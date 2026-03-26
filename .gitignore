@@ -1,0 +1,34 @@
+# Node
+node_modules/
+.next/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Env and local state
+.env
+.env.local
+qcai_dev.db
+apps/api/qcai_dev.db
+
+# Logs
+*.log
+*.out.log
+*.err.log
+
+# Internal working notes and non-submission artifacts
+01_Repository_Artifact_Study_and_Assessment.docx
+02_QC_AI_Web_App_Corrected_Clean_Specification.docx
+03_QC_AI_Web_App_Implementation_Blueprint.docx
+04_Completed_Activities_Log.md
+05_Improvement_Brainstorm.txt
+06_Codex_Challenge_Assessment.txt
+Vital_Concepts.docx
+2025.mp4
+*.pdf
+
+# OS
+.DS_Store
+Thumbs.db

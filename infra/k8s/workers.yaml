@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qcai-ingestion-worker
+  namespace: qcai-learning
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qcai-ingestion-worker
+  template:
+    metadata:
+      labels:
+        app: qcai-ingestion-worker
+    spec:
+      containers:
+        - name: ingestion-worker
+          image: gcr.io/PROJECT_ID/qcai-api:latest
+          command: ["python", "-m", "app.workers.ingestion"]
+          envFrom:
+            - configMapRef:
+                name: qcai-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qcai-rag-worker
+  namespace: qcai-learning
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qcai-rag-worker
+  template:
+    metadata:
+      labels:
+        app: qcai-rag-worker
+    spec:
+      containers:
+        - name: rag-worker
+          image: gcr.io/PROJECT_ID/qcai-api:latest
+          command: ["python", "-m", "app.workers.rag"]
+          envFrom:
+            - configMapRef:
+                name: qcai-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qcai-analytics-worker
+  namespace: qcai-learning
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qcai-analytics-worker
+  template:
+    metadata:
+      labels:
+        app: qcai-analytics-worker
+    spec:
+      containers:
+        - name: analytics-worker
+          image: gcr.io/PROJECT_ID/qcai-api:latest
+          command: ["python", "-m", "app.workers.analytics"]
+          envFrom:
+            - configMapRef:
+                name: qcai-config

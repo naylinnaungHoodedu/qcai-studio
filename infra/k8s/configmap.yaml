@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: qcai-config
+  namespace: qcai-learning
+data:
+  API_BASE_URL: "https://api.qcai.local"
+  NEXT_PUBLIC_API_BASE_URL: "https://api.qcai.local"
+  DATABASE_URL: "postgresql+psycopg://qcai:change-me@cloudsql/qcai"
+  SOURCE_ASSETS_ROOT: "/app/source-assets"
+  ALLOWED_ORIGINS: '["https://app.qcai.local"]'

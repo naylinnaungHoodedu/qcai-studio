@@ -1,0 +1,106 @@
+import json
+from functools import lru_cache
+from pathlib import Path
+from typing import Annotated, Any
+
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+
+SOURCE_DOCUMENT_NAMES = [
+    "Quantum Computing AI Research Synthesis 2026.docx",
+    "Analyzing Quantum Computing and AI Paper 2025.docx",
+    "Quantum Computing and Artificial Intelligence Industry Use Cases.docx",
+]
+
+SOURCE_VIDEO_NAMES = [
+    "Quantum Computing and Artificial Intelligence 2025.mp4",
+    "Quantum Computing and Artificial Intelligence 2026.mp4",
+]
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    app_name: str = "QC+AI Learning API"
+    environment: str = "development"
+    database_url: str = "sqlite:///./qcai_dev.db"
+    openai_api_key: str | None = None
+    openai_chat_model: str = "gpt-4.1-mini"
+    openai_embedding_model: str = "text-embedding-3-small"
+    auth0_domain: str | None = None
+    auth0_audience: str | None = None
+    pinecone_api_key: str | None = None
+    pinecone_index: str | None = None
+    api_base_url: str | None = None
+    source_assets_root: str | None = None
+    allowed_origins: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:3000"])
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            raw_value = value.strip()
+            if not raw_value:
+                return ["http://localhost:3000"]
+            if raw_value.startswith("["):
+                try:
+                    parsed = json.loads(raw_value)
+                except ValueError:
+                    parsed = None
+                if isinstance(parsed, list):
+                    return [item for item in parsed if isinstance(item, str) and item.strip()]
+            return [item.strip() for item in raw_value.split(",") if item.strip()]
+        return value
+
+    @model_validator(mode="after")
+    def validate_allowed_origins(self) -> "Settings":
+        if self.environment.lower() != "development" and any(origin.strip() == "*" for origin in self.allowed_origins):
+            raise ValueError("Wildcard ALLOWED_ORIGINS is not permitted outside development.")
+        return self
+
+    @property
+    def project_root(self) -> Path:
+        if self.source_assets_root:
+            return Path(self.source_assets_root).resolve()
+
+        config_path = Path(__file__).resolve()
+        candidates = [parent for parent in config_path.parents]
+        candidates.append(Path("/app/source-assets"))
+
+        for candidate in candidates:
+            if all((candidate / name).exists() for name in SOURCE_DOCUMENT_NAMES[:2]):
+                return candidate
+
+        for candidate in candidates:
+            if all((candidate / name).exists() for name in SOURCE_VIDEO_NAMES):
+                return candidate
+
+        return config_path.parents[min(3, len(config_path.parents) - 1)]
+
+    @property
+    def source_documents(self) -> list[Path]:
+        root = self.project_root
+        return [root / name for name in SOURCE_DOCUMENT_NAMES if (root / name).exists()]
+
+    @property
+    def source_videos(self) -> list[Path]:
+        return [
+            self.project_root / name for name in SOURCE_VIDEO_NAMES
+        ]
+
+    @property
+    def transcripts_dir(self) -> Path:
+        return self.project_root / "transcripts"
+
+    @property
+    def source_assets_dir(self) -> Path:
+        return self.project_root
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

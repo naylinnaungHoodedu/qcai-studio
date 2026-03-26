@@ -1,0 +1,164 @@
+import {
+  CourseProgress,
+  CourseOverview,
+  LessonDetail,
+  ModuleDetail,
+  Note,
+  QuizAttemptResult,
+  QAResponse,
+  SearchResult,
+  UserProfile,
+} from "@/lib/types";
+
+const SERVER_API_BASE_URL =
+  process.env.API_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  "http://127.0.0.1:8000";
+const CLIENT_API_BASE_URL = "/api/backend";
+const DEMO_USER_ID = "demo-learner";
+const DEMO_ROLE = "learner";
+
+type FetchOptions = RequestInit & { headers?: HeadersInit };
+
+function applyDemoAuthHeaders(headers: Headers): void {
+  if (headers.has("authorization")) {
+    headers.delete("x-demo-user");
+    headers.delete("x-demo-role");
+    return;
+  }
+  if (!headers.has("x-demo-user")) {
+    headers.set("x-demo-user", DEMO_USER_ID);
+  }
+  if (!headers.has("x-demo-role")) {
+    headers.set("x-demo-role", DEMO_ROLE);
+  }
+}
+
+function resolveApiBaseUrl(): string {
+  if (typeof window === "undefined") {
+    return SERVER_API_BASE_URL;
+  }
+  return CLIENT_API_BASE_URL;
+}
+
+async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
+  const headers = new Headers(options.headers);
+  if (options.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  applyDemoAuthHeaders(headers);
+
+  const response = await fetch(`${resolveApiBaseUrl()}${path}`, {
+    ...options,
+    headers,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`API request failed: ${response.status}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+export function getApiBaseUrl(): string {
+  return SERVER_API_BASE_URL;
+}
+
+export function getClientApiBaseUrl(): string {
+  return CLIENT_API_BASE_URL;
+}
+
+export async function fetchCourseOverview(): Promise<CourseOverview> {
+  return apiFetch<CourseOverview>("/content/course");
+}
+
+export async function fetchCourseProgress(): Promise<CourseProgress> {
+  return apiFetch<CourseProgress>("/content/progress");
+}
+
+export async function fetchModule(slug: string): Promise<ModuleDetail> {
+  return apiFetch<ModuleDetail>(`/content/modules/${slug}`);
+}
+
+export async function fetchLesson(slug: string): Promise<LessonDetail> {
+  return apiFetch<LessonDetail>(`/content/lessons/${slug}`);
+}
+
+export async function fetchLessonNotes(slug: string): Promise<Note[]> {
+  return apiFetch<Note[]>(`/content/lessons/${slug}/notes`);
+}
+
+export async function createLessonNote(
+  slug: string,
+  body: string,
+  anchorValue?: string,
+): Promise<Note> {
+  return apiFetch<Note>(`/content/lessons/${slug}/notes`, {
+    method: "POST",
+    body: JSON.stringify({
+      body,
+      anchor_type: anchorValue ? "chapter" : null,
+      anchor_value: anchorValue ?? null,
+    }),
+  });
+}
+
+export async function askQuestion(
+  question: string,
+  lessonSlug?: string,
+): Promise<QAResponse> {
+  return apiFetch<QAResponse>("/qa/ask", {
+    method: "POST",
+    body: JSON.stringify({
+      question,
+      lesson_slug: lessonSlug ?? null,
+      top_k: 4,
+    }),
+  });
+}
+
+export async function searchContent(
+  query: string,
+  lessonSlug?: string,
+): Promise<SearchResult[]> {
+  const params = new URLSearchParams({ query });
+  if (lessonSlug) {
+    params.set("lesson_slug", lessonSlug);
+  }
+  return apiFetch<SearchResult[]>(`/search?${params.toString()}`);
+}
+
+export async function fetchMe(): Promise<UserProfile> {
+  return apiFetch<UserProfile>("/auth/me");
+}
+
+export async function postAnalyticsEvent(
+  eventType: string,
+  lessonSlug?: string,
+  payload: Record<string, unknown> = {},
+): Promise<void> {
+  await apiFetch("/analytics/events", {
+    method: "POST",
+    body: JSON.stringify({
+      event_type: eventType,
+      lesson_slug: lessonSlug ?? null,
+      payload,
+    }),
+  });
+}
+
+export async function recordQuizAttempt(
+  lessonSlug: string,
+  score: number,
+  responses: Record<string, string>,
+): Promise<QuizAttemptResult> {
+  return apiFetch<QuizAttemptResult>("/content/quiz-attempts", {
+    method: "POST",
+    body: JSON.stringify({
+      lesson_slug: lessonSlug,
+      score,
+      responses,
+    }),
+  });
+}

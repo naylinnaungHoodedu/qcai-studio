@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: qcai-ingress
+  namespace: qcai-learning
+spec:
+  rules:
+    - host: app.qcai.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: qcai-frontend
+                port:
+                  number: 3000
+    - host: api.qcai.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: qcai-api
+                port:
+                  number: 8000
