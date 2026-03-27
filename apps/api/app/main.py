@@ -2,7 +2,7 @@ import time
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
@@ -10,35 +10,57 @@ from sqlalchemy.exc import OperationalError
 from app.api.routes import admin, analytics, arena, assets, auth, builder, content, insights, projects, qa, search
 from app.core.config import get_settings
 from app.core.db import Base, engine
+from app.core.request_protection import protect_guest_mutation_request
 from app.core.schema_upgrades import run_schema_upgrades
 from app.services.store import get_course_store
 
 
 settings = get_settings()
+IS_PRODUCTION = settings.environment.lower() != "development"
 
-def _build_content_security_policy() -> str:
-    connect_sources = {"'self'", "http://127.0.0.1:*", "http://localhost:*"}
-    for origin in settings.allowed_origins:
+def _build_content_security_policy(app_settings = settings) -> str:
+    is_production = app_settings.environment.lower() != "development"
+    connect_sources = {"'self'"}
+    if not is_production:
+        connect_sources.update({"http://127.0.0.1:*", "http://localhost:*"})
+    for origin in app_settings.allowed_origins:
         connect_sources.add(origin.rstrip("/"))
-    if settings.api_base_url:
-        parsed = urlsplit(settings.api_base_url)
+    if app_settings.site_url:
+        parsed_site_url = urlsplit(app_settings.site_url)
+        if parsed_site_url.scheme and parsed_site_url.netloc:
+            connect_sources.add(f"{parsed_site_url.scheme}://{parsed_site_url.netloc}")
+    if app_settings.api_base_url:
+        parsed = urlsplit(app_settings.api_base_url)
         if parsed.scheme and parsed.netloc:
             connect_sources.add(f"{parsed.scheme}://{parsed.netloc}")
             websocket_scheme = "wss" if parsed.scheme == "https" else "ws"
             connect_sources.add(f"{websocket_scheme}://{parsed.netloc}")
+    script_sources = ["'self'", "'unsafe-inline'"]
+    if not is_production:
+        script_sources.append("'unsafe-eval'")
     return (
-        "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; "
-        "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; "
+        "img-src 'self' data: blob:; media-src 'self' blob:; "
+        "style-src 'self' 'unsafe-inline'; "
+        f"script-src {' '.join(script_sources)}; "
         f"connect-src {' '.join(sorted(connect_sources))};"
     )
 
 
-SECURITY_HEADERS = {
-    "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
-    "Referrer-Policy": "same-origin",
-    "Content-Security-Policy": _build_content_security_policy(),
-}
+def _build_security_headers(app_settings = settings) -> dict[str, str]:
+    security_headers = {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "same-origin",
+        "Permissions-Policy": "accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()",
+        "Content-Security-Policy": _build_content_security_policy(app_settings),
+    }
+    if app_settings.environment.lower() != "development":
+        security_headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    return security_headers
+
+
+SECURITY_HEADERS = _build_security_headers()
 
 
 def _initialize_database() -> None:
@@ -66,7 +88,13 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app = FastAPI(
+    title=settings.app_name,
+    lifespan=lifespan,
+    docs_url="/docs" if not IS_PRODUCTION else None,
+    redoc_url="/redoc" if not IS_PRODUCTION else None,
+    openapi_url="/openapi.json" if not IS_PRODUCTION else None,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -87,6 +115,16 @@ app.include_router(arena.router)
 app.include_router(builder.router)
 app.include_router(insights.router)
 app.include_router(projects.router)
+
+
+@app.middleware("http")
+async def enforce_guest_request_protection(request: Request, call_next):
+    try:
+        protect_guest_mutation_request(request, settings)
+    except HTTPException as exc:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=SECURITY_HEADERS)
+    response = await call_next(request)
+    return response
 
 
 @app.middleware("http")

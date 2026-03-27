@@ -36,6 +36,8 @@ const CLIENT_API_BASE_URL = "/api/backend";
 const DEMO_USER_ID = "demo-learner";
 const DEMO_ROLE = "learner";
 const PUBLIC_REVALIDATE_SECONDS = 300;
+const GUEST_CSRF_COOKIE_NAME = "qcai_guest_csrf";
+const GUEST_CSRF_HEADER = "x-qcai-csrf";
 const ENABLE_DEMO_AUTH =
   process.env.ENABLE_DEMO_AUTH != null
     ? process.env.ENABLE_DEMO_AUTH === "true"
@@ -47,6 +49,31 @@ type FetchOptions = RequestInit & {
   headers?: HeadersInit;
   cacheMode?: "public" | "private";
 };
+
+function readCookieValue(name: string): string | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+  const prefix = `${name}=`;
+  const match = document.cookie
+    .split(";")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(prefix));
+  if (!match) {
+    return null;
+  }
+  return decodeURIComponent(match.slice(prefix.length));
+}
+
+function applyGuestCsrfHeader(headers: Headers): void {
+  if (headers.has("authorization") || headers.has(GUEST_CSRF_HEADER)) {
+    return;
+  }
+  const csrfToken = readCookieValue(GUEST_CSRF_COOKIE_NAME);
+  if (csrfToken) {
+    headers.set(GUEST_CSRF_HEADER, csrfToken);
+  }
+}
 
 function applyDemoAuthHeaders(headers: Headers): void {
   if (!ENABLE_DEMO_AUTH) {
@@ -76,10 +103,11 @@ function resolveApiBaseUrl(): string {
 
 async function applyServerRequestHeaders(headers: Headers): Promise<void> {
   if (typeof window !== "undefined") {
+    applyGuestCsrfHeader(headers);
     return;
   }
   try {
-    const { headers: nextHeaders } = await import("next/headers");
+    const { cookies: nextCookies, headers: nextHeaders } = await import("next/headers");
     const requestHeaders = await nextHeaders();
     const cookieHeader = requestHeaders.get("cookie");
     if (cookieHeader && !headers.has("cookie")) {
@@ -88,6 +116,11 @@ async function applyServerRequestHeaders(headers: Headers): Promise<void> {
     const authorization = requestHeaders.get("authorization");
     if (authorization && !headers.has("authorization")) {
       headers.set("authorization", authorization);
+    }
+    const requestCookies = await nextCookies();
+    const csrfToken = requestCookies.get(GUEST_CSRF_COOKIE_NAME)?.value;
+    if (csrfToken && !headers.has(GUEST_CSRF_HEADER)) {
+      headers.set(GUEST_CSRF_HEADER, csrfToken);
     }
   } catch {
     // Requests made outside a Next request context do not have incoming headers to forward.

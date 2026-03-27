@@ -1,9 +1,16 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { ModuleCard } from "@/components/module-card";
 import { PageErrorState } from "@/components/page-state";
 import { fetchCourseOverview, fetchCourseProgress } from "@/lib/api";
 import { COURSE_REFERENCES } from "@/lib/course-references";
+
+export const metadata: Metadata = {
+  alternates: {
+    canonical: "/",
+  },
+};
 
 export default async function HomePage() {
   const data = await Promise.all([fetchCourseOverview(), fetchCourseProgress()]).catch(() => null);

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.core.db import SessionLocal
 from app.db_models import ArenaProfile
 from app.core.config import Settings
-from app.main import app
+from app.main import _build_security_headers, app
 
 
 client = TestClient(app)
@@ -39,6 +39,7 @@ def test_healthcheck():
     assert response.json()["status"] == "ok"
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
+    assert "permissions-policy" in response.headers
 
 
 def test_readiness_check():
@@ -268,6 +269,20 @@ def test_demo_auth_defaults_off_outside_development(monkeypatch):
     assert settings.enable_demo_auth is False
 
 
+def test_production_security_headers_drop_localhost_and_add_hsts():
+    settings = Settings(
+        environment="production",
+        allowed_origins=["https://qantumlearn.academy"],
+        api_base_url="https://api.qantumlearn.academy",
+        site_url="https://qantumlearn.academy",
+    )
+    headers = _build_security_headers(settings)
+    assert "http://127.0.0.1:*" not in headers["Content-Security-Policy"]
+    assert "http://localhost:*" not in headers["Content-Security-Policy"]
+    assert "wss://api.qantumlearn.academy" in headers["Content-Security-Policy"]
+    assert headers["Strict-Transport-Security"].startswith("max-age=")
+
+
 def test_source_document_selection_uses_curated_allowlist(tmp_path: Path):
     for name in (
         "Quantum Computing AI Research Synthesis 2026.docx",
@@ -296,6 +311,48 @@ def test_guest_cookie_auth_is_supported():
         assert response.status_code == 200
         assert response.json()["user_id"] == guest_id
         assert response.json()["role"] == "learner"
+
+
+def test_guest_mutation_requires_csrf_protection():
+    with TestClient(app) as guest_client:
+        guest_client.cookies.set("qcai_guest_id", "guest-123e4567-e89b-12d3-a456-426614174000")
+        response = guest_client.post(
+            "/insights/check-ins",
+            json={
+                "motivation_level": 3,
+                "focus_level": 3,
+                "energy_level": 3,
+                "session_minutes": 10,
+                "today_goal": "Audit the protections.",
+                "blocker": "None",
+            },
+        )
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Missing CSRF protection."
+
+
+def test_guest_mutation_accepts_trusted_origin_with_matching_csrf():
+    with TestClient(app) as guest_client:
+        guest_client.cookies.set("qcai_guest_id", "guest-123e4567-e89b-12d3-a456-426614174000")
+        guest_client.cookies.set("qcai_guest_csrf", "3b1f2f40-7132-4778-8df5-44c1c5cf6bb0")
+        response = guest_client.post(
+            "/insights/check-ins",
+            headers={
+                "origin": "http://localhost:3000",
+                "x-qcai-csrf": "3b1f2f40-7132-4778-8df5-44c1c5cf6bb0",
+            },
+            json={
+                "motivation_level": 3,
+                "focus_level": 3,
+                "energy_level": 3,
+                "session_minutes": 10,
+                "today_goal": "Audit the protections.",
+                "blocker": "None",
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["session_minutes"] == 10
+        assert response.json()["today_goal"] == "Audit the protections."
 
 
 def test_progress_endpoint_aggregates_activity():

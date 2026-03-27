@@ -28,6 +28,7 @@ class Settings(BaseSettings):
 
     app_name: str = "QC+AI Learning API"
     environment: str = "development"
+    site_url: str | None = None
     database_url: str = "sqlite:///./qcai_dev.db"
     enable_demo_auth: bool | None = None
     cloud_sql_connection_name: str | None = None

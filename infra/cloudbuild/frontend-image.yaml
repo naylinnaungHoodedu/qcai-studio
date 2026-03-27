@@ -16,6 +16,8 @@ steps:
       - NEXT_PUBLIC_ENABLE_DEMO_AUTH=${_ENABLE_DEMO_AUTH}
       - --build-arg
       - NEXT_PUBLIC_COOKIE_DOMAIN=${_COOKIE_DOMAIN}
+      - --build-arg
+      - NEXT_PUBLIC_SITE_URL=${_SITE_URL}
       - .
 
 images:
@@ -25,3 +27,4 @@ substitutions:
   _API_BASE_URL: https://api.qantumlearn.academy
   _ENABLE_DEMO_AUTH: "false"
   _COOKIE_DOMAIN: .qantumlearn.academy
+  _SITE_URL: https://qantumlearn.academy
