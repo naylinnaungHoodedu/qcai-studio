@@ -172,3 +172,88 @@ export type CourseProgress = {
   recent_notes: Note[];
   recent_quiz_attempts: QuizAttemptSummary[];
 };
+
+export type ArenaLeaderboardEntry = {
+  player_id: string;
+  display_name: string;
+  xp: number;
+  matches_played: number;
+  wins: number;
+  skill_rating: number;
+  adaptive_level: number;
+  win_rate_percent: number;
+  rank_label: string;
+};
+
+export type ArenaProfile = ArenaLeaderboardEntry & {
+  recent_form: string;
+};
+
+export type BuilderNode = {
+  id: string;
+  label: string;
+  description: string;
+  color: string;
+};
+
+export type BuilderSlot = {
+  id: string;
+  label: string;
+  description: string;
+  x: number;
+  y: number;
+};
+
+export type BuilderConnection = {
+  from_slot: string;
+  to_slot: string;
+};
+
+export type BuilderScenario = {
+  slug: string;
+  title: string;
+  domain: string;
+  summary: string;
+  unlock_order: number;
+  points_reward: number;
+  nodes: BuilderNode[];
+  slots: BuilderSlot[];
+  connections: BuilderConnection[];
+  unlocked: boolean;
+  completed: boolean;
+  best_completion_percent: number;
+};
+
+export type BuilderProfile = {
+  user_id: string;
+  total_points: number;
+  current_streak: number;
+  completion_percent: number;
+  completed_scenarios: number;
+  unlocked_scenarios: number;
+  badges: string[];
+  next_challenge_slug?: string | null;
+};
+
+export type BuilderFeedItem = {
+  id: number;
+  user_id: string;
+  scenario_slug: string;
+  scenario_title: string;
+  caption: string;
+  completion_percent: number;
+  created_at: string;
+};
+
+export type BuilderSubmissionResult = {
+  scenario_slug: string;
+  completion_percent: number;
+  correct_slots: number;
+  total_slots: number;
+  points_earned: number;
+  unlocked_next_slug?: string | null;
+  completed: boolean;
+  incorrect_slots: string[];
+  current_streak: number;
+  badges: string[];
+};

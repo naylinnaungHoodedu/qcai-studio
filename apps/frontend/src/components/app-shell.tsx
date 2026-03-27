@@ -18,6 +18,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
         <nav className="site-nav">
           <Link href="/">Overview</Link>
+          <Link href="/arena">Arena</Link>
+          <Link href="/builder">Builder</Link>
           <Link href="/dashboard">Dashboard</Link>
           <Link href="/search">Search</Link>
         </nav>

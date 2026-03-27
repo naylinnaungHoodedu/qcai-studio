@@ -1,4 +1,10 @@
 import {
+  ArenaLeaderboardEntry,
+  ArenaProfile,
+  BuilderFeedItem,
+  BuilderProfile,
+  BuilderScenario,
+  BuilderSubmissionResult,
   CourseProgress,
   CourseOverview,
   LessonDetail,
@@ -159,6 +165,54 @@ export async function recordQuizAttempt(
       lesson_slug: lessonSlug,
       score,
       responses,
+    }),
+  });
+}
+
+export async function fetchArenaLeaderboard(): Promise<ArenaLeaderboardEntry[]> {
+  return apiFetch<ArenaLeaderboardEntry[]>("/arena/leaderboard");
+}
+
+export async function fetchArenaProfile(playerId: string): Promise<ArenaProfile> {
+  return apiFetch<ArenaProfile>(`/arena/profiles/${playerId}`);
+}
+
+export async function fetchBuilderScenarios(): Promise<BuilderScenario[]> {
+  return apiFetch<BuilderScenario[]>("/builder/scenarios");
+}
+
+export async function fetchBuilderProfile(): Promise<BuilderProfile> {
+  return apiFetch<BuilderProfile>("/builder/profile");
+}
+
+export async function fetchBuilderFeed(): Promise<BuilderFeedItem[]> {
+  return apiFetch<BuilderFeedItem[]>("/builder/feed");
+}
+
+export async function submitBuilderScenario(
+  scenarioSlug: string,
+  placements: Record<string, string>,
+): Promise<BuilderSubmissionResult> {
+  return apiFetch<BuilderSubmissionResult>("/builder/submit", {
+    method: "POST",
+    body: JSON.stringify({
+      scenario_slug: scenarioSlug,
+      placements,
+    }),
+  });
+}
+
+export async function shareBuilderScenario(
+  scenarioSlug: string,
+  caption: string,
+  placements: Record<string, string>,
+): Promise<BuilderFeedItem> {
+  return apiFetch<BuilderFeedItem>("/builder/share", {
+    method: "POST",
+    body: JSON.stringify({
+      scenario_slug: scenarioSlug,
+      caption,
+      placements,
     }),
   });
 }

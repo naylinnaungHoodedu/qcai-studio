@@ -3,6 +3,8 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from app.core.db import SessionLocal
+from app.db_models import ArenaProfile
 from app.core.config import Settings
 from app.main import app
 
@@ -20,10 +22,12 @@ DISPLAY_DOCUMENT_TITLES = {
     "Raj et al. (Eds.), Quantum Computing and Artificial Intelligence: The Industry Use Cases",
 }
 RAW_VIDEO_TITLES = {
+    "Industry Use Cases.mp4",
     "Quantum Computing and Artificial Intelligence 2025.mp4",
     "Quantum Computing and Artificial Intelligence 2026.mp4",
 }
 DISPLAY_VIDEO_TITLES = {
+    "Industry Use Cases",
     "Quantum Computing and Artificial Intelligence 2025",
     "Quantum Computing and Artificial Intelligence 2026",
 }
@@ -78,9 +82,13 @@ def test_industry_use_cases_lesson_lookup():
     data = response.json()
     assert data["module_slug"] == "industry-use-cases"
     assert data["sections"]
-    assert data["video_asset"] is None
+    assert data["video_asset"]["filename"] == "Industry Use Cases.mp4"
+    assert data["video_asset"]["title"] == "Industry Use Cases"
+    assert data["video_asset"]["download_url"] == "/source-assets/by-id/industry-use-cases"
+    assert data["chapters"]
     source_filenames = [asset["filename"] for asset in data["source_assets"]]
     assert "Quantum Computing and Artificial Intelligence Industry Use Cases.docx" in source_filenames
+    assert "Industry Use Cases.mp4" in source_filenames
     source_titles = {section["source_title"] for section in data["sections"]}
     assert "Raj et al. (Eds.), Quantum Computing and Artificial Intelligence: The Industry Use Cases" in source_titles
     assert not (source_titles & RAW_DOCUMENT_TITLES)
@@ -197,11 +205,31 @@ def test_video_assets_use_updated_filenames():
     assert response.status_code == 200
     assets = response.json()["source_assets"]
     video_filenames = [asset["filename"] for asset in assets if asset["kind"] == "video"]
+    assert "Industry Use Cases.mp4" in video_filenames
     assert "Quantum Computing and Artificial Intelligence 2025.mp4" in video_filenames
     assert "Quantum Computing and Artificial Intelligence 2026.mp4" in video_filenames
     video_urls = [asset["download_url"] for asset in assets if asset["kind"] == "video"]
     assert all(url.startswith("/source-assets/by-id/") for url in video_urls)
     assert not any(any(raw_title in url for raw_title in RAW_VIDEO_TITLES) for url in video_urls)
+
+
+def test_industry_video_asset_supports_head_requests():
+    response = client.head(
+        "/source-assets/by-id/industry-use-cases",
+        headers=DEMO_HEADERS,
+    )
+    assert response.status_code == 200
+
+
+def test_industry_video_asset_supports_byte_ranges():
+    response = client.get(
+        "/source-assets/by-id/industry-use-cases",
+        headers={**DEMO_HEADERS, "Range": "bytes=0-255"},
+    )
+    assert response.status_code == 206
+    assert response.headers["accept-ranges"] == "bytes"
+    assert response.headers["content-range"].startswith("bytes 0-255/")
+    assert len(response.content) == 256
 
 
 def test_allowed_origins_env_accepts_scalar_and_csv(monkeypatch):
@@ -285,3 +313,111 @@ def test_progress_endpoint_aggregates_activity():
     assert module["status"] in {"in_progress", "completed"}
     assert data["recent_notes"]
     assert data["recent_quiz_attempts"]
+
+
+def test_arena_leaderboard_orders_profiles():
+    top_player = f"arena-top-{uuid4().hex[:8]}"
+    runner_up = f"arena-runner-{uuid4().hex[:8]}"
+    with SessionLocal() as session:
+        session.add_all(
+            [
+                ArenaProfile(
+                    player_id=top_player,
+                    display_name="Top Player",
+                    xp=9000,
+                    matches_played=12,
+                    wins=9,
+                    skill_rating=1290,
+                    adaptive_level=4,
+                ),
+                ArenaProfile(
+                    player_id=runner_up,
+                    display_name="Runner Up",
+                    xp=8500,
+                    matches_played=11,
+                    wins=7,
+                    skill_rating=1210,
+                    adaptive_level=4,
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get("/arena/leaderboard")
+    assert response.status_code == 200
+    data = response.json()
+    top_index = next(index for index, item in enumerate(data) if item["player_id"] == top_player)
+    runner_index = next(index for index, item in enumerate(data) if item["player_id"] == runner_up)
+    assert top_index < runner_index
+    assert data[top_index]["rank_label"] == "Quantum Master"
+
+
+def test_arena_bot_match_streams_round_updates():
+    player_id = f"arena-bot-{uuid4().hex[:8]}"
+    with client.websocket_connect(f"/arena/ws?player_id={player_id}&display_name=TestPilot&mode=bot") as websocket:
+        connected = websocket.receive_json()
+        assert connected["type"] == "connected"
+        match_found = websocket.receive_json()
+        assert match_found["type"] == "match_found"
+        challenge = websocket.receive_json()
+        assert challenge["type"] == "challenge"
+        prompt = challenge["challenge"]["prompt"]
+        if challenge["challenge"]["options"]:
+            answer = challenge["challenge"]["options"][0]
+        elif "softmax" in prompt.lower():
+            answer = "np.exp(shifted).sum()"
+        elif "optimizer" in prompt.lower():
+            answer = "step()"
+        elif "reward" in prompt.lower():
+            answer = "reward"
+        else:
+            answer = "target_network"
+        websocket.send_json({"type": "answer", "answer": answer})
+        round_result = websocket.receive_json()
+        assert round_result["type"] == "round_result"
+        assert round_result["correct_answer"]
+        assert round_result["players"]
+
+
+def test_builder_submit_unlocks_next_scenario_and_share_feed():
+    user_headers = {"x-demo-user": f"builder-{uuid4()}", "x-demo-role": "learner"}
+    scenarios_response = client.get("/builder/scenarios", headers=user_headers)
+    assert scenarios_response.status_code == 200
+    scenarios = scenarios_response.json()
+    assert scenarios[0]["slug"] == "qcai-hybrid-loop"
+    assert scenarios[0]["unlocked"] is True
+    assert scenarios[1]["unlocked"] is False
+
+    placements = {
+        "slot-ingest": "data-ingest",
+        "slot-bottleneck": "feature-bottleneck",
+        "slot-quantum": "quantum-routine",
+        "slot-measurement": "measurement",
+        "slot-postprocess": "classical-postprocess",
+    }
+    submit_response = client.post(
+        "/builder/submit",
+        headers=user_headers,
+        json={"scenario_slug": "qcai-hybrid-loop", "placements": placements},
+    )
+    assert submit_response.status_code == 200
+    result = submit_response.json()
+    assert result["completed"] is True
+    assert result["completion_percent"] == 100
+    assert result["unlocked_next_slug"] == "control-systems-loop"
+
+    updated_scenarios = client.get("/builder/scenarios", headers=user_headers).json()
+    assert updated_scenarios[1]["unlocked"] is True
+
+    share_response = client.post(
+        "/builder/share",
+        headers=user_headers,
+        json={
+            "scenario_slug": "qcai-hybrid-loop",
+            "caption": "Completed the hybrid loop under hardware constraints.",
+            "placements": placements,
+        },
+    )
+    assert share_response.status_code == 200
+    feed = client.get("/builder/feed", headers=user_headers).json()
+    assert any(item["caption"] == "Completed the hybrid loop under hardware constraints." for item in feed)

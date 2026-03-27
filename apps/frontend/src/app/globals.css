@@ -403,6 +403,211 @@ input {
   background: linear-gradient(90deg, var(--accent), #2ea89f);
 }
 
+.game-grid,
+.builder-grid {
+  display: grid;
+  gap: 20px;
+}
+
+.game-grid {
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.95fr);
+}
+
+.arena-control-bar,
+.builder-badge-row,
+.builder-node-tray,
+.builder-scenario-list,
+.arena-scoreboard {
+  display: grid;
+  gap: 16px;
+}
+
+.arena-name-field {
+  display: grid;
+  gap: 8px;
+  max-width: 360px;
+}
+
+.arena-name-field input {
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.arena-scoreboard {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.arena-score-card,
+.arena-result-card,
+.arena-challenge-card,
+.builder-result-card {
+  border-radius: 18px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.arena-score-card.is-self {
+  border-color: rgba(15, 118, 110, 0.28);
+  background: linear-gradient(180deg, rgba(15, 118, 110, 0.1), rgba(255, 255, 255, 0.94));
+}
+
+.arena-prompt {
+  font-size: 1.05rem;
+  color: var(--ink);
+}
+
+.arena-code {
+  margin: 0;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(23, 24, 28, 0.12);
+  background: #182028;
+  color: #e9eef5;
+  overflow: auto;
+}
+
+.arena-choice {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  cursor: pointer;
+}
+
+.arena-choice.selected {
+  border-color: rgba(15, 118, 110, 0.36);
+  background: rgba(15, 118, 110, 0.14);
+}
+
+.arena-metric-grid,
+.builder-metric-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.arena-leaderboard-row {
+  padding: 14px 0;
+  border-top: 1px solid rgba(23, 24, 28, 0.1);
+}
+
+.arena-leaderboard-row:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.builder-scenario-list {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.builder-scenario-card {
+  display: grid;
+  gap: 10px;
+  text-align: left;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.86);
+  cursor: pointer;
+}
+
+.builder-scenario-card.is-selected {
+  border-color: rgba(15, 118, 110, 0.34);
+  background: linear-gradient(180deg, rgba(15, 118, 110, 0.08), rgba(255, 255, 255, 0.92));
+}
+
+.builder-scenario-card.is-locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.builder-grid {
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+}
+
+.builder-canvas {
+  position: relative;
+  min-height: 560px;
+  border-radius: 24px;
+  border: 1px solid rgba(23, 24, 28, 0.1);
+  background:
+    radial-gradient(circle at top, rgba(15, 118, 110, 0.09), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(246, 242, 235, 0.94));
+  overflow: hidden;
+}
+
+.builder-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.builder-lines line {
+  stroke: rgba(15, 118, 110, 0.36);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-dasharray: 2 2;
+}
+
+.builder-slot {
+  position: absolute;
+  width: 190px;
+  min-height: 120px;
+  transform: translate(-50%, -50%);
+  border-radius: 18px;
+  padding: 14px;
+  border: 1px dashed rgba(23, 24, 28, 0.18);
+  background: rgba(255, 255, 255, 0.95);
+  display: grid;
+  gap: 8px;
+  box-shadow: 0 16px 32px rgba(23, 24, 28, 0.08);
+}
+
+.builder-slot.is-correct {
+  border-color: rgba(15, 118, 110, 0.4);
+}
+
+.builder-slot.is-incorrect {
+  border-color: rgba(185, 28, 28, 0.42);
+  background: rgba(255, 241, 242, 0.96);
+}
+
+.builder-node-tray {
+  align-content: flex-start;
+}
+
+.builder-node {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 14px;
+  border: none;
+  border-radius: 16px;
+  color: white;
+  text-align: left;
+  cursor: grab;
+}
+
+.builder-node span {
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.builder-node.placed {
+  cursor: pointer;
+}
+
+.inset-panel {
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.84);
+}
+
 @media (max-width: 640px) {
   .app-shell {
     padding: 16px;
@@ -430,11 +635,18 @@ input {
   .hero,
   .two-column-grid,
   .lesson-layout-grid,
-  .lesson-card {
+  .lesson-card,
+  .game-grid,
+  .builder-grid {
     grid-template-columns: 1fr;
   }
 
   .site-header {
     flex-direction: column;
+  }
+
+  .builder-slot {
+    width: 160px;
+    min-height: 100px;
   }
 }

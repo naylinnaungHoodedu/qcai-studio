@@ -67,6 +67,43 @@ export default async function HomePage() {
           ))}
         </div>
       </section>
+
+      <section className="section-block">
+        <div className="section-heading">
+          <p className="eyebrow">Interactive Games</p>
+          <h2>Practice through competition and construction</h2>
+          <p>
+            Two new game modes extend the course beyond reading and quizzes: a live AI-and-quantum battle arena and a
+            drag-and-drop dependency builder for engineering microlearning.
+          </p>
+        </div>
+        <div className="lesson-list">
+          <article className="lesson-card">
+            <div>
+              <p className="eyebrow">Arena</p>
+              <h3>AI &amp; Quantum Challenge Arena</h3>
+              <p>Face ranked rivals or an adaptive bot across real-time AI/ML and quantum systems challenges.</p>
+            </div>
+            <div className="lesson-actions">
+              <Link className="primary-button" href="/arena">
+                Enter arena
+              </Link>
+            </div>
+          </article>
+          <article className="lesson-card">
+            <div>
+              <p className="eyebrow">Builder</p>
+              <h3>Microlearning Drag-and-Drop Builder</h3>
+              <p>Assemble dependency graphs, unlock the next circuit, and share completed learning maps to the feed.</p>
+            </div>
+            <div className="lesson-actions">
+              <Link className="primary-button" href="/builder">
+                Open builder
+              </Link>
+            </div>
+          </article>
+        </div>
+      </section>
     </div>
   );
 }

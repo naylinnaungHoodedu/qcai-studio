@@ -20,6 +20,7 @@ ASSET_TITLE_MAP = {
     **DOCUMENT_TITLE_MAP,
     "Quantum Computing and Artificial Intelligence 2025.mp4": "Quantum Computing and Artificial Intelligence 2025",
     "Quantum Computing and Artificial Intelligence 2026.mp4": "Quantum Computing and Artificial Intelligence 2026",
+    "Industry Use Cases.mp4": "Industry Use Cases",
 }
 
 
@@ -356,7 +357,7 @@ MODULE_BLUEPRINTS: list[dict[str, Any]] = [
                 "The Entrepreneurial Ecosystem and Commercial Opportunities",
                 "Strategic Outlook and Future Trajectories",
             ],
-            video_file=None,
+            video_file="Industry Use Cases.mp4",
         ),
         "flashcards": [
             ("intro", "Which industry group in the document is most tightly tied to native molecular simulation?", "Healthcare, pharmaceuticals, and computational chemistry."),

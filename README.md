@@ -22,8 +22,9 @@ This repository now contains a working MVP implementation of the interactive QC+
   - `Quantum Computing and Artificial Intelligence Industry Use Cases.docx`
   - `Quantum Computing and Artificial Intelligence 2025.mp4`
   - `Quantum Computing and Artificial Intelligence 2026.mp4`
+  - `Industry Use Cases.mp4`
 
-The course is intentionally scoped to the three curated DOCX sources above and the two primary MP4 lecture assets. Stray working files in the repository root are not part of the served course corpus.
+The course is intentionally scoped to the three curated DOCX sources above and the three curated MP4 lesson assets. Stray working files in the repository root are not part of the served course corpus.
 
 ## Local development
 
@@ -50,7 +51,7 @@ If the backend is not running on `http://127.0.0.1:8000`, update `API_BASE_URL` 
 
 ### Git LFS media setup
 
-The two primary MP4 lecture assets are intended to be versioned with Git LFS for GitHub distribution.
+The three curated MP4 lesson assets are intended to be versioned with Git LFS for GitHub distribution.
 
 ```powershell
 git lfs install

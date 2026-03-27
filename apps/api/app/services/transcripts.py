@@ -89,6 +89,53 @@ CURATED_VIDEO_CHAPTERS: dict[str, list[VideoChapter]] = {
             transcript_excerpt="The closing emphasizes future systems design, not merely isolated algorithmic novelty.",
         ),
     ],
+    "Industry Use Cases.mp4": [
+        VideoChapter(
+            id="industry-intro",
+            title="Industry 5.0 Framing",
+            timestamp_start=0,
+            timestamp_end=76,
+            summary="Opens by framing QC+AI as an Industry 5.0 transition shaped by resilience, sustainability, and workload-specific deployment choices.",
+            transcript_excerpt="The video positions industry adoption as a portfolio question rather than a single universal disruption claim.",
+            transcript_status="curated_chapter_summary",
+        ),
+        VideoChapter(
+            id="industry-finance-logistics",
+            title="Finance and Logistics",
+            timestamp_start=76,
+            timestamp_end=196,
+            summary="Covers optimization-heavy sectors such as finance, cryptoeconomics, route planning, inventory management, and traffic flow.",
+            transcript_excerpt="The strongest emphasis is on anomaly detection, portfolio optimization, and real-time orchestration around quantum optimization steps.",
+            transcript_status="curated_chapter_summary",
+        ),
+        VideoChapter(
+            id="industry-healthcare-climate",
+            title="Healthcare, Pharma, and Climate",
+            timestamp_start=196,
+            timestamp_end=330,
+            summary="Explains why healthcare, pharmaceuticals, chemistry, and climate modeling are attractive when simulation and high-dimensional inference are central.",
+            transcript_excerpt="This section distinguishes native molecular simulation stories from broader predictive-analytics claims.",
+            transcript_status="curated_chapter_summary",
+        ),
+        VideoChapter(
+            id="industry-networks-security",
+            title="Networks and Cybersecurity",
+            timestamp_start=330,
+            timestamp_end=470,
+            summary="Moves into telecommunications, quantum networking, post-quantum migration, blockchain, and the urgency of security transition planning.",
+            transcript_excerpt="Cybersecurity is framed as a migration problem with present consequences, not merely a distant speculative use case.",
+            transcript_status="curated_chapter_summary",
+        ),
+        VideoChapter(
+            id="industry-consumer-commercial",
+            title="Consumer and Commercial Outlook",
+            timestamp_start=470,
+            timestamp_end=604,
+            summary="Closes with consumer technology, entrepreneurial opportunity, commercialization limits, and the readiness differences across sectors.",
+            transcript_excerpt="The conclusion stresses that adoption depends on regulation, infrastructure maturity, and hybrid support systems around the quantum component.",
+            transcript_status="curated_chapter_summary",
+        ),
+    ],
 }
 
 

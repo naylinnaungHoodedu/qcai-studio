@@ -191,3 +191,99 @@ class CourseProgress(BaseModel):
     lessons: list[LessonProgress]
     recent_notes: list[NoteRead]
     recent_quiz_attempts: list[QuizAttemptRead]
+
+
+class ArenaLeaderboardEntry(BaseModel):
+    player_id: str
+    display_name: str
+    xp: int
+    matches_played: int
+    wins: int
+    skill_rating: int
+    adaptive_level: int
+    win_rate_percent: float
+    rank_label: str
+
+
+class ArenaProfileRead(ArenaLeaderboardEntry):
+    recent_form: str
+
+
+class BuilderNode(BaseModel):
+    id: str
+    label: str
+    description: str
+    color: str
+
+
+class BuilderSlot(BaseModel):
+    id: str
+    label: str
+    description: str
+    x: int
+    y: int
+
+
+class BuilderConnection(BaseModel):
+    from_slot: str
+    to_slot: str
+
+
+class BuilderScenario(BaseModel):
+    slug: str
+    title: str
+    domain: str
+    summary: str
+    unlock_order: int
+    points_reward: int
+    nodes: list[BuilderNode]
+    slots: list[BuilderSlot]
+    connections: list[BuilderConnection]
+    unlocked: bool = False
+    completed: bool = False
+    best_completion_percent: int = 0
+
+
+class BuilderProfile(BaseModel):
+    user_id: str
+    total_points: int
+    current_streak: int
+    completion_percent: int
+    completed_scenarios: int
+    unlocked_scenarios: int
+    badges: list[str]
+    next_challenge_slug: str | None = None
+
+
+class BuilderFeedItem(BaseModel):
+    id: int
+    user_id: str
+    scenario_slug: str
+    scenario_title: str
+    caption: str
+    completion_percent: int
+    created_at: datetime
+
+
+class BuilderSubmissionCreate(BaseModel):
+    scenario_slug: str
+    placements: dict[str, str] = Field(default_factory=dict)
+
+
+class BuilderSubmissionResult(BaseModel):
+    scenario_slug: str
+    completion_percent: int
+    correct_slots: int
+    total_slots: int
+    points_earned: int
+    unlocked_next_slug: str | None = None
+    completed: bool
+    incorrect_slots: list[str] = Field(default_factory=list)
+    current_streak: int
+    badges: list[str]
+
+
+class BuilderShareCreate(BaseModel):
+    scenario_slug: str
+    caption: str = Field(min_length=1, max_length=280)
+    placements: dict[str, str] = Field(default_factory=dict)

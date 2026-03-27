@@ -16,6 +16,7 @@ SOURCE_DOCUMENT_NAMES = [
 SOURCE_VIDEO_NAMES = [
     "Quantum Computing and Artificial Intelligence 2025.mp4",
     "Quantum Computing and Artificial Intelligence 2026.mp4",
+    "Industry Use Cases.mp4",
 ]
 
 class Settings(BaseSettings):
@@ -88,9 +89,8 @@ class Settings(BaseSettings):
 
     @property
     def source_videos(self) -> list[Path]:
-        return [
-            self.project_root / name for name in SOURCE_VIDEO_NAMES
-        ]
+        root = self.project_root
+        return [root / name for name in SOURCE_VIDEO_NAMES if (root / name).exists()]
 
     @property
     def transcripts_dir(self) -> Path:
