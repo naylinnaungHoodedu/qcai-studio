@@ -9,6 +9,7 @@ import {
   fetchMyProjectSubmissions,
   fetchProjectCatalog,
   fetchProjectReviewQueue,
+  retractProjectSubmission,
   requestRealtimeFeedback,
   submitPeerReview,
 } from "@/lib/api";
@@ -57,12 +58,12 @@ export function ProjectsStudio({ initialCatalog, initialSubmissions, initialQueu
   });
   const submissionsQuery = useQuery({
     queryKey: ["project-submissions"],
-    queryFn: fetchMyProjectSubmissions,
+    queryFn: () => fetchMyProjectSubmissions(),
     initialData: initialSubmissions,
   });
   const queueQuery = useQuery({
     queryKey: ["project-review-queue"],
-    queryFn: fetchProjectReviewQueue,
+    queryFn: () => fetchProjectReviewQueue(),
     initialData: initialQueue,
   });
 
@@ -120,6 +121,15 @@ export function ProjectsStudio({ initialCatalog, initialSubmissions, initialQueu
         delete next[variables.submissionId];
         return next;
       });
+      void queryClient.invalidateQueries({ queryKey: ["project-submissions"] });
+      void queryClient.invalidateQueries({ queryKey: ["project-review-queue"] });
+      void queryClient.invalidateQueries({ queryKey: ["project-catalog"] });
+    },
+  });
+
+  const retractMutation = useMutation({
+    mutationFn: (submissionId: number) => retractProjectSubmission(submissionId),
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["project-submissions"] });
       void queryClient.invalidateQueries({ queryKey: ["project-review-queue"] });
       void queryClient.invalidateQueries({ queryKey: ["project-catalog"] });
@@ -354,7 +364,21 @@ export function ProjectsStudio({ initialCatalog, initialSubmissions, initialQueu
                     ))}
                   </ul>
                 ) : null}
-                <p className="muted">{item.review_count} peer reviews recorded.</p>
+                <p className="muted">
+                  {item.review_count} peer reviews recorded. Status: {item.status.replace("_", " ")}.
+                </p>
+                {item.status !== "retracted" ? (
+                  <div className="button-row">
+                    <button
+                      className="secondary-button"
+                      disabled={retractMutation.isPending}
+                      onClick={() => retractMutation.mutate(item.id)}
+                      type="button"
+                    >
+                      {retractMutation.isPending ? "Retracting..." : "Retract submission"}
+                    </button>
+                  </div>
+                ) : null}
               </article>
             ))}
             {submissionsQuery.data?.length === 0 ? (
@@ -434,6 +458,9 @@ export function ProjectsStudio({ initialCatalog, initialSubmissions, initialQueu
             })}
             {reviewMutation.isError ? (
               <p className="muted">{toErrorMessage(reviewMutation.error, "Could not submit the peer review.")}</p>
+            ) : null}
+            {retractMutation.isError ? (
+              <p className="muted">{toErrorMessage(retractMutation.error, "Could not retract the submission.")}</p>
             ) : null}
             {queueQuery.data?.length === 0 ? (
               <p className="muted">No peer submissions are waiting for review yet.</p>

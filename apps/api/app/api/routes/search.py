@@ -13,5 +13,7 @@ def search_content(
     query: Annotated[str, Query(min_length=1, max_length=500)],
     lesson_slug: str | None = None,
     top_k: Annotated[int, Query(ge=1, le=20)] = 8,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    return get_course_store().search(query=query.strip(), lesson_slug=lesson_slug, top_k=top_k)
+    results = get_course_store().search(query=query.strip(), lesson_slug=lesson_slug, top_k=top_k + offset)
+    return results[offset : offset + top_k]

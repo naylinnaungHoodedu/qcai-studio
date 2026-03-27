@@ -1,9 +1,10 @@
 "use client";
 
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
-import { askQuestion, postAnalyticsEvent } from "@/lib/api";
-import { QAResponse } from "@/lib/types";
+import { askQuestion, fetchQAHistory, postAnalyticsEvent } from "@/lib/api";
+import { QAHistoryItem, QAResponse } from "@/lib/types";
 
 function toErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
@@ -16,10 +17,17 @@ export function QAPanel({
   lessonSlug: string;
   seedQuestions: string[];
 }) {
+  const queryClient = useQueryClient();
   const [question, setQuestion] = useState(seedQuestions[0] ?? "");
   const [response, setResponse] = useState<QAResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+
+  const historyQuery = useQuery({
+    queryKey: ["qa-history", lessonSlug],
+    queryFn: () => fetchQAHistory(lessonSlug, { limit: 5 }),
+  });
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -32,16 +40,27 @@ export function QAPanel({
     try {
       const answer = await askQuestion(question.trim(), lessonSlug);
       setResponse(answer);
+      void queryClient.invalidateQueries({ queryKey: ["qa-history", lessonSlug] });
       void postAnalyticsEvent("lesson_qa_asked", lessonSlug, {
         question_length: question.trim().length,
         citation_count: answer.citations.length,
         retrieval_mode: answer.retrieval_mode,
       }).catch(() => null);
-    } catch (error) {
-      setError(toErrorMessage(error, "Could not retrieve an answer right now."));
+    } catch (nextError) {
+      setError(toErrorMessage(nextError, "Could not retrieve an answer right now."));
     } finally {
       setIsLoading(false);
     }
+  }
+
+  function renderHistoryItem(item: QAHistoryItem) {
+    return (
+      <article className="citation-card" key={item.id}>
+        <strong>{item.question}</strong>
+        <p className="muted">{new Date(item.created_at).toLocaleString()}</p>
+        <p>{item.answer}</p>
+      </article>
+    );
   }
 
   return (
@@ -66,9 +85,18 @@ export function QAPanel({
           onChange={(event) => setQuestion(event.target.value)}
           rows={4}
         />
-        <button className="primary-button" type="submit" disabled={isLoading}>
-          {isLoading ? "Retrieving..." : "Ask grounded question"}
-        </button>
+        <div className="button-row">
+          <button className="primary-button" type="submit" disabled={isLoading}>
+            {isLoading ? "Retrieving..." : "Ask grounded question"}
+          </button>
+          <button
+            className="secondary-button"
+            onClick={() => setShowHistory((current) => !current)}
+            type="button"
+          >
+            {showHistory ? "Hide recent questions" : "Show recent questions"}
+          </button>
+        </div>
       </form>
       {error ? <p className="muted">{error}</p> : null}
       {response ? (
@@ -81,12 +109,30 @@ export function QAPanel({
                 <strong>{citation.section_title}</strong>
                 <p className="muted">
                   {citation.source_title}
-                  {citation.timestamp_label ? ` · ${citation.timestamp_label}` : ""}
+                  {citation.timestamp_label ? ` | ${citation.timestamp_label}` : ""}
                 </p>
                 <p>{citation.excerpt}</p>
               </article>
             ))}
           </div>
+        </div>
+      ) : null}
+      {showHistory ? (
+        <div className="stack">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Recent questions</p>
+              <h3>Last 5 grounded answers</h3>
+            </div>
+          </div>
+          {historyQuery.isLoading ? <p className="muted">Loading recent questions...</p> : null}
+          {historyQuery.isError ? (
+            <p className="muted">{toErrorMessage(historyQuery.error, "Could not load recent questions.")}</p>
+          ) : null}
+          {(historyQuery.data ?? []).map(renderHistoryItem)}
+          {historyQuery.data?.length === 0 ? (
+            <p className="muted">No saved Q&A yet for this lesson.</p>
+          ) : null}
         </div>
       ) : null}
     </section>

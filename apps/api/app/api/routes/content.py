@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.auth import AuthUser, get_current_user
@@ -15,32 +18,38 @@ from app.schemas import (
 )
 from app.services.learner_progress import build_course_progress
 from app.services.store import get_course_store
+from app.services.text_utils import sanitize_user_text
 
 router = APIRouter(prefix="/content", tags=["content"])
+PUBLIC_CONTENT_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=60"
 
 
 @router.get("/course", response_model=CourseOverview)
-def get_course():
+def get_course(response: Response):
+    response.headers["Cache-Control"] = PUBLIC_CONTENT_CACHE_CONTROL
     return get_course_store().overview
 
 
 @router.get("/modules/{module_slug}")
-def get_module(module_slug: str):
+def get_module(module_slug: str, response: Response):
     store = get_course_store()
     module = store.modules.get(module_slug)
     if not module:
         raise HTTPException(status_code=404, detail="Module not found.")
+    response.headers["Cache-Control"] = PUBLIC_CONTENT_CACHE_CONTROL
     lessons = [store.lessons[slug] for slug in module.lesson_slugs]
     return {"module": module, "lessons": lessons}
 
 
 @router.get("/lessons/{lesson_slug}", response_model=LessonDetail)
-def get_lesson(lesson_slug: str):
+def get_lesson(lesson_slug: str, response: Response):
     store = get_course_store()
     lesson = store.lessons.get(lesson_slug)
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found.")
+    response.headers["Cache-Control"] = PUBLIC_CONTENT_CACHE_CONTROL
     return lesson
+
 
 @router.get("/progress", response_model=CourseProgress)
 def get_progress(
@@ -53,12 +62,14 @@ def get_progress(
 @router.get("/lessons/{lesson_slug}/notes", response_model=list[NoteRead])
 def list_notes(
     lesson_slug: str,
+    limit: Annotated[int, Query(ge=1, le=50)] = 10,
+    offset: Annotated[int, Query(ge=0)] = 0,
     db: Session = Depends(get_db),
     user: AuthUser = Depends(get_current_user),
 ):
     records = db.scalars(
         select(Note).where(Note.lesson_slug == lesson_slug, Note.user_id == user.user_id).order_by(Note.created_at.desc())
-    ).all()
+    ).all()[offset : offset + limit]
     return [
         NoteRead(
             id=record.id,
@@ -79,15 +90,15 @@ def create_note(
     db: Session = Depends(get_db),
     user: AuthUser = Depends(get_current_user),
 ):
-    note_body = payload.body.strip()
+    note_body = sanitize_user_text(payload.body)
     if not note_body:
         raise HTTPException(status_code=422, detail="Note body cannot be empty.")
     record = Note(
         user_id=user.user_id,
         lesson_slug=lesson_slug,
         body=note_body,
-        anchor_type=payload.anchor_type,
-        anchor_value=payload.anchor_value,
+        anchor_type=sanitize_user_text(payload.anchor_type or "", preserve_newlines=False) or None,
+        anchor_value=sanitize_user_text(payload.anchor_value or "", preserve_newlines=False) or None,
     )
     db.add(record)
     db.commit()

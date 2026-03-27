@@ -22,6 +22,7 @@ from app.schemas import (
     AdaptivePathRead,
     AdaptivePathStep,
     DashboardMetrics,
+    HeatmapPoint,
     LearnerProfileRead,
     LearningDashboardRead,
     LearningPulseRead,
@@ -34,6 +35,7 @@ from app.schemas import (
 from app.services.learner_progress import build_course_progress
 from app.services.project_studio import PROJECT_CATALOG
 from app.services.store import get_course_store
+from app.services.text_utils import sanitize_user_text
 
 
 SKILL_LABELS = {
@@ -208,6 +210,12 @@ def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
+def _to_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def _ensure_profile(db: Session, user_id: str) -> LearnerProfile:
     profile = db.scalars(select(LearnerProfile).where(LearnerProfile.user_id == user_id)).first()
     if profile:
@@ -267,7 +275,7 @@ def update_learner_profile(
     profile.target_role = target_role if target_role in ROLE_PROFILES else "Quantum ML Engineer"
     profile.weekly_goal_hours = weekly_goal_hours
     profile.preferred_pace = preferred_pace
-    profile.focus_area = focus_area
+    profile.focus_area = sanitize_user_text(focus_area or "", preserve_newlines=False) or None
     profile.self_ratings = {
         skill_id: max(1, min(5, int(self_ratings.get(skill_id, DEFAULT_SELF_RATINGS[skill_id]))))
         for skill_id in SKILL_LABELS
@@ -293,8 +301,8 @@ def record_learning_pulse(
         focus_level=focus_level,
         energy_level=energy_level,
         session_minutes=session_minutes,
-        today_goal=(today_goal or "").strip() or None,
-        blocker=(blocker or "").strip() or None,
+        today_goal=sanitize_user_text(today_goal or "") or None,
+        blocker=sanitize_user_text(blocker or "") or None,
     )
     db.add(pulse)
     db.commit()
@@ -330,7 +338,13 @@ def _estimate_recent_hours(db: Session, user_id: str, since: datetime) -> float:
     quiz_count = len(db.scalars(select(QuizAttempt).where(QuizAttempt.user_id == user_id, QuizAttempt.created_at >= since)).all())
     qa_count = len(db.scalars(select(QAInteraction).where(QAInteraction.user_id == user_id, QAInteraction.created_at >= since)).all())
     project_count = len(
-        db.scalars(select(ProjectSubmission).where(ProjectSubmission.user_id == user_id, ProjectSubmission.created_at >= since)).all()
+        db.scalars(
+            select(ProjectSubmission).where(
+                ProjectSubmission.user_id == user_id,
+                ProjectSubmission.is_deleted.is_(False),
+                ProjectSubmission.created_at >= since,
+            )
+        ).all()
     )
     review_count = len(
         db.scalars(select(PeerReview).where(PeerReview.reviewer_user_id == user_id, PeerReview.created_at >= since)).all()
@@ -350,36 +364,54 @@ def _estimate_recent_hours(db: Session, user_id: str, since: datetime) -> float:
     )
 
 
-def _daily_activity(db: Session, user_id: str) -> list[ActivityPoint]:
-    today = datetime.now(UTC).date()
-    since = datetime.combine(today - timedelta(days=6), datetime.min.time())
+def _activity_records(
+    db: Session,
+    user_id: str,
+    since: datetime,
+) -> tuple[dict[str, int], dict[str, list[int]], dict[str, list[int]], dict[str, int]]:
     event_counts: dict[str, int] = defaultdict(int)
     focus_totals: dict[str, list[int]] = defaultdict(list)
     motivation_totals: dict[str, list[int]] = defaultdict(list)
+    goal_minutes: dict[str, int] = defaultdict(int)
 
     record_groups = [
         db.scalars(select(Note).where(Note.user_id == user_id, Note.created_at >= since)).all(),
         db.scalars(select(QuizAttempt).where(QuizAttempt.user_id == user_id, QuizAttempt.created_at >= since)).all(),
         db.scalars(select(QAInteraction).where(QAInteraction.user_id == user_id, QAInteraction.created_at >= since)).all(),
         db.scalars(select(AnalyticsEvent).where(AnalyticsEvent.user_id == user_id, AnalyticsEvent.created_at >= since)).all(),
-        db.scalars(select(ProjectSubmission).where(ProjectSubmission.user_id == user_id, ProjectSubmission.created_at >= since)).all(),
+        db.scalars(
+            select(ProjectSubmission).where(
+                ProjectSubmission.user_id == user_id,
+                ProjectSubmission.is_deleted.is_(False),
+                ProjectSubmission.created_at >= since,
+            )
+        ).all(),
         db.scalars(select(PeerReview).where(PeerReview.reviewer_user_id == user_id, PeerReview.created_at >= since)).all(),
         db.scalars(select(BuilderRun).where(BuilderRun.user_id == user_id, BuilderRun.created_at >= since)).all(),
         db.scalars(select(BuilderShare).where(BuilderShare.user_id == user_id, BuilderShare.created_at >= since)).all(),
     ]
     for group in record_groups:
         for record in group:
-            day_key = record.created_at.date().isoformat()
+            day_key = _to_utc(record.created_at).date().isoformat()
             event_counts[day_key] += 1
 
     for pulse in db.scalars(select(LearningPulse).where(LearningPulse.user_id == user_id, LearningPulse.created_at >= since)).all():
-        day_key = pulse.created_at.date().isoformat()
+        day_key = _to_utc(pulse.created_at).date().isoformat()
         event_counts[day_key] += 1
         focus_totals[day_key].append(pulse.focus_level)
         motivation_totals[day_key].append(pulse.motivation_level)
+        goal_minutes[day_key] += pulse.session_minutes
+
+    return event_counts, focus_totals, motivation_totals, goal_minutes
+
+
+def _daily_activity(db: Session, user_id: str, days: int = 7) -> list[ActivityPoint]:
+    today = datetime.now(UTC).date()
+    since = datetime.combine(today - timedelta(days=days - 1), datetime.min.time(), tzinfo=UTC)
+    event_counts, focus_totals, motivation_totals, _goal_minutes = _activity_records(db, user_id, since)
 
     points: list[ActivityPoint] = []
-    for offset in range(6, -1, -1):
+    for offset in range(days - 1, -1, -1):
         day = today - timedelta(days=offset)
         day_key = day.isoformat()
         focus_values = focus_totals.get(day_key, [])
@@ -394,6 +426,31 @@ def _daily_activity(db: Session, user_id: str) -> list[ActivityPoint]:
             )
         )
     return points
+
+
+def _activity_heatmap(db: Session, user_id: str, days: int = 90) -> list[HeatmapPoint]:
+    today = datetime.now(UTC).date()
+    since = datetime.combine(today - timedelta(days=days - 1), datetime.min.time(), tzinfo=UTC)
+    event_counts, _focus_totals, _motivation_totals, goal_minutes = _activity_records(db, user_id, since)
+    max_events = max(event_counts.values(), default=0)
+    heatmap: list[HeatmapPoint] = []
+    for offset in range(days - 1, -1, -1):
+        day = today - timedelta(days=offset)
+        day_key = day.isoformat()
+        events = event_counts.get(day_key, 0)
+        if max_events <= 0 or events <= 0:
+            intensity = 0
+        else:
+            intensity = max(1, round((events / max_events) * 4))
+        heatmap.append(
+            HeatmapPoint(
+                date=day_key,
+                events=events,
+                intensity=intensity,
+                goal_minutes=goal_minutes.get(day_key),
+            )
+        )
+    return heatmap
 
 
 def _active_streak(activity: list[ActivityPoint]) -> int:
@@ -425,7 +482,9 @@ def _skill_levels(db: Session, user_id: str, profile: LearnerProfileRead) -> dic
     completed_builder_runs = sum(1 for run in builder_runs if run.status == "completed")
     levels["hybrid_architecture"] += min(1.2, completed_builder_runs * 0.18)
 
-    submissions = db.scalars(select(ProjectSubmission).where(ProjectSubmission.user_id == user_id)).all()
+    submissions = db.scalars(
+        select(ProjectSubmission).where(ProjectSubmission.user_id == user_id, ProjectSubmission.is_deleted.is_(False))
+    ).all()
     for submission in submissions:
         review_scores = [
             review.overall_score
@@ -504,7 +563,7 @@ def build_adaptive_path(db: Session, user_id: str) -> AdaptivePathRead:
         )
     else:
         recent_focus = 3.0
-    since = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=7)
+    since = datetime.now(UTC) - timedelta(days=7)
     weekly_hours = _estimate_recent_hours(db, user_id, since)
     if recent_focus < 2.8:
         pace_mode = "stabilize"
@@ -668,8 +727,9 @@ def build_learning_dashboard(db: Session, user_id: str) -> LearningDashboardRead
     profile = get_learner_profile(db, user_id)
     progress = build_course_progress(db, user_id)
     activity = _daily_activity(db, user_id)
+    heatmap = _activity_heatmap(db, user_id)
     pulses = _list_recent_pulses(db, user_id)
-    since = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=7)
+    since = datetime.now(UTC) - timedelta(days=7)
     weekly_hours = _estimate_recent_hours(db, user_id, since)
     focus_values = [pulse.focus_level for pulse in pulses]
     motivation_values = [pulse.motivation_level for pulse in pulses]
@@ -678,7 +738,11 @@ def build_learning_dashboard(db: Session, user_id: str) -> LearningDashboardRead
     active_days = sum(1 for point in activity if point.events > 0)
     consistency_score = round((active_days / len(activity)) * 100) if activity else 0
     momentum_score = round(_clamp(sum(point.events for point in activity) * 7, 0, 100))
-    project_count = len(db.scalars(select(ProjectSubmission).where(ProjectSubmission.user_id == user_id)).all())
+    project_count = len(
+        db.scalars(
+            select(ProjectSubmission).where(ProjectSubmission.user_id == user_id, ProjectSubmission.is_deleted.is_(False))
+        ).all()
+    )
     review_count = len(db.scalars(select(PeerReview).where(PeerReview.reviewer_user_id == user_id)).all())
 
     return LearningDashboardRead(
@@ -697,6 +761,7 @@ def build_learning_dashboard(db: Session, user_id: str) -> LearningDashboardRead
             peer_reviews_completed=review_count,
         ),
         activity=activity,
+        heatmap=heatmap,
         pulses=[
             LearningPulseRead(
                 id=pulse.id,
@@ -725,6 +790,7 @@ def generate_realtime_feedback(
     project_slug: str | None = None,
     score: int | None = None,
 ) -> RealtimeFeedbackResponse:
+    content = sanitize_user_text(content)
     lowered = content.lower()
     resources: list[RecommendationCard] = []
     actions: list[str] = []

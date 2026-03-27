@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, JSON, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -8,6 +8,9 @@ from app.core.db import Base
 
 class Note(Base):
     __tablename__ = "notes"
+    __table_args__ = (
+        Index("ix_notes_user_id_lesson_slug_created_at", "user_id", "lesson_slug", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[str] = mapped_column(String(255), index=True)
@@ -20,6 +23,9 @@ class Note(Base):
 
 class QuizAttempt(Base):
     __tablename__ = "quiz_attempts"
+    __table_args__ = (
+        Index("ix_quiz_attempts_user_id_lesson_slug_created_at", "user_id", "lesson_slug", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[str] = mapped_column(String(255), index=True)
@@ -31,6 +37,9 @@ class QuizAttempt(Base):
 
 class QAInteraction(Base):
     __tablename__ = "qa_interactions"
+    __table_args__ = (
+        Index("ix_qa_interactions_user_id_lesson_slug_created_at", "user_id", "lesson_slug", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[str] = mapped_column(String(255), index=True)
@@ -43,6 +52,9 @@ class QAInteraction(Base):
 
 class AnalyticsEvent(Base):
     __tablename__ = "analytics_events"
+    __table_args__ = (
+        Index("ix_analytics_events_user_id_event_type", "user_id", "event_type"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[str] = mapped_column(String(255), index=True)
@@ -89,6 +101,9 @@ class ArenaMatchRecord(Base):
 
 class BuilderRun(Base):
     __tablename__ = "builder_runs"
+    __table_args__ = (
+        Index("ix_builder_runs_user_id_scenario_slug", "user_id", "scenario_slug"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[str] = mapped_column(String(255), index=True)
@@ -134,6 +149,9 @@ class LearnerProfile(Base):
 
 class LearningPulse(Base):
     __tablename__ = "learning_pulses"
+    __table_args__ = (
+        Index("ix_learning_pulses_user_id_created_at", "user_id", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[str] = mapped_column(String(255), index=True)
@@ -157,6 +175,7 @@ class ProjectSubmission(Base):
     implementation_notes: Mapped[str] = mapped_column(Text)
     confidence_level: Mapped[int] = mapped_column(Integer, default=3)
     status: Mapped[str] = mapped_column(String(50), index=True, default="submitted")
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     ai_feedback_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     ai_recommendations: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -171,7 +190,7 @@ class PeerReview(Base):
     __tablename__ = "peer_reviews"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    submission_id: Mapped[int] = mapped_column(Integer, index=True)
+    submission_id: Mapped[int] = mapped_column(Integer, ForeignKey("project_submissions.id"), index=True)
     reviewer_user_id: Mapped[str] = mapped_column(String(255), index=True)
     rubric_scores: Mapped[dict] = mapped_column(JSON)
     overall_score: Mapped[float] = mapped_column(Float)

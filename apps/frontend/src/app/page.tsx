@@ -1,16 +1,21 @@
 import Link from "next/link";
 
 import { ModuleCard } from "@/components/module-card";
+import { PageErrorState } from "@/components/page-state";
 import { fetchCourseOverview, fetchCourseProgress } from "@/lib/api";
-
-const REFERENCES = [
-  "P. Raj, B. Sundaravadivazhagan, M. Ouaissa, V. Kavitha, and K. Shantha Kumari, Eds., Quantum Computing and Artificial Intelligence: The Industry Use Cases. Hoboken, NJ, USA: John Wiley & Sons / Scrivener Publishing LLC, 2025, ISBN: 978-1-394-24236-8.",
-  "S. Ali, F. Chicano, and A. Moraglio, Eds., Quantum Computing and Artificial Intelligence: First International Workshop, QC+AI 2025, Philadelphia, PA, USA, March 3, 2025, Proceedings, ser. Communications in Computer and Information Science, vol. 2813. Cham, Switzerland: Springer Nature Switzerland AG, 2026, ISSN: 1865-0929 (print), 1865-0937 (electronic), ISBN: 978-3-032-15930-4 (print), 978-3-032-15931-1 (eBook). doi: 10.1007/978-3-032-15931-1.",
-  "S. Ali, F. Chicano, and A. Moraglio, Eds., Quantum Computing and Artificial Intelligence: Second International Workshop, QC+AI 2026, Singapore, January 27, 2026, Proceedings, ser. Communications in Computer and Information Science, vol. 2872. Cham, Switzerland: Springer Nature Switzerland AG, 2026, ISSN: 1865-0929 (print), 1865-0937 (electronic), ISBN: 978-3-032-17624-0 (print), 978-3-032-17625-7 (eBook). doi: 10.1007/978-3-032-17625-7.",
-];
+import { COURSE_REFERENCES } from "@/lib/course-references";
 
 export default async function HomePage() {
-  const [course, progress] = await Promise.all([fetchCourseOverview(), fetchCourseProgress()]);
+  const data = await Promise.all([fetchCourseOverview(), fetchCourseProgress()]).catch(() => null);
+  if (!data) {
+    return (
+      <PageErrorState
+        title="Course overview is temporarily unavailable"
+        detail="The public course data or learner progress API did not respond cleanly for the homepage."
+      />
+    );
+  }
+  const [course, progress] = data;
   const moduleProgressBySlug = new Map(progress.modules.map((item) => [item.module_slug, item]));
 
   return (
@@ -30,6 +35,9 @@ export default async function HomePage() {
             <Link className="secondary-button" href="/dashboard">
               Open analytics hub
             </Link>
+            <Link className="secondary-button" href="/syllabus">
+              View syllabus
+            </Link>
             <Link className="secondary-button" href="/search">
               Search materials
             </Link>
@@ -47,7 +55,7 @@ export default async function HomePage() {
           <div className="hero-panel">
             <h2>References</h2>
             <ol className="reference-list">
-              {REFERENCES.map((reference, index) => (
+              {COURSE_REFERENCES.map((reference, index) => (
                 <li key={reference} className="reference-item">
                   <span className="eyebrow">Reference {index + 1}</span>
                   <p>{reference}</p>

@@ -1415,3 +1415,90 @@ Recorded publication result:
   - backend tests: `29 passed`
   - frontend lint: passed
   - frontend build: passed
+
+## 60. Improvement Batch Implemented from Improvements.txt
+
+The improvement brief in `Improvements.txt` was studied and converted into a production-quality implementation pass across the backend, frontend, data layer, and migration workflow.
+
+Completed backend improvement work:
+
+- fixed the content route issue in `content.py` and added safer public-cache headers for lesson and course content
+- added pagination support for notes, search, builder feed, project review queues, and related collection endpoints
+- added recent Q&A history and stronger request sanitization for learner-authored text
+- added related-lesson modeling for lesson responses and frontend rendering
+- added arena queue and live status reporting for the competitive game surface
+- added project soft retraction so review-queue removal no longer hard-deletes learner work
+- added database-level improvements including indexes, foreign-key handling, and runtime schema-upgrade safeguards
+- added Alembic migration scaffolding and a new head migration:
+  - `25705ed89aa2_improvement_batch_schema`
+
+Completed frontend improvement work:
+
+- added a public syllabus page and surfaced it in the main navigation
+- upgraded lesson pages with transcript playback, related lessons, and recent-question history
+- upgraded the dashboard with onboarding baseline prompts, skill-detail tooltips, and a 90-day heat map
+- upgraded the arena with live queue and active-match presence plus keyboard shortcut hints
+- added global loading and error states for the app router
+- improved project and builder surfaces to reflect the new pagination and retraction behaviors
+- updated shared API and type layers so the new backend capabilities are consistently represented in the UI
+
+Completed product-quality work mapped to the improvement brief:
+
+- transcript visibility and lesson discovery were improved through transcript panels and related-lesson recommendations
+- learner progress visibility was improved through a 90-day study heat map and onboarding baseline prompts
+- queue and moderation behavior were improved through live arena status and project soft retraction
+- schema durability was improved through Alembic support plus runtime safety upgrades for existing SQLite environments
+
+## 61. Improvement Batch Verification Completed
+
+The new improvement batch was validated through automated checks, migration checks, and live runtime checks on the active local stack.
+
+Completed automated verification work:
+
+- `pytest` run in `apps/api`
+- Result: `32 passed`
+
+- `npm run lint` run in `apps/frontend`
+- Result: passed
+
+- `npm run build` run in `apps/frontend`
+- Result: passed
+
+- `alembic current` run in `apps/api`
+- Result: `25705ed89aa2 (head)`
+
+Confirmed live runtime checks:
+
+- backend live endpoint returned `200`:
+  - `http://127.0.0.1:8001/arena/status`
+- frontend live route returned `200`:
+  - `http://127.0.0.1:3000/syllabus`
+- confirmed the lesson content API exposes `related_lessons`
+- confirmed lesson content responses include:
+  - `Cache-Control: public, max-age=300, stale-while-revalidate=60`
+- confirmed the live lesson experience exposes:
+  - transcript panel
+  - related lessons
+  - recent question history
+- confirmed the live dashboard exposes:
+  - `Set your skill baseline`
+  - `90-day streak`
+  - `Study heat map`
+- confirmed live project retraction changes submission status to `retracted` and removes the item from the active review queue
+
+## 62. GitHub Update Prepared for Improvement Batch Release
+
+The repository was prepared for a new GitHub update that captures the completed `Improvements.txt` implementation batch.
+
+Completed publication-preparation work:
+
+- updated the repository activity log with the completed implementation and verification record
+- confirmed the configured GitHub remote remains:
+  - `origin = https://github.com/naylinnaungHoodedu/qcai-studio.git`
+- confirmed the active branch remains:
+  - `main`
+- confirmed the current verified change set includes:
+  - backend route, schema, service, and database improvements
+  - frontend lesson, dashboard, arena, syllabus, and app-state improvements
+  - Alembic migration scaffolding and schema-upgrade support
+  - expanded regression coverage in `apps/api/tests/test_api.py`

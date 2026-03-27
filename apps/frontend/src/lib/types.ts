@@ -34,6 +34,14 @@ export type LessonSection = {
   topics: string[];
 };
 
+export type RelatedLesson = {
+  slug: string;
+  title: string;
+  summary: string;
+  module_slug: string;
+  reason: string;
+};
+
 export type VideoChapter = {
   id: string;
   title: string;
@@ -77,6 +85,7 @@ export type LessonDetail = {
   chapters: VideoChapter[];
   flashcards: Flashcard[];
   quiz_questions: QuizQuestion[];
+  related_lessons: RelatedLesson[];
 };
 
 export type SearchResult = {
@@ -110,6 +119,22 @@ export type QAResponse = {
     timestamp_label?: string | null;
   }>;
   retrieval_mode: string;
+};
+
+export type QAHistoryItem = {
+  id: number;
+  lesson_slug?: string | null;
+  question: string;
+  answer: string;
+  citations: Array<{
+    chunk_id: string;
+    source_title: string;
+    source_kind: string;
+    section_title: string;
+    excerpt: string;
+    timestamp_label?: string | null;
+  }>;
+  created_at: string;
 };
 
 export type QuizAttemptResult = {
@@ -187,6 +212,12 @@ export type ArenaLeaderboardEntry = {
 
 export type ArenaProfile = ArenaLeaderboardEntry & {
   recent_form: string;
+};
+
+export type ArenaStatus = {
+  queue_size: number;
+  active_matches: number;
+  connected_players: number;
 };
 
 export type BuilderNode = {
@@ -286,6 +317,13 @@ export type ActivityPoint = {
   motivation_level?: number | null;
 };
 
+export type HeatmapPoint = {
+  date: string;
+  events: number;
+  intensity: number;
+  goal_minutes?: number | null;
+};
+
 export type DashboardMetrics = {
   progress_percent: number;
   motivation_score: number;
@@ -330,6 +368,7 @@ export type LearningDashboard = {
   profile: LearnerProfile;
   metrics: DashboardMetrics;
   activity: ActivityPoint[];
+  heatmap: HeatmapPoint[];
   pulses: LearningPulse[];
   module_insights: ModuleInsight[];
   recommendations: RecommendationCard[];

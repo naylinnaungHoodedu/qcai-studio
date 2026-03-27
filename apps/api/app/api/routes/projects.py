@@ -1,10 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.auth import AuthUser, get_current_user
 from app.core.db import get_db
 from app.schemas import PeerReviewCreate, PeerReviewRead, ProjectBrief, ProjectSubmissionCreate, ProjectSubmissionRead, ReviewQueueItem
-from app.services.project_studio import create_project_submission, list_project_catalog, list_review_queue, list_user_submissions, submit_peer_review
+from app.services.project_studio import (
+    create_project_submission,
+    list_project_catalog,
+    list_review_queue,
+    list_user_submissions,
+    retract_project_submission,
+    submit_peer_review,
+)
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -17,18 +26,22 @@ def read_project_catalog(db: Session = Depends(get_db)):
 
 @router.get("/my-submissions", response_model=list[ProjectSubmissionRead])
 def read_user_project_submissions(
+    limit: Annotated[int, Query(ge=1, le=50)] = 12,
+    offset: Annotated[int, Query(ge=0)] = 0,
     db: Session = Depends(get_db),
     user: AuthUser = Depends(get_current_user),
 ):
-    return list_user_submissions(db, user.user_id)
+    return list_user_submissions(db, user.user_id, limit=limit, offset=offset)
 
 
 @router.get("/review-queue", response_model=list[ReviewQueueItem])
 def read_project_review_queue(
+    limit: Annotated[int, Query(ge=1, le=25)] = 8,
+    offset: Annotated[int, Query(ge=0)] = 0,
     db: Session = Depends(get_db),
     user: AuthUser = Depends(get_current_user),
 ):
-    return list_review_queue(db, user.user_id)
+    return list_review_queue(db, user.user_id, limit=limit, offset=offset)
 
 
 @router.post("/submissions", response_model=ProjectSubmissionRead)
@@ -67,3 +80,15 @@ def create_peer_review(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/submissions/{submission_id}", response_model=ProjectSubmissionRead)
+def retract_submission(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    user: AuthUser = Depends(get_current_user),
+):
+    try:
+        return retract_project_submission(db, user.user_id, submission_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

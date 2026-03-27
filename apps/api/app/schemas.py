@@ -41,6 +41,14 @@ class LessonSection(BaseModel):
     topics: list[str] = Field(default_factory=list)
 
 
+class RelatedLessonSummary(BaseModel):
+    slug: str
+    title: str
+    summary: str
+    module_slug: str
+    reason: str
+
+
 class Flashcard(BaseModel):
     id: str
     difficulty: str
@@ -74,6 +82,7 @@ class LessonDetail(BaseModel):
     chapters: list[VideoChapter] = Field(default_factory=list)
     flashcards: list[Flashcard] = Field(default_factory=list)
     quiz_questions: list[QuizQuestion] = Field(default_factory=list)
+    related_lessons: list[RelatedLessonSummary] = Field(default_factory=list)
 
 
 class ModuleSummary(BaseModel):
@@ -129,6 +138,15 @@ class QAResponse(BaseModel):
     answer: str
     citations: list[Citation]
     retrieval_mode: str
+
+
+class QAHistoryItem(BaseModel):
+    id: int
+    lesson_slug: str | None = None
+    question: str
+    answer: str
+    citations: list[Citation] = Field(default_factory=list)
+    created_at: datetime
 
 
 class AnalyticsEventCreate(BaseModel):
@@ -334,6 +352,13 @@ class ActivityPoint(BaseModel):
     motivation_level: float | None = None
 
 
+class HeatmapPoint(BaseModel):
+    date: str
+    events: int
+    intensity: int
+    goal_minutes: int | None = None
+
+
 class DashboardMetrics(BaseModel):
     progress_percent: int
     motivation_score: int
@@ -423,10 +448,17 @@ class LearningDashboardRead(BaseModel):
     profile: LearnerProfileRead
     metrics: DashboardMetrics
     activity: list[ActivityPoint]
+    heatmap: list[HeatmapPoint] = Field(default_factory=list)
     pulses: list[LearningPulseRead]
     module_insights: list[ModuleInsight]
     recommendations: list[RecommendationCard]
     coach_feedback: RealtimeFeedbackResponse
+
+
+class ArenaStatusRead(BaseModel):
+    queue_size: int
+    active_matches: int
+    connected_players: int
 
 
 class ProjectRubricCriterion(BaseModel):
@@ -451,8 +483,8 @@ class ProjectBrief(BaseModel):
 class ProjectSubmissionCreate(BaseModel):
     project_slug: str
     title: str = Field(min_length=1, max_length=255)
-    solution_summary: str = Field(min_length=80, max_length=4000)
-    implementation_notes: str = Field(min_length=40, max_length=4000)
+    solution_summary: str = Field(min_length=80, max_length=8000)
+    implementation_notes: str = Field(min_length=40, max_length=8000)
     confidence_level: int = Field(default=3, ge=1, le=5)
 
 
@@ -486,7 +518,7 @@ class ReviewQueueItem(BaseModel):
 class PeerReviewCreate(BaseModel):
     submission_id: int
     rubric_scores: dict[str, int] = Field(default_factory=dict)
-    feedback: str = Field(min_length=20, max_length=2000)
+    feedback: str = Field(min_length=20, max_length=4000)
 
 
 class PeerReviewRead(BaseModel):

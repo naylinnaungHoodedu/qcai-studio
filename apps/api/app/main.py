@@ -1,9 +1,11 @@
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
 from app.api.routes import admin, analytics, arena, assets, auth, builder, content, insights, projects, qa, search
 from app.core.config import get_settings
 from app.core.db import Base, engine
+from app.core.schema_upgrades import run_schema_upgrades
 from app.services.store import get_course_store
 
 
@@ -26,6 +28,7 @@ app.add_middleware(
 )
 
 Base.metadata.create_all(bind=engine)
+run_schema_upgrades(engine)
 get_course_store()
 
 app.include_router(auth.router)

@@ -1,6 +1,7 @@
 import {
   ArenaLeaderboardEntry,
   ArenaProfile,
+  ArenaStatus,
   AdaptivePath,
   BuilderFeedItem,
   BuilderProfile,
@@ -17,6 +18,7 @@ import {
   PeerReview,
   ProjectBrief,
   ProjectSubmission,
+  QAHistoryItem,
   QuizAttemptResult,
   QAResponse,
   RealtimeFeedback,
@@ -33,8 +35,12 @@ const SERVER_API_BASE_URL =
 const CLIENT_API_BASE_URL = "/api/backend";
 const DEMO_USER_ID = "demo-learner";
 const DEMO_ROLE = "learner";
+const PUBLIC_REVALIDATE_SECONDS = 300;
 
-type FetchOptions = RequestInit & { headers?: HeadersInit };
+type FetchOptions = RequestInit & {
+  headers?: HeadersInit;
+  cacheMode?: "public" | "private";
+};
 
 function applyDemoAuthHeaders(headers: Headers): void {
   if (headers.has("authorization")) {
@@ -58,17 +64,29 @@ function resolveApiBaseUrl(): string {
 }
 
 async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
-  const headers = new Headers(options.headers);
-  if (options.body && !headers.has("Content-Type")) {
+  const { cacheMode = "private", ...requestOptions } = options;
+  const headers = new Headers(requestOptions.headers);
+  if (requestOptions.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   applyDemoAuthHeaders(headers);
 
-  const response = await fetch(`${resolveApiBaseUrl()}${path}`, {
-    ...options,
+  const method = (requestOptions.method ?? "GET").toUpperCase();
+  const fetchOptions = {
+    ...requestOptions,
     headers,
-    cache: "no-store",
-  });
+  };
+  if (
+    cacheMode === "public" &&
+    typeof window === "undefined" &&
+    (method === "GET" || method === "HEAD")
+  ) {
+    fetchOptions.next = { revalidate: PUBLIC_REVALIDATE_SECONDS };
+  } else {
+    fetchOptions.cache = "no-store";
+  }
+
+  const response = await fetch(`${resolveApiBaseUrl()}${path}`, fetchOptions);
 
   if (!response.ok) {
     throw new Error(`API request failed: ${response.status}`);
@@ -86,7 +104,7 @@ export function getClientApiBaseUrl(): string {
 }
 
 export async function fetchCourseOverview(): Promise<CourseOverview> {
-  return apiFetch<CourseOverview>("/content/course");
+  return apiFetch<CourseOverview>("/content/course", { cacheMode: "public" });
 }
 
 export async function fetchCourseProgress(): Promise<CourseProgress> {
@@ -94,15 +112,26 @@ export async function fetchCourseProgress(): Promise<CourseProgress> {
 }
 
 export async function fetchModule(slug: string): Promise<ModuleDetail> {
-  return apiFetch<ModuleDetail>(`/content/modules/${slug}`);
+  return apiFetch<ModuleDetail>(`/content/modules/${slug}`, { cacheMode: "public" });
 }
 
 export async function fetchLesson(slug: string): Promise<LessonDetail> {
-  return apiFetch<LessonDetail>(`/content/lessons/${slug}`);
+  return apiFetch<LessonDetail>(`/content/lessons/${slug}`, { cacheMode: "public" });
 }
 
-export async function fetchLessonNotes(slug: string): Promise<Note[]> {
-  return apiFetch<Note[]>(`/content/lessons/${slug}/notes`);
+export async function fetchLessonNotes(
+  slug: string,
+  options: { limit?: number; offset?: number } = {},
+): Promise<Note[]> {
+  const params = new URLSearchParams();
+  if (options.limit) {
+    params.set("limit", String(options.limit));
+  }
+  if (options.offset) {
+    params.set("offset", String(options.offset));
+  }
+  const suffix = params.size ? `?${params.toString()}` : "";
+  return apiFetch<Note[]>(`/content/lessons/${slug}/notes${suffix}`);
 }
 
 export async function createLessonNote(
@@ -132,6 +161,23 @@ export async function askQuestion(
       top_k: 4,
     }),
   });
+}
+
+export async function fetchQAHistory(
+  lessonSlug?: string,
+  options: { limit?: number; offset?: number } = {},
+): Promise<QAHistoryItem[]> {
+  const params = new URLSearchParams();
+  if (lessonSlug) {
+    params.set("lesson_slug", lessonSlug);
+  }
+  if (options.limit) {
+    params.set("limit", String(options.limit));
+  }
+  if (options.offset) {
+    params.set("offset", String(options.offset));
+  }
+  return apiFetch<QAHistoryItem[]>(`/qa/history?${params.toString()}`);
 }
 
 export async function searchContent(
@@ -187,6 +233,10 @@ export async function fetchArenaProfile(playerId: string): Promise<ArenaProfile>
   return apiFetch<ArenaProfile>(`/arena/profiles/${playerId}`);
 }
 
+export async function fetchArenaStatus(): Promise<ArenaStatus> {
+  return apiFetch<ArenaStatus>("/arena/status");
+}
+
 export async function fetchBuilderScenarios(): Promise<BuilderScenario[]> {
   return apiFetch<BuilderScenario[]>("/builder/scenarios");
 }
@@ -195,8 +245,18 @@ export async function fetchBuilderProfile(): Promise<BuilderProfile> {
   return apiFetch<BuilderProfile>("/builder/profile");
 }
 
-export async function fetchBuilderFeed(): Promise<BuilderFeedItem[]> {
-  return apiFetch<BuilderFeedItem[]>("/builder/feed");
+export async function fetchBuilderFeed(
+  options: { limit?: number; offset?: number } = {},
+): Promise<BuilderFeedItem[]> {
+  const params = new URLSearchParams();
+  if (options.limit) {
+    params.set("limit", String(options.limit));
+  }
+  if (options.offset) {
+    params.set("offset", String(options.offset));
+  }
+  const suffix = params.size ? `?${params.toString()}` : "";
+  return apiFetch<BuilderFeedItem[]>(`/builder/feed${suffix}`);
 }
 
 export async function submitBuilderScenario(
@@ -283,12 +343,32 @@ export async function fetchProjectCatalog(): Promise<ProjectBrief[]> {
   return apiFetch<ProjectBrief[]>("/projects/catalog");
 }
 
-export async function fetchMyProjectSubmissions(): Promise<ProjectSubmission[]> {
-  return apiFetch<ProjectSubmission[]>("/projects/my-submissions");
+export async function fetchMyProjectSubmissions(
+  options: { limit?: number; offset?: number } = {},
+): Promise<ProjectSubmission[]> {
+  const params = new URLSearchParams();
+  if (options.limit) {
+    params.set("limit", String(options.limit));
+  }
+  if (options.offset) {
+    params.set("offset", String(options.offset));
+  }
+  const suffix = params.size ? `?${params.toString()}` : "";
+  return apiFetch<ProjectSubmission[]>(`/projects/my-submissions${suffix}`);
 }
 
-export async function fetchProjectReviewQueue(): Promise<ReviewQueueItem[]> {
-  return apiFetch<ReviewQueueItem[]>("/projects/review-queue");
+export async function fetchProjectReviewQueue(
+  options: { limit?: number; offset?: number } = {},
+): Promise<ReviewQueueItem[]> {
+  const params = new URLSearchParams();
+  if (options.limit) {
+    params.set("limit", String(options.limit));
+  }
+  if (options.offset) {
+    params.set("offset", String(options.offset));
+  }
+  const suffix = params.size ? `?${params.toString()}` : "";
+  return apiFetch<ReviewQueueItem[]>(`/projects/review-queue${suffix}`);
 }
 
 export async function createProjectSubmission(payload: {
@@ -312,5 +392,13 @@ export async function submitPeerReview(payload: {
   return apiFetch<PeerReview>("/projects/reviews", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function retractProjectSubmission(
+  submissionId: number,
+): Promise<ProjectSubmission> {
+  return apiFetch<ProjectSubmission>(`/projects/submissions/${submissionId}`, {
+    method: "DELETE",
   });
 }

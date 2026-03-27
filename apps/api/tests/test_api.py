@@ -71,6 +71,7 @@ def test_lesson_lookup():
     data = response.json()
     assert data["module_slug"] == "ai-for-quantum-hardware"
     assert data["sections"]
+    assert data["related_lessons"]
     assert data["video_asset"]["filename"] == "Quantum Computing and Artificial Intelligence 2025.mp4"
     assert data["video_asset"]["title"] == "Quantum Computing and Artificial Intelligence 2025"
     assert data["video_asset"]["download_url"] == "/source-assets/by-id/quantum-computing-and-artificial-intelligence-2025"
@@ -103,6 +104,17 @@ def test_search_returns_results():
     data = response.json()
     assert data
     assert not ({result["source_title"] for result in data} & RAW_DOCUMENT_TITLES)
+
+
+def test_public_content_endpoints_set_cache_headers():
+    for path in (
+        "/content/course",
+        "/content/modules/ai-for-quantum-hardware",
+        "/content/lessons/ai4qc-routing-and-optimization",
+    ):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert "public, max-age=300" in response.headers["cache-control"]
 
 
 def test_search_returns_industry_use_case_results():
@@ -314,6 +326,28 @@ def test_progress_endpoint_aggregates_activity():
     assert data["recent_notes"]
     assert data["recent_quiz_attempts"]
 
+    notes_response = client.get(
+        "/content/lessons/ai4qc-routing-and-optimization/notes",
+        headers=user_headers,
+        params={"limit": 1, "offset": 0},
+    )
+    assert notes_response.status_code == 200
+    assert len(notes_response.json()) == 1
+
+    qa_response = client.post(
+        "/qa/ask",
+        headers=user_headers,
+        json={"question": "Why does routing depth matter?", "lesson_slug": "ai4qc-routing-and-optimization"},
+    )
+    assert qa_response.status_code == 200
+    history_response = client.get(
+        "/qa/history",
+        headers=user_headers,
+        params={"lesson_slug": "ai4qc-routing-and-optimization", "limit": 5},
+    )
+    assert history_response.status_code == 200
+    assert history_response.json()[0]["question"] == "Why does routing depth matter?"
+
 
 def test_arena_leaderboard_orders_profiles():
     top_player = f"arena-top-{uuid4().hex[:8]}"
@@ -377,6 +411,13 @@ def test_arena_bot_match_streams_round_updates():
         assert round_result["type"] == "round_result"
         assert round_result["correct_answer"]
         assert round_result["players"]
+
+
+def test_arena_status_endpoint_reports_live_counts():
+    response = client.get("/arena/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert {"queue_size", "active_matches", "connected_players"} <= set(data)
 
 
 def test_builder_submit_unlocks_next_scenario_and_share_feed():
@@ -487,6 +528,7 @@ def test_learning_dashboard_path_and_skill_gap_flow():
     assert dashboard["profile"]["target_role"] == "Quantum Optimization Analyst"
     assert dashboard["metrics"]["focus_score"] > 0
     assert dashboard["activity"]
+    assert len(dashboard["heatmap"]) == 90
     assert dashboard["recommendations"]
     assert dashboard["coach_feedback"]["recommended_actions"]
 
@@ -569,3 +611,34 @@ def test_project_submission_and_peer_review_flow():
     updated = next(item for item in updated_submissions.json() if item["id"] == submission["id"])
     assert updated["review_count"] == 1
     assert updated["average_peer_score"] == 4.0
+
+
+def test_project_submission_can_be_retracted_without_hard_delete():
+    author_headers = {"x-demo-user": f"retract-author-{uuid4().hex[:8]}", "x-demo-role": "learner"}
+    reviewer_headers = {"x-demo-user": f"retract-reviewer-{uuid4().hex[:8]}", "x-demo-role": "learner"}
+
+    submission_response = client.post(
+        "/projects/submissions",
+        headers=author_headers,
+        json={
+            "project_slug": "post-quantum-migration-roadmap",
+            "title": "Migration plan draft",
+            "solution_summary": "This draft prioritizes store-now-decrypt-later risk, creates a staged cryptographic inventory, and aligns baseline controls with a phased migration plan across the organization.",
+            "implementation_notes": "The roadmap names governance checkpoints, risk-ranked assets, baseline comparisons, validation metrics, and communication milestones so the transition can be audited rather than treated as a one-off rollout.",
+            "confidence_level": 3,
+        },
+    )
+    assert submission_response.status_code == 200
+    submission = submission_response.json()
+
+    queue_before = client.get("/projects/review-queue", headers=reviewer_headers)
+    assert queue_before.status_code == 200
+    assert any(item["submission_id"] == submission["id"] for item in queue_before.json())
+
+    retract_response = client.delete(f"/projects/submissions/{submission['id']}", headers=author_headers)
+    assert retract_response.status_code == 200
+    assert retract_response.json()["status"] == "retracted"
+
+    queue_after = client.get("/projects/review-queue", headers=reviewer_headers)
+    assert queue_after.status_code == 200
+    assert not any(item["submission_id"] == submission["id"] for item in queue_after.json())

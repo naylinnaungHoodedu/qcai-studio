@@ -43,6 +43,16 @@ const SKILL_LABELS: Array<{ id: string; label: string }> = [
   { id: "roadmapping", label: "Roadmapping" },
 ];
 
+const SKILL_HELP: Record<string, string> = {
+  quantum_hardware: "How well you reason about routing, noise, qubit limits, and executable circuit realism.",
+  hybrid_architecture: "How clearly you can place a bounded quantum stage inside a wider classical workflow.",
+  optimization: "How well you reformulate constrained problems, reason about QUBO structure, and compare baselines.",
+  applied_qcai: "How well you evaluate realistic application-fit for hybrid QC+AI systems.",
+  representation_xai: "How well you reason about features, explainability, kernels, and representation quality.",
+  industry_strategy: "How well you judge commercial readiness, migration timing, and sector-specific value.",
+  roadmapping: "How well you translate technical capability into staged execution plans and future direction.",
+};
+
 type LearningDashboardProps = {
   course: CourseOverview;
   progress: CourseProgress;
@@ -151,6 +161,7 @@ export function LearningDashboardView({
   const gapReport = gapQuery.data;
   const modulesBySlug = moduleProgressMap(progress);
   const liveCoach = coachResult ?? dashboard.coach_feedback;
+  const needsSelfRatingBaseline = Object.values(profileForm.self_ratings).every((value) => value === 2);
 
   function handleProfileSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -205,6 +216,24 @@ export function LearningDashboardView({
         </div>
       </section>
 
+      {needsSelfRatingBaseline ? (
+        <section className="panel onboarding-banner">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Onboarding</p>
+              <h2>Set your skill baseline</h2>
+            </div>
+            <a className="secondary-button inline-action" href="#profile-tuning">
+              Open self-ratings
+            </a>
+          </div>
+          <p>
+            Your adaptive path and skill-gap analysis are still leaning on default self-ratings. Set a sharper baseline
+            so the recommendations and role-fit model track your actual starting point.
+          </p>
+        </section>
+      ) : null}
+
       <div className="insight-grid">
         <section className="panel">
           <div className="panel-header">
@@ -242,6 +271,24 @@ export function LearningDashboardView({
                 {insight.risk_flag ? <p className="muted">{insight.risk_flag}</p> : null}
               </article>
             ))}
+          </div>
+          <div className="stack">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">90-day streak</p>
+                <h3>Study heat map</h3>
+              </div>
+            </div>
+            <div className="heatmap-grid" role="list">
+              {dashboard.heatmap.map((point) => (
+                <div
+                  className={`heatmap-cell intensity-${point.intensity}`}
+                  key={point.date}
+                  role="listitem"
+                  title={`${point.date}: ${point.events} learning events${point.goal_minutes ? `, ${point.goal_minutes} focus minutes` : ""}`}
+                />
+              ))}
+            </div>
           </div>
         </section>
 
@@ -458,7 +505,7 @@ export function LearningDashboardView({
           </div>
         </section>
 
-        <section className="panel">
+        <section className="panel" id="profile-tuning">
           <div className="panel-header">
             <div>
               <p className="eyebrow">Profile tuning</p>
@@ -507,7 +554,7 @@ export function LearningDashboardView({
             <div className="analytics-form-grid">
               {SKILL_LABELS.map((skill) => (
                 <label key={skill.id}>
-                  {skill.label}
+                  <span title={SKILL_HELP[skill.id]}>{skill.label}</span>
                   <input
                     type="range"
                     min={1}
@@ -523,6 +570,7 @@ export function LearningDashboardView({
                       }))
                     }
                   />
+                  <span className="muted">{SKILL_HELP[skill.id]}</span>
                 </label>
               ))}
             </div>
@@ -570,11 +618,19 @@ export function LearningDashboardView({
                         {moduleProgress.status.replace("_", " ")} | {moduleProgress.progress_percent}% progress
                       </p>
                     ) : null}
+                    {moduleProgress?.status === "completed" ? (
+                      <p className="muted">Module complete. Update your skill ratings to sharpen the adaptive path.</p>
+                    ) : null}
                   </div>
                   <div className="lesson-actions">
                     <Link className="primary-button" href={`/modules/${module.slug}`}>
                       Continue
                     </Link>
+                    {moduleProgress?.status === "completed" ? (
+                      <a className="secondary-button" href="#profile-tuning">
+                        Update ratings
+                      </a>
+                    ) : null}
                   </div>
                 </article>
               );

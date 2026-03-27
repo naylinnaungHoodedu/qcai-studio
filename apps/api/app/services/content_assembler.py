@@ -5,7 +5,17 @@ from typing import Any
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.core.config import Settings
-from app.schemas import CourseOverview, Flashcard, LessonDetail, LessonSection, ModuleSummary, QuizQuestion, SearchResult, SourceAsset
+from app.schemas import (
+    CourseOverview,
+    Flashcard,
+    LessonDetail,
+    LessonSection,
+    ModuleSummary,
+    QuizQuestion,
+    RelatedLessonSummary,
+    SearchResult,
+    SourceAsset,
+)
 from app.services.docx_parser import SectionRecord, parse_docx_sections
 from app.services.transcripts import load_video_chapters
 
@@ -503,6 +513,7 @@ class CourseStore:
             source_assets=assets,
         )
         self.modules = {module.slug: module for module in modules}
+        self._populate_related_lessons(lessons)
         self.lessons = lessons
         self.chunks = chunks
 
@@ -725,6 +736,52 @@ class CourseStore:
             )
         results.sort(key=lambda item: item.score, reverse=True)
         return results[:top_k]
+
+    def _populate_related_lessons(self, lessons: dict[str, LessonDetail]) -> None:
+        lesson_topics = {slug: self._lesson_topics(lesson) for slug, lesson in lessons.items()}
+        lesson_asset_ids = {slug: {asset.id for asset in lesson.source_assets} for slug, lesson in lessons.items()}
+        for lesson_slug, lesson in lessons.items():
+            ranked: list[tuple[int, RelatedLessonSummary]] = []
+            for candidate_slug, candidate in lessons.items():
+                if candidate_slug == lesson_slug:
+                    continue
+                shared_topics = sorted(lesson_topics[lesson_slug] & lesson_topics[candidate_slug])
+                shared_assets = sorted(lesson_asset_ids[lesson_slug] & lesson_asset_ids[candidate_slug])
+                score = (len(shared_topics) * 3) + (len(shared_assets) * 2)
+                if score <= 0:
+                    continue
+                ranked.append(
+                    (
+                        score,
+                        RelatedLessonSummary(
+                            slug=candidate.slug,
+                            title=candidate.title,
+                            summary=candidate.summary,
+                            module_slug=candidate.module_slug,
+                            reason=self._related_reason(shared_topics, shared_assets),
+                        ),
+                    )
+                )
+            ranked.sort(key=lambda item: (item[0], item[1].title), reverse=True)
+            lesson.related_lessons = [item for _, item in ranked[:3]]
+
+    def _lesson_topics(self, lesson: LessonDetail) -> set[str]:
+        topics: set[str] = set()
+        for section in lesson.sections:
+            topics.update(section.topics)
+        derived = self._derive_topics(
+            lesson.title,
+            " ".join([lesson.summary, *lesson.key_ideas, *lesson.key_notes, *lesson.learner_questions]),
+        )
+        topics.update(derived)
+        return topics
+
+    def _related_reason(self, shared_topics: list[str], shared_assets: list[str]) -> str:
+        if shared_topics:
+            return f"Shares core themes in {', '.join(shared_topics[:3])}."
+        if shared_assets:
+            return "Draws on overlapping source material from the local QC+AI corpus."
+        return "Connects through adjacent QC+AI systems concepts."
 
 
 def _tokenize(text: str) -> list[str]:

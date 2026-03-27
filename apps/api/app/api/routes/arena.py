@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 
+from app.schemas import ArenaStatusRead
 from app.services.arena_engine import get_arena_service
 
 router = APIRouter(prefix="/arena", tags=["arena"])
@@ -13,6 +14,11 @@ def read_arena_leaderboard(limit: int = Query(default=12, ge=1, le=50)):
 @router.get("/profiles/{player_id}")
 def read_arena_profile(player_id: str):
     return get_arena_service().profile(player_id)
+
+
+@router.get("/status", response_model=ArenaStatusRead)
+def read_arena_status():
+    return get_arena_service().status()
 
 
 @router.websocket("/ws")

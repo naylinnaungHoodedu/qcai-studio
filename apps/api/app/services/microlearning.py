@@ -13,6 +13,7 @@ from app.schemas import (
     BuilderSlot,
     BuilderSubmissionResult,
 )
+from app.services.text_utils import sanitize_user_text
 
 
 SCENARIO_DEFINITIONS = [
@@ -461,7 +462,7 @@ def share_builder_map(
     share = BuilderShare(
         user_id=user_id,
         scenario_slug=scenario_slug,
-        caption=caption,
+        caption=sanitize_user_text(caption),
         completion_percent=latest_completed.completion_percent,
         map_snapshot=placements or latest_completed.placements,
     )
@@ -479,10 +480,10 @@ def share_builder_map(
     )
 
 
-def list_builder_feed(db: Session, limit: int = 12) -> list[BuilderFeedItem]:
+def list_builder_feed(db: Session, limit: int = 12, offset: int = 0) -> list[BuilderFeedItem]:
     shares = db.scalars(select(BuilderShare).order_by(BuilderShare.created_at.desc(), BuilderShare.id.desc())).all()
     items: list[BuilderFeedItem] = []
-    for share in shares[:limit]:
+    for share in shares[offset : offset + limit]:
         scenario = _find_scenario(share.scenario_slug)
         items.append(
             BuilderFeedItem(

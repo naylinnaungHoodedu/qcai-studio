@@ -1,4 +1,5 @@
 import asyncio
+from collections import deque
 import random
 import time
 from dataclasses import dataclass, field
@@ -12,6 +13,7 @@ from sqlalchemy import select
 from app.core.db import SessionLocal
 from app.db_models import ArenaMatchRecord, ArenaProfile
 from app.schemas import ArenaLeaderboardEntry, ArenaProfileRead
+from app.services.text_utils import sanitize_user_text
 
 
 ROUND_COUNT = 5
@@ -279,7 +281,7 @@ class ArenaService:
         self._connections: dict[str, WebSocket] = {}
         self._matches: dict[str, ArenaMatch] = {}
         self._player_match: dict[str, str] = {}
-        self._waiting_player_id: str | None = None
+        self._waiting_player_ids: deque[str] = deque()
 
     def leaderboard(self, limit: int = 12) -> list[ArenaLeaderboardEntry]:
         with SessionLocal() as session:
@@ -342,13 +344,24 @@ class ArenaService:
             recent_form=recent_form,
         )
 
+    def status(self) -> dict[str, int]:
+        return {
+            "queue_size": len(self._queued_player_ids()),
+            "active_matches": len(self._matches),
+            "connected_players": len(self._connections),
+        }
+
     async def connect(self, websocket: WebSocket, player_id: str, display_name: str, mode: str) -> None:
         await websocket.accept()
+        display_name = sanitize_user_text(display_name, preserve_newlines=False) or player_id
         await self._ensure_profile(player_id, display_name)
         match_start_id: str | None = None
         payload: dict[str, Any] | None = None
+        queue_updates: list[tuple[str, dict[str, Any]]] = []
+        direct_messages: list[tuple[str, dict[str, Any]]] = []
         async with self._lock:
             self._connections[player_id] = websocket
+            self._remove_from_wait_queue(player_id)
             if player_id in self._player_match:
                 match = self._matches.get(self._player_match[player_id])
                 payload = self._match_found_payload(match, player_id) if match else None
@@ -359,29 +372,30 @@ class ArenaService:
                 payload = self._match_found_payload(match, player_id)
                 match_start_id = match.match_id
             else:
-                if (
-                    self._waiting_player_id
-                    and self._waiting_player_id != player_id
-                    and self._waiting_player_id in self._connections
-                    and self._waiting_player_id not in self._player_match
-                ):
-                    opponent_id = self._waiting_player_id
-                    match = self._build_ranked_match(opponent_id, player_id, websocket)
+                self._waiting_player_ids.append(player_id)
+                self._prune_wait_queue()
+                if len(self._waiting_player_ids) >= 2:
+                    opponent_id = self._waiting_player_ids.popleft()
+                    current_id = self._waiting_player_ids.popleft()
+                    match = self._build_ranked_match(opponent_id, current_id)
                     self._matches[match.match_id] = match
                     self._player_match[opponent_id] = match.match_id
-                    self._player_match[player_id] = match.match_id
-                    self._waiting_player_id = None
-                    await self._send(opponent_id, self._match_found_payload(match, opponent_id))
-                    payload = self._match_found_payload(match, player_id)
+                    self._player_match[current_id] = match.match_id
+                    direct_messages.append((opponent_id, self._match_found_payload(match, opponent_id)))
+                    if current_id == player_id:
+                        payload = self._match_found_payload(match, current_id)
+                    else:
+                        direct_messages.append((current_id, self._match_found_payload(match, current_id)))
+                        payload = self._queue_status_payload(player_id)
                     match_start_id = match.match_id
                 else:
-                    self._waiting_player_id = player_id
-                    payload = {
-                        "type": "queue_status",
-                        "state": "waiting",
-                        "message": "Waiting for another challenger to enter the ranked arena...",
-                    }
+                    payload = self._queue_status_payload(player_id)
+                queue_updates = self._waiting_queue_updates()
         await self._send(player_id, {"type": "connected", "player_id": player_id, "display_name": display_name})
+        for target_player_id, queued_payload in queue_updates:
+            await self._send(target_player_id, queued_payload)
+        for target_player_id, direct_payload in direct_messages:
+            await self._send(target_player_id, direct_payload)
         if payload:
             await self._send(player_id, payload)
         if match_start_id:
@@ -390,19 +404,24 @@ class ArenaService:
     async def disconnect(self, player_id: str) -> None:
         should_finish = False
         match_id: str | None = None
+        queue_updates: list[tuple[str, dict[str, Any]]] = []
         async with self._lock:
             self._connections.pop(player_id, None)
-            if self._waiting_player_id == player_id:
-                self._waiting_player_id = None
+            self._remove_from_wait_queue(player_id)
+            queue_updates = self._waiting_queue_updates()
             match_id = self._player_match.get(player_id)
             if not match_id:
-                return
-            match = self._matches.get(match_id)
-            if not match:
-                self._player_match.pop(player_id, None)
-                return
-            remaining_humans = [candidate for candidate, player in match.players.items() if candidate != player_id and not player.is_bot]
-            should_finish = bool(remaining_humans)
+                pass
+            else:
+                match = self._matches.get(match_id)
+                if not match:
+                    self._player_match.pop(player_id, None)
+                    match_id = None
+                else:
+                    remaining_humans = [candidate for candidate, player in match.players.items() if candidate != player_id and not player.is_bot]
+                    should_finish = bool(remaining_humans)
+        for target_player_id, payload in queue_updates:
+            await self._send(target_player_id, payload)
         if should_finish and match_id:
             await self._finish_match(match_id, forfeit_player_id=player_id)
 
@@ -427,7 +446,7 @@ class ArenaService:
         if should_finalize:
             await self._finalize_round(match_id, round_number)
 
-    def _build_ranked_match(self, opponent_id: str, player_id: str, websocket: WebSocket) -> ArenaMatch:
+    def _build_ranked_match(self, opponent_id: str, player_id: str) -> ArenaMatch:
         opponent_profile = self.profile(opponent_id)
         current_profile = self.profile(player_id)
         return ArenaMatch(
@@ -444,7 +463,7 @@ class ArenaService:
                     player_id=player_id,
                     display_name=current_profile.display_name,
                     adaptive_level=current_profile.adaptive_level,
-                    websocket=websocket,
+                    websocket=self._connections[player_id],
                 ),
             },
             difficulty_band=max(1, min(5, round((opponent_profile.adaptive_level + current_profile.adaptive_level) / 2))),
@@ -499,6 +518,34 @@ class ArenaService:
             }
             for player in match.players.values()
         ]
+
+    def _queued_player_ids(self) -> list[str]:
+        return [
+            player_id
+            for player_id in self._waiting_player_ids
+            if player_id in self._connections and player_id not in self._player_match
+        ]
+
+    def _prune_wait_queue(self) -> None:
+        self._waiting_player_ids = deque(dict.fromkeys(self._queued_player_ids()))
+
+    def _remove_from_wait_queue(self, player_id: str) -> None:
+        self._waiting_player_ids = deque(candidate for candidate in self._waiting_player_ids if candidate != player_id)
+
+    def _queue_status_payload(self, player_id: str) -> dict[str, Any]:
+        queued_ids = self._queued_player_ids()
+        position = queued_ids.index(player_id) + 1 if player_id in queued_ids else 0
+        return {
+            "type": "queue_status",
+            "state": "waiting",
+            "position": position,
+            "queue_size": len(queued_ids),
+            "message": "Waiting for another challenger to enter the ranked arena...",
+        }
+
+    def _waiting_queue_updates(self) -> list[tuple[str, dict[str, Any]]]:
+        self._prune_wait_queue()
+        return [(player_id, self._queue_status_payload(player_id)) for player_id in self._waiting_player_ids]
 
     def _pick_challenge(self, match: ArenaMatch) -> ArenaChallenge:
         eligible = [
@@ -667,8 +714,7 @@ class ArenaService:
                 match.round_task.cancel()
             for player_id in list(match.players):
                 self._player_match.pop(player_id, None)
-            if self._waiting_player_id in match.players:
-                self._waiting_player_id = None
+                self._remove_from_wait_queue(player_id)
             if forfeit_player_id and forfeit_player_id in match.players:
                 match.players[forfeit_player_id].score = max(0, match.players[forfeit_player_id].score - 120)
             players = list(match.players.values())

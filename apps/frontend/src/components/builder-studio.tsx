@@ -42,7 +42,7 @@ export function BuilderStudio() {
   });
   const feedQuery = useQuery({
     queryKey: ["builder-feed"],
-    queryFn: fetchBuilderFeed,
+    queryFn: () => fetchBuilderFeed(),
   });
 
   const scenarios = useMemo(() => scenariosQuery.data ?? [], [scenariosQuery.data]);

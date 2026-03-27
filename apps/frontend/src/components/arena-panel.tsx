@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-import { fetchArenaLeaderboard, fetchArenaProfile } from "@/lib/api";
+import { fetchArenaLeaderboard, fetchArenaProfile, fetchArenaStatus } from "@/lib/api";
 import { ArenaLeaderboardEntry, ArenaProfile } from "@/lib/types";
 
 type ArenaPanelProps = {
@@ -150,10 +150,31 @@ export function ArenaPanel({ apiBaseUrl }: ArenaPanelProps) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!challenge || challenge.kind !== "mcq") {
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const index = Number(event.key) - 1;
+      if (Number.isNaN(index) || index < 0 || index >= challenge.options.length) {
+        return;
+      }
+      setPendingAnswer(challenge.options[index]);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [challenge]);
+
   const leaderboardQuery = useQuery({
     queryKey: ["arena-leaderboard"],
     queryFn: fetchArenaLeaderboard,
     refetchInterval: 15_000,
+  });
+
+  const statusQuery = useQuery({
+    queryKey: ["arena-status"],
+    queryFn: fetchArenaStatus,
+    refetchInterval: 5_000,
   });
 
   const profileQuery = useQuery({
@@ -199,7 +220,8 @@ export function ArenaPanel({ apiBaseUrl }: ArenaPanelProps) {
       }
       if (message.type === "queue_status") {
         setConnectionState("queued");
-        setStatusMessage((message.message as string) ?? "Waiting for the next challenger.");
+        const position = message.position ? ` Queue position ${message.position as number}.` : "";
+        setStatusMessage(`${(message.message as string) ?? "Waiting for the next challenger."}${position}`);
         return;
       }
       if (message.type === "match_found") {
@@ -248,14 +270,13 @@ export function ArenaPanel({ apiBaseUrl }: ArenaPanelProps) {
         setStatusMessage("Match complete. XP and adaptive rating updated.");
         void queryClient.invalidateQueries({ queryKey: ["arena-leaderboard"] });
         void queryClient.invalidateQueries({ queryKey: ["arena-profile", playerId] });
-        return;
+        void queryClient.invalidateQueries({ queryKey: ["arena-status"] });
       }
     };
 
     socket.onclose = () => {
-      if (connectionState !== "complete") {
-        setConnectionState("idle");
-      }
+      setConnectionState((current) => (current === "complete" ? current : "idle"));
+      void queryClient.invalidateQueries({ queryKey: ["arena-status"] });
     };
   }
 
@@ -323,6 +344,11 @@ export function ArenaPanel({ apiBaseUrl }: ArenaPanelProps) {
             Status: <strong>{formatConnectionState(connectionState)}</strong>. Mode <strong>{mode}</strong>.{" "}
             {statusMessage}
           </p>
+          <div className="arena-presence-bar">
+            <span className="status-pill">Queue {statusQuery.data?.queue_size ?? 0}</span>
+            <span className="status-pill">Live matches {statusQuery.data?.active_matches ?? 0}</span>
+            <span className="status-pill">Connected {statusQuery.data?.connected_players ?? 0}</span>
+          </div>
         </div>
       </section>
 
@@ -346,9 +372,7 @@ export function ArenaPanel({ apiBaseUrl }: ArenaPanelProps) {
               <article className={`arena-score-card ${player.is_self ? "is-self" : ""}`} key={player.player_id}>
                 <span className="eyebrow">{player.is_bot ? "AI rival" : player.is_self ? "You" : "Opponent"}</span>
                 <strong>{player.display_name}</strong>
-                <p>
-                  Score {player.score} · correct {player.correct_answers}
-                </p>
+                <p>Score {player.score} | correct {player.correct_answers}</p>
               </article>
             ))}
           </div>
@@ -356,24 +380,27 @@ export function ArenaPanel({ apiBaseUrl }: ArenaPanelProps) {
           {challenge ? (
             <article className="arena-challenge-card">
               <p className="eyebrow">
-                {challenge.topic} · difficulty {challenge.difficulty}
+                {challenge.topic} | difficulty {challenge.difficulty}
               </p>
               <h3>{challenge.title}</h3>
               <p>{challenge.scenario}</p>
               <p className="arena-prompt">{challenge.prompt}</p>
               {challenge.kind === "mcq" ? (
-                <div className="choice-list">
-                  {challenge.options.map((option) => (
-                    <button
-                      className={`choice-item arena-choice ${pendingAnswer === option ? "selected" : ""}`}
-                      key={option}
-                      onClick={() => setPendingAnswer(option)}
-                      type="button"
-                    >
-                      <span>{option}</span>
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <p className="muted">Keyboard shortcut: press 1-4 to select an answer.</p>
+                  <div className="choice-list">
+                    {challenge.options.map((option) => (
+                      <button
+                        className={`choice-item arena-choice ${pendingAnswer === option ? "selected" : ""}`}
+                        key={option}
+                        onClick={() => setPendingAnswer(option)}
+                        type="button"
+                      >
+                        <span>{option}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
               ) : (
                 <form className="stack" onSubmit={submitAnswer}>
                   <pre className="arena-code">{challenge.starter_code}</pre>
@@ -409,7 +436,7 @@ export function ArenaPanel({ apiBaseUrl }: ArenaPanelProps) {
                   <div className="citation-card" key={entry.player_id}>
                     <strong>{entry.display_name}</strong>
                     <p className="muted">
-                      {entry.correct ? "Correct" : "Missed"} · delta {entry.score_delta} · {formatMillis(entry.time_taken_ms)}
+                      {entry.correct ? "Correct" : "Missed"} | delta {entry.score_delta} | {formatMillis(entry.time_taken_ms)}
                     </p>
                     <p>{entry.answer || "No answer submitted."}</p>
                   </div>
@@ -427,7 +454,7 @@ export function ArenaPanel({ apiBaseUrl }: ArenaPanelProps) {
                   <div className="citation-card" key={update.player_id as string}>
                     <strong>{update.display_name as string}</strong>
                     <p className="muted">
-                      +{update.xp_delta as number} XP · rating {update.skill_rating as number} · band{" "}
+                      +{update.xp_delta as number} XP | rating {update.skill_rating as number} | band{" "}
                       {update.adaptive_level as number}
                     </p>
                     <p>{update.rank_label as string}</p>
@@ -463,7 +490,7 @@ export function ArenaPanel({ apiBaseUrl }: ArenaPanelProps) {
                     #{index + 1} {entry.display_name}
                   </strong>
                   <p className="muted">
-                    {entry.rank_label} · {entry.xp} XP · win rate {entry.win_rate_percent}%
+                    {entry.rank_label} | {entry.xp} XP | win rate {entry.win_rate_percent}%
                   </p>
                 </article>
               ))}

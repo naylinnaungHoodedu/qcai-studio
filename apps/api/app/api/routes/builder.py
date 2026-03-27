@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.auth import AuthUser, get_current_user
@@ -33,9 +35,11 @@ def read_builder_profile(
 
 @router.get("/feed")
 def read_builder_feed(
+    limit: Annotated[int, Query(ge=1, le=30)] = 12,
+    offset: Annotated[int, Query(ge=0)] = 0,
     db: Session = Depends(get_db),
 ):
-    return list_builder_feed(db)
+    return list_builder_feed(db, limit=limit, offset=offset)
 
 
 @router.post("/submit")

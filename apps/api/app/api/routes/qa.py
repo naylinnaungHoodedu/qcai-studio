@@ -1,11 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.auth import AuthUser, get_current_user
 from app.core.db import get_db
 from app.db_models import QAInteraction
-from app.schemas import QARequest, QAResponse
+from app.schemas import Citation, QAHistoryItem, QARequest, QAResponse
 from app.services.store import get_qa_engine
+from app.services.text_utils import sanitize_user_text
 
 router = APIRouter(prefix="/qa", tags=["qa"])
 
@@ -16,7 +20,7 @@ def ask_question(
     db: Session = Depends(get_db),
     user: AuthUser = Depends(get_current_user),
 ):
-    question = payload.question.strip()
+    question = sanitize_user_text(payload.question)
     if not question:
         raise HTTPException(status_code=422, detail="Question cannot be empty.")
     response = get_qa_engine().ask(question, payload.lesson_slug, payload.top_k)
@@ -31,3 +35,32 @@ def ask_question(
     )
     db.commit()
     return response
+
+
+@router.get("/history", response_model=list[QAHistoryItem])
+def read_question_history(
+    lesson_slug: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=20)] = 5,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    db: Session = Depends(get_db),
+    user: AuthUser = Depends(get_current_user),
+):
+    filters = [QAInteraction.user_id == user.user_id]
+    if lesson_slug:
+        filters.append(QAInteraction.lesson_slug == lesson_slug)
+    records = db.scalars(
+        select(QAInteraction)
+        .where(*filters)
+        .order_by(QAInteraction.created_at.desc(), QAInteraction.id.desc())
+    ).all()[offset : offset + limit]
+    return [
+        QAHistoryItem(
+            id=record.id,
+            lesson_slug=record.lesson_slug,
+            question=record.question,
+            answer=record.answer,
+            citations=[Citation.model_validate(citation) for citation in (record.citations or [])],
+            created_at=record.created_at,
+        )
+        for record in records
+    ]

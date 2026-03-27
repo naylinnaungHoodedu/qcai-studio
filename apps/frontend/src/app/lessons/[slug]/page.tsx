@@ -98,24 +98,50 @@ export default async function LessonPage({ params }: LessonPageProps) {
 
       <div className="lesson-layout-grid">
         <NotesPanel lessonSlug={lesson.slug} />
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Source assets</p>
-              <h2>Downloads and references</h2>
+        <div className="stack">
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Source assets</p>
+                <h2>Downloads and references</h2>
+              </div>
             </div>
-          </div>
-          <ul className="source-list compact">
-            {lesson.source_assets.map((asset) => (
-              <li key={asset.id}>
-                <span>{asset.kind}</span>
-                <a href={`${assetBaseUrl}${asset.download_url}`}>
-                  {asset.title}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </section>
+            <ul className="source-list compact">
+              {lesson.source_assets.map((asset) => (
+                <li key={asset.id}>
+                  <span>{asset.kind}</span>
+                  <a href={`${assetBaseUrl}${asset.download_url}`}>
+                    {asset.title}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Related lessons</p>
+                <h2>Cross-module reinforcement</h2>
+              </div>
+            </div>
+            <div className="stack">
+              {lesson.related_lessons.map((item) => (
+                <article className="citation-card" key={item.slug}>
+                  <strong>{item.title}</strong>
+                  <p>{item.summary}</p>
+                  <p className="muted">{item.reason}</p>
+                  <Link className="secondary-button inline-action" href={`/lessons/${item.slug}`}>
+                    Open related lesson
+                  </Link>
+                </article>
+              ))}
+              {lesson.related_lessons.length === 0 ? (
+                <p className="muted">No adjacent lessons were identified yet for this module.</p>
+              ) : null}
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   );

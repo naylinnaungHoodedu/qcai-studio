@@ -1,4 +1,5 @@
 import { LearningDashboardView } from "@/components/learning-dashboard";
+import { PageErrorState } from "@/components/page-state";
 import {
   fetchAdaptivePath,
   fetchCourseOverview,
@@ -10,14 +11,24 @@ import {
 
 
 export default async function DashboardPage() {
-  const [course, progress, user, dashboard, adaptivePath, gapReport] = await Promise.all([
+  const data = await Promise.all([
     fetchCourseOverview(),
     fetchCourseProgress(),
     fetchMe(),
     fetchLearningDashboard(),
     fetchAdaptivePath(),
     fetchSkillGapReport(),
-  ]);
+  ]).catch(() => null);
+
+  if (!data) {
+    return (
+      <PageErrorState
+        title="The dashboard could not be loaded"
+        detail="One or more learner intelligence endpoints failed, so the analytics workspace is in a safe fallback state."
+      />
+    );
+  }
+  const [course, progress, user, dashboard, adaptivePath, gapReport] = data;
 
   return (
     <LearningDashboardView

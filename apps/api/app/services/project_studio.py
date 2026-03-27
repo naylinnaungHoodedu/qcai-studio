@@ -9,6 +9,7 @@ from app.schemas import (
     ProjectSubmissionRead,
     ReviewQueueItem,
 )
+from app.services.text_utils import sanitize_user_text
 
 
 PROJECT_CATALOG = [
@@ -140,7 +141,7 @@ def _project_brief(project: dict, submissions: list[ProjectSubmission], reviews:
 
 
 def list_project_catalog(db: Session) -> list[ProjectBrief]:
-    submissions = db.scalars(select(ProjectSubmission)).all()
+    submissions = db.scalars(select(ProjectSubmission).where(ProjectSubmission.is_deleted.is_(False))).all()
     reviews = db.scalars(select(PeerReview)).all()
     return [_project_brief(project, submissions, reviews) for project in PROJECT_CATALOG]
 
@@ -157,15 +158,19 @@ def create_project_submission(
     project = _PROJECT_INDEX.get(project_slug)
     if not project:
         raise ValueError("Project not found.")
-    ai_summary, ai_recommendations = _build_feedback(project_slug, solution_summary, implementation_notes)
+    clean_title = sanitize_user_text(title, preserve_newlines=False)
+    clean_summary = sanitize_user_text(solution_summary)
+    clean_notes = sanitize_user_text(implementation_notes)
+    ai_summary, ai_recommendations = _build_feedback(project_slug, clean_summary, clean_notes)
     submission = ProjectSubmission(
         user_id=user_id,
         project_slug=project_slug,
-        title=title.strip(),
-        solution_summary=solution_summary.strip(),
-        implementation_notes=implementation_notes.strip(),
+        title=clean_title,
+        solution_summary=clean_summary,
+        implementation_notes=clean_notes,
         confidence_level=confidence_level,
         status="submitted",
+        is_deleted=False,
         ai_feedback_summary=ai_summary,
         ai_recommendations=ai_recommendations,
     )
@@ -198,19 +203,23 @@ def _submission_read(db: Session, submission: ProjectSubmission) -> ProjectSubmi
     )
 
 
-def list_user_submissions(db: Session, user_id: str) -> list[ProjectSubmissionRead]:
+def list_user_submissions(db: Session, user_id: str, limit: int = 12, offset: int = 0) -> list[ProjectSubmissionRead]:
     submissions = db.scalars(
         select(ProjectSubmission)
         .where(ProjectSubmission.user_id == user_id)
         .order_by(ProjectSubmission.created_at.desc(), ProjectSubmission.id.desc())
-    ).all()
+    ).all()[offset : offset + limit]
     return [_submission_read(db, submission) for submission in submissions]
 
 
-def list_review_queue(db: Session, user_id: str) -> list[ReviewQueueItem]:
+def list_review_queue(db: Session, user_id: str, limit: int = 8, offset: int = 0) -> list[ReviewQueueItem]:
     submissions = db.scalars(
         select(ProjectSubmission)
-        .where(ProjectSubmission.user_id != user_id, ProjectSubmission.status == "submitted")
+        .where(
+            ProjectSubmission.user_id != user_id,
+            ProjectSubmission.status == "submitted",
+            ProjectSubmission.is_deleted.is_(False),
+        )
         .order_by(ProjectSubmission.created_at.desc(), ProjectSubmission.id.desc())
     ).all()
     existing_reviewed_ids = {
@@ -236,7 +245,7 @@ def list_review_queue(db: Session, user_id: str) -> list[ReviewQueueItem]:
                 rubric=[ProjectRubricCriterion(**criterion) for criterion in project["rubric"]],
             )
         )
-    return items[:8]
+    return items[offset : offset + limit]
 
 
 def submit_peer_review(
@@ -249,6 +258,8 @@ def submit_peer_review(
     submission = db.scalars(select(ProjectSubmission).where(ProjectSubmission.id == submission_id)).first()
     if not submission:
         raise ValueError("Submission not found.")
+    if submission.is_deleted:
+        raise ValueError("This submission has been retracted.")
     if submission.user_id == reviewer_user_id:
         raise ValueError("You cannot review your own submission.")
     existing = db.scalars(
@@ -269,7 +280,7 @@ def submit_peer_review(
         reviewer_user_id=reviewer_user_id,
         rubric_scores=normalized_scores,
         overall_score=overall_score,
-        feedback=feedback.strip(),
+        feedback=sanitize_user_text(feedback),
     )
     db.add(review)
     db.commit()
@@ -282,3 +293,18 @@ def submit_peer_review(
         feedback=review.feedback,
         created_at=review.created_at,
     )
+
+
+def retract_project_submission(db: Session, user_id: str, submission_id: int) -> ProjectSubmissionRead:
+    submission = db.scalars(
+        select(ProjectSubmission).where(ProjectSubmission.id == submission_id, ProjectSubmission.user_id == user_id)
+    ).first()
+    if not submission:
+        raise ValueError("Submission not found.")
+    if submission.is_deleted:
+        return _submission_read(db, submission)
+    submission.is_deleted = True
+    submission.status = "retracted"
+    db.commit()
+    db.refresh(submission)
+    return _submission_read(db, submission)
