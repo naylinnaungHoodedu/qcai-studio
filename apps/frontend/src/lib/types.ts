@@ -257,3 +257,173 @@ export type BuilderSubmissionResult = {
   current_streak: number;
   badges: string[];
 };
+
+export type LearnerProfile = {
+  user_id: string;
+  target_role: string;
+  weekly_goal_hours: number;
+  preferred_pace: string;
+  focus_area?: string | null;
+  self_ratings: Record<string, number>;
+};
+
+export type LearningPulse = {
+  id: number;
+  motivation_level: number;
+  focus_level: number;
+  energy_level: number;
+  session_minutes: number;
+  today_goal?: string | null;
+  blocker?: string | null;
+  created_at: string;
+};
+
+export type ActivityPoint = {
+  label: string;
+  date: string;
+  events: number;
+  focus_level?: number | null;
+  motivation_level?: number | null;
+};
+
+export type DashboardMetrics = {
+  progress_percent: number;
+  motivation_score: number;
+  focus_score: number;
+  momentum_score: number;
+  consistency_score: number;
+  active_streak_days: number;
+  weekly_goal_hours: number;
+  weekly_goal_progress_percent: number;
+  completed_lessons: number;
+  projects_submitted: number;
+  peer_reviews_completed: number;
+};
+
+export type ModuleInsight = {
+  module_slug: string;
+  module_title: string;
+  mastery_percent: number;
+  confidence_label: string;
+  risk_flag?: string | null;
+  recommendation: string;
+};
+
+export type RecommendationCard = {
+  title: string;
+  summary: string;
+  href: string;
+  recommendation_type: string;
+  reason: string;
+  urgency: string;
+};
+
+export type RealtimeFeedback = {
+  summary: string;
+  signal: string;
+  confidence_label: string;
+  recommended_actions: string[];
+  suggested_resources: RecommendationCard[];
+};
+
+export type LearningDashboard = {
+  profile: LearnerProfile;
+  metrics: DashboardMetrics;
+  activity: ActivityPoint[];
+  pulses: LearningPulse[];
+  module_insights: ModuleInsight[];
+  recommendations: RecommendationCard[];
+  coach_feedback: RealtimeFeedback;
+};
+
+export type AdaptivePathStep = {
+  step_number: number;
+  title: string;
+  summary: string;
+  href: string;
+  recommendation_type: string;
+  estimated_minutes: number;
+  intensity: string;
+  reason: string;
+};
+
+export type AdaptivePath = {
+  target_role: string;
+  pace_mode: string;
+  adaptation_summary: string;
+  steps: AdaptivePathStep[];
+};
+
+export type SkillGapItem = {
+  skill_id: string;
+  label: string;
+  current_level: number;
+  target_level: number;
+  gap: number;
+  evidence: string;
+  recommended_actions: string[];
+};
+
+export type SkillGapReport = {
+  target_role: string;
+  role_summary: string;
+  readiness_percent: number;
+  strengths: string[];
+  gaps: SkillGapItem[];
+  recommendations: RecommendationCard[];
+};
+
+export type ProjectRubricCriterion = {
+  id: string;
+  label: string;
+  description: string;
+};
+
+export type ProjectBrief = {
+  slug: string;
+  title: string;
+  summary: string;
+  difficulty: string;
+  estimated_hours: number;
+  deliverable: string;
+  linked_lessons: string[];
+  rubric: ProjectRubricCriterion[];
+  submitted_count: number;
+  peer_reviews_received: number;
+};
+
+export type ProjectSubmission = {
+  id: number;
+  project_slug: string;
+  project_title: string;
+  title: string;
+  solution_summary: string;
+  implementation_notes: string;
+  confidence_level: number;
+  status: string;
+  ai_feedback_summary?: string | null;
+  ai_recommendations: string[];
+  average_peer_score?: number | null;
+  review_count: number;
+  created_at: string;
+};
+
+export type ReviewQueueItem = {
+  submission_id: number;
+  project_slug: string;
+  project_title: string;
+  title: string;
+  author_id: string;
+  solution_summary: string;
+  implementation_notes: string;
+  rubric: ProjectRubricCriterion[];
+};
+
+export type PeerReview = {
+  id: number;
+  submission_id: number;
+  reviewer_user_id: string;
+  overall_score: number;
+  feedback: string;
+  created_at: string;
+};

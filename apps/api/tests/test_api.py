@@ -343,7 +343,7 @@ def test_arena_leaderboard_orders_profiles():
         )
         session.commit()
 
-    response = client.get("/arena/leaderboard")
+    response = client.get("/arena/leaderboard", params={"limit": 50})
     assert response.status_code == 200
     data = response.json()
     top_index = next(index for index, item in enumerate(data) if item["player_id"] == top_player)
@@ -421,3 +421,151 @@ def test_builder_submit_unlocks_next_scenario_and_share_feed():
     assert share_response.status_code == 200
     feed = client.get("/builder/feed", headers=user_headers).json()
     assert any(item["caption"] == "Completed the hybrid loop under hardware constraints." for item in feed)
+
+
+def test_learning_dashboard_path_and_skill_gap_flow():
+    user_headers = {"x-demo-user": f"insights-{uuid4().hex[:8]}", "x-demo-role": "learner"}
+
+    profile_response = client.put(
+        "/insights/profile",
+        headers=user_headers,
+        json={
+            "target_role": "Quantum Optimization Analyst",
+            "weekly_goal_hours": 6,
+            "preferred_pace": "balanced",
+            "focus_area": "optimization",
+            "self_ratings": {
+                "quantum_hardware": 2,
+                "hybrid_architecture": 3,
+                "optimization": 2,
+                "applied_qcai": 2,
+                "representation_xai": 2,
+                "industry_strategy": 2,
+                "roadmapping": 2,
+            },
+        },
+    )
+    assert profile_response.status_code == 200
+    assert profile_response.json()["target_role"] == "Quantum Optimization Analyst"
+
+    note_response = client.post(
+        "/content/lessons/ai4qc-routing-and-optimization/notes",
+        headers=user_headers,
+        json={"body": "Need to compare graph shrinking and routing depth before the next optimization run."},
+    )
+    assert note_response.status_code == 200
+
+    quiz_response = client.post(
+        "/content/quiz-attempts",
+        headers=user_headers,
+        json={
+            "lesson_slug": "ai4qc-routing-and-optimization",
+            "score": 1,
+            "responses": {"ai4qc-routing-and-optimization-quiz-1": "sample"},
+        },
+    )
+    assert quiz_response.status_code == 200
+
+    pulse_response = client.post(
+        "/insights/check-ins",
+        headers=user_headers,
+        json={
+            "motivation_level": 4,
+            "focus_level": 3,
+            "energy_level": 4,
+            "session_minutes": 45,
+            "today_goal": "Close the optimization gap for my target role.",
+            "blocker": "Still weak on routing tradeoffs.",
+        },
+    )
+    assert pulse_response.status_code == 200
+    assert pulse_response.json()["blocker"] == "Still weak on routing tradeoffs."
+
+    dashboard_response = client.get("/insights/dashboard", headers=user_headers)
+    assert dashboard_response.status_code == 200
+    dashboard = dashboard_response.json()
+    assert dashboard["profile"]["target_role"] == "Quantum Optimization Analyst"
+    assert dashboard["metrics"]["focus_score"] > 0
+    assert dashboard["activity"]
+    assert dashboard["recommendations"]
+    assert dashboard["coach_feedback"]["recommended_actions"]
+
+    path_response = client.get("/insights/path", headers=user_headers)
+    assert path_response.status_code == 200
+    path = path_response.json()
+    assert path["steps"]
+    assert path["steps"][0]["href"].startswith("/")
+
+    gap_response = client.get("/insights/skill-gap", headers=user_headers)
+    assert gap_response.status_code == 200
+    gap_report = gap_response.json()
+    assert gap_report["target_role"] == "Quantum Optimization Analyst"
+    assert gap_report["gaps"]
+    assert gap_report["recommendations"]
+
+    feedback_response = client.post(
+        "/insights/realtime-feedback",
+        headers=user_headers,
+        json={
+            "context_type": "project_submission",
+            "project_slug": "routing-rescue-playbook",
+            "content": "Routing depth is still inflating SWAP count. I need a better graph shrinking and baseline comparison plan for the QUBO workflow.",
+        },
+    )
+    assert feedback_response.status_code == 200
+    feedback = feedback_response.json()
+    assert feedback["signal"] in {"advance", "stabilize"}
+    assert feedback["suggested_resources"]
+
+
+def test_project_submission_and_peer_review_flow():
+    author_headers = {"x-demo-user": f"project-author-{uuid4().hex[:8]}", "x-demo-role": "learner"}
+    reviewer_headers = {"x-demo-user": f"project-reviewer-{uuid4().hex[:8]}", "x-demo-role": "learner"}
+
+    catalog_response = client.get("/projects/catalog", headers=author_headers)
+    assert catalog_response.status_code == 200
+    catalog = catalog_response.json()
+    assert len(catalog) >= 3
+
+    submission_response = client.post(
+        "/projects/submissions",
+        headers=author_headers,
+        json={
+            "project_slug": "routing-rescue-playbook",
+            "title": "Routing rescue for constrained logistics",
+            "solution_summary": "I propose a hardware-aware rescue workflow that shrinks the QUBO graph before routing, then validates the reduced instance against a classical baseline so the claimed gain stays honest and measurable.",
+            "implementation_notes": "The plan explicitly tracks SWAP depth, post-routing circuit depth, and a fallback classical solver. It introduces graph shrinking before quantum execution and compares solution quality and runtime against a classical control path.",
+            "confidence_level": 4,
+        },
+    )
+    assert submission_response.status_code == 200
+    submission = submission_response.json()
+    assert submission["project_slug"] == "routing-rescue-playbook"
+    assert submission["ai_feedback_summary"]
+
+    author_submissions = client.get("/projects/my-submissions", headers=author_headers)
+    assert author_submissions.status_code == 200
+    assert any(item["title"] == "Routing rescue for constrained logistics" for item in author_submissions.json())
+
+    queue_response = client.get("/projects/review-queue", headers=reviewer_headers)
+    assert queue_response.status_code == 200
+    queue = queue_response.json()
+    queued_item = next(item for item in queue if item["submission_id"] == submission["id"])
+
+    review_response = client.post(
+        "/projects/reviews",
+        headers=reviewer_headers,
+        json={
+            "submission_id": queued_item["submission_id"],
+            "rubric_scores": {criterion["id"]: 4 for criterion in queued_item["rubric"]},
+            "feedback": "Strong systems grounding and baseline awareness. Tighten the validation thresholds so the routing rescue can be audited more easily.",
+        },
+    )
+    assert review_response.status_code == 200
+    assert review_response.json()["overall_score"] == 4.0
+
+    updated_submissions = client.get("/projects/my-submissions", headers=author_headers)
+    assert updated_submissions.status_code == 200
+    updated = next(item for item in updated_submissions.json() if item["id"] == submission["id"])
+    assert updated["review_count"] == 1
+    assert updated["average_peer_score"] == 4.0

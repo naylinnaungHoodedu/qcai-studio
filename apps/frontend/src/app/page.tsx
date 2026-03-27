@@ -27,6 +27,9 @@ export default async function HomePage() {
             <Link className="primary-button" href={`/modules/${course.modules[0]?.slug}`}>
               Start with the course path
             </Link>
+            <Link className="secondary-button" href="/dashboard">
+              Open analytics hub
+            </Link>
             <Link className="secondary-button" href="/search">
               Search materials
             </Link>
@@ -65,6 +68,43 @@ export default async function HomePage() {
           {course.modules.map((module) => (
             <ModuleCard key={module.slug} module={module} progress={moduleProgressBySlug.get(module.slug)} />
           ))}
+        </div>
+      </section>
+
+      <section className="section-block">
+        <div className="section-heading">
+          <p className="eyebrow">Adaptive Learning</p>
+          <h2>Analytics, coaching, and skill-gap intelligence</h2>
+          <p>
+            The dashboard now tracks progress, focus, motivation, adaptive pacing, target-role gaps, and AI-generated
+            next steps from the evidence you create across lessons, games, and projects.
+          </p>
+        </div>
+        <div className="lesson-list">
+          <article className="lesson-card">
+            <div>
+              <p className="eyebrow">Dashboard</p>
+              <h3>Powerful analytics dashboard</h3>
+              <p>Track momentum, focus, motivation, readiness for target roles, and the next adaptive steps.</p>
+            </div>
+            <div className="lesson-actions">
+              <Link className="primary-button" href="/dashboard">
+                View insights
+              </Link>
+            </div>
+          </article>
+          <article className="lesson-card">
+            <div>
+              <p className="eyebrow">Projects</p>
+              <h3>Hands-on projects and peer review</h3>
+              <p>Build practical QC+AI deliverables, get live AI draft feedback, and review peers against technical rubrics.</p>
+            </div>
+            <div className="lesson-actions">
+              <Link className="primary-button" href="/projects">
+                Open project studio
+              </Link>
+            </div>
+          </article>
         </div>
       </section>
 

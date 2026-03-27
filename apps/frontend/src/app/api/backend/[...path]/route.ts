@@ -22,6 +22,7 @@ async function proxyRequest(
   const { path } = await paramsPromise;
   const headers = new Headers(request.headers);
   headers.delete("host");
+  headers.delete("expect");
   if (headers.has("authorization")) {
     headers.delete("x-demo-user");
     headers.delete("x-demo-role");

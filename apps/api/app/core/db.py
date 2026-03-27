@@ -15,7 +15,8 @@ settings = get_settings()
 engine_kwargs: dict[str, object] = {}
 if settings.database_url.startswith("sqlite"):
     engine_kwargs["connect_args"] = {"check_same_thread": False}
-    engine_kwargs["poolclass"] = StaticPool
+    if ":memory:" in settings.database_url or settings.database_url.rstrip("/") == "sqlite:":
+        engine_kwargs["poolclass"] = StaticPool
 elif settings.database_url.startswith(("postgresql", "postgres")):
     engine_kwargs["pool_size"] = 20
     engine_kwargs["max_overflow"] = 10

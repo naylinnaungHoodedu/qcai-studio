@@ -287,3 +287,212 @@ class BuilderShareCreate(BaseModel):
     scenario_slug: str
     caption: str = Field(min_length=1, max_length=280)
     placements: dict[str, str] = Field(default_factory=dict)
+
+
+class LearnerProfileRead(BaseModel):
+    user_id: str
+    target_role: str
+    weekly_goal_hours: int
+    preferred_pace: str
+    focus_area: str | None = None
+    self_ratings: dict[str, int] = Field(default_factory=dict)
+
+
+class LearnerProfileUpdate(BaseModel):
+    target_role: str = Field(min_length=1, max_length=255)
+    weekly_goal_hours: int = Field(default=4, ge=1, le=40)
+    preferred_pace: str = Field(default="balanced", min_length=1, max_length=50)
+    focus_area: str | None = Field(default=None, max_length=255)
+    self_ratings: dict[str, int] = Field(default_factory=dict)
+
+
+class LearningPulseCreate(BaseModel):
+    motivation_level: int = Field(ge=1, le=5)
+    focus_level: int = Field(ge=1, le=5)
+    energy_level: int = Field(ge=1, le=5)
+    session_minutes: int = Field(default=25, ge=10, le=240)
+    today_goal: str | None = Field(default=None, max_length=280)
+    blocker: str | None = Field(default=None, max_length=280)
+
+
+class LearningPulseRead(BaseModel):
+    id: int
+    motivation_level: int
+    focus_level: int
+    energy_level: int
+    session_minutes: int
+    today_goal: str | None = None
+    blocker: str | None = None
+    created_at: datetime
+
+
+class ActivityPoint(BaseModel):
+    label: str
+    date: str
+    events: int
+    focus_level: float | None = None
+    motivation_level: float | None = None
+
+
+class DashboardMetrics(BaseModel):
+    progress_percent: int
+    motivation_score: int
+    focus_score: int
+    momentum_score: int
+    consistency_score: int
+    active_streak_days: int
+    weekly_goal_hours: int
+    weekly_goal_progress_percent: int
+    completed_lessons: int
+    projects_submitted: int
+    peer_reviews_completed: int
+
+
+class ModuleInsight(BaseModel):
+    module_slug: str
+    module_title: str
+    mastery_percent: int
+    confidence_label: str
+    risk_flag: str | None = None
+    recommendation: str
+
+
+class RecommendationCard(BaseModel):
+    title: str
+    summary: str
+    href: str
+    recommendation_type: str
+    reason: str
+    urgency: str
+
+
+class AdaptivePathStep(BaseModel):
+    step_number: int
+    title: str
+    summary: str
+    href: str
+    recommendation_type: str
+    estimated_minutes: int
+    intensity: str
+    reason: str
+
+
+class AdaptivePathRead(BaseModel):
+    target_role: str
+    pace_mode: str
+    adaptation_summary: str
+    steps: list[AdaptivePathStep]
+
+
+class SkillGapItem(BaseModel):
+    skill_id: str
+    label: str
+    current_level: float
+    target_level: float
+    gap: float
+    evidence: str
+    recommended_actions: list[str] = Field(default_factory=list)
+
+
+class SkillGapReportRead(BaseModel):
+    target_role: str
+    role_summary: str
+    readiness_percent: int
+    strengths: list[str] = Field(default_factory=list)
+    gaps: list[SkillGapItem]
+    recommendations: list[RecommendationCard]
+
+
+class RealtimeFeedbackRequest(BaseModel):
+    context_type: str = Field(min_length=1, max_length=100)
+    content: str = Field(min_length=1, max_length=8000)
+    lesson_slug: str | None = None
+    project_slug: str | None = None
+    score: int | None = Field(default=None, ge=0, le=100)
+
+
+class RealtimeFeedbackResponse(BaseModel):
+    summary: str
+    signal: str
+    confidence_label: str
+    recommended_actions: list[str] = Field(default_factory=list)
+    suggested_resources: list[RecommendationCard] = Field(default_factory=list)
+
+
+class LearningDashboardRead(BaseModel):
+    profile: LearnerProfileRead
+    metrics: DashboardMetrics
+    activity: list[ActivityPoint]
+    pulses: list[LearningPulseRead]
+    module_insights: list[ModuleInsight]
+    recommendations: list[RecommendationCard]
+    coach_feedback: RealtimeFeedbackResponse
+
+
+class ProjectRubricCriterion(BaseModel):
+    id: str
+    label: str
+    description: str
+
+
+class ProjectBrief(BaseModel):
+    slug: str
+    title: str
+    summary: str
+    difficulty: str
+    estimated_hours: int
+    deliverable: str
+    linked_lessons: list[str] = Field(default_factory=list)
+    rubric: list[ProjectRubricCriterion] = Field(default_factory=list)
+    submitted_count: int = 0
+    peer_reviews_received: int = 0
+
+
+class ProjectSubmissionCreate(BaseModel):
+    project_slug: str
+    title: str = Field(min_length=1, max_length=255)
+    solution_summary: str = Field(min_length=80, max_length=4000)
+    implementation_notes: str = Field(min_length=40, max_length=4000)
+    confidence_level: int = Field(default=3, ge=1, le=5)
+
+
+class ProjectSubmissionRead(BaseModel):
+    id: int
+    project_slug: str
+    project_title: str
+    title: str
+    solution_summary: str
+    implementation_notes: str
+    confidence_level: int
+    status: str
+    ai_feedback_summary: str | None = None
+    ai_recommendations: list[str] = Field(default_factory=list)
+    average_peer_score: float | None = None
+    review_count: int = 0
+    created_at: datetime
+
+
+class ReviewQueueItem(BaseModel):
+    submission_id: int
+    project_slug: str
+    project_title: str
+    title: str
+    author_id: str
+    solution_summary: str
+    implementation_notes: str
+    rubric: list[ProjectRubricCriterion] = Field(default_factory=list)
+
+
+class PeerReviewCreate(BaseModel):
+    submission_id: int
+    rubric_scores: dict[str, int] = Field(default_factory=dict)
+    feedback: str = Field(min_length=20, max_length=2000)
+
+
+class PeerReviewRead(BaseModel):
+    id: int
+    submission_id: int
+    reviewer_user_id: str
+    overall_score: float
+    feedback: str
+    created_at: datetime

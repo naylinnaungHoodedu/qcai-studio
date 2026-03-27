@@ -1,18 +1,28 @@
 import {
   ArenaLeaderboardEntry,
   ArenaProfile,
+  AdaptivePath,
   BuilderFeedItem,
   BuilderProfile,
   BuilderScenario,
   BuilderSubmissionResult,
   CourseProgress,
   CourseOverview,
+  LearningDashboard,
+  LearningPulse,
+  LearnerProfile,
   LessonDetail,
   ModuleDetail,
   Note,
+  PeerReview,
+  ProjectBrief,
+  ProjectSubmission,
   QuizAttemptResult,
   QAResponse,
+  RealtimeFeedback,
+  ReviewQueueItem,
   SearchResult,
+  SkillGapReport,
   UserProfile,
 } from "@/lib/types";
 
@@ -214,5 +224,93 @@ export async function shareBuilderScenario(
       caption,
       placements,
     }),
+  });
+}
+
+export async function fetchLearningDashboard(): Promise<LearningDashboard> {
+  return apiFetch<LearningDashboard>("/insights/dashboard");
+}
+
+export async function fetchAdaptivePath(): Promise<AdaptivePath> {
+  return apiFetch<AdaptivePath>("/insights/path");
+}
+
+export async function fetchSkillGapReport(): Promise<SkillGapReport> {
+  return apiFetch<SkillGapReport>("/insights/skill-gap");
+}
+
+export async function updateLearnerProfile(payload: {
+  target_role: string;
+  weekly_goal_hours: number;
+  preferred_pace: string;
+  focus_area?: string | null;
+  self_ratings: Record<string, number>;
+}): Promise<LearnerProfile> {
+  return apiFetch<LearnerProfile>("/insights/profile", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createLearningCheckIn(payload: {
+  motivation_level: number;
+  focus_level: number;
+  energy_level: number;
+  session_minutes: number;
+  today_goal?: string;
+  blocker?: string;
+}): Promise<LearningPulse> {
+  return apiFetch<LearningPulse>("/insights/check-ins", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function requestRealtimeFeedback(payload: {
+  context_type: string;
+  content: string;
+  lesson_slug?: string;
+  project_slug?: string;
+  score?: number;
+}): Promise<RealtimeFeedback> {
+  return apiFetch<RealtimeFeedback>("/insights/realtime-feedback", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchProjectCatalog(): Promise<ProjectBrief[]> {
+  return apiFetch<ProjectBrief[]>("/projects/catalog");
+}
+
+export async function fetchMyProjectSubmissions(): Promise<ProjectSubmission[]> {
+  return apiFetch<ProjectSubmission[]>("/projects/my-submissions");
+}
+
+export async function fetchProjectReviewQueue(): Promise<ReviewQueueItem[]> {
+  return apiFetch<ReviewQueueItem[]>("/projects/review-queue");
+}
+
+export async function createProjectSubmission(payload: {
+  project_slug: string;
+  title: string;
+  solution_summary: string;
+  implementation_notes: string;
+  confidence_level: number;
+}): Promise<ProjectSubmission> {
+  return apiFetch<ProjectSubmission>("/projects/submissions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function submitPeerReview(payload: {
+  submission_id: number;
+  rubric_scores: Record<string, number>;
+  feedback: string;
+}): Promise<PeerReview> {
+  return apiFetch<PeerReview>("/projects/reviews", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import admin, analytics, arena, assets, auth, builder, content, qa, search
+from app.api.routes import admin, analytics, arena, assets, auth, builder, content, insights, projects, qa, search
 from app.core.config import get_settings
 from app.core.db import Base, engine
 from app.services.store import get_course_store
@@ -37,6 +37,8 @@ app.include_router(analytics.router)
 app.include_router(admin.router)
 app.include_router(arena.router)
 app.include_router(builder.router)
+app.include_router(insights.router)
+app.include_router(projects.router)
 
 
 @app.middleware("http")

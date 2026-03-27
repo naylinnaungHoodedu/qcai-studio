@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, JSON, String, Text, func
+from sqlalchemy import DateTime, Float, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -111,4 +111,69 @@ class BuilderShare(Base):
     caption: Mapped[str] = mapped_column(Text)
     completion_percent: Mapped[int] = mapped_column(Integer, default=0)
     map_snapshot: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LearnerProfile(Base):
+    __tablename__ = "learner_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(255), index=True, unique=True)
+    target_role: Mapped[str] = mapped_column(String(255), default="Quantum ML Engineer")
+    weekly_goal_hours: Mapped[int] = mapped_column(Integer, default=4)
+    preferred_pace: Mapped[str] = mapped_column(String(50), default="balanced")
+    focus_area: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    self_ratings: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class LearningPulse(Base):
+    __tablename__ = "learning_pulses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(255), index=True)
+    motivation_level: Mapped[int] = mapped_column(Integer, default=3)
+    focus_level: Mapped[int] = mapped_column(Integer, default=3)
+    energy_level: Mapped[int] = mapped_column(Integer, default=3)
+    session_minutes: Mapped[int] = mapped_column(Integer, default=25)
+    today_goal: Mapped[str | None] = mapped_column(Text, nullable=True)
+    blocker: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProjectSubmission(Base):
+    __tablename__ = "project_submissions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(255), index=True)
+    project_slug: Mapped[str] = mapped_column(String(255), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    solution_summary: Mapped[str] = mapped_column(Text)
+    implementation_notes: Mapped[str] = mapped_column(Text)
+    confidence_level: Mapped[int] = mapped_column(Integer, default=3)
+    status: Mapped[str] = mapped_column(String(50), index=True, default="submitted")
+    ai_feedback_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_recommendations: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class PeerReview(Base):
+    __tablename__ = "peer_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    submission_id: Mapped[int] = mapped_column(Integer, index=True)
+    reviewer_user_id: Mapped[str] = mapped_column(String(255), index=True)
+    rubric_scores: Mapped[dict] = mapped_column(JSON)
+    overall_score: Mapped[float] = mapped_column(Float)
+    feedback: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

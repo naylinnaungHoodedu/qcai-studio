@@ -41,6 +41,15 @@ input {
   font: inherit;
 }
 
+select,
+input:not([type="range"]) {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
 .app-shell {
   min-height: 100vh;
   padding: 24px;
@@ -403,6 +412,102 @@ input {
   background: linear-gradient(90deg, var(--accent), #2ea89f);
 }
 
+.analytics-hero,
+.project-hero {
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.12), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(248, 242, 233, 0.9));
+}
+
+.analytics-metric-grid,
+.insight-grid,
+.analytics-form-grid,
+.projects-grid,
+.review-grid,
+.analytics-band {
+  display: grid;
+  gap: 16px;
+}
+
+.analytics-metric-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.insight-grid {
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+}
+
+.analytics-form-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.analytics-form-grid label,
+.review-grid label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.analytics-band {
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+}
+
+.activity-bar-card {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  padding: 14px 10px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid var(--line);
+}
+
+.activity-bar-track {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  min-height: 112px;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(15, 118, 110, 0.07), rgba(255, 255, 255, 0.9));
+}
+
+.activity-bar-track span {
+  display: block;
+  width: 28px;
+  border-radius: 999px 999px 10px 10px;
+  background: linear-gradient(180deg, var(--warm), var(--accent));
+}
+
+.insight-card,
+.path-step-card,
+.skill-gap-card,
+.project-submission-card {
+  border-radius: 18px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.emphasis-card {
+  background: linear-gradient(180deg, rgba(15, 118, 110, 0.12), rgba(255, 255, 255, 0.96));
+  border-color: rgba(15, 118, 110, 0.24);
+}
+
+.inline-action {
+  display: inline-flex;
+  width: auto;
+}
+
+.projects-grid {
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.15fr) minmax(320px, 0.85fr);
+}
+
+.review-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
 .game-grid,
 .builder-grid {
   display: grid;
@@ -636,6 +741,10 @@ input {
   .two-column-grid,
   .lesson-layout-grid,
   .lesson-card,
+  .insight-grid,
+  .projects-grid,
+  .analytics-form-grid,
+  .review-grid,
   .game-grid,
   .builder-grid {
     grid-template-columns: 1fr;
