@@ -1,7 +1,8 @@
 from dataclasses import dataclass
+import re
 
 import jwt
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, status
 from jwt import PyJWKClient
 
 from app.core.config import Settings, get_settings
@@ -39,17 +40,29 @@ def get_current_user(
     authorization: str | None = Header(default=None),
     x_demo_user: str | None = Header(default=None),
     x_demo_role: str | None = Header(default=None),
+    qcai_guest_id: str | None = Cookie(default=None),
     settings: Settings = Depends(get_settings),
 ) -> AuthUser:
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1].strip()
         return _decode_auth0_token(token, settings)
 
-    return AuthUser(
-        user_id=x_demo_user or "demo-learner",
-        email="demo@qcai.local",
-        role=(x_demo_role or "learner").lower(),
-    )
+    if settings.enable_demo_auth and (x_demo_user or x_demo_role):
+        return AuthUser(
+            user_id=x_demo_user or "demo-learner",
+            email="demo@qcai.local",
+            role=(x_demo_role or "learner").lower(),
+        )
+
+    if qcai_guest_id:
+        guest_id = qcai_guest_id.strip().lower()
+        if re.fullmatch(r"guest-[0-9a-f-]{8,64}", guest_id):
+            return AuthUser(user_id=guest_id, email=None, role="learner")
+
+    if settings.enable_demo_auth:
+        return AuthUser(user_id="demo-learner", email="demo@qcai.local", role="learner")
+
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
 
 
 def require_role(*allowed_roles: str):

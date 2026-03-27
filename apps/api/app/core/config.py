@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     app_name: str = "QC+AI Learning API"
     environment: str = "development"
     database_url: str = "sqlite:///./qcai_dev.db"
+    enable_demo_auth: bool | None = None
+    cloud_sql_connection_name: str | None = None
+    cloud_sql_ip_type: str = "PUBLIC"
     openai_api_key: str | None = None
     openai_chat_model: str = "gpt-4.1-mini"
     openai_embedding_model: str = "text-embedding-3-small"
@@ -59,6 +62,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_allowed_origins(self) -> "Settings":
+        if self.enable_demo_auth is None:
+            self.enable_demo_auth = self.environment.lower() == "development"
         if self.environment.lower() != "development" and any(origin.strip() == "*" for origin in self.allowed_origins):
             raise ValueError("Wildcard ALLOWED_ORIGINS is not permitted outside development.")
         return self

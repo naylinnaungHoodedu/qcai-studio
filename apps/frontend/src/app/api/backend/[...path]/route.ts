@@ -6,6 +6,12 @@ const API_BASE_URL =
   "http://127.0.0.1:8000";
 const DEMO_USER_ID = "demo-learner";
 const DEMO_ROLE = "learner";
+const ENABLE_DEMO_AUTH =
+  process.env.ENABLE_DEMO_AUTH != null
+    ? process.env.ENABLE_DEMO_AUTH === "true"
+    : process.env.NEXT_PUBLIC_ENABLE_DEMO_AUTH != null
+      ? process.env.NEXT_PUBLIC_ENABLE_DEMO_AUTH === "true"
+      : process.env.NODE_ENV !== "production";
 
 function buildTargetUrl(pathParts: string[], request: NextRequest): string {
   const base = API_BASE_URL.replace(/\/$/, "");
@@ -23,7 +29,10 @@ async function proxyRequest(
   const headers = new Headers(request.headers);
   headers.delete("host");
   headers.delete("expect");
-  if (headers.has("authorization")) {
+  if (!ENABLE_DEMO_AUTH) {
+    headers.delete("x-demo-user");
+    headers.delete("x-demo-role");
+  } else if (headers.has("authorization")) {
     headers.delete("x-demo-user");
     headers.delete("x-demo-role");
   } else {

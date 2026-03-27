@@ -2,7 +2,7 @@ import mimetypes
 from pathlib import Path
 from typing import Iterator
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, StreamingResponse
 
 from app.core.auth import AuthUser, get_current_user
@@ -15,14 +15,16 @@ def _require_asset_access(
     authorization: str | None = Header(default=None),
     x_demo_user: str | None = Header(default=None),
     x_demo_role: str | None = Header(default=None),
+    qcai_guest_id: str | None = Cookie(default=None),
     settings: Settings = Depends(get_settings),
 ) -> AuthUser:
-    if not authorization and not x_demo_user and not x_demo_role:
+    if not authorization and not x_demo_user and not x_demo_role and not qcai_guest_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required for source assets.")
     user = get_current_user(
         authorization=authorization,
         x_demo_user=x_demo_user,
         x_demo_role=x_demo_role,
+        qcai_guest_id=qcai_guest_id,
         settings=settings,
     )
     if user.role not in {"learner", "admin"}:

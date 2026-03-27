@@ -4,6 +4,8 @@ import { PageErrorState } from "@/components/page-state";
 import { fetchCourseOverview } from "@/lib/api";
 import { COURSE_REFERENCES } from "@/lib/course-references";
 
+export const dynamic = "force-dynamic";
+
 export default async function SyllabusPage() {
   const course = await fetchCourseOverview().catch(() => null);
   if (!course) {

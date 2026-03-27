@@ -1,0 +1,27 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - apps/frontend/Dockerfile
+      - -t
+      - us-central1-docker.pkg.dev/$PROJECT_ID/qcai-repo/qcai-frontend:latest
+      - --build-arg
+      - API_BASE_URL=${_API_BASE_URL}
+      - --build-arg
+      - NEXT_PUBLIC_API_BASE_URL=${_API_BASE_URL}
+      - --build-arg
+      - ENABLE_DEMO_AUTH=${_ENABLE_DEMO_AUTH}
+      - --build-arg
+      - NEXT_PUBLIC_ENABLE_DEMO_AUTH=${_ENABLE_DEMO_AUTH}
+      - --build-arg
+      - NEXT_PUBLIC_COOKIE_DOMAIN=${_COOKIE_DOMAIN}
+      - .
+
+images:
+  - us-central1-docker.pkg.dev/$PROJECT_ID/qcai-repo/qcai-frontend:latest
+
+substitutions:
+  _API_BASE_URL: https://api.qantumlearn.academy
+  _ENABLE_DEMO_AUTH: "false"
+  _COOKIE_DOMAIN: .qantumlearn.academy

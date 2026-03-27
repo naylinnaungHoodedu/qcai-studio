@@ -36,6 +36,12 @@ const CLIENT_API_BASE_URL = "/api/backend";
 const DEMO_USER_ID = "demo-learner";
 const DEMO_ROLE = "learner";
 const PUBLIC_REVALIDATE_SECONDS = 300;
+const ENABLE_DEMO_AUTH =
+  process.env.ENABLE_DEMO_AUTH != null
+    ? process.env.ENABLE_DEMO_AUTH === "true"
+    : process.env.NEXT_PUBLIC_ENABLE_DEMO_AUTH != null
+      ? process.env.NEXT_PUBLIC_ENABLE_DEMO_AUTH === "true"
+      : process.env.NODE_ENV !== "production";
 
 type FetchOptions = RequestInit & {
   headers?: HeadersInit;
@@ -43,6 +49,11 @@ type FetchOptions = RequestInit & {
 };
 
 function applyDemoAuthHeaders(headers: Headers): void {
+  if (!ENABLE_DEMO_AUTH) {
+    headers.delete("x-demo-user");
+    headers.delete("x-demo-role");
+    return;
+  }
   if (headers.has("authorization")) {
     headers.delete("x-demo-user");
     headers.delete("x-demo-role");
@@ -63,12 +74,33 @@ function resolveApiBaseUrl(): string {
   return CLIENT_API_BASE_URL;
 }
 
+async function applyServerRequestHeaders(headers: Headers): Promise<void> {
+  if (typeof window !== "undefined") {
+    return;
+  }
+  try {
+    const { headers: nextHeaders } = await import("next/headers");
+    const requestHeaders = await nextHeaders();
+    const cookieHeader = requestHeaders.get("cookie");
+    if (cookieHeader && !headers.has("cookie")) {
+      headers.set("cookie", cookieHeader);
+    }
+    const authorization = requestHeaders.get("authorization");
+    if (authorization && !headers.has("authorization")) {
+      headers.set("authorization", authorization);
+    }
+  } catch {
+    // Requests made outside a Next request context do not have incoming headers to forward.
+  }
+}
+
 async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
   const { cacheMode = "private", ...requestOptions } = options;
   const headers = new Headers(requestOptions.headers);
   if (requestOptions.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
+  await applyServerRequestHeaders(headers);
   applyDemoAuthHeaders(headers);
 
   const method = (requestOptions.method ?? "GET").toUpperCase();

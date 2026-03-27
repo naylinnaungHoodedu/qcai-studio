@@ -1527,3 +1527,79 @@ Recorded publication result:
   - frontend lint: passed
   - frontend build: passed
   - alembic head: `25705ed89aa2`
+
+## 64. Production Deployment Hardening Implemented
+
+The production website brief was studied and converted into a deployment-hardening batch that prepares the QC+AI platform for a public domain instead of a local-only demo environment.
+
+Completed backend hardening work:
+
+- added a production-safe auth toggle so demo-header auth defaults off outside development
+- added guest-cookie learner identity support so the public app can function without relying on shared demo headers
+- extended source-asset access checks so guest-cookie sessions can still access protected course media
+- upgraded database initialization to support Cloud SQL startup retries during service boot
+- added Cloud SQL connector support for PostgreSQL deployments
+- expanded CSP generation so allowed origins and API origins are reflected dynamically
+
+Completed frontend hardening work:
+
+- added a Next.js proxy hook that mints and persists a secure guest learner cookie
+- updated frontend API calls to forward server-side cookies and authorization headers correctly
+- disabled demo-header injection automatically in production builds
+- updated the arena page to prefer the browser-safe public API base for WebSocket connections
+- updated the syllabus route to force dynamic rendering for production correctness
+- added deployment-time Docker build arguments for API base URL, cookie domain, and auth mode
+- added GitHub-safe Cloud Build manifests for API and frontend image publication
+
+Completed deployment-readiness improvements:
+
+- public-domain sessions no longer depend on a shared demo learner identity
+- WebSocket and CSP behavior can now align with deployed HTTPS and WSS origins
+- the backend can now connect to managed PostgreSQL through the Cloud SQL connector when configured
+
+## 65. Production Build and Provisioning Verification Completed
+
+The production-hardening batch was validated through local automated checks and cloud build publication work.
+
+Completed automated verification work:
+
+- `pytest` run in `apps/api`
+- Result: `34 passed`
+
+- `npm run lint` run in `apps/frontend`
+- Result: passed
+
+- `npm run build` run in `apps/frontend`
+- Result: passed
+
+Completed cloud publication work:
+
+- production API container image was built and published successfully through Cloud Build
+- production frontend container image was built and published successfully through Cloud Build
+- production runtime prerequisites were provisioned for a managed deployment path:
+  - container registry repository
+  - managed PostgreSQL instance
+  - database secret storage
+  - service accounts and required IAM bindings
+
+Completed deployment-state verification:
+
+- confirmed Artifact Registry contains the published `qcai-api` image
+- confirmed Artifact Registry contains the published `qcai-frontend` image
+- confirmed the production domain DNS zone still requires final service mapping before public cutover
+- confirmed Cloud Run service deployment and domain mapping remain separate follow-up steps and were not falsely recorded as completed
+
+## 66. GitHub Update Prepared for Production Hardening Release
+
+The repository was prepared for a GitHub-safe update that captures the completed production-hardening and deployment-automation work while keeping environment-sensitive deployment details local only.
+
+Completed publication-preparation work:
+
+- updated the repository activity log with a sanitized implementation and verification record
+- created a local-only deployment log for environment-sensitive operational details
+- added ignore rules so local deployment notes and environment-specific production files remain outside source control
+- confirmed the GitHub-safe change set includes:
+  - backend production-auth and Cloud SQL readiness changes
+  - frontend public-session and proxy hardening changes
+  - Cloud Build manifests
+  - a sanitized Cloud Run environment template

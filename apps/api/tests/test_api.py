@@ -261,6 +261,13 @@ def test_allowed_origins_rejects_wildcard_in_production(monkeypatch):
         raise AssertionError("Expected wildcard CORS configuration to be rejected outside development.")
 
 
+def test_demo_auth_defaults_off_outside_development(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.delenv("ENABLE_DEMO_AUTH", raising=False)
+    settings = Settings()
+    assert settings.enable_demo_auth is False
+
+
 def test_source_document_selection_uses_curated_allowlist(tmp_path: Path):
     for name in (
         "Quantum Computing AI Research Synthesis 2026.docx",
@@ -279,6 +286,16 @@ def test_source_document_selection_uses_curated_allowlist(tmp_path: Path):
         "Analyzing Quantum Computing and AI Paper 2025.docx",
         "Quantum Computing and Artificial Intelligence Industry Use Cases.docx",
     ]
+
+
+def test_guest_cookie_auth_is_supported():
+    guest_id = "guest-123e4567-e89b-12d3-a456-426614174000"
+    with TestClient(app) as cookie_client:
+        cookie_client.cookies.set("qcai_guest_id", guest_id)
+        response = cookie_client.get("/auth/me")
+        assert response.status_code == 200
+        assert response.json()["user_id"] == guest_id
+        assert response.json()["role"] == "learner"
 
 
 def test_progress_endpoint_aggregates_activity():
