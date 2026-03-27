@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ReactNode } from "react";
 
+import { SiteFooter } from "@/components/site-footer";
+
 export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="app-shell">
@@ -24,9 +26,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Link href="/builder">Builder</Link>
           <Link href="/dashboard">Dashboard</Link>
           <Link href="/search">Search</Link>
+          <Link href="/account">Account</Link>
         </nav>
       </header>
       <main id="main-content">{children}</main>
+      <SiteFooter />
     </div>
   );
 }

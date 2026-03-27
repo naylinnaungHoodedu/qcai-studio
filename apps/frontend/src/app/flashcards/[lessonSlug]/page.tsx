@@ -25,7 +25,6 @@ export async function generateMetadata({ params }: FlashcardsPageProps): Promise
     title: `${lesson.title} Flashcards`,
     description: `Review flashcards for ${lesson.title} across definitions, workflows, and hardware constraints.`,
     path: `/flashcards/${lesson.slug}`,
-    index: false,
   });
 }
 

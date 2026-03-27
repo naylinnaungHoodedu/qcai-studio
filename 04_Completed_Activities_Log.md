@@ -1840,3 +1840,94 @@ Recorded release state:
   - local production-mode smoke verification: passed
 - GitHub-safe filtering result:
   - local-only site audit worksheet remained local only
+
+## 78. Frontend Audit Verification and Gap Analysis Completed
+
+The frontend was re-audited against the newly reported public-site issues to distinguish actual implementation defects from expected early-deployment states and to verify the runtime paths that still needed remediation.
+
+Completed verification and analysis work:
+
+- reviewed the current frontend shell, metadata, sitemap, robots policy, lesson-adjacent routes, and authentication wiring before making further changes
+- confirmed the public UI had no footer surface for contact, privacy, terms, attribution, or account-access links
+- confirmed no custom `not-found` route had been implemented or tested in the Next.js app at that time
+- confirmed the arena leaderboard and builder social feed could legitimately render empty on a new deployment, but their empty states were too weak and too easy to misread as broken features
+- confirmed there was still no visible frontend account-access path despite backend Auth0 validation support already existing
+- verified that flashcard and quiz routes existed but were absent from the generated sitemap and previously excluded from crawl/index discovery
+- rechecked page-level metadata generation and determined that the earlier "single `og:description` for all pages" observation was stale for lessons, but still required direct runtime confirmation for homepage, flashcards, and quiz routes
+- treated guest-session continuity across browsers/devices as a real product limitation rather than a code bug, and planned UI disclosure instead of pretending it was solved
+
+## 79. Frontend Audit Remediation Batch Implemented
+
+The verified frontend defects were corrected across navigation, policy surfaces, sitemap/indexing, empty states, and authenticated-entry routing.
+
+Completed remediation work:
+
+- added a real footer to the shared app shell with:
+  - contact email
+  - privacy policy link
+  - terms of use link
+  - attribution link
+  - account/sign-in link
+  - GitHub repository link
+- introduced dedicated public-facing pages for:
+  - privacy policy
+  - terms of use
+  - attribution
+- implemented a custom `404` page with recovery links and contact details for broken-link reporting
+- added a dedicated account page that explains:
+  - guest-session limitations across browsers/devices
+  - the authenticated path when Auth0 client configuration is present
+- added frontend Auth0 login, callback, and logout route handlers with PKCE state/verifier handling and secure cookie management
+- extended frontend API/proxy request handling so authenticated bearer tokens can be forwarded from the frontend cookie layer to the backend instead of leaving Auth0 as backend-only plumbing
+- added flashcard and quiz lesson routes to the generated sitemap
+- removed crawl blocking for flashcard and quiz routes from `robots.txt`
+- preserved `noindex` behavior for private account/auth flows while allowing lesson-adjacent public study surfaces to be discovered
+- upgraded the arena leaderboard and builder feed empty states so new deployments communicate "no activity yet" rather than looking silently broken
+- added styling support for the new footer, legal pages, account page, empty-state cards, and custom `404` presentation
+
+## 80. Deep Production-Mode Verification and Output Correction Completed
+
+The remediation batch was verified through static checks and production-style runtime inspection, and one additional correctness issue was found and corrected during this verification pass.
+
+Completed verification work:
+
+- ran `npm run lint` in `apps/frontend`
+- result: passed
+
+- ran `API_BASE_URL=https://api.qantumlearn.academy NEXT_PUBLIC_API_BASE_URL=https://api.qantumlearn.academy npm run build` in `apps/frontend`
+- result: passed
+
+- launched a fresh local production server from the rebuilt frontend output
+- confirmed `/` renders the new footer contact, policy, attribution, and account-entry links
+- confirmed `/privacy`, `/terms`, and `/attribution` render as intended
+- confirmed an unknown route returns HTTP `404` and serves the custom `not-found` content
+- confirmed `/sitemap.xml` contains flashcard and quiz URLs for lesson slugs
+- confirmed `/robots.txt` no longer blocks flashcard and quiz paths
+- confirmed route-level `og:description` output differs appropriately across:
+  - homepage
+  - lesson page
+  - flashcard page
+  - quiz page
+- confirmed the Auth0 login/logout routes return the expected redirect behavior for a deployment without active client-side Auth0 variables
+
+Correction identified and fixed during verification:
+
+- the first account-page implementation used a client-only component, which meant the Auth0 sign-in wording and guest-session warning were not present in the initial server-rendered HTML
+- replaced that client-only surface with a server-rendered account page so the authentication entry point and continuity limitations are visible in the actual delivered HTML as well as the hydrated client experience
+
+## 81. GitHub Publication Preparation Completed for Frontend Audit Remediation
+
+The repository was prepared for GitHub-safe publication after the remediation and verification pass was completed locally.
+
+Completed publication-preparation work:
+
+- updated the completed-activities log with the verified frontend audit findings, remediation actions, and production-mode verification results
+- reviewed the staged publication set and confirmed it contains:
+  - footer and legal-surface additions
+  - custom `404` support
+  - account/Auth0 frontend routes and token forwarding support
+  - sitemap and robots corrections for flashcard and quiz routes
+  - improved empty-state messaging for community/game surfaces
+  - production-mode verification records for the corrected frontend batch
+- confirmed GitHub repository authentication remains available for push operations
+- rechecked GitHub Projects CLI access and confirmed the current token still lacks `read:project`, so repository publication can proceed but GitHub Projects board inspection/mutation remains blocked by token scope rather than code state

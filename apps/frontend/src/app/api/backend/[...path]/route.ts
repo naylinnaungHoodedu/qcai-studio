@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { getAuthorizationHeaderFromRequest } from "@/lib/auth";
 import {
   applyGuestSessionToHeaders,
   resolveGuestSession,
@@ -37,6 +38,10 @@ async function proxyRequest(
   const headers = new Headers(request.headers);
   headers.delete("host");
   headers.delete("expect");
+  const cookieAuthorization = getAuthorizationHeaderFromRequest(request);
+  if (cookieAuthorization && !headers.has("authorization")) {
+    headers.set("authorization", cookieAuthorization);
+  }
   const method = request.method.toUpperCase();
   const hasAuthorization = headers.has("authorization");
   const session =

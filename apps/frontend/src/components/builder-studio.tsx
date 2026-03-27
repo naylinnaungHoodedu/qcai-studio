@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
@@ -398,7 +399,22 @@ export function BuilderStudio() {
                 <p>{item.caption}</p>
               </article>
             ))}
-            {!feedQuery.data?.length ? <p className="muted">No shared maps yet. Publish the first one.</p> : null}
+            {!feedQuery.data?.length ? (
+              <article className="empty-state-card">
+                <strong>No shared maps yet</strong>
+                <p className="muted">
+                  This deployment has not accumulated community builder activity yet. Solve a circuit and publish the first shared learning map.
+                </p>
+                <div className="button-row">
+                  <button className="primary-button" onClick={checkCircuit} type="button">
+                    Check current circuit
+                  </button>
+                  <Link className="secondary-button" href="/account">
+                    Open account options
+                  </Link>
+                </div>
+              </article>
+            ) : null}
           </div>
         </section>
       </div>

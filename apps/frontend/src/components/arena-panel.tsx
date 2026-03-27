@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
@@ -494,7 +495,22 @@ export function ArenaPanel({ apiBaseUrl }: ArenaPanelProps) {
                   </p>
                 </article>
               ))}
-              {!sortedLeaderboard.length ? <p className="muted">No ranked results yet.</p> : null}
+              {!sortedLeaderboard.length ? (
+                <article className="empty-state-card">
+                  <strong>No ranked results yet</strong>
+                  <p className="muted">
+                    The arena leaderboard is still empty on this deployment. Join ranked play or complete a bot match to seed the first visible results.
+                  </p>
+                  <div className="button-row">
+                    <button className="primary-button" onClick={() => openSocket("ranked")} type="button">
+                      Start ranked play
+                    </button>
+                    <Link className="secondary-button" href="/account">
+                      Review account options
+                    </Link>
+                  </div>
+                </article>
+              ) : null}
             </div>
           </section>
         </div>

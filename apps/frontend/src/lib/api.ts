@@ -27,6 +27,7 @@ import {
   SkillGapReport,
   UserProfile,
 } from "@/lib/types";
+import { AUTH_TOKEN_COOKIE_NAME } from "@/lib/auth";
 
 const SERVER_API_BASE_URL =
   process.env.API_BASE_URL ||
@@ -118,6 +119,10 @@ async function applyServerRequestHeaders(headers: Headers): Promise<void> {
       headers.set("authorization", authorization);
     }
     const requestCookies = await nextCookies();
+    const authToken = requestCookies.get(AUTH_TOKEN_COOKIE_NAME)?.value?.trim();
+    if (authToken && !headers.has("authorization")) {
+      headers.set("authorization", `Bearer ${authToken}`);
+    }
     const csrfToken = requestCookies.get(GUEST_CSRF_COOKIE_NAME)?.value;
     if (csrfToken && !headers.has(GUEST_CSRF_HEADER)) {
       headers.set(GUEST_CSRF_HEADER, csrfToken);

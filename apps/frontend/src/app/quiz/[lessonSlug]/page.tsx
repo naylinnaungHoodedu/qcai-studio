@@ -25,7 +25,6 @@ export async function generateMetadata({ params }: QuizPageProps): Promise<Metad
     title: `${lesson.title} Quiz`,
     description: `Test your understanding of ${lesson.title} with exam-style QC+AI questions and rubric guidance.`,
     path: `/quiz/${lesson.slug}`,
-    index: false,
   });
 }
 

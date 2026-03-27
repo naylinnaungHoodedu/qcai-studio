@@ -5,6 +5,9 @@ import { LESSON_SLUGS, MODULE_SLUGS, SITE_URL } from "@/lib/site";
 const STATIC_ROUTES: Array<{ path: string; priority: number }> = [
   { path: "/", priority: 1 },
   { path: "/syllabus", priority: 0.8 },
+  { path: "/privacy", priority: 0.3 },
+  { path: "/terms", priority: 0.3 },
+  { path: "/attribution", priority: 0.3 },
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {
@@ -27,5 +30,17 @@ export default function sitemap(): MetadataRoute.Sitemap {
     changeFrequency: "weekly",
     priority: 0.8,
   }));
-  return [...staticEntries, ...moduleEntries, ...lessonEntries];
+  const flashcardEntries: MetadataRoute.Sitemap = LESSON_SLUGS.map((slug) => ({
+    url: `${SITE_URL}/flashcards/${slug}`,
+    lastModified: now,
+    changeFrequency: "weekly",
+    priority: 0.55,
+  }));
+  const quizEntries: MetadataRoute.Sitemap = LESSON_SLUGS.map((slug) => ({
+    url: `${SITE_URL}/quiz/${slug}`,
+    lastModified: now,
+    changeFrequency: "weekly",
+    priority: 0.55,
+  }));
+  return [...staticEntries, ...moduleEntries, ...lessonEntries, ...flashcardEntries, ...quizEntries];
 }
