@@ -1931,3 +1931,29 @@ Completed publication-preparation work:
   - production-mode verification records for the corrected frontend batch
 - confirmed GitHub repository authentication remains available for push operations
 - rechecked GitHub Projects CLI access and confirmed the current token still lacks `read:project`, so repository publication can proceed but GitHub Projects board inspection/mutation remains blocked by token scope rather than code state
+
+## 82. GitHub Project Updated for Frontend Audit Remediation Release
+
+The completed frontend remediation and verification batch was committed and pushed to the live GitHub project after the local logging pass was finalized.
+
+Completed publication work:
+
+- created a new feature commit on `main`:
+  - commit: `dc7e1a9`
+  - message: `Add frontend audit fixes for policy and account UX`
+- updated the GitHub-safe completed-activities record for this release by adding:
+  - sections `78` through `82` in `04_Completed_Activities_Log.md`
+- pushed the updated branch to:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+
+Recorded release state:
+
+- verification supporting the published change set:
+  - frontend lint: passed
+  - frontend build: passed
+  - local production-mode smoke verification: passed
+- GitHub publication/access status:
+  - repository push: completed successfully
+  - GitHub Projects board query: still blocked by missing `read:project` token scope
+  - result: the GitHub repository project was updated, but the separate GitHub Projects board could not be mutated from this environment
