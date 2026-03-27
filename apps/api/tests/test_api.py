@@ -2,13 +2,17 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 
 from app.core.db import SessionLocal
 from app.db_models import ArenaProfile
 from app.core.config import Settings
-from app.main import _build_security_headers, app
+from app.main import _build_security_headers, _initialize_database, app
+from app.services.store import get_course_store
 
 
+_initialize_database()
+get_course_store()
 client = TestClient(app)
 DEMO_HEADERS = {"x-demo-user": "demo-test-user", "x-demo-role": "learner"}
 RAW_DOCUMENT_TITLES = {
@@ -114,6 +118,17 @@ def test_public_content_endpoints_set_cache_headers():
         "/content/lessons/ai4qc-routing-and-optimization",
     ):
         response = client.get(path)
+        assert response.status_code == 200
+        assert "public, max-age=300" in response.headers["cache-control"]
+
+
+def test_public_content_endpoints_accept_head_requests():
+    for path in (
+        "/content/course",
+        "/content/modules/ai-for-quantum-hardware",
+        "/content/lessons/ai4qc-routing-and-optimization",
+    ):
+        response = client.head(path)
         assert response.status_code == 200
         assert "public, max-age=300" in response.headers["cache-control"]
 
@@ -427,12 +442,13 @@ def test_arena_leaderboard_orders_profiles():
     top_player = f"arena-top-{uuid4().hex[:8]}"
     runner_up = f"arena-runner-{uuid4().hex[:8]}"
     with SessionLocal() as session:
+        current_max_xp = session.scalar(select(func.max(ArenaProfile.xp))) or 0
         session.add_all(
             [
                 ArenaProfile(
                     player_id=top_player,
                     display_name="Top Player",
-                    xp=9000,
+                    xp=current_max_xp + 200,
                     matches_played=12,
                     wins=9,
                     skill_rating=1290,
@@ -441,7 +457,7 @@ def test_arena_leaderboard_orders_profiles():
                 ArenaProfile(
                     player_id=runner_up,
                     display_name="Runner Up",
-                    xp=8500,
+                    xp=current_max_xp + 100,
                     matches_played=11,
                     wins=7,
                     skill_rating=1210,

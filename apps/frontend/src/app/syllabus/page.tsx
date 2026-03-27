@@ -1,10 +1,17 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { PageErrorState } from "@/components/page-state";
 import { fetchCourseOverview } from "@/lib/api";
 import { COURSE_REFERENCES } from "@/lib/course-references";
+import { buildPageMetadata } from "@/lib/metadata";
 
-export const dynamic = "force-dynamic";
+export const metadata: Metadata = buildPageMetadata({
+  title: "Syllabus",
+  description:
+    "Browse the public QC+AI syllabus, module sequence, learning goals, and source references for the hardware-constrained course.",
+  path: "/syllabus",
+});
 
 export default async function SyllabusPage() {
   const course = await fetchCourseOverview().catch(() => null);

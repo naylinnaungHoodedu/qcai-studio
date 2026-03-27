@@ -1,4 +1,11 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+
+import {
+  applyGuestSessionToHeaders,
+  resolveGuestSession,
+  routeRequiresGuestSession,
+  setGuestSessionCookies,
+} from "@/lib/guest-session";
 
 const API_BASE_URL =
   process.env.API_BASE_URL ||
@@ -26,13 +33,27 @@ async function proxyRequest(
   paramsPromise: Promise<{ path: string[] }>,
 ): Promise<Response> {
   const { path } = await paramsPromise;
+  const normalizedPath = `/${path.join("/")}`;
   const headers = new Headers(request.headers);
   headers.delete("host");
   headers.delete("expect");
+  const method = request.method.toUpperCase();
+  const hasAuthorization = headers.has("authorization");
+  const session =
+    !ENABLE_DEMO_AUTH && !hasAuthorization && routeRequiresGuestSession(normalizedPath)
+      ? resolveGuestSession(request)
+      : null;
+
+  if (session) {
+    applyGuestSessionToHeaders(request, headers, session, {
+      ensureCsrfHeader: !["GET", "HEAD", "OPTIONS"].includes(method),
+    });
+  }
+
   if (!ENABLE_DEMO_AUTH) {
     headers.delete("x-demo-user");
     headers.delete("x-demo-role");
-  } else if (headers.has("authorization")) {
+  } else if (hasAuthorization) {
     headers.delete("x-demo-user");
     headers.delete("x-demo-role");
   } else {
@@ -44,7 +65,6 @@ async function proxyRequest(
     }
   }
 
-  const method = request.method.toUpperCase();
   const body =
     method === "GET" || method === "HEAD" ? undefined : await request.text();
   if (!body) {
@@ -62,10 +82,14 @@ async function proxyRequest(
   responseHeaders.delete("content-encoding");
   responseHeaders.delete("transfer-encoding");
 
-  return new Response(upstream.body, {
+  const response = new NextResponse(upstream.body, {
     status: upstream.status,
     headers: responseHeaders,
   });
+  if (session) {
+    setGuestSessionCookies(response, request, session);
+  }
+  return response;
 }
 
 export async function GET(

@@ -20,7 +20,6 @@ import {
   ModuleProgress,
   RealtimeFeedback,
   SkillGapReport,
-  UserProfile,
 } from "@/lib/types";
 
 
@@ -56,7 +55,6 @@ const SKILL_HELP: Record<string, string> = {
 type LearningDashboardProps = {
   course: CourseOverview;
   progress: CourseProgress;
-  user: UserProfile;
   initialDashboard: LearningDashboard;
   initialPath: AdaptivePath;
   initialGapReport: SkillGapReport;
@@ -73,7 +71,6 @@ function moduleProgressMap(progress: CourseProgress): Map<string, ModuleProgress
 export function LearningDashboardView({
   course,
   progress,
-  user,
   initialDashboard,
   initialPath,
   initialGapReport,
@@ -186,7 +183,7 @@ export function LearningDashboardView({
       <section className="section-block analytics-hero">
         <div className="section-heading">
           <p className="eyebrow">Learning Intelligence</p>
-          <h1>{user.user_id}</h1>
+          <h1>Your learning dashboard</h1>
           <p>
             Progress, motivation, focus, adaptive pacing, role-fit skill gaps, and AI coaching are all derived from your
             real learning activity across lessons, games, and projects.

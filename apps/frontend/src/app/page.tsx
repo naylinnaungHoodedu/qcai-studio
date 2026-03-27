@@ -3,27 +3,29 @@ import Link from "next/link";
 
 import { ModuleCard } from "@/components/module-card";
 import { PageErrorState } from "@/components/page-state";
-import { fetchCourseOverview, fetchCourseProgress } from "@/lib/api";
+import { fetchCourseOverview } from "@/lib/api";
 import { COURSE_REFERENCES } from "@/lib/course-references";
+import { buildPageMetadata } from "@/lib/metadata";
 
-export const metadata: Metadata = {
-  alternates: {
-    canonical: "/",
-  },
-};
+export const metadata: Metadata = buildPageMetadata({
+  description:
+    "Hardware-constrained quantum computing and AI learning, grounded in local proceedings, lesson scaffolds, and industry use cases.",
+  path: "/",
+});
 
 export default async function HomePage() {
-  const data = await Promise.all([fetchCourseOverview(), fetchCourseProgress()]).catch(() => null);
-  if (!data) {
+  const course = await fetchCourseOverview().catch(() => null);
+  if (!course) {
     return (
       <PageErrorState
         title="Course overview is temporarily unavailable"
-        detail="The public course data or learner progress API did not respond cleanly for the homepage."
+        detail="The public course data API did not respond cleanly for the homepage."
       />
     );
   }
-  const [course, progress] = data;
-  const moduleProgressBySlug = new Map(progress.modules.map((item) => [item.module_slug, item]));
+  const totalLessons = course.modules.reduce((count, module) => count + module.lesson_slugs.length, 0);
+  const videoCount = course.source_assets.filter((asset) => asset.kind === "video").length;
+  const startHref = course.modules[0] ? `/modules/${course.modules[0].slug}` : "/syllabus";
 
   return (
     <div className="page-stack">
@@ -36,7 +38,7 @@ export default async function HomePage() {
             optimization reformulation, hybrid orchestration, application-specific evidence, and commercialization context as first-class teaching objects.
           </p>
           <div className="button-row">
-            <Link className="primary-button" href={`/modules/${course.modules[0]?.slug}`}>
+            <Link className="primary-button" href={startHref}>
               Start with the course path
             </Link>
             <Link className="secondary-button" href="/dashboard">
@@ -52,11 +54,12 @@ export default async function HomePage() {
         </div>
         <div className="hero-grid">
           <div className="hero-panel">
-            <p className="eyebrow">Progress</p>
-            <h2>{progress.progress_percent}% study momentum</h2>
+            <p className="eyebrow">Course footprint</p>
+            <h2>
+              {course.modules.length} modules, {totalLessons} lessons
+            </h2>
             <p className="muted">
-              {progress.completed_lessons} completed lessons, {progress.visited_lessons} visited lessons, {course.modules.length} modules in
-              the study path
+              {course.source_assets.length} source assets, including {videoCount} video lessons and curated document synthesis.
             </p>
           </div>
           <div className="hero-panel">
@@ -81,7 +84,7 @@ export default async function HomePage() {
         </div>
         <div className="module-grid">
           {course.modules.map((module) => (
-            <ModuleCard key={module.slug} module={module} progress={moduleProgressBySlug.get(module.slug)} />
+            <ModuleCard key={module.slug} module={module} />
           ))}
         </div>
       </section>

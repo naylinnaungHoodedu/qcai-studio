@@ -4,11 +4,6 @@ import { LESSON_SLUGS, MODULE_SLUGS, SITE_URL } from "@/lib/site";
 
 const STATIC_ROUTES: Array<{ path: string; priority: number }> = [
   { path: "/", priority: 1 },
-  { path: "/dashboard", priority: 0.9 },
-  { path: "/projects", priority: 0.9 },
-  { path: "/arena", priority: 0.8 },
-  { path: "/builder", priority: 0.8 },
-  { path: "/search", priority: 0.7 },
   { path: "/syllabus", priority: 0.8 },
 ];
 

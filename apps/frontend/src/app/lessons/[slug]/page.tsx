@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -5,10 +6,32 @@ import { NotesPanel } from "@/components/notes-panel";
 import { QAPanel } from "@/components/qa-panel";
 import { VideoPanel } from "@/components/video-panel";
 import { fetchLesson, getClientApiBaseUrl } from "@/lib/api";
+import { buildPageMetadata } from "@/lib/metadata";
 
 type LessonPageProps = {
   params: Promise<{ slug: string }>;
 };
+
+export async function generateMetadata({ params }: LessonPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const lesson = await fetchLesson(slug).catch(() => null);
+
+  if (!lesson) {
+    return buildPageMetadata({
+      title: "Lesson unavailable",
+      description: "The requested QC+AI lesson could not be loaded.",
+      path: `/lessons/${slug}`,
+      index: false,
+    });
+  }
+
+  return buildPageMetadata({
+    title: lesson.title,
+    description: lesson.summary,
+    path: `/lessons/${lesson.slug}`,
+    type: "article",
+  });
+}
 
 export default async function LessonPage({ params }: LessonPageProps) {
   const { slug } = await params;

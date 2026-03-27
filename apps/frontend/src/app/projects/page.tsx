@@ -1,7 +1,18 @@
+import type { Metadata } from "next";
+
 import { PageErrorState } from "@/components/page-state";
 import { ProjectsStudio } from "@/components/projects-studio";
 import { fetchMyProjectSubmissions, fetchProjectCatalog, fetchProjectReviewQueue } from "@/lib/api";
+import { buildPageMetadata } from "@/lib/metadata";
 
+export const dynamic = "force-dynamic";
+export const metadata: Metadata = buildPageMetadata({
+  title: "Project Studio",
+  description:
+    "Private QC+AI project workspace for submissions, peer review, and live drafting feedback.",
+  path: "/projects",
+  index: false,
+});
 
 export default async function ProjectsPage() {
   const data = await Promise.all([

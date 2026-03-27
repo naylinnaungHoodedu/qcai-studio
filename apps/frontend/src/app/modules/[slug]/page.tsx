@@ -1,11 +1,34 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { fetchModule } from "@/lib/api";
+import { buildPageMetadata } from "@/lib/metadata";
 
 type ModulePageProps = {
   params: Promise<{ slug: string }>;
 };
+
+export async function generateMetadata({ params }: ModulePageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const data = await fetchModule(slug).catch(() => null);
+
+  if (!data) {
+    return buildPageMetadata({
+      title: "Module unavailable",
+      description: "The requested QC+AI module could not be loaded.",
+      path: `/modules/${slug}`,
+      index: false,
+    });
+  }
+
+  return buildPageMetadata({
+    title: data.module.title,
+    description: data.module.summary,
+    path: `/modules/${data.module.slug}`,
+    type: "article",
+  });
+}
 
 export default async function ModulePage({ params }: ModulePageProps) {
   const { slug } = await params;

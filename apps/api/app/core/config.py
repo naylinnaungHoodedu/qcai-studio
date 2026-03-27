@@ -18,6 +18,22 @@ SOURCE_VIDEO_NAMES = [
     "Quantum Computing and Artificial Intelligence 2026.mp4",
     "Industry Use Cases.mp4",
 ]
+SQLITE_URL_PREFIX = "sqlite:///"
+API_ROOT = Path(__file__).resolve().parents[2]
+
+
+def normalize_sqlite_database_url(database_url: str) -> str:
+    if not database_url.startswith(SQLITE_URL_PREFIX):
+        return database_url
+
+    sqlite_path = database_url[len(SQLITE_URL_PREFIX) :]
+    if sqlite_path in {"", ":memory:"}:
+        return database_url
+    if sqlite_path.startswith("/") or (len(sqlite_path) >= 2 and sqlite_path[1] == ":"):
+        return database_url
+
+    normalized_path = (API_ROOT / sqlite_path).resolve()
+    return f"{SQLITE_URL_PREFIX}{normalized_path.as_posix()}"
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -67,6 +83,7 @@ class Settings(BaseSettings):
             self.enable_demo_auth = self.environment.lower() == "development"
         if self.environment.lower() != "development" and any(origin.strip() == "*" for origin in self.allowed_origins):
             raise ValueError("Wildcard ALLOWED_ORIGINS is not permitted outside development.")
+        self.database_url = normalize_sqlite_database_url(self.database_url)
         return self
 
     @property

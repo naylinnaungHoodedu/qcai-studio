@@ -27,6 +27,7 @@ apps/api/qcai_dev.db
 Improvements.txt
 production_website.txt
 07_Production_Deployment_Local_Log.md
+site_audit_qantumlearn.txt
 infra/cloudrun/*.env.yaml
 Vital_Concepts.docx
 2025.mp4

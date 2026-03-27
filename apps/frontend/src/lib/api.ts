@@ -133,8 +133,11 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
   if (requestOptions.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  await applyServerRequestHeaders(headers);
-  applyDemoAuthHeaders(headers);
+  const isPublicRequest = cacheMode === "public";
+  if (!isPublicRequest) {
+    await applyServerRequestHeaders(headers);
+    applyDemoAuthHeaders(headers);
+  }
 
   const method = (requestOptions.method ?? "GET").toUpperCase();
   const fetchOptions = {

@@ -1740,3 +1740,103 @@ Recorded release state:
 - GitHub-safe filtering result:
   - local-only deployment notes remained local only
   - environment-sensitive production details remained outside source control
+
+## 73. Deep Repository and Live-Site Re-Study Completed
+
+The current folder and live public deployment were re-studied in depth after the earlier remediation batch to verify that the previously reported fixes were actually correct in code, tests, and runtime behavior.
+
+Completed re-study work:
+
+- re-read the modified backend, frontend, and logging files involved in the audit remediation batch
+- re-ran local production-mode route inspection for public and private pages instead of relying only on build output
+- traced guest-cookie issuance through the frontend proxy and backend proxy route
+- confirmed the public homepage and syllabus behaved correctly after the public-content caching refactor
+- identified two real correctness issues that still remained from the earlier close-out:
+  - dashboard HTML still serialized a guest learner identifier in the hydration payload even though the visible UI no longer rendered it
+  - backend verification could pass or fail depending on the working directory because the default SQLite URL was relative and the arena leaderboard test assumed a cleaner persistent dataset than the local database guaranteed
+- confirmed the earlier `/builder` and lesson-page cookie confusion was a stale-runtime observation rather than a remaining code defect by rebuilding and retesting from a clean `.next` output
+
+## 74. Audit Correction Batch Implemented
+
+The confirmed defects from the re-study pass were corrected in both the frontend privacy path and the backend verification/configuration layer.
+
+Completed frontend correction work:
+
+- sanitized dashboard server payloads before hydration so learner identifiers are no longer serialized into `/dashboard` HTML
+- kept the dashboard route private and `noindex` while preserving functional guest-session bootstrapping for private analytics access
+
+Completed backend correction work:
+
+- normalized the default SQLite database URL to an absolute path rooted at `apps/api` so test execution no longer changes database selection by working directory
+- forced API test bootstrap initialization so schema creation and course-store readiness are not left to incidental runtime state
+- made the arena leaderboard regression test deterministic against a dirty persistent database by scoring inserted fixtures above the current maximum stored XP instead of assuming an empty leaderboard
+- preserved the previously added public content `HEAD` support and route coverage within the corrected test suite
+
+## 75. Deep Verification and Runtime Confirmation Completed
+
+The corrected batch was verified through automated checks and direct production-mode route inspection from a fresh frontend build.
+
+Completed automated verification work:
+
+- `pytest -q apps/api/tests/test_api.py` run from repository root
+- Result: `38 passed`
+
+- `pytest -q` run in `apps/api`
+- Result: `38 passed`
+
+- `npm run lint` run in `apps/frontend`
+- Result: passed
+
+- `API_BASE_URL=https://api.qantumlearn.academy NEXT_PUBLIC_API_BASE_URL=https://api.qantumlearn.academy npm run build` run in `apps/frontend`
+- Result: passed
+
+Completed runtime confirmation work:
+
+- rebuilt the frontend from a clean `.next` output and launched a fresh local production server
+- confirmed `/` remains public, cacheable, and does not set guest cookies
+- confirmed `/builder` no longer sets guest cookies and returns static public HTML as intended
+- confirmed lesson pages no longer emit guest cookies while still serving the corrected metadata and content behavior
+- confirmed `/dashboard` still sets guest-session cookies and remains private/no-store as intended
+- confirmed `robots.txt` and `sitemap.xml` reflect the corrected crawl policy
+- confirmed lesson metadata, canonical tags, and social metadata resolve correctly
+- confirmed dashboard HTML no longer contains any `guest-...` identifier after hydration-payload sanitization
+
+## 76. GitHub Update Prepared for Audit Verification Release
+
+The repository was prepared for a GitHub-safe publication of the audit-correction and verification batch while keeping local-only audit artifacts out of source control.
+
+Completed publication-preparation work:
+
+- updated the completed-activities log with the deep re-study, correction, and verification record
+- added a local-only ignore rule for the ad hoc site audit worksheet so the publication remains focused on the durable implementation and verification record
+- confirmed the GitHub-safe change set includes:
+  - frontend public/private route behavior corrections
+  - dashboard hydration privacy sanitization
+  - metadata, robots, sitemap, and guest-session infrastructure introduced by the audit remediation batch
+  - backend SQLite-path normalization and deterministic regression coverage
+- confirmed local-only audit scratch notes remain excluded from source control
+
+## 77. GitHub Project Updated for Audit Verification Release
+
+The completed audit-correction and verification batch was committed and pushed to the live GitHub project after the local logging pass was finalized.
+
+Completed publication work:
+
+- created a new feature commit on `main`:
+  - message: `Refine audit fixes and log the verification corrections`
+- updated the GitHub-safe completed-activities record for this release by adding:
+  - sections `73` through `77` in `04_Completed_Activities_Log.md`
+- pushed the updated branch to:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+
+Recorded release state:
+
+- automated verification supporting the published change set:
+  - backend tests from repo root: `38 passed`
+  - backend tests from `apps/api`: `38 passed`
+  - frontend lint: passed
+  - frontend build: passed
+  - local production-mode smoke verification: passed
+- GitHub-safe filtering result:
+  - local-only site audit worksheet remained local only

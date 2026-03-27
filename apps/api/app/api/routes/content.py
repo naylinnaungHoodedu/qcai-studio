@@ -24,10 +24,19 @@ router = APIRouter(prefix="/content", tags=["content"])
 PUBLIC_CONTENT_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=60"
 
 
+def _public_content_head_response() -> Response:
+    return Response(status_code=200, headers={"Cache-Control": PUBLIC_CONTENT_CACHE_CONTROL})
+
+
 @router.get("/course", response_model=CourseOverview)
 def get_course(response: Response):
     response.headers["Cache-Control"] = PUBLIC_CONTENT_CACHE_CONTROL
     return get_course_store().overview
+
+
+@router.head("/course")
+def head_course():
+    return _public_content_head_response()
 
 
 @router.get("/modules/{module_slug}")
@@ -41,6 +50,14 @@ def get_module(module_slug: str, response: Response):
     return {"module": module, "lessons": lessons}
 
 
+@router.head("/modules/{module_slug}")
+def head_module(module_slug: str):
+    store = get_course_store()
+    if module_slug not in store.modules:
+        raise HTTPException(status_code=404, detail="Module not found.")
+    return _public_content_head_response()
+
+
 @router.get("/lessons/{lesson_slug}", response_model=LessonDetail)
 def get_lesson(lesson_slug: str, response: Response):
     store = get_course_store()
@@ -49,6 +66,14 @@ def get_lesson(lesson_slug: str, response: Response):
         raise HTTPException(status_code=404, detail="Lesson not found.")
     response.headers["Cache-Control"] = PUBLIC_CONTENT_CACHE_CONTROL
     return lesson
+
+
+@router.head("/lessons/{lesson_slug}")
+def head_lesson(lesson_slug: str):
+    store = get_course_store()
+    if lesson_slug not in store.lessons:
+        raise HTTPException(status_code=404, detail="Lesson not found.")
+    return _public_content_head_response()
 
 
 @router.get("/progress", response_model=CourseProgress)
