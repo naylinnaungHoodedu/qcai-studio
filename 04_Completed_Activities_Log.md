@@ -2044,18 +2044,28 @@ Completed publication-preparation work:
 
 ## 87. GitHub Project Update Completed for Production Remediation Batch
 
-The completed remediation and verification batch was prepared for publication to the GitHub repository project after the local logging pass was updated.
+The completed remediation and verification batch was committed and pushed to the GitHub repository project after the local logging pass was updated.
 
 Completed publication scope:
 
 - local activity log updated with sections `83` through `87`
-- repository publication prepared for:
+- repository publication completed for:
   - the arena first-render correction
   - the builder first-render correction
   - the account/builder guest-session bootstrap correction
   - the builder feed privacy cleanup
   - the hydration-risk fix identified during double-checking
+- created and pushed the production-remediation commit on `main`:
+  - commit: `fe44963`
+  - message: `Fix private page first render and log remediation batch`
+- pushed the updated branch to:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+- rechecked GitHub Projects CLI access after publication:
+  - command: `gh project list --owner naylinnaungHoodedu`
+  - result: blocked by missing `read:project` token scope
 
-Pending publication note at log-update time:
+Recorded publication result:
 
-- the final commit hash and push result for this batch were still to be recorded immediately after the GitHub publication step
+- repository update: completed successfully
+- separate GitHub Projects board mutation: still blocked by token scope, not by repository state
