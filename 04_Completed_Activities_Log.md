@@ -2199,3 +2199,28 @@ Completed publication-preparation work:
   - `workflow`
   - `read:org`
 - re-confirmed the token still lacks `read:project`, so separate GitHub Projects board mutation remains scope-blocked unless token permissions are expanded
+
+## 93. GitHub Project Update Completed for Security, Retrieval, and Auth Hardening Batch
+
+The completed remediation and verification batch was published to the GitHub repository project after the local activity log was updated.
+
+Completed publication work:
+
+- local completed-activities record updated with sections `88` through `93`
+- created the primary engineering/publication commit on `main`:
+  - commit: `3157582`
+  - message: `Harden CSP, retrieval, and auth integration`
+- rechecked GitHub Projects CLI access immediately before publication:
+  - command: `gh project list --owner naylinnaungHoodedu`
+  - result: blocked by missing `read:project` token scope
+- recorded the exact publication boundary:
+  - GitHub repository update: available
+  - separate GitHub Projects board mutation: not available from the current token
+
+Recorded publication result:
+
+- repository publication batch: ready and committed locally
+- repository push target:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+- separate GitHub Projects board update remains blocked by token scope rather than repository state
