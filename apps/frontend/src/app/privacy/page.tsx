@@ -23,6 +23,7 @@ export default function PrivacyPage() {
       <section className="panel legal-copy">
         <h2>What the app stores</h2>
         <p>Guest sessions use browser cookies to identify the active learner and protect same-site mutations.</p>
+        <p>The public deployment uses those guest sessions for open-demo learner access when Auth0 sign-in is not configured on the client.</p>
         <p>Authenticated access, when configured, uses Auth0-issued credentials so the backend can resolve a stable user identity.</p>
         <p>Notes, quiz attempts, analytics events, builder submissions, project submissions, peer reviews, and learner-profile settings may be persisted to support the learning experience.</p>
         <h2>How data is used</h2>

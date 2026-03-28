@@ -50,8 +50,9 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
         <p className="eyebrow">Account access</p>
         <h1>Guest sessions and authenticated access</h1>
         <p className="hero-text">
-          Guest activity works immediately in the current browser, but it does not follow you across devices.
-          Authenticated access is the path to persistent identity when Auth0 client configuration is available.
+          This deployment supports guest study sessions immediately in the current browser, but that activity does
+          not follow you across devices. Production keeps demo-header auth disabled; persistent identity depends on
+          Auth0 client configuration being exposed for this deployment.
         </p>
       </section>
 
@@ -100,7 +101,9 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
             </div>
           </div>
           <p className="muted">
-            The backend already accepts Auth0-issued bearer tokens. This UI now exposes the account entry point instead of hiding the authenticated path behind backend-only wiring.
+            The backend already accepts Auth0-issued bearer tokens. On the live public deployment, open-demo access
+            is handled through guest cookies plus CSRF protection, while demo-header auth remains disabled outside
+            development.
           </p>
           <div className="stack">
             {auth0Configured ? (

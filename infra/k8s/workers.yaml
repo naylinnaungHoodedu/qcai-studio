@@ -15,14 +15,14 @@ spec:
     spec:
       containers:
         - name: ingestion-worker
-          image: gcr.io/PROJECT_ID/qcai-api:latest
+          image: us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-api:latest
           command: ["python", "-m", "app.workers.ingestion"]
           envFrom:
             - configMapRef:
                 name: qcai-config
             - secretRef:
                 name: qcai-secrets
-                optional: true
+                optional: false
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -41,14 +41,14 @@ spec:
     spec:
       containers:
         - name: rag-worker
-          image: gcr.io/PROJECT_ID/qcai-api:latest
+          image: us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-api:latest
           command: ["python", "-m", "app.workers.rag"]
           envFrom:
             - configMapRef:
                 name: qcai-config
             - secretRef:
                 name: qcai-secrets
-                optional: true
+                optional: false
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -67,11 +67,11 @@ spec:
     spec:
       containers:
         - name: analytics-worker
-          image: gcr.io/PROJECT_ID/qcai-api:latest
+          image: us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-api:latest
           command: ["python", "-m", "app.workers.analytics"]
           envFrom:
             - configMapRef:
                 name: qcai-config
             - secretRef:
                 name: qcai-secrets
-                optional: true
+                optional: false

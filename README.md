@@ -80,8 +80,10 @@ docker build -f apps/frontend/Dockerfile -t qcai-frontend .
 ## Key implementation notes
 
 - The backend assembles the course around the three curated local `.docx` sources listed above, including the industry-use-cases module grounded in the added DOCX.
-- Video chapters are currently driven by curated chapter metadata; transcript JSON files can later be dropped into a `transcripts/` directory at the repository root.
-- QA uses a grounded local retrieval fallback by default and upgrades to OpenAI-backed RAG when `OPENAI_API_KEY` is configured.
+- Background workers are real Python entrypoints and can be invoked directly with `python -m app.workers.ingestion`, `python -m app.workers.rag`, and `python -m app.workers.analytics`.
+- Video chapters are currently driven by curated chapter metadata; transcript JSON files can be dropped into the repository-root `transcripts/` directory using the format documented in `transcripts/README.md`.
+- QA uses grounded lexical retrieval by default and upgrades to Pinecone-backed hybrid retrieval only when `OPENAI_API_KEY`, `PINECONE_API_KEY`, and `PINECONE_INDEX` are all configured.
+- The current public Cloud Run deployment is running in `production` with `ENABLE_DEMO_AUTH=false`; open-demo learner access is provided through guest cookies and CSRF-protected same-site mutations rather than demo-header auth.
 - The frontend now proxies browser-side API requests and source-asset streaming through a same-origin Next.js route so deployed clients do not compile in a `localhost` API URL.
 - Source assets now require authenticated or demo-authenticated access and video files support byte-range requests for reliable seeking.
 - Quiz attempts and learner interactions are wired into the existing backend persistence and analytics endpoints.

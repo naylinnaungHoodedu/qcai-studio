@@ -139,6 +139,15 @@ CURATED_VIDEO_CHAPTERS: dict[str, list[VideoChapter]] = {
 }
 
 
+def _mark_curated_transcript_status(chapters: list[VideoChapter]) -> list[VideoChapter]:
+    return [
+        chapter
+        if chapter.transcript_status != "chapter_summary_only"
+        else chapter.model_copy(update={"transcript_status": "curated_chapter_summary"})
+        for chapter in chapters
+    ]
+
+
 def load_video_chapters(transcripts_dir: Path, filename: str) -> list[VideoChapter]:
     transcript_file = transcripts_dir / f"{Path(filename).stem}.json"
     if transcript_file.exists():
@@ -147,4 +156,4 @@ def load_video_chapters(transcripts_dir: Path, filename: str) -> list[VideoChapt
             return [VideoChapter.model_validate(item) for item in data.get("chapters", [])]
         except Exception:
             pass
-    return CURATED_VIDEO_CHAPTERS.get(filename, [])
+    return _mark_curated_transcript_status(CURATED_VIDEO_CHAPTERS.get(filename, []))

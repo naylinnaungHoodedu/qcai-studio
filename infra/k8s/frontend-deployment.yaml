@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: gcr.io/PROJECT_ID/qcai-frontend:latest
+          image: us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest
           ports:
             - containerPort: 3000
           envFrom:

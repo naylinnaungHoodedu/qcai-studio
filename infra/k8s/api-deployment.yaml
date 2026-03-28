@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: gcr.io/PROJECT_ID/qcai-api:latest
+          image: us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-api:latest
           ports:
             - containerPort: 8000
           envFrom:
@@ -23,7 +23,7 @@ spec:
                 name: qcai-config
             - secretRef:
                 name: qcai-secrets
-                optional: true
+                optional: false
 ---
 apiVersion: v1
 kind: Service

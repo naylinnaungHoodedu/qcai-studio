@@ -70,7 +70,7 @@ const ENGINEERING_SURFACES = [
       "QC+AI Studio uses retrieval-first AI services so niche quantum topics stay tied to evidence instead of model improvisation.",
     bullets: [
       "LangChain and OpenAI GPT-4.1-mini drive citation-first Q&A against the curated corpus.",
-      "Pinecone is available for production retrieval, with local grounded fallbacks for resilient development and demos.",
+      "Pinecone-backed hybrid retrieval activates only when OpenAI and Pinecone secrets are provisioned; otherwise the platform stays on grounded lexical fallback.",
       "Adaptive insights, skill-gap reporting, and next-step recommendations extend the platform beyond static content delivery.",
     ],
   },

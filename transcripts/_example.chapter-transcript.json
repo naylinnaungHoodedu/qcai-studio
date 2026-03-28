@@ -1,0 +1,13 @@
+{
+  "chapters": [
+    {
+      "id": "example-intro",
+      "title": "Example transcript span",
+      "timestamp_start": 0,
+      "timestamp_end": 45,
+      "summary": "Example summary for an aligned transcript chapter.",
+      "transcript_excerpt": "This is where the time-synced transcript excerpt would go.",
+      "transcript_status": "aligned_transcript"
+    }
+  ]
+}

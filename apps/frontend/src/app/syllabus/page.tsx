@@ -5,6 +5,7 @@ import { PageErrorState } from "@/components/page-state";
 import { fetchCourseOverview } from "@/lib/api";
 import { COURSE_REFERENCES } from "@/lib/course-references";
 import { buildPageMetadata } from "@/lib/metadata";
+import { splitSyllabusAssets } from "@/lib/syllabus";
 
 export const metadata: Metadata = buildPageMetadata({
   title: "Syllabus",
@@ -23,6 +24,7 @@ export default async function SyllabusPage() {
       />
     );
   }
+  const { documentAssets, supplementalAssets } = splitSyllabusAssets(course.source_assets);
 
   return (
     <div className="page-stack">
@@ -66,7 +68,11 @@ export default async function SyllabusPage() {
       <section className="section-block">
         <div className="section-heading">
           <p className="eyebrow">Sources</p>
-          <h2>References and local assets</h2>
+          <h2>References and course media</h2>
+          <p>
+            The numbered bibliography below represents the curated document corpus. The supplemental asset list focuses on
+            non-document media so the same references are not rendered twice.
+          </p>
         </div>
         <ol className="reference-list">
           {COURSE_REFERENCES.map((reference, index) => (
@@ -76,15 +82,24 @@ export default async function SyllabusPage() {
             </li>
           ))}
         </ol>
-        <ul className="source-list compact">
-          {course.source_assets.map((asset) => (
-            <li key={asset.id}>
-              <span>{asset.kind}</span>
-              <strong>{asset.title}</strong>
-              <p className="muted">{asset.filename}</p>
-            </li>
-          ))}
-        </ul>
+        {documentAssets.length ? (
+          <p className="muted">
+            {documentAssets.length} curated document asset{documentAssets.length === 1 ? "" : "s"} are already represented in citation form above.
+          </p>
+        ) : null}
+        {supplementalAssets.length ? (
+          <ul className="source-list compact">
+            {supplementalAssets.map((asset) => (
+              <li key={asset.id}>
+                <span>{asset.kind}</span>
+                <strong>{asset.title}</strong>
+                <p className="muted">{asset.filename}</p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">No supplemental non-document assets were published for this syllabus snapshot.</p>
+        )}
       </section>
     </div>
   );
