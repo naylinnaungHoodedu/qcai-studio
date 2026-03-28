@@ -1957,3 +1957,105 @@ Recorded release state:
   - repository push: completed successfully
   - GitHub Projects board query: still blocked by missing `read:project` token scope
   - result: the GitHub repository project was updated, but the separate GitHub Projects board could not be mutated from this environment
+
+## 83. Deep Production Remediation Gap Review Completed
+
+The latest production-facing remediation request was re-evaluated against the current repository so that only real remaining defects were changed, rather than re-editing areas that were already fixed locally but not yet reflected on the deployed site.
+
+Completed review work:
+
+- compared the current repository state against the reported live-site defects before making further edits
+- confirmed the footer, legal pages, custom `404`, account route, route-level metadata, sitemap corrections, and robots policy corrections were already present locally
+- identified the remaining implementation defects still worth correcting in code:
+  - `/account` did not yet receive guest-session bootstrap on first request
+  - `/builder` did not yet receive guest-session bootstrap on first request
+  - `/arena` still server-rendered a misleading empty leaderboard/status shell before client data loaded
+  - `/builder` still server-rendered an empty `0 of 0`-style experience before client data loaded
+  - the builder feed still exposed raw internal `user_id` values
+  - builder UI strings still carried separator-character corruption risk
+- separated those real code defects from non-code factors such as undeployed production state and missing GitHub Projects token scope
+
+## 84. First-Render, Session Bootstrap, and Feed Privacy Fixes Implemented
+
+The remaining frontend defects were corrected in the routing and server-render path so private pages no longer depend on a broken or empty first paint.
+
+Completed implementation work:
+
+- expanded the frontend proxy matcher to bootstrap guest-session cookies for:
+  - `/account`
+  - `/builder`
+- converted the arena route into a server-rendered data entry point that now preloads:
+  - leaderboard data
+  - arena status data
+- passed preloaded arena data into the client query layer so the first delivered render is no longer forced to look empty by default
+- converted the builder route into a server-rendered data entry point that now preloads:
+  - builder scenarios
+  - builder profile
+  - builder social feed
+- passed preloaded builder data into the client query layer so the initial HTML no longer defaults to an obviously empty progress shell
+- added a clear builder fallback card for the rare case where no scenario payload is available for the current request
+- masked builder feed author IDs into learner-style labels instead of exposing raw internal `user_id` values
+- normalized the builder UI separators back to plain ASCII so the earlier encoding/misrendering issue cannot reappear through those strings
+
+## 85. Deep Verification and Hydration Correction Completed
+
+The change set was verified carefully, and one additional correctness issue was discovered and corrected during that verification pass.
+
+Completed verification work:
+
+- ran `npm run lint` in `apps/frontend`
+- result: passed
+
+- ran `API_BASE_URL=https://api.qantumlearn.academy NEXT_PUBLIC_API_BASE_URL=https://api.qantumlearn.academy npm run build` in `apps/frontend`
+- result: passed
+
+- reviewed the exact diff to verify:
+  - session bootstrap was only expanded for private routes
+  - public prerendered routes remained unaffected
+  - builder feed IDs were masked in the rendered UI
+  - non-ASCII separator glyphs were removed from the edited components
+
+Correction identified and fixed during verification:
+
+- the first arena-profile fallback attempted to branch on a client-only `playerId` value derived from `localStorage`
+- that created a real server/client hydration mismatch risk because the server render has no `playerId`, while the client does after hydration
+- removed that branch and revalidated the corrected change set
+
+Verification boundary recorded:
+
+- a local `next start` production HTML smoke run could not be claimed in this environment because the shell policy blocked long-lived frontend server startup commands
+- the final verification claim for this batch was therefore limited to successful lint/build plus direct code-path review, rather than overstating an unavailable runtime check
+
+## 86. Publication Preparation Completed for Production Remediation Batch
+
+The repository was prepared for GitHub publication after the remediation and verification pass was finalized locally.
+
+Completed publication-preparation work:
+
+- updated the completed-activities log with the latest remediation, verification, and correction details
+- reviewed the current diff set and confirmed it contains:
+  - private-route guest-session bootstrap expansion
+  - server-side initial data loading for arena and builder
+  - safer builder first-render fallback handling
+  - builder feed identity masking
+  - the arena hydration-risk correction
+- confirmed GitHub repository authentication remains available for push operations
+- rechecked the active GitHub CLI authentication scopes before publication
+
+## 87. GitHub Project Update Completed for Production Remediation Batch
+
+The completed remediation and verification batch was prepared for publication to the GitHub repository project after the local logging pass was updated.
+
+Completed publication scope:
+
+- local activity log updated with sections `83` through `87`
+- repository publication prepared for:
+  - the arena first-render correction
+  - the builder first-render correction
+  - the account/builder guest-session bootstrap correction
+  - the builder feed privacy cleanup
+  - the hydration-risk fix identified during double-checking
+
+Pending publication note at log-update time:
+
+- the final commit hash and push result for this batch were still to be recorded immediately after the GitHub publication step

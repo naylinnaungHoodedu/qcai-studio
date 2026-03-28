@@ -11,7 +11,13 @@ import {
   shareBuilderScenario,
   submitBuilderScenario,
 } from "@/lib/api";
-import { BuilderFeedItem, BuilderScenario, BuilderSubmissionResult } from "@/lib/types";
+import { BuilderFeedItem, BuilderProfile, BuilderScenario, BuilderSubmissionResult } from "@/lib/types";
+
+type BuilderStudioProps = {
+  initialScenarios?: BuilderScenario[];
+  initialProfile?: BuilderProfile | null;
+  initialFeed?: BuilderFeedItem[];
+};
 
 function toErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
@@ -21,11 +27,20 @@ function formatDateLabel(value: string): string {
   return new Date(value).toLocaleString();
 }
 
+function formatFeedAuthorLabel(userId: string): string {
+  const suffix = userId.replace(/[^a-zA-Z0-9]/g, "").slice(-4).toUpperCase();
+  return suffix ? `Learner ${suffix}` : "Learner";
+}
+
 function cx(...tokens: Array<string | false | null | undefined>): string {
   return tokens.filter(Boolean).join(" ");
 }
 
-export function BuilderStudio() {
+export function BuilderStudio({
+  initialScenarios = [],
+  initialProfile = null,
+  initialFeed = [],
+}: BuilderStudioProps) {
   const queryClient = useQueryClient();
   const [selectedScenarioSlug, setSelectedScenarioSlug] = useState("");
   const [placements, setPlacements] = useState<Record<string, string>>({});
@@ -36,14 +51,17 @@ export function BuilderStudio() {
   const scenariosQuery = useQuery({
     queryKey: ["builder-scenarios"],
     queryFn: fetchBuilderScenarios,
+    initialData: initialScenarios,
   });
   const profileQuery = useQuery({
     queryKey: ["builder-profile"],
     queryFn: fetchBuilderProfile,
+    initialData: initialProfile ?? undefined,
   });
   const feedQuery = useQuery({
     queryKey: ["builder-feed"],
     queryFn: () => fetchBuilderFeed(),
+    initialData: initialFeed,
   });
 
   const scenarios = useMemo(() => scenariosQuery.data ?? [], [scenariosQuery.data]);
@@ -53,6 +71,7 @@ export function BuilderStudio() {
       ? selectedScenarioSlug
       : (scenarios.find((item) => item.unlocked && !item.completed) ?? scenarios[0])?.slug ?? "";
   const selectedScenario = scenarioMap.get(activeScenarioSlug) ?? scenarios[0];
+  const workbenchTitle = selectedScenario?.title ?? (scenarios.length ? scenarios[0].title : "No scenario available");
 
   const submitMutation = useMutation({
     mutationFn: ({ slug, map }: { slug: string; map: Record<string, string> }) => submitBuilderScenario(slug, map),
@@ -193,7 +212,7 @@ export function BuilderStudio() {
                 <strong>{scenario.title}</strong>
                 <p>{scenario.summary}</p>
                 <p className="muted">
-                  {scenario.completed ? "Completed" : scenario.unlocked ? "Unlocked" : "Locked"} · best{" "}
+                  {scenario.completed ? "Completed" : scenario.unlocked ? "Unlocked" : "Locked"} | best{" "}
                   {scenario.best_completion_percent}%
                 </p>
               </button>
@@ -205,7 +224,7 @@ export function BuilderStudio() {
           <div className="panel-header">
             <div>
               <p className="eyebrow">Workbench</p>
-              <h2>{selectedScenario?.title ?? "Loading scenario"}</h2>
+              <h2>{workbenchTitle}</h2>
             </div>
             <div className="button-row">
               <span className="status-pill in_progress">{selectedScenario?.domain ?? "..."}</span>
@@ -214,10 +233,7 @@ export function BuilderStudio() {
           </div>
 
           <div className="builder-grid">
-            <div
-              className="builder-canvas"
-              onDragOver={(event) => event.preventDefault()}
-            >
+            <div className="builder-canvas" onDragOver={(event) => event.preventDefault()}>
               {selectedScenario ? (
                 <>
                   <svg className="builder-lines" preserveAspectRatio="none" viewBox="0 0 100 100">
@@ -279,7 +295,15 @@ export function BuilderStudio() {
                     );
                   })}
                 </>
-              ) : null}
+              ) : (
+                <article className="empty-state-card">
+                  <strong>No scenario available yet</strong>
+                  <p className="muted">
+                    The builder could not load an unlocked scenario for this request. Refresh the page to retry the
+                    current guest session.
+                  </p>
+                </article>
+              )}
             </div>
 
             <div className="stack">
@@ -324,13 +348,13 @@ export function BuilderStudio() {
                 <article className="builder-result-card">
                   <p className="eyebrow">Latest result</p>
                   <h3>
-                    {lastResult.completed ? "Circuit complete" : "Partial circuit"} · {lastResult.completion_percent}%
+                    {lastResult.completed ? "Circuit complete" : "Partial circuit"} | {lastResult.completion_percent}%
                   </h3>
                   <p>
-                    {lastResult.correct_slots} / {lastResult.total_slots} slots matched · +{lastResult.points_earned} points
+                    {lastResult.correct_slots} / {lastResult.total_slots} slots matched | +{lastResult.points_earned} points
                   </p>
                   <p className="muted">
-                    Streak {lastResult.current_streak} · badges {lastResult.badges.join(", ") || "none yet"}
+                    Streak {lastResult.current_streak} | badges {lastResult.badges.join(", ") || "none yet"}
                   </p>
                   {lastResult.unlocked_next_slug ? (
                     <p className="muted">Unlocked next scenario: {lastResult.unlocked_next_slug}</p>
@@ -394,7 +418,7 @@ export function BuilderStudio() {
               <article className="citation-card" key={item.id}>
                 <strong>{item.scenario_title}</strong>
                 <p className="muted">
-                  {item.user_id} · {item.completion_percent}% · {formatDateLabel(item.created_at)}
+                  {formatFeedAuthorLabel(item.user_id)} | {item.completion_percent}% | {formatDateLabel(item.created_at)}
                 </p>
                 <p>{item.caption}</p>
               </article>
@@ -403,7 +427,8 @@ export function BuilderStudio() {
               <article className="empty-state-card">
                 <strong>No shared maps yet</strong>
                 <p className="muted">
-                  This deployment has not accumulated community builder activity yet. Solve a circuit and publish the first shared learning map.
+                  This deployment has not accumulated community builder activity yet. Solve a circuit and publish the
+                  first shared learning map.
                 </p>
                 <div className="button-row">
                   <button className="primary-button" onClick={checkCircuit} type="button">

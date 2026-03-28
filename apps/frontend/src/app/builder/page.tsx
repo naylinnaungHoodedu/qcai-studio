@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 
 import { BuilderStudio } from "@/components/builder-studio";
+import { fetchBuilderFeed, fetchBuilderProfile, fetchBuilderScenarios } from "@/lib/api";
 import { buildPageMetadata } from "@/lib/metadata";
+import { BuilderFeedItem, BuilderProfile, BuilderScenario } from "@/lib/types";
 
+export const dynamic = "force-dynamic";
 export const metadata: Metadata = buildPageMetadata({
   title: "Microlearning Builder",
   description:
@@ -11,6 +14,24 @@ export const metadata: Metadata = buildPageMetadata({
   index: false,
 });
 
-export default function BuilderPage() {
-  return <BuilderStudio />;
+export default async function BuilderPage() {
+  const [scenariosResult, profileResult, feedResult] = await Promise.allSettled([
+    fetchBuilderScenarios(),
+    fetchBuilderProfile(),
+    fetchBuilderFeed(),
+  ]);
+  const initialScenarios: BuilderScenario[] =
+    scenariosResult.status === "fulfilled" ? scenariosResult.value : [];
+  const initialProfile: BuilderProfile | null =
+    profileResult.status === "fulfilled" ? profileResult.value : null;
+  const initialFeed: BuilderFeedItem[] =
+    feedResult.status === "fulfilled" ? feedResult.value : [];
+
+  return (
+    <BuilderStudio
+      initialFeed={initialFeed}
+      initialProfile={initialProfile}
+      initialScenarios={initialScenarios}
+    />
+  );
 }

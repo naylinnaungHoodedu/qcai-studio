@@ -5,10 +5,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { fetchArenaLeaderboard, fetchArenaProfile, fetchArenaStatus } from "@/lib/api";
-import { ArenaLeaderboardEntry, ArenaProfile } from "@/lib/types";
+import { ArenaLeaderboardEntry, ArenaProfile, ArenaStatus } from "@/lib/types";
 
 type ArenaPanelProps = {
   apiBaseUrl: string;
+  initialLeaderboard?: ArenaLeaderboardEntry[];
+  initialStatus?: ArenaStatus | null;
 };
 
 type ArenaMessage = {
@@ -108,7 +110,7 @@ function formatConnectionState(state: string): string {
   return "Idle";
 }
 
-export function ArenaPanel({ apiBaseUrl }: ArenaPanelProps) {
+export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus }: ArenaPanelProps) {
   const queryClient = useQueryClient();
   const socketRef = useRef<WebSocket | null>(null);
   const [playerId] = useState(() => (typeof window === "undefined" ? "" : ensurePlayerId()));
@@ -169,12 +171,14 @@ export function ArenaPanel({ apiBaseUrl }: ArenaPanelProps) {
   const leaderboardQuery = useQuery({
     queryKey: ["arena-leaderboard"],
     queryFn: fetchArenaLeaderboard,
+    initialData: initialLeaderboard,
     refetchInterval: 15_000,
   });
 
   const statusQuery = useQuery({
     queryKey: ["arena-status"],
     queryFn: fetchArenaStatus,
+    initialData: initialStatus ?? undefined,
     refetchInterval: 5_000,
   });
 
@@ -291,6 +295,9 @@ export function ArenaPanel({ apiBaseUrl }: ArenaPanelProps) {
   }
 
   function renderProfile(profile?: ArenaProfile) {
+    if (profileQuery.isError) {
+      return <p className="muted">The arena profile could not be loaded for this browser session.</p>;
+    }
     if (!profile) {
       return <p className="muted">Arena profile is loading.</p>;
     }
