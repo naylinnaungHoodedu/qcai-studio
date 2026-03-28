@@ -2334,3 +2334,26 @@ Recorded publication boundary:
 
 - GitHub repository update: available
 - separate GitHub Projects board mutation: still blocked by token scope rather than repository state
+
+## 98. GitHub Project Update Completed for About Page Release
+
+The completed About-page release was published to the GitHub repository project after the local activity and deployment logs were updated.
+
+Completed publication work:
+
+- local completed-activities record updated with sections `94` through `98`
+- local-only deployment record updated with the About-page rollout details, build id, revision id, and live verification snapshot
+- created and pushed the About-page release commit on `main`:
+  - commit: `58527d7`
+  - message: `Ship About page and log release rollout`
+- pushed the updated branch to:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+- rechecked GitHub Projects CLI access after repository publication:
+  - command: `gh project list --owner naylinnaungHoodedu`
+  - result: blocked by missing `read:project` token scope
+
+Recorded publication result:
+
+- GitHub repository update: completed successfully
+- separate GitHub Projects board mutation: still blocked by token scope rather than repository state
