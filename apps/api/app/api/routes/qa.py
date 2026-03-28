@@ -1,11 +1,13 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.auth import AuthUser, get_current_user
 from app.core.db import get_db
+from app.core.config import get_settings
+from app.core.rate_limit import limiter
 from app.db_models import QAInteraction
 from app.schemas import Citation, QAHistoryItem, QARequest, QAResponse
 from app.services.store import get_qa_engine
@@ -15,7 +17,10 @@ router = APIRouter(prefix="/qa", tags=["qa"])
 
 
 @router.post("/ask", response_model=QAResponse)
+@limiter.limit(lambda: get_settings().qa_ask_rate_limit)
 def ask_question(
+    request: Request,
+    response: Response,
     payload: QARequest,
     db: Session = Depends(get_db),
     user: AuthUser = Depends(get_current_user),

@@ -56,6 +56,8 @@ def _lesson_blueprint(
     learner_questions: list[str],
     section_refs: list[str],
     video_file: str | None,
+    flashcards: list[tuple[str, str, str]] | None = None,
+    quiz: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return {
         "slug": slug,
@@ -67,7 +69,22 @@ def _lesson_blueprint(
         "learner_questions": learner_questions,
         "section_refs": section_refs,
         "video_file": video_file,
+        "flashcards": flashcards or [],
+        "quiz": quiz or [],
     }
+
+
+def _module_lessons(blueprint: dict[str, Any]) -> list[dict[str, Any]]:
+    lessons = blueprint.get("lessons")
+    if lessons:
+        return lessons
+
+    lesson = dict(blueprint["lesson"])
+    if not lesson.get("flashcards"):
+        lesson["flashcards"] = blueprint.get("flashcards", [])
+    if not lesson.get("quiz"):
+        lesson["quiz"] = blueprint.get("quiz", [])
+    return [lesson]
 
 
 MODULE_BLUEPRINTS: list[dict[str, Any]] = [
@@ -207,56 +224,96 @@ MODULE_BLUEPRINTS: list[dict[str, Any]] = [
             "Quantum-Enhanced Reinforcement Learning in Safety-Critical Clinical Control (2026)",
             "Quantum Kernel Methods for High-Dimensional Biomedical Imaging (2026)",
         ],
-        "lesson": _lesson_blueprint(
-            slug="hybrid-applications-healthcare-vision",
-            title="Hybrid QC+AI Architectures in Practice",
-            summary="Surveys application families in which quantum layers operate as targeted representational or decision-making components rather than total model replacements.",
-            key_ideas=[
-                "The most credible pattern is to place the quantum circuit at a narrow, expressive bottleneck.",
-                "Healthcare and scientific-vision examples show how quantum kernels and variational layers can be embedded inside classical pipelines.",
-                "Operational realism comes from identifying exactly what the quantum subroutine is supposed to improve.",
-            ],
-            key_notes=[
-                "QC-DQN is a hybrid clinical-control example, not a claim that quantum RL broadly supersedes classical RL.",
-                "QUEN, QViT, and quantum-classical GNNs all preserve substantial classical structure around the quantum part.",
-            ],
-            formulas=[
-                "Bellman-style value updates for reinforcement learning, interpreted in a hybrid QC-DQN setting.",
-                "Kernel similarity as a fidelity-style overlap between encoded quantum states.",
-            ],
-            learner_questions=[
-                "Why do these application papers keep the quantum circuit at the feature bottleneck?",
-                "What does a quantum kernel add in the aneurysm classification example?",
-                "How should a practitioner assess whether these applications are mature enough for deployment?",
-            ],
-            section_refs=[
-                "Quantum Vision Transformers in High-Energy Physics",
-                "Quantum-Classical Graph Neural Networks for Particle Jet Tagging",
-                "Quantum Diffusion Models for Few-Shot Learning",
-                "Quantum-Enhanced Reinforcement Learning in Safety-Critical Clinical Control",
-                "Quantum Kernel Methods for High-Dimensional Biomedical Imaging",
-            ],
-            video_file="Quantum Computing and Artificial Intelligence 2026.mp4",
-        ),
-        "flashcards": [
-            ("intro", "What is a common placement for the quantum component in practical hybrid models?", "At a compact feature bottleneck, kernel layer, or classifier head."),
-            ("intermediate", "Why is QUEN interesting pedagogically?", "It ties a quantum kernel-style bottleneck to a concrete biomedical imaging task with explicit physical regularization ideas."),
-            ("advanced", "Why should QC-DQN be taught carefully?", "Because it is an instructive hybrid design in a safety-critical setting, but not evidence that quantum RL broadly replaces classical control methods."),
-        ],
-        "quiz": [
-            {
-                "type": "mcq",
-                "prompt": "Which architectural pattern best matches the application cases in the sources?",
-                "choices": [
-                    "Replace all classical layers with a quantum circuit",
-                    "Use the quantum component as a targeted representational or decision bottleneck",
-                    "Avoid any classical preprocessing",
-                    "Assume hardware constraints are secondary once a kernel is used",
+        "lessons": [
+            _lesson_blueprint(
+                slug="hybrid-applications-healthcare-vision",
+                title="Quantum Vision, GNN, and Few-Shot Hybrid Architectures",
+                summary="Surveys vision-transformer, graph-neural, and diffusion examples in which the quantum component is a narrow representational bottleneck rather than a total model replacement.",
+                key_ideas=[
+                    "The most credible pattern is to place the quantum circuit at a narrow, expressive bottleneck.",
+                    "Vision, jet-tagging, and few-shot examples preserve substantial classical structure around the quantum component.",
+                    "Operational realism comes from identifying exactly what the bounded quantum stage is supposed to improve.",
                 ],
-                "answer": "Use the quantum component as a targeted representational or decision bottleneck",
-                "difficulty": "intermediate",
-                "explanation": "The application cases preserve substantial classical structure around a focused quantum subroutine.",
-            }
+                key_notes=[
+                    "QViT, quantum-classical GNNs, and quantum diffusion all use the quantum stage selectively rather than universally.",
+                    "The strongest educational takeaway is architectural placement, not blanket quantum superiority.",
+                ],
+                formulas=[
+                    "Hybrid attention or latent-pipeline sketches should show where the quantum stage sits relative to classical preprocessing and decoding.",
+                ],
+                learner_questions=[
+                    "Why do these application papers keep the quantum circuit at the feature bottleneck?",
+                    "What does the quantum component contribute in the jet-tagging and few-shot-learning examples?",
+                    "How should a practitioner assess whether these vision and graph applications are mature enough for deployment?",
+                ],
+                section_refs=[
+                    "Quantum Vision Transformers in High-Energy Physics",
+                    "Quantum-Classical Graph Neural Networks for Particle Jet Tagging",
+                    "Quantum Diffusion Models for Few-Shot Learning",
+                ],
+                video_file="Quantum Computing and Artificial Intelligence 2026.mp4",
+                flashcards=[
+                    ("intro", "What is a common placement for the quantum component in practical hybrid models?", "At a compact feature bottleneck, kernel layer, or classifier head."),
+                    ("intermediate", "Why are the QViT and quantum-classical GNN examples pedagogically useful?", "They show how a bounded quantum stage can sit inside a larger classical perception pipeline without replacing the full model."),
+                    ("advanced", "Why is the few-shot diffusion example notable?", "It treats the quantum component as a compact latent or representational aid rather than a full generative stack replacement."),
+                ],
+                quiz=[
+                    {
+                        "type": "mcq",
+                        "prompt": "Which architectural pattern best matches the vision, graph, and few-shot application cases in the sources?",
+                        "choices": [
+                            "Replace all classical layers with a quantum circuit",
+                            "Use the quantum component as a targeted representational or decision bottleneck",
+                            "Avoid any classical preprocessing",
+                            "Assume hardware constraints are secondary once a kernel is used",
+                        ],
+                        "answer": "Use the quantum component as a targeted representational or decision bottleneck",
+                        "difficulty": "intermediate",
+                        "explanation": "The application cases preserve substantial classical structure around a focused quantum subroutine.",
+                    }
+                ],
+            ),
+            _lesson_blueprint(
+                slug="clinical-and-kernel-qcai-systems",
+                title="Clinical Control and Kernelized Biomedical Hybrids",
+                summary="Focuses on safety-critical clinical control and biomedical-kernel examples where quantum models are embedded inside tightly scoped classical decision systems.",
+                key_ideas=[
+                    "Healthcare examples succeed only when the quantum role remains narrow, explicit, and auditable.",
+                    "QC-DQN is best interpreted as a hybrid control architecture in a constrained safety setting, not as a broad replacement for classical RL.",
+                    "Quantum kernels are framed as compact similarity mechanisms inside otherwise classical biomedical workflows.",
+                ],
+                key_notes=[
+                    "QUEN ties a quantum-kernel bottleneck to a concrete aneurysm classification task with explicit regularization ideas.",
+                    "Clinical-control examples should always be read with deployment maturity and validation requirements in mind.",
+                ],
+                formulas=[
+                    "Bellman-style value updates for reinforcement learning, interpreted in a hybrid QC-DQN setting.",
+                    "Kernel similarity as a fidelity-style overlap between encoded quantum states.",
+                ],
+                learner_questions=[
+                    "What does a quantum kernel add in the aneurysm classification example?",
+                    "Why should QC-DQN be taught carefully in a clinical context?",
+                    "What makes these healthcare-flavored examples more operationally constrained than the perception examples?",
+                ],
+                section_refs=[
+                    "Quantum-Enhanced Reinforcement Learning in Safety-Critical Clinical Control",
+                    "Quantum Kernel Methods for High-Dimensional Biomedical Imaging",
+                ],
+                video_file="Quantum Computing and Artificial Intelligence 2026.mp4",
+                flashcards=[
+                    ("intro", "Why is QUEN interesting pedagogically?", "It ties a quantum kernel-style bottleneck to a concrete biomedical imaging task with explicit physical regularization ideas."),
+                    ("intermediate", "Why should QC-DQN be taught carefully?", "Because it is an instructive hybrid design in a safety-critical setting, but not evidence that quantum RL broadly replaces classical control methods."),
+                    ("advanced", "What makes healthcare QC+AI architectures operationally demanding?", "They require bounded quantum roles, validation discipline, and auditable fallback behavior around the clinical decision path."),
+                ],
+                quiz=[
+                    {
+                        "type": "short-answer",
+                        "prompt": "Explain why QC-DQN and biomedical quantum-kernel methods should be evaluated as narrow hybrid architectures rather than end-to-end quantum replacements.",
+                        "answer": "Both examples embed a bounded quantum stage inside a larger classical decision or imaging pipeline, so the technical question is whether that narrow insertion improves representation or control without undermining validation, safety, or fallback behavior.",
+                        "difficulty": "advanced",
+                    }
+                ],
+            ),
         ],
     },
     {
@@ -469,41 +526,44 @@ class CourseStore:
         chunks: list[IndexedChunk] = []
 
         for module_index, blueprint in enumerate(MODULE_BLUEPRINTS, start=1):
-            lesson_blueprint = blueprint["lesson"]
-            lesson_slug = lesson_blueprint["slug"]
-            matched_sections = self._match_sections(sections, lesson_blueprint["section_refs"])
-            lesson_sections = self._build_lesson_sections(matched_sections)
-            video_asset = next((asset for asset in video_assets if asset.filename == lesson_blueprint["video_file"]), None)
-            chapters = load_video_chapters(self.settings.transcripts_dir, video_asset.filename) if video_asset else []
+            lesson_slugs: list[str] = []
+            for lesson_blueprint in _module_lessons(blueprint):
+                lesson_slug = lesson_blueprint["slug"]
+                matched_sections = self._match_sections(sections, lesson_blueprint["section_refs"])
+                lesson_sections = self._build_lesson_sections(matched_sections)
+                video_asset = next((asset for asset in video_assets if asset.filename == lesson_blueprint["video_file"]), None)
+                chapters = load_video_chapters(self.settings.transcripts_dir, video_asset.filename) if video_asset else []
 
-            lesson = LessonDetail(
-                slug=lesson_slug,
-                module_slug=blueprint["slug"],
-                title=lesson_blueprint["title"],
-                summary=lesson_blueprint["summary"],
-                key_ideas=lesson_blueprint["key_ideas"],
-                key_notes=lesson_blueprint["key_notes"],
-                formulas=lesson_blueprint["formulas"],
-                learner_questions=lesson_blueprint["learner_questions"],
-                sections=lesson_sections,
-                source_assets=self._collect_source_assets(assets, matched_sections, lesson_blueprint["video_file"]),
-                video_asset=video_asset,
-                chapters=chapters,
-                flashcards=self._build_flashcards(lesson_slug, blueprint["flashcards"]),
-                quiz_questions=self._build_quiz(lesson_slug, blueprint["quiz"]),
-            )
-            lessons[lesson_slug] = lesson
+                lesson = LessonDetail(
+                    slug=lesson_slug,
+                    module_slug=blueprint["slug"],
+                    title=lesson_blueprint["title"],
+                    summary=lesson_blueprint["summary"],
+                    key_ideas=lesson_blueprint["key_ideas"],
+                    key_notes=lesson_blueprint["key_notes"],
+                    formulas=lesson_blueprint["formulas"],
+                    learner_questions=lesson_blueprint["learner_questions"],
+                    sections=lesson_sections,
+                    source_assets=self._collect_source_assets(assets, matched_sections, lesson_blueprint["video_file"]),
+                    video_asset=video_asset,
+                    chapters=chapters,
+                    flashcards=self._build_flashcards(lesson_slug, lesson_blueprint.get("flashcards", [])),
+                    quiz_questions=self._build_quiz(lesson_slug, lesson_blueprint.get("quiz", [])),
+                )
+                lessons[lesson_slug] = lesson
+                lesson_slugs.append(lesson_slug)
+                chunks.extend(self._build_chunks(module_index, lesson, matched_sections))
+
             modules.append(
                 ModuleSummary(
                     slug=blueprint["slug"],
                     title=blueprint["title"],
                     summary=blueprint["summary"],
                     learning_goals=blueprint["learning_goals"],
-                    lesson_slugs=[lesson_slug],
+                    lesson_slugs=lesson_slugs,
                     source_highlights=blueprint["source_highlights"],
                 )
             )
-            chunks.extend(self._build_chunks(module_index, lesson, matched_sections))
 
         self.overview = CourseOverview(
             id="qcai-hardware-aware-course",

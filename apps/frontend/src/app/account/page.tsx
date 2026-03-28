@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { AUTH0_IS_CONFIGURED } from "@/lib/auth";
+import { isAuth0Configured } from "@/lib/auth";
 import { fetchMe } from "@/lib/api";
 import { buildPageMetadata } from "@/lib/metadata";
 
@@ -42,6 +42,7 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
   const statusMessage = describeAuthState(auth ?? null);
   const user = await fetchMe().catch(() => null);
   const guestUser = isGuestUser(user?.user_id);
+  const auth0Configured = isAuth0Configured();
 
   return (
     <div className="page-stack">
@@ -102,7 +103,7 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
             The backend already accepts Auth0-issued bearer tokens. This UI now exposes the account entry point instead of hiding the authenticated path behind backend-only wiring.
           </p>
           <div className="stack">
-            {AUTH0_IS_CONFIGURED ? (
+            {auth0Configured ? (
               <div className="button-row">
                 <a className="primary-button" href="/auth/login?returnTo=/account">
                   Sign in with Auth0

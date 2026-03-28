@@ -5,13 +5,33 @@ export const AUTH_STATE_COOKIE_NAME = "qcai_auth_state";
 export const AUTH_VERIFIER_COOKIE_NAME = "qcai_auth_verifier";
 export const AUTH_RETURN_TO_COOKIE_NAME = "qcai_auth_return_to";
 
-export const AUTH0_DOMAIN = (process.env.NEXT_PUBLIC_AUTH0_DOMAIN || "")
-  .replace(/^https?:\/\//, "")
-  .replace(/\/$/, "");
-export const AUTH0_CLIENT_ID = process.env.NEXT_PUBLIC_AUTH0_CLIENT_ID || "";
-export const AUTH0_AUDIENCE = process.env.NEXT_PUBLIC_AUTH0_AUDIENCE || "";
-export const AUTH0_SCOPE = process.env.NEXT_PUBLIC_AUTH0_SCOPE || "openid profile email";
-export const AUTH0_IS_CONFIGURED = Boolean(AUTH0_DOMAIN && AUTH0_CLIENT_ID && AUTH0_AUDIENCE);
+export type Auth0Settings = {
+  domain: string;
+  clientId: string;
+  audience: string;
+  scope: string;
+  isConfigured: boolean;
+};
+
+export function getAuth0Settings(): Auth0Settings {
+  const domain = (process.env.NEXT_PUBLIC_AUTH0_DOMAIN || "")
+    .replace(/^https?:\/\//, "")
+    .replace(/\/$/, "");
+  const clientId = process.env.NEXT_PUBLIC_AUTH0_CLIENT_ID || "";
+  const audience = process.env.NEXT_PUBLIC_AUTH0_AUDIENCE || "";
+  const scope = process.env.NEXT_PUBLIC_AUTH0_SCOPE || "openid profile email";
+  return {
+    domain,
+    clientId,
+    audience,
+    scope,
+    isConfigured: Boolean(domain && clientId && audience),
+  };
+}
+
+export function isAuth0Configured(): boolean {
+  return getAuth0Settings().isConfigured;
+}
 
 export function sanitizeReturnTo(value: string | null | undefined): string {
   if (!value || !value.startsWith("/") || value.startsWith("//")) {
@@ -32,12 +52,13 @@ export function getAuthorizationHeaderFromRequest(
 }
 
 export function buildAuth0AuthorizeUrl(origin: string, state: string, challenge: string): string {
-  const url = new URL(`https://${AUTH0_DOMAIN}/authorize`);
+  const auth0 = getAuth0Settings();
+  const url = new URL(`https://${auth0.domain}/authorize`);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("client_id", AUTH0_CLIENT_ID);
+  url.searchParams.set("client_id", auth0.clientId);
   url.searchParams.set("redirect_uri", `${origin}/auth/callback`);
-  url.searchParams.set("scope", AUTH0_SCOPE);
-  url.searchParams.set("audience", AUTH0_AUDIENCE);
+  url.searchParams.set("scope", auth0.scope);
+  url.searchParams.set("audience", auth0.audience);
   url.searchParams.set("state", state);
   url.searchParams.set("code_challenge", challenge);
   url.searchParams.set("code_challenge_method", "S256");
@@ -45,8 +66,9 @@ export function buildAuth0AuthorizeUrl(origin: string, state: string, challenge:
 }
 
 export function buildAuth0LogoutUrl(origin: string): string {
-  const url = new URL(`https://${AUTH0_DOMAIN}/v2/logout`);
-  url.searchParams.set("client_id", AUTH0_CLIENT_ID);
+  const auth0 = getAuth0Settings();
+  const url = new URL(`https://${auth0.domain}/v2/logout`);
+  url.searchParams.set("client_id", auth0.clientId);
   url.searchParams.set("returnTo", `${origin}/account?auth=signed-out`);
   return url.toString();
 }

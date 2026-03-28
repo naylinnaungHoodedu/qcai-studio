@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
+    "postbuild": "node ./scripts/assert-account-route.mjs",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:integration": "tsx --test tests/**/*.test.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.95.2",
@@ -21,6 +23,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
+    "tsx": "^4.20.6",
     "typescript": "^5"
   }
 }

@@ -12,6 +12,10 @@ __pycache__/
 .env.local
 qcai_dev.db
 apps/api/qcai_dev.db
+**/qcai_dev.db
+**/qcai_dev.db-shm
+**/qcai_dev.db-wal
+**/qcai_dev.db-journal
 
 # Logs
 *.log

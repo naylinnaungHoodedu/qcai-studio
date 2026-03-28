@@ -5,16 +5,17 @@ from langchain_openai import ChatOpenAI
 
 from app.core.config import Settings
 from app.schemas import Citation, QAResponse
-from app.services.content_assembler import CourseStore
+from app.services.retrieval_engine import RetrievalEngine
 
 
 class QAEngine:
-    def __init__(self, store: CourseStore, settings: Settings):
-        self.store = store
+    def __init__(self, retrieval_engine: RetrievalEngine, settings: Settings):
+        self.retrieval_engine = retrieval_engine
         self.settings = settings
 
     def ask(self, question: str, lesson_slug: str | None = None, top_k: int = 4) -> QAResponse:
-        hits = self.store.search(question, lesson_slug=lesson_slug, top_k=top_k)
+        retrieval = self.retrieval_engine.search(question, lesson_slug=lesson_slug, top_k=top_k)
+        hits = retrieval.results
         citations = [
             Citation(
                 chunk_id=hit.chunk_id,
@@ -30,15 +31,15 @@ class QAEngine:
             return QAResponse(
                 answer="I could not ground an answer in the indexed course sources. Try a more specific question about routing, QUBO optimization, quantum kernels, thermodynamic quantum agents, or another named topic from the course.",
                 citations=[],
-                retrieval_mode="no-match",
+                retrieval_mode=f"{retrieval.mode}-no-match",
             )
 
         if self.settings.openai_api_key:
             answer = self._ask_with_openai(question, citations)
-            mode = "openai-rag"
+            mode = f"openai-rag-{retrieval.mode}"
         else:
             answer = self._fallback_answer(question, citations)
-            mode = "local-grounded-fallback"
+            mode = "semantic-grounded-fallback" if retrieval.mode == "hybrid-pinecone" else "local-grounded-fallback"
         return QAResponse(answer=answer, citations=citations, retrieval_mode=mode)
 
     def _ask_with_openai(self, question: str, citations: list[Citation]) -> str:

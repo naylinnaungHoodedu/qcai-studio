@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     auth0_audience: str | None = None
     pinecone_api_key: str | None = None
     pinecone_index: str | None = None
+    pinecone_namespace: str = "qcai-course"
+    pinecone_upsert_batch_size: int = 32
+    qa_ask_rate_limit: str = "5/minute"
+    search_rate_limit: str = "10/minute"
     api_base_url: str | None = None
     source_assets_root: str | None = None
     allowed_origins: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:3000"])

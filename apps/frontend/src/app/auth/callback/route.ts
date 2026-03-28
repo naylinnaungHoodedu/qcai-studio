@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import {
-  AUTH0_AUDIENCE,
-  AUTH0_CLIENT_ID,
-  AUTH0_DOMAIN,
-  AUTH0_IS_CONFIGURED,
   AUTH_RETURN_TO_COOKIE_NAME,
   AUTH_STATE_COOKIE_NAME,
   AUTH_TOKEN_COOKIE_NAME,
   AUTH_VERIFIER_COOKIE_NAME,
+  getAuth0Settings,
+  isAuth0Configured,
   isSecureCookieRequest,
   sanitizeReturnTo,
 } from "@/lib/auth";
@@ -24,9 +22,10 @@ function redirectToAccount(request: NextRequest, status: string) {
 }
 
 export async function GET(request: NextRequest) {
-  if (!AUTH0_IS_CONFIGURED) {
+  if (!isAuth0Configured()) {
     return redirectToAccount(request, "unavailable");
   }
+  const auth0 = getAuth0Settings();
 
   const code = request.nextUrl.searchParams.get("code");
   const state = request.nextUrl.searchParams.get("state");
@@ -40,18 +39,18 @@ export async function GET(request: NextRequest) {
     return response;
   }
 
-  const tokenResponse = await fetch(`https://${AUTH0_DOMAIN}/oauth/token`, {
+  const tokenResponse = await fetch(`https://${auth0.domain}/oauth/token`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
       grant_type: "authorization_code",
-      client_id: AUTH0_CLIENT_ID,
+      client_id: auth0.clientId,
       code_verifier: verifier,
       code,
       redirect_uri: `${request.nextUrl.origin}/auth/callback`,
-      audience: AUTH0_AUDIENCE,
+      audience: auth0.audience,
     }),
     cache: "no-store",
   });

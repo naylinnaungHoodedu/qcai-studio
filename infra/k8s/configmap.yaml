@@ -4,8 +4,12 @@ metadata:
   name: qcai-config
   namespace: qcai-learning
 data:
-  API_BASE_URL: "https://api.qcai.local"
-  NEXT_PUBLIC_API_BASE_URL: "https://api.qcai.local"
+  API_BASE_URL: "https://api.qantumlearn.academy"
+  NEXT_PUBLIC_API_BASE_URL: "https://api.qantumlearn.academy"
   DATABASE_URL: "postgresql+psycopg://qcai:change-me@cloudsql/qcai"
   SOURCE_ASSETS_ROOT: "/app/source-assets"
-  ALLOWED_ORIGINS: '["https://app.qcai.local"]'
+  ALLOWED_ORIGINS: '["https://qantumlearn.academy"]'
+  PINECONE_NAMESPACE: "qcai-course"
+  PINECONE_UPSERT_BATCH_SIZE: "32"
+  QA_ASK_RATE_LIMIT: "5/minute"
+  SEARCH_RATE_LIMIT: "10/minute"

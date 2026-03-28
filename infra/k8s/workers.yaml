@@ -20,6 +20,9 @@ spec:
           envFrom:
             - configMapRef:
                 name: qcai-config
+            - secretRef:
+                name: qcai-secrets
+                optional: true
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -43,6 +46,9 @@ spec:
           envFrom:
             - configMapRef:
                 name: qcai-config
+            - secretRef:
+                name: qcai-secrets
+                optional: true
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -66,3 +72,6 @@ spec:
           envFrom:
             - configMapRef:
                 name: qcai-config
+            - secretRef:
+                name: qcai-secrets
+                optional: true

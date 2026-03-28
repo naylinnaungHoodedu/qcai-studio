@@ -8,6 +8,7 @@ from app.core.db import SessionLocal
 from app.db_models import ArenaProfile
 from app.core.config import Settings
 from app.main import _build_security_headers, _initialize_database, app
+from app.services.retrieval_engine import RetrievalEngine
 from app.services.store import get_course_store
 
 
@@ -59,6 +60,7 @@ def test_course_overview():
     data = response.json()
     assert data["id"] == "qcai-hardware-aware-course"
     assert len(data["modules"]) == 6
+    assert sum(len(module["lesson_slugs"]) for module in data["modules"]) == 7
     source_filenames = [asset["filename"] for asset in data["source_assets"]]
     assert "Quantum Computing and Artificial Intelligence Industry Use Cases.docx" in source_filenames
     assert "Vital_Concepts.docx" not in source_filenames
@@ -108,6 +110,7 @@ def test_search_returns_results():
     assert response.status_code == 200
     data = response.json()
     assert data
+    assert response.headers["x-retrieval-mode"] == "lexical"
     assert not ({result["source_title"] for result in data} & RAW_DOCUMENT_TITLES)
 
 
@@ -219,6 +222,18 @@ def test_course_overview_excludes_removed_prerequisite_module():
     assert modules[0]["slug"] == "nisq-hybrid-workflows"
 
 
+def test_quantum_applications_module_supports_multiple_lessons():
+    response = client.get("/content/modules/quantum-enhanced-applications")
+    assert response.status_code == 200
+    data = response.json()
+    lesson_slugs = data["module"]["lesson_slugs"]
+    assert lesson_slugs == [
+        "hybrid-applications-healthcare-vision",
+        "clinical-and-kernel-qcai-systems",
+    ]
+    assert len(data["lessons"]) == 2
+
+
 def test_video_assets_use_updated_titles():
     response = client.get("/content/course")
     assert response.status_code == 200
@@ -291,10 +306,12 @@ def test_production_security_headers_drop_localhost_and_add_hsts():
         api_base_url="https://api.qantumlearn.academy",
         site_url="https://qantumlearn.academy",
     )
-    headers = _build_security_headers(settings)
+    headers = _build_security_headers(settings, nonce="unit-test-nonce")
     assert "http://127.0.0.1:*" not in headers["Content-Security-Policy"]
     assert "http://localhost:*" not in headers["Content-Security-Policy"]
     assert "wss://api.qantumlearn.academy" in headers["Content-Security-Policy"]
+    assert "'unsafe-inline'" not in headers["Content-Security-Policy"].split("script-src", 1)[1]
+    assert "'nonce-unit-test-nonce'" in headers["Content-Security-Policy"]
     assert headers["Strict-Transport-Security"].startswith("max-age=")
 
 
@@ -401,7 +418,7 @@ def test_progress_endpoint_aggregates_activity():
     progress_response = client.get("/content/progress", headers=user_headers)
     assert progress_response.status_code == 200
     data = progress_response.json()
-    assert data["total_lessons"] == 6
+    assert data["total_lessons"] == 7
     assert data["visited_lessons"] >= 1
     assert data["completed_lessons"] >= 1
     lesson = next(item for item in data["lessons"] if item["lesson_slug"] == "ai4qc-routing-and-optimization")
@@ -732,3 +749,52 @@ def test_project_submission_can_be_retracted_without_hard_delete():
     queue_after = client.get("/projects/review-queue", headers=reviewer_headers)
     assert queue_after.status_code == 200
     assert not any(item["submission_id"] == submission["id"] for item in queue_after.json())
+
+
+def test_qa_endpoint_rate_limits_repeated_requests():
+    user_headers = {"x-demo-user": f"qa-limit-{uuid4().hex[:8]}", "x-demo-role": "learner"}
+    for _ in range(5):
+        response = client.post(
+            "/qa/ask",
+            headers=user_headers,
+            json={"question": "Why does routing depth matter?", "lesson_slug": "ai4qc-routing-and-optimization"},
+        )
+        assert response.status_code == 200
+
+    blocked = client.post(
+        "/qa/ask",
+        headers=user_headers,
+        json={"question": "Why does routing depth matter?", "lesson_slug": "ai4qc-routing-and-optimization"},
+    )
+    assert blocked.status_code == 429
+
+
+def test_search_endpoint_rate_limits_repeated_requests():
+    user_headers = {"x-demo-user": f"search-limit-{uuid4().hex[:8]}", "x-demo-role": "learner"}
+    for _ in range(10):
+        response = client.get("/search", headers=user_headers, params={"query": "QUBO logistics"})
+        assert response.status_code == 200
+
+    blocked = client.get("/search", headers=user_headers, params={"query": "QUBO logistics"})
+    assert blocked.status_code == 429
+
+
+def test_retrieval_engine_merges_semantic_and_lexical_results():
+    store = get_course_store()
+    engine = RetrievalEngine(store, Settings())
+
+    class StubSemanticBackend:
+        enabled = True
+
+        def search(self, query: str, lesson_slug: str | None = None, top_k: int = 8):
+            return [
+                store.search(query, lesson_slug=lesson_slug, top_k=1)[0].model_copy(update={"score": 0.99}),
+                store.search("post-quantum cryptography", top_k=1)[0].model_copy(update={"score": 0.91}),
+            ]
+
+    engine._semantic_backend = StubSemanticBackend()
+    response = engine.search("QUBO logistics", top_k=3)
+
+    assert response.mode == "hybrid-pinecone"
+    assert len(response.results) == 3
+    assert response.results[0].chunk_id == store.search("QUBO logistics", top_k=1)[0].chunk_id

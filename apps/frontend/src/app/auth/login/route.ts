@@ -3,11 +3,11 @@ import { createHash, randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 import {
-  AUTH0_IS_CONFIGURED,
   AUTH_RETURN_TO_COOKIE_NAME,
   AUTH_STATE_COOKIE_NAME,
   AUTH_VERIFIER_COOKIE_NAME,
   buildAuth0AuthorizeUrl,
+  isAuth0Configured,
   isSecureCookieRequest,
   sanitizeReturnTo,
 } from "@/lib/auth";
@@ -17,7 +17,7 @@ function toBase64Url(value: Buffer): string {
 }
 
 export async function GET(request: NextRequest) {
-  if (!AUTH0_IS_CONFIGURED) {
+  if (!isAuth0Configured()) {
     return NextResponse.redirect(new URL("/account?auth=unavailable", request.url));
   }
 

@@ -21,6 +21,9 @@ spec:
           envFrom:
             - configMapRef:
                 name: qcai-config
+            - secretRef:
+                name: qcai-secrets
+                optional: true
 ---
 apiVersion: v1
 kind: Service

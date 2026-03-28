@@ -4,8 +4,13 @@ metadata:
   name: qcai-ingress
   namespace: qcai-learning
 spec:
+  tls:
+    - hosts:
+        - qantumlearn.academy
+        - api.qantumlearn.academy
+      secretName: qantumlearn-academy-tls
   rules:
-    - host: app.qcai.local
+    - host: qantumlearn.academy
       http:
         paths:
           - path: /
@@ -15,7 +20,7 @@ spec:
                 name: qcai-frontend
                 port:
                   number: 3000
-    - host: api.qcai.local
+    - host: api.qantumlearn.academy
       http:
         paths:
           - path: /

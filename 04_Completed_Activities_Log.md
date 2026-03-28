@@ -2069,3 +2069,133 @@ Recorded publication result:
 
 - repository update: completed successfully
 - separate GitHub Projects board mutation: still blocked by token scope, not by repository state
+
+## 88. Deep Verification Scope Completed for Security, Retrieval, Infrastructure, and Auth Hardening
+
+The latest requested remediation scope was evaluated deeply against the repository and the already-published batches so that the next publication would capture only real remaining engineering work.
+
+Completed verification and scoping work:
+
+- reviewed the current local codebase against the eight requested areas:
+  - `/account` route inclusion and build output
+  - nonce-based CSP replacement for inline script execution
+  - Pinecone-backed semantic retrieval and RAG grounding
+  - OpenAI-endpoint rate limiting
+  - SQLite development database ignore coverage
+  - Kubernetes production-host ingress alignment
+  - multi-lesson course-module support
+  - authentication integration coverage for Auth0 callback and guest-session lifecycle
+- confirmed the changes needed to span both implementation and deployment-facing configuration rather than only code paths
+- separated repo-fixable work from deployment-only activation concerns such as real secret values for Auth0 and Pinecone/OpenAI
+- identified the need to prove `/account` route inclusion directly from the Next build artifact instead of relying on source presence alone
+
+## 89. Security, Retrieval, Infrastructure, and Course-Structure Remediation Implemented
+
+The requested engineering work was implemented across the frontend, API, test suite, and deployment manifests.
+
+Completed implementation work:
+
+- frontend account/build verification:
+  - added a post-build assertion script to fail the build if `/account` is missing from the generated app manifest
+  - added an integration-test entry point for route/auth/proxy validation
+- nonce-based CSP hardening:
+  - removed the old static frontend CSP header
+  - implemented per-request nonce generation in the Next proxy layer
+  - injected nonce-based `script-src` policy with no `unsafe-inline`
+  - switched the root app layout to dynamic rendering so Next can honor nonce-based script handling
+  - added matching per-request nonce CSP generation on the FastAPI side
+- Auth0/frontend auth hardening:
+  - refactored Auth0 environment handling to runtime getters rather than import-time constants
+  - updated account, login, callback, and logout routes to use the runtime auth configuration path
+- Pinecone-backed semantic retrieval:
+  - replaced the deprecated Pinecone client dependency with the current package
+  - added a dedicated retrieval engine that merges lexical and semantic results
+  - wired semantic retrieval into QA and search flows
+  - updated the RAG worker to refresh/sync the semantic namespace when configured
+- API rate limiting:
+  - added `slowapi`
+  - introduced request-key derivation for bearer, demo, guest, and IP-based throttling
+  - applied rate limits to search and OpenAI-backed QA endpoints
+- course-structure expansion:
+  - generalized module assembly so a module can contain multiple lessons
+  - expanded the `quantum-enhanced-applications` module to two distinct lessons
+- repository and deployment hygiene:
+  - added ignore coverage for `qcai_dev.db` and SQLite sidecar files
+  - updated Kubernetes ingress to production hostnames
+  - updated Kubernetes config-map values to production API origins
+  - added optional secret wiring plus a `secret.example.yaml` template so Pinecone, OpenAI, and Auth0 values can be activated cleanly in deployment
+
+## 90. Full Validation, Artifact Verification, and Integration Coverage Completed
+
+The full change set was verified through backend tests, frontend integration tests, and a production-style frontend build.
+
+Completed validation work:
+
+- ran `pytest -q` in `apps/api`
+- result: `42 passed`
+
+- ran `npm run test:integration` in `apps/frontend`
+- result: `8 passed`
+
+- ran `API_BASE_URL=https://api.qantumlearn.academy NEXT_PUBLIC_API_BASE_URL=https://api.qantumlearn.academy npm run build` in `apps/frontend`
+- result: passed
+
+- verified the generated Next manifest contains:
+  - `/account/page`
+
+- verified the frontend post-build assertion succeeded:
+  - `Verified /account route in build manifest.`
+
+- verified the API now emits a nonce-bearing CSP header in runtime test-client inspection
+- verified the updated API tests cover:
+  - rate limiting on QA
+  - rate limiting on search
+  - multi-lesson module handling
+  - semantic/lexical retrieval merging
+  - nonce-based CSP expectations in production-mode header generation
+- verified the new frontend integration tests cover:
+  - Auth0 login redirect behavior
+  - PKCE cookie issuance
+  - Auth0 callback success/failure handling
+  - logout cleanup
+  - guest-session bootstrap rules
+  - nonce-based proxy CSP behavior
+
+## 91. Deep Double-Check Completed for Prior Output Accuracy
+
+The implementation claims and validation claims were re-audited carefully so the publication record would not overstate anything.
+
+Completed double-check work:
+
+- re-read the exact prior output claims and validated them directly against:
+  - build artifacts
+  - code paths
+  - test results
+  - deployment manifest wiring
+- confirmed there was no factual error in the prior close-out after the deeper recheck
+- recorded the important precision boundaries explicitly:
+  - `unsafe-eval` still appears in development CSP by design
+  - HSTS is only emitted outside development
+  - Pinecone/Auth0 activation in deployment still depends on real secret values, but the repository wiring is now in place
+
+## 92. Publication Preparation Completed for Security, Retrieval, and Auth Hardening Batch
+
+The repository was prepared for GitHub publication after the implementation and verification pass was completed locally.
+
+Completed publication-preparation work:
+
+- updated the completed-activities record with the latest scoping, implementation, validation, and double-check results
+- reviewed the publication diff and confirmed it contains:
+  - `/account` build-artifact enforcement
+  - nonce-based CSP implementation
+  - Pinecone retrieval integration
+  - API rate limiting
+  - multi-lesson module support
+  - Kubernetes ingress/config/secrets updates
+  - frontend integration coverage for auth and guest-session flows
+- confirmed GitHub repository authentication remains available for push operations
+- rechecked GitHub CLI token scopes and confirmed they still include:
+  - `repo`
+  - `workflow`
+  - `read:org`
+- re-confirmed the token still lacks `read:project`, so separate GitHub Projects board mutation remains scope-blocked unless token permissions are expanded
