@@ -2227,3 +2227,110 @@ Recorded publication result:
 
 - repository publication batch: completed successfully
 - separate GitHub Projects board update remains blocked by token scope rather than repository state
+
+## 94. About Page Release Designed and Implemented
+
+The public About experience for `https://qantumlearn.academy` was designed and implemented as a first-party product page rather than a placeholder legal or marketing stub.
+
+Completed implementation work:
+
+- created a new public frontend route at `/about`
+- structured the page around:
+  - platform purpose
+  - creator and ownership context
+  - live course footprint metrics
+  - learner capabilities
+  - engineering architecture
+  - source corpus and evidence grounding
+  - OpenAI Codex usage
+  - differentiators and lessons learned
+- wired the page to use public course-overview data when available, with stable fallback asset metadata so the page remains renderable if the public API is unavailable
+- added the About route to the main site navigation
+- added an About link to the shared site footer
+- added `/about` to the generated public sitemap
+- added a targeted About-page visual treatment in the shared frontend stylesheet
+- added a focused frontend discovery regression test covering:
+  - sitemap publication of `/about`
+  - continued publication of lesson, flashcard, and quiz routes for `clinical-and-kernel-qcai-systems`
+  - robots rules keeping `/about` public while preserving private-path exclusions
+- included the pending frontend lesson-slug registry correction so the public discovery layer now reflects the expanded multi-lesson applications module
+
+## 95. Validation, Deployment, and Live Verification Completed for About Page Release
+
+The About-page release was validated locally, deployed to Cloud Run, and rechecked against the live public domain.
+
+Completed validation and deployment work:
+
+- ran `npm run test:integration` in `apps/frontend`
+- result: `10 passed`
+
+- ran `npm run lint` in `apps/frontend`
+- result: passed
+
+- ran `API_BASE_URL=https://api.qantumlearn.academy NEXT_PUBLIC_API_BASE_URL=https://api.qantumlearn.academy NEXT_PUBLIC_SITE_URL=https://qantumlearn.academy npm run build` in `apps/frontend`
+- result: passed
+
+- confirmed the generated Next build includes:
+  - `/about`
+
+- built and published the updated frontend image through Cloud Build:
+  - build id: `73a9da48-1086-4a52-82f0-9d94a9ce030b`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest`
+
+- updated the Cloud Run frontend service:
+  - service: `qcai-frontend`
+  - region: `us-central1`
+  - latest ready revision: `qcai-frontend-00008-sgn`
+  - traffic: `100%`
+
+- verified the live public domain after rollout:
+  - `https://qantumlearn.academy/about` returns `200`
+  - the homepage now exposes the `/about` link in navigation
+  - the shared footer now exposes the About link
+  - `https://qantumlearn.academy/sitemap.xml` now includes `https://qantumlearn.academy/about`
+
+## 96. Deep Double-Check Completed for About Page Release
+
+The full release was re-audited carefully so the written output and publication record would not overstate anything.
+
+Completed double-check work:
+
+- reran the frontend integration tests, lint, and production build after the first close-out
+- rechecked the deployed Cloud Run service state directly through `gcloud run services describe`
+- rechecked the live public domain directly for:
+  - `/about`
+  - homepage navigation/footer presence
+  - sitemap publication
+- confirmed there was no functional or deployment error in the About-page release or in the validation summary
+- recorded the one wording correction needed for precision:
+  - it cannot be proven from local evidence that the `apps/frontend/src/lib/site.ts` lesson-slug change predated this task
+  - what was confirmed instead is narrower: the file was already modified relative to `HEAD` when audited, and it was not manually edited during the About-page patch itself
+
+## 97. Publication Preparation Completed for About Page Release
+
+The repository and local records were prepared for GitHub publication after the About-page release, deployment, and double-check pass were completed.
+
+Completed publication-preparation work:
+
+- updated the completed-activities record with the new implementation, validation, deployment, and double-check details
+- updated the local-only production deployment log with the latest frontend build id, Cloud Run revision, and live-domain verification snapshot
+- reviewed the current publication diff and confirmed it contains:
+  - the new `/about` route
+  - navigation and footer integration
+  - sitemap publication of `/about`
+  - About-page styling support
+  - the public discovery regression test
+  - the lesson-slug discovery correction for `clinical-and-kernel-qcai-systems`
+- confirmed GitHub repository authentication remains available for push operations
+- rechecked GitHub CLI authentication scopes and confirmed they currently include:
+  - `repo`
+  - `workflow`
+  - `read:org`
+- rechecked GitHub Projects CLI access immediately before publication:
+  - command: `gh project list --owner naylinnaungHoodedu`
+  - result: blocked by missing `read:project` token scope
+
+Recorded publication boundary:
+
+- GitHub repository update: available
+- separate GitHub Projects board mutation: still blocked by token scope rather than repository state

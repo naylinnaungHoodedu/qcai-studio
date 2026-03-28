@@ -20,6 +20,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
         <nav className="site-nav">
           <Link href="/">Overview</Link>
+          <Link href="/about">About</Link>
           <Link href="/syllabus">Syllabus</Link>
           <Link href="/projects">Projects</Link>
           <Link href="/arena">Arena</Link>

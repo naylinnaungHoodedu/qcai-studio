@@ -19,6 +19,7 @@ export const LESSON_SLUGS = [
   "nisq-reality-overview",
   "ai4qc-routing-and-optimization",
   "hybrid-applications-healthcare-vision",
+  "clinical-and-kernel-qcai-systems",
   "representation-language-and-xai",
   "industry-use-cases",
   "thermodynamics-and-roadmap",

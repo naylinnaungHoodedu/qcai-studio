@@ -35,9 +35,12 @@ export function SiteFooter() {
           <p>
             Review the repository, implementation context, and submission framing behind the public QC+AI learning platform.
           </p>
-          <a className="footer-link" href={REPOSITORY_URL} rel="noreferrer" target="_blank">
-            GitHub repository
-          </a>
+          <nav className="footer-link-list" aria-label="Project links">
+            <Link href="/about">About QC+AI Studio</Link>
+            <a className="footer-link" href={REPOSITORY_URL} rel="noreferrer" target="_blank">
+              GitHub repository
+            </a>
+          </nav>
         </section>
       </div>
     </footer>

@@ -460,6 +460,20 @@ input:not([type="range"]) {
     linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(248, 242, 233, 0.9));
 }
 
+.about-hero {
+  background:
+    radial-gradient(circle at top right, rgba(15, 118, 110, 0.14), transparent 30%),
+    radial-gradient(circle at bottom left, rgba(154, 52, 18, 0.14), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 242, 233, 0.96));
+}
+
+.about-metric-value {
+  font-size: clamp(1.8rem, 3vw, 2.8rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
 .onboarding-banner {
   background:
     radial-gradient(circle at top right, rgba(154, 52, 18, 0.12), transparent 34%),
