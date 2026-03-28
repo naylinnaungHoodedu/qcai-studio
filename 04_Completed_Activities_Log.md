@@ -2210,6 +2210,12 @@ Completed publication work:
 - created the primary engineering/publication commit on `main`:
   - commit: `3157582`
   - message: `Harden CSP, retrieval, and auth integration`
+- created the publication-record commit on `main`:
+  - commit: `88ae1a7`
+  - message: `Record GitHub publication of hardening batch`
+- pushed the updated branch to:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
 - rechecked GitHub Projects CLI access immediately before publication:
   - command: `gh project list --owner naylinnaungHoodedu`
   - result: blocked by missing `read:project` token scope
@@ -2219,8 +2225,5 @@ Completed publication work:
 
 Recorded publication result:
 
-- repository publication batch: ready and committed locally
-- repository push target:
-  - `origin/main`
-  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+- repository publication batch: completed successfully
 - separate GitHub Projects board update remains blocked by token scope rather than repository state
