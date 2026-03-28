@@ -2357,3 +2357,160 @@ Recorded publication result:
 
 - GitHub repository update: completed successfully
 - separate GitHub Projects board mutation: still blocked by token scope rather than repository state
+
+## 99. Deep Verification Completed for Deployment, Retrieval, Auth, Syllabus, and Transcript Findings
+
+The seven reported concerns were re-audited directly against the repository, local runtime entrypoints, Kubernetes manifests, and the live production deployment so the next remediation batch would separate real defects from already-resolved or misdiagnosed conditions.
+
+Completed verification work:
+
+- rechecked the worker-runtime concern by inspecting the actual `apps/api/app/workers/` package and invoking:
+  - `python -m app.workers.ingestion`
+  - `python -m app.workers.rag`
+  - `python -m app.workers.analytics`
+- confirmed the worker modules are not missing stubs; they are real Python entrypoints that initialize and enter heartbeat loops
+- verified the Pinecone concern against both source and production behavior:
+  - repository retrieval logic supports Pinecone-backed hybrid retrieval only when OpenAI and Pinecone settings are present
+  - live production search currently reports `x-retrieval-mode: lexical`
+  - live GCP secrets currently expose only `qcai-database-url`, so Pinecone activation remains environment-gated rather than silently broken
+- verified the Cloud SQL manifest concern:
+  - `infra/k8s/configmap.yaml` still carried a `DATABASE_URL` placeholder with `change-me`
+  - this was a real deployment-hygiene defect because database credentials belong in secret material rather than a config map
+- verified the image placeholder concern:
+  - `infra/k8s/api-deployment.yaml`, `infra/k8s/frontend-deployment.yaml`, and `infra/k8s/workers.yaml` still referenced `gcr.io/PROJECT_ID/...`
+  - this was a real manifest defect because the current build/publish path uses Artifact Registry
+- verified the demo-auth concern against the live API service configuration:
+  - `qcai-api` is running with `ENVIRONMENT=production`
+  - `ENABLE_DEMO_AUTH=false`
+  - therefore the live-site issue was not an active runtime misconfiguration
+  - the real gap was documentation clarity around guest-cookie-based open-demo access versus demo-header auth
+- verified the syllabus reference-duplication concern against the live frontend:
+  - the page repeated cited document material in both the bibliography and the raw asset list
+  - this was a real frontend presentation defect
+- verified the transcript concern:
+  - the `transcripts/` directory exists and is intentionally present in the repo
+  - it currently contains only `.gitkeep`, so the gap is missing transcript JSON content rather than missing path wiring
+  - live lesson chapters were still labeled `chapter_summary_only`, which was imprecise because the payloads already contain curated chapter excerpts rather than total absence of transcript-adjacent guidance
+
+## 100. Remediation Implemented for Deployment Manifests, Documentation, Syllabus Rendering, and Transcript Status
+
+The verified issues were remediated across Kubernetes manifests, Cloud Run examples, frontend pages, transcript handling, and automated verification coverage.
+
+Completed implementation work:
+
+- deployment-manifest hardening:
+  - removed `DATABASE_URL` from `infra/k8s/configmap.yaml`
+  - moved the database connection example into `infra/k8s/secret.example.yaml`
+  - changed Kubernetes API and worker secret refs from optional to required
+  - replaced the stale `gcr.io/PROJECT_ID/...` image placeholders with the live Artifact Registry image paths in:
+    - `infra/k8s/api-deployment.yaml`
+    - `infra/k8s/frontend-deployment.yaml`
+    - `infra/k8s/workers.yaml`
+  - added `infra/cloudrun/api-production.env.example.yaml` to document production API env expectations and the secret-injection boundary
+- syllabus-rendering cleanup:
+  - added a dedicated frontend helper to split document assets from supplemental media
+  - updated the public syllabus page so the numbered bibliography remains the source-of-truth for cited documents
+  - changed the supplemental asset list to show only non-document media, eliminating the duplicated reference rendering on the live page
+- auth and deployment documentation clarity:
+  - updated the account page to explain that production keeps demo-header auth disabled and uses guest-cookie sessions for open-demo access
+  - updated the privacy page to document guest-cookie-based learner access on public deployments
+  - updated the About page to clarify that Pinecone-backed hybrid retrieval activates only when OpenAI and Pinecone secrets are provisioned
+  - updated `README.md` to document:
+    - real worker entrypoints
+    - Pinecone/OpenAI activation requirements
+    - guest-session behavior on production
+    - transcript-drop expectations
+- transcript handling improvements:
+  - changed fallback chapter labeling from `chapter_summary_only` to `curated_chapter_summary` for curated transcript-excerpt payloads
+  - added `transcripts/README.md` and `transcripts/_example.chapter-transcript.json` so aligned transcript JSON drops now have an explicit format contract
+- automated verification coverage:
+  - added backend tests for worker entrypoints, manifest image references, database-secret placement, and API production-env examples
+  - added frontend coverage for syllabus asset splitting so duplicate reference rendering does not regress silently
+
+## 101. Full Validation, Production Deployment, and Live Reverification Completed for the Remediation Batch
+
+The remediation batch was validated locally, deployed to the live Cloud Run stack, and rechecked directly against the public domain and public API.
+
+Completed validation and deployment work:
+
+- ran `pytest -q` in `apps/api`
+- result: `46 passed`
+
+- ran `npm run test:integration` in `apps/frontend`
+- result: `11 passed`
+
+- ran `npm run lint` in `apps/frontend`
+- result: passed
+
+- ran `API_BASE_URL=https://api.qantumlearn.academy NEXT_PUBLIC_API_BASE_URL=https://api.qantumlearn.academy NEXT_PUBLIC_SITE_URL=https://qantumlearn.academy npm run build` in `apps/frontend`
+- result: passed
+
+- built and published the updated API image through Cloud Build:
+  - build id: `01a0335e-ec34-4fe1-a4bc-6c7ce3fd9c4f`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-api:latest`
+
+- updated the Cloud Run API service:
+  - service: `qcai-api`
+  - region: `us-central1`
+  - latest ready revision: `qcai-api-00008-4xb`
+  - traffic: `100%`
+
+- built and published the updated frontend image through Cloud Build:
+  - build id: `202a511b-e1b7-4a04-a00c-b1f4a58317a0`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest`
+
+- updated the Cloud Run frontend service:
+  - service: `qcai-frontend`
+  - region: `us-central1`
+  - latest ready revision: `qcai-frontend-00009-n6h`
+  - traffic: `100%`
+
+- reverified live production behavior after rollout:
+  - `https://api.qantumlearn.academy/search?query=QUBO%20logistics` now explicitly returns `x-retrieval-mode: lexical`
+  - `https://api.qantumlearn.academy/content/lessons/ai4qc-routing-and-optimization` now labels curated fallback chapters as `curated_chapter_summary`
+  - `https://qantumlearn.academy/syllabus` now lists only the non-document supplemental assets under the asset section, eliminating duplicate document-reference rendering
+  - `https://qantumlearn.academy/account` now explicitly documents production guest-session behavior and disabled demo-header auth on live deployment
+
+## 102. Publication Preparation Completed for the Deployment and Syllabus Remediation Batch
+
+The repository and local-only deployment notes were prepared for GitHub publication after the implementation, validation, deployment, and live verification pass were completed.
+
+Completed publication-preparation work:
+
+- updated the completed-activities record with the latest verification, implementation, validation, and deployment details
+- updated the local-only deployment record with:
+  - the new API and frontend Cloud Build ids
+  - the new Cloud Run revision names
+  - the new live verification snapshot
+- reviewed the remediation diff and confirmed it contains:
+  - Kubernetes manifest corrections for images and secret handling
+  - the API production env example
+  - syllabus deduplication logic
+  - guest-session/auth documentation clarifications
+  - transcript labeling and transcript-drop scaffolding
+  - backend and frontend regression coverage for the audited issues
+- confirmed GitHub repository authentication remains available for push operations
+- rechecked GitHub CLI token scope expectations and retained the known publication boundary:
+  - repository push access is available
+  - separate GitHub Projects board mutation still requires `read:project`
+
+## 103. GitHub Project Update Completed for the Deployment and Syllabus Remediation Batch
+
+The completed remediation batch was published to the GitHub repository project after the local logging pass was updated.
+
+Completed publication work:
+
+- repository code and documentation for the remediation batch were already published on `main` in:
+  - commit: `8b6d20f`
+  - message: `Fix deployment docs and syllabus source handling`
+- updated the completed-activities record with sections `99` through `103`
+- pushed the updated branch to:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+- recorded the continuing GitHub Projects CLI boundary:
+  - separate GitHub Projects board mutation remains blocked by missing `read:project` token scope
+
+Recorded publication result:
+
+- GitHub repository update: completed successfully
+- separate GitHub Projects board mutation: still blocked by token scope rather than repository state
