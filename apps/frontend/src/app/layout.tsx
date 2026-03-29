@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ReactNode } from "react";
+import { headers } from "next/headers";
 
 import { AppShell } from "@/components/app-shell";
 import { Providers } from "@/components/providers";
@@ -41,13 +42,14 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <link href="https://api.qantumlearn.academy" rel="preconnect" crossOrigin="" />
         <link href="https://api.qantumlearn.academy" rel="dns-prefetch" />
       </head>
-      <body>
+      <body nonce={nonce}>
         <Providers>
           <AppShell>{children}</AppShell>
         </Providers>

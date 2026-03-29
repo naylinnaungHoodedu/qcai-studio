@@ -61,6 +61,7 @@ function buildContentSecurityPolicy(request: NextRequest, nonce: string): string
     "img-src 'self' data: blob:",
     "media-src 'self' blob:",
     "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
     `script-src ${scriptSources.join(" ")}`,
     `connect-src ${buildConnectSources()}`,
   ].join("; ");
@@ -76,6 +77,7 @@ export function proxy(request: NextRequest) {
   const nonce = createNonce();
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", buildContentSecurityPolicy(request, nonce));
 
   const session = pageRequiresGuestBootstrap(request.nextUrl.pathname) ? resolveGuestSession(request) : null;
   if (session) {
