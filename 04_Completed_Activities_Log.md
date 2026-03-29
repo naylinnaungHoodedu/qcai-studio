@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-03-29 02:22:50 -04:00`
+Last updated on: `2026-03-29 02:25:11 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp`
 
 ## 1. Scope of Work Completed
@@ -2333,6 +2333,27 @@ Completed publication-preparation work:
 Recorded publication boundary:
 
 - GitHub repository update: available
+- separate GitHub Projects board mutation: still blocked by token scope rather than repository state
+
+## 118. GitHub Project Update Completed for the Video/Simulation Batch
+
+The current remediation, validation, deployment, and logging batch was published to the GitHub repository project after the local records were updated.
+
+Completed publication work:
+
+- published the current repository batch on `main` in:
+  - commit: `7211946`
+  - message: `Fix lesson video playback and activate live simulations`
+- pushed the updated branch to:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+- rechecked GitHub Projects CLI access after publication:
+  - command: `gh project list --owner naylinnaungHoodedu`
+  - result: still blocked by missing `read:project` token scope
+
+Recorded publication result:
+
+- GitHub repository update: completed successfully
 - separate GitHub Projects board mutation: still blocked by token scope rather than repository state
 
 ## 98. GitHub Project Update Completed for About Page Release
