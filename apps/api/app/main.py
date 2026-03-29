@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
@@ -166,8 +167,18 @@ async def add_security_headers(request, call_next):
     return response
 
 
+@app.exception_handler(HTTPException)
+async def custom_http_exception_handler(request, exc):
+    response = await http_exception_handler(request, exc)
+    for key, value in _security_headers_for_request(request).items():
+        response.headers.setdefault(key, value)
+    return response
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request, exc):
+    if isinstance(exc, HTTPException):
+        return await custom_http_exception_handler(request, exc)
     return JSONResponse(
         status_code=500,
         content={"error": "internal", "detail": "Unexpected server error."},

@@ -14,12 +14,14 @@ const API_BASE_URL =
   "http://127.0.0.1:8000";
 const DEMO_USER_ID = "demo-learner";
 const DEMO_ROLE = "learner";
-const ENABLE_DEMO_AUTH =
-  process.env.ENABLE_DEMO_AUTH != null
+
+function isDemoAuthEnabled(): boolean {
+  return process.env.ENABLE_DEMO_AUTH != null
     ? process.env.ENABLE_DEMO_AUTH === "true"
     : process.env.NEXT_PUBLIC_ENABLE_DEMO_AUTH != null
       ? process.env.NEXT_PUBLIC_ENABLE_DEMO_AUTH === "true"
       : process.env.NODE_ENV !== "production";
+}
 
 function buildTargetUrl(pathParts: string[], request: NextRequest): string {
   const base = API_BASE_URL.replace(/\/$/, "");
@@ -27,6 +29,10 @@ function buildTargetUrl(pathParts: string[], request: NextRequest): string {
   const url = new URL(`${base}/${path}`);
   url.search = request.nextUrl.search;
   return url.toString();
+}
+
+function isSourceAssetRequest(pathParts: string[]): boolean {
+  return pathParts[0] === "source-assets";
 }
 
 async function proxyRequest(
@@ -43,9 +49,10 @@ async function proxyRequest(
     headers.set("authorization", cookieAuthorization);
   }
   const method = request.method.toUpperCase();
+  const demoAuthEnabled = isDemoAuthEnabled();
   const hasAuthorization = headers.has("authorization");
   const session =
-    !ENABLE_DEMO_AUTH && !hasAuthorization && routeRequiresGuestSession(normalizedPath)
+    !demoAuthEnabled && !hasAuthorization && routeRequiresGuestSession(normalizedPath)
       ? resolveGuestSession(request)
       : null;
 
@@ -55,7 +62,17 @@ async function proxyRequest(
     });
   }
 
-  if (!ENABLE_DEMO_AUTH) {
+  // Source assets (videos, PDFs) must be proxied — NOT redirected — so that
+  // authentication cookies scoped to qantumlearn.academy are forwarded as
+  // server-side headers to api.qantumlearn.academy.  A browser-side redirect
+  // would lose those cookies, sending an unauthenticated request that causes
+  // the backend to return 401 (which the global exception handler re-maps to
+  // 500, making videos fail with a playback error in the UI).
+  //
+  // For range-request video streaming we forward the Range header and echo
+  // back the 206 Partial Content response so the HTML5 video element can seek.
+
+  if (!demoAuthEnabled) {
     headers.delete("x-demo-user");
     headers.delete("x-demo-role");
   } else if (hasAuthorization) {
