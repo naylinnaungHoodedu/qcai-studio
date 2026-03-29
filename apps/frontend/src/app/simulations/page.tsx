@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { SimulationGallery } from "@/components/simulation-gallery";
 import { StructuredData } from "@/components/structured-data";
 import { buildPageMetadata } from "@/lib/metadata";
 import {
@@ -85,7 +86,7 @@ export default function SimulationsPage() {
           <p className="eyebrow">Simulation program</p>
           <h1>Verified QC+AI simulations designed to make the curriculum learn-by-doing.</h1>
           <p className="hero-text">
-            This public page publishes the March 2026 simulation concept library for QC+AI Studio: sixteen verified simulations, inline corrections, the teaching model behind them, and the implementation path needed to bring them into the live product.
+            This public page now hosts the March 2026 QC+AI simulation library as a live browser surface: sixteen verified simulations, inline corrections, runnable teaching prototypes, and the architecture notes needed to harden them into fully persisted product features.
           </p>
           <p className="hero-text">{SIMULATION_STATUS_NOTE}</p>
           <div className="button-row">
@@ -133,25 +134,25 @@ export default function SimulationsPage() {
           <p className="eyebrow">Public framing</p>
           <h2>What this page claims, and what it does not claim</h2>
           <p>
-            The simulation program is now public and inspectable. That improves transparency immediately, but it is not the same as claiming that every simulation is already embedded as a production interaction. The value of this page is that the roadmap, corrected concepts, and implementation boundaries are now explicit instead of hidden.
+            The simulation program is now public, inspectable, and runnable in the browser. That still does not mean the deeper platform layer is complete: simulation sessions are not yet persisted into learner history, and analytics or arena variants are still future engineering work. The value of this page is that the interaction layer and the remaining implementation boundaries are both explicit.
           </p>
         </div>
         <div className="two-column-grid">
           <article className="panel">
             <p className="eyebrow">Current status</p>
-            <h2>Verified design, phased implementation</h2>
+            <h2>Live browser prototypes, deeper platform work next</h2>
             <ul className="goal-list">
-              <li>The sixteen simulations are defined, grouped by module, and corrected where needed.</li>
-              <li>The teaching model now requires source citation, saveable state, and arena-compatible variants.</li>
-              <li>The next engineering step is to start with the simplest high-value public simulation rather than attempting the entire program at once.</li>
+              <li>All sixteen simulations now have playable browser labs grouped by module and corrected where needed.</li>
+              <li>The teaching model still requires source citation, saveable state, and arena-compatible variants as the next platform layer.</li>
+              <li>The next engineering step is to persist session state and embed the strongest labs directly into lesson flow.</li>
             </ul>
           </article>
           <article className="panel emphasis-card">
-            <p className="eyebrow">First priority</p>
+            <p className="eyebrow">Prototype anchor</p>
             <h2>{SIMULATION_FIRST_STEP.title}</h2>
             <p>{SIMULATION_FIRST_STEP.summary}</p>
             <p className="muted">
-              {SIMULATION_FIRST_STEP.id} is the best public teaser because it is mathematically compact, easy to explain, and directly tied to why NISQ realism matters.
+              {SIMULATION_FIRST_STEP.id} remains the clearest thesis statement for the simulation layer because it is mathematically compact, easy to explain, and directly tied to why NISQ realism matters.
             </p>
           </article>
         </div>
@@ -188,45 +189,12 @@ export default function SimulationsPage() {
       <section className="section-block" id="simulation-library">
         <div className="section-heading">
           <p className="eyebrow">Concept library</p>
-          <h2>Sixteen verified simulations mapped to the curriculum</h2>
+          <h2>Sixteen verified simulations mapped to the curriculum and playable in the browser</h2>
           <p>
-            The catalog is organized by module so evaluators can see exactly how the simulation layer reinforces the current lesson path. Concepts marked corrected include explicit change notes, not silent edits.
+            The catalog is organized by module so evaluators can see exactly how the simulation layer reinforces the current lesson path. Concepts marked corrected include explicit change notes, not silent edits, and each card now opens a browser-playable lab.
           </p>
         </div>
-        <div className="simulation-module-list">
-          {SIMULATION_MODULES.map((module) => (
-            <article className="panel simulation-module-block" key={module.slug}>
-              <div className="module-card-header">
-                <div className="stack">
-                  <p className="eyebrow">Module {module.moduleNumber}</p>
-                  <h2>{module.title}</h2>
-                  <p>{module.summary}</p>
-                </div>
-                <Link className="secondary-button inline-action" href={`/modules/${module.slug}`}>
-                  Open module
-                </Link>
-              </div>
-
-              <div className="simulation-card-grid">
-                {module.concepts.map((concept) => (
-                  <article className="simulation-card" key={concept.id}>
-                    <div className="simulation-badge-row">
-                      <span className="simulation-chip">{concept.id}</span>
-                      <span className="simulation-chip tier">{concept.tier}</span>
-                      {concept.correction ? <span className="simulation-chip corrected">Corrected</span> : null}
-                    </div>
-                    <h3>{concept.title}</h3>
-                    <p>{concept.summary}</p>
-                    <p className="muted">{concept.interaction}</p>
-                    {concept.formula ? <p className="simulation-formula">{concept.formula}</p> : null}
-                    {concept.correction ? <p className="simulation-callout">{concept.correction}</p> : null}
-                    {concept.emphasis ? <p className="simulation-emphasis">{concept.emphasis}</p> : null}
-                  </article>
-                ))}
-              </div>
-            </article>
-          ))}
-        </div>
+        <SimulationGallery modules={SIMULATION_MODULES} />
       </section>
 
       <section className="section-block">
@@ -360,7 +328,7 @@ export default function SimulationsPage() {
           <p className="eyebrow">Explore next</p>
           <h2>Use the curriculum pages to anchor the simulation roadmap</h2>
           <p>
-            The simulations page now exposes the product direction clearly. The next useful step is to read the relevant module, inspect the existing lesson path, and then decide which simulation should become the first public interactive build.
+            The simulations page now exposes both the product direction and a working browser layer. The next useful step is to read the relevant module, inspect the existing lesson path, and decide which labs should be embedded directly into lessons with persistence, citations, and analytics.
           </p>
         </div>
         <div className="button-row">

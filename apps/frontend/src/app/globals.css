@@ -760,6 +760,12 @@ input:not([type="range"]) {
   background: rgba(154, 52, 18, 0.08);
 }
 
+.simulation-chip.available {
+  color: var(--accent-deep);
+  border-color: rgba(15, 118, 110, 0.22);
+  background: rgba(15, 118, 110, 0.08);
+}
+
 .simulation-formula,
 .simulation-callout,
 .simulation-emphasis {
@@ -785,6 +791,261 @@ input:not([type="range"]) {
   background: rgba(15, 118, 110, 0.08);
   border: 1px solid rgba(15, 118, 110, 0.18);
   color: var(--accent-deep);
+}
+
+.simulation-lab,
+.simulation-mini-card,
+.simulation-metric-tile,
+.simulation-routing-node {
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.simulation-lab {
+  display: grid;
+  gap: 18px;
+  padding: 18px;
+}
+
+.simulation-lab h4,
+.simulation-mini-card strong,
+.simulation-metric-tile strong,
+.simulation-routing-node strong {
+  margin: 0;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+}
+
+.simulation-lab-header,
+.simulation-control-grid,
+.simulation-metric-grid,
+.simulation-routing-grid,
+.simulation-table {
+  display: grid;
+  gap: 16px;
+}
+
+.simulation-lab-header p,
+.simulation-metric-tile p,
+.simulation-mini-card p,
+.simulation-routing-node p {
+  margin: 0;
+}
+
+.simulation-lab-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+}
+
+.simulation-lab-panel {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.simulation-control-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.simulation-control-grid.compact {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.simulation-control-grid label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.simulation-metric-grid {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.simulation-metric-tile {
+  padding: 14px;
+}
+
+.simulation-metric-tile strong {
+  font-size: 1.4rem;
+}
+
+.simulation-chart-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
+}
+
+.simulation-bar-column {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  text-align: center;
+}
+
+.simulation-bar-column strong,
+.simulation-bar-column p {
+  margin: 0;
+}
+
+.simulation-bar-track {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  min-height: 110px;
+  padding: 8px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(15, 118, 110, 0.08), rgba(255, 255, 255, 0.96));
+}
+
+.simulation-bar-track span {
+  display: block;
+  width: 100%;
+  border-radius: 12px;
+  background: linear-gradient(180deg, var(--warm), var(--accent));
+}
+
+.simulation-status-copy,
+.simulation-success,
+.simulation-warning {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 16px;
+}
+
+.simulation-status-copy,
+.simulation-success {
+  background: rgba(15, 118, 110, 0.08);
+  border: 1px solid rgba(15, 118, 110, 0.18);
+  color: var(--accent-deep);
+}
+
+.simulation-warning {
+  background: rgba(154, 52, 18, 0.08);
+  border: 1px solid rgba(154, 52, 18, 0.18);
+  color: #6b2a14;
+}
+
+.simulation-choice-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.secondary-button.is-selected,
+.simulation-toggle.is-selected {
+  border-color: rgba(15, 118, 110, 0.34);
+  background: rgba(15, 118, 110, 0.14);
+}
+
+.simulation-card-grid.compact {
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+.simulation-mini-card {
+  padding: 16px;
+}
+
+.simulation-toggle {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.simulation-routing-grid {
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+}
+
+.simulation-routing-node {
+  padding: 14px;
+  text-align: center;
+}
+
+.simulation-boundary-grid {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.simulation-boundary-pair {
+  display: grid;
+  gap: 4px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.simulation-boundary-cell {
+  aspect-ratio: 1;
+  border-radius: 10px;
+  border: 1px solid rgba(23, 24, 28, 0.08);
+}
+
+.simulation-boundary-cell.positive {
+  background: rgba(15, 118, 110, 0.72);
+}
+
+.simulation-boundary-cell.negative {
+  background: rgba(154, 52, 18, 0.5);
+}
+
+.simulation-table {
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.simulation-table-row {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.92);
+  border-top: 1px solid rgba(23, 24, 28, 0.08);
+}
+
+.simulation-table-row:first-child {
+  border-top: none;
+}
+
+.simulation-progress {
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(23, 24, 28, 0.08);
+}
+
+.simulation-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #2ea89f);
+}
+
+.video-status-banner {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.video-status-banner.preparing {
+  background: rgba(15, 118, 110, 0.08);
+  border-color: rgba(15, 118, 110, 0.18);
+}
+
+.video-status-banner.error {
+  background: rgba(154, 52, 18, 0.08);
+  border-color: rgba(154, 52, 18, 0.18);
+}
+
+.video-status-banner p {
+  margin: 0;
 }
 
 .transcript-panel {
@@ -1146,7 +1407,8 @@ button:disabled,
   .game-grid,
   .builder-grid,
   .video-panel-grid,
-  .simulation-state-grid {
+  .simulation-state-grid,
+  .simulation-lab-grid {
     grid-template-columns: 1fr;
   }
 

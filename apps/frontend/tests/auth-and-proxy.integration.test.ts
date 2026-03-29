@@ -162,6 +162,15 @@ test("proxy bootstraps guest cookies for private account pages", async () => {
   assert.ok(response.cookies.get("qcai_guest_csrf")?.value);
 });
 
+test("proxy also bootstraps guest cookies for lesson pages so media assets can stream", async () => {
+  const response = proxy(
+    new NextRequest("https://qantumlearn.academy/lessons/nisq-reality-overview"),
+  );
+
+  assert.match(response.cookies.get("qcai_guest_id")?.value ?? "", /^guest-/);
+  assert.ok(response.cookies.get("qcai_guest_csrf")?.value);
+});
+
 test("proxy preserves an existing guest session without reissuing cookies", async () => {
   const response = proxy(
     new NextRequest("https://qantumlearn.academy/account", {

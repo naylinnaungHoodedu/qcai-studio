@@ -7,7 +7,7 @@ import {
 } from "@/lib/guest-session";
 
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
-const PRIVATE_PAGE_PREFIXES = ["/account", "/builder", "/dashboard", "/projects"];
+const GUEST_BOOTSTRAP_PREFIXES = ["/account", "/builder", "/dashboard", "/projects", "/lessons"];
 
 function createNonce(): string {
   const bytes = new Uint8Array(16);
@@ -67,7 +67,9 @@ function buildContentSecurityPolicy(request: NextRequest, nonce: string): string
 }
 
 function pageRequiresGuestBootstrap(pathname: string): boolean {
-  return PRIVATE_PAGE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  return GUEST_BOOTSTRAP_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
 }
 
 export function proxy(request: NextRequest) {

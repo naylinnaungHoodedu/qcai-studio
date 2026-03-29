@@ -255,8 +255,8 @@ export default async function HomePage() {
           <article className="lesson-card">
             <div>
               <p className="eyebrow">Simulations</p>
-              <h3>Verified QC+AI simulation roadmap</h3>
-              <p>Inspect the sixteen-simulation catalog, corrected concept notes, and the implementation path for turning the course into a learn-by-doing studio.</p>
+              <h3>Browser-playable QC+AI simulation studio</h3>
+              <p>Run the sixteen verified labs directly in the browser, inspect the corrected concept notes, and review the deeper rollout path for persistence and analytics.</p>
             </div>
             <div className="lesson-actions">
               <Link className="primary-button" href="/simulations">

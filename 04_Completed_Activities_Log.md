@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-03-29 01:34:18 -04:00`
+Last updated on: `2026-03-29 02:22:50 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp`
 
 ## 1. Scope of Work Completed
@@ -2914,4 +2914,164 @@ Completed publication work:
 Recorded publication result:
 
 - GitHub repository update: completed successfully
+- separate GitHub Projects board mutation: still blocked by token scope rather than repository state
+
+## 114. Video Playback and Simulation Runtime Remediation Completed
+
+The latest public-experience defect batch was verified against the live site and then remediated in the frontend codebase. Two user-visible issues were handled together:
+
+- lesson videos appeared present in the UI but were failing to start reliably on the public domain
+- the public Simulations page was still acting as a roadmap/catalog surface rather than a working interactive lab surface
+
+Completed verification work before changes:
+
+- verified the live lesson page rendered a real HTML video element for:
+  - `https://qantumlearn.academy/lessons/nisq-reality-overview`
+- verified the protected asset endpoint itself was healthy rather than fully offline:
+  - proxied asset request returned `200 OK`
+  - ranged asset request returned `206 Partial Content`
+  - media response advertised `content-type: video/mp4`
+  - media response advertised `accept-ranges: bytes`
+- verified the live `/simulations` route was still a documentation page rather than a browser-playable lab experience
+- verified the current MP4 codec container tags were browser-compatible:
+  - `avc1`
+  - `mp4a`
+
+Completed remediation work for lesson-video delivery:
+
+- extended lesson-page guest bootstrap behavior in:
+  - `apps/frontend/src/proxy.ts`
+- the middleware now issues guest-session cookies on `/lessons/*` routes so the browser reaches the video surface with a valid guest identity already established
+- hardened the lesson media player in:
+  - `apps/frontend/src/components/video-panel.tsx`
+- added a same-origin `HEAD` preflight before attaching the video stream
+- added explicit stream-status messaging for:
+  - preparing
+  - ready
+  - error
+- added a retry action for reattaching the stream
+- added a direct-asset fallback link for cases where the browser still rejects the first media attach
+- added `playsInline` and `<source type="video/mp4">` handling so the element behavior is more explicit to the browser runtime
+
+Completed remediation work for simulations:
+
+- created a new deterministic browser-side simulation model layer in:
+  - `apps/frontend/src/lib/simulation-models.ts`
+- created a new interactive simulations gallery component in:
+  - `apps/frontend/src/components/simulation-gallery.tsx`
+- converted `/simulations` from a roadmap-only surface into a live browser-lab surface in:
+  - `apps/frontend/src/app/simulations/page.tsx`
+- updated supporting public status and homepage copy in:
+  - `apps/frontend/src/lib/simulations.ts`
+  - `apps/frontend/src/lib/public-status.ts`
+  - `apps/frontend/src/app/page.tsx`
+- added the required layout and lab styling in:
+  - `apps/frontend/src/app/globals.css`
+
+Recorded simulation-runtime scope:
+
+- all sixteen verified concept cards now expose a browser-playable lab surface
+- the page remains honest about what is still not complete at platform level:
+  - session persistence
+  - simulation analytics
+  - lesson-embedded progression history
+  - arena variants
+
+## 115. Validation, Frontend Deployment, and Live Reverification Completed for the Video/Simulation Batch
+
+The video/simulation remediation batch was validated locally, deployed to Cloud Run, and then rechecked against the public domain so the recorded outcome reflects real runtime behavior rather than local source edits alone.
+
+Completed local validation work:
+
+- ran `npm run test:integration` in `apps/frontend`
+- result: `22 passed`
+- ran `npm run lint` in `apps/frontend`
+- result: passed
+- ran `npm run build` in `apps/frontend`
+- result: passed
+- confirmed the production build exposes `/simulations` as a static public route and keeps `/lessons/[slug]` active as a dynamic study route
+
+Completed production image build work:
+
+- built and published the updated frontend image through Cloud Build:
+  - build id: `59439f3e-d3bc-4fc0-8698-343d22b56141`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest`
+
+Completed production deployment work:
+
+- updated the Cloud Run frontend service:
+  - service: `qcai-frontend`
+  - region: `us-central1`
+  - latest ready revision: `qcai-frontend-00013-zww`
+  - traffic: `100%`
+
+Completed live verification work after rollout:
+
+- verified `https://qantumlearn.academy/lessons/nisq-reality-overview` returns `200`
+- verified the live lesson response now issues:
+  - `qcai_guest_id`
+  - `qcai_guest_csrf`
+- verified a lesson-page guest bootstrap followed by a ranged MP4 request returns:
+  - `206 Partial Content`
+- verified the live lesson page now renders the new stream-status block and direct-asset fallback action
+- verified `https://qantumlearn.academy/simulations` returns `200`
+- verified the live simulations HTML now contains:
+  - `16` visible `Live lab` markers
+  - the new browser-playable simulation status copy
+  - the expanded `SIM-01A` interactive lab surface
+
+## 116. Deep Double-Check Completed for the Video/Simulation Release
+
+The video/simulation remediation summary was rechecked immediately after rollout so the close-out would retain only claims that still held against the live production environment and the current repository state.
+
+Completed recheck work:
+
+- re-ran frontend integration tests
+- re-ran frontend lint
+- re-ran frontend production build
+- rechecked the latest Cloud Build status for:
+  - `59439f3e-d3bc-4fc0-8698-343d22b56141`
+- rechecked the latest ready frontend revision and traffic split for:
+  - `qcai-frontend-00013-zww`
+- rechecked the live lesson page headers and confirmed guest-cookie issuance on the lesson route still holds
+- rechecked the ranged MP4 delivery path and confirmed the lesson-bootstrap-plus-range request still returns `206 Partial Content`
+- rechecked the live simulations page HTML and confirmed the interactive-lab markers remain present
+
+Recorded precision notes from the deep double-check:
+
+- the strongest directly verified video claim is that lesson pages now bootstrap the guest session correctly and the live ranged stream path works immediately afterward
+- this is strong evidence the playback defect is fixed, but the verification remained transport- and DOM-level rather than a full manual browser click-and-watch session from this environment
+- the current untracked-file state was rechecked and confirmed to include:
+  - `Codex_Submission_Package.txt`
+  - `lesson.json`
+
+## 117. Publication Preparation Completed for the Video/Simulation Batch
+
+The repository and local logs were prepared for publication after the remediation, validation, deployment, and deep recheck work were completed.
+
+Completed publication-preparation work:
+
+- updated the completed-activities record with sections `114` through `118`
+- updated the local-only production deployment log with:
+  - the new frontend build id
+  - the new frontend Cloud Run revision
+  - the guest-bootstrap deployment note for lesson video delivery
+  - the live-simulations runtime activation note
+  - the latest live verification snapshot for lesson video and simulation behavior
+- reviewed the current publication diff and confirmed it contains:
+  - the lesson-video streaming hardening changes
+  - the new browser-playable simulation model layer
+  - the new interactive simulation gallery component
+  - the updated public copy and supporting tests
+  - the latest activity-log records
+- confirmed the worktree publication boundary before commit:
+  - `Codex_Submission_Package.txt` remains intentionally outside the publication batch
+  - `lesson.json` remains intentionally outside the publication batch
+- rechecked GitHub Projects CLI access immediately before publication:
+  - command: `gh project list --owner naylinnaungHoodedu`
+  - result: still blocked by missing `read:project` token scope
+
+Recorded publication boundary:
+
+- GitHub repository update: available
 - separate GitHub Projects board mutation: still blocked by token scope rather than repository state

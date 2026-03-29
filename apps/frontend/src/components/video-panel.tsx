@@ -22,6 +22,12 @@ export function VideoPanel({
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [activeChapterId, setActiveChapterId] = useState(chapters[0]?.id ?? "");
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [streamState, setStreamState] = useState<"preparing" | "ready" | "error">("preparing");
+  const [streamMessage, setStreamMessage] = useState("Preparing authenticated lesson stream.");
+  const [refreshToken, setRefreshToken] = useState(0);
+  const resolvedVideoUrl =
+    videoAsset?.download_url != null ? `${getClientApiBaseUrl()}${videoAsset.download_url}` : null;
 
   useEffect(() => {
     if (!videoRef.current || chapters.length === 0) {
@@ -41,7 +47,62 @@ export function VideoPanel({
     return () => video.removeEventListener("timeupdate", updateActiveChapter);
   }, [chapters]);
 
-  if (!videoAsset) {
+  useEffect(() => {
+    if (!resolvedVideoUrl) {
+      setVideoUrl(null);
+      setStreamState("preparing");
+      setStreamMessage("Lesson uses document-grounded content only.");
+      return;
+    }
+    const streamUrl = resolvedVideoUrl;
+    let cancelled = false;
+
+    async function bootstrapStream() {
+      setVideoUrl(null);
+      setStreamState("preparing");
+      setStreamMessage("Preparing authenticated lesson stream.");
+
+      try {
+        const response = await fetch(streamUrl, {
+          method: "HEAD",
+          cache: "no-store",
+          credentials: "same-origin",
+        });
+        if (!response.ok) {
+          throw new Error(`bootstrap ${response.status}`);
+        }
+        if (cancelled) {
+          return;
+        }
+        setVideoUrl(streamUrl);
+        setStreamState("ready");
+        setStreamMessage("Video stream ready. If playback stalls, retry the stream attach.");
+      } catch {
+        if (cancelled) {
+          return;
+        }
+        setStreamState("error");
+        setStreamMessage(
+          "The browser could not attach the lesson video. Retry the stream or open the direct asset link.",
+        );
+      }
+    }
+
+    void bootstrapStream();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshToken, resolvedVideoUrl]);
+
+  useEffect(() => {
+    if (!videoRef.current || !videoUrl) {
+      return;
+    }
+    videoRef.current.load();
+  }, [videoUrl]);
+
+  if (!videoAsset || !resolvedVideoUrl) {
     return (
       <section className="panel">
         <h2>Lesson Media</h2>
@@ -49,8 +110,6 @@ export function VideoPanel({
       </section>
     );
   }
-
-  const videoUrl = `${getClientApiBaseUrl()}${videoAsset.download_url}`;
 
   function seekToChapter(chapter: VideoChapter) {
     if (!videoRef.current) {
@@ -71,14 +130,40 @@ export function VideoPanel({
       </div>
       <div className="video-panel-grid">
         <div className="stack">
+          <div className={`video-status-banner ${streamState}`}>
+            <p className="eyebrow">Stream status</p>
+            <p>{streamMessage}</p>
+            <div className="button-row">
+              <button
+                className="secondary-button"
+                onClick={() => setRefreshToken((current) => current + 1)}
+                type="button"
+              >
+                Retry stream
+              </button>
+              <a className="secondary-button" href={resolvedVideoUrl} rel="noreferrer" target="_blank">
+                Open direct asset
+              </a>
+            </div>
+          </div>
           <video
             aria-label={`Video lesson: ${videoAsset.title}`}
             className="lesson-video"
             controls
+            onError={() => {
+              setStreamState("error");
+              setStreamMessage(
+                "The browser reported a playback error. Retry the stream attach or open the direct asset link.",
+              );
+            }}
+            onLoadedData={() => {
+              setStreamState("ready");
+            }}
+            playsInline
             preload="metadata"
             ref={videoRef}
-            src={videoUrl}
           >
+            {videoUrl ? <source src={videoUrl} type="video/mp4" /> : null}
             <track kind="captions" />
           </video>
           <div className="chapter-list">

@@ -28,9 +28,9 @@ export const FEATURE_AVAILABILITY = [
 export const RECENT_UPDATES = [
   {
     date: "March 29, 2026",
-    title: "Published the Simulations hub",
+    title: "Activated live browser simulations",
     detail:
-      "The site now includes a verified public simulations program with corrected concept notes, interaction rules, API-extension requirements, and a phased implementation roadmap.",
+      "The simulations page now ships browser-playable labs for all sixteen verified concepts, alongside corrected notes, architecture guidance, and the longer-term rollout plan.",
   },
   {
     date: "March 28, 2026",
@@ -53,9 +53,9 @@ export const EXPANSION_ROADMAP = [
       "The current course remains an intensive starter-to-project path. The next visible step is to grow it into a fuller 12-15 week curriculum with additional lessons and labs per module.",
   },
   {
-    title: "Ship the first public simulation build",
+    title: "Persist and instrument the simulation layer",
     detail:
-      "The verified roadmap already identifies SIM-01A, the NISQ Fidelity Cliff, as the fastest high-value public interactive build.",
+      "The live browser labs now exist. The next step is to persist simulation sessions, resolve citations per state, and wire analytics into learner dashboards and arena-style challenges.",
   },
   {
     title: "Add completion signals learners can carry forward",

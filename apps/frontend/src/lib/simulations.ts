@@ -51,7 +51,7 @@ export type SimulationPhase = {
 };
 
 export const SIMULATION_STATUS_NOTE =
-  "This page publishes the verified simulation program for QC+AI Studio. It documents the design, corrections, and implementation roadmap without claiming that all 16 simulations are already live in the browser today.";
+  "This page now includes browser-playable educational prototypes for all sixteen verified simulation concepts. They run live in the browser today, while session persistence, analytics, and lesson-embedded progression remain the next implementation layer.";
 
 export const SIMULATION_TIERS = [
   {
