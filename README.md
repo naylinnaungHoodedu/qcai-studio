@@ -10,6 +10,7 @@ This repository now contains a working MVP implementation of the interactive QC+
 - Submission docs:
   - `SUBMISSION_ATTRIBUTION.md`
   - `PROJECT_SUMMARY.md`
+  - `04_Completed_Activities_Log.md`
 
 ## Structure
 
