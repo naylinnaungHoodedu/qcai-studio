@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-03-29 00:31:13 -04:00`
+Last updated on: `2026-03-29 01:34:18 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp`
 
 ## 1. Scope of Work Completed
@@ -2679,6 +2679,235 @@ Completed publication work:
   - the deep double-check
   - the GitHub publication result
 - rechecked GitHub Projects CLI access immediately after the repository push:
+  - command: `gh project list --owner naylinnaungHoodedu`
+  - result: still blocked by missing `read:project` token scope
+
+Recorded publication result:
+
+- GitHub repository update: completed successfully
+- separate GitHub Projects board mutation: still blocked by token scope rather than repository state
+
+## 109. Public Trust, Discoverability, and Repository-Metadata Remediation Completed
+
+The current public-trust and discoverability audit batch was verified issue by issue so only the confirmed defects and genuinely actionable portfolio gaps were implemented rather than copying the full audit list uncritically into the codebase.
+
+Completed verification and implementation work:
+
+- confirmed and fixed the repository-level trust gaps:
+  - added a top-level `LICENSE` file using the MIT license
+  - verified the GitHub repository is public
+  - added GitHub repository topics through GitHub CLI:
+    - `artificial-intelligence`
+    - `education`
+    - `fastapi`
+    - `nextjs`
+    - `openai`
+    - `quantum-computing`
+    - `rag`
+    - `typescript`
+  - enabled GitHub Discussions for the repository
+- clarified Git LFS expectations in `README.md` so MP4 asset handling is explained honestly for cloners and ZIP-download users
+- removed loopback and local-development endpoints from the production CSP paths in:
+  - `apps/frontend/src/proxy.ts`
+  - `apps/api/app/main.py`
+- added `X-XSS-Protection` headers to both frontend and API responses in:
+  - `apps/frontend/next.config.ts`
+  - `apps/api/app/main.py`
+- added explicit public-page cache headers and kept ISR-friendly behavior visible on the frontend in:
+  - `apps/frontend/next.config.ts`
+  - `apps/frontend/src/app/layout.tsx`
+- added API-domain `preconnect` and `dns-prefetch` hints in:
+  - `apps/frontend/src/app/layout.tsx`
+- improved accessibility and keyboard affordances by:
+  - adding `aria-live="polite"` and `role="status"` to loading shells in `apps/frontend/src/components/page-state.tsx`
+  - adding global focus-visible styles and screen-reader helper styling in `apps/frontend/src/app/globals.css`
+- consolidated the crowded primary navigation by grouping practice features under `Practice` in:
+  - `apps/frontend/src/components/app-shell.tsx`
+- added a new public release/status surface in:
+  - `apps/frontend/src/app/whats-new/page.tsx`
+  - `apps/frontend/src/lib/public-status.ts`
+- expanded public status messaging on the homepage and modules hub so visitors can see:
+  - feature availability
+  - course-expansion roadmap
+  - completion-signal plans
+  - external operational tasks that cannot be completed from the repo alone
+- expanded breadcrumb structured data and visual breadcrumbs where they were still missing on public pages:
+  - `apps/frontend/src/app/about/page.tsx`
+  - `apps/frontend/src/app/attribution/page.tsx`
+  - `apps/frontend/src/app/privacy/page.tsx`
+  - `apps/frontend/src/app/terms/page.tsx`
+  - shared helpers in `apps/frontend/src/lib/metadata.ts`
+- replaced the previous single-build-timestamp sitemap behavior with curated per-route `lastmod` values in:
+  - `apps/frontend/src/lib/site.ts`
+  - `apps/frontend/src/app/sitemap.ts`
+- extended automated coverage for the new trust/discovery behavior in:
+  - `apps/frontend/tests/public-discovery.integration.test.ts`
+  - `apps/frontend/tests/auth-and-proxy.integration.test.ts`
+  - `apps/api/tests/test_api.py`
+
+Recorded verification outcomes for the audit list:
+
+- confirmed as real and fixed:
+  - missing license
+  - missing GitHub topics
+  - production CSP loopback leakage
+  - missing `X-XSS-Protection`
+  - missing explicit public changelog/status surface
+  - missing explicit public feature-availability messaging
+  - crowded top navigation
+  - uniform sitemap `lastmod` timestamps
+- confirmed as real but external to repository-only implementation:
+  - Google Search Console submission
+  - redirect-domain registration for `quantumlearn.academy`
+  - backlink/indexing growth
+  - full mobile-device audit
+  - Lighthouse/axe governance setup
+  - large follow-on product work such as a full interactive simulator and completion-badge export
+- confirmed as stale or not reproducible as current defects:
+  - the broad "zero alt text on images" claim
+  - the assumption that breadcrumb structured data was absent across the public site
+
+## 110. Validation, Production Deployment, and Live Reverification Completed for the Trust and Discoverability Batch
+
+The trust/discovery remediation batch was fully validated locally, deployed to production, and then rechecked on the live domain and live API so the summary would reflect actual runtime behavior rather than only local code state.
+
+Completed local validation work:
+
+- ran `npm run test:integration` in `apps/frontend`
+- result: `16 passed`
+- ran `npm run lint` in `apps/frontend`
+- result: passed
+- ran `npm run build` in `apps/frontend`
+- result: passed
+- confirmed the production build now exposes static/revalidation-friendly public routes including:
+  - `/`
+  - `/about`
+  - `/modules`
+  - `/syllabus`
+  - `/whats-new`
+- ran `pytest -q` in `apps/api`
+- result: `50 passed`
+
+Completed production image build work:
+
+- built and published the updated frontend image through Cloud Build:
+  - build id: `c5fe6ca8-bc54-4a5c-8a5c-a1a1e483fac4`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest`
+- built and published the updated API image through Cloud Build:
+  - build id: `33ca203c-57cd-4135-903f-308a7576d1a8`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-api:latest`
+
+Completed production deployment work:
+
+- updated the Cloud Run frontend service:
+  - service: `qcai-frontend`
+  - region: `us-central1`
+  - latest ready revision: `qcai-frontend-00012-rf6`
+  - traffic: `100%`
+- attempted an API rollout with malformed `--set-env-vars` usage and confirmed the failure rather than masking it:
+  - failed revision: `qcai-api-00011-bvs`
+  - failure mode: the CLI invocation collapsed multiple env vars into the `ENVIRONMENT` value and the revision never became healthy
+- created a corrected local deployment env file:
+  - `infra/cloudrun/api-production.env.yaml`
+- redeployed the API with the corrected env-file approach:
+  - service: `qcai-api`
+  - region: `us-central1`
+  - latest ready revision: `qcai-api-00012-q9n`
+  - traffic: `100%`
+
+Completed live verification work after rollout:
+
+- verified the repository metadata state directly through GitHub API:
+  - `LICENSE` is published on the public repository
+  - topics are present
+  - Discussions are enabled
+- verified `https://qantumlearn.academy/` now returns:
+  - `x-xss-protection: 1; mode=block`
+  - `cache-control: public, max-age=0, s-maxage=300, stale-while-revalidate=86400`
+  - CSP without `0.0.0.0:3000`
+  - API `preconnect` and `dns-prefetch` hints
+- verified `https://api.qantumlearn.academy/health` returns `200` and includes:
+  - `x-xss-protection: 1; mode=block`
+- verified `https://qantumlearn.academy/whats-new` returns `200`
+- verified the live homepage now exposes:
+  - the `Practice` nav group
+  - the `What's new` public release/status surface
+  - the explicit feature-availability section
+- verified `https://qantumlearn.academy/about` and `https://qantumlearn.academy/privacy` include breadcrumb JSON-LD
+- verified `https://qantumlearn.academy/sitemap.xml` now exposes mixed `2026-03-28` and `2026-03-29` `lastmod` values rather than a single uniform build timestamp
+
+## 111. Deep Double-Check Completed for the Trust and Discoverability Release
+
+The trust/discovery batch was rechecked after publication so the final close-out would only preserve claims that still held after the repository push and live rollout.
+
+Completed recheck work:
+
+- re-ran repository verification for:
+  - current `main` commit
+  - repository visibility
+  - presence of `LICENSE`
+  - configured GitHub topics
+  - GitHub Discussions state
+- re-ran local verification for:
+  - frontend integration tests
+  - backend tests
+- re-ran live verification for:
+  - frontend and API Cloud Run latest-ready revisions
+  - homepage headers
+  - API `/health`
+  - `/whats-new`
+  - `/about`
+  - `/privacy`
+  - `sitemap.xml`
+- confirmed there was no functional, factual, or deployment error in the trust/discovery rollout summary
+- recorded the one wording-tightening note for precision:
+  - the broad public-cache/preconnect claim was directly reverified on the homepage and sampled public pages that were checked live, while the route config and tests support the broader route family
+
+## 112. Publication Preparation Completed for the Trust and Discoverability Batch
+
+The repository and local log set were prepared for GitHub publication after the remediation, validation, deployment, and deep recheck pass were completed.
+
+Completed publication-preparation work:
+
+- updated the completed-activities record with sections `109` through `113`
+- updated the local-only production deployment log with:
+  - the new Cloud Build ids
+  - the new Cloud Run revision names
+  - the failed-first API rollout record
+  - the corrected API env-file deployment note
+  - the latest live verification snapshot
+- reviewed the current publication diff and confirmed it contains:
+  - the trust/discovery and accessibility remediation code
+  - the new `LICENSE`
+  - the new public `What's New` page and supporting status model
+  - the CSP/header/cache/sitemap improvements
+  - the latest deployment notes
+- confirmed the worktree publication boundary before commit:
+  - the GitHub-publishable file for this logging pass is `04_Completed_Activities_Log.md`
+  - `07_Production_Deployment_Local_Log.md` was updated locally but remains intentionally excluded from Git by repo policy
+  - `Codex_Submission_Package.txt` remains untracked and intentionally outside the publication batch
+- rechecked GitHub Projects CLI access immediately before publication:
+  - command: `gh project list --owner naylinnaungHoodedu`
+  - result: still blocked by missing `read:project` token scope
+
+Recorded publication boundary:
+
+- GitHub repository update: available
+- separate GitHub Projects board mutation: still blocked by token scope rather than repository state
+
+## 113. GitHub Project Update Completed for the Trust and Discoverability Batch
+
+The current logging and publication batch was pushed to the GitHub repository project after the local records were updated.
+
+Completed publication work:
+
+- published the trust/discovery repository batch on `main` in:
+  - commit: `442fbeb`
+  - message: `Harden public site trust and discovery surfaces`
+- pushed the updated branch to:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+- rechecked GitHub Projects CLI access after the logging pass:
   - command: `gh project list --owner naylinnaungHoodedu`
   - result: still blocked by missing `read:project` token scope
 
