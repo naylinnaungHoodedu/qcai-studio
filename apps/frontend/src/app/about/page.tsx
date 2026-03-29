@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { Breadcrumbs } from "@/components/breadcrumbs";
+import { StructuredData } from "@/components/structured-data";
 import { fetchCourseOverview } from "@/lib/api";
-import { COURSE_REFERENCES } from "@/lib/course-references";
 import { buildPageMetadata } from "@/lib/metadata";
-import { CONTACT_EMAIL, OWNER_NAME, REPOSITORY_URL } from "@/lib/site";
+import { COURSE_SCOPE_NOTE, ENGINEERING_READING_NOTES, INDUSTRY_METHOD_NOTE } from "@/lib/public-course";
+import { CONTACT_EMAIL, OWNER_NAME, REPOSITORY_URL, SITE_URL } from "@/lib/site";
 
 const FALLBACK_SOURCE_ASSETS = [
   {
@@ -56,7 +58,7 @@ const ENGINEERING_SURFACES = [
     eyebrow: "Backend",
     title: "FastAPI service architecture",
     description:
-      "The platform exposes a substantial API surface for lessons, grounded QA, analytics, projects, and game-like practice modes.",
+      "The platform exposes a substantial API surface for lessons, grounded QA, analytics, projects, and interactive practice modes.",
     bullets: [
       "11 route groups cover content, auth, search, QA, analytics, assets, arena, builder, insights, projects, and admin flows.",
       "SQLAlchemy and Alembic support persistence across learner activity, notes, reviews, and progress data.",
@@ -69,8 +71,8 @@ const ENGINEERING_SURFACES = [
     description:
       "QC+AI Studio uses retrieval-first AI services so niche quantum topics stay tied to evidence instead of model improvisation.",
     bullets: [
-      "LangChain and OpenAI GPT-4.1-mini drive citation-first Q&A against the curated corpus.",
-      "Pinecone-backed hybrid retrieval activates only when OpenAI and Pinecone secrets are provisioned; otherwise the platform stays on grounded lexical fallback.",
+      "LangChain and OpenAI GPT-4.1-mini drive citation-first Q&A against the curated corpus when the OpenAI key is provisioned.",
+      "Pinecone-backed hybrid retrieval activates only when OpenAI and Pinecone secrets are present; otherwise the site stays on grounded lexical fallback.",
       "Adaptive insights, skill-gap reporting, and next-step recommendations extend the platform beyond static content delivery.",
     ],
   },
@@ -80,58 +82,23 @@ const ENGINEERING_SURFACES = [
     description:
       "The learner experience is built as a real web application with secure public and protected surfaces, not as a static microsite.",
     bullets: [
-      "Next.js 16, React 19, TypeScript, and App Router power the frontend experience.",
-      "Proxy-based guest auth and CSRF protection keep protected study surfaces usable without weakening mutation safety.",
+      "Next.js 16.2.1, React 19.2.4, TypeScript, and App Router power the frontend experience.",
+      "Proxy-based guest auth and CSRF protection keep public study surfaces usable without weakening mutation safety.",
       "Docker, Cloud Run, Cloud SQL, GCS, Secret Manager, and Cloud DNS form the intended production deployment stack.",
     ],
   },
 ] as const;
 
-const CODEX_WORKSTREAMS = [
-  {
-    eyebrow: "Backend",
-    title: "Route and service implementation",
-    description:
-      "Codex was used to implement and refine the backend route modules, course assembly pipeline, analytics services, and interactive learning engines.",
-  },
-  {
-    eyebrow: "Frontend",
-    title: "Pages, flows, and interaction design",
-    description:
-      "Codex assisted with the Next.js pages, TypeScript data wiring, video delivery UX, grounded study flows, and public platform surfaces.",
-  },
-  {
-    eyebrow: "Verification",
-    title: "Testing and hardening",
-    description:
-      "The project uses backend tests, frontend integration tests, linting, and production builds to verify feature behavior rather than relying on screenshots.",
-  },
-  {
-    eyebrow: "Delivery",
-    title: "Infrastructure and submission packaging",
-    description:
-      "Codex also accelerated Cloud Run, container, and documentation work so the product story, deployment shape, and attribution stayed coherent end to end.",
-  },
-] as const;
-
-const DIFFERENTIATORS = [
-  "Graduate-level QC+AI focus instead of a generic chatbot or a shallow educational shell.",
-  "Citation-grounded answers anchored to real proceedings, use-case analysis, and lecture assets.",
-  "A real full-stack product footprint spanning backend services, frontend UX, storage, auth, and deployment infrastructure.",
-  "Multiple active-learning loops, including flashcards, quizzes, notes, projects, analytics, arena play, and builder scenarios.",
-] as const;
-
-const LESSONS_LEARNED = [
-  "Grounding is essential for educational AI on niche technical subjects because confident hallucinations are otherwise too easy.",
-  "AI-assisted development works best when the human owner sets scope, quality bar, and acceptance criteria across the whole stack.",
-  "Security details like CSP, guest mutation protection, and proper streaming semantics matter even in student-led products.",
-  "Documentation and attribution are part of product quality, not cleanup chores to postpone until the end.",
+const BUILD_PRACTICES = [
+  "Human review stays responsible for scope, architecture, acceptance criteria, and final publication.",
+  "AI assistance accelerated implementation, refinement, testing, infrastructure, and documentation work across the stack.",
+  "Claims on the public site are strongest when they can be tied back to the live codebase, a source asset, or a reproducible test run.",
 ] as const;
 
 export const metadata: Metadata = buildPageMetadata({
-  title: "About",
+  title: "About the QC+AI Learning Platform",
   description:
-    "Learn what QC+AI Studio is, why it was built, how the curriculum is grounded, and how the platform was engineered with OpenAI Codex assistance.",
+    "Learn what QC+AI Studio is, why it was built, how the curriculum is curated, and how the live platform is engineered and reviewed.",
   path: "/about",
 });
 
@@ -139,91 +106,43 @@ export default async function AboutPage() {
   const course = await fetchCourseOverview().catch(() => null);
   const sourceAssets = course?.source_assets.length ? course.source_assets : FALLBACK_SOURCE_ASSETS;
   const moduleCount = course?.modules.length ?? 6;
-  const totalLessons =
-    course?.modules.reduce((count, module) => count + module.lesson_slugs.length, 0) ?? 7;
-  const sourceAssetCount = sourceAssets.length;
-  const videoCount =
-    sourceAssets.filter((asset) => asset.kind.toLowerCase() === "video").length || 3;
-  const documentCount = Math.max(sourceAssetCount - videoCount, 0);
-  const startHref = course?.modules[0] ? `/modules/${course.modules[0].slug}` : "/syllabus";
-  const courseSummary =
-    course?.summary ??
-    "QC+AI Studio turns curated QC+AI proceedings, industry-use-case analysis, and lecture media into a structured interactive course.";
-
-  const platformPillars = [
-    {
-      eyebrow: "Curriculum",
-      title: "Follow a structured six-module path",
-      description:
-        "The course moves from NISQ-era realities and hardware optimization into applications, explainability, industry use cases, and roadmap thinking.",
-      href: "/syllabus",
-      action: "View syllabus",
-    },
-    {
-      eyebrow: "Grounded retrieval",
-      title: "Ask questions against cited source material",
-      description:
-        "Search and lesson-level Q&A stay tied to source passages, sections, and timestamps instead of drifting into unsupported answers.",
-      href: "/search",
-      action: "Search the materials",
-    },
-    {
-      eyebrow: "Retention",
-      title: "Study through flashcards, quizzes, and notes",
-      description:
-        "Lessons are designed for active recall and durable learning, not passive reading, with practice surfaces built directly into the course flow.",
-      href: startHref,
-      action: "Start a lesson",
-    },
-    {
-      eyebrow: "Analytics",
-      title: "Track progress, momentum, and skill gaps",
-      description:
-        "The dashboard combines completion, performance, focus, readiness, and AI-generated next steps into a single learner view.",
-      href: "/dashboard",
-      action: "Open dashboard",
-    },
-    {
-      eyebrow: "Projects",
-      title: "Build portfolio-grade QC+AI work",
-      description:
-        "Project workflows combine technical briefs, AI feedback, submission tracking, and peer review so learners can produce evidence of skill.",
-      href: "/projects",
-      action: "Open projects",
-    },
-    {
-      eyebrow: "Practice modes",
-      title: "Compete in the arena or build dependency maps",
-      description:
-        "Arena and Builder extend the platform into live recall, systems thinking, and microlearning construction instead of stopping at content delivery.",
-      href: "/arena",
-      action: "Enter arena",
-      secondaryHref: "/builder",
-      secondaryAction: "Open builder",
-    },
-  ] as const;
+  const lessonCount = course?.modules.reduce((count, module) => count + module.lesson_slugs.length, 0) ?? 7;
+  const videoCount = sourceAssets.filter((asset) => asset.kind.toLowerCase() === "video").length || 3;
+  const documentCount = Math.max(sourceAssets.length - videoCount, 0);
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: "QC+AI Studio",
+    url: `${SITE_URL}/about`,
+    founder: OWNER_NAME,
+    email: CONTACT_EMAIL,
+    description:
+      "QC+AI Studio is a source-grounded learning platform for quantum computing and AI built around hybrid-system design, hardware realism, and transparent public evaluation.",
+  };
 
   return (
     <div className="page-stack">
+      <StructuredData data={structuredData} id="about-organization-jsonld" />
       <section className="hero about-hero">
         <div className="hero-copy">
+          <Breadcrumbs
+            items={[
+              { label: "Home", href: "/" },
+              { label: "About" },
+            ]}
+          />
           <p className="eyebrow">About QC+AI Studio</p>
-          <h1>A source-grounded QC+AI learning platform built around real research, real media, and real engineering constraints.</h1>
+          <h1>A public QC+AI learning platform built for technical trust, not just surface polish.</h1>
           <p className="hero-text">
-            QC+AI Studio is a graduate-level learning environment for quantum computing and artificial intelligence. It converts curated workshop
-            proceedings, industry-use-case analysis, and lecture videos into a structured web platform with lessons, retrieval, practice loops,
-            and learner analytics.
+            QC+AI Studio is a graduate-level learning environment for quantum computing and artificial intelligence. It turns curated proceedings, applied industry material, and lecture assets into a structured web product with modules, lessons, grounded Q&amp;A, projects, and learner analytics.
           </p>
-          <p className="hero-text">
-            The goal is to teach what actually matters in practice: routing overhead, qubit scarcity, hybrid orchestration, noise, explainability,
-            and commercialization context, not just abstract definitions.
-          </p>
+          <p className="hero-text">{COURSE_SCOPE_NOTE}</p>
           <div className="button-row">
-            <Link className="primary-button" href={startHref}>
-              Start the course
+            <Link className="primary-button" href="/modules">
+              Review the curriculum
             </Link>
-            <Link className="secondary-button" href="/syllabus">
-              Review syllabus
+            <Link className="secondary-button" href="/attribution">
+              Read attribution
             </Link>
             <a className="secondary-button" href={REPOSITORY_URL} rel="noreferrer" target="_blank">
               Inspect GitHub
@@ -231,121 +150,100 @@ export default async function AboutPage() {
           </div>
         </div>
 
-        <div className="hero-grid">
-          <div className="hero-panel stack">
-            <div className="stack">
-              <p className="eyebrow">Creator and context</p>
-              <h2>{OWNER_NAME}</h2>
-              <p className="muted">
-                Hood College, Frederick, Maryland. Product ownership, domain direction, and final review remain human-led, with OpenAI Codex used as
-                the primary coding assistant across the stack.
-              </p>
-              <p className="muted">
-                This public page documents the purpose, corpus, and engineering footprint behind the live platform at qantumlearn.academy.
-              </p>
-              <p className="muted">
-                Contact: <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
-              </p>
-            </div>
-            <div className="button-row">
-              <Link className="secondary-button" href="/attribution">
-                Read attribution
-              </Link>
-              <Link className="secondary-button" href="/privacy">
-                Privacy details
-              </Link>
-            </div>
-          </div>
-
-          <div className="analytics-metric-grid">
-            <article className="metric-card">
-              <div className="stack">
-                <span className="eyebrow">Modules</span>
-                <strong className="about-metric-value">{moduleCount}</strong>
-                <span className="muted">Structured curriculum blocks</span>
-              </div>
-            </article>
-            <article className="metric-card">
-              <div className="stack">
-                <span className="eyebrow">Lessons</span>
-                <strong className="about-metric-value">{totalLessons}</strong>
-                <span className="muted">Interactive learning units</span>
-              </div>
-            </article>
-            <article className="metric-card">
-              <div className="stack">
-                <span className="eyebrow">Source assets</span>
-                <strong className="about-metric-value">{sourceAssetCount}</strong>
-                <span className="muted">
-                  {documentCount} documents and {videoCount} videos
-                </span>
-              </div>
-            </article>
-            <article className="metric-card">
-              <div className="stack">
-                <span className="eyebrow">Service surface</span>
-                <strong className="about-metric-value">11</strong>
-                <span className="muted">API route groups, plus 3 background workers</span>
-              </div>
-            </article>
-          </div>
+        <div className="analytics-metric-grid">
+          <article className="metric-card">
+            <span className="eyebrow">Creator</span>
+            <strong className="about-metric-value">{OWNER_NAME}</strong>
+            <p>Product ownership, domain direction, and final review remain human-led.</p>
+          </article>
+          <article className="metric-card">
+            <span className="eyebrow">Modules</span>
+            <strong className="about-metric-value">{moduleCount}</strong>
+            <p>Structured curriculum blocks in the current public studio track.</p>
+          </article>
+          <article className="metric-card">
+            <span className="eyebrow">Lessons</span>
+            <strong className="about-metric-value">{lessonCount}</strong>
+            <p>Focused learning units connected to search, flashcards, quizzes, and projects.</p>
+          </article>
+          <article className="metric-card">
+            <span className="eyebrow">Corpus</span>
+            <strong className="about-metric-value">{documentCount + videoCount}</strong>
+            <p>
+              {documentCount} documents and {videoCount} videos shape the public curriculum.
+            </p>
+          </article>
         </div>
       </section>
 
       <section className="section-block">
         <div className="section-heading">
-          <p className="eyebrow">Why it exists</p>
-          <h2>Built to close the gap between abstract quantum education and engineering reality</h2>
-          <p>{courseSummary}</p>
+          <p className="eyebrow">Mission</p>
+          <h2>Why this product exists</h2>
+          <p>
+            Most QC+AI resources split in the wrong direction: either they stay too abstract to help engineers reason about real systems, or they oversimplify quantum claims into marketing language. This platform is meant to create a middle path anchored in evidence, architecture, and practical skepticism.
+          </p>
         </div>
         <div className="two-column-grid">
           <article className="panel">
-            <p className="eyebrow">Problem</p>
-            <h2>What most learners are missing</h2>
+            <p className="eyebrow">Public promise</p>
+            <h2>What the site should make clear</h2>
             <ul className="goal-list">
-              <li>Too many quantum resources stay theoretical and disconnected from hardware limits, workflow design, and deployment tradeoffs.</li>
-              <li>Static PDFs and proceedings are valuable, but they are difficult to interrogate, navigate, and retain without guided structure.</li>
-              <li>Generic chat systems are not trustworthy for niche QC+AI topics when they cannot cite the actual source base.</li>
+              <li>The curriculum is source-grounded and inspectable.</li>
+              <li>The course prioritizes hybrid-system design under hardware limits.</li>
+              <li>The product is honest about what is fully operational, what is guest-mode, and what is still environment-gated.</li>
             </ul>
           </article>
           <article className="panel emphasis-card">
-            <p className="eyebrow">Response</p>
-            <h2>What this platform changes</h2>
-            <ul className="goal-list">
-              <li>It organizes the corpus into a coherent module sequence with lesson-level summaries, notes, flashcards, quizzes, and projects.</li>
-              <li>It keeps retrieval and Q&amp;A grounded in specific source evidence so learners can verify what the system says.</li>
-              <li>It treats hybrid system design, optimization overhead, application evidence, and commercialization context as first-class teaching material.</li>
-            </ul>
+            <p className="eyebrow">Creator context</p>
+            <h2>Ownership and contact</h2>
+            <p>
+              {OWNER_NAME} remains responsible for product direction, publication decisions, and final review. Questions about attribution, evaluation, or the public course experience can be sent to <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
+            </p>
           </article>
         </div>
       </section>
 
       <section className="section-block">
         <div className="section-heading">
-          <p className="eyebrow">What learners can do</p>
-          <h2>Structured study, grounded retrieval, and applied practice in one platform</h2>
+          <p className="eyebrow">Editorial method</p>
+          <h2>How the content is framed</h2>
           <p>
-            QC+AI Studio is designed as a full learning loop. Learners can move through the course path, interrogate the source material, practice,
-            submit work, and monitor how their understanding is changing over time.
+            The site does not treat every source equally. Proceedings-style research, applied industry synthesis, and lecture media play different roles inside the learning path, and the product now says so explicitly.
+          </p>
+        </div>
+        <div className="two-column-grid">
+          <article className="panel">
+            <p className="eyebrow">Reading lens</p>
+            <h2>How to interpret the lessons</h2>
+            <ul className="goal-list">
+              {ENGINEERING_READING_NOTES.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </article>
+          <article className="panel">
+            <p className="eyebrow">Industry synthesis note</p>
+            <h2>Why Module 5 is labeled carefully</h2>
+            <p>{INDUSTRY_METHOD_NOTE}</p>
+          </article>
+        </div>
+      </section>
+
+      <section className="section-block">
+        <div className="section-heading">
+          <p className="eyebrow">Verification and review</p>
+          <h2>How the product is kept honest</h2>
+          <p>
+            A public learning product should not ask visitors to trust vague claims. The implementation is backed by tests, deployable infrastructure, source-linked retrieval, and explicit disclosure of environment-gated capabilities.
           </p>
         </div>
         <div className="module-grid">
-          {platformPillars.map((pillar) => (
-            <article className="panel" key={pillar.title}>
+          {BUILD_PRACTICES.map((item) => (
+            <article className="panel" key={item}>
               <div className="stack">
-                <p className="eyebrow">{pillar.eyebrow}</p>
-                <h2>{pillar.title}</h2>
-                <p>{pillar.description}</p>
-                <div className="button-row">
-                  <Link className="secondary-button" href={pillar.href}>
-                    {pillar.action}
-                  </Link>
-                  {"secondaryHref" in pillar ? (
-                    <Link className="secondary-button" href={pillar.secondaryHref}>
-                      {pillar.secondaryAction}
-                    </Link>
-                  ) : null}
-                </div>
+                <p className="eyebrow">Practice</p>
+                <h2>{item}</h2>
               </div>
             </article>
           ))}
@@ -354,11 +252,10 @@ export default async function AboutPage() {
 
       <section className="section-block">
         <div className="section-heading">
-          <p className="eyebrow">How it is built</p>
-          <h2>Full-stack architecture, not a single demo page</h2>
+          <p className="eyebrow">Architecture snapshot</p>
+          <h2>Full-stack engineering footprint</h2>
           <p>
-            The platform combines a content assembly pipeline, grounded AI services, secure asset delivery, learner-state persistence, and a modern
-            frontend delivery stack.
+            The public site is the frontend of a larger product surface that includes content assembly, retrieval, analytics, project workflows, and secure media delivery.
           </p>
         </div>
         <div className="module-grid">
@@ -379,126 +276,24 @@ export default async function AboutPage() {
         </div>
       </section>
 
-      <section className="section-block">
-        <div className="section-heading">
-          <p className="eyebrow">Built with Codex</p>
-          <h2>Human-directed, AI-assisted product engineering</h2>
-          <p>
-            OpenAI Codex was used across implementation, refinement, validation, infrastructure, and documentation work while the product owner kept
-            scope, architecture, and acceptance decisions under direct control.
-          </p>
-        </div>
-        <div className="module-grid">
-          {CODEX_WORKSTREAMS.map((workstream) => (
-            <article className="panel" key={workstream.title}>
-              <div className="stack">
-                <p className="eyebrow">{workstream.eyebrow}</p>
-                <h2>{workstream.title}</h2>
-                <p>{workstream.description}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="section-block">
-        <div className="section-heading">
-          <p className="eyebrow">Corpus and evidence</p>
-          <h2>Grounded in curated references and local source assets</h2>
-          <p>
-            The public course is anchored in workshop proceedings, industry-use-case analysis, and lecture media rather than in generalized model
-            pretraining alone.
-          </p>
-        </div>
-        <div className="two-column-grid">
-          <article className="panel">
-            <div className="stack">
-              <p className="eyebrow">References</p>
-              <h2>Core research corpus</h2>
-              <ol className="reference-list">
-                {COURSE_REFERENCES.map((reference, index) => (
-                  <li key={reference} className="reference-item">
-                    <span className="eyebrow">Reference {index + 1}</span>
-                    <p>{reference}</p>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          </article>
-          <article className="panel">
-            <div className="stack">
-              <p className="eyebrow">Asset inventory</p>
-              <h2>Documents and lecture media</h2>
-              <ul className="source-list compact">
-                {sourceAssets.map((asset) => (
-                  <li key={asset.id}>
-                    <span>{asset.kind}</span>
-                    <strong>{asset.title}</strong>
-                    <p className="muted">{asset.description ?? asset.filename}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <section className="section-block">
-        <div className="section-heading">
-          <p className="eyebrow">What makes it different</p>
-          <h2>Designed as a serious learning product</h2>
-          <p>
-            QC+AI Studio is meant to be educationally useful, technically inspectable, and honest about how AI assistance was applied during the build.
-          </p>
-        </div>
-        <div className="two-column-grid">
-          <article className="panel">
-            <div className="stack">
-              <p className="eyebrow">Differentiators</p>
-              <h2>Why the platform stands apart</h2>
-              <ul className="goal-list">
-                {DIFFERENTIATORS.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          </article>
-          <article className="panel">
-            <div className="stack">
-              <p className="eyebrow">What was learned</p>
-              <h2>Practical takeaways from the build</h2>
-              <ul className="goal-list">
-                {LESSONS_LEARNED.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          </article>
-        </div>
-      </section>
-
       <section className="section-block analytics-hero">
         <div className="section-heading">
           <p className="eyebrow">Explore next</p>
-          <h2>Study the curriculum or inspect the implementation</h2>
+          <h2>Read the curriculum, then inspect the implementation details</h2>
           <p>
-            This platform is intended to work both as a real learner-facing product and as a transparent example of end-to-end human-directed,
-            AI-assisted software engineering.
+            The curriculum hub now covers prerequisites, project rubrics, public guest access, and methodological notes. The attribution page covers the human-directed AI-assisted build process in more detail.
           </p>
         </div>
         <div className="button-row">
-          <Link className="primary-button" href={startHref}>
-            Enter the course
+          <Link className="primary-button" href="/modules">
+            Open modules
           </Link>
           <Link className="secondary-button" href="/syllabus">
             Open syllabus
           </Link>
           <Link className="secondary-button" href="/attribution">
-            View attribution
+            Open attribution
           </Link>
-          <a className="secondary-button" href={REPOSITORY_URL} rel="noreferrer" target="_blank">
-            GitHub repository
-          </a>
         </div>
       </section>
     </div>

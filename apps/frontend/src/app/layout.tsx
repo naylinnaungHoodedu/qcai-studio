@@ -23,12 +23,21 @@ export const metadata: Metadata = {
     url: SITE_URL,
     siteName: "QC+AI Studio",
     type: "website",
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: "QC+AI Studio social preview",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "QC+AI Studio",
     description:
       "Interactive learning environment for quantum computing and artificial intelligence under hardware constraints.",
+    images: ["/twitter-image"],
   },
 };
 

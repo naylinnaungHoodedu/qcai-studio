@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-03-26 17:09:02 -04:00`
+Last updated on: `2026-03-29 00:26:25 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp`
 
 ## 1. Scope of Work Completed
@@ -25,8 +25,8 @@ At the start of work, the folder did not contain an existing software codebase. 
 
 - `Quantum Computing AI Research Synthesis 2026.docx`
 - `Analyzing Quantum Computing and AI Paper 2025.docx`
-- `2025.mp4`
-- `2026.mp4`
+- `Quantum Computing and Artificial Intelligence 2025.mp4`
+- `Quantum Computing and Artificial Intelligence 2026.mp4`
 
 The following conclusions were established during the study phase:
 
@@ -308,12 +308,12 @@ The work materially added or changed these major implementation areas:
 - `.dockerignore`
 - `README.md`
 
-The original research source files were preserved unchanged:
+The original research documents were preserved unchanged, and the original video assets are now represented under their canonical runtime filenames:
 
 - `Quantum Computing AI Research Synthesis 2026.docx`
 - `Analyzing Quantum Computing and AI Paper 2025.docx`
-- `2025.mp4`
-- `2026.mp4`
+- `Quantum Computing and Artificial Intelligence 2025.mp4`
+- `Quantum Computing and Artificial Intelligence 2026.mp4`
 
 ## 12. Current State Summary
 
@@ -410,8 +410,8 @@ Current root-level video-file state:
 
 - `Quantum Computing and Artificial Intelligence 2025.mp4` is the active runtime 2025 video file.
 - `Quantum Computing and Artificial Intelligence 2026.mp4` is the active runtime 2026 video file.
-- Legacy `2025.mp4` still remains in the folder as an inactive leftover and is not used by the current application runtime.
-- Legacy `2026.mp4` is no longer the active runtime file and is no longer present as the served 2026 asset.
+- `Industry Use Cases.mp4` is the active runtime industry-use-cases video file.
+- No separate short-name legacy copies of the 2025 or 2026 lecture videos are part of the current served runtime file set.
 
 ## 18. Verification and Double-Check Completed
 
@@ -469,14 +469,14 @@ As of the last update, the current folder materially contains:
 - source video files with active runtime names:
   - `Quantum Computing and Artificial Intelligence 2025.mp4`
   - `Quantum Computing and Artificial Intelligence 2026.mp4`
+  - `Industry Use Cases.mp4`
 - additional root-level local artifacts:
-  - legacy `2025.mp4`
   - `Quantum Computing and Artificial Intelligence 2025.pdf`
   - `Quantum_Computing_and_Artificial_Intelligence_2026.pdf`
 
 ## 21. Superseding Statement
 
-Where earlier sections in this log refer to the older source-video names `2025.mp4` and `2026.mp4`, the earlier statements should now be read as historical records of the pre-normalization state rather than the current runtime configuration.
+Where earlier sections in this log used short-form references for the lecture videos, those statements should now be read as pointing to the canonical runtime filenames `Quantum Computing and Artificial Intelligence 2025.mp4` and `Quantum Computing and Artificial Intelligence 2026.mp4`.
 
 This file now records both:
 
@@ -2513,4 +2513,149 @@ Completed publication work:
 Recorded publication result:
 
 - GitHub repository update: completed successfully
+- separate GitHub Projects board mutation: still blocked by token scope rather than repository state
+
+## 104. Simulation Program Study Completed from the Verified QC+AI Simulation Design Package
+
+The verified simulation-design package was studied in depth so the next public-facing implementation would reflect the corrected scientific framing, the intended pedagogy, and the actual product architecture rather than reducing the source into a thin placeholder page.
+
+Completed study work:
+
+- inspected `QC_AI_Studio_Simulations_Verified.docx` directly and extracted:
+  - the full set of 16 simulation concepts
+  - the 3 corrected concepts with explicit change notes
+  - the 7 verified UX and interaction-design principles
+  - the corrected implementation roadmap and Phase 0 foundation checklist
+  - the recommended browser/runtime stack notes and new FastAPI endpoint requirements
+- rechecked the existing frontend structure before design work so the new page would match the live site rather than becoming a disconnected microsite:
+  - `apps/frontend/src/app/page.tsx`
+  - `apps/frontend/src/app/modules/page.tsx`
+  - `apps/frontend/src/app/about/page.tsx`
+  - `apps/frontend/src/components/app-shell.tsx`
+  - `apps/frontend/src/components/site-footer.tsx`
+  - `apps/frontend/src/app/sitemap.ts`
+  - `apps/frontend/src/lib/metadata.ts`
+  - `apps/frontend/src/components/structured-data.tsx`
+- confirmed the simulation package contains four distinct public-story layers worth preserving on the live site:
+  - concept library
+  - teaching/interaction model
+  - technical implementation architecture
+  - staged rollout roadmap
+- established the public-positioning rule for the page before implementation:
+  - the live site should publish the verified simulation program honestly
+  - it should not falsely imply that all 16 simulations are already interactive in production
+
+## 105. Public Simulations Page Implemented, Validated, and Deployed to Production
+
+The live frontend was extended with a new public Simulations hub that presents the verified simulation program as a serious product surface rather than as a temporary note or flat document dump.
+
+Completed implementation work:
+
+- added a new simulation-content model in:
+  - `apps/frontend/src/lib/simulations.ts`
+- added the new public route:
+  - `apps/frontend/src/app/simulations/page.tsx`
+- structured the page to cover:
+  - the 16 verified simulations mapped by module
+  - corrected concept notes for `SIM-01A`, `SIM-02A`, and `SIM-05B`
+  - the tier model
+  - the three-state interaction model
+  - the verified UX principles
+  - the architecture and API-extension requirements
+  - the 6-phase implementation roadmap
+  - the "build `SIM-01A` first" recommendation
+- integrated the page into shared public-discovery surfaces:
+  - added `Simulations` to the main navigation in `apps/frontend/src/components/app-shell.tsx`
+  - added `Simulation program` to the footer project links in `apps/frontend/src/components/site-footer.tsx`
+  - added a homepage simulations card and button path in `apps/frontend/src/app/page.tsx`
+  - added `/simulations` to `apps/frontend/src/app/sitemap.ts`
+- added page-specific styling and layout support in:
+  - `apps/frontend/src/app/globals.css`
+- extended frontend regression coverage in:
+  - `apps/frontend/tests/public-discovery.integration.test.ts`
+
+Completed validation work:
+
+- ran `npm run test:integration` in `apps/frontend`
+- result: `13 passed`
+- ran `npm run lint` in `apps/frontend`
+- result: passed
+- ran `npm run build` in `apps/frontend`
+- result: passed
+- confirmed the production build output includes:
+  - `/simulations`
+
+Completed production deployment work:
+
+- built and published the updated frontend image through Cloud Build:
+  - build id: `ef179209-a9b9-4bcc-b8c9-d747344d993f`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest`
+- updated the Cloud Run frontend service:
+  - service: `qcai-frontend`
+  - region: `us-central1`
+  - latest ready revision: `qcai-frontend-00011-qsh`
+  - traffic: `100%`
+
+Completed live verification work after rollout:
+
+- verified `https://qantumlearn.academy/simulations` returns `200`
+- verified the live homepage now exposes simulations in:
+  - the shared header navigation
+  - the homepage hero button row
+  - the interactive-practice section
+- verified the shared footer now exposes:
+  - `Simulation program`
+- verified `https://qantumlearn.academy/sitemap.xml` includes:
+  - `https://qantumlearn.academy/simulations`
+- verified the live simulations page publishes the expected corrected content including:
+  - `SIM-01A`
+  - `IBM Heron`
+  - `IonQ Forte`
+  - the AES-256 migration correction
+
+## 106. Deep Double-Check Completed for the Simulations Release
+
+The Simulations release was rechecked after the initial rollout so the deployment summary would be evidence-based rather than assumed from the first successful run.
+
+Completed double-check work:
+
+- reran the frontend integration tests, lint, and production build after the initial close-out
+- rechecked the live Cloud Run frontend service directly through:
+  - `gcloud run services describe qcai-frontend --region us-central1`
+- rechecked the public domain directly for:
+  - `/simulations`
+  - homepage header and hero exposure
+  - sitemap publication
+  - live simulations-page metadata
+  - corrected concept visibility on the live page
+- confirmed there was no functional or deployment error in the Simulations-page implementation, validation, or rollout summary
+- recorded the one wording-tightening note for precision:
+  - the exact verified homepage fact is that the hero button row includes `Explore simulations`
+  - the global navigation separately includes `Simulations`
+
+## 107. Publication Preparation Completed for the Current Public-Experience Batch
+
+The repository and local records were prepared for GitHub publication after the simulation study, frontend implementation, deployment, and deep recheck pass were completed.
+
+Completed publication-preparation work:
+
+- updated the completed-activities record with the simulation-study, implementation, validation, deployment, and recheck details
+- updated the local-only production deployment log with:
+  - the new frontend Cloud Build id
+  - the new Cloud Run revision name
+  - the live verification snapshot for `/simulations`
+- reviewed the current publication diff and confirmed it contains the current public-experience batch, including:
+  - public curriculum and metadata improvements
+  - About/Attribution/Account public-facing refinements
+  - lesson-navigation and breadcrumb improvements
+  - backend content-cleanup and transcript-label refinements
+  - the new public Simulations route and supporting content model
+- confirmed GitHub repository authentication remains available for push operations
+- rechecked GitHub Projects CLI access immediately before publication:
+  - command: `gh project list --owner naylinnaungHoodedu`
+  - result: blocked by missing `read:project` token scope
+
+Recorded publication boundary:
+
+- GitHub repository update: available
 - separate GitHub Projects board mutation: still blocked by token scope rather than repository state

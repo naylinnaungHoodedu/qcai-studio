@@ -17,6 +17,7 @@ from app.schemas import (
     SourceAsset,
 )
 from app.services.docx_parser import SectionRecord, parse_docx_sections
+from app.services.text_utils import lead_sentence, truncate_display_excerpt
 from app.services.transcripts import load_video_chapters
 
 
@@ -619,8 +620,8 @@ class CourseStore:
     def _build_lesson_sections(self, sections: list[SectionRecord]) -> list[LessonSection]:
         built: list[LessonSection] = []
         for index, section in enumerate(sections, start=1):
-            excerpt = section.body[:500].strip()
-            summary = excerpt.split(". ")[0].strip()
+            excerpt = truncate_display_excerpt(section.body, 560)
+            summary = lead_sentence(section.body, 220)
             built.append(
                 LessonSection(
                     id=f"{section.source_id}-section-{index}",
@@ -788,7 +789,7 @@ class CourseStore:
                     title=chunk.title,
                     source_kind=chunk.source_kind,
                     source_title=chunk.source_title,
-                    excerpt=chunk.excerpt,
+                    excerpt=truncate_display_excerpt(chunk.excerpt, 320),
                     lesson_slug=chunk.lesson_slug,
                     score=round(score, 3),
                     timestamp_label=chunk.timestamp_label,

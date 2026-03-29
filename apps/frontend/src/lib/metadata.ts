@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 
 const SITE_NAME = "QC+AI Studio";
+const OPEN_GRAPH_IMAGE = "/opengraph-image";
+const TWITTER_IMAGE = "/twitter-image";
 
 type BuildPageMetadataOptions = {
   title?: string;
@@ -32,11 +34,20 @@ export function buildPageMetadata({
       url: canonicalPath,
       siteName: SITE_NAME,
       type,
+      images: [
+        {
+          url: OPEN_GRAPH_IMAGE,
+          width: 1200,
+          height: 630,
+          alt: `${resolvedTitle} | ${SITE_NAME}`,
+        },
+      ],
     },
     twitter: {
       card: "summary_large_image",
       title: resolvedTitle,
       description,
+      images: [TWITTER_IMAGE],
     },
     robots: index
       ? undefined

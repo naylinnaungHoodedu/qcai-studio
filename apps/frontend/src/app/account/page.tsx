@@ -6,7 +6,7 @@ import { fetchMe } from "@/lib/api";
 import { buildPageMetadata } from "@/lib/metadata";
 
 export const metadata: Metadata = buildPageMetadata({
-  title: "Account",
+  title: "Guest Access and Account",
   description:
     "Review the current guest or authenticated learner session and access the Auth0 sign-in path when client configuration is available.",
   path: "/account",
@@ -117,16 +117,18 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
               </div>
             ) : (
               <div className="stack">
-                <button className="primary-button" disabled type="button">
-                  Sign in with Auth0
-                </button>
+                <div className="button-row">
+                  <Link className="primary-button" href="/dashboard">
+                    Continue in guest mode
+                  </Link>
+                </div>
                 <p className="muted">
-                  Client-side Auth0 variables are not configured for this deployment yet, so the authenticated login button is visible but inactive.
+                  Client-side Auth0 variables are not configured for this deployment yet, so this public deployment is currently guest-first rather than sign-in-first.
                 </p>
               </div>
             )}
             <article className="citation-card">
-              <strong>What changes after sign-in</strong>
+              <strong>What changes after authenticated sign-in</strong>
               <p>
                 Authenticated API requests can resolve against a stable identity instead of a guest cookie, which is the foundation for cross-browser and cross-device continuity.
               </p>

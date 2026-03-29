@@ -1,14 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { Breadcrumbs } from "@/components/breadcrumbs";
 import { PageErrorState } from "@/components/page-state";
+import { StructuredData } from "@/components/structured-data";
 import { fetchCourseOverview } from "@/lib/api";
 import { COURSE_REFERENCES } from "@/lib/course-references";
 import { buildPageMetadata } from "@/lib/metadata";
 import { splitSyllabusAssets } from "@/lib/syllabus";
+import { SITE_URL } from "@/lib/site";
 
 export const metadata: Metadata = buildPageMetadata({
-  title: "Syllabus",
+  title: "QC+AI Curriculum and Syllabus",
   description:
     "Browse the public QC+AI syllabus, module sequence, learning goals, and source references for the hardware-constrained course.",
   path: "/syllabus",
@@ -25,14 +28,43 @@ export default async function SyllabusPage() {
     );
   }
   const { documentAssets, supplementalAssets } = splitSyllabusAssets(course.source_assets);
+  const structuredData = [
+    {
+      "@context": "https://schema.org",
+      "@type": "Course",
+      name: course.title,
+      description: course.summary,
+      url: `${SITE_URL}/syllabus`,
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
+        { "@type": "ListItem", position: 2, name: "Syllabus", item: `${SITE_URL}/syllabus` },
+      ],
+    },
+  ];
 
   return (
     <div className="page-stack">
+      <StructuredData data={structuredData} id="syllabus-jsonld" />
       <section className="section-block">
         <div className="section-heading">
+          <Breadcrumbs
+            items={[
+              { label: "Home", href: "/" },
+              { label: "Syllabus" },
+            ]}
+          />
           <p className="eyebrow">Public syllabus</p>
           <h1>{course.title}</h1>
           <p>{course.summary}</p>
+          <div className="button-row">
+            <Link className="secondary-button" href="/modules">
+              Open modules hub
+            </Link>
+          </div>
         </div>
       </section>
 

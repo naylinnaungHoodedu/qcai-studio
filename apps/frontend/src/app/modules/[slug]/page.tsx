@@ -2,8 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { Breadcrumbs } from "@/components/breadcrumbs";
+import { StructuredData } from "@/components/structured-data";
 import { fetchModule } from "@/lib/api";
 import { buildPageMetadata } from "@/lib/metadata";
+import { INDUSTRY_METHOD_NOTE } from "@/lib/public-course";
+import { SITE_URL } from "@/lib/site";
 
 type ModulePageProps = {
   params: Promise<{ slug: string }>;
@@ -38,12 +42,47 @@ export default async function ModulePage({ params }: ModulePageProps) {
     notFound();
   }
 
+  const structuredData = [
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
+        { "@type": "ListItem", position: 2, name: "Modules", item: `${SITE_URL}/modules` },
+        { "@type": "ListItem", position: 3, name: data.module.title, item: `${SITE_URL}/modules/${data.module.slug}` },
+      ],
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "CreativeWork",
+      name: data.module.title,
+      description: data.module.summary,
+      url: `${SITE_URL}/modules/${data.module.slug}`,
+    },
+  ];
+
   return (
     <div className="page-stack">
+      <StructuredData data={structuredData} id={`module-${data.module.slug}-jsonld`} />
       <section className="section-block">
+        <Breadcrumbs
+          items={[
+            { label: "Home", href: "/" },
+            { label: "Modules", href: "/modules" },
+            { label: data.module.title },
+          ]}
+        />
         <p className="eyebrow">Module</p>
         <h1>{data.module.title}</h1>
         <p className="hero-text">{data.module.summary}</p>
+        <div className="button-row">
+          <Link className="secondary-button" href="/modules">
+            Back to curriculum hub
+          </Link>
+          <Link className="secondary-button" href="/syllabus">
+            View syllabus
+          </Link>
+        </div>
         <div className="two-column-grid">
           <div className="panel">
             <h2>Learning goals</h2>
@@ -62,6 +101,13 @@ export default async function ModulePage({ params }: ModulePageProps) {
             </ul>
           </div>
         </div>
+        {data.module.slug === "industry-use-cases" ? (
+          <article className="panel">
+            <p className="eyebrow">Methodological note</p>
+            <h2>How to read this module</h2>
+            <p>{INDUSTRY_METHOD_NOTE}</p>
+          </article>
+        ) : null}
       </section>
 
       <section className="section-block">

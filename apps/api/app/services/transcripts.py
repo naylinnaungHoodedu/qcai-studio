@@ -12,7 +12,7 @@ CURATED_VIDEO_CHAPTERS: dict[str, list[VideoChapter]] = {
             timestamp_start=0,
             timestamp_end=71,
             summary="Introduces the QC+AI field and frames it through the practical limitations of NISQ hardware.",
-            transcript_excerpt="Curated chapter summary for local development. Full transcript alignment can replace this field later.",
+            transcript_excerpt="The opening frames QC+AI as a hardware-constrained field in which every quantum step must earn its place inside a practical hybrid workflow.",
         ),
         VideoChapter(
             id="2025-nisq",
@@ -54,7 +54,7 @@ CURATED_VIDEO_CHAPTERS: dict[str, list[VideoChapter]] = {
             timestamp_start=0,
             timestamp_end=71,
             summary="Opens with the broad framing of quantum computing and AI as mutually enabling disciplines under hardware constraints.",
-            transcript_excerpt="Curated chapter summary for local development. Final production should use aligned transcript segments.",
+            transcript_excerpt="The introduction positions quantum computing and AI as mutually enabling disciplines, then narrows quickly to what present hardware can sustain operationally.",
         ),
         VideoChapter(
             id="2026-feature-bottlenecks",

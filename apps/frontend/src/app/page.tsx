@@ -3,11 +3,15 @@ import Link from "next/link";
 
 import { ModuleCard } from "@/components/module-card";
 import { PageErrorState } from "@/components/page-state";
+import { StructuredData } from "@/components/structured-data";
 import { fetchCourseOverview } from "@/lib/api";
 import { COURSE_REFERENCES } from "@/lib/course-references";
 import { buildPageMetadata } from "@/lib/metadata";
+import { COURSE_SCOPE_NOTE, GUEST_MODE_NOTES } from "@/lib/public-course";
+import { SITE_URL } from "@/lib/site";
 
 export const metadata: Metadata = buildPageMetadata({
+  title: "Quantum Computing and AI Course",
   description:
     "Hardware-constrained quantum computing and AI learning, grounded in local proceedings, lesson scaffolds, and industry use cases.",
   path: "/",
@@ -25,10 +29,29 @@ export default async function HomePage() {
   }
   const totalLessons = course.modules.reduce((count, module) => count + module.lesson_slugs.length, 0);
   const videoCount = course.source_assets.filter((asset) => asset.kind === "video").length;
-  const startHref = course.modules[0] ? `/modules/${course.modules[0].slug}` : "/syllabus";
+  const startHref = course.modules[0] ? `/modules/${course.modules[0].slug}` : "/modules";
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "Course",
+    name: course.title,
+    description: course.summary,
+    provider: {
+      "@type": "Organization",
+      name: "QC+AI Studio",
+      url: SITE_URL,
+    },
+    educationalCredentialAwarded: "Course completion is currently portfolio-based; no certificate is issued yet.",
+    numberOfCredits: 0,
+    hasCourseInstance: {
+      "@type": "CourseInstance",
+      courseMode: "online",
+      url: SITE_URL,
+    },
+  };
 
   return (
     <div className="page-stack">
+      <StructuredData data={structuredData} id="home-course-jsonld" />
       <section className="hero">
         <div className="hero-copy">
           <p className="eyebrow">Quantum Hardware Perspective</p>
@@ -37,15 +60,19 @@ export default async function HomePage() {
             This course is built from the local QC+AI research and industry-use-case materials. It treats routing, noise, qubit scarcity,
             optimization reformulation, hybrid orchestration, application-specific evidence, and commercialization context as first-class teaching objects.
           </p>
+          <p className="hero-text">{COURSE_SCOPE_NOTE}</p>
           <div className="button-row">
             <Link className="primary-button" href={startHref}>
               Start with the course path
             </Link>
-            <Link className="secondary-button" href="/dashboard">
-              Open analytics hub
+            <Link className="secondary-button" href="/modules">
+              Browse modules
             </Link>
-            <Link className="secondary-button" href="/syllabus">
-              View syllabus
+            <Link className="secondary-button" href="/simulations">
+              Explore simulations
+            </Link>
+            <Link className="secondary-button" href="/dashboard">
+              Open guest dashboard
             </Link>
             <Link className="secondary-button" href="/search">
               Search materials
@@ -63,15 +90,13 @@ export default async function HomePage() {
             </p>
           </div>
           <div className="hero-panel">
-            <h2>References</h2>
-            <ol className="reference-list">
-              {COURSE_REFERENCES.map((reference, index) => (
-                <li key={reference} className="reference-item">
-                  <span className="eyebrow">Reference {index + 1}</span>
-                  <p>{reference}</p>
-                </li>
+            <p className="eyebrow">Public access</p>
+            <h2>What you can try right now</h2>
+            <ul className="goal-list">
+              {GUEST_MODE_NOTES.map((note) => (
+                <li key={note}>{note}</li>
               ))}
-            </ol>
+            </ul>
           </div>
         </div>
       </section>
@@ -87,15 +112,40 @@ export default async function HomePage() {
             <ModuleCard key={module.slug} module={module} />
           ))}
         </div>
+        <div className="button-row">
+          <Link className="secondary-button" href="/modules">
+            Open curriculum hub
+          </Link>
+          <Link className="secondary-button" href="/syllabus">
+            View syllabus
+          </Link>
+        </div>
+      </section>
+
+      <section className="section-block">
+        <div className="section-heading">
+          <p className="eyebrow">Corpus and evidence</p>
+          <h2>Grounded in curated research and lecture material</h2>
+          <p>
+            The public platform is anchored in a compact local corpus. References remain visible so learners and evaluators can inspect the evidentiary base behind the curriculum.
+          </p>
+        </div>
+        <ol className="reference-list">
+          {COURSE_REFERENCES.map((reference, index) => (
+            <li key={reference} className="reference-item">
+              <span className="eyebrow">Reference {index + 1}</span>
+              <p>{reference}</p>
+            </li>
+          ))}
+        </ol>
       </section>
 
       <section className="section-block">
         <div className="section-heading">
           <p className="eyebrow">Adaptive Learning</p>
-          <h2>Analytics, coaching, and skill-gap intelligence</h2>
+          <h2>Analytics, coaching, and applied project work</h2>
           <p>
-            The dashboard now tracks progress, focus, motivation, adaptive pacing, target-role gaps, and AI-generated
-            next steps from the evidence you create across lessons, games, and projects.
+            The platform extends beyond lesson reading. Learners can monitor progress, submit portfolio-style work, and stress-test recall through interactive study surfaces.
           </p>
         </div>
         <div className="lesson-list">
@@ -115,7 +165,7 @@ export default async function HomePage() {
             <div>
               <p className="eyebrow">Projects</p>
               <h3>Hands-on projects and peer review</h3>
-              <p>Build practical QC+AI deliverables, get live AI draft feedback, and review peers against technical rubrics.</p>
+              <p>Build practical QC+AI deliverables, get live AI draft feedback, and review peers against explicit technical rubrics.</p>
             </div>
             <div className="lesson-actions">
               <Link className="primary-button" href="/projects">
@@ -128,14 +178,25 @@ export default async function HomePage() {
 
       <section className="section-block">
         <div className="section-heading">
-          <p className="eyebrow">Interactive Games</p>
-          <h2>Practice through competition and construction</h2>
+          <p className="eyebrow">Interactive practice</p>
+          <h2>Competition and construction modes</h2>
           <p>
-            Two new game modes extend the course beyond reading and quizzes: a live AI-and-quantum battle arena and a
-            drag-and-drop dependency builder for engineering microlearning.
+            Arena and Builder keep the course from collapsing into static reading. They create additional recall, comparison, and systems-thinking loops for returning learners.
           </p>
         </div>
         <div className="lesson-list">
+          <article className="lesson-card">
+            <div>
+              <p className="eyebrow">Simulations</p>
+              <h3>Verified QC+AI simulation roadmap</h3>
+              <p>Inspect the sixteen-simulation catalog, corrected concept notes, and the implementation path for turning the course into a learn-by-doing studio.</p>
+            </div>
+            <div className="lesson-actions">
+              <Link className="primary-button" href="/simulations">
+                Open simulations
+              </Link>
+            </div>
+          </article>
           <article className="lesson-card">
             <div>
               <p className="eyebrow">Arena</p>
