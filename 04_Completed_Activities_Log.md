@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-03-29 00:29:23 -04:00`
+Last updated on: `2026-03-29 00:31:13 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp`
 
 ## 1. Scope of Work Completed
@@ -2335,33 +2335,6 @@ Recorded publication boundary:
 - GitHub repository update: available
 - separate GitHub Projects board mutation: still blocked by token scope rather than repository state
 
-## 108. GitHub Project Update Completed for the Current Public-Experience Batch
-
-The current public-experience batch was published to the GitHub repository project after the local simulation-release logging and publication-preparation pass were completed.
-
-Completed publication work:
-
-- published the current code and documentation batch on `main` in:
-  - commit: `385abab`
-  - message: `Publish public experience updates and simulations hub`
-- pushed the updated branch to:
-  - `origin/main`
-  - `https://github.com/naylinnaungHoodedu/qcai-studio`
-- updated the completed-activities record so sections `104` through `108` now document:
-  - the simulation-program study
-  - the new public Simulations route
-  - the validation and production rollout
-  - the deep double-check
-  - the GitHub publication result
-- rechecked GitHub Projects CLI access immediately after the repository push:
-  - command: `gh project list --owner naylinnaungHoodedu`
-  - result: still blocked by missing `read:project` token scope
-
-Recorded publication result:
-
-- GitHub repository update: completed successfully
-- separate GitHub Projects board mutation: still blocked by token scope rather than repository state
-
 ## 98. GitHub Project Update Completed for About Page Release
 
 The completed About-page release was published to the GitHub repository project after the local activity and deployment logs were updated.
@@ -2685,4 +2658,31 @@ Completed publication-preparation work:
 Recorded publication boundary:
 
 - GitHub repository update: available
+- separate GitHub Projects board mutation: still blocked by token scope rather than repository state
+
+## 108. GitHub Project Update Completed for the Current Public-Experience Batch
+
+The current public-experience batch was published to the GitHub repository project after the local simulation-release logging and publication-preparation pass were completed.
+
+Completed publication work:
+
+- published the current code and documentation batch on `main` in:
+  - commit: `385abab`
+  - message: `Publish public experience updates and simulations hub`
+- pushed the updated branch to:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+- updated the completed-activities record so sections `104` through `108` now document:
+  - the simulation-program study
+  - the new public Simulations route
+  - the validation and production rollout
+  - the deep double-check
+  - the GitHub publication result
+- rechecked GitHub Projects CLI access immediately after the repository push:
+  - command: `gh project list --owner naylinnaungHoodedu`
+  - result: still blocked by missing `read:project` token scope
+
+Recorded publication result:
+
+- GitHub repository update: completed successfully
 - separate GitHub Projects board mutation: still blocked by token scope rather than repository state
