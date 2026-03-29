@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-03-29 02:31:30 -04:00`
+Last updated on: `2026-03-29 02:32:24 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp`
 
 ## 1. Scope of Work Completed
@@ -3085,6 +3085,11 @@ Completed publication work:
 - published the current repository batch on `main` in:
   - commit: `7211946`
   - message: `Fix lesson video playback and activate live simulations`
+- published the follow-up logging commits on `main` in:
+  - commit: `bf1af4b`
+  - message: `Record publication of video and simulations rollout`
+  - commit: `2ac34ce`
+  - message: `Fix video and simulations activity log ordering`
 - pushed the updated branch to:
   - `origin/main`
   - `https://github.com/naylinnaungHoodedu/qcai-studio`
