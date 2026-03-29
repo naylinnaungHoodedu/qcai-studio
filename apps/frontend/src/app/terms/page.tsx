@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 
-import { buildPageMetadata } from "@/lib/metadata";
+import { Breadcrumbs } from "@/components/breadcrumbs";
+import { StructuredData } from "@/components/structured-data";
+import { buildBreadcrumbStructuredData, buildPageMetadata } from "@/lib/metadata";
 import { CONTACT_EMAIL } from "@/lib/site";
 
 export const metadata: Metadata = buildPageMetadata({
@@ -11,9 +13,21 @@ export const metadata: Metadata = buildPageMetadata({
 });
 
 export default function TermsPage() {
+  const structuredData = buildBreadcrumbStructuredData([
+    { name: "Home", path: "/" },
+    { name: "Terms", path: "/terms" },
+  ]);
+
   return (
     <div className="page-stack">
+      <StructuredData data={structuredData} id="terms-breadcrumb-jsonld" />
       <section className="section-block">
+        <Breadcrumbs
+          items={[
+            { label: "Home", href: "/" },
+            { label: "Terms" },
+          ]}
+        />
         <p className="eyebrow">Terms</p>
         <h1>Terms of use</h1>
         <p className="hero-text">

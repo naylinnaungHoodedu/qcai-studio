@@ -18,16 +18,21 @@ export function AppShell({ children }: { children: ReactNode }) {
             Hardware-constrained learning for quantum computing and artificial intelligence
           </p>
         </div>
-        <nav className="site-nav">
+        <nav className="site-nav" aria-label="Primary">
           <Link href="/">Overview</Link>
           <Link href="/modules">Modules</Link>
           <Link href="/simulations">Simulations</Link>
           <Link href="/about">About</Link>
           <Link href="/projects">Projects</Link>
-          <Link href="/arena">Arena</Link>
-          <Link href="/builder">Builder</Link>
-          <Link href="/dashboard">Dashboard</Link>
           <Link href="/search">Search</Link>
+          <details className="site-nav-group">
+            <summary>Practice</summary>
+            <div className="site-subnav" role="group" aria-label="Practice links">
+              <Link href="/dashboard">Dashboard</Link>
+              <Link href="/arena">Arena</Link>
+              <Link href="/builder">Builder</Link>
+            </div>
+          </details>
           <Link href="/account">Account</Link>
         </nav>
       </header>

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 
+import { SITE_URL } from "@/lib/site";
+
 const SITE_NAME = "QC+AI Studio";
 const OPEN_GRAPH_IMAGE = "/opengraph-image";
 const TWITTER_IMAGE = "/twitter-image";
@@ -10,6 +12,11 @@ type BuildPageMetadataOptions = {
   path: string;
   index?: boolean;
   type?: "website" | "article";
+};
+
+type BreadcrumbItem = {
+  name: string;
+  path: string;
 };
 
 export function buildPageMetadata({
@@ -59,5 +66,18 @@ export function buildPageMetadata({
             follow: false,
           },
         },
+  };
+}
+
+export function buildBreadcrumbStructuredData(items: BreadcrumbItem[]) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: items.map((item, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: item.name,
+      item: `${SITE_URL}${item.path}`,
+    })),
   };
 }

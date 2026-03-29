@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { connection } from "next/server";
 import { ReactNode } from "react";
 
 import { AppShell } from "@/components/app-shell";
@@ -42,9 +41,12 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
-  await connection();
   return (
     <html lang="en">
+      <head>
+        <link href="https://api.qantumlearn.academy" rel="preconnect" crossOrigin="" />
+        <link href="https://api.qantumlearn.academy" rel="dns-prefetch" />
+      </head>
       <body>
         <Providers>
           <AppShell>{children}</AppShell>

@@ -44,6 +44,7 @@ def test_healthcheck():
     assert response.json()["status"] == "ok"
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["x-xss-protection"] == "1; mode=block"
     assert "permissions-policy" in response.headers
 
 
@@ -312,7 +313,20 @@ def test_production_security_headers_drop_localhost_and_add_hsts():
     assert "wss://api.qantumlearn.academy" in headers["Content-Security-Policy"]
     assert "'unsafe-inline'" not in headers["Content-Security-Policy"].split("script-src", 1)[1]
     assert "'nonce-unit-test-nonce'" in headers["Content-Security-Policy"]
+    assert headers["X-XSS-Protection"] == "1; mode=block"
     assert headers["Strict-Transport-Security"].startswith("max-age=")
+
+
+def test_production_security_headers_drop_loopback_urls_even_if_configured():
+    settings = Settings(
+        environment="production",
+        allowed_origins=["https://qantumlearn.academy"],
+        api_base_url="https://0.0.0.0:3000",
+        site_url="https://localhost:3000",
+    )
+    headers = _build_security_headers(settings, nonce="unit-test-nonce")
+    assert "0.0.0.0:3000" not in headers["Content-Security-Policy"]
+    assert "localhost:3000" not in headers["Content-Security-Policy"]
 
 
 def test_source_document_selection_uses_curated_allowlist(tmp_path: Path):

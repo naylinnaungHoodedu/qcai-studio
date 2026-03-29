@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 
-import { buildPageMetadata } from "@/lib/metadata";
+import { Breadcrumbs } from "@/components/breadcrumbs";
+import { StructuredData } from "@/components/structured-data";
+import { buildBreadcrumbStructuredData, buildPageMetadata } from "@/lib/metadata";
 import { CONTACT_EMAIL } from "@/lib/site";
 
 export const metadata: Metadata = buildPageMetadata({
@@ -11,9 +13,21 @@ export const metadata: Metadata = buildPageMetadata({
 });
 
 export default function PrivacyPage() {
+  const structuredData = buildBreadcrumbStructuredData([
+    { name: "Home", path: "/" },
+    { name: "Privacy", path: "/privacy" },
+  ]);
+
   return (
     <div className="page-stack">
+      <StructuredData data={structuredData} id="privacy-breadcrumb-jsonld" />
       <section className="section-block">
+        <Breadcrumbs
+          items={[
+            { label: "Home", href: "/" },
+            { label: "Privacy" },
+          ]}
+        />
         <p className="eyebrow">Privacy</p>
         <h1>Privacy policy</h1>
         <p className="hero-text">

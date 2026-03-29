@@ -6,6 +6,7 @@ This repository now contains a working MVP implementation of the interactive QC+
 
 - Project name: `QC+AI Studio`
 - Product owner: `Nay Linn Aung (na27@hood.edu)`
+- License: `MIT` for repository code unless a file states otherwise
 - Submission docs:
   - `SUBMISSION_ATTRIBUTION.md`
   - `PROJECT_SUMMARY.md`
@@ -60,6 +61,13 @@ git lfs pull
 
 If you are working from a fresh clone and the MP4 files have not been pulled yet, run the commands above before testing video playback.
 
+Important LFS note:
+
+- Install Git LFS before the first checkout whenever possible.
+- ZIP downloads from GitHub do not hydrate LFS-managed MP4 payloads.
+- If a clone was created before Git LFS was installed, run `git lfs install` and then `git lfs pull` from the repository root.
+- Use `git lfs ls-files` to confirm the three curated MP4 assets were actually hydrated.
+
 ### Docker Compose
 
 ```powershell
@@ -79,6 +87,7 @@ docker build -f apps/frontend/Dockerfile -t qcai-frontend .
 
 ## Key implementation notes
 
+- `LICENSE` applies to the repository code. Third-party source documents, proceedings metadata, and curated media assets remain subject to their own upstream rights and are not relicensed by the repository code license.
 - The backend assembles the course around the three curated local `.docx` sources listed above, including the industry-use-cases module grounded in the added DOCX.
 - Background workers are real Python entrypoints and can be invoked directly with `python -m app.workers.ingestion`, `python -m app.workers.rag`, and `python -m app.workers.analytics`.
 - Video chapters are currently driven by curated chapter metadata; transcript JSON files can be dropped into the repository-root `transcripts/` directory using the format documented in `transcripts/README.md`.
@@ -89,3 +98,9 @@ docker build -f apps/frontend/Dockerfile -t qcai-frontend .
 - Quiz attempts and learner interactions are wired into the existing backend persistence and analytics endpoints.
 - Learner progress is now aggregated through `/content/progress` and surfaced on the homepage and dashboard.
 - Auth defaults to demo learner headers for local development, while the API surface is prepared for Auth0-backed JWT validation in deployed environments.
+
+## Public operations still owned outside the repo
+
+- Google Search Console submission and verification must be completed from the domain owner account.
+- Exact-match redirect domains such as `quantumlearn.academy` require registrar and DNS changes outside the application repository.
+- GitHub repository topics are set through repository settings or the GitHub CLI and are not stored in git history.

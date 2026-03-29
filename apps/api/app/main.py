@@ -31,11 +31,19 @@ def _build_content_security_policy(app_settings = settings, nonce: str | None = 
         connect_sources.add(origin.rstrip("/"))
     if app_settings.site_url:
         parsed_site_url = urlsplit(app_settings.site_url)
-        if parsed_site_url.scheme and parsed_site_url.netloc:
+        if (
+            parsed_site_url.scheme
+            and parsed_site_url.netloc
+            and not (is_production and parsed_site_url.hostname in {"0.0.0.0", "127.0.0.1", "localhost"})
+        ):
             connect_sources.add(f"{parsed_site_url.scheme}://{parsed_site_url.netloc}")
     if app_settings.api_base_url:
         parsed = urlsplit(app_settings.api_base_url)
-        if parsed.scheme and parsed.netloc:
+        if (
+            parsed.scheme
+            and parsed.netloc
+            and not (is_production and parsed.hostname in {"0.0.0.0", "127.0.0.1", "localhost"})
+        ):
             connect_sources.add(f"{parsed.scheme}://{parsed.netloc}")
             websocket_scheme = "wss" if parsed.scheme == "https" else "ws"
             connect_sources.add(f"{websocket_scheme}://{parsed.netloc}")
@@ -57,6 +65,7 @@ def _build_security_headers(app_settings = settings, nonce: str | None = None) -
     security_headers = {
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY",
+        "X-XSS-Protection": "1; mode=block",
         "Referrer-Policy": "same-origin",
         "Permissions-Policy": "accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()",
         "Content-Security-Policy": _build_content_security_policy(app_settings, nonce=nonce),

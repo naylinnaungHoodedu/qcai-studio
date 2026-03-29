@@ -24,3 +24,34 @@ export const LESSON_SLUGS = [
   "industry-use-cases",
   "thermodynamics-and-roadmap",
 ];
+
+export const STATIC_ROUTE_LASTMOD: Record<string, string> = {
+  "/": "2026-03-29T00:00:00Z",
+  "/modules": "2026-03-29T00:00:00Z",
+  "/simulations": "2026-03-29T00:00:00Z",
+  "/about": "2026-03-28T00:00:00Z",
+  "/whats-new": "2026-03-29T00:00:00Z",
+  "/syllabus": "2026-03-28T00:00:00Z",
+  "/privacy": "2026-03-29T00:00:00Z",
+  "/terms": "2026-03-29T00:00:00Z",
+  "/attribution": "2026-03-29T00:00:00Z",
+};
+
+export const MODULE_ROUTE_LASTMOD: Record<string, string> = {
+  "nisq-hybrid-workflows": "2026-03-28T00:00:00Z",
+  "ai-for-quantum-hardware": "2026-03-28T00:00:00Z",
+  "quantum-enhanced-applications": "2026-03-28T00:00:00Z",
+  "representation-explainability": "2026-03-28T00:00:00Z",
+  "industry-use-cases": "2026-03-29T00:00:00Z",
+  "thermodynamics-roadmap": "2026-03-28T00:00:00Z",
+};
+
+export const LESSON_ROUTE_LASTMOD: Record<string, string> = {
+  "nisq-reality-overview": "2026-03-29T00:00:00Z",
+  "ai4qc-routing-and-optimization": "2026-03-29T00:00:00Z",
+  "hybrid-applications-healthcare-vision": "2026-03-28T00:00:00Z",
+  "clinical-and-kernel-qcai-systems": "2026-03-28T00:00:00Z",
+  "representation-language-and-xai": "2026-03-28T00:00:00Z",
+  "industry-use-cases": "2026-03-29T00:00:00Z",
+  "thermodynamics-and-roadmap": "2026-03-28T00:00:00Z",
+};

@@ -38,6 +38,7 @@ export function SiteFooter() {
           <nav className="footer-link-list" aria-label="Project links">
             <Link href="/modules">Modules and prerequisites</Link>
             <Link href="/simulations">Simulation program</Link>
+            <Link href="/whats-new">What&apos;s new</Link>
             <Link href="/about">About QC+AI Studio</Link>
             <a className="footer-link" href={REPOSITORY_URL} rel="noreferrer" target="_blank">
               GitHub repository

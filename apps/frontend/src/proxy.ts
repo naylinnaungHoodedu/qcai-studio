@@ -15,18 +15,14 @@ function createNonce(): string {
   return btoa(String.fromCharCode(...bytes));
 }
 
-function buildConnectSources(request: NextRequest): string {
+function buildConnectSources(): string {
   const connectSources = new Set(["'self'"]);
   if (!IS_PRODUCTION) {
     connectSources.add("http://127.0.0.1:*");
     connectSources.add("http://localhost:*");
   }
 
-  const candidateOrigins = [
-    process.env.API_BASE_URL,
-    process.env.NEXT_PUBLIC_API_BASE_URL,
-    request.nextUrl.origin,
-  ];
+  const candidateOrigins = [process.env.API_BASE_URL, process.env.NEXT_PUBLIC_API_BASE_URL];
 
   for (const candidate of candidateOrigins) {
     if (!candidate) {
@@ -34,6 +30,12 @@ function buildConnectSources(request: NextRequest): string {
     }
     try {
       const parsed = new URL(candidate);
+      if (
+        IS_PRODUCTION &&
+        ["0.0.0.0", "127.0.0.1", "localhost"].includes(parsed.hostname)
+      ) {
+        continue;
+      }
       connectSources.add(parsed.origin);
       connectSources.add(`${parsed.protocol === "https:" ? "wss:" : "ws:"}//${parsed.host}`);
     } catch {
@@ -60,7 +62,7 @@ function buildContentSecurityPolicy(request: NextRequest, nonce: string): string
     "media-src 'self' blob:",
     "style-src 'self' 'unsafe-inline'",
     `script-src ${scriptSources.join(" ")}`,
-    `connect-src ${buildConnectSources(request)}`,
+    `connect-src ${buildConnectSources()}`,
   ].join("; ");
 }
 

@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { StructuredData } from "@/components/structured-data";
-import { buildPageMetadata } from "@/lib/metadata";
+import { buildBreadcrumbStructuredData, buildPageMetadata } from "@/lib/metadata";
 import { ATTRIBUTION_STATEMENT, CONTACT_EMAIL, OWNER_NAME, SITE_URL } from "@/lib/site";
 
 const REVIEW_PRACTICES = [
@@ -26,15 +26,21 @@ export const metadata: Metadata = buildPageMetadata({
 });
 
 export default function AttributionPage() {
-  const structuredData = {
-    "@context": "https://schema.org",
-    "@type": "CreativeWork",
-    name: "QC+AI Studio attribution",
-    author: OWNER_NAME,
-    url: `${SITE_URL}/attribution`,
-    description:
-      "Human-directed, AI-assisted authorship and review disclosure for the QC+AI Studio platform.",
-  };
+  const structuredData = [
+    {
+      "@context": "https://schema.org",
+      "@type": "CreativeWork",
+      name: "QC+AI Studio attribution",
+      author: OWNER_NAME,
+      url: `${SITE_URL}/attribution`,
+      description:
+        "Human-directed, AI-assisted authorship and review disclosure for the QC+AI Studio platform.",
+    },
+    buildBreadcrumbStructuredData([
+      { name: "Home", path: "/" },
+      { name: "Attribution", path: "/attribution" },
+    ]),
+  ];
 
   return (
     <div className="page-stack">

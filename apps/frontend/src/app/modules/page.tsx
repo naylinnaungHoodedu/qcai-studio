@@ -6,7 +6,8 @@ import { ModuleCard } from "@/components/module-card";
 import { PageErrorState } from "@/components/page-state";
 import { StructuredData } from "@/components/structured-data";
 import { fetchCourseOverview } from "@/lib/api";
-import { buildPageMetadata } from "@/lib/metadata";
+import { buildBreadcrumbStructuredData, buildPageMetadata } from "@/lib/metadata";
+import { COMPLETION_SIGNAL_NOTES, EXPANSION_ROADMAP } from "@/lib/public-status";
 import {
   COURSE_SCOPE_NOTE,
   ENGINEERING_READING_NOTES,
@@ -52,24 +53,10 @@ export default async function ModulesLandingPage() {
       },
       url: `${SITE_URL}/modules`,
     },
-    {
-      "@context": "https://schema.org",
-      "@type": "BreadcrumbList",
-      itemListElement: [
-        {
-          "@type": "ListItem",
-          position: 1,
-          name: "Home",
-          item: SITE_URL,
-        },
-        {
-          "@type": "ListItem",
-          position: 2,
-          name: "Modules",
-          item: `${SITE_URL}/modules`,
-        },
-      ],
-    },
+    buildBreadcrumbStructuredData([
+      { name: "Home", path: "/" },
+      { name: "Modules", path: "/modules" },
+    ]),
   ];
 
   return (
@@ -225,6 +212,46 @@ export default async function ModulesLandingPage() {
               </div>
             </article>
           ))}
+        </div>
+      </section>
+
+      <section className="section-block">
+        <div className="section-heading">
+          <p className="eyebrow">Expansion and completion</p>
+          <h2>How the compact track grows from here</h2>
+          <p>
+            The public site already says this is not yet a fifteen-week semester. The next step is to make the growth path and the completion signal equally explicit.
+          </p>
+        </div>
+        <div className="two-column-grid">
+          <article className="panel">
+            <p className="eyebrow">Roadmap</p>
+            <h2>Expansion path</h2>
+            <ul className="goal-list">
+              {EXPANSION_ROADMAP.map((item) => (
+                <li key={item.title}>
+                  <strong>{item.title}:</strong> {item.detail}
+                </li>
+              ))}
+            </ul>
+          </article>
+          <article className="panel emphasis-card">
+            <p className="eyebrow">Completion signals</p>
+            <h2>What learners can point to today</h2>
+            <ul className="goal-list">
+              {COMPLETION_SIGNAL_NOTES.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+            <div className="button-row">
+              <Link className="primary-button" href="/projects">
+                Open project studio
+              </Link>
+              <Link className="secondary-button" href="/whats-new">
+                Review the roadmap
+              </Link>
+            </div>
+          </article>
         </div>
       </section>
 

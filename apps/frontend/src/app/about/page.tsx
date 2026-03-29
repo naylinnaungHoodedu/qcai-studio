@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { StructuredData } from "@/components/structured-data";
 import { fetchCourseOverview } from "@/lib/api";
-import { buildPageMetadata } from "@/lib/metadata";
+import { buildBreadcrumbStructuredData, buildPageMetadata } from "@/lib/metadata";
 import { COURSE_SCOPE_NOTE, ENGINEERING_READING_NOTES, INDUSTRY_METHOD_NOTE } from "@/lib/public-course";
 import { CONTACT_EMAIL, OWNER_NAME, REPOSITORY_URL, SITE_URL } from "@/lib/site";
 
@@ -109,16 +109,22 @@ export default async function AboutPage() {
   const lessonCount = course?.modules.reduce((count, module) => count + module.lesson_slugs.length, 0) ?? 7;
   const videoCount = sourceAssets.filter((asset) => asset.kind.toLowerCase() === "video").length || 3;
   const documentCount = Math.max(sourceAssets.length - videoCount, 0);
-  const structuredData = {
-    "@context": "https://schema.org",
-    "@type": "Organization",
-    name: "QC+AI Studio",
-    url: `${SITE_URL}/about`,
-    founder: OWNER_NAME,
-    email: CONTACT_EMAIL,
-    description:
-      "QC+AI Studio is a source-grounded learning platform for quantum computing and AI built around hybrid-system design, hardware realism, and transparent public evaluation.",
-  };
+  const structuredData = [
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      name: "QC+AI Studio",
+      url: `${SITE_URL}/about`,
+      founder: OWNER_NAME,
+      email: CONTACT_EMAIL,
+      description:
+        "QC+AI Studio is a source-grounded learning platform for quantum computing and AI built around hybrid-system design, hardware realism, and transparent public evaluation.",
+    },
+    buildBreadcrumbStructuredData([
+      { name: "Home", path: "/" },
+      { name: "About", path: "/about" },
+    ]),
+  ];
 
   return (
     <div className="page-stack">

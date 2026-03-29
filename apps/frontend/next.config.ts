@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const PUBLIC_PAGE_CACHE_CONTROL = "public, max-age=0, s-maxage=300, stale-while-revalidate=86400";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
@@ -8,6 +9,7 @@ const nextConfig: NextConfig = {
     const securityHeaders = [
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "X-Frame-Options", value: "DENY" },
+      { key: "X-XSS-Protection", value: "1; mode=block" },
       { key: "Referrer-Policy", value: "same-origin" },
       {
         key: "Permissions-Policy",
@@ -20,10 +22,63 @@ const nextConfig: NextConfig = {
         value: "max-age=31536000; includeSubDomains; preload",
       });
     }
+    const publicCacheHeaders = [{ key: "Cache-Control", value: PUBLIC_PAGE_CACHE_CONTROL }];
     return [
       {
         source: "/:path*",
         headers: securityHeaders,
+      },
+      {
+        source: "/",
+        headers: publicCacheHeaders,
+      },
+      {
+        source: "/about",
+        headers: publicCacheHeaders,
+      },
+      {
+        source: "/attribution",
+        headers: publicCacheHeaders,
+      },
+      {
+        source: "/modules",
+        headers: publicCacheHeaders,
+      },
+      {
+        source: "/modules/:path*",
+        headers: publicCacheHeaders,
+      },
+      {
+        source: "/lessons/:path*",
+        headers: publicCacheHeaders,
+      },
+      {
+        source: "/simulations",
+        headers: publicCacheHeaders,
+      },
+      {
+        source: "/syllabus",
+        headers: publicCacheHeaders,
+      },
+      {
+        source: "/privacy",
+        headers: publicCacheHeaders,
+      },
+      {
+        source: "/terms",
+        headers: publicCacheHeaders,
+      },
+      {
+        source: "/whats-new",
+        headers: publicCacheHeaders,
+      },
+      {
+        source: "/robots.txt",
+        headers: publicCacheHeaders,
+      },
+      {
+        source: "/sitemap.xml",
+        headers: publicCacheHeaders,
       },
     ];
   },

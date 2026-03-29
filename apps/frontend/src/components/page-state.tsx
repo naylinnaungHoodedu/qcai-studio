@@ -15,7 +15,8 @@ export function PageErrorState({ title, detail }: PageErrorStateProps) {
 
 export function PageLoadingState() {
   return (
-    <div className="page-stack">
+    <div className="page-stack" aria-busy="true" aria-live="polite" role="status">
+      <span className="sr-only">Loading page content.</span>
       <section className="section-block loading-shell">
         <div className="loading-line loading-line-wide" />
         <div className="loading-line" />
