@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-03-30 02:24:27 -04:00`
+Last updated on: `2026-03-30 03:02:36 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp`
 
 ## 1. Scope of Work Completed
@@ -3324,3 +3324,100 @@ Recorded publication result:
 
 - GitHub repository update: completed successfully
 - separate GitHub Projects board mutation: still blocked by token scope rather than repository state
+
+## 127. GitHub Repository Publication Completed for the Media, Theme, and Simulation Expansion Batch
+
+The current folder state was then published to the GitHub repository after the larger media-remediation, frontend-redesign, simulation-split, and academy-lab implementation batch was completed and revalidated locally.
+
+Completed repository publication work:
+
+- published the current repository batch on `main` in:
+  - commit: `e8f3bc3`
+  - message: `feat: publish simulation expansion and media fixes`
+- pushed the updated branch to:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+- confirmed the publication batch includes the completed implementation work for:
+  - backend video-streaming hardening
+  - lesson video UX cleanup
+  - dark vivid frontend redesign
+  - sixteen curriculum simulation studios on dedicated routes
+  - five academy-style simulation subjects and eighteen academy simulation labs
+  - updated completed-activities documentation
+
+Recorded GitHub access state at publication time:
+
+- repository push/update: available
+- authenticated account: `naylinnaungHoodedu`
+- available token scopes:
+  - `repo`
+  - `workflow`
+  - `gist`
+  - `read:org`
+
+## 128. Production Deployment and Live Verification Completed for the Full Simulation Expansion
+
+After the repository publication, the simulation-expansion frontend was deployed to the live public site and then reverified directly against production.
+
+Completed deployment work:
+
+- built and published the updated frontend image through Cloud Build:
+  - build id: `4940e07a-8b45-41bc-a338-068e5fe3456c`
+  - build status: `SUCCESS`
+  - image digest deployed to Cloud Run:
+    - `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend@sha256:49b661c23f0d68891f1a1014c955aebcbe4afac01b5f52343793857eac1015a4`
+- updated the Cloud Run frontend service:
+  - service: `qcai-frontend`
+  - region: `us-central1`
+  - latest ready revision: `qcai-frontend-00025-85r`
+  - traffic: `100%`
+
+Completed live verification work after rollout:
+
+- verified `https://qantumlearn.academy/simulations` returns `200`
+- verified academy subject routes return `200`, including:
+  - `/simulations/subjects/quantum-mechanics-and-information`
+  - `/simulations/subjects/quantum-algorithms`
+  - `/simulations/subjects/quantum-programming`
+  - `/simulations/subjects/advanced-quantum-software`
+  - `/simulations/subjects/quantum-finance-and-optimization`
+- verified dedicated academy simulation routes return `200`, including:
+  - `/simulations/subjects/quantum-mechanics-and-information/bloch-sphere-visualizer`
+  - `/simulations/subjects/quantum-finance-and-optimization/quantum-monte-carlo-option-pricing-lab`
+- verified the live sitemap now exposes:
+  - `16` curriculum simulation routes
+  - `5` academy subject routes
+  - `18` academy lab routes
+- completed a live sweep across all simulation-related URLs exposed by the production sitemap:
+  - total simulation URLs checked: `40`
+  - failed responses: `0`
+
+## 129. Deep Double-Check Completed for the Current GitHub and Production State
+
+The publication and production-deployment summary was rechecked after rollout so the completed-activities record would only retain claims still true against the current folder, GitHub state, and live public deployment.
+
+Completed recheck work:
+
+- rechecked the latest frontend Cloud Run service state and confirmed:
+  - latest ready revision remains `qcai-frontend-00025-85r`
+  - traffic remains `100%`
+  - deployed image remains the expected `sha256:49b661c23f0d68891f1a1014c955aebcbe4afac01b5f52343793857eac1015a4` digest
+- rechecked the latest Cloud Build status for:
+  - `4940e07a-8b45-41bc-a338-068e5fe3456c`
+- result: `SUCCESS`
+- rechecked the live sitemap route counts and confirmed they still expose:
+  - `16` curriculum simulation routes
+  - `5` academy subject routes
+  - `18` academy lab routes
+- rechecked the full simulation-route sweep result and confirmed:
+  - total simulation URLs checked: `40`
+  - failed responses: `0`
+- rechecked GitHub CLI authentication and confirmed repository access is still available for publication work
+- rechecked GitHub Projects CLI access with:
+  - `gh project list --owner naylinnaungHoodedu`
+- result: still blocked by missing `read:project` token scope
+
+Recorded current publication boundary:
+
+- GitHub repository update: completed successfully and still available
+- separate GitHub Projects board mutation: still blocked by token scope rather than repository or folder state
