@@ -4055,3 +4055,103 @@ Recorded current publication boundary:
 - GitHub repository update: completed successfully for the builder-layout restack batch
 - local-only operational log `07_Production_Deployment_Local_Log.md` remains intentionally excluded from Git
 - generated working artifact `sitemap-live.xml` remains intentionally outside the publication batch
+
+## 148. Production Audit, API Remediation, and Header Repair Completed for Live Content Delivery
+
+The current folder then underwent a new production-facing audit of the live public domain, with emphasis on content integrity and source-asset delivery rather than relevance or product direction.
+
+Completed production audit findings:
+
+- verified the live public site, curriculum API, account flow, lesson routes, source-asset access, security headers, sitemap, and robots surfaces directly against `https://qantumlearn.academy`
+- confirmed the expanded public curriculum remained live in production with:
+  - `11` modules
+  - `12` lesson slugs
+  - `16` source assets
+- identified two concrete production issues:
+  - at least one live lesson API payload still exposed mojibake in a public source excerpt
+  - DOCX source assets were still being served with `application/octet-stream` instead of the DOCX-specific Office MIME type
+- traced the mojibake issue back to the display-text normalization path rather than the frontend renderer
+- traced the document-header issue back to MIME-type resolution in the protected source-asset route
+
+Completed remediation work:
+
+- rebuilt the display-text normalization layer so UTF-8 mojibake is repaired deterministically before excerpt truncation and section assembly
+- corrected the mojibake replacement map so the normalization code uses valid replacement keys rather than corrupted literals
+- preserved cleaned Unicode punctuation in excerpts instead of degrading repaired text back to lossy ASCII fallbacks
+- added an explicit DOCX media-type override so document assets always return:
+  - `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+- added backend regression coverage for:
+  - lesson-section excerpt cleanup through the real assembled content endpoint
+  - common mojibake cleanup in deployment-artifact text handling
+  - DOCX asset `HEAD` responses exposing the correct MIME type
+
+## 149. Validation, Production Deployment, Deep Double-Check, and GitHub Publication Completed for the API Content-Integrity Batch
+
+After the API content-integrity fixes were implemented, the backend was revalidated locally, deployed to production, rechecked through both the direct API domain and the public proxy, deeply re-audited for factual correctness, and confirmed as published on the related GitHub repository.
+
+Completed local verification work:
+
+- backend automated verification:
+  - `pytest`
+  - result: `65 passed`
+- direct local behavior checks confirmed:
+  - cleaned lesson excerpts now normalize mojibake into proper Unicode punctuation
+  - DOCX asset responses now advertise the Office MIME type during `HEAD` handling
+
+Completed production deployment work:
+
+- built and published the updated API image through Cloud Build:
+  - build id: `d6fe0bb1-70c4-4b7c-859b-f2e582ffaf13`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-api:latest`
+- deployed the updated API image to Cloud Run:
+  - service: `qcai-api`
+  - latest ready revision: `qcai-api-00024-9jf`
+  - traffic: `100%`
+
+Completed live verification work:
+
+- verified both:
+  - `https://api.qantumlearn.academy/content/lessons/nisq-reality-overview`
+  - `https://qantumlearn.academy/api/backend/content/lessons/nisq-reality-overview`
+  now expose the repaired lesson excerpt without mojibake
+- confirmed the repaired excerpt now contains Unicode em dashes represented as:
+  - `0x2014`
+- verified a live `HEAD` request for a protected DOCX asset now returns:
+  - `content-type: application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+- verified live API health remains:
+  - `200`
+  - `status: ok`
+
+Completed deep double-check work:
+
+- re-audited the rollout summary against:
+  - commit `446935d`
+  - `HEAD`
+  - `origin/main`
+  - local git status
+  - Cloud Build status
+  - the deployed Cloud Run API revision
+  - the direct API domain
+  - the public-domain API proxy
+- reran:
+  - `pytest`
+- confirmed no factual correction was required
+- confirmed that a temporary PowerShell rendering mismatch could still make Unicode JSON look corrupted even when the underlying API bytes were correct
+- confirmed the remaining local untracked artifacts are unrelated generated files:
+  - four PNG files
+  - `sitemap-live.xml`
+
+Completed repository publication work:
+
+- published the API content-integrity batch on `main` in:
+  - commit: `446935d`
+  - message: `fix: repair lesson excerpts and docx asset headers`
+- pushed the updated branch to:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+
+Recorded current publication boundary:
+
+- GitHub repository update: completed successfully for the API content-integrity batch
+- local-only operational log `07_Production_Deployment_Local_Log.md` remains intentionally excluded from Git
+- generated working artifact `sitemap-live.xml` and the unrelated PNG artifacts remain intentionally outside the publication batch
