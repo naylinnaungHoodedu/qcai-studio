@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { CSSProperties, KeyboardEvent, useMemo, useState } from "react";
 
 import {
   fetchBuilderFeed,
@@ -11,6 +11,7 @@ import {
   shareBuilderScenario,
   submitBuilderScenario,
 } from "@/lib/api";
+import { getBuilderCanvasLayout, placeBuilderNode, removeBuilderNode } from "@/lib/builder";
 import { BuilderFeedItem, BuilderProfile, BuilderScenario, BuilderSubmissionResult } from "@/lib/types";
 
 type BuilderStudioProps = {
@@ -44,6 +45,7 @@ export function BuilderStudio({
   const queryClient = useQueryClient();
   const [selectedScenarioSlug, setSelectedScenarioSlug] = useState("");
   const [placements, setPlacements] = useState<Record<string, string>>({});
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [shareCaption, setShareCaption] = useState("Built a clean dependency graph under pressure.");
   const [lastResult, setLastResult] = useState<BuilderSubmissionResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -72,6 +74,17 @@ export function BuilderStudio({
       : (scenarios.find((item) => item.unlocked && !item.completed) ?? scenarios[0])?.slug ?? "";
   const selectedScenario = scenarioMap.get(activeScenarioSlug) ?? scenarios[0];
   const workbenchTitle = selectedScenario?.title ?? (scenarios.length ? scenarios[0].title : "No scenario available");
+  const selectedNode =
+    selectedNodeId && selectedScenario
+      ? selectedScenario.nodes.find((node) => node.id === selectedNodeId) ?? null
+      : null;
+  const canvasLayout = getBuilderCanvasLayout(selectedScenario?.slots ?? []);
+  const canvasStyle = {
+    width: `${canvasLayout.width}px`,
+    height: `${canvasLayout.height}px`,
+    ["--builder-slot-width" as string]: `${canvasLayout.slotWidth}px`,
+    ["--builder-slot-height" as string]: `${canvasLayout.slotHeight}px`,
+  } as CSSProperties;
 
   const submitMutation = useMutation({
     mutationFn: ({ slug, map }: { slug: string; map: Record<string, string> }) => submitBuilderScenario(slug, map),
@@ -103,12 +116,9 @@ export function BuilderStudio({
   });
 
   const placedNodeIds = useMemo(() => new Set(Object.values(placements)), [placements]);
-  const availableNodes = useMemo(() => {
-    if (!selectedScenario) {
-      return [];
-    }
-    return selectedScenario.nodes.filter((node) => !placedNodeIds.has(node.id));
-  }, [placedNodeIds, selectedScenario]);
+  const availableNodes = selectedScenario
+    ? selectedScenario.nodes.filter((node) => !placedNodeIds.has(node.id))
+    : [];
 
   function setScenario(nextScenario: BuilderScenario) {
     if (!nextScenario.unlocked) {
@@ -116,29 +126,40 @@ export function BuilderStudio({
     }
     setSelectedScenarioSlug(nextScenario.slug);
     setPlacements({});
+    setSelectedNodeId(null);
     setLastResult(null);
     setErrorMessage(null);
   }
 
-  function handleDrop(slotId: string, nodeId: string) {
-    setPlacements((current) => {
-      const next: Record<string, string> = {};
-      for (const [key, value] of Object.entries(current)) {
-        if (key !== slotId && value !== nodeId) {
-          next[key] = value;
-        }
-      }
-      next[slotId] = nodeId;
-      return next;
-    });
+  function handlePlacement(slotId: string, nodeId: string) {
+    setPlacements((current) => placeBuilderNode(current, slotId, nodeId));
+    setSelectedNodeId(null);
+    setLastResult(null);
+    setErrorMessage(null);
   }
 
   function removePlacement(slotId: string) {
-    setPlacements((current) => {
-      const next = { ...current };
-      delete next[slotId];
-      return next;
-    });
+    setPlacements((current) => removeBuilderNode(current, slotId));
+    setLastResult(null);
+    setErrorMessage(null);
+  }
+
+  function resetBoard() {
+    setPlacements({});
+    setSelectedNodeId(null);
+    setLastResult(null);
+    setErrorMessage(null);
+  }
+
+  function handleSlotKeyDown(event: KeyboardEvent<HTMLDivElement>, slotId: string) {
+    if (!selectedNodeId) {
+      return;
+    }
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    handlePlacement(slotId, selectedNodeId);
   }
 
   function checkCircuit() {
@@ -187,7 +208,7 @@ export function BuilderStudio({
         </div>
       </section>
 
-      <div className="game-grid">
+      <div className="game-grid builder-top-grid">
         <section className="panel">
           <div className="panel-header">
             <div>
@@ -231,90 +252,161 @@ export function BuilderStudio({
               <span className="score-pill">{selectedScenario?.points_reward ?? 0} bonus points</span>
             </div>
           </div>
+          <div className="builder-workbench-toolbar">
+            <p className="muted">
+              Drag concepts into the circuit, or tap a concept and then tap a step. On smaller screens, swipe across
+              the canvas to inspect the full loop before scoring it.
+            </p>
+            <div className="builder-workbench-pills">
+              <span className="prompt-pill">
+                {Object.keys(placements).length} / {selectedScenario?.slots.length ?? 0} placed
+              </span>
+              <span className={cx("prompt-pill", selectedNode && "is-armed")}>
+                {selectedNode ? `Selected: ${selectedNode.label}` : "Tap a concept to arm placement"}
+              </span>
+            </div>
+          </div>
 
           <div className="builder-grid">
-            <div className="builder-canvas" onDragOver={(event) => event.preventDefault()}>
-              {selectedScenario ? (
-                <>
-                  <svg className="builder-lines" preserveAspectRatio="none" viewBox="0 0 100 100">
-                    {selectedScenario.connections.map((connection) => {
-                      const fromSlot = selectedScenario.slots.find((slot) => slot.id === connection.from_slot);
-                      const toSlot = selectedScenario.slots.find((slot) => slot.id === connection.to_slot);
-                      if (!fromSlot || !toSlot) {
-                        return null;
-                      }
-                      return (
-                        <line
-                          key={`${connection.from_slot}-${connection.to_slot}`}
-                          x1={fromSlot.x}
-                          y1={fromSlot.y}
-                          x2={toSlot.x}
-                          y2={toSlot.y}
-                        />
-                      );
-                    })}
-                  </svg>
-                  {selectedScenario.slots.map((slot) => {
-                    const nodeId = placements[slot.id];
-                    const node = selectedScenario.nodes.find((item) => item.id === nodeId);
-                    const slotIncorrect = lastResult?.incorrect_slots.includes(slot.id) ?? false;
-                    const slotCorrect = Boolean(node) && !slotIncorrect && lastResult?.scenario_slug === selectedScenario.slug;
-                    return (
-                      <div
-                        className={cx(
-                          "builder-slot",
-                          slotIncorrect && "is-incorrect",
-                          slotCorrect && lastResult?.completed && "is-correct",
-                        )}
-                        key={slot.id}
-                        onDragOver={(event) => event.preventDefault()}
-                        onDrop={(event) => {
-                          event.preventDefault();
-                          const droppedNodeId = event.dataTransfer.getData("text/plain");
-                          if (droppedNodeId) {
-                            handleDrop(slot.id, droppedNodeId);
-                          }
-                        }}
-                        style={{ left: `${slot.x}%`, top: `${slot.y}%` }}
+            <div className="builder-canvas-frame">
+              <div className="builder-canvas-scroll">
+                <div className="builder-canvas" onDragOver={(event) => event.preventDefault()} style={canvasStyle}>
+                  {selectedScenario ? (
+                    <>
+                      <svg
+                        className="builder-lines"
+                        preserveAspectRatio="none"
+                        viewBox={`0 0 ${canvasLayout.width} ${canvasLayout.height}`}
                       >
-                        <span className="eyebrow">{slot.label}</span>
-                        <strong>{slot.description}</strong>
-                        {node ? (
-                          <button
-                            className="builder-node placed"
-                            onClick={() => removePlacement(slot.id)}
-                            style={{ backgroundColor: node.color }}
-                            type="button"
+                        {selectedScenario.connections.map((connection) => {
+                          const fromSlot = canvasLayout.positions[connection.from_slot];
+                          const toSlot = canvasLayout.positions[connection.to_slot];
+                          if (!fromSlot || !toSlot) {
+                            return null;
+                          }
+                          return (
+                            <line
+                              key={`${connection.from_slot}-${connection.to_slot}`}
+                              x1={fromSlot.x}
+                              y1={fromSlot.y}
+                              x2={toSlot.x}
+                              y2={toSlot.y}
+                            />
+                          );
+                        })}
+                      </svg>
+                      {selectedScenario.slots.map((slot) => {
+                        const nodeId = placements[slot.id];
+                        const node = selectedScenario.nodes.find((item) => item.id === nodeId);
+                        const slotIncorrect = lastResult?.incorrect_slots.includes(slot.id) ?? false;
+                        const slotCorrect =
+                          Boolean(node) && !slotIncorrect && lastResult?.scenario_slug === selectedScenario.slug;
+                        const slotPosition = canvasLayout.positions[slot.id];
+                        return (
+                          <div
+                            aria-label={
+                              selectedNode
+                                ? `Place ${selectedNode.label} in ${slot.label}`
+                                : `${slot.label}. ${slot.description}`
+                            }
+                            className={cx(
+                              "builder-slot",
+                              selectedNode && "is-armed",
+                              Boolean(node) && "has-node",
+                              slotIncorrect && "is-incorrect",
+                              slotCorrect && lastResult?.completed && "is-correct",
+                            )}
+                            key={slot.id}
+                            onClick={() => {
+                              if (selectedNodeId) {
+                                handlePlacement(slot.id, selectedNodeId);
+                              }
+                            }}
+                            onDragOver={(event) => event.preventDefault()}
+                            onDrop={(event) => {
+                              event.preventDefault();
+                              const droppedNodeId = event.dataTransfer.getData("text/plain");
+                              if (droppedNodeId) {
+                                handlePlacement(slot.id, droppedNodeId);
+                              }
+                            }}
+                            onKeyDown={(event) => handleSlotKeyDown(event, slot.id)}
+                            role="button"
+                            style={{
+                              left: slotPosition?.leftPercent,
+                              top: slotPosition?.topPercent,
+                            }}
+                            tabIndex={selectedNodeId ? 0 : -1}
                           >
-                            {node.label}
-                          </button>
-                        ) : (
-                          <p className="muted">Drop a concept here</p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </>
-              ) : (
-                <article className="empty-state-card">
-                  <strong>No scenario available yet</strong>
-                  <p className="muted">
-                    The builder could not load an unlocked scenario for this request. Refresh the page to retry the
-                    current guest session.
-                  </p>
-                </article>
-              )}
+                            <span className="eyebrow">{slot.label}</span>
+                            <strong>{slot.description}</strong>
+                            {node ? (
+                              <button
+                                className="builder-node placed"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  removePlacement(slot.id);
+                                }}
+                                style={{ backgroundColor: node.color }}
+                                type="button"
+                              >
+                                {node.label}
+                              </button>
+                            ) : selectedNode ? (
+                              <p className="muted">Tap to place {selectedNode.label}</p>
+                            ) : (
+                              <p className="muted">Drop a concept here</p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </>
+                  ) : (
+                    <article className="empty-state-card">
+                      <strong>No scenario available yet</strong>
+                      <p className="muted">
+                        The builder could not load an unlocked scenario for this request. Refresh the page to retry the
+                        current guest session.
+                      </p>
+                    </article>
+                  )}
+                </div>
+              </div>
             </div>
 
-            <div className="stack">
+            <div className="stack builder-side-stack">
+              <div className="panel inset-panel builder-selection-card">
+                <p className="eyebrow">Placement mode</p>
+                {selectedNode ? (
+                  <>
+                    <strong>{selectedNode.label}</strong>
+                    <p className="muted">
+                      Tap a highlighted step to place this concept, or drag it directly into the circuit.
+                    </p>
+                    <div className="button-row">
+                      <button className="secondary-button" onClick={() => setSelectedNodeId(null)} type="button">
+                        Clear selection
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="muted">
+                    Choose a concept from the tray to activate touch-friendly placement. Drag-and-drop remains available
+                    on desktop.
+                  </p>
+                )}
+              </div>
+
               <div className="panel inset-panel">
                 <p className="eyebrow">Concept tray</p>
                 <div className="builder-node-tray">
                   {availableNodes.map((node) => (
                     <button
-                      className="builder-node"
+                      aria-pressed={selectedNodeId === node.id}
+                      className={cx("builder-node", selectedNodeId === node.id && "is-selected")}
                       draggable
                       key={node.id}
+                      onClick={() => setSelectedNodeId((current) => (current === node.id ? null : node.id))}
                       onDragStart={(event) => event.dataTransfer.setData("text/plain", node.id)}
                       style={{ backgroundColor: node.color }}
                       type="button"
@@ -331,15 +423,7 @@ export function BuilderStudio({
                 <button className="primary-button" disabled={submitMutation.isPending} onClick={checkCircuit} type="button">
                   {submitMutation.isPending ? "Scoring..." : "Check circuit"}
                 </button>
-                <button
-                  className="secondary-button"
-                  onClick={() => {
-                    setPlacements({});
-                    setLastResult(null);
-                    setErrorMessage(null);
-                  }}
-                  type="button"
-                >
+                <button className="secondary-button" onClick={resetBoard} type="button">
                   Reset board
                 </button>
               </div>
