@@ -208,8 +208,8 @@ export function BuilderStudio({
         </div>
       </section>
 
-      <div className="game-grid builder-top-grid">
-        <section className="panel">
+      <div className="builder-stage-stack">
+        <section className="panel builder-scenario-panel">
           <div className="panel-header">
             <div>
               <p className="eyebrow">Scenario ladder</p>

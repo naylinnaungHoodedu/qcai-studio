@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   BUILDER_SLOT_HEIGHT,
@@ -9,6 +12,16 @@ import {
   removeBuilderNode,
 } from "../src/lib/builder";
 import { BuilderSlot } from "../src/lib/types";
+
+const TEST_DIR = dirname(fileURLToPath(import.meta.url));
+const BUILDER_COMPONENT_SOURCE = readFileSync(
+  resolve(TEST_DIR, "../src/components/builder-studio.tsx"),
+  "utf8",
+);
+const GLOBAL_CSS_SOURCE = readFileSync(
+  resolve(TEST_DIR, "../src/app/globals.css"),
+  "utf8",
+);
 
 const QC_AI_SLOTS: BuilderSlot[] = [
   {
@@ -91,4 +104,18 @@ test("removing a concept clears only the requested slot", () => {
   assert.deepEqual(next, {
     "slot-ingest": "data-ingest",
   });
+});
+
+test("builder layout renders the scenario ladder before the workbench", () => {
+  assert.match(
+    BUILDER_COMPONENT_SOURCE,
+    /<div className="builder-stage-stack">[\s\S]*?<section className="panel builder-scenario-panel">[\s\S]*?<section className="panel builder-workbench">/,
+  );
+});
+
+test("builder workbench keeps the drag-and-drop columns side by side on desktop", () => {
+  assert.match(
+    GLOBAL_CSS_SOURCE,
+    /\.builder-grid\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1\.45fr\)\s+minmax\(320px,\s*0\.82fr\);/,
+  );
 });

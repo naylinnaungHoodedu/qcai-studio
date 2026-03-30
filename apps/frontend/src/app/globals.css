@@ -2011,9 +2011,9 @@ select option:focus {
   grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.95fr);
 }
 
-.builder-top-grid {
-  grid-template-columns: minmax(280px, 0.82fr) minmax(0, 1.48fr);
-  align-items: start;
+.builder-stage-stack {
+  display: grid;
+  gap: 20px;
 }
 
 .arena-control-bar,
@@ -2126,6 +2126,11 @@ button:disabled,
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.builder-scenario-panel {
+  display: grid;
+  gap: 18px;
+}
+
 .builder-scenario-card {
   display: grid;
   gap: 10px;
@@ -2148,7 +2153,8 @@ button:disabled,
 }
 
 .builder-grid {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.82fr);
+  align-items: start;
 }
 
 .builder-canvas {
@@ -2382,14 +2388,6 @@ button:disabled,
 
   .simulation-sidebar {
     position: static;
-  }
-
-  .builder-top-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .builder-workbench {
-    order: -1;
   }
 
   .audience-grid {
