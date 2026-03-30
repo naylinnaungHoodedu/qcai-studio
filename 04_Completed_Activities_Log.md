@@ -4256,3 +4256,53 @@ Completed live verification work:
   - `Cross-Origin-Opener-Policy: same-origin`
   - `Cross-Origin-Resource-Policy: same-site`
   - the tightened CSP style directives instead of the prior broad inline-style allowance
+
+## 151. Deep Double-Check and GitHub Publication Completed for the Audit-Remediation Batch
+
+After the audit-remediation implementation was deployed, the rollout summary was rechecked deeply against the live domain, the deployed infrastructure, the local codebase, and the validation results. The completed batch was then published to the related GitHub repository.
+
+Completed deep double-check work:
+
+- re-audited the rollout summary against:
+  - local `HEAD`
+  - Cloud Build status for both new image builds
+  - the deployed Cloud Run API and frontend revisions
+  - the live homepage, builder, privacy, terms, support, `security.txt`, and API health surfaces
+  - the rerun local verification commands
+- reran:
+  - `pytest`
+  - `npm run test:integration`
+  - `npm run lint`
+  - `npm run build`
+- confirmed no factual correction was required
+- reconfirmed the live builder now exposes:
+  - keyboard help text
+  - keyboard shortcuts
+  - `5` focusable workbench slots
+- reconfirmed the live public legal/trust surfaces now expose:
+  - retention and subprocessors language on `/privacy`
+  - public-offering and minors language on `/terms`
+  - support/commercial-clarity language on `/support`
+- reconfirmed both public `security.txt` routes return `200` and match each other
+- reconfirmed the live homepage and API health endpoint both expose:
+  - `Cross-Origin-Opener-Policy: same-origin`
+  - `Cross-Origin-Resource-Policy: same-site`
+  - the narrowed CSP style directives
+- confirmed the remaining local untracked artifacts are still intentionally outside the publication batch:
+  - four unrelated PNG files
+  - `sitemap-live.xml`
+
+Completed repository publication work:
+
+- published the audit-remediation code batch on `main` in:
+  - commit: `bb31b2c`
+  - message: `feat: harden builder accessibility and public trust surfaces`
+- pushed the updated branch to:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+
+Recorded current publication boundary:
+
+- GitHub repository update: completed successfully for the audit-remediation code batch
+- local-only operational log `07_Production_Deployment_Local_Log.md` remains intentionally excluded from Git
+- generated working artifact `sitemap-live.xml` and the unrelated PNG artifacts remain intentionally outside the publication batch
