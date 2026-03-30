@@ -160,7 +160,12 @@ test("proxy adds nonce-based CSP without issuing guest cookies on public pages",
   const csp = response.headers.get("content-security-policy") ?? "";
   assert.match(csp, /script-src 'self' 'nonce-[^']+'/);
   assert.doesNotMatch(csp, /script-src[^;]*'unsafe-inline'/);
+  assert.match(csp, /style-src 'self'/);
+  assert.match(csp, /style-src-elem 'self'/);
+  assert.match(csp, /style-src-attr 'unsafe-inline'/);
   assert.doesNotMatch(csp, /0\.0\.0\.0:3000/);
+  assert.equal(response.headers.get("cross-origin-opener-policy"), "same-origin");
+  assert.equal(response.headers.get("cross-origin-resource-policy"), "same-site");
   assert.ok(response.headers.get("x-nonce"));
   assert.equal(response.cookies.get("qcai_guest_id"), undefined);
   assert.equal(response.cookies.get("qcai_guest_csrf"), undefined);

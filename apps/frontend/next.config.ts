@@ -11,6 +11,8 @@ const nextConfig: NextConfig = {
       { key: "X-Frame-Options", value: "DENY" },
       { key: "X-XSS-Protection", value: "1; mode=block" },
       { key: "Referrer-Policy", value: "same-origin" },
+      { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+      { key: "Cross-Origin-Resource-Policy", value: "same-site" },
       {
         key: "Permissions-Policy",
         value: "accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()",
@@ -69,7 +71,19 @@ const nextConfig: NextConfig = {
         headers: publicCacheHeaders,
       },
       {
+        source: "/support",
+        headers: publicCacheHeaders,
+      },
+      {
         source: "/whats-new",
+        headers: publicCacheHeaders,
+      },
+      {
+        source: "/security.txt",
+        headers: publicCacheHeaders,
+      },
+      {
+        source: "/.well-known/security.txt",
         headers: publicCacheHeaders,
       },
       {

@@ -60,7 +60,9 @@ function buildContentSecurityPolicy(request: NextRequest, nonce: string): string
     "object-src 'none'",
     "img-src 'self' data: blob:",
     "media-src 'self' blob:",
-    "style-src 'self' 'unsafe-inline'",
+    "style-src 'self'",
+    "style-src-elem 'self'",
+    "style-src-attr 'unsafe-inline'",
     "font-src 'self'",
     `script-src ${scriptSources.join(" ")}`,
     `connect-src ${buildConnectSources()}`,
@@ -90,6 +92,8 @@ export function proxy(request: NextRequest) {
     },
   });
   response.headers.set("Content-Security-Policy", buildContentSecurityPolicy(request, nonce));
+  response.headers.set("Cross-Origin-Opener-Policy", "same-origin");
+  response.headers.set("Cross-Origin-Resource-Policy", "same-site");
   response.headers.set("x-nonce", nonce);
 
   if (session) {

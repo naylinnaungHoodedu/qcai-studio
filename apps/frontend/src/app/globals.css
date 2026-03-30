@@ -2184,6 +2184,10 @@ button:disabled,
   margin-bottom: 18px;
 }
 
+.builder-keyboard-help {
+  margin: 0 0 18px;
+}
+
 .builder-workbench-pills {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
@@ -2236,6 +2240,13 @@ button:disabled,
   display: grid;
   gap: 10px;
   box-shadow: 0 16px 32px rgba(0, 0, 0, 0.32);
+}
+
+.builder-slot:focus-visible,
+.builder-slot:focus-within {
+  outline: 3px solid rgba(15, 118, 110, 0.42);
+  outline-offset: 4px;
+  border-color: rgba(130, 231, 255, 0.42);
 }
 
 .builder-slot strong {

@@ -31,6 +31,7 @@ test("sitemap publishes public study and simulations routes", () => {
   const urls = new Set(entries.map((entry) => entry.url));
 
   assert.ok(urls.has(`${SITE_URL}/about`));
+  assert.ok(urls.has(`${SITE_URL}/support`));
   assert.ok(urls.has(`${SITE_URL}/modules`));
   assert.ok(urls.has(`${SITE_URL}/simulations`));
   assert.ok(urls.has(`${SITE_URL}/simulations/the-nisq-fidelity-cliff`));
@@ -175,12 +176,30 @@ test("public routes advertise revalidation-friendly cache headers", async () => 
   const routes = (await nextConfig.headers?.()) ?? [];
   const homeHeaders = routes.find((route) => route.source === "/");
   const whatsNewHeaders = routes.find((route) => route.source === "/whats-new");
+  const securityHeaders = routes.find((route) => route.source === "/:path*");
+  const supportHeaders = routes.find((route) => route.source === "/support");
 
   assert.ok(homeHeaders);
   assert.ok(whatsNewHeaders);
+  assert.ok(securityHeaders);
+  assert.ok(supportHeaders);
   assert.equal(homeHeaders.headers[0]?.key, "Cache-Control");
   assert.equal(
     homeHeaders.headers[0]?.value,
+    "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
+  );
+  assert.ok(
+    securityHeaders.headers.some(
+      (header) => header.key === "Cross-Origin-Opener-Policy" && header.value === "same-origin",
+    ),
+  );
+  assert.ok(
+    securityHeaders.headers.some(
+      (header) => header.key === "Cross-Origin-Resource-Policy" && header.value === "same-site",
+    ),
+  );
+  assert.equal(
+    supportHeaders.headers[0]?.value,
     "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
   );
 });

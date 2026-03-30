@@ -55,7 +55,7 @@ def _build_content_security_policy(app_settings = settings, nonce: str | None = 
     return (
         "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; "
         "img-src 'self' data: blob:; media-src 'self' blob:; "
-        "style-src 'self' 'unsafe-inline'; "
+        "style-src 'self'; style-src-elem 'self'; style-src-attr 'unsafe-inline'; "
         f"script-src {' '.join(script_sources)}; "
         f"connect-src {' '.join(sorted(connect_sources))};"
     )
@@ -67,6 +67,8 @@ def _build_security_headers(app_settings = settings, nonce: str | None = None) -
         "X-Frame-Options": "DENY",
         "X-XSS-Protection": "1; mode=block",
         "Referrer-Policy": "same-origin",
+        "Cross-Origin-Opener-Policy": "same-origin",
+        "Cross-Origin-Resource-Policy": "same-site",
         "Permissions-Policy": "accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()",
         "Content-Security-Policy": _build_content_security_policy(app_settings, nonce=nonce),
     }

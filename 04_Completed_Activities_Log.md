@@ -4155,3 +4155,104 @@ Recorded current publication boundary:
 - GitHub repository update: completed successfully for the API content-integrity batch
 - local-only operational log `07_Production_Deployment_Local_Log.md` remains intentionally excluded from Git
 - generated working artifact `sitemap-live.xml` and the unrelated PNG artifacts remain intentionally outside the publication batch
+
+## 150. Builder Accessibility, Public-Trust Disclosures, security.txt, and Header Hardening Implemented and Deployed
+
+The live public audit recommendations were then converted into a single remediation batch spanning accessibility, privacy/compliance disclosures, security disclosure, trust/commercial clarity, and response-hardening work across both the frontend and backend.
+
+Completed implementation work:
+
+- rebuilt the live `/builder` workbench interaction model so core placement targets are keyboard-reachable and keyboard-operable instead of remaining pointer-only
+- added builder workbench guidance and assistive feedback for:
+  - keyboard selection and placement
+  - `Enter` and `Space` placement actions
+  - `Delete` and `Backspace` removal actions
+  - live status updates during selection, placement, removal, and reset flows
+- added focus-visible styling for builder slots so keyboard navigation has an explicit visual focus state
+- expanded the public privacy page to cover:
+  - cookies and session security
+  - retention and deletion
+  - infrastructure and subprocessors
+  - lawful basis and rights where applicable
+  - education and minors handling
+- expanded the public terms page to cover:
+  - account deletion and moderation
+  - public offering, pricing, and refunds
+  - education and minors
+  - operator identity and support
+- added a new public support/trust page exposing:
+  - operator identity
+  - support channel
+  - partner/institutional contact framing
+  - security-disclosure location
+  - explicit confirmation that the site is not currently a paid self-serve public offering
+- added public `security.txt` disclosure endpoints at:
+  - `/security.txt`
+  - `/.well-known/security.txt`
+- tightened frontend and backend response hardening by adding:
+  - `Cross-Origin-Opener-Policy: same-origin`
+  - `Cross-Origin-Resource-Policy: same-site`
+- reduced CSP style permissiveness by replacing the broad inline-style directive with:
+  - `style-src 'self'`
+  - `style-src-elem 'self'`
+  - `style-src-attr 'unsafe-inline'`
+- explicitly evaluated `Cross-Origin-Embedder-Policy` and left it out of the live rollout to avoid breaking current media and embedded-resource behavior without a broader compatibility audit
+- added new regression coverage for:
+  - builder keyboard reachability and focus styling
+  - tightened proxy/header behavior
+  - public trust/compliance content
+  - `security.txt` publication and canonical matching
+
+Completed local verification work:
+
+- backend automated verification:
+  - `pytest`
+  - result: `65 passed`
+- frontend automated verification:
+  - `npm run test:integration`
+  - result: `45 passed`
+- frontend static verification:
+  - `npm run lint`
+  - result: passed
+- frontend production build verification:
+  - `npm run build`
+  - result: passed
+
+Completed production deployment work:
+
+- built and published the updated API image through Cloud Build:
+  - build id: `4c3b4811-cb38-406e-9fbd-fe0eefc0c941`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-api:latest`
+- deployed the updated API image to Cloud Run:
+  - service: `qcai-api`
+  - latest ready revision: `qcai-api-00025-hmt`
+  - traffic: `100%`
+- built and published the updated frontend image through Cloud Build:
+  - build id: `de3fa9f5-6b06-4263-b654-39f7240059d5`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest`
+- deployed the updated frontend image to Cloud Run:
+  - service: `qcai-frontend`
+  - latest ready revision: `qcai-frontend-00035-2fx`
+  - traffic: `100%`
+
+Completed live verification work:
+
+- verified `https://qantumlearn.academy/builder` returns `200` and now exposes:
+  - keyboard-help copy
+  - keyboard shortcuts
+  - `5` focusable workbench slots
+- verified `https://qantumlearn.academy/privacy` returns `200` and exposes:
+  - `Retention and deletion`
+  - `Infrastructure and subprocessors`
+- verified `https://qantumlearn.academy/terms` returns `200` and exposes:
+  - `Public offering, pricing, and refunds`
+  - `Education and minors`
+- verified `https://qantumlearn.academy/support` returns `200` and explicitly states the public site is not currently a paid self-serve public offering
+- verified both:
+  - `https://qantumlearn.academy/security.txt`
+  - `https://qantumlearn.academy/.well-known/security.txt`
+  return `200` and expose the public contact and policy references
+- verified the live homepage and API health endpoint now expose:
+  - `Cross-Origin-Opener-Policy: same-origin`
+  - `Cross-Origin-Resource-Policy: same-site`
+  - the tightened CSP style directives instead of the prior broad inline-style allowance

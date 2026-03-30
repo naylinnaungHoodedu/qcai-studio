@@ -604,8 +604,13 @@ def test_production_security_headers_drop_localhost_and_add_hsts():
     assert "http://localhost:*" not in headers["Content-Security-Policy"]
     assert "wss://api.qantumlearn.academy" in headers["Content-Security-Policy"]
     assert "'unsafe-inline'" not in headers["Content-Security-Policy"].split("script-src", 1)[1]
+    assert "style-src 'self'" in headers["Content-Security-Policy"]
+    assert "style-src-elem 'self'" in headers["Content-Security-Policy"]
+    assert "style-src-attr 'unsafe-inline'" in headers["Content-Security-Policy"]
     assert "'nonce-unit-test-nonce'" in headers["Content-Security-Policy"]
     assert headers["X-XSS-Protection"] == "1; mode=block"
+    assert headers["Cross-Origin-Opener-Policy"] == "same-origin"
+    assert headers["Cross-Origin-Resource-Policy"] == "same-site"
     assert headers["Strict-Transport-Security"].startswith("max-age=")
 
 

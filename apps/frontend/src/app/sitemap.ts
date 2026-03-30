@@ -25,6 +25,7 @@ const STATIC_ROUTES: Array<{ path: string; priority: number }> = [
   { path: "/syllabus", priority: 0.8 },
   { path: "/privacy", priority: 0.3 },
   { path: "/terms", priority: 0.3 },
+  { path: "/support", priority: 0.4 },
   { path: "/attribution", priority: 0.3 },
 ];
 

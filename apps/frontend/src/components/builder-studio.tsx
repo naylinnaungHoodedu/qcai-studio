@@ -49,6 +49,9 @@ export function BuilderStudio({
   const [shareCaption, setShareCaption] = useState("Built a clean dependency graph under pressure.");
   const [lastResult, setLastResult] = useState<BuilderSubmissionResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [interactionMessage, setInteractionMessage] = useState(
+    "Keyboard help: tab to a concept in the tray and press Enter to arm placement, then tab to a step and press Enter or Space to place it.",
+  );
 
   const scenariosQuery = useQuery({
     queryKey: ["builder-scenarios"],
@@ -129,19 +132,35 @@ export function BuilderStudio({
     setSelectedNodeId(null);
     setLastResult(null);
     setErrorMessage(null);
+    setInteractionMessage(`${nextScenario.title} loaded. Choose a concept, then place it into the circuit.`);
   }
 
   function handlePlacement(slotId: string, nodeId: string) {
+    const placedNode = selectedScenario?.nodes.find((node) => node.id === nodeId);
+    const slot = selectedScenario?.slots.find((item) => item.id === slotId);
     setPlacements((current) => placeBuilderNode(current, slotId, nodeId));
     setSelectedNodeId(null);
     setLastResult(null);
     setErrorMessage(null);
+    setInteractionMessage(
+      placedNode && slot
+        ? `${placedNode.label} placed in ${slot.label}.`
+        : "Concept placed in the selected step.",
+    );
   }
 
   function removePlacement(slotId: string) {
+    const slot = selectedScenario?.slots.find((item) => item.id === slotId);
+    const nodeId = placements[slotId];
+    const placedNode = selectedScenario?.nodes.find((node) => node.id === nodeId);
     setPlacements((current) => removeBuilderNode(current, slotId));
     setLastResult(null);
     setErrorMessage(null);
+    setInteractionMessage(
+      placedNode && slot
+        ? `${placedNode.label} removed from ${slot.label}.`
+        : "Placement removed from the circuit.",
+    );
   }
 
   function resetBoard() {
@@ -149,17 +168,41 @@ export function BuilderStudio({
     setSelectedNodeId(null);
     setLastResult(null);
     setErrorMessage(null);
+    setInteractionMessage("Workbench reset. All concepts are back in the tray.");
   }
 
   function handleSlotKeyDown(event: KeyboardEvent<HTMLDivElement>, slotId: string) {
-    if (!selectedNodeId) {
+    const hasPlacement = Boolean(placements[slotId]);
+    if (event.key === "Delete" || event.key === "Backspace") {
+      if (hasPlacement) {
+        event.preventDefault();
+        removePlacement(slotId);
+      }
       return;
     }
     if (event.key !== "Enter" && event.key !== " ") {
       return;
     }
     event.preventDefault();
-    handlePlacement(slotId, selectedNodeId);
+    if (selectedNodeId) {
+      handlePlacement(slotId, selectedNodeId);
+      return;
+    }
+    if (!hasPlacement) {
+      setInteractionMessage("Select a concept from the tray before placing it into a circuit step.");
+    }
+  }
+
+  function toggleSelectedNode(nodeId: string, label: string) {
+    setSelectedNodeId((current) => {
+      const next = current === nodeId ? null : nodeId;
+      setInteractionMessage(
+        next
+          ? `${label} selected. Move to a circuit step and press Enter or Space to place it.`
+          : "Placement selection cleared.",
+      );
+      return next;
+    });
   }
 
   function checkCircuit() {
@@ -262,10 +305,17 @@ export function BuilderStudio({
                 {Object.keys(placements).length} / {selectedScenario?.slots.length ?? 0} placed
               </span>
               <span className={cx("prompt-pill", selectedNode && "is-armed")}>
-                {selectedNode ? `Selected: ${selectedNode.label}` : "Tap a concept to arm placement"}
+                {selectedNode ? `Selected: ${selectedNode.label}` : "Select a concept to arm placement"}
               </span>
             </div>
           </div>
+          <p className="builder-keyboard-help muted" id="builder-workbench-help">
+            Keyboard: tab to a concept, press Enter to arm placement, then tab to a step and press Enter or Space to
+            place it. Use Delete or Backspace on a filled step to clear it.
+          </p>
+          <p className="sr-only" id="builder-workbench-status" role="status">
+            {interactionMessage}
+          </p>
 
           <div className="builder-grid">
             <div className="builder-canvas-frame">
@@ -309,6 +359,9 @@ export function BuilderStudio({
                                 ? `Place ${selectedNode.label} in ${slot.label}`
                                 : `${slot.label}. ${slot.description}`
                             }
+                            aria-describedby="builder-workbench-help builder-workbench-status"
+                            aria-disabled={!selectedNodeId && !node ? true : undefined}
+                            aria-keyshortcuts="Enter Space Delete Backspace"
                             className={cx(
                               "builder-slot",
                               selectedNode && "is-armed",
@@ -336,7 +389,7 @@ export function BuilderStudio({
                               left: slotPosition?.leftPercent,
                               top: slotPosition?.topPercent,
                             }}
-                            tabIndex={selectedNodeId ? 0 : -1}
+                            tabIndex={0}
                           >
                             <span className="eyebrow">{slot.label}</span>
                             <strong>{slot.description}</strong>
@@ -381,7 +434,7 @@ export function BuilderStudio({
                   <>
                     <strong>{selectedNode.label}</strong>
                     <p className="muted">
-                      Tap a highlighted step to place this concept, or drag it directly into the circuit.
+                      Select a highlighted step to place this concept, or drag it directly into the circuit.
                     </p>
                     <div className="button-row">
                       <button className="secondary-button" onClick={() => setSelectedNodeId(null)} type="button">
@@ -391,8 +444,8 @@ export function BuilderStudio({
                   </>
                 ) : (
                   <p className="muted">
-                    Choose a concept from the tray to activate touch-friendly placement. Drag-and-drop remains available
-                    on desktop.
+                    Choose a concept from the tray to activate touch-friendly or keyboard placement. Drag-and-drop
+                    remains available on desktop.
                   </p>
                 )}
               </div>
@@ -403,10 +456,11 @@ export function BuilderStudio({
                   {availableNodes.map((node) => (
                     <button
                       aria-pressed={selectedNodeId === node.id}
+                      aria-describedby="builder-workbench-help builder-workbench-status"
                       className={cx("builder-node", selectedNodeId === node.id && "is-selected")}
                       draggable
                       key={node.id}
-                      onClick={() => setSelectedNodeId((current) => (current === node.id ? null : node.id))}
+                      onClick={() => toggleSelectedNode(node.id, node.label)}
                       onDragStart={(event) => event.dataTransfer.setData("text/plain", node.id)}
                       style={{ backgroundColor: node.color }}
                       type="button"

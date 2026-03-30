@@ -119,3 +119,15 @@ test("builder workbench keeps the drag-and-drop columns side by side on desktop"
     /\.builder-grid\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1\.45fr\)\s+minmax\(320px,\s*0\.82fr\);/,
   );
 });
+
+test("builder slots stay keyboard reachable and advertise keyboard placement help", () => {
+  assert.match(BUILDER_COMPONENT_SOURCE, /id="builder-workbench-help"/);
+  assert.match(BUILDER_COMPONENT_SOURCE, /id="builder-workbench-status"/);
+  assert.match(BUILDER_COMPONENT_SOURCE, /aria-describedby="builder-workbench-help builder-workbench-status"/);
+  assert.match(BUILDER_COMPONENT_SOURCE, /tabIndex=\{0\}/);
+  assert.match(BUILDER_COMPONENT_SOURCE, /event\.key === "Delete" \|\| event\.key === "Backspace"/);
+});
+
+test("builder slot focus styles are defined for keyboard and assistive-technology navigation", () => {
+  assert.match(GLOBAL_CSS_SOURCE, /\.builder-slot:focus-visible,\s*\.builder-slot:focus-within\s*\{/);
+});
