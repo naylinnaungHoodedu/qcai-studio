@@ -6,6 +6,7 @@ import { ModuleCard } from "@/components/module-card";
 import { PageErrorState } from "@/components/page-state";
 import { StructuredData } from "@/components/structured-data";
 import { fetchCourseOverview } from "@/lib/api";
+import { formatModuleLabel } from "@/lib/module-labels";
 import { buildBreadcrumbStructuredData, buildPageMetadata } from "@/lib/metadata";
 import { COMPLETION_SIGNAL_NOTES, EXPANSION_ROADMAP } from "@/lib/public-status";
 import {
@@ -78,6 +79,12 @@ export default async function ModulesLandingPage() {
           <p className="hero-text">
             This page makes the public learning contract explicit: who the course is for, what background helps, how the modules are sequenced, and how projects are judged.
           </p>
+          <div className="button-row">
+            <span className="status-pill in_progress">
+              {formatModuleLabel(1)} to {formatModuleLabel(course.modules.length)}
+            </span>
+            <span className="status-pill">{totalLessons} lesson path</span>
+          </div>
           <div className="button-row">
             <Link className="primary-button" href={firstModuleHref}>
               Start with module 1

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 
+import { formatModuleLabel } from "@/lib/module-labels";
 import { ModuleProgress, ModuleSummary } from "@/lib/types";
 
 type ModuleCardMeta = {
@@ -231,6 +232,7 @@ export function ModuleCard({
   const meta = MODULE_CARD_META[module.slug] ?? DEFAULT_CARD_META;
   const firstLessonHref = module.lesson_slugs[0] ? `/lessons/${module.lesson_slugs[0]}` : "/syllabus";
   const secondaryLabel = module.lesson_slugs[0] ? "Open first lesson" : "Review syllabus";
+  const moduleLabel = formatModuleLabel(moduleNumber);
 
   return (
     <article
@@ -254,8 +256,8 @@ export function ModuleCard({
             ) : null}
           </div>
         </div>
-        <span aria-label={`Module ${moduleNumber}`} className="module-card-number">
-          {moduleNumber}
+        <span aria-label={moduleLabel} className="module-card-number">
+          {moduleLabel}
         </span>
       </div>
 

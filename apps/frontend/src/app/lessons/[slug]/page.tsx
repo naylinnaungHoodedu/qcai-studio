@@ -8,6 +8,7 @@ import { QAPanel } from "@/components/qa-panel";
 import { StructuredData } from "@/components/structured-data";
 import { VideoPanel } from "@/components/video-panel";
 import { fetchCourseOverview, fetchLesson, getClientApiBaseUrl } from "@/lib/api";
+import { getModuleLabel } from "@/lib/module-labels";
 import { buildPageMetadata } from "@/lib/metadata";
 import { SITE_URL } from "@/lib/site";
 
@@ -49,6 +50,7 @@ export default async function LessonPage({ params }: LessonPageProps) {
 
   const assetBaseUrl = getClientApiBaseUrl();
   const moduleSummary = course?.modules.find((item) => item.slug === lesson.module_slug) ?? null;
+  const moduleLabel = moduleSummary ? getModuleLabel(moduleSummary.slug) : null;
   const orderedLessons = course?.modules.flatMap((module) => module.lesson_slugs) ?? [];
   const currentLessonIndex = orderedLessons.indexOf(lesson.slug);
   const previousLessonSlug = currentLessonIndex > 0 ? orderedLessons[currentLessonIndex - 1] : null;
@@ -102,7 +104,11 @@ export default async function LessonPage({ params }: LessonPageProps) {
             { label: lesson.title },
           ]}
         />
-        <p className="eyebrow">Lesson</p>
+        <div className="button-row">
+          {moduleLabel ? <span className="status-pill in_progress">{moduleLabel}</span> : null}
+          {moduleSummary ? <span className="status-pill">{moduleSummary.title}</span> : null}
+        </div>
+        <p className="eyebrow">{moduleLabel ? `${moduleLabel} lesson` : "Lesson"}</p>
         <h1>{lesson.title}</h1>
         <p className="hero-text">{lesson.summary}</p>
         <div className="button-row">

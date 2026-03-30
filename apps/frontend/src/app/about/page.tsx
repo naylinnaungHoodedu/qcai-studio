@@ -1,11 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { StructuredData } from "@/components/structured-data";
 import { fetchCourseOverview } from "@/lib/api";
 import { buildBreadcrumbStructuredData, buildPageMetadata } from "@/lib/metadata";
-import { COURSE_SCOPE_NOTE, ENGINEERING_READING_NOTES, INDUSTRY_METHOD_NOTE } from "@/lib/public-course";
+import {
+  ABOUT_AUDIENCE_GROUPS,
+  ABOUT_LEARNING_PROGRESSION,
+  COURSE_SCOPE_NOTE,
+  ENGINEERING_READING_NOTES,
+  INDUSTRY_METHOD_NOTE,
+} from "@/lib/public-course";
 import { CONTACT_EMAIL, OWNER_NAME, REPOSITORY_URL, SITE_URL } from "@/lib/site";
 
 const FALLBACK_SOURCE_ASSETS = [
@@ -165,6 +172,42 @@ const BUILD_PRACTICES = [
   "Claims on the public site are strongest when they can be tied back to the live codebase, a source asset, or a reproducible test run.",
 ] as const;
 
+function renderAudienceIcon(icon: string): ReactNode {
+  switch (icon) {
+    case "developers":
+      return (
+        <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+          <rect height="12" rx="2.5" width="16" x="4" y="5" />
+          <path d="M8 19h8" />
+        </svg>
+      );
+    case "scientists":
+      return (
+        <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+          <path d="M10 4h4" />
+          <path d="M11 4v5l-5 8a3 3 0 0 0 2.6 4.5h6.8A3 3 0 0 0 18 17l-5-8V4" />
+        </svg>
+      );
+    case "researchers":
+      return (
+        <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+          <circle cx="9" cy="10" r="3.5" />
+          <path d="M3.5 19a5.5 5.5 0 0 1 11 0" />
+          <path d="M18.5 8.5a2.5 2.5 0 1 1-.001 5.001A2.5 2.5 0 0 1 18.5 8.5Z" />
+          <path d="M16.5 19a4 4 0 0 1 4-4" />
+        </svg>
+      );
+    case "students":
+    default:
+      return (
+        <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+          <path d="m4 9 8-4 8 4-8 4-8-4Z" />
+          <path d="M7 11.5V15c0 1.2 2.2 3 5 3s5-1.8 5-3v-3.5" />
+        </svg>
+      );
+  }
+}
+
 export const metadata: Metadata = buildPageMetadata({
   title: "About the QC+AI Learning Platform",
   description:
@@ -250,6 +293,54 @@ export default async function AboutPage() {
             </p>
           </article>
         </div>
+      </section>
+
+      <section className="section-block">
+        <div className="section-heading">
+          <p className="eyebrow">Audience and progression</p>
+          <h2>Who is it for?</h2>
+          <p>
+            The platform is meant for technically serious learners who want a compact route into QC+AI without losing sight of engineering constraints. The progression below makes the intended learning arc explicit instead of leaving the course sequence implicit.
+          </p>
+        </div>
+        <div className="audience-grid">
+          {ABOUT_AUDIENCE_GROUPS.map((group) => (
+            <article className="audience-card" key={group.title}>
+              <div className="audience-card-icon">{renderAudienceIcon(group.icon)}</div>
+              <div className="stack">
+                <h3>{group.title}</h3>
+                <p>{group.description}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+        <article className="panel progression-shell">
+          <div className="section-heading">
+            <p className="eyebrow">Learning progression</p>
+            <h2>Learning progression</h2>
+            <p>
+              The public course now makes the module path easier to read as a progression rather than a flat list. Each stage below points to the relevant module range inside the current eleven-module track.
+            </p>
+          </div>
+          <div className="progression-track">
+            <div aria-hidden="true" className="progression-line" />
+            {ABOUT_LEARNING_PROGRESSION.map((step, index) => (
+              <article
+                className={`progression-step ${index % 2 === 1 ? "is-offset" : ""}`}
+                key={step.title}
+              >
+                <span className="progression-step-dot" aria-hidden="true" />
+                <div className="progression-step-card">
+                  <div className="button-row">
+                    <span className="status-pill in_progress">{step.moduleRange}</span>
+                  </div>
+                  <h3>{step.title}</h3>
+                  <p>{step.summary}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </article>
       </section>
 
       <section className="section-block">

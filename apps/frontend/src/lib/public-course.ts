@@ -7,6 +7,61 @@ export const TARGET_AUDIENCE = [
   "Builders who want a compact, inspectable curriculum before deeper specialization.",
 ] as const;
 
+export const ABOUT_AUDIENCE_GROUPS = [
+  {
+    title: "Students",
+    description:
+      "Undergraduate and graduate learners who want a structured entry into hybrid quantum-classical systems without starting from marketing language.",
+    icon: "students",
+  },
+  {
+    title: "Developers",
+    description:
+      "Software engineers moving toward quantum programming, compiler-aware workflows, and hardware-constrained software design.",
+    icon: "developers",
+  },
+  {
+    title: "Data scientists",
+    description:
+      "Applied ML and optimization practitioners evaluating where quantum kernels, compressed features, or QUBO reformulations may actually fit.",
+    icon: "scientists",
+  },
+  {
+    title: "Researchers",
+    description:
+      "Academic and industry researchers who need a compact, inspectable view of current QC+AI evidence, limits, and deployment tradeoffs.",
+    icon: "researchers",
+  },
+] as const;
+
+export const ABOUT_LEARNING_PROGRESSION = [
+  {
+    title: "Foundations",
+    summary: "NISQ realism, hybrid-system framing, and why hardware limits dominate the early design conversation.",
+    moduleRange: "Modules 1 and 7",
+  },
+  {
+    title: "Algorithms",
+    summary: "Routing, constrained optimization, kernels, and the validation logic behind hardware-aware QC+AI models.",
+    moduleRange: "Modules 2 and 8",
+  },
+  {
+    title: "Programming",
+    summary: "Device-first programming patterns, parameter-shift workflows, shot strategy, debugging, and compiler-aware execution.",
+    moduleRange: "Modules 9 and 10",
+  },
+  {
+    title: "Applications",
+    summary: "Vision, healthcare, language, explainability, and industry use cases interpreted through realistic deployment constraints.",
+    moduleRange: "Modules 3, 4, and 5",
+  },
+  {
+    title: "Specialization",
+    summary: "Systems-roadmap thinking and finance-focused optimization work that push the curriculum into domain-specific tradeoffs.",
+    moduleRange: "Modules 6 and 11",
+  },
+] as const;
+
 export const PREREQUISITES = [
   "Comfort reading technical material in linear algebra terms such as vectors, matrices, embeddings, and similarity.",
   "Basic machine-learning intuition: optimization, feature representations, evaluation, and the role of training loops.",

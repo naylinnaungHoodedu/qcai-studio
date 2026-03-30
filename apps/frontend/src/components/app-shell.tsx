@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ReactNode } from "react";
 
 import { SiteFooter } from "@/components/site-footer";
+import { PRIMARY_NAV_ITEMS } from "@/lib/navigation";
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -19,21 +20,24 @@ export function AppShell({ children }: { children: ReactNode }) {
           </p>
         </div>
         <nav className="site-nav" aria-label="Primary">
-          <Link href="/">Overview</Link>
-          <Link href="/modules">Modules</Link>
-          <Link href="/simulations">Simulations</Link>
-          <Link href="/about">About</Link>
-          <Link href="/projects">Projects</Link>
-          <Link href="/search">Search</Link>
-          <details className="site-nav-group">
-            <summary>Practice</summary>
-            <div className="site-subnav" role="group" aria-label="Practice links">
-              <Link href="/dashboard">Dashboard</Link>
-              <Link href="/arena">Arena</Link>
-              <Link href="/builder">Builder</Link>
-            </div>
-          </details>
-          <Link href="/account">Account</Link>
+          {PRIMARY_NAV_ITEMS.map((item) =>
+            "children" in item ? (
+              <details className="site-nav-group" key={item.label}>
+                <summary>{item.label}</summary>
+                <div className="site-subnav" role="group" aria-label={`${item.label} links`}>
+                  {item.children.map((child) => (
+                    <Link href={child.href} key={child.href}>
+                      {child.label}
+                    </Link>
+                  ))}
+                </div>
+              </details>
+            ) : (
+              <Link href={item.href} key={item.href}>
+                {item.label}
+              </Link>
+            ),
+          )}
         </nav>
       </header>
       <main id="main-content">{children}</main>

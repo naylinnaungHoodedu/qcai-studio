@@ -484,17 +484,21 @@ select option:focus {
 }
 
 .module-card-number {
-  min-width: 44px;
-  height: 52px;
-  display: grid;
+  min-width: 96px;
+  height: 40px;
+  display: inline-flex;
   place-items: center;
+  justify-content: center;
+  align-items: center;
   padding: 0 14px;
-  border-radius: 16px;
+  border-radius: 999px;
   border: 1px solid rgba(118, 155, 255, 0.2);
   background: linear-gradient(180deg, rgba(80, 84, 138, 0.5), rgba(54, 41, 88, 0.42));
   color: #eef4ff;
-  font-size: 1.05rem;
+  font-size: 0.8rem;
   font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .module-card-copy h3,
@@ -863,6 +867,119 @@ select option:focus {
     radial-gradient(circle at top right, rgba(122, 108, 255, 0.2), transparent 28%),
     radial-gradient(circle at bottom left, rgba(27, 212, 255, 0.16), transparent 24%),
     linear-gradient(180deg, rgba(10, 20, 42, 0.96), rgba(5, 11, 24, 0.94));
+}
+
+.audience-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.audience-card,
+.progression-shell,
+.progression-step-card {
+  border-radius: 22px;
+  border: 1px solid rgba(88, 137, 255, 0.18);
+  background: linear-gradient(180deg, rgba(10, 20, 40, 0.94), rgba(7, 13, 27, 0.98));
+}
+
+.audience-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 16px;
+  padding: 22px;
+  align-items: start;
+}
+
+.audience-card h3,
+.progression-step-card h3 {
+  margin: 0;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+}
+
+.audience-card p,
+.progression-step-card p {
+  margin: 0;
+}
+
+.audience-card-icon {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  color: #11d4ff;
+  background: linear-gradient(180deg, rgba(20, 47, 88, 0.9), rgba(31, 44, 97, 0.72));
+  border: 1px solid rgba(27, 212, 255, 0.24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.audience-card-icon svg {
+  width: 24px;
+  height: 24px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.progression-shell {
+  display: grid;
+  gap: 22px;
+  padding: 28px;
+}
+
+.progression-track {
+  position: relative;
+  display: grid;
+  gap: 18px;
+  padding: 10px 0;
+}
+
+.progression-line {
+  position: absolute;
+  top: 20px;
+  bottom: 20px;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, rgba(27, 212, 255, 0.88), rgba(122, 108, 255, 0.78));
+  box-shadow: 0 0 24px rgba(27, 212, 255, 0.3);
+}
+
+.progression-step {
+  position: relative;
+  width: calc(50% - 22px);
+}
+
+.progression-step.is-offset {
+  margin-left: auto;
+}
+
+.progression-step-dot {
+  position: absolute;
+  top: 50%;
+  right: -34px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  transform: translateY(-50%);
+  background: #11d4ff;
+  border: 3px solid rgba(5, 11, 24, 0.96);
+  box-shadow: 0 0 0 6px rgba(27, 212, 255, 0.12);
+}
+
+.progression-step.is-offset .progression-step-dot {
+  right: auto;
+  left: -34px;
+}
+
+.progression-step-card {
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  min-height: 100%;
 }
 
 .simulation-hero {
@@ -2222,6 +2339,32 @@ button:disabled,
 
   .builder-workbench {
     order: -1;
+  }
+
+  .audience-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .progression-track {
+    gap: 16px;
+    padding-left: 18px;
+  }
+
+  .progression-line {
+    left: 9px;
+    transform: none;
+  }
+
+  .progression-step,
+  .progression-step.is-offset {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .progression-step-dot,
+  .progression-step.is-offset .progression-step-dot {
+    left: -15px;
+    right: auto;
   }
 
   .academy-hero-heading,
