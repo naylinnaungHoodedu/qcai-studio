@@ -8,6 +8,7 @@ import {
   AUTH_VERIFIER_COOKIE_NAME,
   buildAuth0AuthorizeUrl,
   isAuth0Configured,
+  resolveAppOrigin,
   isSecureCookieRequest,
   sanitizeReturnTo,
 } from "@/lib/auth";
@@ -17,8 +18,9 @@ function toBase64Url(value: Buffer): string {
 }
 
 export async function GET(request: NextRequest) {
+  const appOrigin = resolveAppOrigin(request);
   if (!isAuth0Configured()) {
-    return NextResponse.redirect(new URL("/account?auth=unavailable", request.url));
+    return NextResponse.redirect(new URL("/account?auth=unavailable", appOrigin));
   }
 
   const returnTo = sanitizeReturnTo(request.nextUrl.searchParams.get("returnTo"));
@@ -28,7 +30,7 @@ export async function GET(request: NextRequest) {
   const secure = isSecureCookieRequest(request);
 
   const response = NextResponse.redirect(
-    buildAuth0AuthorizeUrl(request.nextUrl.origin, state, challenge),
+    buildAuth0AuthorizeUrl(appOrigin, state, challenge),
   );
   response.cookies.set({
     name: AUTH_STATE_COOKIE_NAME,

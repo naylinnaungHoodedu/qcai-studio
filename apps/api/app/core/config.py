@@ -68,6 +68,8 @@ class Settings(BaseSettings):
     pinecone_index: str | None = None
     pinecone_namespace: str = "qcai-course"
     pinecone_upsert_batch_size: int = 32
+    auth_register_rate_limit: str = "5/minute"
+    auth_login_rate_limit: str = "10/minute"
     qa_ask_rate_limit: str = "5/minute"
     search_rate_limit: str = "10/minute"
     api_base_url: str | None = None

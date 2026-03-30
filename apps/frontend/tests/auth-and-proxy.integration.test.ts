@@ -9,10 +9,13 @@ import { GET as authLoginRoute } from "../src/app/auth/login/route";
 import { GET as authLogoutRoute } from "../src/app/auth/logout/route";
 import { proxy } from "../src/proxy";
 import {
+  AUTH_CSRF_COOKIE_NAME,
   AUTH_RETURN_TO_COOKIE_NAME,
   AUTH_STATE_COOKIE_NAME,
   AUTH_TOKEN_COOKIE_NAME,
   AUTH_VERIFIER_COOKIE_NAME,
+  LOCAL_AUTH_SESSION_COOKIE_NAME,
+  resolveAppOrigin,
 } from "../src/lib/auth";
 
 const AUTH_ENV_KEYS = [
@@ -53,6 +56,11 @@ test("auth login route redirects to account when Auth0 is unavailable", async ()
 
   assert.equal(response.status, 307);
   assert.equal(response.headers.get("location"), "https://qantumlearn.academy/account?auth=unavailable");
+});
+
+test("auth helpers fall back to the configured site origin when the request host is internal", () => {
+  const request = new NextRequest("https://0.0.0.0:3000/auth/login");
+  assert.equal(resolveAppOrigin(request), "https://qantumlearn.academy");
 });
 
 test("auth login route issues PKCE cookies and redirects to Auth0", async () => {
@@ -142,6 +150,8 @@ test("auth logout route clears cookies and redirects to Auth0 logout", async () 
   const setCookie = getSetCookieHeader(response);
   assert.match(setCookie, new RegExp(`${AUTH_TOKEN_COOKIE_NAME}=;`));
   assert.match(setCookie, new RegExp(`${AUTH_STATE_COOKIE_NAME}=;`));
+  assert.match(setCookie, new RegExp(`${LOCAL_AUTH_SESSION_COOKIE_NAME}=;`));
+  assert.match(setCookie, new RegExp(`${AUTH_CSRF_COOKIE_NAME}=;`));
 });
 
 test("proxy adds nonce-based CSP without issuing guest cookies on public pages", async () => {

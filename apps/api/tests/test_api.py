@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 
 from app.api.routes import assets
 from app.core.db import SessionLocal
-from app.db_models import ArenaProfile
+from app.db_models import ArenaProfile, Note, UserAccount
 from app.core.config import Settings
 from app.main import _build_security_headers, _initialize_database, app
 from app.services.retrieval_engine import RetrievalEngine
@@ -700,6 +700,90 @@ def test_guest_mutation_accepts_trusted_origin_with_matching_csrf():
         assert response.status_code == 200
         assert response.json()["session_minutes"] == 10
         assert response.json()["today_goal"] == "Audit the protections."
+
+
+def test_local_account_register_login_logout_and_delete():
+    email = f"learner-{uuid4().hex[:8]}@qcai.local"
+    password = "S3cureQuantumPath"
+    note_body = f"Local account note {uuid4().hex[:8]} for deletion coverage."
+
+    with TestClient(app) as account_client:
+        register_response = account_client.post(
+            "/auth/register",
+            json={"email": email, "password": password},
+        )
+        assert register_response.status_code == 201
+        registered_user = register_response.json()["user"]
+        assert registered_user["email"] == email
+        assert registered_user["auth_provider"] == "local"
+        assert registered_user["can_delete_account"] is True
+        assert account_client.cookies.get("qcai_session_token")
+        assert account_client.cookies.get("qcai_auth_csrf")
+
+        me_response = account_client.get("/auth/me")
+        assert me_response.status_code == 200
+        assert me_response.json()["email"] == email
+
+        csrf_token = account_client.cookies.get("qcai_auth_csrf")
+        note_response = account_client.post(
+            "/content/lessons/ai4qc-routing-and-optimization/notes",
+            headers={"origin": "http://localhost:3000", "x-qcai-csrf": csrf_token},
+            json={"body": note_body},
+        )
+        assert note_response.status_code == 200
+
+        logout_response = account_client.post(
+            "/auth/logout",
+            headers={"origin": "http://localhost:3000", "x-qcai-csrf": csrf_token},
+        )
+        assert logout_response.status_code == 200
+        assert logout_response.json()["status"] == "signed_out"
+        assert account_client.cookies.get("qcai_session_token") is None
+
+        post_logout_me = account_client.get("/auth/me")
+        assert post_logout_me.status_code == 200
+        assert post_logout_me.json()["user_id"] != registered_user["user_id"]
+
+        login_response = account_client.post(
+            "/auth/login",
+            json={"email": email, "password": password},
+        )
+        assert login_response.status_code == 200
+        assert login_response.json()["user"]["email"] == email
+
+        delete_csrf = account_client.cookies.get("qcai_auth_csrf")
+        delete_response = account_client.request(
+            "DELETE",
+            "/auth/account",
+            headers={"origin": "http://localhost:3000", "x-qcai-csrf": delete_csrf},
+            json={"password": password},
+        )
+        assert delete_response.status_code == 200
+        assert delete_response.json()["status"] == "deleted"
+
+    with SessionLocal() as db:
+        assert db.scalars(select(UserAccount).where(UserAccount.email == email)).first() is None
+        assert not db.scalars(select(Note).where(Note.body == note_body)).all()
+
+
+def test_local_account_rejects_bad_password_on_login():
+    email = f"learner-{uuid4().hex[:8]}@qcai.local"
+    password = "S3cureQuantumPath"
+    with TestClient(app) as account_client:
+        response = account_client.post("/auth/register", json={"email": email, "password": password})
+        assert response.status_code == 201
+        account_client.post(
+            "/auth/logout",
+            headers={
+                "origin": "http://localhost:3000",
+                "x-qcai-csrf": account_client.cookies.get("qcai_auth_csrf"),
+            },
+        )
+
+    with TestClient(app) as fresh_client:
+        failed_login = fresh_client.post("/auth/login", json={"email": email, "password": "wrong-password"})
+        assert failed_login.status_code == 401
+        assert failed_login.json()["detail"] == "Invalid email or password."
 
 
 def test_progress_endpoint_aggregates_activity():

@@ -1,6 +1,10 @@
 from datetime import datetime
+import re
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class SourceAsset(BaseModel):
@@ -165,6 +169,47 @@ class UserProfile(BaseModel):
     user_id: str
     email: str | None
     role: str
+    auth_provider: str = "guest"
+    can_delete_account: bool = False
+
+
+class LocalAccountRegisterRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=10, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not EMAIL_PATTERN.fullmatch(normalized):
+            raise ValueError("Enter a valid email address.")
+        return normalized
+
+
+class LocalAccountLoginRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not EMAIL_PATTERN.fullmatch(normalized):
+            raise ValueError("Enter a valid email address.")
+        return normalized
+
+
+class LocalAccountDeleteRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
+
+
+class AuthSessionRead(BaseModel):
+    status: str
+    user: UserProfile
+
+
+class AuthActionRead(BaseModel):
+    status: str
 
 
 class QuizAttemptRead(BaseModel):

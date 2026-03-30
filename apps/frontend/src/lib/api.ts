@@ -1,4 +1,6 @@
 import {
+  AuthAction,
+  AuthSession,
   ArenaLeaderboardEntry,
   ArenaProfile,
   ArenaStatus,
@@ -27,7 +29,7 @@ import {
   SkillGapReport,
   UserProfile,
 } from "@/lib/types";
-import { AUTH_TOKEN_COOKIE_NAME } from "@/lib/auth";
+import { AUTH_CSRF_COOKIE_NAME, AUTH_CSRF_HEADER, AUTH_TOKEN_COOKIE_NAME } from "@/lib/auth";
 
 const SERVER_API_BASE_URL =
   process.env.API_BASE_URL ||
@@ -38,7 +40,6 @@ const DEMO_USER_ID = "demo-learner";
 const DEMO_ROLE = "learner";
 const PUBLIC_REVALIDATE_SECONDS = 300;
 const GUEST_CSRF_COOKIE_NAME = "qcai_guest_csrf";
-const GUEST_CSRF_HEADER = "x-qcai-csrf";
 const ENABLE_DEMO_AUTH =
   process.env.ENABLE_DEMO_AUTH != null
     ? process.env.ENABLE_DEMO_AUTH === "true"
@@ -66,13 +67,13 @@ function readCookieValue(name: string): string | null {
   return decodeURIComponent(match.slice(prefix.length));
 }
 
-function applyGuestCsrfHeader(headers: Headers): void {
-  if (headers.has("authorization") || headers.has(GUEST_CSRF_HEADER)) {
+function applyCsrfHeader(headers: Headers): void {
+  if (headers.has("authorization") || headers.has(AUTH_CSRF_HEADER)) {
     return;
   }
-  const csrfToken = readCookieValue(GUEST_CSRF_COOKIE_NAME);
+  const csrfToken = readCookieValue(AUTH_CSRF_COOKIE_NAME) || readCookieValue(GUEST_CSRF_COOKIE_NAME);
   if (csrfToken) {
-    headers.set(GUEST_CSRF_HEADER, csrfToken);
+    headers.set(AUTH_CSRF_HEADER, csrfToken);
   }
 }
 
@@ -104,7 +105,7 @@ function resolveApiBaseUrl(): string {
 
 async function applyServerRequestHeaders(headers: Headers): Promise<void> {
   if (typeof window !== "undefined") {
-    applyGuestCsrfHeader(headers);
+    applyCsrfHeader(headers);
     return;
   }
   try {
@@ -123,9 +124,11 @@ async function applyServerRequestHeaders(headers: Headers): Promise<void> {
     if (authToken && !headers.has("authorization")) {
       headers.set("authorization", `Bearer ${authToken}`);
     }
-    const csrfToken = requestCookies.get(GUEST_CSRF_COOKIE_NAME)?.value;
-    if (csrfToken && !headers.has(GUEST_CSRF_HEADER)) {
-      headers.set(GUEST_CSRF_HEADER, csrfToken);
+    const csrfToken =
+      requestCookies.get(AUTH_CSRF_COOKIE_NAME)?.value ||
+      requestCookies.get(GUEST_CSRF_COOKIE_NAME)?.value;
+    if (csrfToken && !headers.has(AUTH_CSRF_HEADER)) {
+      headers.set(AUTH_CSRF_HEADER, csrfToken);
     }
   } catch {
     // Requests made outside a Next request context do not have incoming headers to forward.
@@ -162,7 +165,18 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
   const response = await fetch(`${resolveApiBaseUrl()}${path}`, fetchOptions);
 
   if (!response.ok) {
-    throw new Error(`API request failed: ${response.status}`);
+    let detail = `API request failed: ${response.status}`;
+    try {
+      const payload = (await response.json()) as { detail?: string; error?: string };
+      if (typeof payload.detail === "string" && payload.detail.trim()) {
+        detail = payload.detail;
+      } else if (typeof payload.error === "string" && payload.error.trim()) {
+        detail = payload.error;
+      }
+    } catch {
+      // Keep the status-based fallback when the error body is not JSON.
+    }
+    throw new Error(detail);
   }
 
   return response.json() as Promise<T>;
@@ -266,6 +280,33 @@ export async function searchContent(
 
 export async function fetchMe(): Promise<UserProfile> {
   return apiFetch<UserProfile>("/auth/me");
+}
+
+export async function registerAccount(email: string, password: string): Promise<AuthSession> {
+  return apiFetch<AuthSession>("/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function loginAccount(email: string, password: string): Promise<AuthSession> {
+  return apiFetch<AuthSession>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function logoutAccount(): Promise<AuthAction> {
+  return apiFetch<AuthAction>("/auth/logout", {
+    method: "POST",
+  });
+}
+
+export async function deleteAccount(password: string): Promise<AuthAction> {
+  return apiFetch<AuthAction>("/auth/account", {
+    method: "DELETE",
+    body: JSON.stringify({ password }),
+  });
 }
 
 export async function postAnalyticsEvent(

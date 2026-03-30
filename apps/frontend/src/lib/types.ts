@@ -159,6 +159,17 @@ export type UserProfile = {
   user_id: string;
   email?: string | null;
   role: string;
+  auth_provider?: string;
+  can_delete_account?: boolean;
+};
+
+export type AuthSession = {
+  status: string;
+  user: UserProfile;
+};
+
+export type AuthAction = {
+  status: string;
 };
 
 export type LessonProgress = {

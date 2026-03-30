@@ -1,9 +1,14 @@
 import type { NextRequest } from "next/server";
 
+import { SITE_URL } from "@/lib/site";
+
 export const AUTH_TOKEN_COOKIE_NAME = "qcai_auth_token";
 export const AUTH_STATE_COOKIE_NAME = "qcai_auth_state";
 export const AUTH_VERIFIER_COOKIE_NAME = "qcai_auth_verifier";
 export const AUTH_RETURN_TO_COOKIE_NAME = "qcai_auth_return_to";
+export const LOCAL_AUTH_SESSION_COOKIE_NAME = "qcai_session_token";
+export const AUTH_CSRF_COOKIE_NAME = "qcai_auth_csrf";
+export const AUTH_CSRF_HEADER = "x-qcai-csrf";
 
 export type Auth0Settings = {
   domain: string;
@@ -42,6 +47,26 @@ export function sanitizeReturnTo(value: string | null | undefined): string {
 
 export function isSecureCookieRequest(request: NextRequest): boolean {
   return request.nextUrl.protocol === "https:" || process.env.NODE_ENV === "production";
+}
+
+function isInvalidDeployedOrigin(origin: string): boolean {
+  try {
+    const parsed = new URL(origin);
+    return (
+      process.env.NODE_ENV !== "development" &&
+      ["0.0.0.0", "127.0.0.1", "localhost"].includes(parsed.hostname)
+    );
+  } catch {
+    return true;
+  }
+}
+
+export function resolveAppOrigin(request: Pick<NextRequest, "nextUrl">): string {
+  const origin = request.nextUrl.origin.replace(/\/$/, "");
+  if (origin && !isInvalidDeployedOrigin(origin)) {
+    return origin;
+  }
+  return SITE_URL;
 }
 
 export function getAuthorizationHeaderFromRequest(

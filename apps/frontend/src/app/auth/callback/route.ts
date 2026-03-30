@@ -7,6 +7,7 @@ import {
   AUTH_VERIFIER_COOKIE_NAME,
   getAuth0Settings,
   isAuth0Configured,
+  resolveAppOrigin,
   isSecureCookieRequest,
   sanitizeReturnTo,
 } from "@/lib/auth";
@@ -18,10 +19,11 @@ function clearEphemeralCookies(response: NextResponse) {
 }
 
 function redirectToAccount(request: NextRequest, status: string) {
-  return NextResponse.redirect(new URL(`/account?auth=${status}`, request.url));
+  return NextResponse.redirect(new URL(`/account?auth=${status}`, resolveAppOrigin(request)));
 }
 
 export async function GET(request: NextRequest) {
+  const appOrigin = resolveAppOrigin(request);
   if (!isAuth0Configured()) {
     return redirectToAccount(request, "unavailable");
   }
@@ -49,7 +51,7 @@ export async function GET(request: NextRequest) {
       client_id: auth0.clientId,
       code_verifier: verifier,
       code,
-      redirect_uri: `${request.nextUrl.origin}/auth/callback`,
+      redirect_uri: `${appOrigin}/auth/callback`,
       audience: auth0.audience,
     }),
     cache: "no-store",
@@ -69,7 +71,7 @@ export async function GET(request: NextRequest) {
   }
 
   const secure = isSecureCookieRequest(request);
-  const redirectUrl = new URL(returnTo, request.nextUrl.origin);
+  const redirectUrl = new URL(returnTo, appOrigin);
   redirectUrl.searchParams.set("auth", "signed-in");
   const response = NextResponse.redirect(redirectUrl);
   response.cookies.set({

@@ -4,9 +4,12 @@ from typing import Iterator
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, StreamingResponse
+from sqlalchemy.orm import Session
 
 from app.core.auth import AuthUser, get_current_user
 from app.core.config import Settings, get_settings
+from app.core.db import get_db
+from app.services.local_accounts import AUTH_SESSION_COOKIE_NAME
 from app.core.source_assets import source_asset_lookup_ids
 
 router = APIRouter(prefix="/source-assets", tags=["source-assets"])
@@ -17,17 +20,21 @@ def _require_asset_access(
     authorization: str | None = Header(default=None),
     x_demo_user: str | None = Header(default=None),
     x_demo_role: str | None = Header(default=None),
+    qcai_session_token: str | None = Cookie(default=None, alias=AUTH_SESSION_COOKIE_NAME),
     qcai_guest_id: str | None = Cookie(default=None),
     settings: Settings = Depends(get_settings),
+    db: Session = Depends(get_db),
 ) -> AuthUser:
-    if not authorization and not x_demo_user and not x_demo_role and not qcai_guest_id:
+    if not authorization and not x_demo_user and not x_demo_role and not qcai_session_token and not qcai_guest_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required for source assets.")
     user = get_current_user(
         authorization=authorization,
         x_demo_user=x_demo_user,
         x_demo_role=x_demo_role,
+        qcai_session_token=qcai_session_token,
         qcai_guest_id=qcai_guest_id,
         settings=settings,
+        db=db,
     )
     if user.role not in {"learner", "admin"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role for source assets.")

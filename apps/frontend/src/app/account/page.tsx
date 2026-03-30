@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
+import { AccountConsole } from "@/components/account-console";
 import { isAuth0Configured } from "@/lib/auth";
 import { fetchMe } from "@/lib/api";
 import { buildPageMetadata } from "@/lib/metadata";
 
+
 export const metadata: Metadata = buildPageMetadata({
-  title: "Guest Access and Account",
+  title: "Account Access",
   description:
-    "Review the current guest or authenticated learner session and access the Auth0 sign-in path when client configuration is available.",
+    "Create a local QC+AI Studio account, sign in, sign out, inspect the current session, or delete the active user account.",
   path: "/account",
   index: false,
 });
@@ -19,123 +20,88 @@ type AccountPageProps = {
 
 function describeAuthState(status: string | null): string | null {
   if (status === "signed-in") {
-    return "You are now connected to an authenticated account. Future activity in this browser will use that identity.";
+    return "You are now connected to an authenticated account session.";
   }
   if (status === "signed-out") {
-    return "You signed out of the authenticated account and are back on a local guest-session path.";
+    return "The current account session was signed out.";
   }
   if (status === "failed") {
-    return "Auth0 login did not complete cleanly. Retry the sign-in flow or continue as a guest.";
+    return "The external sign-in flow did not complete cleanly.";
   }
   if (status === "unavailable") {
-    return "This deployment does not currently expose client-side Auth0 configuration, so sign-in is unavailable here.";
+    return "This deployment is using the built-in account system because client-side Auth0 configuration is unavailable here.";
   }
   return null;
-}
-
-function isGuestUser(userId: string | undefined): boolean {
-  return Boolean(userId && (userId.startsWith("guest-") || userId === "demo-learner"));
 }
 
 export default async function AccountPage({ searchParams }: AccountPageProps) {
   const { auth } = await searchParams;
   const statusMessage = describeAuthState(auth ?? null);
   const user = await fetchMe().catch(() => null);
-  const guestUser = isGuestUser(user?.user_id);
-  const auth0Configured = isAuth0Configured();
 
   return (
     <div className="page-stack">
       <section className="section-block">
         <p className="eyebrow">Account access</p>
-        <h1>Guest sessions and authenticated access</h1>
+        <h1>Create, sign in, sign out, and delete user accounts without leaving the live platform.</h1>
         <p className="hero-text">
-          This deployment supports guest study sessions immediately in the current browser, but that activity does
-          not follow you across devices. Production keeps demo-header auth disabled; persistent identity depends on
-          Auth0 client configuration being exposed for this deployment.
+          QC+AI Studio now supports a first-party user account system in addition to the guest path. Guest study
+          remains available immediately, while local accounts add reusable identity, persistent browser sessions, and
+          explicit account-deletion controls.
         </p>
       </section>
 
       <div className="two-column-grid">
-        <section className="panel">
+        <article className="panel">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">Current session</p>
-              <h2>Status</h2>
+              <p className="eyebrow">Lifecycle</p>
+              <h2>What this deployment supports</h2>
             </div>
           </div>
-          {statusMessage ? <p className="muted">{statusMessage}</p> : null}
-          {user ? (
-            <div className="stack">
-              <article className="citation-card">
-                <strong>{guestUser ? "Guest session" : "Authenticated account"}</strong>
-                <p className="muted">{guestUser ? "Device-local identity" : user.email ?? user.user_id}</p>
-                <p>
-                  {guestUser
-                    ? "Notes, progress, quizzes, and other learner activity are tied to this browser session and will not automatically sync elsewhere."
-                    : "Private learner data can now resolve against the authenticated identity for this browser session."}
-                </p>
-              </article>
-              <div className="button-row">
-                {guestUser ? (
-                  <Link className="secondary-button" href="/dashboard">
-                    Continue as guest
-                  </Link>
-                ) : (
-                  <a className="secondary-button" href="/auth/logout">
-                    Sign out
-                  </a>
-                )}
-              </div>
-            </div>
-          ) : (
-            <p className="muted">The account endpoint could not be loaded for this request.</p>
-          )}
-        </section>
-
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Auth0</p>
-              <h2>Sign in</h2>
-            </div>
-          </div>
-          <p className="muted">
-            The backend already accepts Auth0-issued bearer tokens. On the live public deployment, open-demo access
-            is handled through guest cookies plus CSRF protection, while demo-header auth remains disabled outside
-            development.
-          </p>
           <div className="stack">
-            {auth0Configured ? (
-              <div className="button-row">
-                <a className="primary-button" href="/auth/login?returnTo=/account">
-                  Sign in with Auth0
-                </a>
-                <a className="secondary-button" href="/auth/logout">
-                  Clear auth session
-                </a>
-              </div>
-            ) : (
-              <div className="stack">
-                <div className="button-row">
-                  <Link className="primary-button" href="/dashboard">
-                    Continue in guest mode
-                  </Link>
-                </div>
-                <p className="muted">
-                  Client-side Auth0 variables are not configured for this deployment yet, so this public deployment is currently guest-first rather than sign-in-first.
-                </p>
-              </div>
-            )}
             <article className="citation-card">
-              <strong>What changes after authenticated sign-in</strong>
-              <p>
-                Authenticated API requests can resolve against a stable identity instead of a guest cookie, which is the foundation for cross-browser and cross-device continuity.
+              <strong>Create account</strong>
+              <p className="muted">Register directly on the platform with email and password.</p>
+            </article>
+            <article className="citation-card">
+              <strong>Login and logout</strong>
+              <p className="muted">Session cookies are stored server-side and can be revoked on sign-out.</p>
+            </article>
+            <article className="citation-card">
+              <strong>Delete user account</strong>
+              <p className="muted">
+                Locally managed accounts can be hard-deleted together with learner data tied to that account identity.
               </p>
             </article>
           </div>
-        </section>
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Design posture</p>
+              <h2>How account safety is handled</h2>
+            </div>
+          </div>
+          <div className="stack">
+            <article className="citation-card">
+              <strong>Secure session cookies</strong>
+              <p className="muted">Local accounts use HTTP-only session cookies instead of exposing raw tokens to the browser.</p>
+            </article>
+            <article className="citation-card">
+              <strong>CSRF protection</strong>
+              <p className="muted">Mutating account actions require the same-origin CSRF flow already used by the guest path.</p>
+            </article>
+            <article className="citation-card">
+              <strong>Optional external provider</strong>
+              <p className="muted">Auth0 remains available as an optional identity layer when deployment configuration enables it.</p>
+            </article>
+          </div>
+        </article>
       </div>
+
+      <AccountConsole auth0Configured={isAuth0Configured()} initialUser={user} statusMessage={statusMessage} />
     </div>
   );
 }
