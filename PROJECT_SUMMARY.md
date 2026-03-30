@@ -14,11 +14,11 @@ AI is used in two layers. First, the product itself is AI-powered: it supports g
 
 Key capabilities in the current build include:
 
-- 6 structured training modules grounded in curated QC+AI source materials
+- 11 structured training modules and 12 lesson entry points grounded in curated QC+AI source materials
 - lesson-level grounded search and Q&A with citation context
 - learner notes, quizzes, analytics, and aggregated course progress
 - clean reference presentation instead of raw file-name leakage in the UI
-- authenticated source-asset delivery and byte-range video streaming
+- authenticated source-asset delivery and byte-range video streaming across the expanded lesson-media corpus
 - local Docker and Kubernetes deployment scaffolding
 
 Technically, the project is designed as a serious MVP rather than a one-page demo. It includes typed API schemas, persistence via SQLAlchemy and SQLite, automated backend verification, frontend lint/build validation, and deployment-oriented configuration. The current local verified runtime is a production-style frontend and backend pair served on separate ports with proxied browser access through the frontend.

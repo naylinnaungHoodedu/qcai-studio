@@ -22,6 +22,11 @@ SOURCE_VIDEO_NAMES = [
     "Quantum Computing and Artificial Intelligence 2025.mp4",
     "Quantum Computing and Artificial Intelligence 2026.mp4",
     "Industry Use Cases.mp4",
+    "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
+    "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4",
+    "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
+    "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
+    "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
 ]
 SQLITE_URL_PREFIX = "sqlite:///"
 API_ROOT = Path(__file__).resolve().parents[2]

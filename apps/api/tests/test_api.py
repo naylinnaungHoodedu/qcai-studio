@@ -43,11 +43,21 @@ RAW_VIDEO_TITLES = {
     "Industry Use Cases.mp4",
     "Quantum Computing and Artificial Intelligence 2025.mp4",
     "Quantum Computing and Artificial Intelligence 2026.mp4",
+    "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
+    "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4",
+    "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
+    "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
+    "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
 }
 DISPLAY_VIDEO_TITLES = {
     "Industry Use Cases",
     "Quantum Computing and Artificial Intelligence 2025",
     "Quantum Computing and Artificial Intelligence 2026",
+    "Introduction to Hardware-Constrained QC+AI",
+    "Hardware-Constrained QC+AI Models",
+    "Intermediate Quantum Programming for Hardware-Constrained QC+AI",
+    "Advanced Quantum Software Development for Hardware-Constrained QC+AI",
+    "Quantum Finance Programming and Optimization for Hardware-Constrained QC+AI",
 }
 
 
@@ -99,6 +109,7 @@ def test_course_overview():
     assert data["id"] == "qcai-hardware-aware-course"
     assert len(data["modules"]) == 11
     assert sum(len(module["lesson_slugs"]) for module in data["modules"]) == 12
+    assert len(data["source_assets"]) == 16
     source_filenames = [asset["filename"] for asset in data["source_assets"]]
     assert "Quantum Computing and Artificial Intelligence Industry Use Cases.docx" in source_filenames
     assert (
@@ -149,6 +160,45 @@ def test_industry_use_cases_lesson_lookup():
     asset_titles = {asset["title"] for asset in data["source_assets"] if asset["kind"] == "document"}
     assert "Raj et al. (Eds.), Quantum Computing and Artificial Intelligence: The Industry Use Cases" in asset_titles
     assert not (asset_titles & RAW_DOCUMENT_TITLES)
+
+
+def test_intro_hardware_constrained_lesson_lookup():
+    response = client.get("/content/lessons/introduction-to-hardware-constrained-learning")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["module_slug"] == "hardware-constrained-introduction"
+    assert data["video_asset"]["filename"] == (
+        "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
+    )
+    assert data["video_asset"]["title"] == "Introduction to Hardware-Constrained QC+AI"
+    assert data["video_asset"]["download_url"].endswith("-video")
+    assert data["chapters"]
+
+
+def test_intermediate_programming_lesson_lookup_uses_expanded_video_asset():
+    response = client.get("/content/lessons/intermediate-quantum-programming-patterns")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["module_slug"] == "intermediate-quantum-programming"
+    assert data["video_asset"]["filename"] == (
+        "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
+    )
+    assert data["video_asset"]["title"] == "Intermediate Quantum Programming for Hardware-Constrained QC+AI"
+    assert data["video_asset"]["download_url"].endswith("-video")
+    assert data["chapters"]
+
+
+def test_advanced_quantum_software_lesson_lookup_uses_expanded_video_asset():
+    response = client.get("/content/lessons/advanced-quantum-software-development")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["module_slug"] == "advanced-quantum-software"
+    assert data["video_asset"]["filename"] == (
+        "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
+    )
+    assert data["video_asset"]["title"] == "Advanced Quantum Software Development for Hardware-Constrained QC+AI"
+    assert data["video_asset"]["download_url"].endswith("-video")
+    assert data["chapters"]
 
 
 def test_search_returns_results():
@@ -361,9 +411,83 @@ def test_video_assets_use_updated_filenames():
     assert "Industry Use Cases.mp4" in video_filenames
     assert "Quantum Computing and Artificial Intelligence 2025.mp4" in video_filenames
     assert "Quantum Computing and Artificial Intelligence 2026.mp4" in video_filenames
+    assert (
+        "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
+        in video_filenames
+    )
+    assert (
+        "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4"
+        in video_filenames
+    )
+    assert (
+        "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
+        in video_filenames
+    )
+    assert (
+        "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
+        in video_filenames
+    )
+    assert (
+        "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
+        in video_filenames
+    )
+    assert len(video_filenames) == 8
     video_urls = [asset["download_url"] for asset in assets if asset["kind"] == "video"]
     assert all(url.startswith("/source-assets/by-id/") for url in video_urls)
     assert not any(any(raw_title in url for raw_title in RAW_VIDEO_TITLES) for url in video_urls)
+
+
+def test_duplicate_stem_assets_use_kind_specific_ids():
+    response = client.get("/content/course")
+    assert response.status_code == 200
+    assets = response.json()["source_assets"]
+
+    intro_document = next(
+        asset
+        for asset in assets
+        if asset["filename"]
+        == "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx"
+    )
+    intro_video = next(
+        asset
+        for asset in assets
+        if asset["filename"]
+        == "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
+    )
+    finance_document = next(
+        asset
+        for asset in assets
+        if asset["filename"]
+        == "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx"
+    )
+    finance_video = next(
+        asset
+        for asset in assets
+        if asset["filename"]
+        == "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
+    )
+    advanced_document = next(
+        asset
+        for asset in assets
+        if asset["filename"]
+        == "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx"
+    )
+    advanced_video = next(
+        asset
+        for asset in assets
+        if asset["filename"]
+        == "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
+    )
+
+    assert intro_document["id"].endswith("-document")
+    assert intro_video["id"].endswith("-video")
+    assert intro_document["id"] != intro_video["id"]
+    assert advanced_document["id"].endswith("-document")
+    assert advanced_video["id"].endswith("-video")
+    assert advanced_document["id"] != advanced_video["id"]
+    assert finance_document["id"].endswith("-document")
+    assert finance_video["id"].endswith("-video")
+    assert finance_document["id"] != finance_video["id"]
 
 
 def test_industry_video_asset_supports_head_requests():
@@ -404,6 +528,15 @@ def test_industry_video_asset_caps_open_ended_ranges(monkeypatch, tmp_path: Path
     assert response.headers["accept-ranges"] == "bytes"
     assert response.headers["content-range"] == f"bytes 0-{capped_end}/{len(payload)}"
     assert len(response.content) == assets.VIDEO_OPEN_ENDED_RANGE_CHUNK_SIZE
+
+
+def test_kind_specific_video_asset_id_resolves_to_video_with_duplicate_stem():
+    response = client.head(
+        "/source-assets/by-id/introduction_to_hardware-constrained_learning_for_quantum_computing_and_artificial_intelligence-video",
+        headers=DEMO_HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("video/mp4")
 
 
 def test_allowed_origins_env_accepts_scalar_and_csv(monkeypatch):
@@ -486,6 +619,34 @@ def test_source_document_selection_uses_curated_allowlist(tmp_path: Path):
         "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
         "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
         "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+    ]
+
+
+def test_source_video_selection_uses_curated_allowlist(tmp_path: Path):
+    for name in (
+        "Quantum Computing and Artificial Intelligence 2025.mp4",
+        "Quantum Computing and Artificial Intelligence 2026.mp4",
+        "Industry Use Cases.mp4",
+        "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
+        "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4",
+        "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
+        "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
+        "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
+        "draft-lecture.mp4",
+    ):
+        (tmp_path / name).write_bytes(b"test")
+
+    settings = Settings(source_assets_root=str(tmp_path))
+    discovered = [path.name for path in settings.source_videos]
+    assert discovered == [
+        "Quantum Computing and Artificial Intelligence 2025.mp4",
+        "Quantum Computing and Artificial Intelligence 2026.mp4",
+        "Industry Use Cases.mp4",
+        "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
+        "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4",
+        "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
+        "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
+        "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
     ]
 
 

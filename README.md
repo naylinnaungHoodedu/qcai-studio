@@ -22,11 +22,21 @@ This repository now contains a working MVP implementation of the interactive QC+
   - `Quantum Computing AI Research Synthesis 2026.docx`
   - `Analyzing Quantum Computing and AI Paper 2025.docx`
   - `Quantum Computing and Artificial Intelligence Industry Use Cases.docx`
+  - `Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx`
+  - `Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx`
+  - `Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx`
+  - `Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx`
+  - `Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx`
   - `Quantum Computing and Artificial Intelligence 2025.mp4`
   - `Quantum Computing and Artificial Intelligence 2026.mp4`
   - `Industry Use Cases.mp4`
+  - `Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4`
+  - `The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4`
+  - `Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4`
+  - `Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4`
+  - `Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4`
 
-The course is intentionally scoped to the three curated DOCX sources above and the three curated MP4 lesson assets. Stray working files in the repository root are not part of the served course corpus.
+The current public curriculum is intentionally scoped to the eight curated DOCX sources above and the eight curated MP4 lesson assets above.
 
 ## Local development
 
@@ -53,7 +63,7 @@ If the backend is not running on `http://127.0.0.1:8000`, update `API_BASE_URL` 
 
 ### Git LFS media setup
 
-The three curated MP4 lesson assets are intended to be versioned with Git LFS for GitHub distribution.
+The curated MP4 lesson assets are intended to be versioned with Git LFS for GitHub distribution.
 
 ```powershell
 git lfs install
@@ -67,7 +77,7 @@ Important LFS note:
 - Install Git LFS before the first checkout whenever possible.
 - ZIP downloads from GitHub do not hydrate LFS-managed MP4 payloads.
 - If a clone was created before Git LFS was installed, run `git lfs install` and then `git lfs pull` from the repository root.
-- Use `git lfs ls-files` to confirm the three curated MP4 assets were actually hydrated.
+- Use `git lfs ls-files` to confirm the curated MP4 assets were actually hydrated.
 
 ### Docker Compose
 
@@ -83,13 +93,13 @@ Build from the repository root so the API image can include the local source cor
 
 ```powershell
 docker build -f apps/api/Dockerfile -t qcai-api .
-docker build -f apps/frontend/Dockerfile -t qcai-frontend .
+docker build -t qcai-frontend apps/frontend
 ```
 
 ## Key implementation notes
 
 - `LICENSE` applies to the repository code. Third-party source documents, proceedings metadata, and curated media assets remain subject to their own upstream rights and are not relicensed by the repository code license.
-- The backend assembles the course around the three curated local `.docx` sources listed above, including the industry-use-cases module grounded in the added DOCX.
+- The backend now assembles the course around an eight-document local corpus and eight curated MP4 lesson assets, producing an eleven-module, twelve-lesson curriculum.
 - Background workers are real Python entrypoints and can be invoked directly with `python -m app.workers.ingestion`, `python -m app.workers.rag`, and `python -m app.workers.analytics`.
 - Video chapters are currently driven by curated chapter metadata; transcript JSON files can be dropped into the repository-root `transcripts/` directory using the format documented in `transcripts/README.md`.
 - QA uses grounded lexical retrieval by default and upgrades to Pinecone-backed hybrid retrieval only when `OPENAI_API_KEY`, `PINECONE_API_KEY`, and `PINECONE_INDEX` are all configured.

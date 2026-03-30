@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from app.core.auth import AuthUser, get_current_user
 from app.core.config import Settings, get_settings
+from app.core.source_assets import source_asset_lookup_ids
 
 router = APIRouter(prefix="/source-assets", tags=["source-assets"])
 VIDEO_OPEN_ENDED_RANGE_CHUNK_SIZE = 8 * 1024 * 1024
@@ -46,7 +47,7 @@ def _resolve_asset_path_by_id(asset_id: str) -> Path:
     settings = get_settings()
     allowed_paths = settings.source_documents + settings.source_videos
     for path in allowed_paths:
-        if path.stem.lower().replace(" ", "-") == asset_id and path.exists():
+        if asset_id in source_asset_lookup_ids(path.name) and path.exists():
             return path
     raise HTTPException(status_code=404, detail="Source asset not found.")
 

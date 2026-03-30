@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-03-30 04:04:50 -04:00`
+Last updated on: `2026-03-30 13:15:48 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp`
 
 ## 1. Scope of Work Completed
@@ -3540,3 +3540,107 @@ Completed repository publication preparation:
   - this updated completed-activities log
 - intentionally excluded the unrelated local file:
   - `sitemap-live.xml`
+
+## 135. Five New Hardware-Constrained QC+AI Source Videos Integrated into the Curated Asset Set
+
+The current folder was expanded again by adding five new authored MP4 lecture assets aligned with the previously added hardware-constrained document set.
+
+Completed source-video integration work:
+
+- integrated the following five authored source videos into the backend source-video allowlist:
+  - `Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4`
+  - `The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4`
+  - `Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4`
+  - `Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4`
+  - `Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4`
+- added clean public-facing asset-title mappings for the five new videos so lesson and course APIs expose curated titles instead of raw filenames
+- attached the five new videos to the five new hardware-constrained lessons so each expanded lesson now carries a dedicated video asset rather than a document-only payload
+- expanded curated chapter metadata so the newly added videos expose stable chapter structure during lesson playback
+- updated frontend public-copy and About-page fallback inventory so public corpus messaging reflects the expanded `8 documents / 8 videos` state
+
+## 136. Source-Asset Routing and Duplicate-ID Hardening Completed for the Expanded Media Batch
+
+The larger mixed document-and-video asset set exposed a real production-sensitive collision: several new document and video files shared the same filename stem, which would have made `/source-assets/by-id/...` ambiguous without a resolver change.
+
+Completed asset-routing hardening work:
+
+- created a new backend source-asset ID helper so colliding document/video filename stems now resolve to distinct canonical IDs with `-document` and `-video` suffixes
+- preserved backward-compatible lookup behavior where older legacy IDs remain unambiguous
+- updated the source-asset delivery route to resolve IDs through the new helper rather than assuming one stem maps to one file
+- verified the hardening against the introductory, intermediate, advanced-software, and finance document/video pairs
+- aligned backend tests so the duplicate-stem cases are now explicitly covered rather than remaining an untested edge case
+
+## 137. Local Verification and Production Deployment Completed for the Expanded Curriculum and Asset Batch
+
+After the new hardware-constrained videos, lesson bindings, transcript metadata, routing hardening, and deployment-file changes were completed, the batch was revalidated locally and then deployed to production.
+
+Completed local verification work:
+
+- backend verification:
+  - `pytest`
+  - result: `61 passed`
+- frontend verification:
+  - `npm run test:integration`
+  - result: `29 passed`
+  - `npm run build`
+  - result: passed
+- confirmed the local course payload now reports:
+  - `11` modules
+  - `12` lessons
+  - `16` source assets
+- confirmed the five new lesson routes resolve locally with their intended lesson-video bindings
+
+Completed production deployment work:
+
+- updated the frontend container build flow so the frontend can be built cleanly from `apps/frontend` as its own Docker context
+- built and published the final frontend production image through Cloud Build:
+  - build id: `ab487b55-912e-4e43-8a1b-44bb7621153c`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest`
+- built and published the final API production image through Cloud Build:
+  - build id: `22df9c15-8108-4fda-95ee-a0703c01cabb`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-api:latest`
+- updated the Cloud Run API service:
+  - service: `qcai-api`
+  - region: `us-central1`
+  - latest ready revision: `qcai-api-00022-wnz`
+  - traffic: `100%`
+- updated the Cloud Run frontend service:
+  - service: `qcai-frontend`
+  - region: `us-central1`
+  - latest ready revision: `qcai-frontend-00029-qdq`
+  - traffic: `100%`
+
+## 138. Deep Production Verification Completed for the Five New Videos and Five New Documents
+
+The live public site and API were then rechecked against the exact ten new asset filenames so the recorded outcome reflects real production behavior rather than code intent alone.
+
+Completed live verification work:
+
+- verified `https://qantumlearn.academy/api/backend/content/course` returns:
+  - `11` modules
+  - `12` lessons
+  - `16` source assets
+- verified `https://qantumlearn.academy/about` now renders:
+  - corpus metric `16`
+  - `8 documents and 8 videos`
+- verified the live modules page exposes the five new hardware-constrained lesson families
+- verified all ten newly added assets are present in the live `source_assets` inventory with the expected kinds and download URLs
+- verified all ten protected asset routes under `/api/backend/source-assets/by-id/...` return `200 OK`
+- verified the five new video assets return `content-type: video/mp4`
+- verified the five new document assets return downloadable binary responses and remain accessible under the new collision-safe IDs
+- verified the five new lesson APIs expose the expected video filenames:
+  - `introduction-to-hardware-constrained-learning`
+  - `hardware-constrained-qcai-models`
+  - `intermediate-quantum-programming-patterns`
+  - `advanced-quantum-software-development`
+  - `quantum-finance-programming-and-optimization`
+- verified the live remote `Content-Length` for each of the ten new assets exactly matches the corresponding local file size
+- rechecked the summary for factual accuracy and confirmed:
+  - all ten assets are present
+  - all ten routes return `200`
+  - all size checks match
+  - all five lesson-video bindings match the intended files
+
+Recorded non-blocking implementation note:
+
+- the DOCX downloads are currently served with `application/octet-stream` rather than the DOCX-specific MIME type; this does not block download or production use, but it remains a header-quality refinement opportunity rather than a rollout defect

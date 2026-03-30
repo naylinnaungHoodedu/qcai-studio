@@ -66,25 +66,60 @@ const FALLBACK_SOURCE_ASSETS = [
     description: "Local authored source focused on finance workloads, hybrid optimization, and model-risk-aware QC+AI deployment.",
   },
   {
-    id: "video-lecture-1",
-    title: "QC+AI lecture asset 1",
+    id: "video-qcai-2025",
+    title: "Quantum Computing and Artificial Intelligence 2025",
     kind: "video",
-    filename: "qcai-lecture-1.mp4",
-    description: "Lecture media used to reinforce the hardware and hybrid-workflow portions of the course.",
+    filename: "Quantum Computing and Artificial Intelligence 2025.mp4",
+    description: "Lecture media used to reinforce the NISQ, routing, and hybrid-workflow portions of the course.",
   },
   {
-    id: "video-lecture-2",
-    title: "QC+AI lecture asset 2",
+    id: "video-qcai-2026",
+    title: "Quantum Computing and Artificial Intelligence 2026",
     kind: "video",
-    filename: "qcai-lecture-2.mp4",
-    description: "Lecture media tied to the application and explainability modules.",
+    filename: "Quantum Computing and Artificial Intelligence 2026.mp4",
+    description: "Lecture media tied to the applications, representational bottlenecks, and systems roadmap modules.",
   },
   {
-    id: "video-lecture-3",
-    title: "QC+AI lecture asset 3",
+    id: "video-industry-use-cases",
+    title: "Industry Use Cases",
     kind: "video",
-    filename: "qcai-lecture-3.mp4",
-    description: "Lecture media supporting the roadmap, thermodynamics, and future-facing sections.",
+    filename: "Industry Use Cases.mp4",
+    description: "Lecture media connecting the curriculum to industry readiness, migration planning, and sector-specific deployment tradeoffs.",
+  },
+  {
+    id: "video-hcl-introduction",
+    title: "Introduction to Hardware-Constrained QC+AI",
+    kind: "video",
+    filename: "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
+    description: "Lecture media introducing the hardware-first worldview, trainability limits, and near-term QC+AI design discipline.",
+  },
+  {
+    id: "video-hcl-models",
+    title: "Hardware-Constrained QC+AI Models",
+    kind: "video",
+    filename: "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4",
+    description: "Lecture media comparing model families, kernel concentration, and validation criteria under NISQ constraints.",
+  },
+  {
+    id: "video-hcl-programming",
+    title: "Intermediate Quantum Programming for Hardware-Constrained QC+AI",
+    kind: "video",
+    filename: "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
+    description: "Lecture media focused on parameter-shift gradients, shot allocation, measurement grouping, and diagnostics.",
+  },
+  {
+    id: "video-hcl-software",
+    title: "Advanced Quantum Software Development for Hardware-Constrained QC+AI",
+    kind: "video",
+    filename: "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
+    description: "Lecture media focused on compiler design, MLIR, caching, pulse-level optimization, and reliability engineering.",
+  },
+  {
+    id: "video-hcl-finance",
+    title: "Quantum Finance Programming and Optimization for Hardware-Constrained QC+AI",
+    kind: "video",
+    filename: "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
+    description: "Lecture media focused on portfolio optimization, pricing, anomaly workflows, and finance-specific model-risk gates.",
   },
 ] as const;
 
@@ -142,7 +177,7 @@ export default async function AboutPage() {
   const sourceAssets = course?.source_assets.length ? course.source_assets : FALLBACK_SOURCE_ASSETS;
   const moduleCount = course?.modules.length ?? 11;
   const lessonCount = course?.modules.reduce((count, module) => count + module.lesson_slugs.length, 0) ?? 12;
-  const videoCount = sourceAssets.filter((asset) => asset.kind.toLowerCase() === "video").length || 3;
+  const videoCount = sourceAssets.filter((asset) => asset.kind.toLowerCase() === "video").length || 8;
   const documentCount = Math.max(sourceAssets.length - videoCount, 0);
   const structuredData = [
     {

@@ -5,6 +5,7 @@ from typing import Any
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.core.config import Settings
+from app.core.source_assets import source_asset_id
 from app.schemas import (
     CourseOverview,
     Flashcard,
@@ -37,6 +38,11 @@ ASSET_TITLE_MAP = {
     "Quantum Computing and Artificial Intelligence 2025.mp4": "Quantum Computing and Artificial Intelligence 2025",
     "Quantum Computing and Artificial Intelligence 2026.mp4": "Quantum Computing and Artificial Intelligence 2026",
     "Industry Use Cases.mp4": "Industry Use Cases",
+    "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4": "Introduction to Hardware-Constrained QC+AI",
+    "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4": "Hardware-Constrained QC+AI Models",
+    "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4": "Intermediate Quantum Programming for Hardware-Constrained QC+AI",
+    "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4": "Advanced Quantum Software Development for Hardware-Constrained QC+AI",
+    "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4": "Quantum Finance Programming and Optimization for Hardware-Constrained QC+AI",
 }
 
 
@@ -551,7 +557,7 @@ MODULE_BLUEPRINTS: list[dict[str, Any]] = [
                 "Failure Modes & Diagnostics",
                 "Risks & Mitigations",
             ],
-            video_file=None,
+            video_file="Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
         ),
         "flashcards": [
             ("intro", "What does hardware-constrained learning mean in this course?", "It means designing QC+AI models around the real limits of the target quantum hardware rather than assuming ideal qubits and unlimited depth."),
@@ -618,7 +624,7 @@ MODULE_BLUEPRINTS: list[dict[str, Any]] = [
                 "Acceptance Criteria",
                 "Test Strategy",
             ],
-            video_file=None,
+            video_file="The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4",
         ),
         "flashcards": [
             ("intro", "What is the reachability deficit?", "It is the failure of a shallow quantum model to contain the true useful solution within the limited state space it can physically explore."),
@@ -679,7 +685,7 @@ MODULE_BLUEPRINTS: list[dict[str, Any]] = [
                 "Acceptance Criteria",
                 "Test Strategy",
             ],
-            video_file=None,
+            video_file="Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
         ),
         "flashcards": [
             ("intro", "Why is finite-difference differentiation a poor default on NISQ hardware?", "Because shot noise makes tiny perturbation-based gradient estimates unstable and expensive."),
@@ -747,7 +753,7 @@ MODULE_BLUEPRINTS: list[dict[str, Any]] = [
                 "Acceptance Criteria",
                 "Practical Next Steps",
             ],
-            video_file=None,
+            video_file="Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
         ),
         "flashcards": [
             ("intro", "What does differentiable programming mean in this QC+AI context?", "It means treating the quantum routine as a differentiable layer inside a larger classical computation graph."),
@@ -809,7 +815,7 @@ MODULE_BLUEPRINTS: list[dict[str, Any]] = [
                 "Programming & Implementation Blueprint",
                 "Acceptance Criteria",
             ],
-            video_file=None,
+            video_file="Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
         ),
         "flashcards": [
             ("intro", "Why is quantum finance framed as hardware-first in this document?", "Because realistic near-term value depends on noise-aware, shot-frugal, topology-aware hybrid workflows rather than on fault-tolerant assumptions."),
@@ -908,7 +914,7 @@ class CourseStore:
         self.chunks = chunks
 
     def _build_source_asset(self, path: Path, kind: str) -> SourceAsset:
-        asset_id = path.stem.lower().replace(" ", "-")
+        asset_id = source_asset_id(path.name, kind)
         return SourceAsset(
             id=asset_id,
             title=ASSET_TITLE_MAP.get(path.name, path.name),
