@@ -141,6 +141,24 @@ def test_lesson_lookup():
     assert data["video_asset"]["download_url"] == "/source-assets/by-id/quantum-computing-and-artificial-intelligence-2025"
 
 
+def test_lesson_lookup_repairs_mojibake_in_source_excerpts():
+    response = client.get("/content/lessons/nisq-reality-overview")
+    assert response.status_code == 200
+    data = response.json()
+
+    excerpt = next(
+        section["excerpt"]
+        for section in data["sections"]
+        if section["heading"] == "The Convergence of Quantum Mechanics and Computational Intelligence"
+    )
+
+    assert "\u00e2\u0080" not in excerpt
+    assert (
+        "accessible, albeit noisy, physical systems—commonly referred to as "
+        "Noisy Intermediate-Scale Quantum (NISQ) devices"
+    ) in excerpt
+
+
 def test_industry_use_cases_lesson_lookup():
     response = client.get("/content/lessons/industry-use-cases")
     assert response.status_code == 200
@@ -280,6 +298,17 @@ def test_document_source_asset_supports_id_based_head_requests():
         headers=DEMO_HEADERS,
     )
     assert response.status_code == 200
+
+
+def test_document_source_asset_uses_docx_media_type():
+    response = client.head(
+        "/source-assets/by-id/quantum-computing-ai-research-synthesis-2026",
+        headers=DEMO_HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
 
 
 def test_video_source_asset_supports_id_based_head_requests():

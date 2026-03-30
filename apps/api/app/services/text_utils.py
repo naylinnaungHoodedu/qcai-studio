@@ -1,20 +1,42 @@
 import re
 
 
-CONTROL_CHARS_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+ASCII_CONTROL_CHARS_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+CONTROL_CHARS_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 WHITESPACE_PATTERN = re.compile(r"[ \t]+")
 INLINE_REFERENCE_PATTERN = re.compile(r"(?<=[A-Za-z])\.(\d+)(?=\s)")
 SENTENCE_BOUNDARY_PATTERN = re.compile(r"[.!?](?:['\")\]]*)\s")
 MOJIBAKE_REPLACEMENTS = {
-    "â\x80\x94": " - ",
-    "â\x80\x93": "-",
-    "â\x80\x99": "'",
-    "â\x80\x98": "'",
-    "â\x80\x9c": '"',
-    "â\x80\x9d": '"',
-    "â\x80\xa6": "...",
-    "Â ": " ",
+    "\u00e2\u0080\u0094": " - ",
+    "\u00e2\u0080\u0093": "-",
+    "\u00e2\u0080\u0099": "'",
+    "\u00e2\u0080\u0098": "'",
+    "\u00e2\u0080\u009c": '"',
+    "\u00e2\u0080\u009d": '"',
+    "\u00e2\u0080\u00a6": "...",
+    "\u00c2 ": " ",
 }
+UTF8_MOJIBAKE_HINTS = (
+    "\u00e2\u0080",
+    "\u00c2",
+    "\u00c3",
+)
+
+
+def _repair_utf8_mojibake(value: str) -> str:
+    if not any(marker in value for marker in UTF8_MOJIBAKE_HINTS):
+        return value
+
+    try:
+        repaired = value.encode("latin-1").decode("utf-8")
+    except UnicodeError:
+        return value
+
+    original_marker_count = sum(value.count(marker) for marker in UTF8_MOJIBAKE_HINTS)
+    repaired_marker_count = sum(repaired.count(marker) for marker in UTF8_MOJIBAKE_HINTS)
+    if repaired_marker_count > original_marker_count:
+        return value
+    return repaired
 
 
 def sanitize_user_text(value: str, *, preserve_newlines: bool = True) -> str:
@@ -27,10 +49,12 @@ def sanitize_user_text(value: str, *, preserve_newlines: bool = True) -> str:
 
 
 def normalize_display_text(value: str) -> str:
-    sanitized = CONTROL_CHARS_PATTERN.sub("", value.replace("\r\n", "\n").replace("\r", "\n"))
+    sanitized = ASCII_CONTROL_CHARS_PATTERN.sub("", value.replace("\r\n", "\n").replace("\r", "\n"))
+    sanitized = _repair_utf8_mojibake(sanitized)
     collapsed = re.sub(r"\s+", " ", sanitized).strip()
     for broken, replacement in MOJIBAKE_REPLACEMENTS.items():
         collapsed = collapsed.replace(broken, replacement)
+    collapsed = CONTROL_CHARS_PATTERN.sub("", collapsed)
     collapsed = INLINE_REFERENCE_PATTERN.sub(".", collapsed)
     if collapsed and collapsed[0].islower():
         match = re.search(r"[.!?](?:['\")\]]*)\s+([A-Z])", collapsed)

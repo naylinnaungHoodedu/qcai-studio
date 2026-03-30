@@ -95,12 +95,15 @@ def test_display_excerpt_cleanup_removes_inline_reference_artifacts():
 
 
 def test_display_excerpt_cleanup_repairs_common_mojibake():
-    raw_text = "Quantum phenomenaâ\x80\x94such as superposition and entanglementâ\x80\x94can support richer representations."
+    raw_text = (
+        "Quantum phenomena\u00e2\u0080\u0094such as superposition and "
+        "entanglement\u00e2\u0080\u0094can support richer representations."
+    )
 
     excerpt = truncate_display_excerpt(raw_text, 160)
 
-    assert "â\x80" not in excerpt
-    assert "Quantum phenomena - such as superposition and entanglement - can support richer representations." == excerpt
+    assert "\u00e2\u0080" not in excerpt
+    assert "Quantum phenomena—such as superposition and entanglement—can support richer representations." == excerpt
 
 
 def test_curated_transcript_copy_is_public_safe():

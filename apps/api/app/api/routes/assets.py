@@ -14,6 +14,9 @@ from app.core.source_assets import source_asset_lookup_ids
 
 router = APIRouter(prefix="/source-assets", tags=["source-assets"])
 VIDEO_OPEN_ENDED_RANGE_CHUNK_SIZE = 8 * 1024 * 1024
+MEDIA_TYPE_OVERRIDES = {
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
 
 
 def _require_asset_access(
@@ -111,12 +114,16 @@ def _is_open_ended_byte_range(range_header: str) -> bool:
     return bool(start_text) and not end_text
 
 
+def _resolve_media_type(path: Path) -> str:
+    return MEDIA_TYPE_OVERRIDES.get(path.suffix.lower()) or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+
+
 def _serve_source_asset(
     path: Path,
     request: Request,
 ) -> Response:
     file_size = path.stat().st_size
-    media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    media_type = _resolve_media_type(path)
     headers = {"Accept-Ranges": "bytes", "Content-Length": str(file_size)}
     range_header = request.headers.get("range")
 
