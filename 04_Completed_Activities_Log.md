@@ -3960,3 +3960,98 @@ Recorded current publication boundary:
 - GitHub repository update: completed successfully for the first-party account-system batch
 - local-only operational log `07_Production_Deployment_Local_Log.md` remains intentionally excluded from Git
 - generated working artifact `sitemap-live.xml` remains intentionally outside the publication batch
+
+## 146. Builder Scenario-Ladder and Workbench Restack Completed for the Private Practice Surface
+
+The current folder then underwent a second focused builder batch, this time aimed at correcting the structural page order on the live `/builder` surface so the scenario ladder leads the workflow and the drag-and-drop workbench remains readable on desktop.
+
+Completed builder-layout audit findings:
+
+- verified the live `/builder` route still rendered the scenario ladder beside the workbench rather than above it
+- confirmed the builder surface was still using a shared top-grid wrapper that treated the scenario ladder and workbench as lateral peers instead of sequential workflow panels
+- confirmed the workbench interior desktop layout was still effectively single-column, which kept the circuit canvas and concept tray from using the intended side-by-side space allocation
+- confirmed the earlier narrow-screen ordering override that pulled the workbench ahead of the ladder was no longer aligned with the requested production structure
+
+Completed builder-layout implementation work:
+
+- replaced the shared builder top-grid wrapper with a dedicated vertical stage stack so the scenario ladder now renders above the workbench in source order and page layout
+- introduced a dedicated scenario-panel wrapper to preserve spacing and panel behavior after the restack
+- kept the workbench as the second stage in the flow so the ladder remains the decision surface and the workbench remains the execution surface
+- changed the desktop workbench grid to a true two-column allocation so the circuit canvas and the concept-tray/control stack remain side by side
+- removed the obsolete mobile ordering override that previously forced the workbench ahead of the scenario ladder
+- extended builder regression coverage to assert:
+  - the scenario ladder renders before the workbench
+  - the desktop workbench grid uses the intended side-by-side column definition
+
+## 147. Validation, Production Deployment, Deep Double-Check, and GitHub Publication Completed for the Builder-Layout Restack Batch
+
+After the builder-layout restack was implemented, the frontend was revalidated locally, deployed to production, deeply rechecked against the live domain and repository state, and confirmed as published on the related GitHub repository.
+
+Completed local verification work:
+
+- frontend integration tests:
+  - `npm run test:integration`
+  - result: `38 passed`
+- frontend lint:
+  - `npm run lint`
+  - result: passed
+- frontend production build:
+  - `npm run build`
+  - result: passed
+
+Completed production deployment work:
+
+- built and published the updated frontend image through Cloud Build:
+  - build id: `6d45bc97-60c8-4694-9ac0-8482e33786c9`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest`
+- deployed the updated frontend image to Cloud Run:
+  - service: `qcai-frontend`
+  - latest ready revision: `qcai-frontend-00034-x5s`
+  - traffic: `100%`
+
+Completed live verification work:
+
+- verified `https://qantumlearn.academy/builder` now returns HTML containing:
+  - `builder-stage-stack`
+  - `builder-scenario-panel`
+  - `builder-workbench`
+- verified the live markup now places the scenario ladder before the workbench
+- verified the obsolete `builder-top-grid` class is no longer present in the live page response
+- verified the live compiled CSS now exposes:
+  - `.builder-stage-stack{display:grid;gap:20px}`
+  - `.builder-grid{grid-template-columns:minmax(0,1.45fr) minmax(320px,.82fr);align-items:start}`
+- verified the live workbench still exposes the guidance and tray content expected after the restack, including:
+  - `Drag concepts into the circuit`
+  - `Concept tray`
+
+Completed deep double-check work:
+
+- re-audited the rollout summary against:
+  - commit `c7f0063`
+  - `HEAD`
+  - local git status
+  - Cloud Build status
+  - the deployed Cloud Run frontend revision
+  - the live `/builder` HTML and compiled CSS
+- reran:
+  - `npm run test:integration`
+  - `npm run lint`
+  - `npm run build`
+- confirmed no factual correction was required
+- confirmed the only remaining local untracked artifact is:
+  - `sitemap-live.xml`
+
+Completed repository publication work:
+
+- published the builder-layout restack batch on `main` in:
+  - commit: `c7f0063`
+  - message: `fix: restack builder ladder and workbench`
+- pushed the updated branch to:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+
+Recorded current publication boundary:
+
+- GitHub repository update: completed successfully for the builder-layout restack batch
+- local-only operational log `07_Production_Deployment_Local_Log.md` remains intentionally excluded from Git
+- generated working artifact `sitemap-live.xml` remains intentionally outside the publication batch
