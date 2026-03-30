@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-03-30 13:15:48 -04:00`
+Last updated on: `2026-03-30 13:20:45 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp`
 
 ## 1. Scope of Work Completed
@@ -3644,3 +3644,30 @@ Completed live verification work:
 Recorded non-blocking implementation note:
 
 - the DOCX downloads are currently served with `application/octet-stream` rather than the DOCX-specific MIME type; this does not block download or production use, but it remains a header-quality refinement opportunity rather than a rollout defect
+
+## 139. GitHub Repository Update Completed for the Expanded Curriculum and Asset Rollout
+
+After the expanded curriculum/media batch was revalidated locally, deployed to production, and reverified against the live public domain, the completed work was published to the related GitHub repository.
+
+Completed repository publication work:
+
+- published the current repository batch on `main` in:
+  - commit: `4a61a4b`
+  - message: `feat: publish expanded curriculum media rollout`
+- pushed the updated branch to:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+- confirmed the publication batch includes:
+  - backend source-video allowlist expansion
+  - duplicate source-asset ID hardening for mixed DOCX/MP4 filename stems
+  - transcript/chapter metadata for the five new lesson videos
+  - updated backend tests for the expanded media corpus
+  - frontend About-page fallback inventory and frontend build-context fixes
+  - the five new MP4 source assets through Git LFS
+  - updated repository documentation and this completed-activities log
+
+Recorded publication boundary:
+
+- GitHub repository update: completed successfully
+- local-only operational log `07_Production_Deployment_Local_Log.md` remains intentionally excluded from Git
+- generated working artifact `sitemap-live.xml` remains intentionally outside the publication batch
