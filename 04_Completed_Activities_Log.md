@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-03-30 13:20:45 -04:00`
+Last updated on: `2026-03-30 15:35:18 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp`
 
 ## 1. Scope of Work Completed
@@ -3669,5 +3669,172 @@ Completed repository publication work:
 Recorded publication boundary:
 
 - GitHub repository update: completed successfully
+- local-only operational log `07_Production_Deployment_Local_Log.md` remains intentionally excluded from Git
+- generated working artifact `sitemap-live.xml` remains intentionally outside the publication batch
+
+## 140. Builder Workbench Audit and Remediation Completed for the Private Practice Surface
+
+The current folder then underwent a focused production-facing audit of the private builder surface, with the workbench treated as the primary defect area rather than the surrounding page chrome.
+
+Completed builder audit findings:
+
+- verified the live `/builder` route was available but the workbench itself was materially degraded
+- confirmed the circuit canvas was being compressed into an unreadable narrow column on desktop because the workbench column was under-allocated relative to the fixed-position slot geometry
+- confirmed the slot cards were clipping and overlapping rather than presenting a readable dependency graph
+- confirmed the interaction model depended too heavily on HTML drag-and-drop, which weakens the builder experience on touch devices
+
+Completed builder remediation work:
+
+- added a dedicated builder-layout helper to normalize slot positions into a stable canvas frame rather than trusting raw edge-heavy percentages directly
+- widened and restructured the workbench so the circuit map receives primary visual space and no longer collapses into an unreadable overlap stack
+- added touch-safe concept placement by allowing learners to tap a concept and then tap a step, while preserving drag-and-drop for desktop usage
+- added workbench guidance, placement-state pills, and a dedicated placement-mode panel so the interaction model is explicit rather than implicit
+- converted the canvas wrapper into a horizontally scrollable frame for narrow viewports so slot cards stay readable on mobile instead of being forcibly shrunk
+- added targeted builder regression coverage for:
+  - canvas-layout bounds
+  - duplicate-node placement replacement
+  - per-slot removal behavior
+
+## 141. Validation, Production Deployment, and GitHub Publication Completed for the Builder Workbench Batch
+
+After the builder workbench remediation was implemented locally, the batch was revalidated, deployed to production, rechecked visually, and then published to the related GitHub repository.
+
+Completed local verification work:
+
+- frontend integration tests:
+  - `npm run test:integration`
+  - result: `32 passed`
+- frontend lint:
+  - `npm run lint`
+  - result: passed
+- frontend production build:
+  - `npm run build`
+  - result: passed
+
+Completed production deployment work:
+
+- built and published the updated frontend image through Cloud Build:
+  - build id: `76e72e81-3944-4e4e-b1d1-62b2c270a98c`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest`
+- updated the Cloud Run frontend service:
+  - service: `qcai-frontend`
+  - region: `us-central1`
+  - latest ready revision after the builder batch: `qcai-frontend-00030-brs`
+  - traffic: `100%`
+
+Completed live verification work:
+
+- verified `https://qantumlearn.academy/builder` returns `200`
+- verified the live builder HTML now includes the new workbench guidance and touch-placement copy:
+  - `Drag concepts into the circuit`
+  - `Tap a concept to arm placement`
+  - `Placement mode`
+- completed headless-browser screenshot verification on the live public domain for both desktop and narrow mobile viewports
+- confirmed the desktop workbench now renders a readable dependency graph rather than overlapping cards
+- confirmed the narrow mobile workbench now preserves readable slot cards and exposes the tap-to-place flow with scrollable canvas behavior
+
+Completed repository publication work:
+
+- published the builder batch on `main` in:
+  - commit: `2ead627`
+  - message: `fix: harden builder workbench layout and touch placement`
+- pushed the updated branch to:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+
+## 142. Navigation, Module Labeling, and About Information-Architecture Refinement Completed
+
+The public course and information surfaces were then refined to match the requested navigation order, module labeling language, and About-page structure more explicitly.
+
+Completed navigation and content-structure work:
+
+- reordered the shared primary navigation to:
+  - `Overview`
+  - `About`
+  - `Modules`
+  - `Projects`
+  - `Practice`
+  - `Simulations`
+  - `Account`
+  - `Search`
+- extracted the shared navigation definition into a reusable frontend configuration layer rather than hardcoding the order inline
+- replaced bare module-card numerals with explicit `Module 1` through `Module 11` labels
+- added reusable module-label helpers so numbering stays consistent across cards, module pages, and lesson pages
+- added module-number callouts at the top of module-detail pages and lesson pages so learners can see the current position in the course path immediately
+- added a module-range callout to the curriculum hub so the top-of-page course framing now points from `Module 1` through `Module 11`
+- expanded the About page with the requested new sections:
+  - `Who is it for?`
+  - `Learning progression`
+- added audience cards for:
+  - students
+  - developers
+  - data scientists
+  - researchers
+- added a staged learning-progression presentation that maps the current eleven-module track from foundations through specialization
+- added frontend regression coverage for:
+  - primary navigation order
+  - module-label helpers
+  - About-page audience/progression content blocks
+
+## 143. Validation, Production Deployment, Deep Double-Check, and GitHub Publication Completed for the Navigation and About Batch
+
+After the navigation, module-labeling, and About-page refinement batch was implemented, the resulting frontend was revalidated locally, deployed twice to production for final copy alignment, deeply rechecked for factual accuracy, and then published to the related GitHub repository.
+
+Completed local verification work:
+
+- frontend integration tests:
+  - `npm run test:integration`
+  - result: `35 passed`
+- frontend lint:
+  - `npm run lint`
+  - result: passed
+- frontend production build:
+  - `npm run build`
+  - result: passed
+
+Completed production deployment work:
+
+- built and published the first navigation/About frontend image through Cloud Build:
+  - build id: `2a299a13-49e8-4362-b4a2-7766f4d8dea0`
+- deployed that image to Cloud Run:
+  - revision: `qcai-frontend-00031-w69`
+- completed a follow-up copy-tightening pass so the About headings match the requested wording more literally
+- built and published the final adjusted frontend image through Cloud Build:
+  - build id: `c30b3483-3315-4ecb-9b28-aee0e440aa55`
+- deployed the final adjusted image to Cloud Run:
+  - latest ready revision: `qcai-frontend-00032-gzq`
+  - traffic: `100%`
+
+Completed live verification work:
+
+- verified the live shared header order now matches the requested sequence
+- verified `/modules` now exposes explicit `Module 1` through `Module 11` labels on the module cards
+- verified the module-detail surface now includes the module-number callout at the top of the course page
+- verified the lesson-detail surface now includes:
+  - the module-number pill
+  - the parent-module title pill
+  - the `Module 1 lesson` style eyebrow treatment
+- verified `https://qantumlearn.academy/about` now includes the exact requested headings:
+  - `Who is it for?`
+  - `Learning progression`
+- verified the live About page also exposes the requested audience and progression content blocks, including:
+  - `Students`
+  - `Developers`
+  - `Researchers`
+  - `Specialization`
+- completed a deep post-rollout double-check and confirmed no factual correction was needed in the rollout summary
+
+Completed repository publication work:
+
+- published the navigation/About batch on `main` in:
+  - commit: `2b941f0`
+  - message: `feat: refine course navigation and about structure`
+- pushed the updated branch to:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+
+Recorded current publication boundary:
+
+- GitHub repository update: completed successfully for both the builder batch and the navigation/About batch
 - local-only operational log `07_Production_Deployment_Local_Log.md` remains intentionally excluded from Git
 - generated working artifact `sitemap-live.xml` remains intentionally outside the publication batch
