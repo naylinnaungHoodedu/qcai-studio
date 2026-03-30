@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-03-30 15:35:18 -04:00`
+Last updated on: `2026-03-30 16:47:21 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp`
 
 ## 1. Scope of Work Completed
@@ -3836,5 +3836,127 @@ Completed repository publication work:
 Recorded current publication boundary:
 
 - GitHub repository update: completed successfully for both the builder batch and the navigation/About batch
+- local-only operational log `07_Production_Deployment_Local_Log.md` remains intentionally excluded from Git
+- generated working artifact `sitemap-live.xml` remains intentionally outside the publication batch
+
+## 144. First-Party User Account Lifecycle Design and Implementation Completed
+
+The current folder then underwent a focused identity-surface audit and remediation batch for the user-account system, with the goal of moving the live deployment from guest-only continuity plus optional external-provider framing to a real first-party lifecycle.
+
+Completed account-system audit findings:
+
+- confirmed the existing production surface supported guest cookies, `/auth/me`, and Auth0 login/callback/logout wiring, but did not actually expose first-party account creation or deletion
+- confirmed no local user table, no persistent session table, and no server-managed account lifecycle were present in the backend
+- confirmed the public `/account` surface described guest and Auth0 states but did not provide a real create/login/delete path
+- confirmed the public Auth0 login route could emit an invalid deployed redirect origin (`0.0.0.0:3000`) when client-side Auth0 configuration was unavailable
+
+Completed backend account-system implementation work:
+
+- added a first-party local-account model with:
+  - unique email identity
+  - hashed password storage
+  - server-managed session records
+- extended current-user resolution so authenticated local sessions are resolved before guest fallback
+- added first-party auth routes for:
+  - account registration
+  - password login
+  - logout
+  - current-session lookup
+  - account deletion
+- kept Auth0 support available as an optional external provider instead of removing it
+- extended mutation protection so authenticated local sessions use CSRF validation and trusted-origin checks, aligned with the existing guest-protection posture
+- implemented hard account deletion that removes learner-owned records tied to the deleted local identity across notes, quizzes, QA history, analytics, builder activity, learner profiles, pulses, arena records, project submissions, peer reviews, and sessions
+
+Completed frontend account-system implementation work:
+
+- redesigned `/account` to expose the real lifecycle directly on the live product surface:
+  - create account
+  - sign in
+  - sign out
+  - inspect current identity
+  - delete account
+- added a dedicated interactive account console with local create/login/delete forms, status banners, and identity-state rendering
+- extended the frontend API client to call the new local-account endpoints and surface backend error detail instead of generic status-only failures
+- added local-session and auth-CSRF cookie handling to the frontend auth utilities
+- fixed the production auth-route origin fallback so unavailable Auth0 flows now redirect to the public site origin rather than leaking the internal `0.0.0.0:3000` host
+
+## 145. Validation, Production Deployment, Deep Double-Check, and GitHub Publication Completed for the Account-System Batch
+
+After the first-party account lifecycle was implemented, the backend and frontend were revalidated locally, deployed to production, tested through the public domain, deeply rechecked for factual accuracy, and then published to the related GitHub repository.
+
+Completed local verification work:
+
+- backend automated verification:
+  - `pytest`
+  - result: `63 passed`
+- frontend integration verification:
+  - `npm run test:integration`
+  - result: `36 passed`
+- frontend lint:
+  - `npm run lint`
+  - result: passed
+- frontend production build:
+  - `npm run build`
+  - result: passed
+
+Completed production deployment work:
+
+- built and published the updated API image through Cloud Build:
+  - build id: `740ea4f0-005f-4633-8f88-8294c44f982f`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-api:latest`
+- deployed the updated API image to Cloud Run:
+  - service: `qcai-api`
+  - latest ready revision: `qcai-api-00023-2rl`
+  - traffic: `100%`
+- built and published the updated frontend image through Cloud Build:
+  - build id: `cad81078-8e88-41b7-b26d-04ddd8fdcd56`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest`
+- deployed the updated frontend image to Cloud Run:
+  - service: `qcai-frontend`
+  - latest ready revision: `qcai-frontend-00033-9kc`
+  - traffic: `100%`
+
+Completed live verification work:
+
+- verified `https://qantumlearn.academy/account` now renders the new first-party account lifecycle page, including:
+  - `Create, sign in, sign out, and delete user accounts without leaving the live platform.`
+  - `Create account`
+  - `Delete user account`
+  - `First-party account path is active`
+- verified `https://qantumlearn.academy/auth/login?returnTo=/account` now redirects safely to:
+  - `https://qantumlearn.academy/account?auth=unavailable`
+- completed end-to-end public-domain lifecycle verification through the same production proxy path used by the browser:
+  - register account
+  - resolve `auth/me` as `auth_provider=local`
+  - create learner note while authenticated
+  - logout back to guest state
+  - resolve `auth/me` as `auth_provider=guest`
+  - log back in
+  - delete the account
+- completed a destructive post-delete verification and confirmed the deleted credentials can no longer authenticate successfully
+
+Completed deep double-check work:
+
+- re-audited the rollout summary against:
+  - the live public account page
+  - the live login redirect behavior
+  - the live register/login/logout/delete lifecycle
+  - the deployed Cloud Run revisions
+  - the GitHub branch tip
+- confirmed no factual correction was required
+- noted one temporary stale web-fetch view during recheck, but raw HTTP verification and live proxy verification confirmed production itself was correct
+
+Completed repository publication work:
+
+- published the account-system batch on `main` in:
+  - commit: `90d3feb`
+  - message: `feat: add first-party account lifecycle`
+- pushed the updated branch to:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+
+Recorded current publication boundary:
+
+- GitHub repository update: completed successfully for the first-party account-system batch
 - local-only operational log `07_Production_Deployment_Local_Log.md` remains intentionally excluded from Git
 - generated working artifact `sitemap-live.xml` remains intentionally outside the publication batch
