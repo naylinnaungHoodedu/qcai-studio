@@ -31,6 +31,41 @@ const FALLBACK_SOURCE_ASSETS = [
     description: "Industry framing that connects the curriculum to commercial and applied system design.",
   },
   {
+    id: "doc-hcl-introduction",
+    title: "Introduction to Hardware-Constrained QC+AI",
+    kind: "document",
+    filename: "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+    description: "Local authored source that extends the curriculum with hardware-constrained learning foundations.",
+  },
+  {
+    id: "doc-hcl-models",
+    title: "Hardware-Constrained QC+AI Models",
+    kind: "document",
+    filename: "Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx",
+    description: "Local authored source focused on model families, trainability barriers, and validation strategy.",
+  },
+  {
+    id: "doc-hcl-programming",
+    title: "Intermediate Quantum Programming for Hardware-Constrained QC+AI",
+    kind: "document",
+    filename: "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+    description: "Local authored source focused on device-first programming patterns, debugging, and measurement strategy.",
+  },
+  {
+    id: "doc-hcl-software",
+    title: "Advanced Quantum Software Development for Hardware-Constrained QC+AI",
+    kind: "document",
+    filename: "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+    description: "Local authored source covering compilation, MLIR, caching, pulse control, and reliability engineering.",
+  },
+  {
+    id: "doc-hcl-finance",
+    title: "Quantum Finance Programming and Optimization for Hardware-Constrained QC+AI",
+    kind: "document",
+    filename: "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+    description: "Local authored source focused on finance workloads, hybrid optimization, and model-risk-aware QC+AI deployment.",
+  },
+  {
     id: "video-lecture-1",
     title: "QC+AI lecture asset 1",
     kind: "video",
@@ -105,8 +140,8 @@ export const metadata: Metadata = buildPageMetadata({
 export default async function AboutPage() {
   const course = await fetchCourseOverview().catch(() => null);
   const sourceAssets = course?.source_assets.length ? course.source_assets : FALLBACK_SOURCE_ASSETS;
-  const moduleCount = course?.modules.length ?? 6;
-  const lessonCount = course?.modules.reduce((count, module) => count + module.lesson_slugs.length, 0) ?? 7;
+  const moduleCount = course?.modules.length ?? 11;
+  const lessonCount = course?.modules.reduce((count, module) => count + module.lesson_slugs.length, 0) ?? 12;
   const videoCount = sourceAssets.filter((asset) => asset.kind.toLowerCase() === "video").length || 3;
   const documentCount = Math.max(sourceAssets.length - videoCount, 0);
   const structuredData = [

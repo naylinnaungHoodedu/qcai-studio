@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-03-30 03:02:36 -04:00`
+Last updated on: `2026-03-30 04:04:50 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp`
 
 ## 1. Scope of Work Completed
@@ -3421,3 +3421,122 @@ Recorded current publication boundary:
 
 - GitHub repository update: completed successfully and still available
 - separate GitHub Projects board mutation: still blocked by token scope rather than repository or folder state
+
+## 130. Vivid Simulation Control Styling Completed for the Dark Production Theme
+
+After the simulation-program expansion and dark-theme rollout, the remaining default browser dropdown styling was replaced with a vivid dark-theme treatment so simulation controls no longer fell back to white-background selects inside the new interface.
+
+Completed styling work:
+
+- updated the shared `select` styling in the frontend global stylesheet so simulation dropdown controls now use:
+  - dark navy backgrounds
+  - bright cyan text
+  - stronger border contrast
+  - themed hover treatment
+  - a custom vivid chevron indicator
+- kept the styling centralized in the shared frontend theme layer rather than adding one-off control overrides inside individual simulation labs
+- preserved browser-native control behavior while improving the visual match with the vivid dark QC+AI Studio theme
+
+Completed validation work for this styling batch:
+
+- verified frontend linting locally
+- verified frontend integration tests locally
+- verified frontend production build locally
+- confirmed the shared stylesheet contains the dark control rules used by the simulation interfaces
+
+## 131. Five New Hardware-Constrained QC+AI Source Documents Integrated into the Curated Corpus
+
+The current folder was then expanded beyond the original proceedings-and-video source set by adding five new authored DOCX documents focused on hardware-constrained learning, model design, programming, software development, and finance-oriented optimization.
+
+Completed source-corpus integration work:
+
+- integrated the following five authored source documents into the curated source-document allowlist:
+  - `Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx`
+  - `Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx`
+  - `Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx`
+  - `Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx`
+  - `Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx`
+- expanded the backend source-document configuration so these files are now treated as first-class curated course assets
+- added clean public-facing title mappings for the five new authored documents so public APIs no longer expose raw underscore-based filenames as source titles
+- updated course-reference metadata so the frontend public documentation surfaces can cite the expanded local source corpus consistently
+
+## 132. Curriculum Expansion Completed from Six Modules to Eleven Modules
+
+Using the five newly integrated authored documents, the public curriculum was expanded from the original six-module research-led studio track into an eleven-module public course with twelve lesson entry points.
+
+Completed curriculum-expansion work:
+
+- kept the original six-module studio core intact as modules `1` through `6`
+- added the following five new public modules as modules `7` through `11`:
+  - `hardware-constrained-introduction`
+  - `hardware-constrained-models`
+  - `intermediate-quantum-programming`
+  - `advanced-quantum-software`
+  - `quantum-finance-programming`
+- added one dedicated lesson for each of the five new modules:
+  - `introduction-to-hardware-constrained-learning`
+  - `hardware-constrained-qcai-models`
+  - `intermediate-quantum-programming-patterns`
+  - `advanced-quantum-software-development`
+  - `quantum-finance-programming-and-optimization`
+- authored new lesson summaries, key ideas, key notes, formulas, learner questions, section references, flashcards, and quizzes for the five added modules
+- updated the backend course summary so the public course description now reflects the expanded hardware-constrained curriculum instead of the earlier seven-lesson-only scope
+- updated route metadata and sitemap support for the five new module pages and five new lesson pages
+- updated About, What's New, public-course, public-status, and simulation-context copy so the broader curriculum footprint is reflected consistently across the public site
+
+## 133. Module Card UX Redesign Completed for the Expanded Curriculum
+
+The public curriculum surfaces were then redesigned to visually match the dark premium card language shown in the uploaded reference image while preserving real QC+AI Studio routes and actions.
+
+Completed UI/UX redesign work:
+
+- replaced the earlier plain module cards with a redesigned dark module-card system featuring:
+  - colored icon tile
+  - level badge
+  - numbered corner badge
+  - topical tag chips
+  - dual action buttons
+  - source-grounded footer note
+- assigned distinct accent colors, iconography, level labels, and tag sets across all eleven modules so the original six modules and the five new hardware-constrained modules each present a clear visual identity
+- updated the homepage module grid to use the redesigned card component and explicit module numbering
+- redesigned the modules landing page so it now separates:
+  - the original six-module studio core
+  - the five new hardware-constrained extension modules
+- kept the primary curriculum actions bound to real site routes:
+  - `Visit course`
+  - `Open first lesson`
+  - `Review syllabus`
+
+## 134. Verification and GitHub Repository Publication Completed for the Expanded Curriculum Batch
+
+After the source-corpus integration, curriculum expansion, and module-card redesign were completed, the full batch was revalidated locally and then prepared for publication to the related GitHub repository.
+
+Completed local verification work:
+
+- backend verification:
+  - `pytest -q`
+  - result: `55 passed`
+- frontend verification:
+  - `npm run lint`
+  - result: passed
+  - `npm run test:integration`
+  - result: `29 passed`
+  - `npm run build`
+  - result: passed
+- explicit route verification confirmed the five new module endpoints return `200`
+- explicit route verification confirmed the five new lesson endpoints return `200`
+- explicit sitemap verification confirmed the five new module routes and five new lesson routes are published by the frontend sitemap generator
+
+Completed repository publication preparation:
+
+- prepared the current repository batch for publication to:
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+- included:
+  - backend curriculum expansion code
+  - frontend module-card and modules-page redesign
+  - metadata and public-copy updates
+  - backend and frontend test updates
+  - the five new authored DOCX source files required by the expanded curated corpus
+  - this updated completed-activities log
+- intentionally excluded the unrelated local file:
+  - `sitemap-live.xml`

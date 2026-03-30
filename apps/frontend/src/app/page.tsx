@@ -108,9 +108,9 @@ export default async function HomePage() {
           <h2>{course.title}</h2>
           <p>{course.summary}</p>
         </div>
-        <div className="module-grid">
-          {course.modules.map((module) => (
-            <ModuleCard key={module.slug} module={module} />
+        <div className="curriculum-card-grid">
+          {course.modules.map((module, index) => (
+            <ModuleCard key={module.slug} module={module} moduleNumber={index + 1} />
           ))}
         </div>
         <div className="button-row">

@@ -41,6 +41,8 @@ test("sitemap publishes public study and simulations routes", () => {
     ),
   );
   assert.ok(urls.has(`${SITE_URL}/whats-new`));
+  assert.ok(urls.has(`${SITE_URL}/modules/hardware-constrained-models`));
+  assert.ok(urls.has(`${SITE_URL}/lessons/hardware-constrained-qcai-models`));
   assert.ok(urls.has(`${SITE_URL}/lessons/clinical-and-kernel-qcai-systems`));
   assert.ok(urls.has(`${SITE_URL}/flashcards/clinical-and-kernel-qcai-systems`));
   assert.ok(urls.has(`${SITE_URL}/quiz/clinical-and-kernel-qcai-systems`));

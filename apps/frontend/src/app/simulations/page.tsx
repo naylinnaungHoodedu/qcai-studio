@@ -94,8 +94,9 @@ export default function SimulationsPage() {
           <h1>Thirty-four QC+AI simulations, split across curriculum studios and subject labs.</h1>
           <p className="hero-text">
             The simulation layer now behaves like a real library instead of a single long document. The
-            original sixteen course labs remain grouped by the six-module curriculum, and eighteen new
-            academy-style labs now live in their own subject tracks and dedicated studio routes.
+            original sixteen course labs remain grouped by the original six-module studio core, and
+            eighteen new academy-style labs now live in their own subject tracks and dedicated studio
+            routes while the broader public curriculum continues to expand.
           </p>
           <p className="hero-text">{SIMULATION_STATUS_NOTE}</p>
           <div className="button-row">
@@ -136,12 +137,12 @@ export default function SimulationsPage() {
           <article className="metric-card">
             <span className="eyebrow">Subjects</span>
             <strong className="about-metric-value">{academySubjectCount}</strong>
-            <p>Five subject families complement the six curriculum modules.</p>
+            <p>Five subject families complement the original simulation-track modules.</p>
           </article>
           <article className="metric-card">
             <span className="eyebrow">Modules</span>
             <strong className="about-metric-value">{moduleCount}</strong>
-            <p>The catalog stays grouped by the six curriculum tracks.</p>
+            <p>The simulation catalog still stays grouped by the six-module studio core.</p>
           </article>
         </div>
       </section>

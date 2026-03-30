@@ -27,6 +27,12 @@ export const FEATURE_AVAILABILITY = [
 
 export const RECENT_UPDATES = [
   {
+    date: "March 30, 2026",
+    title: "Expanded the curriculum with five hardware-constrained modules",
+    detail:
+      "The public course now adds dedicated modules for hardware-constrained learning foundations, model families, intermediate programming, advanced software development, and quantum finance programming.",
+  },
+  {
     date: "March 29, 2026",
     title: "Activated live browser simulations",
     detail:
@@ -48,9 +54,9 @@ export const RECENT_UPDATES = [
 
 export const EXPANSION_ROADMAP = [
   {
-    title: "Expand beyond the seven-lesson studio track",
+    title: "Deepen the expanded eleven-module curriculum",
     detail:
-      "The current course remains an intensive starter-to-project path. The next visible step is to grow it into a fuller 12-15 week curriculum with additional lessons and labs per module.",
+      "The public course now covers eleven modules. The next visible step is to add more lessons, labs, and assessments inside each module instead of only increasing the top-level module count.",
   },
   {
     title: "Persist and instrument the simulation layer",

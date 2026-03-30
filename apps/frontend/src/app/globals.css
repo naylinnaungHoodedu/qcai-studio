@@ -88,7 +88,8 @@ select:focus-visible {
 
 button,
 textarea,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -96,10 +97,50 @@ select,
 input:not([type="range"]) {
   width: 100%;
   border-radius: 14px;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(108, 167, 255, 0.28);
   padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--ink);
+  background:
+    linear-gradient(135deg, rgba(27, 212, 255, 0.08), rgba(122, 108, 255, 0.08)),
+    rgba(7, 14, 31, 0.92);
+  color: #f2f8ff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 0 1px rgba(27, 212, 255, 0.03);
+}
+
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 44px;
+  cursor: pointer;
+  color-scheme: dark;
+  background-image:
+    linear-gradient(135deg, rgba(27, 212, 255, 0.1), rgba(122, 108, 255, 0.12)),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%2382e7ff' d='M3.2 5.5 8 10.3l4.8-4.8 1.2 1.2L8 12.7 2 6.7z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat, no-repeat;
+  background-position: 0 0, right 14px center;
+  background-size: auto, 14px 14px;
+}
+
+select:hover {
+  border-color: rgba(130, 231, 255, 0.42);
+  background-image:
+    linear-gradient(135deg, rgba(27, 212, 255, 0.14), rgba(122, 108, 255, 0.16)),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23c6f8ff' d='M3.2 5.5 8 10.3l4.8-4.8 1.2 1.2L8 12.7 2 6.7z'/%3E%3C/svg%3E");
+}
+
+select option,
+select optgroup {
+  background: #081328;
+  color: #8fefff;
+}
+
+select option:checked,
+select option:hover,
+select option:focus {
+  background: #183a6b;
+  color: #f8fdff;
 }
 
 .app-shell {
@@ -346,6 +387,7 @@ input:not([type="range"]) {
 }
 
 .module-grid,
+.curriculum-card-grid,
 .two-column-grid,
 .lesson-layout-grid {
   display: grid;
@@ -354,6 +396,11 @@ input:not([type="range"]) {
 
 .module-grid {
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.curriculum-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 28px;
 }
 
 .two-column-grid,
@@ -365,6 +412,172 @@ input:not([type="range"]) {
 .lesson-card,
 .panel {
   padding: 22px;
+}
+
+.module-card {
+  position: relative;
+  display: grid;
+  gap: 18px;
+  min-height: 100%;
+  padding: 28px;
+  overflow: hidden;
+  border-color: rgba(96, 150, 255, 0.22);
+  background:
+    radial-gradient(circle at 78% 88%, var(--module-accent-soft, rgba(27, 212, 255, 0.12)), transparent 24%),
+    radial-gradient(circle at 16% 0%, rgba(255, 255, 255, 0.03), transparent 18%),
+    linear-gradient(180deg, rgba(20, 22, 28, 0.98), rgba(14, 16, 24, 0.98));
+}
+
+.module-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(135deg, var(--module-accent-soft, rgba(27, 212, 255, 0.1)), transparent 30%);
+  opacity: 0.6;
+}
+
+.module-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.module-card-top,
+.module-card-top-left,
+.module-card-badges,
+.module-card-actions,
+.module-card-tags {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.module-card-top {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.module-card-top-left {
+  align-items: center;
+}
+
+.module-card-symbol {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  color: var(--module-accent, var(--accent));
+  background: linear-gradient(180deg, rgba(67, 79, 120, 0.34), rgba(42, 28, 78, 0.32));
+  border: 1px solid color-mix(in srgb, var(--module-accent, var(--accent)) 36%, rgba(255, 255, 255, 0.1));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.module-card-symbol svg {
+  width: 26px;
+  height: 26px;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.module-card-number {
+  min-width: 44px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  padding: 0 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(118, 155, 255, 0.2);
+  background: linear-gradient(180deg, rgba(80, 84, 138, 0.5), rgba(54, 41, 88, 0.42));
+  color: #eef4ff;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.module-card-copy h3,
+.module-card-copy p,
+.module-card-footnote {
+  margin: 0;
+}
+
+.module-card-copy h3 {
+  font-size: 1.45rem;
+  line-height: 1.22;
+  letter-spacing: -0.03em;
+}
+
+.module-card-copy p {
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.module-card-tags {
+  gap: 10px;
+}
+
+.module-chip,
+.module-level-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  padding: 7px 12px;
+  line-height: 1;
+}
+
+.module-chip {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(232, 240, 255, 0.82);
+  font-size: 0.86rem;
+}
+
+.module-level-pill {
+  border-color: color-mix(in srgb, var(--module-accent, var(--accent)) 48%, rgba(255, 255, 255, 0.12));
+  color: #f8fdff;
+  font-size: 0.76rem;
+  letter-spacing: 0.02em;
+}
+
+.module-level-pill--beginner {
+  background: rgba(36, 183, 101, 0.2);
+}
+
+.module-level-pill--intermediate {
+  background: rgba(57, 132, 255, 0.18);
+}
+
+.module-level-pill--advanced {
+  background: rgba(159, 79, 255, 0.18);
+}
+
+.module-card-progress {
+  display: grid;
+  gap: 8px;
+}
+
+.module-card-divider {
+  height: 1px;
+  background: linear-gradient(90deg, rgba(123, 165, 255, 0.18), rgba(255, 255, 255, 0.04));
+}
+
+.module-card-actions {
+  align-items: stretch;
+}
+
+.module-card-button {
+  flex: 1 1 220px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+.module-card-footnote {
+  color: rgba(205, 218, 242, 0.66);
+  font-size: 0.85rem;
 }
 
 .goal-list,

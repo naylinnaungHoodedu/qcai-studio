@@ -23,11 +23,21 @@ RAW_DOCUMENT_TITLES = {
     "Quantum Computing AI Research Synthesis 2026.docx",
     "Analyzing Quantum Computing and AI Paper 2025.docx",
     "Quantum Computing and Artificial Intelligence Industry Use Cases.docx",
+    "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+    "Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx",
+    "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+    "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+    "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
 }
 DISPLAY_DOCUMENT_TITLES = {
     "Ali, Chicano, and Moraglio (Eds.), QC+AI 2025 Proceedings",
     "Ali, Chicano, and Moraglio (Eds.), QC+AI 2026 Proceedings",
     "Raj et al. (Eds.), Quantum Computing and Artificial Intelligence: The Industry Use Cases",
+    "Introduction to Hardware-Constrained QC+AI",
+    "Hardware-Constrained QC+AI Models",
+    "Intermediate Quantum Programming for Hardware-Constrained QC+AI",
+    "Advanced Quantum Software Development for Hardware-Constrained QC+AI",
+    "Quantum Finance Programming and Optimization for Hardware-Constrained QC+AI",
 }
 RAW_VIDEO_TITLES = {
     "Industry Use Cases.mp4",
@@ -87,10 +97,18 @@ def test_course_overview():
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == "qcai-hardware-aware-course"
-    assert len(data["modules"]) == 6
-    assert sum(len(module["lesson_slugs"]) for module in data["modules"]) == 7
+    assert len(data["modules"]) == 11
+    assert sum(len(module["lesson_slugs"]) for module in data["modules"]) == 12
     source_filenames = [asset["filename"] for asset in data["source_assets"]]
     assert "Quantum Computing and Artificial Intelligence Industry Use Cases.docx" in source_filenames
+    assert (
+        "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx"
+        in source_filenames
+    )
+    assert (
+        "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx"
+        in source_filenames
+    )
     assert "Vital_Concepts.docx" not in source_filenames
     document_titles = {asset["title"] for asset in data["source_assets"] if asset["kind"] == "document"}
     assert DISPLAY_DOCUMENT_TITLES <= document_titles
@@ -314,6 +332,18 @@ def test_quantum_applications_module_supports_multiple_lessons():
     assert len(data["lessons"]) == 2
 
 
+def test_new_hardware_constrained_module_supports_lookup():
+    response = client.get("/content/modules/hardware-constrained-models")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["module"]["title"] == "Hardware-Constrained QC+AI Models"
+    assert data["module"]["lesson_slugs"] == ["hardware-constrained-qcai-models"]
+    assert len(data["lessons"]) == 1
+    assert data["lessons"][0]["sections"]
+    source_titles = {section["source_title"] for section in data["lessons"][0]["sections"]}
+    assert "Hardware-Constrained QC+AI Models" in source_titles
+
+
 def test_video_assets_use_updated_titles():
     response = client.get("/content/course")
     assert response.status_code == 200
@@ -434,6 +464,11 @@ def test_source_document_selection_uses_curated_allowlist(tmp_path: Path):
         "Quantum Computing AI Research Synthesis 2026.docx",
         "Analyzing Quantum Computing and AI Paper 2025.docx",
         "Quantum Computing and Artificial Intelligence Industry Use Cases.docx",
+        "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+        "Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx",
+        "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+        "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+        "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
         "Vital_Concepts.docx",
         "06_Future_Deliverable.docx",
     ):
@@ -446,6 +481,11 @@ def test_source_document_selection_uses_curated_allowlist(tmp_path: Path):
         "Quantum Computing AI Research Synthesis 2026.docx",
         "Analyzing Quantum Computing and AI Paper 2025.docx",
         "Quantum Computing and Artificial Intelligence Industry Use Cases.docx",
+        "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+        "Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx",
+        "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+        "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+        "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
     ]
 
 
@@ -532,7 +572,7 @@ def test_progress_endpoint_aggregates_activity():
     progress_response = client.get("/content/progress", headers=user_headers)
     assert progress_response.status_code == 200
     data = progress_response.json()
-    assert data["total_lessons"] == 7
+    assert data["total_lessons"] == 12
     assert data["visited_lessons"] >= 1
     assert data["completed_lessons"] >= 1
     lesson = next(item for item in data["lessons"] if item["lesson_slug"] == "ai4qc-routing-and-optimization")

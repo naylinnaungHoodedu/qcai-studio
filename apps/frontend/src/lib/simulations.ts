@@ -562,7 +562,7 @@ export const SIMULATION_FOUNDATION_CHECKLIST = [
 ] as const;
 
 export const SIMULATION_VERIFIED_ITEMS = [
-  "The six-module structure and current learning goals align with the live syllabus.",
+  "The simulation program still aligns to the original six-module studio core even though the wider public curriculum now extends beyond it.",
   "The simulation paper references such as quINR, QuCoWE, and QGSHAP match the current source framing.",
   "The QAI versus AI4QC distinction is consistent with Module 1 learning objectives.",
   "IBM heavy-hex topology references are compatible with the routing-sandbox framing.",

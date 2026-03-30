@@ -40,6 +40,8 @@ export default async function ModulesLandingPage() {
 
   const totalLessons = course.modules.reduce((count, module) => count + module.lesson_slugs.length, 0);
   const firstModuleHref = course.modules[0] ? `/modules/${course.modules[0].slug}` : "/syllabus";
+  const coreModules = course.modules.slice(0, 6);
+  const extensionModules = course.modules.slice(6);
   const structuredData = [
     {
       "@context": "https://schema.org",
@@ -145,19 +147,43 @@ export default async function ModulesLandingPage() {
       <section className="section-block">
         <div className="section-heading">
           <p className="eyebrow">Curriculum architecture</p>
-          <h2>Six modules, sequenced for systems thinking</h2>
+          <h2>Eleven modules, now split between the studio core and hardware-constrained extensions</h2>
           <p>
-            The path moves from NISQ realism into AI-for-quantum support workflows, application architectures, explainability, industry framing, and future systems strategy.
+            The original six-module path still moves from NISQ realism into AI-for-quantum support workflows, application architectures, explainability, industry framing, and future systems strategy. Five added modules now extend that path into hardware-constrained learning foundations, model design, programming, software systems, and finance specialization.
           </p>
         </div>
-        <div className="module-grid">
-          {course.modules.map((module, index) => (
-            <div className="stack" key={module.slug}>
-              <p className="eyebrow">Module {index + 1}</p>
-              <ModuleCard module={module} />
-            </div>
-          ))}
+        <div className="stack">
+          <div className="section-heading">
+            <p className="eyebrow">Studio core</p>
+            <h2>Original six modules</h2>
+            <p>The research-led public track remains intact as the first half of the curriculum.</p>
+          </div>
+          <div className="curriculum-card-grid">
+            {coreModules.map((module, index) => (
+              <ModuleCard key={module.slug} module={module} moduleNumber={index + 1} />
+            ))}
+          </div>
         </div>
+        {extensionModules.length ? (
+          <div className="stack">
+            <div className="section-heading">
+              <p className="eyebrow">Added modules</p>
+              <h2>Five new hardware-constrained extensions</h2>
+              <p>
+                These additional modules are grounded in the new local authored documents and push the public curriculum deeper into methodology, programming, and finance-specific deployment thinking.
+              </p>
+            </div>
+            <div className="curriculum-card-grid">
+              {extensionModules.map((module, index) => (
+                <ModuleCard
+                  key={module.slug}
+                  module={module}
+                  moduleNumber={coreModules.length + index + 1}
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="section-block">

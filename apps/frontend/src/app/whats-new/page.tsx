@@ -49,7 +49,9 @@ export default function WhatsNewPage() {
           <p className="eyebrow">Release notes</p>
           <h1>Recent releases, current status, and the next visible growth steps.</h1>
           <p className="hero-text">
-            QC+AI Studio is still a compact studio track, not yet a full fifteen-week academy. This page makes the current release state, the feature-availability boundaries, and the growth plan public.
+            QC+AI Studio now spans a broader eleven-module public curriculum, even though it is still
+            not a full fifteen-week academy. This page makes the current release state, the
+            feature-availability boundaries, and the growth plan public.
           </p>
           <div className="button-row">
             <Link className="primary-button" href="/modules">

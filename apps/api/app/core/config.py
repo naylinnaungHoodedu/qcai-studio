@@ -11,6 +11,11 @@ SOURCE_DOCUMENT_NAMES = [
     "Quantum Computing AI Research Synthesis 2026.docx",
     "Analyzing Quantum Computing and AI Paper 2025.docx",
     "Quantum Computing and Artificial Intelligence Industry Use Cases.docx",
+    "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+    "Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx",
+    "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+    "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+    "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
 ]
 
 SOURCE_VIDEO_NAMES = [

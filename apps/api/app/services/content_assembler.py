@@ -25,6 +25,11 @@ DOCUMENT_TITLE_MAP = {
     "Analyzing Quantum Computing and AI Paper 2025.docx": "Ali, Chicano, and Moraglio (Eds.), QC+AI 2025 Proceedings",
     "Quantum Computing AI Research Synthesis 2026.docx": "Ali, Chicano, and Moraglio (Eds.), QC+AI 2026 Proceedings",
     "Quantum Computing and Artificial Intelligence Industry Use Cases.docx": "Raj et al. (Eds.), Quantum Computing and Artificial Intelligence: The Industry Use Cases",
+    "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx": "Introduction to Hardware-Constrained QC+AI",
+    "Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx": "Hardware-Constrained QC+AI Models",
+    "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx": "Intermediate Quantum Programming for Hardware-Constrained QC+AI",
+    "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx": "Advanced Quantum Software Development for Hardware-Constrained QC+AI",
+    "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx": "Quantum Finance Programming and Optimization for Hardware-Constrained QC+AI",
 }
 
 ASSET_TITLE_MAP = {
@@ -503,6 +508,330 @@ MODULE_BLUEPRINTS: list[dict[str, Any]] = [
             }
         ],
     },
+    {
+        "slug": "hardware-constrained-introduction",
+        "title": "Introduction to Hardware-Constrained Learning",
+        "summary": "Introduces the hardware-first worldview for QC+AI, emphasizing noise, shot budgets, trainability, and the collapse of simulator-first intuition on real NISQ systems.",
+        "learning_goals": [
+            "Explain why hardware-constrained learning replaces simulator-first reasoning in near-term QC+AI.",
+            "Identify the main physical limits that reshape learning design on NISQ hardware.",
+            "Recognize the major failure modes that invalidate naive quantum-learning claims.",
+        ],
+        "source_highlights": [
+            "Why Hardware-Constrained Learning",
+            "Hardware Constraints That Shape Learning",
+            "Practical Design Workflow",
+            "Failure Modes & Diagnostics",
+        ],
+        "lesson": _lesson_blueprint(
+            slug="introduction-to-hardware-constrained-learning",
+            title="Why Hardware-Constrained Learning Replaces Simulator-First Thinking",
+            summary="Uses the introduction document to frame QC+AI as a hardware-bounded systems discipline in which noise, depth, shot cost, and deployment realism set the design space.",
+            key_ideas=[
+                "The promise of QC+AI depends on hardware-aware design, not on importing idealized fault-tolerant assumptions into NISQ practice.",
+                "Noise-induced barren plateaus, finite sampling, and cloud-execution costs are first-order design parameters rather than implementation details.",
+                "Credible near-term models live in a narrow Goldilocks zone between expressivity and trainability.",
+            ],
+            key_notes=[
+                "Benchmarking against strong classical baselines is mandatory because classical models still dominate most standard tasks.",
+                "Quantum error mitigation can recover signal, but it shifts cost into sampling overhead rather than eliminating physical limits.",
+            ],
+            formulas=[
+                "Use a hardware budget table covering coherence time, gate error, topology, and shot cost before choosing a learning architecture.",
+            ],
+            learner_questions=[
+                "Why does simulator-first reasoning break down on deployed NISQ hardware?",
+                "What makes noise and shot budgets architectural parameters instead of mere runtime annoyances?",
+                "How should a practitioner recognize when a QC+AI claim is outside the near-term Goldilocks regime?",
+            ],
+            section_refs=[
+                "Why Hardware-Constrained Learning",
+                "Hardware Constraints That Shape Learning",
+                "Practical Design Workflow",
+                "Failure Modes & Diagnostics",
+                "Risks & Mitigations",
+            ],
+            video_file=None,
+        ),
+        "flashcards": [
+            ("intro", "What does hardware-constrained learning mean in this course?", "It means designing QC+AI models around the real limits of the target quantum hardware rather than assuming ideal qubits and unlimited depth."),
+            ("intermediate", "Why are barren plateaus so damaging in the NISQ era?", "Because hardware noise and overly expressive circuits can flatten gradients until training becomes statistically impossible."),
+            ("advanced", "Why is error mitigation not a free escape hatch?", "Because it often trades gate noise for an exponential or near-exponential growth in measurement cost and latency."),
+        ],
+        "quiz": [
+            {
+                "type": "mcq",
+                "prompt": "Which statement best matches the introduction document?",
+                "choices": [
+                    "Hardware limits matter only after a theoretically optimal model is designed.",
+                    "Near-term QC+AI should be built from the assumption of fault-tolerant logical qubits.",
+                    "Noise, topology, and shot cost are architectural constraints that must shape the learning design from the start.",
+                    "Classical baselines are less important once entanglement is present in a model.",
+                ],
+                "answer": "Noise, topology, and shot cost are architectural constraints that must shape the learning design from the start.",
+                "difficulty": "intro",
+                "explanation": "The introduction document treats hardware realism as the condition for any defensible near-term QC+AI claim.",
+            }
+        ],
+    },
+    {
+        "slug": "hardware-constrained-models",
+        "title": "Hardware-Constrained QC+AI Models",
+        "summary": "Compares VQCs, quantum kernels, continuous-variable models, and validation criteria through the lens of trainability, concentration, reachability, and measurable acceptance gates.",
+        "learning_goals": [
+            "Compare the main near-term QC+AI model families under explicit hardware limits.",
+            "Explain how trainability barriers differ across VQCs, kernels, and CV systems.",
+            "Apply acceptance criteria and test strategy thinking before claiming model utility.",
+        ],
+        "source_highlights": [
+            "Why Hardware-Constrained Learning Matters",
+            "Constraint Landscape",
+            "Methods Deep Dive",
+            "Acceptance Criteria (Measurable)",
+            "Test Strategy",
+        ],
+        "lesson": _lesson_blueprint(
+            slug="hardware-constrained-qcai-models",
+            title="Trainability, Kernels, and Validation in QC+AI Models",
+            summary="Builds a model-selection lens for QC+AI by comparing VQCs, kernels, and CV-QNNs against real trainability limits, baseline pressure, and validation rigor.",
+            key_ideas=[
+                "VQCs fail when depth and noise drive gradients into barren plateaus, but shallow circuits can also fail through reachability deficits.",
+                "Quantum kernels become useless when concentration collapses the Gram matrix into an identity-like object.",
+                "Acceptance criteria and test strategy belong inside model design, not only in a later evaluation phase.",
+            ],
+            key_notes=[
+                "The most viable near-term pattern remains asymmetric hybridization: heavy classical preprocessing feeding a small quantum head or kernel stage.",
+                "Validation must separate genuine quantum contribution from classical surrogate effects and noisy benchmarking artifacts.",
+            ],
+            formulas=[
+                "Compare candidate models with a trade-off table covering expressivity, trainability, shot cost, and baseline competitiveness.",
+            ],
+            learner_questions=[
+                "Why can shallow circuits be too weak even when deep circuits are untrainable?",
+                "What makes quantum kernel concentration such a serious failure mode?",
+                "How do acceptance criteria change the way a practitioner chooses between model families?",
+            ],
+            section_refs=[
+                "Why Hardware-Constrained Learning Matters",
+                "Constraint Landscape",
+                "Methods Deep Dive",
+                "Acceptance Criteria",
+                "Test Strategy",
+            ],
+            video_file=None,
+        ),
+        "flashcards": [
+            ("intro", "What is the reachability deficit?", "It is the failure of a shallow quantum model to contain the true useful solution within the limited state space it can physically explore."),
+            ("intermediate", "What happens when a quantum kernel concentrates exponentially?", "The off-diagonal similarity structure disappears and the resulting kernel matrix stops carrying useful relational information."),
+            ("advanced", "Why are acceptance criteria part of model design?", "Because a model is not credible unless it can be benchmarked, stress-tested, and shown to outperform or justify itself against strong classical alternatives."),
+        ],
+        "quiz": [
+            {
+                "type": "short-answer",
+                "prompt": "Explain why model-family selection in QC+AI must be driven by both trainability limits and measurable acceptance criteria.",
+                "answer": "Different QC+AI model families fail in different ways under NISQ constraints, so selection must account for gradient behavior, kernel concentration, hardware cost, and explicit validation gates that compare performance against strong classical baselines.",
+                "difficulty": "advanced",
+            }
+        ],
+    },
+    {
+        "slug": "intermediate-quantum-programming",
+        "title": "Intermediate Quantum Programming",
+        "summary": "Covers the device-first programming patterns that make NISQ learning executable, including parameter-shift differentiation, shot allocation, measurement grouping, error-mitigation hooks, and benchmarking discipline.",
+        "learning_goals": [
+            "Use device-first programming patterns instead of simulator-only habits.",
+            "Explain how gradient estimation, shot scheduling, and measurement grouping affect practical runtime.",
+            "Build debugging and benchmarking habits that survive the jump from simulation to hardware.",
+        ],
+        "source_highlights": [
+            "Hardware Constraints to Design Implications",
+            "Intermediate Programming Patterns",
+            "Hardware-Constrained Learning Approaches",
+            "Diagnostics & Debugging Playbook",
+            "Test Strategy",
+        ],
+        "lesson": _lesson_blueprint(
+            slug="intermediate-quantum-programming-patterns",
+            title="Device-First Programming Patterns for NISQ Learning",
+            summary="Turns the intermediate programming brief into a practical programming lens for PSR-based gradients, shot-frugal scheduling, grouped measurements, and differentiable mitigation hooks.",
+            key_ideas=[
+                "Finite-difference habits from classical ML fail badly under shot noise; parameter-shift and shot-frugal methods are essential on real hardware.",
+                "Measurement grouping and adaptive shot allocation are not optimizations at the margin; they are required to control execution cost and variance.",
+                "Diagnostics and benchmarking must track transpilation overhead, mitigation cost, and real resource use alongside predictive performance.",
+            ],
+            key_notes=[
+                "Data re-uploading is a practical way to grow expressivity without assuming more qubits than the device can support.",
+                "Error mitigation must be wired into the training loop carefully so it improves usable signal without destroying the computational graph or cost budget.",
+            ],
+            formulas=[
+                "Use a resource ledger that tracks shots, transpilation depth multiplier, mitigation passes, and queue latency per experiment.",
+            ],
+            learner_questions=[
+                "Why is the parameter-shift rule more robust than finite differences on noisy hardware?",
+                "How do measurement grouping and adaptive shot allocation change real execution budgets?",
+                "What should a programmer log to distinguish model failure from hardware failure?",
+            ],
+            section_refs=[
+                "Hardware Constraints",
+                "Intermediate Programming Patterns",
+                "Hardware-Constrained Learning Approaches",
+                "Diagnostics & Debugging Playbook",
+                "Acceptance Criteria",
+                "Test Strategy",
+            ],
+            video_file=None,
+        ),
+        "flashcards": [
+            ("intro", "Why is finite-difference differentiation a poor default on NISQ hardware?", "Because shot noise makes tiny perturbation-based gradient estimates unstable and expensive."),
+            ("intermediate", "What does qubit-wise commutativity measurement grouping accomplish?", "It lets mutually commuting Pauli terms be measured together so the total number of circuit executions drops sharply."),
+            ("advanced", "Why is benchmarking more than predictive accuracy in this programming layer?", "Because fair QC+AI evaluation must also include transpilation cost, mitigation overhead, shot count, and queue latency."),
+        ],
+        "quiz": [
+            {
+                "type": "mcq",
+                "prompt": "Which pairing best reflects intermediate hardware-constrained programming practice?",
+                "choices": [
+                    "Deep all-to-all ansatz plus finite differences",
+                    "Parameter-shift gradients plus measurement grouping and adaptive shot allocation",
+                    "Unlimited shots plus no transpilation accounting",
+                    "Simulator-only metrics plus hardware deployment claims",
+                ],
+                "answer": "Parameter-shift gradients plus measurement grouping and adaptive shot allocation",
+                "difficulty": "intermediate",
+                "explanation": "The intermediate programming document treats those techniques as core execution patterns rather than optional polish.",
+            }
+        ],
+    },
+    {
+        "slug": "advanced-quantum-software",
+        "title": "Advanced Quantum Software Development",
+        "summary": "Moves from circuit programming to software architecture, compiler design, caching, pulse-level control, and reliability engineering for hardware-constrained QC+AI systems.",
+        "learning_goals": [
+            "Explain how software architecture changes when quantum hardware becomes an asynchronous, failure-prone co-processor.",
+            "Connect differentiable programming, MLIR, and pulse-level control to hardware-aware QML execution.",
+            "Recognize the reliability, reproducibility, and vendor-abstraction practices needed in advanced QC+AI software.",
+        ],
+        "source_highlights": [
+            "Problem Framing: The Imperative of Hardware-Constrained Learning",
+            "Advanced Programming and Software Development Practices",
+            "Algorithm-to-Software Mapping",
+            "Evaluation & Benchmarking",
+            "Acceptance Criteria and Test Strategy",
+        ],
+        "lesson": _lesson_blueprint(
+            slug="advanced-quantum-software-development",
+            title="Compilation, MLIR, and Pulse-Level QC+AI Software Systems",
+            summary="Reframes hardware-constrained QC+AI as a software-engineering problem that spans differentiable pipelines, compiler dialects, pulse-level control, caching, and reliability instrumentation.",
+            key_ideas=[
+                "The quantum processor behaves like a fragile asynchronous co-processor, so the software stack must minimize redundant compilation, data transfer, and idle latency.",
+                "MLIR-style abstractions and virtualization reduce vendor lock-in while making routing, scheduling, and backend selection more explicit.",
+                "Pulse-level control can create real performance gains because reducing interaction time often matters more than preserving a clean logical-gate abstraction.",
+            ],
+            key_notes=[
+                "Caching and dependency-aware invalidation matter because variational loops execute the same circuit topology repeatedly with only parameter updates.",
+                "Reliability engineering in QC+AI includes seed management, energy accounting, and calibration-aware execution, not only algorithm selection.",
+            ],
+            formulas=[
+                "Treat wall-clock latency as a sum of compilation, queue, execution, mitigation, and host-side orchestration cost rather than only gate complexity.",
+            ],
+            learner_questions=[
+                "Why does MLIR matter in advanced quantum software development?",
+                "What is gained by optimizing at the pulse level instead of staying at the logical-gate level?",
+                "How do caching and reproducibility policies affect real hybrid-system reliability?",
+            ],
+            section_refs=[
+                "Problem Framing",
+                "Advanced Programming and Software Development Practices",
+                "Algorithm-to-Software Mapping",
+                "Evaluation & Benchmarking",
+                "Acceptance Criteria",
+                "Practical Next Steps",
+            ],
+            video_file=None,
+        ),
+        "flashcards": [
+            ("intro", "What does differentiable programming mean in this QC+AI context?", "It means treating the quantum routine as a differentiable layer inside a larger classical computation graph."),
+            ("intermediate", "Why are MLIR dialects useful for QC+AI software?", "They help bridge high-level model code and low-level hardware-aware compilation while preserving optimization opportunities."),
+            ("advanced", "Why is pulse-level control a major advanced-software topic?", "Because tuning native pulses can reduce latency and decoherence exposure more effectively than relying only on abstract gate decomposition."),
+        ],
+        "quiz": [
+            {
+                "type": "short-answer",
+                "prompt": "Describe why advanced QC+AI software engineering must treat compilation, caching, and pulse-level execution as first-class design concerns.",
+                "answer": "Real hybrid QC+AI systems repeatedly execute fragile circuits through queueing, transpilation, and calibration-sensitive hardware, so performance and reliability depend as much on software orchestration, reuse, and pulse-level optimization as on the model architecture itself.",
+                "difficulty": "advanced",
+            }
+        ],
+    },
+    {
+        "slug": "quantum-finance-programming",
+        "title": "Quantum Finance Programming and Optimization",
+        "summary": "Applies hardware-constrained QC+AI to portfolio optimization, option pricing, anomaly detection, and financial model-risk governance under strict NISQ limits.",
+        "learning_goals": [
+            "Map major quantum-finance workloads onto realistic NISQ-compatible methods.",
+            "Explain why hybrid optimization and kernel methods dominate near-term finance use cases.",
+            "Evaluate quantum-finance claims through benchmark rigor and model-risk management.",
+        ],
+        "source_highlights": [
+            "Problem Framing: Quantum Finance + Hardware-Constrained Learning",
+            "Core Methodological Toolbox",
+            "Quantum Finance Targets Mapped to QML Methods",
+            "Programming & Implementation Blueprint",
+            "Quality Gates: Risks, Acceptance, and Testing",
+        ],
+        "lesson": _lesson_blueprint(
+            slug="quantum-finance-programming-and-optimization",
+            title="Risk-Aware Quantum Finance Under Hardware Constraints",
+            summary="Uses the quantum-finance document to position portfolio, pricing, anomaly, and credit workflows as hardware-bounded hybrid systems governed by benchmark realism and model-risk controls.",
+            key_ideas=[
+                "Near-term finance utility comes from hardware-native hybrid workflows, not from fault-tolerant speedup narratives.",
+                "Portfolio optimization, option pricing, anomaly detection, and credit tasks each map differently to kernels, VQCs, CV models, or hybrid optimizers.",
+                "Production finance requires model-risk management, baseline comparison, and resource accounting at least as much as it requires algorithmic novelty.",
+            ],
+            key_notes=[
+                "Compilation overhead can erase paper-level scaling claims when sparse topologies force large SWAP overheads.",
+                "Financial deployment requires explicit acceptance gates because an expensive quantum model that merely matches a classical baseline is operationally unacceptable.",
+            ],
+            formulas=[
+                "Quadratic Unconstrained Binary Optimization objective: x^T Q x.",
+                "Compare finance workflows with a matrix covering objective class, encoding choice, constraint handling, and classical baseline.",
+            ],
+            learner_questions=[
+                "Why are hybrid optimization loops so dominant in near-term quantum finance?",
+                "How do portfolio optimization and option pricing differ in their hardware fit?",
+                "What does model-risk management add to a quantum-finance deployment decision?",
+            ],
+            section_refs=[
+                "Problem Framing",
+                "Hardware Constraints That Dominate Outcomes",
+                "Core Methodological Toolbox",
+                "Quantum Finance Targets Mapped to QML Methods",
+                "Programming & Implementation Blueprint",
+                "Acceptance Criteria",
+            ],
+            video_file=None,
+        ),
+        "flashcards": [
+            ("intro", "Why is quantum finance framed as hardware-first in this document?", "Because realistic near-term value depends on noise-aware, shot-frugal, topology-aware hybrid workflows rather than on fault-tolerant assumptions."),
+            ("intermediate", "What makes quantum kernels attractive in some finance settings?", "They can express high-dimensional similarity structure while keeping the classical optimizer in control of the actual decision boundary."),
+            ("advanced", "Why is model-risk management central to quantum finance adoption?", "Because hardware drift, sampling variance, opacity, and cost can all create deployment failures even if a prototype looks promising in simulation."),
+        ],
+        "quiz": [
+            {
+                "type": "mcq",
+                "prompt": "Which statement best matches the quantum-finance document?",
+                "choices": [
+                    "Near-term finance advantage should be evaluated mainly through theoretical asymptotic speedup claims.",
+                    "The quantum processor usually acts as a narrow co-processor inside a larger classical optimization and risk workflow.",
+                    "Compilation overhead is largely irrelevant once a quantum model is expressive enough.",
+                    "Model-risk management is less important in finance than in healthcare because finance tolerates more noise.",
+                ],
+                "answer": "The quantum processor usually acts as a narrow co-processor inside a larger classical optimization and risk workflow.",
+                "difficulty": "intermediate",
+                "explanation": "The finance document repeatedly frames the classical optimizer and risk workflow as the dominant system, with the quantum stage acting as a bounded specialist component.",
+            }
+        ],
+    },
 ]
 
 
@@ -569,7 +898,7 @@ class CourseStore:
         self.overview = CourseOverview(
             id="qcai-hardware-aware-course",
             title="Quantum Computing and AI: Hardware-Constrained Hybrid Learning",
-            summary="An interactive course grounded in the local QC+AI research syntheses and industry-use-case analysis, framed through NISQ realism, practical applications, and systems constraints.",
+            summary="An expanded interactive course grounded in the local QC+AI proceedings, hardware-constrained learning briefs, finance-focused methodology, and industry-use-case analysis, framed through NISQ realism, practical programming, and systems constraints.",
             modules=modules,
             source_assets=assets,
         )

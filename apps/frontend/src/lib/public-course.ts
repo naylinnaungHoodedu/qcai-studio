@@ -1,5 +1,5 @@
 export const COURSE_SCOPE_NOTE =
-  "QC+AI Studio is currently a focused seven-lesson studio track. It is designed as an intensive starter-to-project path for advanced learners, not yet as a full fifteen-week semester.";
+  "QC+AI Studio now spans an eleven-module public curriculum with twelve lesson entry points. It remains a hardware-constrained studio path rather than a finished fifteen-week academy, but it now extends well beyond the original seven-lesson starter track.";
 
 export const TARGET_AUDIENCE = [
   "Graduate students, engineers, and technical professionals exploring the QC+AI boundary.",
