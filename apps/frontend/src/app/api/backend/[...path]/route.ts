@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { stringifyCookie } from "next/dist/server/web/spec-extension/cookies";
 
 import { getAuthorizationHeaderFromRequest } from "@/lib/auth";
 import {
@@ -87,12 +88,16 @@ async function proxyRequest(
   responseHeaders.delete("content-encoding");
   responseHeaders.delete("transfer-encoding");
 
-  const response = new NextResponse(upstream.body, {
+  const response = new Response(upstream.body, {
     status: upstream.status,
     headers: responseHeaders,
   });
   if (session) {
-    setGuestSessionCookies(response, request, session);
+    const cookieResponse = new NextResponse(null);
+    setGuestSessionCookies(cookieResponse, request, session);
+    for (const cookie of cookieResponse.cookies.getAll()) {
+      response.headers.append("set-cookie", stringifyCookie(cookie));
+    }
   }
   return response;
 }

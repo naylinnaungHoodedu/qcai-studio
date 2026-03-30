@@ -8,6 +8,7 @@ This repository now contains a working MVP implementation of the interactive QC+
 - Product owner: `Nay Linn Aung (na27@hood.edu)`
 - License: `MIT` for repository code unless a file states otherwise
 - Submission docs:
+  - `04_Completed_Activities_Log.md`
   - `SUBMISSION_ATTRIBUTION.md`
   - `PROJECT_SUMMARY.md`
 

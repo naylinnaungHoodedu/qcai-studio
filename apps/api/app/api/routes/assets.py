@@ -9,6 +9,7 @@ from app.core.auth import AuthUser, get_current_user
 from app.core.config import Settings, get_settings
 
 router = APIRouter(prefix="/source-assets", tags=["source-assets"])
+VIDEO_OPEN_ENDED_RANGE_CHUNK_SIZE = 8 * 1024 * 1024
 
 
 def _require_asset_access(
@@ -92,6 +93,16 @@ def _parse_range(range_header: str, file_size: int) -> tuple[int, int]:
     return start, min(end, file_size - 1)
 
 
+def _is_open_ended_byte_range(range_header: str) -> bool:
+    if not range_header.startswith("bytes="):
+        return False
+    raw_range = range_header.removeprefix("bytes=").strip()
+    if "," in raw_range:
+        return False
+    start_text, _, end_text = raw_range.partition("-")
+    return bool(start_text) and not end_text
+
+
 def _serve_source_asset(
     path: Path,
     request: Request,
@@ -103,6 +114,8 @@ def _serve_source_asset(
 
     if range_header:
         start, end = _parse_range(range_header, file_size)
+        if media_type.startswith("video/") and _is_open_ended_byte_range(range_header):
+            end = min(start + VIDEO_OPEN_ENDED_RANGE_CHUNK_SIZE - 1, file_size - 1)
         content_length = end - start + 1
         headers.update(
             {
@@ -121,6 +134,15 @@ def _serve_source_asset(
 
     if request.method == "HEAD":
         return Response(status_code=200, media_type=media_type, headers=headers)
+
+    if media_type.startswith("video/"):
+        headers = {"Accept-Ranges": "bytes"}
+        return StreamingResponse(
+            _iter_file_range(path, 0, file_size - 1),
+            status_code=200,
+            media_type=media_type,
+            headers=headers,
+        )
 
     return FileResponse(path, media_type=media_type, headers=headers)
 

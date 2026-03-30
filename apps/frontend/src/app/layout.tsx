@@ -1,12 +1,19 @@
 import type { Metadata } from "next";
 import { ReactNode } from "react";
 import { headers } from "next/headers";
+import { Space_Grotesk } from "next/font/google";
 
 import { AppShell } from "@/components/app-shell";
 import { Providers } from "@/components/providers";
 import { SITE_URL } from "@/lib/site";
 
 import "./globals.css";
+
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-ui",
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -49,7 +56,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <link href="https://api.qantumlearn.academy" rel="preconnect" crossOrigin="" />
         <link href="https://api.qantumlearn.academy" rel="dns-prefetch" />
       </head>
-      <body nonce={nonce}>
+      <body className={spaceGrotesk.variable} nonce={nonce}>
         <Providers>
           <AppShell>{children}</AppShell>
         </Providers>

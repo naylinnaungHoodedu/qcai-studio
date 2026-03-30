@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-03-29 02:32:24 -04:00`
+Last updated on: `2026-03-30 02:24:27 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp`
 
 ## 1. Scope of Work Completed
@@ -2357,6 +2357,229 @@ Recorded publication result:
 
 - GitHub repository update: completed successfully
 - separate GitHub Projects board mutation: still blocked by token scope rather than repository state
+
+## 119. Rollback, Production-State Verification, and Streaming Path Recheck Completed
+
+After the earlier video-and-simulations publication batch, a new remediation and verification cycle was completed to reconcile local code state, the GitHub repository state, and the live production deployment.
+
+Completed rollback and verification work:
+
+- identified the relevant March 29, 2026 post-10:00 AM commits on GitHub and isolated the rollback target:
+  - `db3b4e4`
+  - timestamp: `2026-03-29 11:00:24 -04:00`
+- safely rolled `main` back to the `db3b4e4` source state by reverting the later video-streaming commit rather than rewriting history
+- verified source equivalence between the rollback target and the local rollback result
+- redeployed the rollback-equivalent source state to production through Cloud Run
+- rechecked the live frontend and API after rollback and confirmed:
+  - homepage and public course routes returned `200`
+  - API health returned `200`
+  - lesson routes issued guest cookies
+  - same-origin source-asset `HEAD` and ranged requests succeeded
+
+Completed defect re-identification after rollback:
+
+- confirmed that the rollback-equivalent production state still had a narrower remaining fault:
+  - full non-range MP4 `GET` requests could fail while `HEAD` and ranged `GET` requests succeeded
+- isolated the backend file-serving path as the next defect surface:
+  - `apps/api/app/api/routes/assets.py`
+- confirmed that lesson playback transport was still relying on the correct same-origin proxy path rather than the old redirect behavior
+
+## 120. Full Video Delivery Remediation Completed
+
+The next confirmed media defect was then remediated directly in the current folder.
+
+Completed backend video-delivery work:
+
+- changed the full MP4 `GET` delivery path away from the previous `FileResponse` behavior in:
+  - `apps/api/app/api/routes/assets.py`
+- moved full video delivery onto streamed responses so large full-file transfers would not fail under the production runtime path
+- further hardened open-ended video range handling so requests such as `Range: bytes=0-` are chunked into bounded partial-content responses rather than attempting effectively full-file range transfers
+- preserved authenticated access, `HEAD`, `Range`, `Content-Range`, `Accept-Ranges`, and normal byte-seeking behavior
+
+Completed backend regression coverage:
+
+- added explicit regression tests in:
+  - `apps/api/tests/test_api.py`
+- the added coverage now checks:
+  - full authenticated MP4 `GET`
+  - open-ended range requests for MP4 assets
+  - safe behavior for ranged streaming of video assets after the transport fix
+
+Completed production verification work after the video-delivery fix:
+
+- confirmed all three production video asset ids succeeded on:
+  - `HEAD`
+  - ranged `GET`
+  - full `GET`
+- confirmed the previous production `500` behavior no longer reproduced on the fixed media path
+- confirmed the current transport path used for browser playback stayed same-origin and authenticated
+
+## 121. Lesson Video UX Cleanup Completed
+
+After transport-level video playback was restored, the lesson video experience was refined so the UI no longer looked broken when playback was healthy.
+
+Completed frontend video UX work:
+
+- updated the lesson video panel in:
+  - `apps/frontend/src/components/video-panel.tsx`
+- changed the stream-status controls so:
+  - `Retry stream`
+  - `Open direct asset`
+  only appear during `preparing` or `error` states
+- added a simplified `Stream ready` badge when playback is healthy
+- preserved the recovery controls for actual retry/fallback situations
+
+Related styling and action cleanup completed:
+
+- updated the primary module CTA treatment in:
+  - `apps/frontend/src/components/module-card.tsx`
+- changed the `Open module` action to use the stronger green primary-button styling with white text
+
+## 122. Dark Vivid Frontend Redesign Completed
+
+The public frontend was then redesigned to a dark vivid visual system aligned more closely with the desired reference aesthetic while still preserving the product’s structure and content model.
+
+Completed design-system and layout work:
+
+- redesigned the global public shell in:
+  - `apps/frontend/src/app/layout.tsx`
+  - `apps/frontend/src/app/globals.css`
+- moved the site from the earlier light editorial presentation to a darker glass-and-grid visual language with:
+  - deep navy canvas
+  - brighter cyan and violet accents
+  - pill navigation
+  - stronger contrast for cards, hero blocks, and metrics
+  - consistent footer, lesson, module, and simulation styling
+- preserved mobile-responsive behavior and the existing route architecture while changing the visual theme broadly across the frontend
+
+Completed verification and deployment work for the redesign:
+
+- revalidated the frontend locally with lint, integration tests, and production build checks
+- redeployed the frontend to production through Cloud Run
+- rechecked live public pages and confirmed the dark vivid theme was serving from the public domain
+
+## 123. Sixteen Simulation Studios Split into Dedicated Routes Completed
+
+The original simulations surface was then upgraded from a single long public page into a route-based simulation library.
+
+Completed route and catalog work:
+
+- split the sixteen verified curriculum simulations into dedicated studio routes
+- added the route-based browser and studio implementation in:
+  - `apps/frontend/src/app/simulations/page.tsx`
+  - `apps/frontend/src/app/simulations/[slug]/page.tsx`
+  - `apps/frontend/src/components/simulation-browser.tsx`
+  - `apps/frontend/src/components/simulation-studio.tsx`
+  - `apps/frontend/src/lib/simulations.ts`
+- updated route discovery in:
+  - `apps/frontend/src/app/sitemap.ts`
+  - `apps/frontend/src/lib/site.ts`
+  - `apps/frontend/tests/public-discovery.integration.test.ts`
+
+Completed product behavior changes:
+
+- `/simulations` now behaves as a real catalog instead of a single continuous document
+- each of the sixteen curriculum simulations now opens on its own dedicated route
+- the catalog stays grouped by the six curriculum modules rather than flattening the teaching structure
+
+Completed deployment and live verification work:
+
+- verified the separated simulations build locally
+- deployed the simulations split to production
+- confirmed live responses for:
+  - `/simulations`
+  - `/simulations/the-nisq-fidelity-cliff`
+- confirmed sitemap coverage for the separated simulation routes
+
+## 124. Additional Academy-Style Simulation Subjects and Labs Completed
+
+After the sixteen-lab split, a second simulation layer was implemented in the current folder to match the subject-based browsing pattern shown in the reference imagery.
+
+Completed data-model and route work:
+
+- added a new academy-style simulation catalog in:
+  - `apps/frontend/src/lib/academy-simulations.ts`
+- introduced five subject tracks:
+  - `Quantum Mechanics & Information`
+  - `Quantum Algorithms`
+  - `Quantum Programming`
+  - `Advanced Quantum Software`
+  - `Quantum Finance & Optimization`
+- implemented eighteen additional dedicated lab routes under:
+  - `/simulations/subjects/[subjectSlug]`
+  - `/simulations/subjects/[subjectSlug]/[simulationSlug]`
+- added subject and simulation route pages in:
+  - `apps/frontend/src/app/simulations/subjects/[subjectSlug]/page.tsx`
+  - `apps/frontend/src/app/simulations/subjects/[subjectSlug]/[simulationSlug]/page.tsx`
+
+Completed UI and interaction work:
+
+- added academy-style subject browsing and launch-card surfaces in:
+  - `apps/frontend/src/components/academy-simulation-browser.tsx`
+  - `apps/frontend/src/components/academy-simulation-studio.tsx`
+- added eighteen browser-playable toy labs in:
+  - `apps/frontend/src/components/academy-simulation-labs.tsx`
+- integrated the academy subject catalog into:
+  - `apps/frontend/src/app/simulations/page.tsx`
+- extended shared styling in:
+  - `apps/frontend/src/app/globals.css`
+- expanded sitemap and discovery coverage for the new subject/simulation routes in:
+  - `apps/frontend/src/app/sitemap.ts`
+  - `apps/frontend/tests/public-discovery.integration.test.ts`
+
+Completed functional scope of the new academy-style lab set:
+
+- `6` quantum mechanics and information labs
+- `5` quantum algorithm labs
+- `3` quantum programming labs
+- `2` advanced quantum software labs
+- `2` quantum finance and optimization labs
+
+## 125. Final Local Verification Completed for the Current Folder State
+
+Before publication, the current folder state was rechecked as a real implementation batch rather than as a documentation-only update.
+
+Completed local verification work:
+
+- ran `pytest -q` in `apps/api`
+- result: `54 passed`
+- ran `npm run lint` in `apps/frontend`
+- result: passed
+- ran `npm run test:integration` in `apps/frontend`
+- result: `29 passed`
+- ran `npm run build` in `apps/frontend`
+- result: passed
+
+Completed current-state conclusions:
+
+- the backend video-streaming changes are verified in the current folder
+- the frontend dark-theme redesign is verified in the current folder
+- the sixteen dedicated simulation studios are verified in the current folder
+- the new five-subject, eighteen-lab academy simulation layer is verified in the current folder
+- the academy subject routes and academy simulation routes build and resolve correctly in the current folder
+
+## 126. Current GitHub Publication Boundary Confirmed
+
+Immediately before publication, the current GitHub-access boundary was rechecked.
+
+Confirmed GitHub access state:
+
+- Git remote:
+  - `https://github.com/naylinnaungHoodedu/qcai-studio.git`
+- authenticated GitHub account:
+  - `naylinnaungHoodedu`
+- available token scopes:
+  - `repo`
+  - `workflow`
+  - `gist`
+  - `read:org`
+
+Confirmed publication boundary:
+
+- GitHub repository push/update: available
+- separate GitHub Projects board mutation: still not available from the current token because `read:project` / project scopes are not present
+
+This means the current update batch can be published to the GitHub repository, while any separate GitHub Projects board update remains blocked by token scope rather than repository state.
 
 ## 99. Deep Verification Completed for Deployment, Retrieval, Auth, Syllabus, and Transcript Findings
 

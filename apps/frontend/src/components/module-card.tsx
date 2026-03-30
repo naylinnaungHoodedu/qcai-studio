@@ -47,7 +47,9 @@ export function ModuleCard({
         <span>
           {module.lesson_slugs.length} {module.lesson_slugs.length === 1 ? "lesson" : "lessons"}
         </span>
-        <Link href={`/modules/${module.slug}`}>Open module</Link>
+        <Link className="primary-button" href={`/modules/${module.slug}`}>
+          Open module
+        </Link>
       </div>
     </article>
   );

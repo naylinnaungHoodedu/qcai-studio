@@ -28,6 +28,7 @@ export function VideoPanel({
   const [refreshToken, setRefreshToken] = useState(0);
   const resolvedVideoUrl =
     videoAsset?.download_url != null ? `${getClientApiBaseUrl()}${videoAsset.download_url}` : null;
+  const showStreamRecoveryControls = streamState !== "ready";
 
   useEffect(() => {
     if (!videoRef.current || chapters.length === 0) {
@@ -130,22 +131,28 @@ export function VideoPanel({
       </div>
       <div className="video-panel-grid">
         <div className="stack">
-          <div className={`video-status-banner ${streamState}`}>
-            <p className="eyebrow">Stream status</p>
-            <p>{streamMessage}</p>
-            <div className="button-row">
-              <button
-                className="secondary-button"
-                onClick={() => setRefreshToken((current) => current + 1)}
-                type="button"
-              >
-                Retry stream
-              </button>
-              <a className="secondary-button" href={resolvedVideoUrl} rel="noreferrer" target="_blank">
-                Open direct asset
-              </a>
+          {showStreamRecoveryControls ? (
+            <div className={`video-status-banner ${streamState}`}>
+              <p className="eyebrow">Stream status</p>
+              <p>{streamMessage}</p>
+              <div className="button-row">
+                <button
+                  className="secondary-button"
+                  onClick={() => setRefreshToken((current) => current + 1)}
+                  type="button"
+                >
+                  Retry stream
+                </button>
+                <a className="secondary-button" href={resolvedVideoUrl} rel="noreferrer" target="_blank">
+                  Open direct asset
+                </a>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="video-ready-indicator" role="status" aria-live="polite">
+              <span className="status-pill completed">Stream ready</span>
+            </div>
+          )}
           <video
             aria-label={`Video lesson: ${videoAsset.title}`}
             className="lesson-video"

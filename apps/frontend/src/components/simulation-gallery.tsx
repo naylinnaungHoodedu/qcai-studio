@@ -1070,6 +1070,10 @@ function renderLab(conceptId: string) {
   }
 }
 
+export function SimulationLabRenderer({ conceptId }: { conceptId: string }) {
+  return renderLab(conceptId);
+}
+
 function SimulationConceptCard({
   concept,
   isOpen,

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
+import { GET as backendProxyGet } from "../src/app/api/backend/[...path]/route";
 import { GET as authCallbackRoute } from "../src/app/auth/callback/route";
 import { GET as authLoginRoute } from "../src/app/auth/login/route";
 import { GET as authLogoutRoute } from "../src/app/auth/logout/route";
@@ -186,4 +187,43 @@ test("proxy preserves an existing guest session without reissuing cookies", asyn
   assert.equal(response.cookies.get("qcai_guest_id"), undefined);
   assert.equal(response.cookies.get("qcai_guest_csrf"), undefined);
   assert.ok(response.headers.get("x-nonce"));
+});
+
+test("asset proxy full GET uses a plain streamed response when guest cookies already exist", async () => {
+  const originalFetch = global.fetch;
+  const payload = new TextEncoder().encode("video-stream-payload");
+  global.fetch = async () =>
+    new Response(payload, {
+      status: 200,
+      headers: {
+        "Content-Type": "video/mp4",
+        "Content-Length": String(payload.byteLength),
+        "Accept-Ranges": "bytes",
+      },
+    });
+
+  try {
+    const response = await backendProxyGet(
+      new NextRequest("https://qantumlearn.academy/api/backend/source-assets/by-id/industry-use-cases", {
+        headers: {
+          cookie: cookieHeader({
+            qcai_guest_id: "guest-123e4567-e89b-12d3-a456-426614174000",
+            qcai_guest_csrf: "3b1f2f40-7132-4778-8df5-44c1c5cf6bb0",
+          }),
+        },
+      }),
+      {
+        params: Promise.resolve({ path: ["source-assets", "by-id", "industry-use-cases"] }),
+      },
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "video/mp4");
+    assert.equal(response.headers.get("content-length"), String(payload.byteLength));
+    assert.equal(response.headers.get("accept-ranges"), "bytes");
+    assert.equal(response.headers.get("set-cookie"), null);
+    assert.equal(response instanceof NextResponse, false);
+  } finally {
+    global.fetch = originalFetch;
+  }
 });

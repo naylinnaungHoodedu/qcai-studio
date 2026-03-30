@@ -1,4 +1,5 @@
 export type SimulationTier = "Tier 1 - Conceptual" | "Tier 2 - Behavioral" | "Tier 3 - Physics-Accurate";
+export type SimulationDifficulty = "Beginner" | "Intermediate" | "Advanced";
 
 export type SimulationConcept = {
   id: string;
@@ -17,6 +18,22 @@ export type SimulationModule = {
   slug: string;
   summary: string;
   concepts: SimulationConcept[];
+};
+
+export type SimulationRecord = SimulationConcept & {
+  slug: string;
+  href: string;
+  difficulty: SimulationDifficulty;
+  moduleNumber: number;
+  moduleSlug: string;
+  moduleTitle: string;
+  moduleSummary: string;
+};
+
+export type SimulationModuleEntry = Omit<SimulationModule, "concepts"> & {
+  href: string;
+  simulationCount: number;
+  concepts: SimulationRecord[];
 };
 
 export type SimulationPrinciple = {
@@ -280,6 +297,64 @@ export const SIMULATION_MODULES: SimulationModule[] = [
     ],
   },
 ];
+
+function slugifySimulationTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function difficultyFromTier(tier: SimulationTier): SimulationDifficulty {
+  switch (tier) {
+    case "Tier 1 - Conceptual":
+      return "Beginner";
+    case "Tier 2 - Behavioral":
+      return "Intermediate";
+    case "Tier 3 - Physics-Accurate":
+      return "Advanced";
+    default:
+      return "Intermediate";
+  }
+}
+
+export const SIMULATION_MODULE_ENTRIES: SimulationModuleEntry[] = SIMULATION_MODULES.map((module) => {
+  const concepts = module.concepts.map<SimulationRecord>((concept) => {
+    const slug = slugifySimulationTitle(concept.title);
+    return {
+      ...concept,
+      slug,
+      href: `/simulations/${slug}`,
+      difficulty: difficultyFromTier(concept.tier),
+      moduleNumber: module.moduleNumber,
+      moduleSlug: module.slug,
+      moduleTitle: module.title,
+      moduleSummary: module.summary,
+    };
+  });
+
+  return {
+    ...module,
+    href: `/simulations#module-${module.slug}`,
+    simulationCount: concepts.length,
+    concepts,
+  };
+});
+
+export const SIMULATION_RECORDS = SIMULATION_MODULE_ENTRIES.flatMap((module) => module.concepts);
+export const SIMULATION_SLUGS = SIMULATION_RECORDS.map((simulation) => simulation.slug);
+export const SIMULATION_ROUTE_LASTMOD: Record<string, string> = Object.fromEntries(
+  SIMULATION_RECORDS.map((simulation) => [simulation.slug, "2026-03-30T00:00:00Z"]),
+);
+
+export function getSimulationBySlug(slug: string): SimulationRecord | null {
+  return SIMULATION_RECORDS.find((simulation) => simulation.slug === slug) ?? null;
+}
+
+export function getSimulationModuleEntry(slug: string): SimulationModuleEntry | null {
+  return SIMULATION_MODULE_ENTRIES.find((module) => module.slug === slug) ?? null;
+}
 
 export const SIMULATION_PRINCIPLES: SimulationPrinciple[] = [
   {

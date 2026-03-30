@@ -1,6 +1,12 @@
 import type { MetadataRoute } from "next";
 
 import {
+  ACADEMY_SIMULATION_RECORDS,
+  ACADEMY_SIMULATION_ROUTE_LASTMOD,
+  ACADEMY_SUBJECT_RECORDS,
+  ACADEMY_SUBJECT_ROUTE_LASTMOD,
+} from "@/lib/academy-simulations";
+import {
   LESSON_ROUTE_LASTMOD,
   LESSON_SLUGS,
   MODULE_ROUTE_LASTMOD,
@@ -8,6 +14,7 @@ import {
   SITE_URL,
   STATIC_ROUTE_LASTMOD,
 } from "@/lib/site";
+import { SIMULATION_ROUTE_LASTMOD, SIMULATION_SLUGS } from "@/lib/simulations";
 
 const STATIC_ROUTES: Array<{ path: string; priority: number }> = [
   { path: "/", priority: 1 },
@@ -34,6 +41,31 @@ export default function sitemap(): MetadataRoute.Sitemap {
     changeFrequency: "weekly",
     priority: 0.7,
   }));
+  const simulationEntries: MetadataRoute.Sitemap = SIMULATION_SLUGS.map((slug) => ({
+    url: `${SITE_URL}/simulations/${slug}`,
+    lastModified: new Date(SIMULATION_ROUTE_LASTMOD[slug] ?? "2026-03-30T00:00:00Z"),
+    changeFrequency: "weekly",
+    priority: 0.75,
+  }));
+  const academySubjectEntries: MetadataRoute.Sitemap = ACADEMY_SUBJECT_RECORDS.map((subject) => ({
+    url: `${SITE_URL}${subject.href}`,
+    lastModified: new Date(
+      ACADEMY_SUBJECT_ROUTE_LASTMOD[subject.slug] ?? "2026-03-30T00:00:00Z",
+    ),
+    changeFrequency: "weekly",
+    priority: 0.78,
+  }));
+  const academySimulationEntries: MetadataRoute.Sitemap = ACADEMY_SIMULATION_RECORDS.map(
+    (simulation) => ({
+      url: `${SITE_URL}${simulation.href}`,
+      lastModified: new Date(
+        ACADEMY_SIMULATION_ROUTE_LASTMOD[`${simulation.subjectSlug}/${simulation.slug}`] ??
+          "2026-03-30T00:00:00Z",
+      ),
+      changeFrequency: "weekly",
+      priority: 0.74,
+    }),
+  );
   const lessonEntries: MetadataRoute.Sitemap = LESSON_SLUGS.map((slug) => ({
     url: `${SITE_URL}/lessons/${slug}`,
     lastModified: new Date(LESSON_ROUTE_LASTMOD[slug] ?? "2026-03-27T00:00:00Z"),
@@ -52,5 +84,14 @@ export default function sitemap(): MetadataRoute.Sitemap {
     changeFrequency: "weekly",
     priority: 0.55,
   }));
-  return [...staticEntries, ...moduleEntries, ...lessonEntries, ...flashcardEntries, ...quizEntries];
+  return [
+    ...staticEntries,
+    ...moduleEntries,
+    ...simulationEntries,
+    ...academySubjectEntries,
+    ...academySimulationEntries,
+    ...lessonEntries,
+    ...flashcardEntries,
+    ...quizEntries,
+  ];
 }

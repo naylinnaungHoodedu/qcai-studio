@@ -1,9 +1,12 @@
 from pathlib import Path
 from uuid import uuid4
 
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 from sqlalchemy import func, select
 
+from app.api.routes import assets
 from app.core.db import SessionLocal
 from app.db_models import ArenaProfile
 from app.core.config import Settings
@@ -36,6 +39,30 @@ DISPLAY_VIDEO_TITLES = {
     "Quantum Computing and Artificial Intelligence 2025",
     "Quantum Computing and Artificial Intelligence 2026",
 }
+
+
+def _build_asset_request(
+    method: str = "GET",
+    headers: dict[str, str] | None = None,
+) -> Request:
+    request_headers = [
+        (key.lower().encode("latin-1"), value.encode("latin-1"))
+        for key, value in (headers or {}).items()
+    ]
+    return Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": method,
+            "scheme": "http",
+            "path": "/source-assets/by-id/quantum-computing-and-artificial-intelligence-2025",
+            "raw_path": b"/source-assets/by-id/quantum-computing-and-artificial-intelligence-2025",
+            "query_string": b"",
+            "headers": request_headers,
+            "client": ("testclient", 50000),
+            "server": ("testserver", 80),
+        }
+    )
 
 
 def test_healthcheck():
@@ -214,6 +241,58 @@ def test_video_source_asset_supports_byte_ranges():
     assert len(response.content) == 256
 
 
+def test_full_video_get_uses_capped_open_ended_ranges(monkeypatch, tmp_path: Path):
+    payload = b"\x00\x00\x00\x18ftypmp42" + (b"chunk-range" * (assets.VIDEO_OPEN_ENDED_RANGE_CHUNK_SIZE // 11 + 1))
+    payload = payload[: assets.VIDEO_OPEN_ENDED_RANGE_CHUNK_SIZE + 1_024]
+    (tmp_path / "Quantum Computing and Artificial Intelligence 2025.mp4").write_bytes(payload)
+    settings = Settings(source_assets_root=str(tmp_path))
+    monkeypatch.setattr(assets, "get_settings", lambda: settings)
+
+    response = client.get(
+        "/source-assets/by-id/quantum-computing-and-artificial-intelligence-2025",
+        headers={**DEMO_HEADERS, "Range": "bytes=0-"},
+    )
+
+    capped_end = assets.VIDEO_OPEN_ENDED_RANGE_CHUNK_SIZE - 1
+    assert response.status_code == 206
+    assert response.headers["accept-ranges"] == "bytes"
+    assert response.headers["content-range"] == f"bytes 0-{capped_end}/{len(payload)}"
+    assert len(response.content) == assets.VIDEO_OPEN_ENDED_RANGE_CHUNK_SIZE
+
+
+def test_full_video_get_uses_streaming_response(tmp_path: Path):
+    payload = b"\x00\x00\x00\x18ftypmp42" + (b"video-payload" * 32)
+    video_path = tmp_path / "Quantum Computing and Artificial Intelligence 2025.mp4"
+    video_path.write_bytes(payload)
+
+    response = assets._serve_source_asset(video_path, _build_asset_request())
+
+    assert isinstance(response, StreamingResponse)
+    assert not isinstance(response, FileResponse)
+    assert response.status_code == 200
+    assert response.media_type == "video/mp4"
+    assert response.headers["accept-ranges"] == "bytes"
+    assert "content-length" not in response.headers
+
+
+def test_video_source_asset_supports_full_gets(monkeypatch, tmp_path: Path):
+    payload = b"\x00\x00\x00\x18ftypmp42" + (b"stream-me" * 64)
+    (tmp_path / "Quantum Computing and Artificial Intelligence 2025.mp4").write_bytes(payload)
+    settings = Settings(source_assets_root=str(tmp_path))
+    monkeypatch.setattr(assets, "get_settings", lambda: settings)
+
+    response = client.get(
+        "/source-assets/by-id/quantum-computing-and-artificial-intelligence-2025",
+        headers=DEMO_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["accept-ranges"] == "bytes"
+    assert response.headers["content-type"].startswith("video/mp4")
+    assert "content-length" not in response.headers
+    assert response.content == payload
+
+
 def test_course_overview_excludes_removed_prerequisite_module():
     response = client.get("/content/course")
     assert response.status_code == 200
@@ -274,6 +353,27 @@ def test_industry_video_asset_supports_byte_ranges():
     assert response.headers["accept-ranges"] == "bytes"
     assert response.headers["content-range"].startswith("bytes 0-255/")
     assert len(response.content) == 256
+
+
+def test_industry_video_asset_caps_open_ended_ranges(monkeypatch, tmp_path: Path):
+    payload = b"\x00\x00\x00\x18ftypmp42" + (
+        b"industry-range" * (assets.VIDEO_OPEN_ENDED_RANGE_CHUNK_SIZE // 14 + 1)
+    )
+    payload = payload[: assets.VIDEO_OPEN_ENDED_RANGE_CHUNK_SIZE + 2_048]
+    (tmp_path / "Industry Use Cases.mp4").write_bytes(payload)
+    settings = Settings(source_assets_root=str(tmp_path))
+    monkeypatch.setattr(assets, "get_settings", lambda: settings)
+
+    response = client.get(
+        "/source-assets/by-id/industry-use-cases",
+        headers={**DEMO_HEADERS, "Range": "bytes=0-"},
+    )
+
+    capped_end = assets.VIDEO_OPEN_ENDED_RANGE_CHUNK_SIZE - 1
+    assert response.status_code == 206
+    assert response.headers["accept-ranges"] == "bytes"
+    assert response.headers["content-range"] == f"bytes 0-{capped_end}/{len(payload)}"
+    assert len(response.content) == assets.VIDEO_OPEN_ENDED_RANGE_CHUNK_SIZE
 
 
 def test_allowed_origins_env_accepts_scalar_and_csv(monkeypatch):
