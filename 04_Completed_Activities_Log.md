@@ -4306,3 +4306,167 @@ Recorded current publication boundary:
 - GitHub repository update: completed successfully for the audit-remediation code batch
 - local-only operational log `07_Production_Deployment_Local_Log.md` remains intentionally excluded from Git
 - generated working artifact `sitemap-live.xml` and the unrelated PNG artifacts remain intentionally outside the publication batch
+
+## 152. Privacy Precision, Support Operations, Public Status, Accessibility Tracking, and Performance Governance Implemented and Deployed
+
+The remaining public-audit recommendations were then converted into an operational-governance batch covering precise privacy retention disclosures, cookie inventory publication, structured support intake, public status visibility, public accessibility tracking, browser-based performance governance, backend telemetry, and the final CSP-hardening documentation path.
+
+Completed implementation work:
+
+- expanded the public privacy page to publish a precise retention schedule for:
+  - session and CSRF cookies
+  - guest session cookies
+  - guest learning records
+  - support requests
+  - public web-vitals telemetry
+- added a public cookie inventory and explicitly stated that the current deployment uses strictly necessary first-party cookies only
+- added backend retention-cleanup handling for:
+  - expired sessions
+  - stale guest learning artifacts
+  - public web-vitals samples
+  - structured support requests
+- added a structured public support-intake flow with:
+  - same-origin validation
+  - rate limiting
+  - honeypot protection
+  - deterministic ticket ids
+  - published response targets
+- added a public status page exposing:
+  - live health visibility
+  - support response targets
+  - browser performance governance thresholds
+  - public web-vitals summaries
+  - current CSP and cross-origin hardening decisions
+- added a public accessibility page exposing:
+  - completed WCAG-oriented validation coverage
+  - shipped accessibility fixes
+  - tracked follow-up work for deeper assistive-technology review
+- added browser-based performance-governance tooling through:
+  - a root web-vitals reporter
+  - public web-vitals ingestion and summary endpoints
+  - local Lighthouse and accessibility audit scripts
+- documented the remaining CSP-hardening boundary by recording that:
+  - `style-src-attr 'unsafe-inline'` is still required by current interactive surfaces
+  - `Cross-Origin-Embedder-Policy` is intentionally deferred pending a broader compatibility audit
+- added regression coverage for:
+  - support and public-operations endpoints
+  - public governance pages
+  - public web-vitals wiring
+  - Lighthouse-governance script exposure
+
+Completed local verification work:
+
+- backend automated verification:
+  - `pytest apps/api/tests -q`
+  - result: `69 passed`
+- frontend automated verification:
+  - `npm run test:integration`
+  - result: `49 passed`
+- frontend static verification:
+  - `npm run lint`
+  - result: passed
+- frontend production build verification:
+  - `npm run build`
+  - result: passed
+- browser-based local governance verification:
+  - `npm run test:a11y -- --baseUrl=http://127.0.0.1:3001`
+  - result: passed
+- browser-based local performance verification:
+  - `npm run test:lighthouse -- --baseUrl=http://127.0.0.1:3001`
+  - result: passed
+
+Completed production deployment work:
+
+- built and published the updated API image through Cloud Build:
+  - build id: `02e10485-47f3-4bdd-9aba-ce96726c7c9d`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-api:latest`
+- deployed the updated API image to Cloud Run:
+  - service: `qcai-api`
+  - latest ready revision: `qcai-api-00026-5hl`
+  - traffic: `100%`
+- built and published the updated frontend image through Cloud Build:
+  - build id: `895e3077-dc77-40be-9a6e-0ffaebc26b38`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest`
+- deployed the updated frontend image to Cloud Run:
+  - service: `qcai-frontend`
+  - latest ready revision: `qcai-frontend-00036-mjb`
+  - traffic: `100%`
+
+Completed live verification work:
+
+- verified `https://qantumlearn.academy/privacy` returns `200` and exposes:
+  - `Retention schedule`
+  - `Cookie inventory`
+  - the current strictly-necessary-cookie statement
+- verified `https://qantumlearn.academy/support` returns `200` and exposes:
+  - `Structured support intake`
+  - published response targets
+- verified `https://qantumlearn.academy/status` returns `200` and exposes:
+  - `Browser performance governance`
+  - `COEP is intentionally deferred`
+  - public hardening and support details
+- verified `https://qantumlearn.academy/accessibility` returns `200` and exposes:
+  - public accessibility-validation tracking
+  - tracked follow-up work
+- verified live structured support intake through the public domain:
+  - `POST /api/backend/support/requests`
+  - result: `201`
+  - sample ticket id: `SUP-000001`
+  - no guest cookie bootstrap was issued
+- verified live public web-vitals ingestion and summary through the public domain:
+  - `POST /api/backend/analytics/public-web-vitals`
+  - result: `200`
+  - `GET /api/backend/analytics/public-web-vitals/summary`
+  - result: `200`
+  - live summary exposed the first stored `LCP` sample for `/status`
+- verified the live homepage and API health endpoint expose:
+  - `Cross-Origin-Opener-Policy: same-origin`
+  - `Cross-Origin-Resource-Policy: same-site`
+  - the narrowed CSP style directives
+
+## 153. Deep Double-Check and GitHub Publication Completed for the Governance and Operations Batch
+
+After the governance-and-operations rollout was deployed, the reported outcome was rechecked deeply against the live domain, Cloud Run, Cloud Build, the local codebase, and the rerun validation commands. The completed code batch was then published to the related GitHub repository.
+
+Completed deep double-check work:
+
+- re-audited the rollout summary against:
+  - local feature commit `b4919b8`
+  - Cloud Build status for both new image builds
+  - the deployed Cloud Run API and frontend revisions
+  - the live privacy, support, status, accessibility, homepage, and public web-vitals-summary surfaces
+  - the rerun local verification commands
+- reran:
+  - `pytest apps/api/tests -q`
+  - `npm run test:integration`
+  - `npm run lint`
+  - `npm run build`
+- confirmed no factual correction was required
+- reconfirmed the live revisions remain:
+  - `qcai-api-00026-5hl`
+  - `qcai-frontend-00036-mjb`
+- reconfirmed the live governance surfaces still return `200` and expose the expected operational disclosures
+- reconfirmed the live homepage still exposes:
+  - `Cross-Origin-Opener-Policy: same-origin`
+  - `Cross-Origin-Resource-Policy: same-site`
+  - the narrowed CSP style directives
+- confirmed the temporary local server used for browser-based audits was stopped after verification
+- confirmed the browser-audit scripts and public governance disclosures remain wired even though a later replay attempt of the browser-based audit commands during the final recheck was blocked by shell background-job policy
+- confirmed the remaining local untracked artifacts are still intentionally outside the publication batch:
+  - four unrelated PNG files
+  - `sitemap-live.xml`
+
+Completed repository publication work:
+
+- published the governance-and-operations code batch on `main` in:
+  - commit: `b4919b8`
+  - message: `feat: add public governance and support operations`
+- pushed the updated branch to:
+  - `origin/main`
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+
+Recorded current publication boundary:
+
+- GitHub repository update: completed successfully for the governance-and-operations code batch
+- local-only operational log `07_Production_Deployment_Local_Log.md` remains intentionally excluded from Git
+- generated working artifact `sitemap-live.xml` and the unrelated PNG artifacts remain intentionally outside the publication batch
