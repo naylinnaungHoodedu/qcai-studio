@@ -10,12 +10,13 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.extension import _rate_limit_exceeded_handler
 from sqlalchemy.exc import OperationalError
 
-from app.api.routes import admin, analytics, arena, assets, auth, builder, content, insights, projects, qa, search
+from app.api.routes import admin, analytics, arena, assets, auth, builder, content, insights, projects, qa, search, support
 from app.core.config import get_settings
-from app.core.db import Base, engine
+from app.core.db import Base, SessionLocal, engine
 from app.core.rate_limit import limiter
 from app.core.request_protection import protect_guest_mutation_request
 from app.core.schema_upgrades import run_schema_upgrades
+from app.services.retention import run_retention_cleanup
 from app.services.store import get_course_store
 
 
@@ -98,6 +99,8 @@ def _initialize_database() -> None:
         try:
             Base.metadata.create_all(bind=engine)
             run_schema_upgrades(engine)
+            with SessionLocal() as db:
+                run_retention_cleanup(db)
             return
         except OperationalError as exc:
             last_error = exc
@@ -144,6 +147,7 @@ app.include_router(arena.router)
 app.include_router(builder.router)
 app.include_router(insights.router)
 app.include_router(projects.router)
+app.include_router(support.router)
 
 
 @app.middleware("http")

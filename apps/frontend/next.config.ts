@@ -75,6 +75,14 @@ const nextConfig: NextConfig = {
         headers: publicCacheHeaders,
       },
       {
+        source: "/status",
+        headers: publicCacheHeaders,
+      },
+      {
+        source: "/accessibility",
+        headers: publicCacheHeaders,
+      },
+      {
         source: "/whats-new",
         headers: publicCacheHeaders,
       },

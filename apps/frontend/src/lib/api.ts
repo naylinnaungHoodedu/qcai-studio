@@ -18,6 +18,7 @@ import {
   ModuleDetail,
   Note,
   PeerReview,
+  PublicWebVitalSummary,
   ProjectBrief,
   ProjectSubmission,
   QAHistoryItem,
@@ -26,7 +27,9 @@ import {
   RealtimeFeedback,
   ReviewQueueItem,
   SearchResult,
+  ServiceHealth,
   SkillGapReport,
+  SupportRequestReceipt,
   UserProfile,
 } from "@/lib/types";
 import { AUTH_CSRF_COOKIE_NAME, AUTH_CSRF_HEADER, AUTH_TOKEN_COOKIE_NAME } from "@/lib/auth";
@@ -321,6 +324,50 @@ export async function postAnalyticsEvent(
       lesson_slug: lessonSlug ?? null,
       payload,
     }),
+  });
+}
+
+export async function postPublicWebVital(payload: {
+  metric_id: string;
+  metric_name: string;
+  path: string;
+  value: number;
+  delta?: number | null;
+  rating: string;
+  navigation_type?: string | null;
+  connection_type?: string | null;
+}): Promise<void> {
+  await apiFetch("/analytics/public-web-vitals", {
+    method: "POST",
+    cacheMode: "public",
+    keepalive: true,
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchPublicWebVitalsSummary(): Promise<PublicWebVitalSummary> {
+  return apiFetch<PublicWebVitalSummary>("/analytics/public-web-vitals/summary", {
+    cacheMode: "public",
+  });
+}
+
+export async function fetchServiceHealth(): Promise<ServiceHealth> {
+  return apiFetch<ServiceHealth>("/health", { cacheMode: "public" });
+}
+
+export async function submitSupportRequest(payload: {
+  name: string;
+  email: string;
+  organization?: string | null;
+  request_type: string;
+  page_url?: string | null;
+  message: string;
+  website?: string | null;
+}): Promise<SupportRequestReceipt> {
+  return apiFetch<SupportRequestReceipt>("/support/requests", {
+    method: "POST",
+    cacheMode: "public",
+    body: JSON.stringify(payload),
   });
 }
 

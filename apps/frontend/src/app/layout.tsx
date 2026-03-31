@@ -5,6 +5,7 @@ import { Space_Grotesk } from "next/font/google";
 
 import { AppShell } from "@/components/app-shell";
 import { Providers } from "@/components/providers";
+import { WebVitalsReporter } from "@/components/web-vitals-reporter";
 import { SITE_URL } from "@/lib/site";
 
 import "./globals.css";
@@ -58,6 +59,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       </head>
       <body className={spaceGrotesk.variable} nonce={nonce}>
         <Providers>
+          <WebVitalsReporter />
           <AppShell>{children}</AppShell>
         </Providers>
       </body>

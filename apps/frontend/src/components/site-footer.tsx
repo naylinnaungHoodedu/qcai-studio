@@ -26,6 +26,8 @@ export function SiteFooter() {
             <Link href="/privacy">Privacy policy</Link>
             <Link href="/terms">Terms of use</Link>
             <Link href="/support">Support and trust</Link>
+            <Link href="/status">Status and operations</Link>
+            <Link href="/accessibility">Accessibility</Link>
             <Link href="/attribution">Attribution</Link>
             <Link href="/account">Account and sign-in</Link>
           </nav>

@@ -45,6 +45,8 @@ export const STATIC_ROUTE_LASTMOD: Record<string, string> = {
   "/privacy": "2026-03-29T00:00:00Z",
   "/terms": "2026-03-29T00:00:00Z",
   "/support": "2026-03-30T00:00:00Z",
+  "/status": "2026-03-31T00:00:00Z",
+  "/accessibility": "2026-03-31T00:00:00Z",
   "/attribution": "2026-03-29T00:00:00Z",
 };
 

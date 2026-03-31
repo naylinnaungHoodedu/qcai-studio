@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     auth_login_rate_limit: str = "10/minute"
     qa_ask_rate_limit: str = "5/minute"
     search_rate_limit: str = "10/minute"
+    support_request_rate_limit: str = "5/hour"
+    public_web_vitals_rate_limit: str = "120/minute"
     api_base_url: str | None = None
     source_assets_root: str | None = None
     allowed_origins: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:3000"])

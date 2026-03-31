@@ -172,6 +172,30 @@ export type AuthAction = {
   status: string;
 };
 
+export type SupportRequestReceipt = {
+  status: string;
+  ticket_id: string;
+  request_type: string;
+  response_target: string;
+  created_at: string;
+};
+
+export type PublicWebVitalSummaryItem = {
+  metric_name: string;
+  sample_count: number;
+  average_value: number;
+  p75_value: number;
+  good_rate_percent: number;
+};
+
+export type PublicWebVitalSummary = {
+  status: string;
+  total_samples: number;
+  monitored_paths: string[];
+  last_sample_at?: string | null;
+  metrics: PublicWebVitalSummaryItem[];
+};
+
 export type LessonProgress = {
   lesson_slug: string;
   lesson_title: string;
@@ -476,4 +500,9 @@ export type PeerReview = {
   overall_score: number;
   feedback: string;
   created_at: string;
+};
+
+export type ServiceHealth = {
+  status: string;
+  app: string;
 };

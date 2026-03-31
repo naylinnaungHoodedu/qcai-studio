@@ -32,6 +32,8 @@ test("sitemap publishes public study and simulations routes", () => {
 
   assert.ok(urls.has(`${SITE_URL}/about`));
   assert.ok(urls.has(`${SITE_URL}/support`));
+  assert.ok(urls.has(`${SITE_URL}/status`));
+  assert.ok(urls.has(`${SITE_URL}/accessibility`));
   assert.ok(urls.has(`${SITE_URL}/modules`));
   assert.ok(urls.has(`${SITE_URL}/simulations`));
   assert.ok(urls.has(`${SITE_URL}/simulations/the-nisq-fidelity-cliff`));
@@ -178,11 +180,15 @@ test("public routes advertise revalidation-friendly cache headers", async () => 
   const whatsNewHeaders = routes.find((route) => route.source === "/whats-new");
   const securityHeaders = routes.find((route) => route.source === "/:path*");
   const supportHeaders = routes.find((route) => route.source === "/support");
+  const statusHeaders = routes.find((route) => route.source === "/status");
+  const accessibilityHeaders = routes.find((route) => route.source === "/accessibility");
 
   assert.ok(homeHeaders);
   assert.ok(whatsNewHeaders);
   assert.ok(securityHeaders);
   assert.ok(supportHeaders);
+  assert.ok(statusHeaders);
+  assert.ok(accessibilityHeaders);
   assert.equal(homeHeaders.headers[0]?.key, "Cache-Control");
   assert.equal(
     homeHeaders.headers[0]?.value,
@@ -200,6 +206,14 @@ test("public routes advertise revalidation-friendly cache headers", async () => 
   );
   assert.equal(
     supportHeaders.headers[0]?.value,
+    "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
+  );
+  assert.equal(
+    statusHeaders.headers[0]?.value,
+    "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
+  );
+  assert.equal(
+    accessibilityHeaders.headers[0]?.value,
     "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
   );
 });

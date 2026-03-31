@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { SupportIntakeForm } from "@/components/support-intake-form";
 import { StructuredData } from "@/components/structured-data";
 import { buildBreadcrumbStructuredData, buildPageMetadata } from "@/lib/metadata";
+import { SUPPORT_RESPONSE_TARGETS } from "@/lib/operations-governance";
 import { CONTACT_EMAIL, OWNER_NAME, REPOSITORY_URL, SITE_URL } from "@/lib/site";
 
 const SUPPORT_SURFACES = [
@@ -80,11 +82,14 @@ export default function SupportPage() {
             commercial posture of the public site actually is.
           </p>
           <div className="button-row">
-            <a className="primary-button" href={`mailto:${CONTACT_EMAIL}`}>
-              Contact support
-            </a>
+            <Link className="primary-button" href="#support-intake">
+              Open support intake
+            </Link>
             <Link className="secondary-button" href="/privacy">
               Review privacy
+            </Link>
+            <Link className="secondary-button" href="/status">
+              View status
             </Link>
             <a className="secondary-button" href={REPOSITORY_URL} rel="noreferrer" target="_blank">
               Inspect GitHub
@@ -100,9 +105,9 @@ export default function SupportPage() {
           </article>
           <article className="metric-card">
             <span className="eyebrow">Support channel</span>
-            <strong className="about-metric-value">Email-first</strong>
+            <strong className="about-metric-value">Structured intake</strong>
             <p>
-              Public support, privacy, and partner requests route through{" "}
+              Public support, privacy, and partner requests can use the intake form below or{" "}
               <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
             </p>
           </article>
@@ -132,6 +137,26 @@ export default function SupportPage() {
         ))}
       </section>
 
+      <section className="two-column-grid">
+        {SUPPORT_RESPONSE_TARGETS.map((item) => (
+          <article className="panel legal-copy" key={item.title}>
+            <p className="eyebrow">{item.title}</p>
+            <h2>{item.target}</h2>
+            <p>{item.detail}</p>
+          </article>
+        ))}
+      </section>
+
+      <section className="panel legal-copy" id="support-intake">
+        <h2>Structured support intake</h2>
+        <p>
+          Use the form below for product help, privacy questions, partnership reviews, or responsible-disclosure
+          follow-up. The public intake route records a ticket reference and keeps the request inside the first-party
+          QC+AI support path.
+        </p>
+        <SupportIntakeForm />
+      </section>
+
       <section className="panel legal-copy">
         <h2>Commercial and enrollment clarity</h2>
         <p>
@@ -148,12 +173,16 @@ export default function SupportPage() {
         <p>{SUPPORT_EXPECTATIONS[0]}</p>
         <p>{SUPPORT_EXPECTATIONS[1]}</p>
         <p>{SUPPORT_EXPECTATIONS[2]}</p>
+        <p>
+          Current response targets and public release notes are summarized on the <Link href="/status">status page</Link>.
+        </p>
         <h2>Related public references</h2>
         <p>
           See the <Link href="/about">about page</Link> for curriculum scope and ownership, the{" "}
           <Link href="/attribution">attribution page</Link> for build-process transparency, the{" "}
-          <Link href="/privacy">privacy policy</Link> for data handling, and the <Link href="/terms">terms of use</Link>{" "}
-          for platform conditions.
+          <Link href="/privacy">privacy policy</Link> for data handling, the <Link href="/accessibility">accessibility page</Link>{" "}
+          for audit status, the <Link href="/status">status page</Link> for operations, and the{" "}
+          <Link href="/terms">terms of use</Link> for platform conditions.
         </p>
       </section>
     </div>

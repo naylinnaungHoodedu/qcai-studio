@@ -159,6 +159,112 @@ class AnalyticsEventCreate(BaseModel):
     payload: dict = Field(default_factory=dict)
 
 
+class PublicWebVitalCreate(BaseModel):
+    metric_id: str = Field(min_length=1, max_length=255)
+    metric_name: str = Field(min_length=1, max_length=32)
+    path: str = Field(min_length=1, max_length=255)
+    value: float = Field(ge=0)
+    delta: float | None = Field(default=None, ge=0)
+    rating: str = Field(min_length=1, max_length=32)
+    navigation_type: str | None = Field(default=None, max_length=64)
+    connection_type: str | None = Field(default=None, max_length=64)
+
+    @field_validator("metric_name")
+    @classmethod
+    def validate_metric_name(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        allowed = {"CLS", "FCP", "FID", "INP", "LCP", "TTFB"}
+        if normalized not in allowed:
+            raise ValueError("Unsupported web-vitals metric.")
+        return normalized
+
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized.startswith("/"):
+            raise ValueError("Path must start with '/'.")
+        return normalized
+
+    @field_validator("rating")
+    @classmethod
+    def validate_rating(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"good", "needs-improvement", "poor"}:
+            raise ValueError("Unsupported web-vitals rating.")
+        return normalized
+
+
+class PublicWebVitalSummaryItem(BaseModel):
+    metric_name: str
+    sample_count: int
+    average_value: float
+    p75_value: float
+    good_rate_percent: float
+
+
+class PublicWebVitalSummaryRead(BaseModel):
+    status: str
+    total_samples: int
+    monitored_paths: list[str] = Field(default_factory=list)
+    last_sample_at: datetime | None = None
+    metrics: list[PublicWebVitalSummaryItem] = Field(default_factory=list)
+
+
+class PublicWebVitalReceipt(BaseModel):
+    status: str
+
+
+class SupportRequestCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    email: str = Field(min_length=3, max_length=320)
+    organization: str | None = Field(default=None, max_length=255)
+    request_type: str = Field(min_length=1, max_length=64)
+    page_url: str | None = Field(default=None, max_length=512)
+    message: str = Field(min_length=20, max_length=4000)
+    website: str | None = Field(default=None, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def validate_support_email(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not EMAIL_PATTERN.fullmatch(normalized):
+            raise ValueError("Enter a valid email address.")
+        return normalized
+
+    @field_validator("name", "request_type")
+    @classmethod
+    def validate_trimmed_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("This field cannot be empty.")
+        return normalized
+
+    @field_validator("message")
+    @classmethod
+    def validate_message(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 20:
+            raise ValueError("Message must be at least 20 characters.")
+        return normalized
+
+    @field_validator("organization", "page_url", "website")
+    @classmethod
+    def normalize_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class SupportRequestRead(BaseModel):
+    status: str
+    ticket_id: str
+    request_type: str
+    response_target: str
+    created_at: datetime
+
+
 class QuizAttemptCreate(BaseModel):
     lesson_slug: str
     score: int = Field(ge=0)

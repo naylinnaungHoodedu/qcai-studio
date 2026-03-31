@@ -92,6 +92,46 @@ class AnalyticsEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class PublicWebVital(Base):
+    __tablename__ = "public_web_vitals"
+    __table_args__ = (
+        Index("ix_public_web_vitals_metric_name_created_at", "metric_name", "created_at"),
+        Index("ix_public_web_vitals_path_created_at", "path", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    metric_id: Mapped[str] = mapped_column(String(255), index=True)
+    metric_name: Mapped[str] = mapped_column(String(32), index=True)
+    path: Mapped[str] = mapped_column(String(255), index=True)
+    value: Mapped[float] = mapped_column(Float)
+    delta: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rating: Mapped[str] = mapped_column(String(32), index=True)
+    navigation_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    connection_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class SupportRequest(Base):
+    __tablename__ = "support_requests"
+    __table_args__ = (
+        Index("ix_support_requests_request_type_created_at", "request_type", "created_at"),
+        Index("ix_support_requests_email_created_at", "email", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    organization: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    request_type: Mapped[str] = mapped_column(String(64), index=True)
+    page_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    message: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="received", index=True)
+    requester_origin: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
 class ArenaProfile(Base):
     __tablename__ = "arena_profiles"
 

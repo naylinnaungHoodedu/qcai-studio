@@ -82,6 +82,11 @@ export default function TermsPage() {
           <Link href="/support">support page</Link>. Product, privacy, and security questions can also be sent to{" "}
           <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
         </p>
+        <p>
+          Current response targets, status notes, and browser-governance disclosures are summarized on the{" "}
+          <Link href="/status">status page</Link>. Accessibility validation notes are published on the{" "}
+          <Link href="/accessibility">accessibility page</Link>.
+        </p>
         <h2>Contact</h2>
         <p>
           Questions about platform use can be directed to <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.

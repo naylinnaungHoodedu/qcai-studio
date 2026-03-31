@@ -9,10 +9,15 @@ const COOKIE_DOMAIN = process.env.NEXT_PUBLIC_COOKIE_DOMAIN || process.env.COOKI
 const GUEST_ID_PATTERN = /^guest-[0-9a-f-]{8,64}$/;
 const GUEST_CSRF_PATTERN = /^[0-9a-f-]{16,128}$/;
 const PUBLIC_API_ROUTE_PATTERNS = [
+  /^\/health$/,
+  /^\/ready$/,
   /^\/content\/course$/,
   /^\/content\/modules\/[^/]+$/,
   /^\/content\/lessons\/[^/]+$/,
   /^\/search$/,
+  /^\/analytics\/public-web-vitals$/,
+  /^\/analytics\/public-web-vitals\/summary$/,
+  /^\/support\/requests$/,
 ];
 
 export type GuestSession = {

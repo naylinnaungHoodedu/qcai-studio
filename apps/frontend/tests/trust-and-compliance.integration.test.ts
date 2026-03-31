@@ -13,10 +13,17 @@ const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const PRIVACY_PAGE_SOURCE = readFileSync(resolve(TEST_DIR, "../src/app/privacy/page.tsx"), "utf8");
 const TERMS_PAGE_SOURCE = readFileSync(resolve(TEST_DIR, "../src/app/terms/page.tsx"), "utf8");
 const SUPPORT_PAGE_SOURCE = readFileSync(resolve(TEST_DIR, "../src/app/support/page.tsx"), "utf8");
+const STATUS_PAGE_SOURCE = readFileSync(resolve(TEST_DIR, "../src/app/status/page.tsx"), "utf8");
+const ACCESSIBILITY_PAGE_SOURCE = readFileSync(resolve(TEST_DIR, "../src/app/accessibility/page.tsx"), "utf8");
+const OPERATIONS_SOURCE = readFileSync(resolve(TEST_DIR, "../src/lib/operations-governance.ts"), "utf8");
+const PRIVACY_DISCLOSURE_SOURCE = readFileSync(resolve(TEST_DIR, "../src/lib/privacy-disclosures.ts"), "utf8");
 
-test("privacy page discloses retention, deletion, subprocessors, rights, and minors handling", () => {
-  assert.match(PRIVACY_PAGE_SOURCE, /Retention and deletion/);
-  assert.match(PRIVACY_PAGE_SOURCE, /removes the local account record/i);
+test("privacy page discloses retention, cookies, deletion, subprocessors, rights, and minors handling", () => {
+  assert.match(PRIVACY_PAGE_SOURCE, /Retention schedule/);
+  assert.match(PRIVACY_PAGE_SOURCE, /Cookie inventory/);
+  assert.match(PRIVACY_DISCLOSURE_SOURCE, /qcai_guest_id/);
+  assert.match(PRIVACY_DISCLOSURE_SOURCE, /540 days/);
+  assert.match(PRIVACY_DISCLOSURE_SOURCE, /Strictly necessary/);
   assert.match(PRIVACY_PAGE_SOURCE, /Infrastructure and subprocessors/);
   assert.match(PRIVACY_PAGE_SOURCE, /Lawful basis and rights where applicable/);
   assert.match(PRIVACY_PAGE_SOURCE, /Education and minors/);
@@ -32,9 +39,18 @@ test("terms page clarifies public offering status, refunds, minors, and support"
 test("support page exposes trust and partner-facing contact details", () => {
   assert.equal(supportMetadata.title, "Support, Contact, and Trust");
   assert.match(SUPPORT_PAGE_SOURCE, /Support and trust/);
+  assert.match(SUPPORT_PAGE_SOURCE, /Structured support intake/);
   assert.match(SUPPORT_PAGE_SOURCE, /Commercial and enrollment clarity/);
   assert.match(SUPPORT_PAGE_SOURCE, /The public QC\+AI Studio site currently operates as a public learning platform/);
-  assert.match(SUPPORT_PAGE_SOURCE, /Email-first/);
+  assert.match(SUPPORT_PAGE_SOURCE, /Open support intake/);
+});
+
+test("status and accessibility pages publish operational and WCAG tracking disclosures", () => {
+  assert.match(STATUS_PAGE_SOURCE, /Browser performance governance/);
+  assert.match(OPERATIONS_SOURCE, /COEP is intentionally deferred/);
+  assert.match(STATUS_PAGE_SOURCE, /Support response targets/);
+  assert.match(ACCESSIBILITY_PAGE_SOURCE, /Accessibility validation is tracked publicly/);
+  assert.match(OPERATIONS_SOURCE, /full NVDA\/VoiceOver assistive-technology lab pass remains an explicit operational follow-up/i);
 });
 
 test("security disclosure route publishes a standard security.txt file", async () => {
