@@ -6,13 +6,15 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request
 from sqlalchemy import func, select
 
-from app.api.routes import assets
+from app.api.routes import assets, assistant
 from app.core.db import SessionLocal
 from app.db_models import ArenaProfile, Note, UserAccount
 from app.core.config import Settings
 from app.main import _build_security_headers, _initialize_database, app
+from app.schemas import AssistantChatResponse, Citation
 from app.services.retrieval_engine import RetrievalEngine
 from app.services.store import get_course_store
+from app.services.teaching_assistant import TeachingAssistantService
 
 
 _initialize_database()
@@ -278,6 +280,137 @@ def test_qa_returns_citations():
     assert data["citations"]
     assert data["answer"]
     assert not ({citation["source_title"] for citation in data["citations"]} & RAW_DOCUMENT_TITLES)
+
+
+def test_assistant_chat_returns_vertex_backed_contract(monkeypatch):
+    class StubAssistant:
+        def chat(self, message: str, **_: object):
+            assert message == "How should I study routing depth?"
+            return AssistantChatResponse(
+                answer="Start with routing as a hardware constraint, then compare graph shrinking and baseline checks [1].",
+                citations=[
+                    Citation(
+                        chunk_id="routing-1",
+                        source_title="Quantum Computing and Artificial Intelligence 2025",
+                        source_kind="video",
+                        section_title="Routing bottlenecks",
+                        excerpt="Routing overhead grows because constrained hardware connectivity forces additional SWAP operations.",
+                        timestamp_label="01:11",
+                    )
+                ],
+                retrieval_mode="vertex-rag-lexical",
+                provider="vertex-ai-service-account",
+                model="gemini-3.1-flash-lite-preview",
+                grounded=True,
+            )
+
+    monkeypatch.setattr(assistant, "get_teaching_assistant", lambda: StubAssistant())
+
+    user_headers = {"x-demo-user": f"assistant-{uuid4().hex[:8]}", "x-demo-role": "learner"}
+    response = client.post(
+        "/assistant/chat",
+        headers=user_headers,
+        json={
+            "message": "How should I study routing depth?",
+            "lesson_slug": "ai4qc-routing-and-optimization",
+            "page_path": "/lessons/ai4qc-routing-and-optimization",
+            "history": [{"role": "assistant", "content": "What topic do you want to focus on?"}],
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["provider"] == "vertex-ai-service-account"
+    assert data["model"] == "gemini-3.1-flash-lite-preview"
+    assert data["grounded"] is True
+    assert data["citations"]
+    assert response.headers["x-assistant-provider"] == "vertex-ai-service-account"
+    assert response.headers["x-assistant-model"] == "gemini-3.1-flash-lite-preview"
+
+
+def test_teaching_assistant_falls_back_to_grounded_local_answer_without_vertex():
+    store = get_course_store()
+    engine = RetrievalEngine(store, Settings())
+
+    class NoVertexAssistant(TeachingAssistantService):
+        @property
+        def vertex_project_id(self) -> str | None:
+            return None
+
+    service = NoVertexAssistant(
+        engine,
+        Settings(vertex_ai_project_id="", vertex_ai_chat_model="gemini-3.1-flash-lite-preview"),
+    )
+
+    response = service.chat(
+        "Why does routing depth matter?",
+        lesson_slug="ai4qc-routing-and-optimization",
+        page_path="/lessons/ai4qc-routing-and-optimization",
+    )
+
+    assert response.provider == "local-grounded-fallback"
+    assert response.model == "qcai-course-corpus"
+    assert response.grounded is True
+    assert response.citations
+    assert "routing" in response.answer.lower()
+
+
+def test_teaching_assistant_uses_api_key_endpoint_without_bearer_header():
+    store = get_course_store()
+    engine = RetrievalEngine(store, Settings())
+
+    class RecordingClient:
+        def __init__(self):
+            self.captured_url = ""
+            self.captured_headers = {}
+
+        def post(self, url: str, *, headers: dict[str, str], json: dict):
+            self.captured_url = url
+            self.captured_headers = headers
+
+            class Response:
+                def raise_for_status(self):
+                    return None
+
+                def json(self):
+                    return {
+                        "candidates": [
+                            {
+                                "content": {
+                                    "parts": [{"text": "Use the hardware-constrained lessons as your study anchor [1]."}]
+                                }
+                            }
+                        ]
+                    }
+
+            return Response()
+
+    client_stub = RecordingClient()
+
+    class ApiKeyAssistant(TeachingAssistantService):
+        @property
+        def vertex_api_key(self) -> str | None:
+            return "test-api-key"
+
+        @property
+        def _vertex_client(self):
+            return client_stub
+
+    service = ApiKeyAssistant(
+        engine,
+        Settings(
+            vertex_ai_api_key="test-api-key",
+            vertex_ai_chat_model="gemini-3.1-flash-lite-preview",
+        ),
+    )
+
+    response = service.chat("How should I start?", page_path="/")
+
+    assert response.provider == "vertex-ai-api-key"
+    assert response.model == "gemini-3.1-flash-lite-preview"
+    assert "key=test-api-key" in client_stub.captured_url
+    assert "/publishers/google/models/gemini-3.1-flash-lite-preview:generateContent" in client_stub.captured_url
+    assert "Authorization" not in client_stub.captured_headers
 
 def test_source_asset_requires_authentication_headers():
     response = client.head("/source-assets/Quantum%20Computing%20and%20Artificial%20Intelligence%202025.mp4")

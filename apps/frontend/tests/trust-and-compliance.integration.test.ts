@@ -5,16 +5,22 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { GET as wellKnownSecurityRoute } from "../src/app/.well-known/security.txt/route";
+import { metadata as auditFixturesMetadata } from "../src/app/audit-fixtures/page";
 import { metadata as supportMetadata } from "../src/app/support/page";
 import { GET as securityRoute } from "../src/app/security.txt/route";
 import { CONTACT_EMAIL, SITE_URL } from "../src/lib/site";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
+const AUDIT_FIXTURES_PAGE_SOURCE = readFileSync(
+  resolve(TEST_DIR, "../src/app/audit-fixtures/page.tsx"),
+  "utf8",
+);
 const PRIVACY_PAGE_SOURCE = readFileSync(resolve(TEST_DIR, "../src/app/privacy/page.tsx"), "utf8");
 const TERMS_PAGE_SOURCE = readFileSync(resolve(TEST_DIR, "../src/app/terms/page.tsx"), "utf8");
 const SUPPORT_PAGE_SOURCE = readFileSync(resolve(TEST_DIR, "../src/app/support/page.tsx"), "utf8");
 const STATUS_PAGE_SOURCE = readFileSync(resolve(TEST_DIR, "../src/app/status/page.tsx"), "utf8");
 const ACCESSIBILITY_PAGE_SOURCE = readFileSync(resolve(TEST_DIR, "../src/app/accessibility/page.tsx"), "utf8");
+const SITE_FOOTER_SOURCE = readFileSync(resolve(TEST_DIR, "../src/components/site-footer.tsx"), "utf8");
 const OPERATIONS_SOURCE = readFileSync(resolve(TEST_DIR, "../src/lib/operations-governance.ts"), "utf8");
 const PRIVACY_DISCLOSURE_SOURCE = readFileSync(resolve(TEST_DIR, "../src/lib/privacy-disclosures.ts"), "utf8");
 
@@ -51,6 +57,17 @@ test("status and accessibility pages publish operational and WCAG tracking discl
   assert.match(STATUS_PAGE_SOURCE, /Support response targets/);
   assert.match(ACCESSIBILITY_PAGE_SOURCE, /Accessibility validation is tracked publicly/);
   assert.match(OPERATIONS_SOURCE, /full NVDA\/VoiceOver assistive-technology lab pass remains an explicit operational follow-up/i);
+});
+
+test("audit fixtures page publishes fictional users and commands as a noindex trust surface", () => {
+  assert.equal(auditFixturesMetadata.title, "Fictional Audit Users and QA Commands");
+  assert.equal(auditFixturesMetadata.robots?.index, false);
+  assert.match(AUDIT_FIXTURES_PAGE_SOURCE, /All records below are fictional, privacy-safe/);
+  assert.match(AUDIT_FIXTURES_PAGE_SOURCE, /Account catalog/);
+  assert.match(AUDIT_FIXTURES_PAGE_SOURCE, /User commands/);
+  assert.match(SUPPORT_PAGE_SOURCE, /\/audit-fixtures/);
+  assert.match(STATUS_PAGE_SOURCE, /\/audit-fixtures/);
+  assert.match(SITE_FOOTER_SOURCE, /\/audit-fixtures/);
 });
 
 test("security disclosure route publishes a standard security.txt file", async () => {

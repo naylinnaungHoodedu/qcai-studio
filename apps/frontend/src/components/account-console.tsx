@@ -264,15 +264,7 @@ export function AccountConsole({ initialUser, auth0Configured, statusMessage }: 
                     </a>
                   </div>
                 </article>
-              ) : (
-                <article className="citation-card">
-                  <strong>First-party account path is active</strong>
-                  <p className="muted">
-                    This deployment no longer depends on external client-side auth configuration for account creation,
-                    login, logout, or deletion.
-                  </p>
-                </article>
-              )}
+              ) : null}
             </div>
           ) : (
             <div className="stack">

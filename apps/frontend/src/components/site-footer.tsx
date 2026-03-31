@@ -28,6 +28,7 @@ export function SiteFooter() {
             <Link href="/support">Support and trust</Link>
             <Link href="/status">Status and operations</Link>
             <Link href="/accessibility">Accessibility</Link>
+            <Link href="/audit-fixtures">Audit fixtures</Link>
             <Link href="/attribution">Attribution</Link>
             <Link href="/account">Account and sign-in</Link>
           </nav>

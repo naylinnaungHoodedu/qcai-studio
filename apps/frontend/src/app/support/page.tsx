@@ -85,6 +85,9 @@ export default function SupportPage() {
             <Link className="primary-button" href="#support-intake">
               Open support intake
             </Link>
+            <Link className="secondary-button" href="/audit-fixtures">
+              Review audit fixtures
+            </Link>
             <Link className="secondary-button" href="/privacy">
               Review privacy
             </Link>
@@ -181,7 +184,8 @@ export default function SupportPage() {
           See the <Link href="/about">about page</Link> for curriculum scope and ownership, the{" "}
           <Link href="/attribution">attribution page</Link> for build-process transparency, the{" "}
           <Link href="/privacy">privacy policy</Link> for data handling, the <Link href="/accessibility">accessibility page</Link>{" "}
-          for audit status, the <Link href="/status">status page</Link> for operations, and the{" "}
+          for audit status, the <Link href="/status">status page</Link> for operations, the{" "}
+          <Link href="/audit-fixtures">fictional audit-fixtures page</Link> for reusable QA personas and commands, and the{" "}
           <Link href="/terms">terms of use</Link> for platform conditions.
         </p>
       </section>

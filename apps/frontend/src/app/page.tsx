@@ -5,9 +5,9 @@ import { ModuleCard } from "@/components/module-card";
 import { PageErrorState } from "@/components/page-state";
 import { StructuredData } from "@/components/structured-data";
 import { fetchCourseOverview } from "@/lib/api";
-import { COURSE_REFERENCES } from "@/lib/course-references";
+import { OVERVIEW_COURSE_REFERENCES } from "@/lib/course-references";
 import { buildPageMetadata } from "@/lib/metadata";
-import { EXPANSION_ROADMAP, FEATURE_AVAILABILITY, RECENT_UPDATES } from "@/lib/public-status";
+import { FEATURE_AVAILABILITY } from "@/lib/public-status";
 import { COURSE_SCOPE_NOTE, GUEST_MODE_NOTES } from "@/lib/public-course";
 import { SITE_URL } from "@/lib/site";
 
@@ -132,7 +132,7 @@ export default async function HomePage() {
           </p>
         </div>
         <ol className="reference-list">
-          {COURSE_REFERENCES.map((reference, index) => (
+          {OVERVIEW_COURSE_REFERENCES.map((reference, index) => (
             <li key={reference} className="reference-item">
               <span className="eyebrow">Reference {index + 1}</span>
               <p>{reference}</p>
@@ -198,48 +198,6 @@ export default async function HomePage() {
               <p>{item.detail}</p>
             </article>
           ))}
-        </div>
-      </section>
-
-      <section className="section-block">
-        <div className="section-heading">
-          <p className="eyebrow">What&apos;s new</p>
-          <h2>Recent releases and visible next steps</h2>
-          <p>
-            The platform is compact by design right now. Public release notes and the expansion roadmap make that state visible instead of hiding it behind generic marketing language.
-          </p>
-        </div>
-        <div className="two-column-grid">
-          <article className="panel">
-            <p className="eyebrow">Recent updates</p>
-            <h2>Recent public-facing releases</h2>
-            <ul className="goal-list">
-              {RECENT_UPDATES.map((item) => (
-                <li key={item.title}>
-                  <strong>{item.date}:</strong> {item.title}. {item.detail}
-                </li>
-              ))}
-            </ul>
-          </article>
-          <article className="panel emphasis-card">
-            <p className="eyebrow">Expansion roadmap</p>
-            <h2>What grows next</h2>
-            <ul className="goal-list">
-              {EXPANSION_ROADMAP.slice(0, 2).map((item) => (
-                <li key={item.title}>
-                  <strong>{item.title}:</strong> {item.detail}
-                </li>
-              ))}
-            </ul>
-            <div className="button-row">
-              <Link className="primary-button" href="/whats-new">
-                Open full changelog
-              </Link>
-              <Link className="secondary-button" href="/modules">
-                Review the curriculum
-              </Link>
-            </div>
-          </article>
         </div>
       </section>
 

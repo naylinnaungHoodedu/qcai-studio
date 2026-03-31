@@ -1,8 +1,8 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-03-30 16:47:21 -04:00`
-Folder: `c:\Users\user\Downloads\Codex_Webapp`
+Last updated on: `2026-03-31 10:58:42 -04:00`
+Folder: `c:\Users\user\Downloads\Codex_Webapp_QC_AI_Studio`
 
 ## 1. Scope of Work Completed
 
@@ -4470,3 +4470,581 @@ Recorded current publication boundary:
 - GitHub repository update: completed successfully for the governance-and-operations code batch
 - local-only operational log `07_Production_Deployment_Local_Log.md` remains intentionally excluded from Git
 - generated working artifact `sitemap-live.xml` and the unrelated PNG artifacts remain intentionally outside the publication batch
+
+## 154. Fictional Audit User Accounts and User-Command Fixture Package Created Locally
+
+The current folder was then extended with a reusable, privacy-safe audit fixture package for fictional user accounts and realistic user-command coverage so QA, demo, and audit work could reference a stable source of synthetic personas instead of ad hoc examples.
+
+Completed local implementation work:
+
+- added a typed fixture library for fictional audit users and commands in:
+  - `apps/frontend/src/lib/audit-user-fixtures.ts`
+- added a human-readable local artifact describing the fixture package in:
+  - `08_Fictional_User_Accounts_and_User_Commands.md`
+- added automated validation for fixture completeness, synthetic-data safety, and category coverage in:
+  - `apps/frontend/tests/audit-user-fixtures.integration.test.ts`
+- created `17` fictional user accounts covering:
+  - guest and anonymous access
+  - new, returning, scholarship, accessibility-sensitive, low-bandwidth, privacy-sensitive, minor, locked, and duplicate-email learners
+  - instructor and creator roles
+  - support and trust-and-safety staff
+  - enterprise manager and guardian roles
+- created `45` realistic user commands covering:
+  - onboarding and authentication
+  - discovery, enrollment, and billing
+  - learning, quizzes, and certificates
+  - content creation and moderation
+  - support and privacy-rights workflows
+  - notifications and preference management
+  - recovery and error paths
+- kept all identifiers synthetic by using:
+  - fictional names
+  - reserved-domain or synthetic emails
+  - synthetic `555` phone numbers
+  - no addresses, passwords, secrets, or production identities
+
+Completed local verification work:
+
+- frontend automated verification:
+  - `npm run test:integration`
+  - result after the fixture-library addition: `52 passed`
+- frontend static verification:
+  - `npm run lint`
+  - result: passed
+- frontend production build verification:
+  - `npm run build`
+  - result: passed
+
+Recorded local publication boundary:
+
+- the fictional-account and command package existed only in the current local folder at this stage
+- the fixture package had not yet been exposed on the production domain
+- the fixture package had not yet been published to GitHub
+
+## 155. Production Audit-Fixtures Surface Implemented and Deeply Rechecked
+
+After the local fixture package was verified, the fictional audit users and command library were promoted into a real production trust surface so the live public domain could expose the same privacy-safe audit material directly.
+
+Completed implementation work:
+
+- added a dedicated public route at:
+  - `/audit-fixtures`
+- rendered the production page from the typed fixture source so the live page consumes:
+  - the fictional account catalog
+  - the user-command library
+  - assumptions and usage notes
+- marked the new route as a public-but-non-indexed trust surface by applying:
+  - `noindex`
+  - `nofollow`
+- linked the new route from existing public trust and operations surfaces:
+  - `/support`
+  - `/status`
+  - the site footer
+- added dedicated presentation styles for:
+  - account cards
+  - command groups
+  - command detail panels
+  - fixture badges and metadata grids
+- extended frontend trust/compliance regression coverage so the new route is verified for:
+  - title
+  - noindex metadata
+  - live trust-surface linking
+  - fictional-safety copy
+
+Completed local verification work:
+
+- frontend automated verification:
+  - `npm run test:integration`
+  - result after the production route implementation: `53 passed`
+- frontend static verification:
+  - `npm run lint`
+  - result: passed
+- frontend production build verification:
+  - `npm run build`
+  - result: passed
+
+Completed production deployment work:
+
+- attempted a frontend Cloud Build from the repository root using the frontend image config:
+  - build id: `39e810bf-a2a7-42e4-8a68-7b7f85971baa`
+  - result: failed
+  - verified cause: the frontend image config expects the frontend app directory as the build context, so the Dockerfile path was unresolved from the repository root context
+- corrected the build invocation by submitting from:
+  - `apps/frontend`
+- built and published the updated frontend image through Cloud Build:
+  - build id: `3b6f880e-8675-47d0-985f-ff21e0883701`
+  - image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest`
+- deployed the updated frontend image to Cloud Run:
+  - service: `qcai-frontend`
+  - latest ready revision: `qcai-frontend-00037-bqg`
+  - traffic: `100%`
+
+Completed live verification work:
+
+- verified `https://qantumlearn.academy/audit-fixtures` returns `200`
+- verified the live page exposes:
+  - the fictional and privacy-safe fixture statement
+  - `17` accounts
+  - `45` commands
+  - the new route title
+- verified the live page is marked:
+  - `noindex`
+- verified the live trust and operations surfaces now link to the new route:
+  - `https://qantumlearn.academy/support`
+  - `https://qantumlearn.academy/status`
+  - the site footer on `https://qantumlearn.academy/`
+- verified the new frontend rollout revision is live at:
+  - `qcai-frontend-00037-bqg`
+
+Completed deep double-check work:
+
+- re-audited the rollout summary against:
+  - the successful Cloud Build status
+  - the deployed Cloud Run frontend revision
+  - the live `/audit-fixtures` page
+  - the live support and status pages
+  - the homepage footer
+  - rerun local frontend verification commands
+- reran:
+  - `npm run test:integration`
+  - `npm run lint`
+  - `npm run build`
+- confirmed no factual correction was required
+- confirmed the new audit-fixtures production batch remains local-only in git at this stage and was not yet published to GitHub during the rollout turn
+
+Recorded current publication boundary:
+
+- the production implementation is complete on the live domain
+- the current-folder log now records both the local fixture-package creation and the production route rollout
+- the related code and log updates remain uncommitted local work unless a later GitHub publication step is requested explicitly
+
+## 156. Practice Navigation Disclosure Now Closes Cleanly After Click
+
+After the public navigation gained the nested `Practice` menu, the disclosure state was tightened so the menu no longer remains open after a submenu click on either same-page or route-changing navigation.
+
+Completed implementation work:
+
+- introduced a dedicated client navigation component so disclosure state can be managed explicitly instead of relying on static shell markup
+- added a disclosure helper that closes the `Practice` list:
+  - when a submenu item is clicked
+  - when the pathname changes
+- updated the shared app shell to render the new navigation component consistently across the public site
+- added regression coverage for:
+  - opening the `Practice` group
+  - clicking `Builder`
+  - verifying the list closes on same-route clicks and SPA navigation
+
+Completed local verification work:
+
+- frontend automated verification:
+  - `npm run test:integration`
+  - result after the navigation fix: `55 passed`
+- frontend static verification:
+  - `npm run lint`
+  - result: passed
+- frontend production build verification:
+  - `npm run build`
+  - result: passed
+
+Completed production deployment work:
+
+- built and published the updated frontend image through Cloud Build:
+  - build id: `dbd7c06d-4942-4867-a0eb-74e2d17b5d10`
+- deployed the updated frontend image to Cloud Run:
+  - service: `qcai-frontend`
+  - latest ready revision: `qcai-frontend-00038-2sd`
+  - traffic: `100%`
+
+Completed live verification work:
+
+- verified the public `Practice` disclosure opens correctly
+- verified that after clicking `Builder` while already on `/builder`, the number of open groups returns to:
+  - `0`
+- verified that after opening `Practice` on the homepage and navigating into `/builder`, the number of open groups also returns to:
+  - `0`
+
+## 157. Overview References 4 Through 8 Removed from the Homepage Only
+
+The homepage bibliography presentation was narrowed so the public Overview page shows only the top reference set while the full syllabus bibliography remains available elsewhere.
+
+Completed implementation work:
+
+- introduced an Overview-specific reference subset for the homepage
+- preserved the full bibliography on the dedicated syllabus surface
+- added regression coverage to ensure:
+  - homepage Overview exposes references `1` through `3`
+  - homepage Overview does not expose references `4` through `8`
+  - syllabus continues to expose the removed references
+
+Completed local verification work:
+
+- frontend automated verification:
+  - `npm run test:integration`
+  - result after the homepage bibliography change: `56 passed`
+- frontend static verification:
+  - `npm run lint`
+  - result: passed
+- frontend production build verification:
+  - `npm run build`
+  - result: passed
+
+Completed production deployment work:
+
+- built and published the updated frontend image through Cloud Build:
+  - build id: `15a2e655-c9cd-4bac-a15e-8db9f6526e7a`
+- deployed the updated frontend image to Cloud Run:
+  - service: `qcai-frontend`
+  - latest ready revision: `qcai-frontend-00039-jgf`
+  - traffic: `100%`
+
+Completed live verification work:
+
+- verified the live homepage still exposes:
+  - `REFERENCE 3`
+- verified the live homepage no longer exposes:
+  - `REFERENCE 4`
+  - `REFERENCE 5`
+  - `REFERENCE 8`
+- verified the dedicated syllabus surface still exposes the removed references, including:
+  - `REFERENCE 4`
+  - `REFERENCE 8`
+
+## 158. Homepage What’s New Box Removed While Keeping the Dedicated Changelog Page
+
+The homepage was simplified by removing the public `What’s new` summary box while preserving the standalone release-notes page for visitors who still need direct changelog access.
+
+Completed implementation work:
+
+- removed the homepage `What’s new` content block entirely
+- preserved the separate changelog route as the dedicated release-notes surface
+- added regression coverage so the homepage cannot silently reintroduce:
+  - `WHAT'S NEW`
+  - `Recent releases and visible next steps`
+
+Completed local verification work:
+
+- frontend automated verification:
+  - `npm run test:integration`
+  - result after the homepage cleanup: `57 passed`
+- frontend static verification:
+  - `npm run lint`
+  - result: passed
+- frontend production build verification:
+  - `npm run build`
+  - result: passed
+
+Completed production deployment work:
+
+- built and published the updated frontend image through Cloud Build:
+  - build id: `4607991c-9595-422b-bfc9-ff5e369e7c01`
+- deployed the updated frontend image to Cloud Run:
+  - service: `qcai-frontend`
+  - latest ready revision: `qcai-frontend-00040-ntr`
+  - traffic: `100%`
+
+Completed live verification work:
+
+- verified the live homepage no longer shows:
+  - `WHAT'S NEW`
+  - `Recent releases and visible next steps`
+- verified the dedicated changelog route remains live:
+  - `https://qantumlearn.academy/whats-new`
+  - result: `200`
+
+## 159. Curriculum Architecture Reframed as a Learning Progression and Local-Grounding Footer Copy Removed
+
+The modules page was restructured away from the old historical split and into an explicit learning-progression narrative that explains how the eleven-module path builds from fundamentals through specialization.
+
+Completed implementation work:
+
+- removed the old split language that separated the curriculum into:
+  - `Original six modules`
+  - `Five new hardware-constrained extensions`
+- reorganized the curriculum architecture around progression stages:
+  - `Foundations`
+  - `Algorithms`
+  - `Programming`
+  - `Applications`
+  - `Specialization`
+- added stage-level explanatory copy so each progression group describes the relevant module range in order of learning progression
+- removed the module-card footer copy so the page no longer displays any `Grounded in ...` or `Grounded in the local ...` text on the public module cards
+- added regression coverage to ensure:
+  - the new stage labels render
+  - the old split labels are absent
+  - the old `Grounded in` footer copy does not reappear
+
+Completed local verification work:
+
+- frontend automated verification:
+  - `npm run test:integration`
+  - result after the modules-page restructure: `59 passed`
+- frontend static verification:
+  - `npm run lint`
+  - result: passed
+- frontend production build verification:
+  - `npm run build`
+  - result: passed
+
+Completed production deployment work:
+
+- built and published the updated frontend image through Cloud Build:
+  - build id: `6b2f9ab8-0f24-47b7-bf5c-6d6604287b25`
+- deployed the updated frontend image to Cloud Run:
+  - service: `qcai-frontend`
+  - latest ready revision: `qcai-frontend-00041-l8s`
+  - traffic: `100%`
+
+Completed live verification work:
+
+- verified `https://qantumlearn.academy/modules` renders the new progression stages:
+  - `Foundations`
+  - `Algorithms`
+  - `Programming`
+  - `Applications`
+  - `Specialization`
+- verified the old split labels are gone:
+  - `Original six modules`
+  - `Five new hardware-constrained extensions`
+- verified the module cards no longer expose any `Grounded in` footer text
+
+## 160. Account Summary Boxes Removed from the Public Account Page
+
+The public account surface was simplified by removing the non-essential summary boxes while preserving the live create, sign-in, sign-out, and delete-account controls.
+
+Completed implementation work:
+
+- removed the public account-page boxes titled:
+  - `Account access`
+  - `Lifecycle`
+  - `First-party account path is active`
+- preserved the actual account-operation controls, including:
+  - account creation
+  - sign in
+  - sign out
+  - account deletion
+- aligned the page metadata so the browser title now resolves cleanly to:
+  - `Account`
+- added regression coverage to ensure the removed boxes do not reappear
+
+Completed local verification work:
+
+- frontend automated verification:
+  - `npm run test:integration`
+  - result after the account-page cleanup: `61 passed`
+- frontend static verification:
+  - `npm run lint`
+  - result: passed
+- frontend production build verification:
+  - `npm run build`
+  - result: passed
+
+Completed production deployment work:
+
+- built and published the updated frontend image through Cloud Build:
+  - build id: `5d89c530-802d-4add-be5d-7673912cd4ab`
+- deployed the updated frontend image to Cloud Run:
+  - service: `qcai-frontend`
+  - latest ready revision: `qcai-frontend-00042-gvr`
+  - traffic: `100%`
+
+Completed live verification work:
+
+- verified `https://qantumlearn.academy/account` no longer shows the removed boxes
+- verified the page title now resolves to:
+  - `Account | QC+AI Studio`
+- verified the remaining live account actions are still present and usable
+
+## 161. AI-Powered Teaching Assistant Implemented on Production with Vertex AI
+
+A real public teaching-assistant experience was added to the live platform so visitors can ask course-related questions and receive grounded answers with citations from the curriculum corpus.
+
+Completed implementation work:
+
+- added a new backend assistant API route for chat requests
+- added a teaching-assistant service that:
+  - grounds responses in the course corpus
+  - includes page and lesson context in prompts
+  - returns citations with the answer
+  - falls back to a local grounded response if Vertex is unavailable
+- added a global frontend teaching-assistant chat shell with:
+  - floating launcher
+  - message history
+  - public-site integration through the app shell
+- extended frontend API wiring and styling for the assistant experience
+- added regression coverage for the new assistant surface
+
+Completed local verification work:
+
+- backend automated verification:
+  - `pytest apps/api/tests -q`
+  - result after the assistant implementation: `71 passed`
+- frontend automated verification:
+  - `npm run test:integration`
+  - result after the assistant UI rollout: `64 passed`
+- frontend static verification:
+  - `npm run lint`
+  - result: passed
+- frontend production build verification:
+  - `npm run build`
+  - result: passed
+
+Completed production deployment work:
+
+- built and published the updated API image through Cloud Build:
+  - build id: `6aa5b242-b6c9-472a-9c2f-d92aeac34a0e`
+- deployed the assistant API rollout to Cloud Run:
+  - service: `qcai-api`
+  - latest ready revision: `qcai-api-00028-4x7`
+  - traffic: `100%`
+- built and published the updated frontend image through Cloud Build:
+  - build id: `afff840b-f245-49e5-bb5b-3d35138a1a8b`
+- deployed the assistant frontend rollout to Cloud Run:
+  - service: `qcai-frontend`
+  - latest ready revision: `qcai-frontend-00043-7km`
+  - traffic: `100%`
+
+Completed live verification work:
+
+- verified live `POST https://qantumlearn.academy/api/backend/assistant/chat` returned:
+  - `200`
+- verified the response headers reported:
+  - `x-assistant-provider: vertex-ai`
+  - `x-assistant-model: gemini-3.1-flash-lite-preview`
+- verified the homepage serves:
+  - the floating assistant launcher
+  - the assistant shell copy
+- verified the runtime service-account path had the required Vertex IAM grant for the initial rollout
+
+## 162. Teaching Assistant Migrated to Secret-Backed Vertex AI API-Key Authentication and Older Exposed Key Retired
+
+The assistant runtime was then hardened so production no longer depends on the broader Vertex service-account path. The live assistant now authenticates through a Secret Manager-backed Vertex AI API key that is injected only at runtime.
+
+Completed implementation work:
+
+- extended the assistant service to support a dedicated Vertex API-key authentication path
+- updated runtime configuration so:
+  - `VERTEX_AI_API_KEY` is used when present
+  - the service falls back to the service-account path only if the key is absent
+- changed the Vertex request path for API-key mode to the express-style publisher endpoint
+- added regression coverage to verify API-key mode:
+  - uses the API-key endpoint
+  - omits bearer-auth headers
+  - reports the provider as `vertex-ai-api-key`
+
+Completed local verification work:
+
+- backend automated verification:
+  - `pytest apps/api/tests/test_api.py -q`
+  - result after the API-key addition: `61 passed`
+- backend full automated verification:
+  - `pytest apps/api/tests -q`
+  - result after the hardening pass: `72 passed`
+
+Completed production deployment work:
+
+- created a new restricted Vertex AI API key for the teaching assistant and stored it in Secret Manager without writing the key into source control or local config files
+- updated the Cloud Run API service to read the key at runtime from:
+  - `qcai-vertex-ai-api-key`
+- built and published the updated API image through Cloud Build:
+  - build id: `ea6ccc05-6e54-4757-92fd-37ed243c9e02`
+- deployed the hardened API rollout to Cloud Run:
+  - service: `qcai-api`
+  - latest ready revision: `qcai-api-00029-gcf`
+  - traffic: `100%`
+
+Completed live verification work:
+
+- verified live `POST https://qantumlearn.academy/api/backend/assistant/chat` returned:
+  - `200`
+- verified the live assistant now reports:
+  - `x-assistant-provider: vertex-ai-api-key`
+  - `x-assistant-model: gemini-3.1-flash-lite-preview`
+- verified the Cloud Run revision reads `VERTEX_AI_API_KEY` from Secret Manager at runtime rather than from checked-in configuration
+- verified a second live assistant call still succeeded after the security cleanup, continuing to report:
+  - `vertex-ai-api-key`
+
+Completed security-cleanup work:
+
+- deleted the older exposed Vertex API key resource so it no longer exists in the project
+- removed the no-longer-needed `roles/aiplatform.user` binding from the runtime API service account
+- confirmed the project key inventory now shows only the active teaching-assistant key resource
+- kept the key itself out of the repository, out of local config files, and out of the current-folder activity logs
+
+## 163. Quantum Teaching Assistant UI Refresh Completed
+
+The global public teaching assistant was then redesigned into a cleaner chat-first drawer aligned to the requested support-chat reference while preserving the grounded-answering behavior and analytics wiring already implemented.
+
+Completed implementation work:
+
+- reworked the global assistant component so the panel now presents as a support-style right drawer on desktop and a compact bottom sheet on mobile
+- preserved the assistant title:
+  - `Quantum Teaching Assistant`
+- preserved the online status treatment while updating the visible copy to:
+  - `Online & ready to help`
+- removed the visible context-pill row and prompt-chip row from the rendered assistant experience
+- removed the visible provider/model metadata line so the interface no longer exposes:
+  - `vertex-ai-api-key | gemini-3.1-flash-lite-preview`
+- kept `response.provider` and `response.model` available only for analytics logging rather than public rendering
+- rewrote the welcome message and helper copy into a shorter support-chat presentation
+- preserved lesson and page request context by continuing to send:
+  - `lesson_slug`
+  - `page_path`
+- preserved citation rendering, but re-presented citations as secondary supporting blocks under each assistant response
+- refreshed the launcher, panel header, transcript surface, message bubbles, and composer styling to match the darker production chat direction
+- retained accessibility and interaction behavior, including:
+  - dialog semantics
+  - `Escape` close handling
+  - focus handoff to the composer
+  - transcript `role="log"`
+  - bounded transcript scrolling
+
+Completed test and validation work:
+
+- updated the assistant integration coverage to verify:
+  - provider/model metadata is no longer rendered
+  - the removed context and prompt UI does not reappear
+  - the drawer still exposes the required dialog and keyboard semantics
+  - the transcript remains scrollable inside a height-bounded panel
+  - the mobile layout continues to collapse into a bottom-sheet form
+- reran frontend automated verification:
+  - `npm run test:integration`
+  - result after the assistant UI refresh: `67 passed`
+- reran frontend production build verification:
+  - `npm run build`
+  - result: passed
+
+## 164. Deep Error-Focused Double-Check Completed for the Current Assistant UI Batch
+
+After the UI refresh was implemented, a second error-focused verification pass was performed specifically to confirm there were no remaining implementation issues rather than merely acceptable styling relevance.
+
+Completed double-check work:
+
+- re-audited the updated assistant component source directly
+- re-audited the assistant-specific CSS selectors directly
+- re-audited the assistant integration-test coverage directly
+- reran the full backend automated suite:
+  - `pytest apps/api/tests -q`
+  - result: `72 passed`
+- reran frontend static verification:
+  - `npm run lint`
+  - result: passed
+- reran frontend automated verification:
+  - `npm run test:integration`
+  - result after the final assistant regression addition: `68 passed`
+- reran frontend production build verification:
+  - `npm run build`
+  - result: passed
+
+Confirmed issue found and corrected during the deep double-check:
+
+- identified a real mobile/short-viewport edge case where the floating launcher remained mounted while the assistant drawer was already open
+- confirmed that the extra launcher footprint could compete with the open sheet on tighter viewports and diverged from the intended support-chat behavior
+- corrected the component so the launcher hides while the drawer is open
+- added explicit regression coverage to ensure the launcher-hidden behavior does not silently regress in a later edit
+
+Current-state confirmation from the final verification pass:
+
+- the visible provider/model line is no longer rendered in the assistant UI
+- the assistant still sends grounded request context
+- analytics logging still preserves provider/model information privately
+- the refreshed drawer passes the verified backend, lint, integration, and production-build checks listed above

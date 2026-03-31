@@ -137,6 +137,27 @@ export type QAHistoryItem = {
   created_at: string;
 };
 
+export type AssistantChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type AssistantChatResponse = {
+  answer: string;
+  citations: Array<{
+    chunk_id: string;
+    source_title: string;
+    source_kind: string;
+    section_title: string;
+    excerpt: string;
+    timestamp_label?: string | null;
+  }>;
+  retrieval_mode: string;
+  provider: string;
+  model: string;
+  grounded: boolean;
+};
+
 export type QuizAttemptResult = {
   status: string;
   attempt_id: number;

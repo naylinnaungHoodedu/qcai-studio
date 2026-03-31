@@ -1,5 +1,7 @@
 import {
   AuthAction,
+  AssistantChatMessage,
+  AssistantChatResponse,
   AuthSession,
   ArenaLeaderboardEntry,
   ArenaProfile,
@@ -249,6 +251,25 @@ export async function askQuestion(
       question,
       lesson_slug: lessonSlug ?? null,
       top_k: 4,
+    }),
+  });
+}
+
+export async function chatWithTeachingAssistant(payload: {
+  message: string;
+  lesson_slug?: string | null;
+  page_path?: string | null;
+  history?: AssistantChatMessage[];
+  top_k?: number;
+}): Promise<AssistantChatResponse> {
+  return apiFetch<AssistantChatResponse>("/assistant/chat", {
+    method: "POST",
+    body: JSON.stringify({
+      message: payload.message,
+      lesson_slug: payload.lesson_slug ?? null,
+      page_path: payload.page_path ?? null,
+      history: payload.history ?? [],
+      top_k: payload.top_k ?? 4,
     }),
   });
 }

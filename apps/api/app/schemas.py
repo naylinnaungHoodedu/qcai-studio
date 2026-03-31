@@ -1,5 +1,6 @@
 from datetime import datetime
 import re
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -151,6 +152,61 @@ class QAHistoryItem(BaseModel):
     answer: str
     citations: list[Citation] = Field(default_factory=list)
     created_at: datetime
+
+
+class AssistantChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Message content cannot be empty.")
+        return normalized
+
+
+class AssistantChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    lesson_slug: str | None = None
+    page_path: str | None = Field(default=None, max_length=255)
+    history: list[AssistantChatMessage] = Field(default_factory=list)
+    top_k: int = Field(default=4, ge=1, le=8)
+
+    @field_validator("message")
+    @classmethod
+    def validate_message(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Message cannot be empty.")
+        return normalized
+
+    @field_validator("page_path")
+    @classmethod
+    def validate_page_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if not normalized.startswith("/"):
+            raise ValueError("Page path must start with '/'.")
+        return normalized[:255]
+
+    @field_validator("history")
+    @classmethod
+    def validate_history(cls, value: list[AssistantChatMessage]) -> list[AssistantChatMessage]:
+        return value[-8:]
+
+
+class AssistantChatResponse(BaseModel):
+    answer: str
+    citations: list[Citation]
+    retrieval_mode: str
+    provider: str
+    model: str
+    grounded: bool = True
 
 
 class AnalyticsEventCreate(BaseModel):

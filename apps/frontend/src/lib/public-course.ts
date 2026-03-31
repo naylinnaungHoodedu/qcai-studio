@@ -62,6 +62,54 @@ export const ABOUT_LEARNING_PROGRESSION = [
   },
 ] as const;
 
+export const CURRICULUM_ARCHITECTURE_STAGES = [
+  {
+    title: "Foundations",
+    moduleRange: "Modules 1 and 7",
+    summary:
+      "Start with the hardware realities, hybrid-system boundaries, and operational assumptions that make the rest of the curriculum interpretable.",
+    detail:
+      "Module 1 frames QC+AI around NISQ-era limits, credible hybrid orchestration, and the distinction between quantum-for-AI and AI-for-quantum support. Module 7 returns to that frame through hardware-constrained learning so noise, shots, trainability, and simulator-to-device gaps become concrete design parameters rather than abstract caveats.",
+    moduleSlugs: ["nisq-hybrid-workflows", "hardware-constrained-introduction"],
+  },
+  {
+    title: "Algorithms",
+    moduleRange: "Modules 2 and 8",
+    summary:
+      "Move from framing into the optimization and model-design decisions that determine whether a quantum subroutine earns its place inside a broader workflow.",
+    detail:
+      "Module 2 shows how classical AI supports routing, graph shrinking, logistics reformulation, and constrained optimization for quantum hardware. Module 8 then compares hardware-aware model families and validation logic so learners can judge which QC+AI model patterns remain credible under device limits.",
+    moduleSlugs: ["ai-for-quantum-hardware", "hardware-constrained-models"],
+  },
+  {
+    title: "Programming",
+    moduleRange: "Modules 9 and 10",
+    summary:
+      "Translate model ideas into implementable programming workflows that survive compiler constraints, calibration noise, and the economics of real hardware execution.",
+    detail:
+      "Module 9 covers parameter-shift differentiation, shot allocation, grouping, and debugging patterns for device-first execution. Module 10 extends that work into software architecture, compiler-aware orchestration, caching, pulse-level control, and reliability engineering for hardware-constrained QC+AI systems.",
+    moduleSlugs: ["intermediate-quantum-programming", "advanced-quantum-software"],
+  },
+  {
+    title: "Applications",
+    moduleRange: "Modules 3, 4, and 5",
+    summary:
+      "Interpret the methods through concrete application domains instead of treating them as abstract algorithms with no deployment context.",
+    detail:
+      "Module 3 examines hybrid application patterns in vision, healthcare, and few-shot learning. Module 4 focuses on representations, language, compression, and explainability under combinatorial pressure. Module 5 closes the applied block with industry-facing sectors, adoption patterns, and commercialization constraints.",
+    moduleSlugs: ["quantum-enhanced-applications", "representation-explainability", "industry-use-cases"],
+  },
+  {
+    title: "Specialization",
+    moduleRange: "Modules 6 and 11",
+    summary:
+      "Finish with systems judgment: how to read longer-horizon QC+AI strategy and how to reason about domain-specific optimization work under strict hardware limits.",
+    detail:
+      "Module 6 treats QC+AI as a systems discipline tied to energy, memory, and future-direction tradeoffs. Module 11 applies the hardware-constrained toolkit to portfolio optimization, option pricing, anomaly detection, and financial model-risk governance.",
+    moduleSlugs: ["thermodynamics-roadmap", "quantum-finance-programming"],
+  },
+] as const;
+
 export const PREREQUISITES = [
   "Comfort reading technical material in linear algebra terms such as vectors, matrices, embeddings, and similarity.",
   "Basic machine-learning intuition: optimization, feature representations, evaluation, and the role of training loops.",

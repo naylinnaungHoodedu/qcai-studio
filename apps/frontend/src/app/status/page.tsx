@@ -56,6 +56,9 @@ export default async function StatusPage() {
             <Link className="primary-button" href="/support">
               Open support
             </Link>
+            <Link className="secondary-button" href="/audit-fixtures">
+              Review audit fixtures
+            </Link>
             <Link className="secondary-button" href="/accessibility">
               Review accessibility
             </Link>

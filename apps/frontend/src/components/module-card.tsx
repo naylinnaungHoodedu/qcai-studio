@@ -10,7 +10,6 @@ type ModuleCardMeta = {
   icon: string;
   level: "Beginner" | "Intermediate" | "Advanced";
   tags: string[];
-  footer: string;
 };
 
 const MODULE_CARD_META: Record<string, ModuleCardMeta> = {
@@ -20,7 +19,6 @@ const MODULE_CARD_META: Record<string, ModuleCardMeta> = {
     icon: "orbit",
     level: "Beginner",
     tags: ["QAI vs AI4QC", "NISQ", "Hybrid loops", "Bottlenecks"],
-    footer: "Grounded in the QC+AI 2025 and 2026 proceedings introduction material.",
   },
   "ai-for-quantum-hardware": {
     accent: "#8f5dff",
@@ -28,7 +26,6 @@ const MODULE_CARD_META: Record<string, ModuleCardMeta> = {
     icon: "routing",
     level: "Intermediate",
     tags: ["Routing", "Graph shrinking", "QUBO", "RL-Q-ALM"],
-    footer: "Grounded in routing, logistics, and graph-reduction source sections.",
   },
   "quantum-enhanced-applications": {
     accent: "#27d8c0",
@@ -36,7 +33,6 @@ const MODULE_CARD_META: Record<string, ModuleCardMeta> = {
     icon: "layers",
     level: "Intermediate",
     tags: ["Vision", "Healthcare", "Few-shot", "Kernels"],
-    footer: "Grounded in hybrid application papers across vision, healthcare, and few-shot learning.",
   },
   "representation-explainability": {
     accent: "#a24dff",
@@ -44,7 +40,6 @@ const MODULE_CARD_META: Record<string, ModuleCardMeta> = {
     icon: "grid",
     level: "Advanced",
     tags: ["Compression", "Language", "QGSHAP", "Representations"],
-    footer: "Grounded in quINR, QuCoWE, and exact explainability source material.",
   },
   "industry-use-cases": {
     accent: "#ff9f2f",
@@ -52,7 +47,6 @@ const MODULE_CARD_META: Record<string, ModuleCardMeta> = {
     icon: "briefcase",
     level: "Intermediate",
     tags: ["Finance", "Healthcare", "Cybersecurity", "Commercialization"],
-    footer: "Grounded in the curated industry-use-cases document rather than proceedings-only evidence.",
   },
   "thermodynamics-roadmap": {
     accent: "#ff6997",
@@ -60,7 +54,6 @@ const MODULE_CARD_META: Record<string, ModuleCardMeta> = {
     icon: "energy",
     level: "Advanced",
     tags: ["Resource efficiency", "Roadmap", "Thermodynamics", "Systems"],
-    footer: "Grounded in the 2026 systems and thermodynamic synthesis sections.",
   },
   "hardware-constrained-introduction": {
     accent: "#27d86f",
@@ -68,7 +61,6 @@ const MODULE_CARD_META: Record<string, ModuleCardMeta> = {
     icon: "spark",
     level: "Beginner",
     tags: ["Noise", "Shots", "Barren plateaus", "Goldilocks design"],
-    footer: "Grounded in the local introduction document for hardware-constrained QC+AI.",
   },
   "hardware-constrained-models": {
     accent: "#4da3ff",
@@ -76,7 +68,6 @@ const MODULE_CARD_META: Record<string, ModuleCardMeta> = {
     icon: "models",
     level: "Intermediate",
     tags: ["VQCs", "Kernel methods", "CV-QNN", "Validation"],
-    footer: "Grounded in the local models document and its acceptance-criteria sections.",
   },
   "intermediate-quantum-programming": {
     accent: "#1bd4ff",
@@ -84,7 +75,6 @@ const MODULE_CARD_META: Record<string, ModuleCardMeta> = {
     icon: "terminal",
     level: "Intermediate",
     tags: ["Parameter shift", "Shot allocation", "Grouping", "Debugging"],
-    footer: "Grounded in the intermediate programming document and its hardware test strategy.",
   },
   "advanced-quantum-software": {
     accent: "#b16dff",
@@ -92,7 +82,6 @@ const MODULE_CARD_META: Record<string, ModuleCardMeta> = {
     icon: "compile",
     level: "Advanced",
     tags: ["MLIR", "Pulse control", "Caching", "Reliability"],
-    footer: "Grounded in the advanced software-development document and workflow mappings.",
   },
   "quantum-finance-programming": {
     accent: "#ffb020",
@@ -100,7 +89,6 @@ const MODULE_CARD_META: Record<string, ModuleCardMeta> = {
     icon: "finance",
     level: "Advanced",
     tags: ["Portfolio optimization", "Option pricing", "Model risk", "QUBO"],
-    footer: "Grounded in the local quantum-finance programming and optimization document.",
   },
 };
 
@@ -110,7 +98,6 @@ const DEFAULT_CARD_META: ModuleCardMeta = {
   icon: "orbit",
   level: "Intermediate",
   tags: ["Hardware aware", "Hybrid", "QC+AI"],
-  footer: "Grounded in curated local QC+AI source material.",
 };
 
 function formatStatus(status: string): string {
@@ -297,7 +284,6 @@ export function ModuleCard({
         </Link>
       </div>
 
-      <p className="module-card-footnote">{meta.footer}</p>
     </article>
   );
 }

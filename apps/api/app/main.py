@@ -10,7 +10,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.extension import _rate_limit_exceeded_handler
 from sqlalchemy.exc import OperationalError
 
-from app.api.routes import admin, analytics, arena, assets, auth, builder, content, insights, projects, qa, search, support
+from app.api.routes import admin, analytics, arena, assets, assistant, auth, builder, content, insights, projects, qa, search, support
 from app.core.config import get_settings
 from app.core.db import Base, SessionLocal, engine
 from app.core.rate_limit import limiter
@@ -141,6 +141,7 @@ app.include_router(content.router)
 app.include_router(assets.router)
 app.include_router(search.router)
 app.include_router(qa.router)
+app.include_router(assistant.router)
 app.include_router(analytics.router)
 app.include_router(admin.router)
 app.include_router(arena.router)

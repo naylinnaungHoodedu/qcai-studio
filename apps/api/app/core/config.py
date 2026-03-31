@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_chat_model: str = "gpt-4.1-mini"
     openai_embedding_model: str = "text-embedding-3-small"
+    vertex_ai_api_key: str | None = None
+    vertex_ai_project_id: str | None = None
+    vertex_ai_location: str = "global"
+    vertex_ai_chat_model: str = "gemini-3.1-flash-lite-preview"
     auth0_domain: str | None = None
     auth0_audience: str | None = None
     pinecone_api_key: str | None = None
@@ -71,6 +75,7 @@ class Settings(BaseSettings):
     auth_register_rate_limit: str = "5/minute"
     auth_login_rate_limit: str = "10/minute"
     qa_ask_rate_limit: str = "5/minute"
+    assistant_chat_rate_limit: str = "8/minute"
     search_rate_limit: str = "10/minute"
     support_request_rate_limit: str = "5/hour"
     public_web_vitals_rate_limit: str = "120/minute"

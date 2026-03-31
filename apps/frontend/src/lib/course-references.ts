@@ -8,3 +8,5 @@ export const COURSE_REFERENCES = [
   "Advanced Programming and Software Development for Hardware-Constrained Learning for Quantum Computing and Artificial Intelligence. Local authored curriculum source document used to shape the advanced software-engineering module.",
   "Quantum Finance Programming and Optimization for Hardware-Constrained Learning for Quantum Computing and Artificial Intelligence. Local authored curriculum source document used to extend the finance-focused specialization module.",
 ];
+
+export const OVERVIEW_COURSE_REFERENCES = COURSE_REFERENCES.slice(0, 3);
