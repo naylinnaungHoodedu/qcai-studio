@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
+import { normalizeAssistantHistory } from "@/lib/assistant-chat";
 import { chatWithTeachingAssistant, postAnalyticsEvent } from "@/lib/api";
 import { AssistantChatMessage, AssistantChatResponse } from "@/lib/types";
 
@@ -146,9 +147,12 @@ export function TeachingAssistantChat() {
       content: message,
       createdAt: new Date().toISOString(),
     };
-    const history: AssistantChatMessage[] = [...messages, userBubble]
-      .slice(-8)
-      .map((item) => ({ role: item.role, content: item.content }));
+    const history: AssistantChatMessage[] = normalizeAssistantHistory(
+      [...messages, userBubble].map((item) => ({
+        role: item.role,
+        content: item.content,
+      })),
+    );
 
     setDraft("");
     setError(null);

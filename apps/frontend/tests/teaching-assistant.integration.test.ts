@@ -22,6 +22,7 @@ test("app shell mounts the global teaching assistant widget", () => {
 test("frontend API client exposes the teaching assistant chat helper", () => {
   assert.match(API_SOURCE, /export async function chatWithTeachingAssistant/);
   assert.match(API_SOURCE, /apiFetch<AssistantChatResponse>\("\/assistant\/chat"/);
+  assert.match(API_SOURCE, /history:\s*normalizeAssistantHistory\(payload\.history \?\? \[\]\)/);
 });
 
 test("teaching assistant widget uses page context and renders the expected product copy", () => {
@@ -29,6 +30,7 @@ test("teaching assistant widget uses page context and renders the expected produ
   assert.match(ASSISTANT_SOURCE, /Quantum Teaching Assistant/);
   assert.match(ASSISTANT_SOURCE, /Online &amp; ready to help/);
   assert.match(ASSISTANT_SOURCE, /chatWithTeachingAssistant/);
+  assert.match(ASSISTANT_SOURCE, /normalizeAssistantHistory/);
   assert.match(ASSISTANT_SOURCE, /page_path: pathname/);
   assert.match(ASSISTANT_SOURCE, /lesson_slug: lessonSlug/);
   assert.match(ASSISTANT_SOURCE, /Ask about quantum computing\.\.\./);

@@ -328,6 +328,57 @@ def test_assistant_chat_returns_vertex_backed_contract(monkeypatch):
     assert response.headers["x-assistant-model"] == "gemini-3.1-flash-lite-preview"
 
 
+def test_assistant_chat_truncates_oversized_history_instead_of_rejecting_it(monkeypatch):
+    oversized_history = "A" * 4501
+
+    class StubAssistant:
+        def chat(self, message: str, **kwargs: object):
+            history = kwargs["history"]
+            assert history is not None
+            assert len(history) == 2
+            assert history[0].content == "Tell me about routing depth."
+            assert history[1].content == oversized_history[:4000]
+            return AssistantChatResponse(
+                answer="Noise and routing overhead both matter [1].",
+                citations=[
+                    Citation(
+                        chunk_id="routing-2",
+                        source_title="Quantum Computing and Artificial Intelligence 2025",
+                        source_kind="video",
+                        section_title="Routing depth",
+                        excerpt="Additional SWAPs increase depth and noise pressure.",
+                        timestamp_label="02:04",
+                    )
+                ],
+                retrieval_mode="vertex-rag-lexical",
+                provider="vertex-ai-api-key",
+                model="gemini-3.1-flash-lite-preview",
+                grounded=True,
+            )
+
+    monkeypatch.setattr(assistant, "get_teaching_assistant", lambda: StubAssistant())
+
+    user_headers = {"x-demo-user": f"assistant-{uuid4().hex[:8]}", "x-demo-role": "learner"}
+    response = client.post(
+        "/assistant/chat",
+        headers=user_headers,
+        json={
+            "message": "Why does noise matter after routing?",
+            "page_path": "/",
+            "history": [
+                {"role": "user", "content": "Tell me about routing depth."},
+                {"role": "assistant", "content": oversized_history},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["provider"] == "vertex-ai-api-key"
+    assert data["model"] == "gemini-3.1-flash-lite-preview"
+    assert data["citations"]
+
+
 def test_teaching_assistant_falls_back_to_grounded_local_answer_without_vertex():
     store = get_course_store()
     engine = RetrievalEngine(store, Settings())

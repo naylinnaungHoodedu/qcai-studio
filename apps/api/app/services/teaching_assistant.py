@@ -8,7 +8,13 @@ from urllib.parse import urlencode
 import httpx
 
 from app.core.config import Settings
-from app.schemas import AssistantChatMessage, AssistantChatResponse, Citation
+from app.schemas import (
+    ASSISTANT_HISTORY_MAX_MESSAGES,
+    ASSISTANT_HISTORY_MESSAGE_MAX_LENGTH,
+    AssistantChatMessage,
+    AssistantChatResponse,
+    Citation,
+)
 from app.services.retrieval_engine import RetrievalEngine
 from app.services.text_utils import sanitize_user_text, truncate_display_excerpt
 
@@ -136,12 +142,12 @@ class TeachingAssistantService:
 
     def _sanitize_history(self, history: list[AssistantChatMessage]) -> list[AssistantChatMessage]:
         cleaned: list[AssistantChatMessage] = []
-        for item in history[-8:]:
-            content = sanitize_user_text(item.content)
+        for item in history[-ASSISTANT_HISTORY_MAX_MESSAGES:]:
+            content = sanitize_user_text(item.content)[:ASSISTANT_HISTORY_MESSAGE_MAX_LENGTH]
             if not content:
                 continue
             cleaned.append(item.model_copy(update={"content": content}))
-        return cleaned[-8:]
+        return cleaned[-ASSISTANT_HISTORY_MAX_MESSAGES:]
 
     def _ask_vertex(
         self,

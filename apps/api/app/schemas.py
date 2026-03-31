@@ -154,9 +154,13 @@ class QAHistoryItem(BaseModel):
     created_at: datetime
 
 
+ASSISTANT_HISTORY_MAX_MESSAGES = 8
+ASSISTANT_HISTORY_MESSAGE_MAX_LENGTH = 4000
+
+
 class AssistantChatMessage(BaseModel):
     role: Literal["user", "assistant"]
-    content: str = Field(min_length=1, max_length=4000)
+    content: str = Field(min_length=1)
 
     @field_validator("content")
     @classmethod
@@ -164,7 +168,7 @@ class AssistantChatMessage(BaseModel):
         normalized = value.strip()
         if not normalized:
             raise ValueError("Message content cannot be empty.")
-        return normalized
+        return normalized[:ASSISTANT_HISTORY_MESSAGE_MAX_LENGTH]
 
 
 class AssistantChatRequest(BaseModel):
@@ -197,7 +201,7 @@ class AssistantChatRequest(BaseModel):
     @field_validator("history")
     @classmethod
     def validate_history(cls, value: list[AssistantChatMessage]) -> list[AssistantChatMessage]:
-        return value[-8:]
+        return value[-ASSISTANT_HISTORY_MAX_MESSAGES:]
 
 
 class AssistantChatResponse(BaseModel):

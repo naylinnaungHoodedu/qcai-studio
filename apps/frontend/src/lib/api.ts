@@ -34,6 +34,8 @@ import {
   SupportRequestReceipt,
   UserProfile,
 } from "@/lib/types";
+import { normalizeAssistantHistory } from "@/lib/assistant-chat";
+import { describeApiError } from "@/lib/api-errors";
 import { AUTH_CSRF_COOKIE_NAME, AUTH_CSRF_HEADER, AUTH_TOKEN_COOKIE_NAME } from "@/lib/auth";
 
 const SERVER_API_BASE_URL =
@@ -170,13 +172,13 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
   const response = await fetch(`${resolveApiBaseUrl()}${path}`, fetchOptions);
 
   if (!response.ok) {
-    let detail = `API request failed: ${response.status}`;
+    let detail =
+      describeApiError(response.status, response.headers, {}) || `API request failed: ${response.status}`;
     try {
-      const payload = (await response.json()) as { detail?: string; error?: string };
-      if (typeof payload.detail === "string" && payload.detail.trim()) {
-        detail = payload.detail;
-      } else if (typeof payload.error === "string" && payload.error.trim()) {
-        detail = payload.error;
+      const payload = (await response.json()) as { detail?: unknown; error?: unknown };
+      const describedError = describeApiError(response.status, response.headers, payload);
+      if (describedError) {
+        detail = describedError;
       }
     } catch {
       // Keep the status-based fallback when the error body is not JSON.
@@ -268,7 +270,7 @@ export async function chatWithTeachingAssistant(payload: {
       message: payload.message,
       lesson_slug: payload.lesson_slug ?? null,
       page_path: payload.page_path ?? null,
-      history: payload.history ?? [],
+      history: normalizeAssistantHistory(payload.history ?? []),
       top_k: payload.top_k ?? 4,
     }),
   });
