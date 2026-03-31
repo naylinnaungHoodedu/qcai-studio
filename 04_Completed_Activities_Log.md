@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-03-31 10:58:42 -04:00`
+Last updated on: `2026-03-31 11:01:32 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp_QC_AI_Studio`
 
 ## 1. Scope of Work Completed
@@ -5048,3 +5048,38 @@ Current-state confirmation from the final verification pass:
 - the assistant still sends grounded request context
 - analytics logging still preserves provider/model information privately
 - the refreshed drawer passes the verified backend, lint, integration, and production-build checks listed above
+
+## 165. GitHub Repository Updated for the Current Completed-Activities Batch
+
+After the completed local activity set and its validation were finalized, the repository was published to the related GitHub project so the current folder state is now reflected remotely.
+
+Completed publication work:
+
+- confirmed the configured remote repository:
+  - `https://github.com/naylinnaungHoodedu/qcai-studio.git`
+- confirmed the publication target branch:
+  - `main`
+- fetched the remote state before publication to avoid pushing against a stale reference
+- committed the full completed batch under:
+  - `77640d5`
+  - `feat: publish assistant and public experience updates`
+- pushed the commit successfully to:
+  - `origin/main`
+
+Published batch contents included:
+
+- the root completed-activities log updates through sections `163` and `164`
+- the audit-fixtures content package and public route
+- the primary navigation disclosure behavior hardening
+- the public-account, homepage, modules, support, and status refinements
+- the backend teaching-assistant route and service
+- the refreshed frontend teaching-assistant drawer UI and regression coverage
+- the newly added course-related image assets and sitemap artifact
+
+Publication confirmation:
+
+- the repository push completed successfully from:
+  - `df83e6d`
+  - to:
+  - `77640d5`
+- the current folder's completed activity batch is now present in the related GitHub repository
