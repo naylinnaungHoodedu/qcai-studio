@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-03-31 11:01:32 -04:00`
+Last updated on: `2026-03-31 13:50:18 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp_QC_AI_Studio`
 
 ## 1. Scope of Work Completed
@@ -5083,3 +5083,151 @@ Publication confirmation:
   - to:
   - `77640d5`
 - the current folder's completed activity batch is now present in the related GitHub repository
+
+## 166. Audit Fixture Deliverable Formalized and Canonical Source-of-Truth Sync Added
+
+The audit-fixture package was then converted from a short summary into a formal deep-dive deliverable aligned to the required audit structure, while preserving the typed fixture library as the only source of truth.
+
+Completed implementation work:
+
+- rewrote the root artifact:
+  - `08_Fictional_User_Accounts_and_User_Commands.md`
+  - into the exact eight-section deliverable structure:
+    - Executive Summary
+    - Scope & Method
+    - Assumptions
+    - Account Catalog
+    - User Commands
+    - Risks & Mitigations
+    - Acceptance Criteria
+    - Test Strategy
+- kept the canonical fixture dataset in:
+  - `apps/frontend/src/lib/audit-user-fixtures.ts`
+- reconciled stale summary claims against the actual exported fixture source and confirmed the current canonical counts are:
+  - `17` fictional user accounts
+  - `45` realistic user commands
+- preserved the existing role-cluster coverage:
+  - `guest`
+  - `learner`
+  - `instructor_creator`
+  - `admin_support`
+  - `manager_guardian`
+- preserved the existing coverage for all required journey categories and edge cases instead of creating a disconnected second fixture set
+- added a document-level regression guard in:
+  - `apps/frontend/tests/audit-user-fixture-report.integration.test.ts`
+- verified the new smoke test enforces:
+  - the required eight-section heading order
+  - synchronization between the written report and the canonical account and command counts
+
+Completed verification work:
+
+- reran frontend automated verification:
+  - `npm run test:integration`
+  - result after the report formalization and doc-smoke-test addition: `73 passed`
+
+Completed GitHub publication work for that deliverable batch:
+
+- committed the audit-fixture report formalization under:
+  - `cf56684`
+  - `docs: formalize audit fixture deliverable`
+- pushed the completed deliverable batch successfully to:
+  - `origin/main`
+
+## 167. Deep Live Audit of `https://qantumlearn.academy/` Completed
+
+After the audit-fixture package was formalized, a separate professional live-site audit was completed directly against the public deployment to evaluate the current public product surface rather than only the local repository.
+
+Completed live audit coverage:
+
+- audited the public educational and trust routes, including:
+  - `/`
+  - `/modules`
+  - `/simulations`
+  - `/search`
+  - `/account`
+  - `/status`
+  - `/support`
+  - `/privacy`
+  - `/terms`
+  - `/accessibility`
+- audited the machine-readable public governance surfaces:
+  - `/robots.txt`
+  - `/sitemap.xml`
+  - `/.well-known/security.txt`
+- audited live response headers and browser hardening signals for public and semi-protected routes
+- audited the public status, privacy, accessibility, and support disclosures for consistency with the live technical posture
+
+Completed independent technical verification work:
+
+- sampled live curl timing checks on `2026-03-31` and confirmed:
+  - `/` returned `200` with approximate TTFB `144 ms`
+  - `/modules` returned `200` with approximate TTFB `149 ms`
+  - `/status` returned `200` with approximate TTFB `205 ms`
+  - `/search` returned `200` with approximate TTFB `196 ms`
+  - `/account` returned `200` with approximate TTFB `204 ms`
+- sampled live security-header posture and confirmed the public deployment exposes:
+  - HSTS
+  - CSP with per-response nonce and `strict-dynamic`
+  - `X-Frame-Options: DENY`
+  - `Referrer-Policy: same-origin`
+  - `Cross-Origin-Opener-Policy: same-origin`
+  - `Cross-Origin-Resource-Policy: same-site`
+  - restrictive `Permissions-Policy`
+- confirmed the account and dashboard surfaces set first-party guest cookies with:
+  - `Secure`
+  - `HttpOnly` on the guest id
+  - `SameSite=lax`
+
+Completed independent Lighthouse-based browser verification:
+
+- ran a live Lighthouse sample against `/` and confirmed:
+  - performance: `99`
+  - accessibility: `100`
+  - best practices: `96`
+  - SEO: `100`
+  - FCP: approximately `1034 ms`
+  - LCP: approximately `2179 ms`
+  - total blocking time: approximately `46 ms`
+- ran a live Lighthouse sample against `/support` and confirmed:
+  - performance: `99`
+  - accessibility: `100`
+  - best practices: `100`
+  - SEO: `100`
+  - FCP: approximately `963 ms`
+  - LCP: approximately `2088 ms`
+  - total blocking time: approximately `32 ms`
+
+Completed audit conclusions recorded from the live pass:
+
+- no high-severity public blocking defect was observed during the non-invasive audit
+- the strongest live risk was operational consistency rather than baseline page construction
+- medium-severity concerns were identified around:
+  - field performance on the public status page remaining below the site’s own targets
+  - `style-src-attr 'unsafe-inline'` still remaining in the live CSP
+  - COEP still being publicly deferred
+  - guest-study continuity and cookies persisting for up to `365 days`
+  - support, privacy, and security continuity remaining concentrated in a single disclosed operator path
+- a lower-severity usability/privacy observation was recorded that the raw guest-session identifier remains visible on the live account page
+
+Operational cleanup completed after the live audit:
+
+- removed the temporary local Lighthouse JSON output files created solely for the audit pass so they were not left as stray unpublished artifacts in the current folder
+
+## 168. GitHub Repository Updated for the Current Audit-Documentation Batch
+
+After the live audit and the missing activity sections were recorded, the current folder’s completed-activities log was updated and synchronized to the related GitHub repository.
+
+Completed documentation and publication work:
+
+- updated the root completed-activities log timestamp to the current execution time
+- appended the new completed-activity sections:
+  - `166`
+  - `167`
+  - `168`
+- removed temporary local live-audit artifacts before publication:
+  - `apps/frontend/lighthouse-live-home.json`
+  - `apps/frontend/support-lighthouse-live.json`
+- committed the updated completed-activities log as a documentation-only batch
+- pushed the current activity-log synchronization batch successfully to:
+  - `https://github.com/naylinnaungHoodedu/qcai-studio.git`
+  - branch: `main`
