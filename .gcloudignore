@@ -1,0 +1,7 @@
+.gcloudignore
+.git
+.gitignore
+#!include:.gitignore
+update_data/*
+!update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx
+!update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4

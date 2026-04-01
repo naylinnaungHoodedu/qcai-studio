@@ -14,10 +14,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY --chown=qcai:qcai apps/api/app ./app
 COPY --chown=qcai:qcai transcripts ./source-assets/transcripts
-COPY --chown=qcai:qcai *.docx ./source-assets/
-COPY --chown=qcai:qcai *.mp4 ./source-assets/
-COPY --chown=qcai:qcai update_data/*.docx ./source-assets/update_data/
-COPY --chown=qcai:qcai update_data/*.mp4 ./source-assets/update_data/
+COPY --chown=qcai:qcai ["Quantum Computing AI Research Synthesis 2026.docx", "Analyzing Quantum Computing and AI Paper 2025.docx", "Quantum Computing and Artificial Intelligence Industry Use Cases.docx", "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx", "Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx", "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx", "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx", "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx", "./source-assets/"]
+COPY --chown=qcai:qcai ["Quantum Computing and Artificial Intelligence 2025.mp4", "Quantum Computing and Artificial Intelligence 2026.mp4", "Industry Use Cases.mp4", "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4", "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4", "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4", "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4", "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4", "./source-assets/"]
+COPY --chown=qcai:qcai ["update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx", "update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4", "./source-assets/update_data/"]
 
 USER qcai
 

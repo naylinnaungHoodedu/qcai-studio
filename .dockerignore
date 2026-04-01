@@ -17,3 +17,6 @@ apps/api/qcai_dev.db
 Vital_Concepts.docx
 2025.mp4
 *.pdf
+update_data/*
+!update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx
+!update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4
