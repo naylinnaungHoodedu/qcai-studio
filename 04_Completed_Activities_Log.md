@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-04-01 19:00:26 -04:00`
+Last updated on: `2026-04-01 19:03:43 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp_QC_AI_Studio`
 
 ## 1. Scope of Work Completed
@@ -5372,3 +5372,48 @@ Final-state confirmation from the completed recheck:
 - no additional concrete code or manifest defects were identified in the changed paths after the API-container ownership fix
 - the remaining open caution was operational rather than implementation-level:
   - the dedicated Module 2 source pair must be present in the GitHub-published build context or otherwise injected during CI/CD, because the updated runtime now expects those files under `update_data/`
+
+## 172. GitHub Repository Updated for the Module 2 and Production-Hardening Batch
+
+After the dedicated Module 2 lesson upgrade, production-hardening batch, README synchronization, and deep error-focused recheck were completed locally, the publishable batch was synchronized to the related GitHub repository.
+
+Completed publication work:
+
+- confirmed the configured remote repository:
+  - `https://github.com/naylinnaungHoodedu/qcai-studio.git`
+- confirmed the publication target branch:
+  - `main`
+- fetched the remote branch before publication and confirmed there was no ahead/behind divergence:
+  - `HEAD...origin/main` -> `0  0`
+- committed the completed publication batch under:
+  - `98cefc1`
+  - `feat: publish module2 lesson and production hardening`
+- pushed the commit successfully to:
+  - `origin/main`
+
+Published batch contents included:
+
+- the dedicated Module 2 routing/logistics lesson-source upgrade
+- the dedicated Module 2 authored DOCX and MP4 runtime source pair
+- source-asset discovery and canonical ID cleanup
+- dedicated Module 2 curated chapter metadata
+- frontend source-reference and fallback-metadata alignment
+- production container hardening for the API and frontend
+- standalone frontend production build output
+- frontend `/health` and `/ready` operational routes
+- API request-id propagation and stronger readiness checks
+- Cloud Build SHA tagging and corrected frontend build context
+- Kubernetes production-config, probes, resource requests/limits, non-root settings, and PodDisruptionBudgets
+- README synchronization for the current active source corpus and production scaffolding
+- completed-activities log updates through sections:
+  - `169`
+  - `170`
+  - `171`
+
+Publication status after the main sync:
+
+- the repository update from:
+  - `f16a905`
+  - to:
+  - `98cefc1`
+  has been completed successfully on GitHub
