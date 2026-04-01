@@ -38,6 +38,13 @@ const FALLBACK_SOURCE_ASSETS = [
     description: "Industry framing that connects the curriculum to commercial and applied system design.",
   },
   {
+    id: "doc-module2-routing",
+    title: "Routing, Graph Shrinking, and Logistics under Hardware Constraints",
+    kind: "document",
+    filename: "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx",
+    description: "Local authored source focused on logistics QUBO reformulation, graph shrinking, augmented Lagrangian control, and routing-aware execution.",
+  },
+  {
     id: "doc-hcl-introduction",
     title: "Introduction to Hardware-Constrained QC+AI",
     kind: "document",
@@ -92,6 +99,13 @@ const FALLBACK_SOURCE_ASSETS = [
     kind: "video",
     filename: "Industry Use Cases.mp4",
     description: "Lecture media connecting the curriculum to industry readiness, migration planning, and sector-specific deployment tradeoffs.",
+  },
+  {
+    id: "video-module2-routing",
+    title: "Routing, Graph Shrinking, and Logistics under Hardware Constraints",
+    kind: "video",
+    filename: "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4",
+    description: "Lecture media focused on graph shrinking, RL-tuned penalty control, nested qubit routing, and quantum logistics systems design.",
   },
   {
     id: "video-hcl-introduction",

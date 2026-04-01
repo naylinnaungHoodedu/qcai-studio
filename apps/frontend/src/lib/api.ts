@@ -38,10 +38,12 @@ import { normalizeAssistantHistory } from "@/lib/assistant-chat";
 import { describeApiError } from "@/lib/api-errors";
 import { AUTH_CSRF_COOKIE_NAME, AUTH_CSRF_HEADER, AUTH_TOKEN_COOKIE_NAME } from "@/lib/auth";
 
+const DEFAULT_PRODUCTION_API_BASE_URL = "https://api.qantumlearn.academy";
+const LOCAL_DEV_API_BASE_URL = "http://127.0.0.1:8000";
 const SERVER_API_BASE_URL =
   process.env.API_BASE_URL ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||
-  "http://127.0.0.1:8000";
+  (process.env.NODE_ENV === "production" ? DEFAULT_PRODUCTION_API_BASE_URL : LOCAL_DEV_API_BASE_URL);
 const CLIENT_API_BASE_URL = "/api/backend";
 const DEMO_USER_ID = "demo-learner";
 const DEMO_ROLE = "learner";

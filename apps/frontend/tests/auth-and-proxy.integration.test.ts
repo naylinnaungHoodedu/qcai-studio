@@ -4,6 +4,8 @@ import test from "node:test";
 import { NextRequest, NextResponse } from "next/server";
 
 import { GET as backendProxyGet } from "../src/app/api/backend/[...path]/route";
+import { GET as frontendHealthRoute } from "../src/app/health/route";
+import { GET as frontendReadyRoute } from "../src/app/ready/route";
 import { GET as authCallbackRoute } from "../src/app/auth/callback/route";
 import { GET as authLoginRoute } from "../src/app/auth/login/route";
 import { GET as authLogoutRoute } from "../src/app/auth/logout/route";
@@ -240,5 +242,63 @@ test("asset proxy full GET uses a plain streamed response when guest cookies alr
     assert.equal(response instanceof NextResponse, false);
   } finally {
     global.fetch = originalFetch;
+  }
+});
+
+test("frontend health route returns a no-store operational payload", async () => {
+  const response = frontendHealthRoute();
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(payload.status, "ok");
+  assert.equal(payload.app, "QC+AI Studio Frontend");
+});
+
+test("frontend ready route fails closed when the API base URL is missing", async () => {
+  const originalApiBaseUrl = process.env.API_BASE_URL;
+  const originalPublicApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  delete process.env.API_BASE_URL;
+  delete process.env.NEXT_PUBLIC_API_BASE_URL;
+
+  try {
+    const response = frontendReadyRoute();
+    const payload = await response.json();
+
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(payload.status, "degraded");
+  } finally {
+    if (originalApiBaseUrl == null) {
+      delete process.env.API_BASE_URL;
+    } else {
+      process.env.API_BASE_URL = originalApiBaseUrl;
+    }
+    if (originalPublicApiBaseUrl == null) {
+      delete process.env.NEXT_PUBLIC_API_BASE_URL;
+    } else {
+      process.env.NEXT_PUBLIC_API_BASE_URL = originalPublicApiBaseUrl;
+    }
+  }
+});
+
+test("frontend ready route reports ready when the API base URL is valid", async () => {
+  const originalApiBaseUrl = process.env.API_BASE_URL;
+  process.env.API_BASE_URL = "https://api.qantumlearn.academy";
+
+  try {
+    const response = frontendReadyRoute();
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(payload.status, "ready");
+    assert.equal(payload.api_origin, "https://api.qantumlearn.academy");
+  } finally {
+    if (originalApiBaseUrl == null) {
+      delete process.env.API_BASE_URL;
+    } else {
+      process.env.API_BASE_URL = originalApiBaseUrl;
+    }
   }
 });

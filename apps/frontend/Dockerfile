@@ -1,4 +1,12 @@
-FROM node:24-alpine
+FROM node:24-alpine AS deps
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -9,6 +17,7 @@ ARG NEXT_PUBLIC_ENABLE_DEMO_AUTH=true
 ARG NEXT_PUBLIC_COOKIE_DOMAIN=
 ARG NEXT_PUBLIC_SITE_URL=https://qantumlearn.academy
 
+ENV NEXT_TELEMETRY_DISABLED=1
 ENV API_BASE_URL=$API_BASE_URL
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 ENV ENABLE_DEMO_AUTH=$ENABLE_DEMO_AUTH
@@ -16,13 +25,42 @@ ENV NEXT_PUBLIC_ENABLE_DEMO_AUTH=$NEXT_PUBLIC_ENABLE_DEMO_AUTH
 ENV NEXT_PUBLIC_COOKIE_DOMAIN=$NEXT_PUBLIC_COOKIE_DOMAIN
 ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
 
-COPY package*.json ./
-RUN npm ci
-
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 RUN npm run build
 
+
+FROM node:24-alpine AS runner
+
+WORKDIR /app
+
+ARG API_BASE_URL=http://127.0.0.1:8000
+ARG NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+ARG ENABLE_DEMO_AUTH=true
+ARG NEXT_PUBLIC_ENABLE_DEMO_AUTH=true
+ARG NEXT_PUBLIC_COOKIE_DOMAIN=
+ARG NEXT_PUBLIC_SITE_URL=https://qantumlearn.academy
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
+ENV API_BASE_URL=$API_BASE_URL
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+ENV ENABLE_DEMO_AUTH=$ENABLE_DEMO_AUTH
+ENV NEXT_PUBLIC_ENABLE_DEMO_AUTH=$NEXT_PUBLIC_ENABLE_DEMO_AUTH
+ENV NEXT_PUBLIC_COOKIE_DOMAIN=$NEXT_PUBLIC_COOKIE_DOMAIN
+ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
+
+RUN addgroup -S qcai && adduser -S qcai -G qcai
+
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=qcai:qcai /app/.next/standalone ./
+COPY --from=builder --chown=qcai:qcai /app/.next/static ./.next/static
+
+USER qcai
+
 EXPOSE 3000
 
-CMD ["npm", "run", "start", "--", "--hostname", "0.0.0.0", "--port", "3000"]
+CMD ["node", "server.js"]

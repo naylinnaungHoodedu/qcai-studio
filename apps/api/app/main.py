@@ -1,13 +1,16 @@
+import logging
 import secrets
 import time
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.extension import _rate_limit_exceeded_handler
+from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 from app.api.routes import admin, analytics, arena, assets, assistant, auth, builder, content, insights, projects, qa, search, support
@@ -22,6 +25,7 @@ from app.services.store import get_course_store
 
 settings = get_settings()
 IS_PRODUCTION = settings.environment.lower() != "development"
+LOGGER = logging.getLogger("qcai.api")
 
 def _build_content_security_policy(app_settings = settings, nonce: str | None = None) -> str:
     is_production = app_settings.environment.lower() != "development"
@@ -89,6 +93,22 @@ def _request_nonce(request: Request) -> str:
 
 def _security_headers_for_request(request: Request) -> dict[str, str]:
     return _build_security_headers(settings, nonce=_request_nonce(request))
+
+
+def _request_id(request: Request) -> str:
+    request_id = getattr(request.state, "request_id", None)
+    if request_id:
+        return request_id
+    inbound_request_id = request.headers.get("x-request-id", "").strip()
+    request_id = inbound_request_id or uuid4().hex
+    request.state.request_id = request_id
+    return request_id
+
+
+def _response_headers_for_request(request: Request) -> dict[str, str]:
+    headers = _security_headers_for_request(request)
+    headers["X-Request-ID"] = _request_id(request)
+    return headers
 
 
 def _initialize_database() -> None:
@@ -159,9 +179,17 @@ async def enforce_guest_request_protection(request: Request, call_next):
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.detail},
-            headers=_security_headers_for_request(request),
+            headers=_response_headers_for_request(request),
         )
     response = await call_next(request)
+    return response
+
+
+@app.middleware("http")
+async def attach_request_id(request: Request, call_next):
+    request_id = _request_id(request)
+    response = await call_next(request)
+    response.headers.setdefault("X-Request-ID", request_id)
     return response
 
 
@@ -175,21 +203,34 @@ async def add_security_headers(request, call_next):
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request, exc):
+    LOGGER.exception("Unhandled server error on %s %s [%s]", request.method, request.url.path, _request_id(request))
     return JSONResponse(
         status_code=500,
         content={"error": "internal", "detail": "Unexpected server error."},
-        headers=_security_headers_for_request(request),
+        headers=_response_headers_for_request(request),
     )
 
 
 @app.get("/health")
 def healthcheck():
-    return {"status": "ok", "app": settings.app_name}
+    return {"status": "ok", "app": settings.app_name, "environment": settings.environment}
 
 
 @app.get("/ready")
 def readiness_check():
+    try:
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
+    except Exception:
+        LOGGER.warning("Readiness database check failed", exc_info=True)
+        return JSONResponse(status_code=503, content={"status": "degraded", "database": "unavailable"})
+
     store = get_course_store()
     if not store.lessons:
-        return JSONResponse(status_code=503, content={"status": "building"})
-    return {"status": "ready", "lessons": len(store.lessons)}
+        return JSONResponse(status_code=503, content={"status": "building", "database": "ok"})
+    return {
+        "status": "ready",
+        "database": "ok",
+        "lessons": len(store.lessons),
+        "source_assets": len(store.overview.source_assets) if store.overview else 0,
+    }

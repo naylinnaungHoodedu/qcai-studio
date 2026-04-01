@@ -52,7 +52,7 @@ export const STATIC_ROUTE_LASTMOD: Record<string, string> = {
 
 export const MODULE_ROUTE_LASTMOD: Record<string, string> = {
   "nisq-hybrid-workflows": "2026-03-28T00:00:00Z",
-  "ai-for-quantum-hardware": "2026-03-28T00:00:00Z",
+  "ai-for-quantum-hardware": "2026-04-01T00:00:00Z",
   "quantum-enhanced-applications": "2026-03-28T00:00:00Z",
   "representation-explainability": "2026-03-28T00:00:00Z",
   "industry-use-cases": "2026-03-29T00:00:00Z",
@@ -66,7 +66,7 @@ export const MODULE_ROUTE_LASTMOD: Record<string, string> = {
 
 export const LESSON_ROUTE_LASTMOD: Record<string, string> = {
   "nisq-reality-overview": "2026-03-29T00:00:00Z",
-  "ai4qc-routing-and-optimization": "2026-03-29T00:00:00Z",
+  "ai4qc-routing-and-optimization": "2026-04-01T00:00:00Z",
   "hybrid-applications-healthcare-vision": "2026-03-28T00:00:00Z",
   "clinical-and-kernel-qcai-systems": "2026-03-28T00:00:00Z",
   "representation-language-and-xai": "2026-03-28T00:00:00Z",

@@ -25,6 +25,7 @@ RAW_DOCUMENT_TITLES = {
     "Quantum Computing AI Research Synthesis 2026.docx",
     "Analyzing Quantum Computing and AI Paper 2025.docx",
     "Quantum Computing and Artificial Intelligence Industry Use Cases.docx",
+    "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx",
     "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
     "Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx",
     "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
@@ -35,6 +36,7 @@ DISPLAY_DOCUMENT_TITLES = {
     "Ali, Chicano, and Moraglio (Eds.), QC+AI 2025 Proceedings",
     "Ali, Chicano, and Moraglio (Eds.), QC+AI 2026 Proceedings",
     "Raj et al. (Eds.), Quantum Computing and Artificial Intelligence: The Industry Use Cases",
+    "Routing, Graph Shrinking, and Logistics under Hardware Constraints",
     "Introduction to Hardware-Constrained QC+AI",
     "Hardware-Constrained QC+AI Models",
     "Intermediate Quantum Programming for Hardware-Constrained QC+AI",
@@ -45,6 +47,7 @@ RAW_VIDEO_TITLES = {
     "Industry Use Cases.mp4",
     "Quantum Computing and Artificial Intelligence 2025.mp4",
     "Quantum Computing and Artificial Intelligence 2026.mp4",
+    "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4",
     "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
     "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4",
     "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
@@ -55,6 +58,7 @@ DISPLAY_VIDEO_TITLES = {
     "Industry Use Cases",
     "Quantum Computing and Artificial Intelligence 2025",
     "Quantum Computing and Artificial Intelligence 2026",
+    "Routing, Graph Shrinking, and Logistics under Hardware Constraints",
     "Introduction to Hardware-Constrained QC+AI",
     "Hardware-Constrained QC+AI Models",
     "Intermediate Quantum Programming for Hardware-Constrained QC+AI",
@@ -91,9 +95,11 @@ def test_healthcheck():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+    assert response.json()["environment"] in {"development", "production"}
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
     assert response.headers["x-xss-protection"] == "1; mode=block"
+    assert response.headers["x-request-id"]
     assert "permissions-policy" in response.headers
 
 
@@ -101,7 +107,9 @@ def test_readiness_check():
     response = client.get("/ready")
     assert response.status_code == 200
     assert response.json()["status"] == "ready"
+    assert response.json()["database"] == "ok"
     assert response.json()["lessons"] >= 1
+    assert response.headers["x-request-id"]
 
 
 def test_course_overview():
@@ -111,9 +119,10 @@ def test_course_overview():
     assert data["id"] == "qcai-hardware-aware-course"
     assert len(data["modules"]) == 11
     assert sum(len(module["lesson_slugs"]) for module in data["modules"]) == 12
-    assert len(data["source_assets"]) == 16
+    assert len(data["source_assets"]) == 18
     source_filenames = [asset["filename"] for asset in data["source_assets"]]
     assert "Quantum Computing and Artificial Intelligence Industry Use Cases.docx" in source_filenames
+    assert "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx" in source_filenames
     assert (
         "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx"
         in source_filenames
@@ -138,9 +147,16 @@ def test_lesson_lookup():
     assert data["module_slug"] == "ai-for-quantum-hardware"
     assert data["sections"]
     assert data["related_lessons"]
-    assert data["video_asset"]["filename"] == "Quantum Computing and Artificial Intelligence 2025.mp4"
-    assert data["video_asset"]["title"] == "Quantum Computing and Artificial Intelligence 2025"
-    assert data["video_asset"]["download_url"] == "/source-assets/by-id/quantum-computing-and-artificial-intelligence-2025"
+    assert data["chapters"]
+    assert data["video_asset"]["filename"] == "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4"
+    assert data["video_asset"]["title"] == "Routing, Graph Shrinking, and Logistics under Hardware Constraints"
+    assert (
+        data["video_asset"]["download_url"]
+        == "/source-assets/by-id/module2_routing-graph-shrinking-and-logistics-under-hardware-constraints-video"
+    )
+    source_filenames = {asset["filename"] for asset in data["source_assets"]}
+    assert "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx" in source_filenames
+    assert "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4" in source_filenames
 
 
 def test_lesson_lookup_repairs_mojibake_in_source_excerpts():
@@ -260,13 +276,13 @@ def test_search_returns_industry_use_case_results():
 
 
 def test_search_uses_clean_video_source_titles():
-    response = client.get("/search", params={"query": "NISQ Bottlenecks"})
+    response = client.get("/search", params={"query": "nested routing"})
     assert response.status_code == 200
     data = response.json()
     video_results = [result for result in data if result["source_kind"] == "video"]
     assert video_results
     source_titles = {result["source_title"] for result in video_results}
-    assert "Quantum Computing and Artificial Intelligence 2025" in source_titles
+    assert "Routing, Graph Shrinking, and Logistics under Hardware Constraints" in source_titles
     assert not (source_titles & RAW_VIDEO_TITLES)
 
 
@@ -291,7 +307,7 @@ def test_assistant_chat_returns_vertex_backed_contract(monkeypatch):
                 citations=[
                     Citation(
                         chunk_id="routing-1",
-                        source_title="Quantum Computing and Artificial Intelligence 2025",
+                        source_title="Routing, Graph Shrinking, and Logistics under Hardware Constraints",
                         source_kind="video",
                         section_title="Routing bottlenecks",
                         excerpt="Routing overhead grows because constrained hardware connectivity forces additional SWAP operations.",
@@ -343,7 +359,7 @@ def test_assistant_chat_truncates_oversized_history_instead_of_rejecting_it(monk
                 citations=[
                     Citation(
                         chunk_id="routing-2",
-                        source_title="Quantum Computing and Artificial Intelligence 2025",
+                        source_title="Routing, Graph Shrinking, and Logistics under Hardware Constraints",
                         source_kind="video",
                         section_title="Routing depth",
                         excerpt="Additional SWAPs increase depth and noise pressure.",
@@ -624,6 +640,7 @@ def test_video_assets_use_updated_filenames():
     assert "Industry Use Cases.mp4" in video_filenames
     assert "Quantum Computing and Artificial Intelligence 2025.mp4" in video_filenames
     assert "Quantum Computing and Artificial Intelligence 2026.mp4" in video_filenames
+    assert "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4" in video_filenames
     assert (
         "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
         in video_filenames
@@ -644,7 +661,7 @@ def test_video_assets_use_updated_filenames():
         "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
         in video_filenames
     )
-    assert len(video_filenames) == 8
+    assert len(video_filenames) == 9
     video_urls = [asset["download_url"] for asset in assets if asset["kind"] == "video"]
     assert all(url.startswith("/source-assets/by-id/") for url in video_urls)
     assert not any(any(raw_title in url for raw_title in RAW_VIDEO_TITLES) for url in video_urls)
@@ -691,6 +708,16 @@ def test_duplicate_stem_assets_use_kind_specific_ids():
         if asset["filename"]
         == "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
     )
+    module2_document = next(
+        asset
+        for asset in assets
+        if asset["filename"] == "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx"
+    )
+    module2_video = next(
+        asset
+        for asset in assets
+        if asset["filename"] == "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4"
+    )
 
     assert intro_document["id"].endswith("-document")
     assert intro_video["id"].endswith("-video")
@@ -701,6 +728,11 @@ def test_duplicate_stem_assets_use_kind_specific_ids():
     assert finance_document["id"].endswith("-document")
     assert finance_video["id"].endswith("-video")
     assert finance_document["id"] != finance_video["id"]
+    assert module2_document["id"].endswith("-document")
+    assert module2_video["id"].endswith("-video")
+    assert module2_document["id"] != module2_video["id"]
+    assert "," not in module2_document["id"]
+    assert "," not in module2_video["id"]
 
 
 def test_industry_video_asset_supports_head_requests():
@@ -815,6 +847,7 @@ def test_source_document_selection_uses_curated_allowlist(tmp_path: Path):
         "Quantum Computing AI Research Synthesis 2026.docx",
         "Analyzing Quantum Computing and AI Paper 2025.docx",
         "Quantum Computing and Artificial Intelligence Industry Use Cases.docx",
+        "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx",
         "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
         "Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx",
         "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
@@ -832,6 +865,7 @@ def test_source_document_selection_uses_curated_allowlist(tmp_path: Path):
         "Quantum Computing AI Research Synthesis 2026.docx",
         "Analyzing Quantum Computing and AI Paper 2025.docx",
         "Quantum Computing and Artificial Intelligence Industry Use Cases.docx",
+        "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx",
         "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
         "Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx",
         "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
@@ -845,6 +879,7 @@ def test_source_video_selection_uses_curated_allowlist(tmp_path: Path):
         "Quantum Computing and Artificial Intelligence 2025.mp4",
         "Quantum Computing and Artificial Intelligence 2026.mp4",
         "Industry Use Cases.mp4",
+        "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4",
         "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
         "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4",
         "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
@@ -860,11 +895,28 @@ def test_source_video_selection_uses_curated_allowlist(tmp_path: Path):
         "Quantum Computing and Artificial Intelligence 2025.mp4",
         "Quantum Computing and Artificial Intelligence 2026.mp4",
         "Industry Use Cases.mp4",
+        "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4",
         "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
         "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4",
         "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
         "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
         "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
+    ]
+
+
+def test_source_asset_selection_discovers_nested_update_data_assets(tmp_path: Path):
+    update_data = tmp_path / "update_data"
+    update_data.mkdir()
+    (update_data / "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx").write_bytes(b"test")
+    (update_data / "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4").write_bytes(b"test")
+
+    settings = Settings(source_assets_root=str(tmp_path))
+
+    assert [path.name for path in settings.source_documents] == [
+        "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx"
+    ]
+    assert [path.name for path in settings.source_videos] == [
+        "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4"
     ]
 
 

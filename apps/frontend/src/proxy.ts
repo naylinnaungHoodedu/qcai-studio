@@ -8,6 +8,7 @@ import {
 
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const GUEST_BOOTSTRAP_PREFIXES = ["/account", "/builder", "/dashboard", "/projects", "/lessons"];
+const DEFAULT_PRODUCTION_API_ORIGIN = "https://api.qantumlearn.academy";
 
 function createNonce(): string {
   const bytes = new Uint8Array(16);
@@ -23,6 +24,9 @@ function buildConnectSources(): string {
   }
 
   const candidateOrigins = [process.env.API_BASE_URL, process.env.NEXT_PUBLIC_API_BASE_URL];
+  if (IS_PRODUCTION && !candidateOrigins.some(Boolean)) {
+    candidateOrigins.push(DEFAULT_PRODUCTION_API_ORIGIN);
+  }
 
   for (const candidate of candidateOrigins) {
     if (!candidate) {

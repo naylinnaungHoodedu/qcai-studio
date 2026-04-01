@@ -5,6 +5,7 @@ metadata:
   namespace: qcai-learning
 spec:
   replicas: 1
+  revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: qcai-ingestion-worker
@@ -13,9 +14,14 @@ spec:
       labels:
         app: qcai-ingestion-worker
     spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: ingestion-worker
           image: us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-api:latest
+          imagePullPolicy: Always
           command: ["python", "-m", "app.workers.ingestion"]
           envFrom:
             - configMapRef:
@@ -23,6 +29,19 @@ spec:
             - secretRef:
                 name: qcai-secrets
                 optional: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -31,6 +50,7 @@ metadata:
   namespace: qcai-learning
 spec:
   replicas: 1
+  revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: qcai-rag-worker
@@ -39,9 +59,14 @@ spec:
       labels:
         app: qcai-rag-worker
     spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: rag-worker
           image: us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-api:latest
+          imagePullPolicy: Always
           command: ["python", "-m", "app.workers.rag"]
           envFrom:
             - configMapRef:
@@ -49,6 +74,19 @@ spec:
             - secretRef:
                 name: qcai-secrets
                 optional: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -57,6 +95,7 @@ metadata:
   namespace: qcai-learning
 spec:
   replicas: 1
+  revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: qcai-analytics-worker
@@ -65,9 +104,14 @@ spec:
       labels:
         app: qcai-analytics-worker
     spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: analytics-worker
           image: us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-api:latest
+          imagePullPolicy: Always
           command: ["python", "-m", "app.workers.analytics"]
           envFrom:
             - configMapRef:
@@ -75,3 +119,16 @@ spec:
             - secretRef:
                 name: qcai-secrets
                 optional: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL

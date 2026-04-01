@@ -4,6 +4,7 @@ const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const PUBLIC_PAGE_CACHE_CONTROL = "public, max-age=0, s-maxage=300, stale-while-revalidate=86400";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   poweredByHeader: false,
   async headers() {
     const securityHeaders = [

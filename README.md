@@ -18,7 +18,10 @@ This repository now contains a working MVP implementation of the interactive QC+
 - `apps/api`: FastAPI backend with source ingestion, notes, search, and grounded QA endpoints
 - `infra/k8s`: Kubernetes manifests aligned with the implementation blueprint
 - `docker-compose.yml`: root-level local orchestration for the API and frontend
-- Expected local source assets:
+- Active source-asset discovery roots:
+  - repository root
+  - `update_data/`
+- Expected active local source assets:
   - `Quantum Computing AI Research Synthesis 2026.docx`
   - `Analyzing Quantum Computing and AI Paper 2025.docx`
   - `Quantum Computing and Artificial Intelligence Industry Use Cases.docx`
@@ -27,6 +30,7 @@ This repository now contains a working MVP implementation of the interactive QC+
   - `Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx`
   - `Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx`
   - `Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx`
+  - `update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx`
   - `Quantum Computing and Artificial Intelligence 2025.mp4`
   - `Quantum Computing and Artificial Intelligence 2026.mp4`
   - `Industry Use Cases.mp4`
@@ -35,8 +39,9 @@ This repository now contains a working MVP implementation of the interactive QC+
   - `Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4`
   - `Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4`
   - `Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4`
+  - `update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4`
 
-The current public curriculum is intentionally scoped to the eight curated DOCX sources above and the eight curated MP4 lesson assets above.
+The current public curriculum is intentionally scoped to nine curated DOCX sources and nine curated MP4 lesson assets, with the routing-and-optimization lesson now grounded in the dedicated Module 2 source pair under `update_data/`.
 
 ## Local development
 
@@ -99,16 +104,19 @@ docker build -t qcai-frontend apps/frontend
 ## Key implementation notes
 
 - `LICENSE` applies to the repository code. Third-party source documents, proceedings metadata, and curated media assets remain subject to their own upstream rights and are not relicensed by the repository code license.
-- The backend now assembles the course around an eight-document local corpus and eight curated MP4 lesson assets, producing an eleven-module, twelve-lesson curriculum.
+- The backend now assembles the course around a nine-document active local corpus and nine curated MP4 lesson assets, producing an eleven-module, twelve-lesson curriculum.
+- The `ai4qc-routing-and-optimization` lesson now uses the dedicated Module 2 routing/logistics DOCX and MP4 assets from `update_data/`, with lesson sections and curated chapters aligned to that source pair.
 - Background workers are real Python entrypoints and can be invoked directly with `python -m app.workers.ingestion`, `python -m app.workers.rag`, and `python -m app.workers.analytics`.
 - Video chapters are currently driven by curated chapter metadata; transcript JSON files can be dropped into the repository-root `transcripts/` directory using the format documented in `transcripts/README.md`.
 - QA uses grounded lexical retrieval by default and upgrades to Pinecone-backed hybrid retrieval only when `OPENAI_API_KEY`, `PINECONE_API_KEY`, and `PINECONE_INDEX` are all configured.
 - The current public Cloud Run deployment is running in `production` with `ENABLE_DEMO_AUTH=false`; open-demo learner access is provided through guest cookies and CSRF-protected same-site mutations rather than demo-header auth.
 - The frontend now proxies browser-side API requests and source-asset streaming through a same-origin Next.js route so deployed clients do not compile in a `localhost` API URL.
+- The frontend now exposes lightweight `/health` and `/ready` probe routes, while the API readiness route verifies both database reachability and assembled lesson availability.
 - Source assets now require authenticated or demo-authenticated access and video files support byte-range requests for reliable seeking.
 - Quiz attempts and learner interactions are wired into the existing backend persistence and analytics endpoints.
 - Learner progress is now aggregated through `/content/progress` and surfaced on the homepage and dashboard.
 - Auth defaults to demo learner headers for local development, while the API surface is prepared for Auth0-backed JWT validation in deployed environments.
+- The current production-oriented container and infrastructure scaffolding now includes non-root runtime containers, SHA-tagged Cloud Build outputs, Kubernetes startup/readiness/liveness probes, resource requests and limits, and PodDisruptionBudgets for the API and frontend.
 
 ## Public operations still owned outside the repo
 

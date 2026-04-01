@@ -4,10 +4,18 @@ metadata:
   name: qcai-config
   namespace: qcai-learning
 data:
+  ENVIRONMENT: "production"
   API_BASE_URL: "https://api.qantumlearn.academy"
   NEXT_PUBLIC_API_BASE_URL: "https://api.qantumlearn.academy"
+  SITE_URL: "https://qantumlearn.academy"
+  NEXT_PUBLIC_SITE_URL: "https://qantumlearn.academy"
   SOURCE_ASSETS_ROOT: "/app/source-assets"
   ALLOWED_ORIGINS: '["https://qantumlearn.academy"]'
+  ENABLE_DEMO_AUTH: "false"
+  NEXT_PUBLIC_ENABLE_DEMO_AUTH: "false"
+  NEXT_PUBLIC_COOKIE_DOMAIN: ".qantumlearn.academy"
+  CLOUD_SQL_CONNECTION_NAME: "naylinnaung:us-central1:qcai-db"
+  CLOUD_SQL_IP_TYPE: "PUBLIC"
   PINECONE_NAMESPACE: "qcai-course"
   PINECONE_UPSERT_BATCH_SIZE: "32"
   QA_ASK_RATE_LIMIT: "5/minute"

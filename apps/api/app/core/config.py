@@ -11,6 +11,7 @@ SOURCE_DOCUMENT_NAMES = [
     "Quantum Computing AI Research Synthesis 2026.docx",
     "Analyzing Quantum Computing and AI Paper 2025.docx",
     "Quantum Computing and Artificial Intelligence Industry Use Cases.docx",
+    "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx",
     "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
     "Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx",
     "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
@@ -22,6 +23,7 @@ SOURCE_VIDEO_NAMES = [
     "Quantum Computing and Artificial Intelligence 2025.mp4",
     "Quantum Computing and Artificial Intelligence 2026.mp4",
     "Industry Use Cases.mp4",
+    "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4",
     "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
     "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4",
     "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
@@ -130,13 +132,11 @@ class Settings(BaseSettings):
 
     @property
     def source_documents(self) -> list[Path]:
-        root = self.project_root
-        return [root / name for name in SOURCE_DOCUMENT_NAMES if (root / name).exists()]
+        return self._resolve_source_assets(SOURCE_DOCUMENT_NAMES)
 
     @property
     def source_videos(self) -> list[Path]:
-        root = self.project_root
-        return [root / name for name in SOURCE_VIDEO_NAMES if (root / name).exists()]
+        return self._resolve_source_assets(SOURCE_VIDEO_NAMES)
 
     @property
     def transcripts_dir(self) -> Path:
@@ -145,6 +145,25 @@ class Settings(BaseSettings):
     @property
     def source_assets_dir(self) -> Path:
         return self.project_root
+
+    @property
+    def source_asset_search_roots(self) -> list[Path]:
+        root = self.project_root
+        search_roots = [root]
+        update_root = root / "update_data"
+        if update_root.exists():
+            search_roots.append(update_root)
+        return search_roots
+
+    def _resolve_source_assets(self, filenames: list[str]) -> list[Path]:
+        resolved_paths: list[Path] = []
+        for name in filenames:
+            for root in self.source_asset_search_roots:
+                candidate = root / name
+                if candidate.exists():
+                    resolved_paths.append(candidate)
+                    break
+        return resolved_paths
 
 
 @lru_cache

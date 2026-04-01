@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-03-31 13:50:18 -04:00`
+Last updated on: `2026-04-01 19:00:26 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp_QC_AI_Studio`
 
 ## 1. Scope of Work Completed
@@ -5231,3 +5231,144 @@ Completed documentation and publication work:
 - pushed the current activity-log synchronization batch successfully to:
   - `https://github.com/naylinnaungHoodedu/qcai-studio.git`
   - branch: `main`
+
+## 169. Dedicated Module 2 Routing-and-Optimization Lesson Upgrade Completed
+
+After the live-site study and current-repo study were completed, the `ai4qc-routing-and-optimization` lesson was professionally upgraded so it no longer depended on the generic 2025 routing media bundle and instead used the dedicated Module 2 routing/logistics source pair.
+
+Completed implementation work:
+
+- traced the current lesson-assembly path across:
+  - `apps/api/app/core/config.py`
+  - `apps/api/app/services/content_assembler.py`
+  - `apps/api/app/services/transcripts.py`
+  - `apps/api/app/api/routes/assets.py`
+- confirmed the live routing lesson was still wired to:
+  - `Quantum Computing and Artificial Intelligence 2025.mp4`
+- studied the dedicated Module 2 authored source document:
+  - `update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx`
+- confirmed the dedicated Module 2 lecture asset dimensions and runtime locally:
+  - `update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4`
+  - runtime: `00:12:12`
+  - size: `272,602,918` bytes
+- added the dedicated Module 2 DOCX and MP4 to the backend curated source-asset allowlists
+- extended source-asset discovery so runtime lookup now checks both:
+  - repository root
+  - `update_data/`
+- added clean display-title mappings for the dedicated Module 2 document and video assets
+- updated the lesson blueprint for `ai4qc-routing-and-optimization` so it now uses:
+  - the dedicated Module 2 MP4
+  - Module 2-specific source highlights
+  - Module 2-specific key ideas, key notes, formulas, learner questions, flashcards, and quiz text
+  - section references aligned to the dedicated Module 2 document headings
+- added curated chapter metadata for the dedicated Module 2 video so the lesson now exposes chapter navigation without requiring a transcript JSON file
+- normalized source-asset ID generation so comma-bearing filenames now publish clean canonical IDs instead of leaking punctuation-heavy route IDs
+- updated local frontend metadata and fallback references so public-facing source counts and bibliography copy remain aligned with the new dedicated Module 2 lesson asset pair
+
+Completed verification work:
+
+- validated the local lesson payload for:
+  - `ai4qc-routing-and-optimization`
+- confirmed the lesson now exposes:
+  - dedicated Module 2 video filename
+  - clean `/source-assets/by-id/module2_routing-graph-shrinking-and-logistics-under-hardware-constraints-video` URL
+  - `6` curated video chapters
+  - `9` matched Module 2 document sections
+- reran backend automated verification:
+  - `pytest tests/test_api.py`
+  - result: `63 passed`
+- reran frontend integration verification for the touched public-structure and proxy surfaces:
+  - `npm run test:integration -- tests/course-structure.integration.test.ts`
+  - result: passed
+
+Completed repository-preparation work for publication:
+
+- prepared the dedicated Module 2 runtime source pair for GitHub publication:
+  - `update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx`
+  - `update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4`
+- preserved Git LFS handling for MP4 assets through the repository-level `*.mp4` rule in `.gitattributes`
+
+## 170. Production Hardening Batch Completed Locally
+
+After the dedicated Module 2 lesson upgrade, a separate production-focused implementation pass was completed to raise the repo’s deployability and runtime safety rather than only the lesson-content fidelity.
+
+Completed implementation work:
+
+- audited the production build, container, and infrastructure files across:
+  - `apps/api/Dockerfile`
+  - `apps/frontend/Dockerfile`
+  - `apps/frontend/next.config.ts`
+  - `infra/cloudbuild/*.yaml`
+  - `infra/k8s/*.yaml`
+- corrected the frontend Cloud Build configuration so it now builds from the actual frontend app directory instead of a nonexistent repository-root Dockerfile path
+- added immutable `$SHORT_SHA` tags to both API and frontend Cloud Build outputs in addition to `latest`
+- converted the frontend production image to a multi-stage standalone Next.js build
+- hardened both API and frontend containers to run as non-root users
+- added lightweight frontend health and readiness routes:
+  - `/health`
+  - `/ready`
+- strengthened API operational behavior by adding:
+  - request-id propagation through `X-Request-ID`
+  - readiness checks that validate both database reachability and assembled lesson availability
+  - explicit health payload environment reporting
+- corrected production frontend API fallback behavior so a missing environment variable no longer silently falls back to `127.0.0.1` in production mode
+- upgraded Kubernetes runtime scaffolding with:
+  - production env defaults
+  - disabled demo auth
+  - Cloud SQL connector settings
+  - startup probes
+  - readiness probes
+  - liveness probes
+  - resource requests and limits
+  - seccomp defaults
+  - non-root security contexts
+  - `imagePullPolicy: Always`
+  - PodDisruptionBudgets for API and frontend
+- aligned the local example env files and the Kubernetes secret example so the production-oriented defaults and Cloud SQL connector behavior are now documented consistently
+
+Completed verification work:
+
+- reran backend automated verification:
+  - `pytest tests/test_api.py`
+  - result: `63 passed`
+- reran frontend automated verification:
+  - `npm run test:integration -- tests/auth-and-proxy.integration.test.ts tests/course-structure.integration.test.ts`
+  - result: `76 passed`
+- reran frontend production-build verification:
+  - `npm run build`
+  - result: passed
+- confirmed the final production build manifest includes the new operational routes:
+  - `/health`
+  - `/ready`
+
+Operational note recorded for this batch:
+
+- this production-hardening pass was completed locally in the repository
+- no Cloud Build submission, Cloud Run rollout, or live-domain deployment was executed in this activity batch
+
+## 171. Deep Error-Focused Recheck Completed for the Module 2 and Production Batch
+
+After the Module 2 upgrade and production-hardening pass were implemented, a second error-focused verification pass was completed specifically to confirm there were no remaining concrete implementation defects in the changed paths.
+
+Completed recheck work:
+
+- re-audited the changed API runtime files directly
+- re-audited the changed frontend proxy, route, and build files directly
+- re-audited the changed Kubernetes and Cloud Build manifests directly
+- reran backend automated verification:
+  - `pytest tests/test_api.py`
+  - result: `63 passed`
+
+Confirmed real issue found and corrected during the deep recheck:
+
+- identified a concrete local-runtime regression in the hardened API container:
+  - the container had been switched to a non-root runtime user
+  - but `/app` itself remained root-owned
+  - which could break the default local SQLite path in Docker-backed local runs
+- corrected the API container setup so `/app` and the source-asset directories are created and owned by the runtime user before startup
+
+Final-state confirmation from the completed recheck:
+
+- no additional concrete code or manifest defects were identified in the changed paths after the API-container ownership fix
+- the remaining open caution was operational rather than implementation-level:
+  - the dedicated Module 2 source pair must be present in the GitHub-published build context or otherwise injected during CI/CD, because the updated runtime now expects those files under `update_data/`

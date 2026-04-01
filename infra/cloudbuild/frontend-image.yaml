@@ -1,11 +1,14 @@
 steps:
   - name: gcr.io/cloud-builders/docker
+    dir: apps/frontend
     args:
       - build
       - -f
       - Dockerfile
       - -t
       - us-central1-docker.pkg.dev/$PROJECT_ID/qcai-repo/qcai-frontend:latest
+      - -t
+      - us-central1-docker.pkg.dev/$PROJECT_ID/qcai-repo/qcai-frontend:$SHORT_SHA
       - --build-arg
       - API_BASE_URL=${_API_BASE_URL}
       - --build-arg
@@ -22,6 +25,7 @@ steps:
 
 images:
   - us-central1-docker.pkg.dev/$PROJECT_ID/qcai-repo/qcai-frontend:latest
+  - us-central1-docker.pkg.dev/$PROJECT_ID/qcai-repo/qcai-frontend:$SHORT_SHA
 
 substitutions:
   _API_BASE_URL: https://api.qantumlearn.academy
