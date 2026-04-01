@@ -7,9 +7,12 @@ steps:
       - -t
       - us-central1-docker.pkg.dev/$PROJECT_ID/qcai-repo/qcai-api:latest
       - -t
-      - us-central1-docker.pkg.dev/$PROJECT_ID/qcai-repo/qcai-api:$SHORT_SHA
+      - us-central1-docker.pkg.dev/$PROJECT_ID/qcai-repo/qcai-api:${_IMAGE_TAG}
       - .
 
 images:
   - us-central1-docker.pkg.dev/$PROJECT_ID/qcai-repo/qcai-api:latest
-  - us-central1-docker.pkg.dev/$PROJECT_ID/qcai-repo/qcai-api:$SHORT_SHA
+  - us-central1-docker.pkg.dev/$PROJECT_ID/qcai-repo/qcai-api:${_IMAGE_TAG}
+
+substitutions:
+  _IMAGE_TAG: manual
