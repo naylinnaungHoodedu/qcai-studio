@@ -5417,3 +5417,322 @@ Publication status after the main sync:
   - to:
   - `98cefc1`
   has been completed successfully on GitHub
+
+## 173. Production Build-Input Hardening and Manual Cloud Build Tag Support Completed
+
+After the Module 2 and initial production-hardening batch had been published, a follow-on production remediation pass was completed to close the remaining concrete deployment blockers in the build-input and Cloud Build image-tag flow.
+
+Completed implementation work:
+
+- corrected the Kubernetes secret example so it again matched the deployment-artifact test expectations:
+  - `infra/k8s/secret.example.yaml`
+- hardened production build-input selection across:
+  - `apps/api/Dockerfile`
+  - `.dockerignore`
+  - `.gcloudignore`
+- made the production API image deterministic by ensuring untracked future lesson assets were no longer uploaded or packaged into the live build context accidentally
+- corrected manual Cloud Build behavior so image publication no longer depended on `$SHORT_SHA` being populated for non-triggered runs:
+  - `infra/cloudbuild/api-image.yaml`
+  - `infra/cloudbuild/frontend-image.yaml`
+- retained the intended production packaging boundary at that time:
+  - active production lesson-source pairs remained Module 2 plus the original tracked corpus
+  - future Module 3, Module 4, and Module 6 source files were kept out of the production build until their dedicated rollout work was completed
+
+Completed verification and deployment work:
+
+- reran backend verification:
+  - `pytest tests/test_api.py tests/test_deployment_artifacts.py`
+  - result: `70 passed`
+- reran frontend verification:
+  - `npm run test:integration -- tests/auth-and-proxy.integration.test.ts tests/course-structure.integration.test.ts tests/account-page.integration.test.ts`
+  - result: `76 passed`
+- reran frontend production-build verification:
+  - `npm run build`
+  - result: passed
+- published the remediation commits to GitHub:
+  - `c364a18`
+  - `fix: harden production build inputs`
+  - `bc9a142`
+  - `fix: support manual cloud build image tags`
+- built and deployed the corrected production images:
+  - API build: `fdaaf761-2850-46f8-b4f0-f0fa31f7a263`
+  - frontend build: `06a8fd45-a721-45d4-b077-ba04cd258763`
+  - API revision: `qcai-api-00031-6pp`
+  - frontend revision: `qcai-frontend-00045-sfz`
+
+Historical rollout confirmation recorded for that deployment point:
+
+- at the time of this production-fix rollout, the live API readiness payload returned:
+  - `{"status":"ready","database":"ok","lessons":12,"source_assets":18}`
+- the live Module 2 lesson continued serving the dedicated routing/logistics source pair correctly after the production packaging fixes were applied
+
+## 174. Dedicated Module 3 Healthcare-and-Vision Lesson Upgrade Completed
+
+After the production-fix rollout was completed, the `hybrid-applications-healthcare-vision` lesson was upgraded so it no longer depended on the generic 2026 lecture asset and instead used the dedicated Module 3 authored vision/GNN/few-shot source pair.
+
+Completed implementation work:
+
+- studied and integrated the dedicated Module 3 authored source files:
+  - `update_data/Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.docx`
+  - `update_data/Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.mp4`
+- extended the backend curated source allowlists and lesson-assembly mappings across:
+  - `apps/api/app/core/config.py`
+  - `apps/api/app/services/content_assembler.py`
+  - `apps/api/app/services/transcripts.py`
+- updated production packaging inputs so the dedicated Module 3 source pair became part of the publishable build context:
+  - `apps/api/Dockerfile`
+  - `.dockerignore`
+  - `.gcloudignore`
+- aligned public metadata and documentation for the Module 3 lesson-source swap across:
+  - `apps/frontend/src/app/about/page.tsx`
+  - `apps/frontend/src/lib/course-references.ts`
+  - `apps/frontend/src/lib/site.ts`
+  - `README.md`
+- expanded backend verification coverage in:
+  - `apps/api/tests/test_api.py`
+- verified the assembled local lesson now exposes:
+  - the dedicated Module 3 video asset
+  - `10` matched Module 3 document sections
+  - `6` curated Module 3 video chapters
+
+Completed verification, publication, and deployment work:
+
+- reran backend verification:
+  - `pytest tests/test_api.py tests/test_deployment_artifacts.py`
+  - result: `71 passed`
+- reran frontend verification:
+  - `npm run test:integration -- tests/auth-and-proxy.integration.test.ts tests/course-structure.integration.test.ts tests/account-page.integration.test.ts`
+  - result: `76 passed`
+- reran frontend production-build verification:
+  - `npm run build`
+  - result: passed
+- published the Module 3 batch to GitHub in:
+  - `efde6fc`
+  - `feat: publish module3 lesson source pair`
+- built and deployed the Module 3 production images:
+  - API build: `bee4d738-d840-411c-8db4-b12909416d76`
+  - frontend build: `e5b74186-7194-4112-a410-b17aa2ae8ca7`
+  - API revision: `qcai-api-00032-4lm`
+  - frontend revision: `qcai-frontend-00046-lmh`
+
+Historical rollout confirmation recorded for the Module 3 deployment point:
+
+- at the time of the Module 3 rollout, the live API readiness payload returned:
+  - `{"status":"ready","database":"ok","lessons":12,"source_assets":20}`
+- the live lesson published the sanitized dedicated asset route:
+  - `/source-assets/by-id/module3_quantum-vision-gnn-and-few-shot-hybrid-architectures-video`
+- the live lesson showed the dedicated Module 3 video title rather than the legacy 2026 lecture asset
+
+## 175. Deep Double-Check Completed for the Module 3 Rollout
+
+After the Module 3 lesson-source rollout reached production, a second error-focused verification pass was completed to confirm the reported GitHub, build, and live-deployment state had no additional concrete defects.
+
+Completed recheck work:
+
+- revalidated the backend and frontend automated test suites used during the Module 3 release
+- rechecked the live lesson page, the direct lesson API payload, and the dedicated Module 3 asset routes
+- rechecked repository state for publication correctness:
+  - the Module 3 DOCX file was tracked
+  - the Module 3 MP4 file was tracked through Git LFS
+
+Final-state confirmation from the Module 3 recheck:
+
+- no additional concrete code, build, or production-runtime errors were identified after the Module 3 rollout
+- at that time, the only remaining local-only future authored assets were the not-yet-published Module 4 and Module 6 source pairs
+
+## 176. Dedicated Module 4 Representation-and-XAI Lesson Upgrade Completed
+
+After the Module 3 rollout was completed, the `representation-language-and-xai` lesson was upgraded so it no longer depended on the generic proceedings/video mix and instead used the dedicated Module 4 authored bottlenecks/compression/language/explanation source pair.
+
+Completed implementation work:
+
+- studied and integrated the dedicated Module 4 authored source files:
+  - `update_data/Module4_Expressive Bottlenecks Compression, Language, and Explanation.docx`
+  - `update_data/Module4_Expressive Bottlenecks Compression, Language, and Explanation.mp4`
+- updated the backend lesson blueprint, source-asset allowlists, and curated chapter data across:
+  - `apps/api/app/core/config.py`
+  - `apps/api/app/services/content_assembler.py`
+  - `apps/api/app/services/transcripts.py`
+  - `apps/api/Dockerfile`
+- identified and corrected one real lesson-assembly defect during implementation:
+  - overlapping heading matches were still pulling unrelated 2025/2026 proceedings sections into the Module 4 lesson
+  - the lesson assembly was tightened so the live lesson resolved only against the dedicated Module 4 document/video pair
+- aligned the production lesson to publish:
+  - `9` authored Module 4 sections
+  - `6` curated Module 4 video chapters
+
+Completed verification, publication, and deployment work:
+
+- reran backend verification:
+  - `pytest tests/test_api.py tests/test_deployment_artifacts.py`
+  - result: `72 passed`
+- reran frontend verification:
+  - `npm run test:integration -- tests/auth-and-proxy.integration.test.ts tests/course-structure.integration.test.ts tests/account-page.integration.test.ts`
+  - result: `76 passed`
+- reran frontend production-build verification:
+  - `npm run build`
+  - result: passed
+- published the Module 4 batch to GitHub in:
+  - `035e0fc`
+  - `feat: publish module4 lesson source pair`
+- built and deployed the Module 4 production images:
+  - API build: `28cf403e-65bc-4419-8699-bd348ff6e9fc`
+  - frontend build: `82011660-4ab8-4409-9e0c-2c58ec453a29`
+  - API revision: `qcai-api-00033-th5`
+  - frontend revision: `qcai-frontend-00047-m4r`
+
+Historical rollout confirmation recorded for the Module 4 deployment point:
+
+- at the time of the Module 4 rollout, the live API readiness payload returned:
+  - `{"status":"ready","database":"ok","lessons":12,"source_assets":22}`
+- the live lesson published the dedicated asset route:
+  - `/source-assets/by-id/module4_expressive-bottlenecks-compression-language-and-explanation-video`
+- the live lesson showed the dedicated Module 4 title, the dedicated Module 4 chapters, and only the dedicated Module 4 source pair in the lesson payload
+
+## 177. Deep Double-Check Completed for the Module 4 Rollout
+
+After the Module 4 lesson-source rollout reached production, a deep recheck was completed against the repository state, deployed revisions, and live lesson payload to confirm the rollout summary contained no additional concrete errors.
+
+Completed recheck work:
+
+- revalidated the same backend and frontend verification commands used for the rollout
+- rechecked the live `representation-language-and-xai` lesson payload through:
+  - the public lesson page
+  - the direct API lesson route
+  - the dedicated Module 4 source-asset route
+- rechecked the deployed image and revision state at that time:
+  - API revision: `qcai-api-00033-th5`
+  - frontend revision: `qcai-frontend-00047-m4r`
+  - both services were serving images tagged from commit `035e0fc`
+
+Final-state confirmation from the Module 4 recheck:
+
+- no additional concrete code, build, or production-runtime errors were identified after the Module 4 rollout and source-filtering fix
+- at that time, the only remaining future authored source pair not yet published was the Module 6 DOCX/MP4 set
+
+## 178. Dedicated Module 6 Thermodynamics-and-Roadmap Lesson Upgrade Completed
+
+After the Module 4 rollout and recheck were completed, the `thermodynamics-and-roadmap` lesson was upgraded so it no longer depended on the generic 2025/2026 capstone media and instead used the dedicated Module 6 authored sustainable-hybrid-systems source pair.
+
+Completed implementation work:
+
+- studied and integrated the dedicated Module 6 authored source files:
+  - `update_data/Module6_From Algorithmic Novelty to Sustainable Hybrid Systems.docx`
+  - `update_data/Module6_From Algorithmic Novelty to Sustainable Hybrid Systems.mp4`
+- confirmed the dedicated Module 6 lecture runtime and delivery characteristics locally:
+  - runtime: `00:12:18`
+  - format: `1920x1080`, `30 fps`
+- updated the backend curated source allowlists, lesson blueprint, title maps, and chapter metadata across:
+  - `apps/api/app/core/config.py`
+  - `apps/api/app/services/content_assembler.py`
+  - `apps/api/app/services/transcripts.py`
+  - `apps/api/Dockerfile`
+- updated production packaging and publication allowlists so the dedicated Module 6 source pair became part of the GitHub-published and Cloud Build-uploaded production input set:
+  - `.dockerignore`
+  - `.gcloudignore`
+- aligned public metadata and repository documentation for the Module 6 lesson-source swap across:
+  - `apps/frontend/src/app/about/page.tsx`
+  - `apps/frontend/src/lib/course-references.ts`
+  - `apps/frontend/src/lib/site.ts`
+  - `README.md`
+- expanded backend coverage for the new lesson-source pair in:
+  - `apps/api/tests/test_api.py`
+- verified the assembled local lesson now exposes:
+  - the dedicated Module 6 video asset
+  - `14` authored Module 6 sections
+  - `7` curated Module 6 video chapters
+
+Completed verification, publication, and deployment work:
+
+- reran backend verification:
+  - `pytest tests/test_api.py tests/test_deployment_artifacts.py`
+  - result: `73 passed`
+- reran frontend verification:
+  - `npm run test:integration -- tests/auth-and-proxy.integration.test.ts tests/course-structure.integration.test.ts tests/account-page.integration.test.ts`
+  - result: `76 passed`
+- reran frontend production-build verification:
+  - `npm run build`
+  - result: passed
+- published the Module 6 batch to GitHub in:
+  - `4123634`
+  - `feat: publish module6 lesson source pair`
+- built and deployed the Module 6 production images:
+  - API build: `f9cd18b5-acf4-46bf-bd94-12b3514d9dc1`
+  - frontend build: `8a7499ad-1c66-4e01-9a40-ee416e44e253`
+  - API revision: `qcai-api-00034-h8p`
+  - frontend revision: `qcai-frontend-00048-5nl`
+
+Completed live confirmation work for the Module 6 rollout:
+
+- confirmed the live readiness payload now returns:
+  - `{"status":"ready","database":"ok","lessons":12,"source_assets":24}`
+- confirmed the live lesson API payload for:
+  - `/content/lessons/thermodynamics-and-roadmap`
+  now resolves only against the dedicated Module 6 DOCX/MP4 source pair
+- confirmed the live public lesson page now shows:
+  - `From Algorithmic Novelty to Sustainable Hybrid Systems`
+  - the dedicated Module 6 chapter cards
+  - the sanitized dedicated asset route:
+    - `/source-assets/by-id/module6_from-algorithmic-novelty-to-sustainable-hybrid-systems-video`
+- confirmed the dedicated Module 6 source-asset route returns:
+  - `200`
+  - `video/mp4`
+  - `Accept-Ranges: bytes`
+
+## 179. Deep Double-Check Completed for the Module 6 Rollout
+
+After the Module 6 lesson-source rollout reached production, a second deep verification pass was completed against the repository, the rerun validation commands, the active Cloud Run revisions, and the live public domain.
+
+Completed recheck work:
+
+- rechecked repository publication state:
+  - local `HEAD` matched `origin/main` at `41236346163df6609236c4b7cefb7aa786cd5684`
+  - working tree state was clean after publication
+- reran backend verification:
+  - `pytest tests/test_api.py tests/test_deployment_artifacts.py`
+  - result: `73 passed`
+- reran frontend verification:
+  - `npm run test:integration -- tests/auth-and-proxy.integration.test.ts tests/course-structure.integration.test.ts tests/account-page.integration.test.ts`
+  - result: `76 passed`
+- reran frontend production-build verification:
+  - `npm run build`
+  - result: passed
+- rechecked deployed production state:
+  - API revision: `qcai-api-00034-h8p`
+  - frontend revision: `qcai-frontend-00048-5nl`
+  - both services were serving images tagged from commit `4123634`
+- rechecked live public endpoints:
+  - `https://api.qantumlearn.academy/ready`
+  - `https://qantumlearn.academy/health`
+  - `https://qantumlearn.academy/ready`
+  - `https://api.qantumlearn.academy/content/lessons/thermodynamics-and-roadmap`
+  - `https://qantumlearn.academy/lessons/thermodynamics-and-roadmap`
+  - `https://qantumlearn.academy/api/backend/source-assets/by-id/module6_from-algorithmic-novelty-to-sustainable-hybrid-systems-video`
+
+Final-state confirmation from the Module 6 recheck:
+
+- no additional concrete code, build, deployment, or live-runtime errors were identified after the Module 6 rollout
+- the live public lesson, the direct API lesson payload, and the dedicated Module 6 asset route all remained aligned with the published Module 6 source pair
+
+## 180. Completed-Activities Log Updated and Synchronized to the Related GitHub Repository
+
+After the missing post-Module2 rollout history was reconstructed and verified from the current folder, the completed-activities record was updated so the repository now contains the missing production-fix, Module 3, Module 4, Module 6, and deep-recheck history in one continuous log.
+
+Completed logging and synchronization work:
+
+- updated the current-folder activity record in:
+  - `04_Completed_Activities_Log.md`
+- added the missing completed-activity sections:
+  - `173`
+  - `174`
+  - `175`
+  - `176`
+  - `177`
+  - `178`
+  - `179`
+  - `180`
+- confirmed the related GitHub repository remains:
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+- confirmed the publication target branch remains:
+  - `main`
+- synchronized the updated completed-activities record to the related GitHub repository so the current folder's missing post-Module2 history is now reflected remotely
