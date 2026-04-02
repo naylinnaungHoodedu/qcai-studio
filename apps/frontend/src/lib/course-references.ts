@@ -5,6 +5,7 @@ export const COURSE_REFERENCES = [
   "Routing, Graph Shrinking, and Logistics under Hardware Constraints. Local authored curriculum source document used to define the routing, graph compression, and logistics-optimization lesson.",
   "Quantum Vision, GNN, and Few-Shot Hybrid Architectures. Local authored curriculum source document used to define the hybrid vision, graph, biomedical imaging, and few-shot learning lesson.",
   "Expressive Bottlenecks: Compression, Language, and Explanation. Local authored curriculum source document used to define the representation, language, compression, and explainability lesson.",
+  "From Algorithmic Novelty to Sustainable Hybrid Systems. Local authored curriculum source document used to define the thermodynamics, sustainability, and future-directions lesson.",
   "Introduction to Hardware-Constrained Learning for Quantum Computing and Artificial Intelligence. Local authored curriculum source document used to extend the foundations portion of the course.",
   "Hardware-Constrained Learning for Quantum Computing and Artificial Intelligence Models. Local authored curriculum source document used to define the model-family and validation module.",
   "Intermediate Quantum Programming for Hardware-Constrained Learning for Quantum Computing and Artificial Intelligence. Local authored curriculum source document used to design the device-first programming module.",

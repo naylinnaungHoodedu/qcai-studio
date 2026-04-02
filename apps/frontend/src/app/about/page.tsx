@@ -59,6 +59,13 @@ const FALLBACK_SOURCE_ASSETS = [
     description: "Local authored source focused on expressive bottlenecks in graph reasoning, diffusion, language adaptation, quantum compression, and explainability.",
   },
   {
+    id: "doc-module6-systems",
+    title: "From Algorithmic Novelty to Sustainable Hybrid Systems",
+    kind: "document",
+    filename: "Module6_From Algorithmic Novelty to Sustainable Hybrid Systems.docx",
+    description: "Local authored capstone source focused on hybrid algorithms, AI4QC orchestration, Industry 5.0 infrastructure, thermodynamic agents, and post-quantum transition planning.",
+  },
+  {
     id: "doc-hcl-introduction",
     title: "Introduction to Hardware-Constrained QC+AI",
     kind: "document",
@@ -134,6 +141,13 @@ const FALLBACK_SOURCE_ASSETS = [
     kind: "video",
     filename: "Module4_Expressive Bottlenecks Compression, Language, and Explanation.mp4",
     description: "Lecture media focused on expressive bottlenecks, quantum representational geometry, hybrid compression, semantic embeddings, and explainability under systems constraints.",
+  },
+  {
+    id: "video-module6-systems",
+    title: "From Algorithmic Novelty to Sustainable Hybrid Systems",
+    kind: "video",
+    filename: "Module6_From Algorithmic Novelty to Sustainable Hybrid Systems.mp4",
+    description: "Lecture media focused on hybrid algorithmic foundations, sustainable infrastructure, language efficiency, quantum agents, and long-horizon security transition planning.",
   },
   {
     id: "video-hcl-introduction",
