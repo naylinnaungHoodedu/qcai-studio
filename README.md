@@ -25,23 +25,25 @@ This repository now contains a working MVP implementation of the interactive QC+
   - `Quantum Computing AI Research Synthesis 2026.docx`
   - `Analyzing Quantum Computing and AI Paper 2025.docx`
   - `Quantum Computing and Artificial Intelligence Industry Use Cases.docx`
+  - `update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx`
+  - `update_data/Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.docx`
   - `Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx`
   - `Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx`
   - `Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx`
   - `Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx`
   - `Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx`
-  - `update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx`
   - `Quantum Computing and Artificial Intelligence 2025.mp4`
   - `Quantum Computing and Artificial Intelligence 2026.mp4`
   - `Industry Use Cases.mp4`
+  - `update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4`
+  - `update_data/Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.mp4`
   - `Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4`
   - `The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4`
   - `Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4`
   - `Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4`
   - `Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4`
-  - `update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4`
 
-The current public curriculum is intentionally scoped to nine curated DOCX sources and nine curated MP4 lesson assets, with the routing-and-optimization lesson now grounded in the dedicated Module 2 source pair under `update_data/`.
+The current public curriculum is intentionally scoped to ten curated DOCX sources and ten curated MP4 lesson assets, with the routing-and-optimization and hybrid-applications lessons now grounded in the dedicated Module 2 and Module 3 source pairs under `update_data/`.
 
 ## Local development
 
@@ -104,8 +106,9 @@ docker build -t qcai-frontend apps/frontend
 ## Key implementation notes
 
 - `LICENSE` applies to the repository code. Third-party source documents, proceedings metadata, and curated media assets remain subject to their own upstream rights and are not relicensed by the repository code license.
-- The backend now assembles the course around a nine-document active local corpus and nine curated MP4 lesson assets, producing an eleven-module, twelve-lesson curriculum.
+- The backend now assembles the course around a ten-document active local corpus and ten curated MP4 lesson assets, producing an eleven-module, twelve-lesson curriculum.
 - The `ai4qc-routing-and-optimization` lesson now uses the dedicated Module 2 routing/logistics DOCX and MP4 assets from `update_data/`, with lesson sections and curated chapters aligned to that source pair.
+- The `hybrid-applications-healthcare-vision` lesson now uses the dedicated Module 3 vision/GNN/few-shot DOCX and MP4 assets from `update_data/`, with lesson sections and curated chapters aligned to that source pair.
 - Background workers are real Python entrypoints and can be invoked directly with `python -m app.workers.ingestion`, `python -m app.workers.rag`, and `python -m app.workers.analytics`.
 - Video chapters are currently driven by curated chapter metadata; transcript JSON files can be dropped into the repository-root `transcripts/` directory using the format documented in `transcripts/README.md`.
 - QA uses grounded lexical retrieval by default and upgrades to Pinecone-backed hybrid retrieval only when `OPENAI_API_KEY`, `PINECONE_API_KEY`, and `PINECONE_INDEX` are all configured.

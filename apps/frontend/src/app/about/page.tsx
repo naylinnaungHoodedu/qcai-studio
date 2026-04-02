@@ -45,6 +45,13 @@ const FALLBACK_SOURCE_ASSETS = [
     description: "Local authored source focused on logistics QUBO reformulation, graph shrinking, augmented Lagrangian control, and routing-aware execution.",
   },
   {
+    id: "doc-module3-vision",
+    title: "Quantum Vision, GNN, and Few-Shot Hybrid Architectures",
+    kind: "document",
+    filename: "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.docx",
+    description: "Local authored source focused on QViTs, QGNNs, conditioned quantum diffusion, biomedical imaging, and orchestration limits in hybrid perception systems.",
+  },
+  {
     id: "doc-hcl-introduction",
     title: "Introduction to Hardware-Constrained QC+AI",
     kind: "document",
@@ -106,6 +113,13 @@ const FALLBACK_SOURCE_ASSETS = [
     kind: "video",
     filename: "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4",
     description: "Lecture media focused on graph shrinking, RL-tuned penalty control, nested qubit routing, and quantum logistics systems design.",
+  },
+  {
+    id: "video-module3-vision",
+    title: "Quantum Vision, GNN, and Few-Shot Hybrid Architectures",
+    kind: "video",
+    filename: "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.mp4",
+    description: "Lecture media focused on QViTs, graph architectures, few-shot diffusion, and the orchestration limits that still bound deployable hybrid perception systems.",
   },
   {
     id: "video-hcl-introduction",
