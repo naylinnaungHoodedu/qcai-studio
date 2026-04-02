@@ -28,6 +28,7 @@ DOCUMENT_TITLE_MAP = {
     "Quantum Computing and Artificial Intelligence Industry Use Cases.docx": "Raj et al. (Eds.), Quantum Computing and Artificial Intelligence: The Industry Use Cases",
     "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx": "Routing, Graph Shrinking, and Logistics under Hardware Constraints",
     "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.docx": "Quantum Vision, GNN, and Few-Shot Hybrid Architectures",
+    "Module4_Expressive Bottlenecks Compression, Language, and Explanation.docx": "Expressive Bottlenecks: Compression, Language, and Explanation",
     "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx": "Introduction to Hardware-Constrained QC+AI",
     "Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx": "Hardware-Constrained QC+AI Models",
     "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx": "Intermediate Quantum Programming for Hardware-Constrained QC+AI",
@@ -42,6 +43,7 @@ ASSET_TITLE_MAP = {
     "Industry Use Cases.mp4": "Industry Use Cases",
     "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4": "Routing, Graph Shrinking, and Logistics under Hardware Constraints",
     "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.mp4": "Quantum Vision, GNN, and Few-Shot Hybrid Architectures",
+    "Module4_Expressive Bottlenecks Compression, Language, and Explanation.mp4": "Expressive Bottlenecks: Compression, Language, and Explanation",
     "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4": "Introduction to Hardware-Constrained QC+AI",
     "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4": "Hardware-Constrained QC+AI Models",
     "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4": "Intermediate Quantum Programming for Hardware-Constrained QC+AI",
@@ -72,6 +74,7 @@ def _lesson_blueprint(
     learner_questions: list[str],
     section_refs: list[str],
     video_file: str | None,
+    document_file: str | None = None,
     flashcards: list[tuple[str, str, str]] | None = None,
     quiz: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -85,6 +88,7 @@ def _lesson_blueprint(
         "learner_questions": learner_questions,
         "section_refs": section_refs,
         "video_file": video_file,
+        "document_file": document_file,
         "flashcards": flashcards or [],
         "quiz": quiz or [],
     }
@@ -213,6 +217,7 @@ MODULE_BLUEPRINTS: list[dict[str, Any]] = [
                 "Performance Analytics and Post-Routing Transpilation",
             ],
             video_file="Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4",
+            document_file="Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx",
         ),
         "flashcards": [
             ("intro", "Why use graph shrinking before quantum optimization in logistics?", "It compresses the problem graph into a smaller constraint-preserving core that fits limited qubit resources."),
@@ -280,6 +285,7 @@ MODULE_BLUEPRINTS: list[dict[str, Any]] = [
                     "High-Bandwidth Quantum-Classical Orchestration",
                 ],
                 video_file="Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.mp4",
+                document_file="Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.docx",
                 flashcards=[
                     ("intro", "What placement pattern dominates the authored Module 3 hybrid architectures?", "A narrow quantum bottleneck or conditioned subroutine inside a larger classical vision, graph, or diffusion pipeline."),
                     ("intermediate", "Why are the QViT and QC-GCN jet-tagging examples useful teaching cases?", "They show how a bounded quantum stage can trade off attention or relational expressivity against parameter count without pretending to replace the surrounding classical model."),
@@ -347,57 +353,65 @@ MODULE_BLUEPRINTS: list[dict[str, Any]] = [
     {
         "slug": "representation-explainability",
         "title": "Representation, Language, Compression, and Explainability",
-        "summary": "Explores quINR, QuCoWE, and QGSHAP as examples of expressive hybrid representations and more faithful explanation under combinatorial complexity.",
+        "summary": "Explores expressive bottlenecks across graph reasoning, generative modeling, language systems, and explainability before grounding quINR, quantum contrastive embeddings, and quantum-accelerated attribution in the authored Module 4 source.",
         "learning_goals": [
-            "Understand why representation density is a recurring theme in hybrid QC+AI.",
-            "Explain how quantum semantics and compression claims are framed in the source corpus.",
-            "Interpret QGSHAP as a targeted explainability acceleration story.",
+            "Understand why expressive bottlenecks are structural limits rather than mere parameter shortages.",
+            "Explain how the authored Module 4 source connects compression, language adaptation, and retrieval to quantum representational capacity.",
+            "Interpret quantum explainability claims as targeted accelerations that still depend on strong structural assumptions.",
         ],
         "source_highlights": [
-            "Quantum Implicit Neural Compression (2025)",
-            "Distributional Semantics and Quantum Contrastive Word Embeddings (2026)",
-            "Quantum Amplitude Amplification for Exact GNN Explainability (2026)",
+            "The Theoretical Paradigm of Expressive Bottlenecks",
+            "Quantum Implicit Neural Compression",
+            "Quantum Contrastive Word Embeddings",
+            "Overcoming the Explainability Bottleneck with Quantum Acceleration",
         ],
         "lesson": _lesson_blueprint(
             slug="representation-language-and-xai",
             title="Expressive Bottlenecks: Compression, Language, and Explanation",
-            summary="Uses quINR, QuCoWE, and QGSHAP to show how hybrid quantum components are often justified by representational density or combinatorial structure rather than generic speedup claims.",
+            summary="Grounds Module 4 in the authored source by tracing how expressive bottlenecks emerge in graph, generative, and language systems before using quINR, quantum contrastive embeddings, and quantum-accelerated explainability as targeted responses.",
             key_ideas=[
-                "Quantum representations are often pitched as compact, expressive bottlenecks.",
-                "Language and semantic models require careful adaptation because quantum fidelity does not directly mirror classical contrastive objectives.",
-                "Explainability remains combinatorially hard; targeted quantum subroutines can be presented as accelerants under strict assumptions.",
+                "Expressive bottlenecks are framed as structural limits in aggregation, dimensionality, adaptation, and retrieval that cannot be repaired reliably by naive parameter scaling alone.",
+                "The authored document treats the quantum shift as a change in representational geometry, using Hilbert-space structure to argue for denser compression and richer semantic encoding.",
+                "Explainability remains combinatorially hard even after better representations, so quantum amplitude amplification is presented as a narrow acceleration mechanism rather than a universal interpretability cure.",
             ],
             key_notes=[
-                "quINR is best taught as a compression story, not as a universal neural network replacement.",
-                "QuCoWE explicitly repairs a mismatch between fidelity-based similarity and classical distributional objectives.",
-                "QGSHAP should be framed as a specialized explainability method with strong structural assumptions.",
+                "Module 4 links compression, language, and explanation to the broader energy and hardware costs of classical scaling, so the quantum argument is partly architectural and partly thermodynamic.",
+                "quINR, quantum contrastive embeddings, and explainability acceleration are all taught as bounded hybrid interventions with explicit assumptions about encoding, task structure, and execution cost.",
             ],
             formulas=[
-                "Folded-angle embedding as a compact way to pack classical coordinates into limited qubits.",
-                "Logit-fidelity mapping to bridge bounded quantum fidelity with contrastive learning objectives.",
+                "Folded-angle embedding as a compact way to pack continuous coordinates into limited qubits for hybrid implicit neural compression.",
+                "Logit-fidelity mapping to bridge bounded quantum fidelity with contrastive semantic objectives in quantum word embedding models.",
+                "Amplitude amplification as the core quantum subroutine used to narrow the search cost of exact attribution over combinatorial explanation spaces.",
             ],
             learner_questions=[
-                "Why is quINR framed as a compression and representation method?",
-                "What problem does the logit-fidelity head solve in QuCoWE?",
-                "How should QGSHAP be explained to a student who already knows Shapley values?",
+                "Why does the authored Module 4 source define expressive bottlenecks as structural failures rather than simple under-parameterization?",
+                "What do quINR and quantum contrastive word embeddings gain by changing the representational geometry instead of only scaling classical models?",
+                "Why should quantum explainability methods still be taught with strong caveats about graph structure, attribution cost, and deployment assumptions?",
             ],
             section_refs=[
+                "The Theoretical Paradigm of Expressive Bottlenecks",
+                "Topological and Structural Bottlenecks in Graph Neural Networks",
+                "Breaking Generative and Spatial Constraints",
+                "Navigating Parameter, Adaptation, and Retrieval Bottlenecks in Language Models",
+                "The Quantum Paradigm Shift: Redefining Computational Expressivity",
                 "Quantum Implicit Neural Compression",
-                "Distributional Semantics and Quantum Contrastive Word Embeddings",
-                "Quantum Amplitude Amplification for Exact GNN Explainability",
+                "Quantum Contrastive Word Embeddings",
+                "Overcoming the Explainability Bottleneck with Quantum Acceleration",
+                "The Energetic Horizon and Future Outlook",
             ],
-            video_file="Quantum Computing and Artificial Intelligence 2026.mp4",
+            video_file="Module4_Expressive Bottlenecks Compression, Language, and Explanation.mp4",
+            document_file="Module4_Expressive Bottlenecks Compression, Language, and Explanation.docx",
         ),
         "flashcards": [
-            ("intro", "What is the central promise of quINR in the course corpus?", "High representational expressivity for compression using a hybrid quantum implicit neural representation."),
-            ("intermediate", "Why is QuCoWE not a simple quantum version of Word2Vec?", "Because classical contrastive objectives and bounded quantum fidelity are not directly compatible."),
-            ("advanced", "What makes QGSHAP pedagogically interesting?", "It connects quantum amplitude amplification to a well-known explainability bottleneck in graph models."),
+            ("intro", "What is an expressive bottleneck in the authored Module 4 source?", "A structural limit in a model's architecture, aggregation, or dimensionality that restricts the hypotheses it can represent or learn."),
+            ("intermediate", "Why is quantum contrastive word embedding not just a quantum Word2Vec clone?", "Because the model has to translate classical contrastive objectives into bounded quantum fidelity scores through an additional logit-fidelity mapping."),
+            ("advanced", "Why is the quantum explainability section taught cautiously?", "Because amplitude amplification only accelerates a narrowly structured attribution problem and does not remove the modeling assumptions or accountability burden around explanations."),
         ],
         "quiz": [
             {
                 "type": "short-answer",
-                "prompt": "Explain the role of representation density across quINR and QuCoWE.",
-                "answer": "Both methods treat the quantum component as a compact expressive space: quINR for signal representation and QuCoWE for semantic structure, but each requires careful mapping from classical objectives into a physically realizable quantum form.",
+                "prompt": "Explain how the authored Module 4 document connects expressive bottlenecks across compression, language, and explanation.",
+                "answer": "The document argues that all three areas face structural representational limits: compression loses high-frequency detail under tight parameter budgets, language models hit adaptation and retrieval bottlenecks, and explanation scales combinatorially. It then presents quantum methods as narrowly targeted ways to change the representational space or accelerate constrained search rather than as blanket replacements for classical systems.",
                 "difficulty": "advanced",
             }
         ],
@@ -881,7 +895,11 @@ class CourseStore:
             lesson_slugs: list[str] = []
             for lesson_blueprint in _module_lessons(blueprint):
                 lesson_slug = lesson_blueprint["slug"]
-                matched_sections = self._match_sections(sections, lesson_blueprint["section_refs"])
+                matched_sections = self._match_sections(
+                    sections,
+                    lesson_blueprint["section_refs"],
+                    lesson_blueprint.get("document_file"),
+                )
                 lesson_sections = self._build_lesson_sections(matched_sections)
                 video_asset = next((asset for asset in video_assets if asset.filename == lesson_blueprint["video_file"]), None)
                 chapters = load_video_chapters(self.settings.transcripts_dir, video_asset.filename) if video_asset else []
@@ -896,7 +914,12 @@ class CourseStore:
                     formulas=lesson_blueprint["formulas"],
                     learner_questions=lesson_blueprint["learner_questions"],
                     sections=lesson_sections,
-                    source_assets=self._collect_source_assets(assets, matched_sections, lesson_blueprint["video_file"]),
+                    source_assets=self._collect_source_assets(
+                        assets,
+                        matched_sections,
+                        lesson_blueprint["video_file"],
+                        lesson_blueprint.get("document_file"),
+                    ),
                     video_asset=video_asset,
                     chapters=chapters,
                     flashcards=self._build_flashcards(lesson_slug, lesson_blueprint.get("flashcards", [])),
@@ -952,14 +975,24 @@ class CourseStore:
                 all_sections.extend(sections)
         return all_sections
 
-    def _match_sections(self, sections: list[SectionRecord], refs: list[str]) -> list[SectionRecord]:
+    def _match_sections(
+        self,
+        sections: list[SectionRecord],
+        refs: list[str],
+        document_file: str | None = None,
+    ) -> list[SectionRecord]:
         if not refs:
             return []
+        document_source_id = None
+        if document_file:
+            document_source_id = Path(document_file).stem.lower().replace(" ", "-")
         matched: list[SectionRecord] = []
         used_keys: set[str] = set()
         for ref in refs:
             ref_l = ref.lower()
             for section in sections:
+                if document_source_id and section.source_id != document_source_id:
+                    continue
                 key = f"{section.source_title}:{section.heading}"
                 if key in used_keys:
                     continue
@@ -1018,9 +1051,17 @@ class CourseStore:
         }
         return sorted({label for token, label in topic_map.items() if token in haystack})
 
-    def _collect_source_assets(self, assets: list[SourceAsset], sections: list[SectionRecord], video_file: str | None) -> list[SourceAsset]:
+    def _collect_source_assets(
+        self,
+        assets: list[SourceAsset],
+        sections: list[SectionRecord],
+        video_file: str | None,
+        document_file: str | None = None,
+    ) -> list[SourceAsset]:
         source_titles = {section.source_title for section in sections}
         selected = [asset for asset in assets if asset.title in source_titles]
+        if document_file:
+            selected.extend(asset for asset in assets if asset.filename == document_file)
         if video_file:
             selected.extend(asset for asset in assets if asset.filename == video_file)
         deduped: list[SourceAsset] = []

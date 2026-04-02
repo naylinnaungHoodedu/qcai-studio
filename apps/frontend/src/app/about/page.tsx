@@ -52,6 +52,13 @@ const FALLBACK_SOURCE_ASSETS = [
     description: "Local authored source focused on QViTs, QGNNs, conditioned quantum diffusion, biomedical imaging, and orchestration limits in hybrid perception systems.",
   },
   {
+    id: "doc-module4-expressivity",
+    title: "Expressive Bottlenecks: Compression, Language, and Explanation",
+    kind: "document",
+    filename: "Module4_Expressive Bottlenecks Compression, Language, and Explanation.docx",
+    description: "Local authored source focused on expressive bottlenecks in graph reasoning, diffusion, language adaptation, quantum compression, and explainability.",
+  },
+  {
     id: "doc-hcl-introduction",
     title: "Introduction to Hardware-Constrained QC+AI",
     kind: "document",
@@ -120,6 +127,13 @@ const FALLBACK_SOURCE_ASSETS = [
     kind: "video",
     filename: "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.mp4",
     description: "Lecture media focused on QViTs, graph architectures, few-shot diffusion, and the orchestration limits that still bound deployable hybrid perception systems.",
+  },
+  {
+    id: "video-module4-expressivity",
+    title: "Expressive Bottlenecks: Compression, Language, and Explanation",
+    kind: "video",
+    filename: "Module4_Expressive Bottlenecks Compression, Language, and Explanation.mp4",
+    description: "Lecture media focused on expressive bottlenecks, quantum representational geometry, hybrid compression, semantic embeddings, and explainability under systems constraints.",
   },
   {
     id: "video-hcl-introduction",

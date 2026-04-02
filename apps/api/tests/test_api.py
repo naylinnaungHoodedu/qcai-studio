@@ -27,6 +27,7 @@ RAW_DOCUMENT_TITLES = {
     "Quantum Computing and Artificial Intelligence Industry Use Cases.docx",
     "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx",
     "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.docx",
+    "Module4_Expressive Bottlenecks Compression, Language, and Explanation.docx",
     "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
     "Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx",
     "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
@@ -39,6 +40,7 @@ DISPLAY_DOCUMENT_TITLES = {
     "Raj et al. (Eds.), Quantum Computing and Artificial Intelligence: The Industry Use Cases",
     "Routing, Graph Shrinking, and Logistics under Hardware Constraints",
     "Quantum Vision, GNN, and Few-Shot Hybrid Architectures",
+    "Expressive Bottlenecks: Compression, Language, and Explanation",
     "Introduction to Hardware-Constrained QC+AI",
     "Hardware-Constrained QC+AI Models",
     "Intermediate Quantum Programming for Hardware-Constrained QC+AI",
@@ -51,6 +53,7 @@ RAW_VIDEO_TITLES = {
     "Quantum Computing and Artificial Intelligence 2026.mp4",
     "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4",
     "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.mp4",
+    "Module4_Expressive Bottlenecks Compression, Language, and Explanation.mp4",
     "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
     "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4",
     "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
@@ -63,6 +66,7 @@ DISPLAY_VIDEO_TITLES = {
     "Quantum Computing and Artificial Intelligence 2026",
     "Routing, Graph Shrinking, and Logistics under Hardware Constraints",
     "Quantum Vision, GNN, and Few-Shot Hybrid Architectures",
+    "Expressive Bottlenecks: Compression, Language, and Explanation",
     "Introduction to Hardware-Constrained QC+AI",
     "Hardware-Constrained QC+AI Models",
     "Intermediate Quantum Programming for Hardware-Constrained QC+AI",
@@ -123,11 +127,12 @@ def test_course_overview():
     assert data["id"] == "qcai-hardware-aware-course"
     assert len(data["modules"]) == 11
     assert sum(len(module["lesson_slugs"]) for module in data["modules"]) == 12
-    assert len(data["source_assets"]) == 20
+    assert len(data["source_assets"]) == 22
     source_filenames = [asset["filename"] for asset in data["source_assets"]]
     assert "Quantum Computing and Artificial Intelligence Industry Use Cases.docx" in source_filenames
     assert "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx" in source_filenames
     assert "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.docx" in source_filenames
+    assert "Module4_Expressive Bottlenecks Compression, Language, and Explanation.docx" in source_filenames
     assert (
         "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx"
         in source_filenames
@@ -185,6 +190,29 @@ def test_hybrid_applications_lesson_lookup_uses_module3_source_pair():
     headings = {section["heading"] for section in data["sections"]}
     assert "Quantum Vision Transformers: Overcoming Quadratic Attention Bottlenecks" in headings
     assert "The Generative Shift: Quantum Diffusion Models for Few-Shot Learning" in headings
+
+
+def test_representation_lesson_lookup_uses_module4_source_pair():
+    response = client.get("/content/lessons/representation-language-and-xai")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["module_slug"] == "representation-explainability"
+    assert data["sections"]
+    assert data["chapters"]
+    assert data["video_asset"]["filename"] == "Module4_Expressive Bottlenecks Compression, Language, and Explanation.mp4"
+    assert data["video_asset"]["title"] == "Expressive Bottlenecks: Compression, Language, and Explanation"
+    assert (
+        data["video_asset"]["download_url"]
+        == "/source-assets/by-id/module4_expressive-bottlenecks-compression-language-and-explanation-video"
+    )
+    source_filenames = {asset["filename"] for asset in data["source_assets"]}
+    assert "Module4_Expressive Bottlenecks Compression, Language, and Explanation.docx" in source_filenames
+    assert "Module4_Expressive Bottlenecks Compression, Language, and Explanation.mp4" in source_filenames
+    source_titles = {section["source_title"] for section in data["sections"]}
+    assert "Expressive Bottlenecks: Compression, Language, and Explanation" in source_titles
+    headings = {section["heading"] for section in data["sections"]}
+    assert "The Theoretical Paradigm of Expressive Bottlenecks" in headings
+    assert "Quantum Contrastive Word Embeddings" in headings
 
 
 def test_lesson_lookup_repairs_mojibake_in_source_excerpts():
@@ -670,6 +698,7 @@ def test_video_assets_use_updated_filenames():
     assert "Quantum Computing and Artificial Intelligence 2026.mp4" in video_filenames
     assert "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4" in video_filenames
     assert "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.mp4" in video_filenames
+    assert "Module4_Expressive Bottlenecks Compression, Language, and Explanation.mp4" in video_filenames
     assert (
         "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
         in video_filenames
@@ -690,7 +719,7 @@ def test_video_assets_use_updated_filenames():
         "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
         in video_filenames
     )
-    assert len(video_filenames) == 10
+    assert len(video_filenames) == 11
     video_urls = [asset["download_url"] for asset in assets if asset["kind"] == "video"]
     assert all(url.startswith("/source-assets/by-id/") for url in video_urls)
     assert not any(any(raw_title in url for raw_title in RAW_VIDEO_TITLES) for url in video_urls)
@@ -757,6 +786,16 @@ def test_duplicate_stem_assets_use_kind_specific_ids():
         for asset in assets
         if asset["filename"] == "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.mp4"
     )
+    module4_document = next(
+        asset
+        for asset in assets
+        if asset["filename"] == "Module4_Expressive Bottlenecks Compression, Language, and Explanation.docx"
+    )
+    module4_video = next(
+        asset
+        for asset in assets
+        if asset["filename"] == "Module4_Expressive Bottlenecks Compression, Language, and Explanation.mp4"
+    )
 
     assert intro_document["id"].endswith("-document")
     assert intro_video["id"].endswith("-video")
@@ -773,10 +812,15 @@ def test_duplicate_stem_assets_use_kind_specific_ids():
     assert module3_document["id"].endswith("-document")
     assert module3_video["id"].endswith("-video")
     assert module3_document["id"] != module3_video["id"]
+    assert module4_document["id"].endswith("-document")
+    assert module4_video["id"].endswith("-video")
+    assert module4_document["id"] != module4_video["id"]
     assert "," not in module2_document["id"]
     assert "," not in module2_video["id"]
     assert "," not in module3_document["id"]
     assert "," not in module3_video["id"]
+    assert "," not in module4_document["id"]
+    assert "," not in module4_video["id"]
 
 
 def test_industry_video_asset_supports_head_requests():
@@ -892,6 +936,8 @@ def test_source_document_selection_uses_curated_allowlist(tmp_path: Path):
         "Analyzing Quantum Computing and AI Paper 2025.docx",
         "Quantum Computing and Artificial Intelligence Industry Use Cases.docx",
         "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx",
+        "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.docx",
+        "Module4_Expressive Bottlenecks Compression, Language, and Explanation.docx",
         "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
         "Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx",
         "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
@@ -910,6 +956,8 @@ def test_source_document_selection_uses_curated_allowlist(tmp_path: Path):
         "Analyzing Quantum Computing and AI Paper 2025.docx",
         "Quantum Computing and Artificial Intelligence Industry Use Cases.docx",
         "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx",
+        "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.docx",
+        "Module4_Expressive Bottlenecks Compression, Language, and Explanation.docx",
         "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
         "Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx",
         "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
@@ -924,6 +972,8 @@ def test_source_video_selection_uses_curated_allowlist(tmp_path: Path):
         "Quantum Computing and Artificial Intelligence 2026.mp4",
         "Industry Use Cases.mp4",
         "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4",
+        "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.mp4",
+        "Module4_Expressive Bottlenecks Compression, Language, and Explanation.mp4",
         "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
         "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4",
         "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
@@ -940,6 +990,8 @@ def test_source_video_selection_uses_curated_allowlist(tmp_path: Path):
         "Quantum Computing and Artificial Intelligence 2026.mp4",
         "Industry Use Cases.mp4",
         "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4",
+        "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.mp4",
+        "Module4_Expressive Bottlenecks Compression, Language, and Explanation.mp4",
         "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
         "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4",
         "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
@@ -955,16 +1007,20 @@ def test_source_asset_selection_discovers_nested_update_data_assets(tmp_path: Pa
     (update_data / "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4").write_bytes(b"test")
     (update_data / "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.docx").write_bytes(b"test")
     (update_data / "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.mp4").write_bytes(b"test")
+    (update_data / "Module4_Expressive Bottlenecks Compression, Language, and Explanation.docx").write_bytes(b"test")
+    (update_data / "Module4_Expressive Bottlenecks Compression, Language, and Explanation.mp4").write_bytes(b"test")
 
     settings = Settings(source_assets_root=str(tmp_path))
 
     assert [path.name for path in settings.source_documents] == [
         "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx",
         "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.docx",
+        "Module4_Expressive Bottlenecks Compression, Language, and Explanation.docx",
     ]
     assert [path.name for path in settings.source_videos] == [
         "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4",
         "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.mp4",
+        "Module4_Expressive Bottlenecks Compression, Language, and Explanation.mp4",
     ]
 
 
