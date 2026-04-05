@@ -348,20 +348,21 @@ export function BuilderStudio({
                       {selectedScenario.slots.map((slot) => {
                         const nodeId = placements[slot.id];
                         const node = selectedScenario.nodes.find((item) => item.id === nodeId);
-                        const slotIncorrect = lastResult?.incorrect_slots.includes(slot.id) ?? false;
-                        const slotCorrect =
-                          Boolean(node) && !slotIncorrect && lastResult?.scenario_slug === selectedScenario.slug;
-                        const slotPosition = canvasLayout.positions[slot.id];
-                        return (
-                          <div
-                            aria-label={
-                              selectedNode
-                                ? `Place ${selectedNode.label} in ${slot.label}`
-                                : `${slot.label}. ${slot.description}`
-                            }
-                            aria-describedby="builder-workbench-help builder-workbench-status"
-                            aria-disabled={!selectedNodeId && !node ? true : undefined}
-                            aria-keyshortcuts="Enter Space Delete Backspace"
+                          const slotIncorrect = lastResult?.incorrect_slots.includes(slot.id) ?? false;
+                          const slotCorrect =
+                            Boolean(node) && !slotIncorrect && lastResult?.scenario_slug === selectedScenario.slug;
+                          const slotPosition = canvasLayout.positions[slot.id];
+                          const slotStatusText = node
+                            ? `${node.label}.`
+                            : selectedNode
+                              ? `Tap to place ${selectedNode.label}.`
+                              : "Drop a concept here.";
+                          return (
+                            <div
+                              aria-label={`${slot.label}. ${slot.description}. ${slotStatusText}`}
+                              aria-describedby="builder-workbench-help builder-workbench-status"
+                              aria-disabled={!selectedNodeId && !node ? true : undefined}
+                              aria-keyshortcuts="Enter Space Delete Backspace"
                             className={cx(
                               "builder-slot",
                               selectedNode && "is-armed",
@@ -503,6 +504,7 @@ export function BuilderStudio({
               <div className="panel inset-panel">
                 <p className="eyebrow">Share this map</p>
                 <textarea
+                  aria-label="Caption for the shared learning map"
                   className="note-input"
                   onChange={(event) => setShareCaption(event.target.value)}
                   rows={3}

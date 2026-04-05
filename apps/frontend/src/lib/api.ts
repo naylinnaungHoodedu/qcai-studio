@@ -150,13 +150,16 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
   if (requestOptions.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
+  const method = (requestOptions.method ?? "GET").toUpperCase();
   const isPublicRequest = cacheMode === "public";
-  if (!isPublicRequest) {
+  const isSafeMethod = method === "GET" || method === "HEAD" || method === "OPTIONS";
+  if (!isPublicRequest || !isSafeMethod) {
     await applyServerRequestHeaders(headers);
+  }
+  if (!isPublicRequest) {
     applyDemoAuthHeaders(headers);
   }
 
-  const method = (requestOptions.method ?? "GET").toUpperCase();
   const fetchOptions = {
     ...requestOptions,
     headers,

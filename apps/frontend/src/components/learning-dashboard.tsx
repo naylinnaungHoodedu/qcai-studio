@@ -346,6 +346,7 @@ export function LearningDashboardView({
               </label>
             </div>
             <textarea
+              aria-label="Most important outcome for this session"
               className="note-input"
               rows={3}
               placeholder="What is the most important outcome for this session?"
@@ -353,6 +354,7 @@ export function LearningDashboardView({
               onChange={(event) => setCheckIn((current) => ({ ...current, today_goal: event.target.value }))}
             />
             <textarea
+              aria-label="Current blocker"
               className="note-input"
               rows={3}
               placeholder="What is slowing you down right now?"
@@ -426,6 +428,7 @@ export function LearningDashboardView({
           </div>
           <form className="stack" onSubmit={handleCoachSubmit}>
             <textarea
+              aria-label="Prompt for the AI coach"
               className="note-input"
               rows={5}
               placeholder="Describe the concept, blocker, or draft plan you want feedback on."

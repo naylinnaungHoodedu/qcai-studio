@@ -80,6 +80,7 @@ export function QAPanel({
       </div>
       <form className="stack" onSubmit={submit}>
         <textarea
+          aria-label="Question for this lesson"
           className="note-input"
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
