@@ -23,6 +23,10 @@ const ENABLE_DEMO_AUTH =
     : process.env.NEXT_PUBLIC_ENABLE_DEMO_AUTH != null
       ? process.env.NEXT_PUBLIC_ENABLE_DEMO_AUTH === "true"
       : process.env.NODE_ENV !== "production";
+const UPSTREAM_TIMEOUT_MS = 8000;
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store",
+};
 
 function buildTargetUrl(pathParts: string[], request: NextRequest): string {
   const base = API_BASE_URL.replace(/\/$/, "");
@@ -30,6 +34,53 @@ function buildTargetUrl(pathParts: string[], request: NextRequest): string {
   const url = new URL(`${base}/${path}`);
   url.search = request.nextUrl.search;
   return url.toString();
+}
+
+function applyGuestSessionCookiesToResponse(
+  response: Response,
+  request: NextRequest,
+  session: ReturnType<typeof resolveGuestSession> | null,
+): Response {
+  if (!session) {
+    return response;
+  }
+
+  const cookieResponse = new NextResponse(null);
+  setGuestSessionCookies(cookieResponse, request, session);
+  for (const cookie of cookieResponse.cookies.getAll()) {
+    response.headers.append("set-cookie", stringifyCookie(cookie));
+  }
+  return response;
+}
+
+function buildUpstreamErrorResponse(
+  request: NextRequest,
+  method: string,
+  error: unknown,
+  session: ReturnType<typeof resolveGuestSession> | null,
+): Response {
+  const isTimeout = error instanceof Error && error.name === "AbortError";
+  const status = isTimeout ? 504 : 502;
+  const detail = isTimeout
+    ? "The frontend proxy timed out while waiting for the API upstream."
+    : "The frontend proxy could not reach the API upstream.";
+  const response =
+    method === "HEAD"
+      ? new NextResponse(null, {
+          status,
+          headers: NO_STORE_HEADERS,
+        })
+      : NextResponse.json(
+          {
+            error: isTimeout ? "upstream_timeout" : "upstream_unavailable",
+            detail,
+          },
+          {
+            status,
+            headers: NO_STORE_HEADERS,
+          },
+        );
+  return applyGuestSessionCookiesToResponse(response, request, session);
 }
 
 async function proxyRequest(
@@ -79,12 +130,22 @@ async function proxyRequest(
     headers.delete("content-length");
   }
 
-  const upstream = await fetch(buildTargetUrl(path, request), {
-    method,
-    headers,
-    body,
-    cache: "no-store",
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+  let upstream: Response;
+  try {
+    upstream = await fetch(buildTargetUrl(path, request), {
+      method,
+      headers,
+      body,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } catch (error) {
+    return buildUpstreamErrorResponse(request, method, error, session);
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const responseHeaders = new Headers(upstream.headers);
   responseHeaders.delete("content-encoding");
@@ -94,14 +155,7 @@ async function proxyRequest(
     status: upstream.status,
     headers: responseHeaders,
   });
-  if (session) {
-    const cookieResponse = new NextResponse(null);
-    setGuestSessionCookies(cookieResponse, request, session);
-    for (const cookie of cookieResponse.cookies.getAll()) {
-      response.headers.append("set-cookie", stringifyCookie(cookie));
-    }
-  }
-  return response;
+  return applyGuestSessionCookiesToResponse(response, request, session);
 }
 
 export async function GET(

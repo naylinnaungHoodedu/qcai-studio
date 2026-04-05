@@ -245,6 +245,29 @@ test("asset proxy full GET uses a plain streamed response when guest cookies alr
   }
 });
 
+test("backend proxy returns a structured bad-gateway response when the upstream is unreachable", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => {
+    throw new TypeError("fetch failed");
+  };
+
+  try {
+    const response = await backendProxyGet(
+      new NextRequest("https://qantumlearn.academy/api/backend/health"),
+      {
+        params: Promise.resolve({ path: ["health"] }),
+      },
+    );
+    const payload = await response.json();
+
+    assert.equal(response.status, 502);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(payload.error, "upstream_unavailable");
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test("frontend health route returns a no-store operational payload", async () => {
   const response = frontendHealthRoute();
   const payload = await response.json();
@@ -262,7 +285,7 @@ test("frontend ready route fails closed when the API base URL is missing", async
   delete process.env.NEXT_PUBLIC_API_BASE_URL;
 
   try {
-    const response = frontendReadyRoute();
+    const response = await frontendReadyRoute();
     const payload = await response.json();
 
     assert.equal(response.status, 503);
@@ -282,23 +305,63 @@ test("frontend ready route fails closed when the API base URL is missing", async
   }
 });
 
-test("frontend ready route reports ready when the API base URL is valid", async () => {
+test("frontend ready route degrades when the backend readiness check cannot be reached", async () => {
   const originalApiBaseUrl = process.env.API_BASE_URL;
+  const originalFetch = global.fetch;
   process.env.API_BASE_URL = "https://api.qantumlearn.academy";
+  global.fetch = async () => {
+    throw new TypeError("fetch failed");
+  };
 
   try {
-    const response = frontendReadyRoute();
+    const response = await frontendReadyRoute();
     const payload = await response.json();
 
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 503);
     assert.equal(response.headers.get("cache-control"), "no-store");
-    assert.equal(payload.status, "ready");
+    assert.equal(payload.status, "degraded");
     assert.equal(payload.api_origin, "https://api.qantumlearn.academy");
+    assert.equal(payload.api_status, "unavailable");
   } finally {
     if (originalApiBaseUrl == null) {
       delete process.env.API_BASE_URL;
     } else {
       process.env.API_BASE_URL = originalApiBaseUrl;
     }
+    global.fetch = originalFetch;
+  }
+});
+
+test("frontend ready route reports ready when the backend readiness check succeeds", async () => {
+  const originalApiBaseUrl = process.env.API_BASE_URL;
+  const originalFetch = global.fetch;
+  process.env.API_BASE_URL = "https://api.qantumlearn.academy";
+  global.fetch = async (input, init) => {
+    assert.equal(String(input), "https://api.qantumlearn.academy/ready");
+    assert.equal(init?.method, "GET");
+    return new Response(JSON.stringify({ status: "ready", lessons: 12, source_assets: 24 }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  };
+
+  try {
+    const response = await frontendReadyRoute();
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(payload.status, "ready");
+    assert.equal(payload.api_origin, "https://api.qantumlearn.academy");
+    assert.equal(payload.api_status, "ready");
+  } finally {
+    if (originalApiBaseUrl == null) {
+      delete process.env.API_BASE_URL;
+    } else {
+      process.env.API_BASE_URL = originalApiBaseUrl;
+    }
+    global.fetch = originalFetch;
   }
 });

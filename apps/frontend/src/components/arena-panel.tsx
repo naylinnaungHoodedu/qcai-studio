@@ -413,6 +413,7 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
                 <form className="stack" onSubmit={submitAnswer}>
                   <pre className="arena-code">{challenge.starter_code}</pre>
                   <textarea
+                    aria-label="Code answer"
                     className="note-input"
                     onChange={(event) => setPendingAnswer(event.target.value)}
                     placeholder="Enter the missing token or expression"

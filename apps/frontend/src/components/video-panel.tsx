@@ -199,22 +199,23 @@ export function VideoPanel({
               <h3>Navigable segments</h3>
             </div>
           </div>
-          <div className="transcript-list" role="list">
+          <ol className="transcript-list">
             {chapters.map((chapter, index) => (
-              <button
-                className={`transcript-segment ${chapter.id === activeChapterId ? "is-active" : ""}`}
-                key={chapter.id}
-                onClick={() => seekToChapter(chapter)}
-                type="button"
-              >
-                <span className="eyebrow">
-                  {index + 1}. {formatTimestamp(chapter.timestamp_start)}
-                </span>
-                <strong>{chapter.title}</strong>
-                <p>{chapter.transcript_excerpt || chapter.summary}</p>
-              </button>
+              <li key={chapter.id}>
+                <button
+                  className={`transcript-segment ${chapter.id === activeChapterId ? "is-active" : ""}`}
+                  onClick={() => seekToChapter(chapter)}
+                  type="button"
+                >
+                  <span className="eyebrow">
+                    {index + 1}. {formatTimestamp(chapter.timestamp_start)}
+                  </span>
+                  <strong>{chapter.title}</strong>
+                  <p>{chapter.transcript_excerpt || chapter.summary}</p>
+                </button>
+              </li>
             ))}
-          </div>
+          </ol>
         </aside>
       </div>
     </section>

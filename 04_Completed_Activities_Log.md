@@ -5736,3 +5736,184 @@ Completed logging and synchronization work:
 - confirmed the publication target branch remains:
   - `main`
 - synchronized the updated completed-activities record to the related GitHub repository so the current folder's missing post-Module2 history is now reflected remotely
+
+## 181. Responsive Small-Screen, Accessibility, and Public-Request Hardening Batch Completed Locally
+
+After the current frontend source and the provided small-screen reference captures were studied in depth, a focused frontend hardening batch was completed to correct phone/tablet navigation behavior, tighten small-screen layout safety, improve input accessibility semantics, and preserve guest CSRF handling on public browser requests.
+
+Completed implementation work:
+
+- studied the current-folder responsive reference captures:
+  - `screenshot_from_iphone13pro.jpeg`
+  - `screenshot_from_galaxy_fold6_phone.jpeg`
+  - `screenshot_from_laptop1.jpg`
+  - `screenshot_from_laptop2.jpg`
+- corrected the shared responsive shell and primary navigation behavior across:
+  - `apps/frontend/src/components/primary-nav.tsx`
+  - `apps/frontend/src/app/globals.css`
+- implemented the responsive navigation hardening so the frontend now:
+  - uses a controlled mobile/tablet menu toggle instead of exposing the desktop pill layout on narrow screens
+  - closes the menu on navigation, outside click, and `Escape`
+  - constrains navigation width correctly on tablets and phones
+  - adds safe-area-aware assistant placement and bottom breathing room for smaller screens
+  - tightens layout min-width behavior so shared panels, cards, and grids do not force horizontal overflow
+- corrected one real tablet-specific defect during implementation:
+  - the opened tablet navigation panel was initially capped to the toggle width rather than the intended overlay width
+  - the responsive CSS was corrected so the navigation panel can expand to the intended tablet width while still collapsing cleanly to full width on phones
+- improved public and study-surface accessibility semantics across:
+  - `apps/frontend/src/components/arena-panel.tsx`
+  - `apps/frontend/src/components/builder-studio.tsx`
+  - `apps/frontend/src/components/learning-dashboard.tsx`
+  - `apps/frontend/src/components/notes-panel.tsx`
+  - `apps/frontend/src/components/projects-studio.tsx`
+  - `apps/frontend/src/components/qa-panel.tsx`
+  - `apps/frontend/src/components/quiz-panel.tsx`
+  - `apps/frontend/src/components/search-page.tsx`
+  - `apps/frontend/src/components/video-panel.tsx`
+- added explicit input labels and improved structural semantics so:
+  - authored text areas now expose concrete accessible labels
+  - builder slots expose clearer slot-content state in their labels
+  - the video chapter transcript surface now uses native ordered-list semantics
+- hardened the public frontend API client behavior in:
+  - `apps/frontend/src/lib/api.ts`
+  so safe public browser requests continue forwarding guest CSRF protection without adding demo-auth headers
+- expanded regression coverage for this batch across:
+  - `apps/frontend/tests/primary-nav.integration.test.ts`
+  - `apps/frontend/tests/auth-and-proxy.integration.test.ts`
+  - `apps/frontend/tests/accessibility.integration.test.ts`
+  - `apps/frontend/tests/public-api.integration.test.ts`
+
+Completed verification work:
+
+- reran frontend lint:
+  - `npm run lint`
+  - result: passed
+- reran frontend integration coverage:
+  - `npm run test:integration`
+  - result: `84 passed`
+- reran frontend production-build verification:
+  - `npm run build`
+  - result: passed
+
+## 182. Responsive Frontend and Frontend-Readiness Hardening Batch Deployed to Production
+
+After the local responsive and frontend-hardening batch was completed, the updated frontend runtime was built and deployed to the live production frontend so the small-screen shell fixes and the frontend readiness/proxy hardening became active on the public domain.
+
+Completed implementation and deployment work:
+
+- hardened the frontend readiness route in:
+  - `apps/frontend/src/app/ready/route.ts`
+  so the public frontend now probes the backend `/ready` endpoint with a timeout and reports `degraded` instead of incorrectly reporting `ready` when the backend cannot actually be reached
+- hardened the frontend backend-proxy route in:
+  - `apps/frontend/src/app/api/backend/[...path]/route.ts`
+  so upstream timeouts and upstream-unreachable cases now return controlled `504` and `502` responses while preserving guest-session cookies
+- built and published the updated frontend image through Cloud Build:
+  - build id: `987372d0-9bb4-4c2a-937d-0cd0d1320b0b`
+  - images:
+    - `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest`
+    - `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:20260404142405`
+  - digest: `sha256:bd0ec24e47019fcb259a8c2f798ec7624f7190256caa6c1ae2dc89115fb1dc27`
+- deployed the frontend rollout to Cloud Run:
+  - service: `qcai-frontend`
+  - latest ready revision: `qcai-frontend-00050-fbk`
+  - traffic: `100%`
+  - service URL: `https://qcai-frontend-55f6mkphiq-uc.a.run.app`
+
+Completed live verification work:
+
+- confirmed the live public frontend health endpoint returns:
+  - `https://qantumlearn.academy/health`
+  - `200`
+  - `{"status":"ok","app":"QC+AI Studio Frontend","environment":"production"}`
+- confirmed the live public frontend readiness endpoint returns:
+  - `https://qantumlearn.academy/ready`
+  - `200`
+  - `{"status":"ready","api_origin":"https://qcai-api-55f6mkphiq-uc.a.run.app","api_status":"ready"}`
+- confirmed the live frontend proxy can still reach the backend health route:
+  - `https://qantumlearn.academy/api/backend/health`
+  - `200`
+  - `{"status":"ok","app":"QC+AI Learning API","environment":"production"}`
+- confirmed the live backend readiness route returns:
+  - `https://api.qantumlearn.academy/ready`
+  - `200`
+  - `{"status":"ready","database":"ok","lessons":12,"source_assets":24}`
+- reran live Lighthouse verification against:
+  - `https://qantumlearn.academy/`
+  - `https://qantumlearn.academy/modules`
+  - `https://qantumlearn.academy/lessons/nisq-reality-overview`
+  - `https://qantumlearn.academy/builder`
+  - `https://qantumlearn.academy/account`
+  - `https://qantumlearn.academy/support`
+- confirmed the live audit scores were:
+  - `/`: `99 / 100 / 100 / 100`
+  - `/modules`: `99 / 100 / 100 / 100`
+  - `/lessons/nisq-reality-overview`: `99 / 100 / 100 / 100`
+  - `/builder`: `100 / 100 / 100 / 66`
+  - `/account`: `99 / 100 / 100 / 66`
+  - `/support`: `100 / 100 / 100 / 100`
+
+## 183. Deep Double-Check Completed for the Responsive and Production-Hardening Batch
+
+After the responsive frontend rollout and the frontend readiness/proxy hardening were deployed, a second deep verification pass was completed against the current repository state, the local validation commands, the Cloud Build and Cloud Run metadata, the live public domain, and the Cloud Run request logs.
+
+Completed recheck work:
+
+- rechecked repository publication scope:
+  - the active publication branch for this batch is:
+    - `codex/log-responsive-production-batch`
+- reran frontend lint:
+  - `npm run lint`
+  - result: passed
+- reran frontend integration coverage:
+  - `npm run test:integration`
+  - result: `84 passed`
+- reran frontend production-build verification:
+  - `npm run build`
+  - result: passed
+- reran Lighthouse verification against the live production domain by setting:
+  - `LIGHTHOUSE_BASE_URL=https://qantumlearn.academy`
+  because the audit script defaults to `http://127.0.0.1:3000` and reports zeroed audits when no local target is running
+- rechecked deployed production state:
+  - Cloud Build `987372d0-9bb4-4c2a-937d-0cd0d1320b0b` is `SUCCESS`
+  - the live frontend revision remains `qcai-frontend-00050-fbk`
+  - the live frontend image remains `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:20260404142405`
+  - the live frontend traffic split remains `100%`
+- rechecked the live public endpoints:
+  - `https://qantumlearn.academy/health`
+  - `https://qantumlearn.academy/ready`
+  - `https://qantumlearn.academy/api/backend/health`
+  - `https://api.qantumlearn.academy/ready`
+- rechecked the prior readiness anomaly through Cloud Run request logs and confirmed one recorded frontend `503` request remains visible at:
+  - `2026-04-05T03:23:32.979694Z`
+  - request URL: `https://qantumlearn.academy/ready`
+  - revision: `qcai-frontend-00050-fbk`
+  - latency: `5.029326355s`
+
+Final-state confirmation from the responsive/production recheck:
+
+- no new concrete code or build failures were identified in the current repository state
+- the live public frontend and backend health/readiness endpoints were all returning `200` at recheck time
+- the previously observed intermittent `/ready` timeout remains the only concrete production-runtime issue identified during the recheck window, so a zero-issue claim would still be inaccurate
+
+## 184. Current Responsive and Production Batch Logged Locally and Synchronized to the Related GitHub Repository
+
+After the responsive, accessibility, public-request, and frontend-production-hardening work was reconstructed and reverified from the current folder, the repository logs were updated so the completed local work, the live deployment state, and the deep recheck findings are now recorded together, while the GitHub-published repository history is synchronized through the tracked completed-activities record.
+
+Completed logging and synchronization work:
+
+- updated the current-folder activity record in:
+  - `04_Completed_Activities_Log.md`
+- updated the current-folder production deployment record in:
+  - `07_Production_Deployment_Local_Log.md`
+- added the missing completed-activity sections:
+  - `181`
+  - `182`
+  - `183`
+  - `184`
+- confirmed the related GitHub repository remains:
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+- confirmed the remote default branch remains:
+  - `main`
+- confirmed the publication branch for this synchronization batch is:
+  - `codex/log-responsive-production-batch`
+- synchronized the updated completed-activities record and the current responsive/frontend-hardening batch to the related GitHub repository through the publication branch for this batch

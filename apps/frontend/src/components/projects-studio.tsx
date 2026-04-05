@@ -254,11 +254,13 @@ export function ProjectsStudio({ initialCatalog, initialSubmissions, initialQueu
               </div>
               <form className="stack" onSubmit={handleSubmission}>
                 <input
+                  aria-label="Submission title"
                   value={submission.title}
                   onChange={(event) => setSubmission((current) => ({ ...current, title: event.target.value }))}
                   placeholder="Submission title"
                 />
                 <textarea
+                  aria-label="Solution summary"
                   className="note-input"
                   rows={6}
                   value={submission.solution_summary}
@@ -269,6 +271,7 @@ export function ProjectsStudio({ initialCatalog, initialSubmissions, initialQueu
                   placeholder="Describe the system design, decision boundary, or migration plan you are proposing."
                 />
                 <textarea
+                  aria-label="Implementation notes"
                   className="note-input"
                   rows={6}
                   value={submission.implementation_notes}
@@ -431,6 +434,7 @@ export function ProjectsStudio({ initialCatalog, initialSubmissions, initialQueu
                     ))}
                   </div>
                   <textarea
+                    aria-label="Peer review feedback"
                     className="note-input"
                     rows={4}
                     value={reviewDraft.feedback}
