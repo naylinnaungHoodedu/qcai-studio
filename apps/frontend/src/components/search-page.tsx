@@ -48,7 +48,13 @@ export function SearchPageView() {
           curated video chapters, and lesson-authored scaffolding where the course adds prerequisite framing.
         </p>
         <form className="stack" onSubmit={handleSearch}>
-          <textarea className="note-input" onChange={(event) => setQuery(event.target.value)} rows={3} value={query} />
+          <textarea
+            aria-label="Search query"
+            className="note-input"
+            onChange={(event) => setQuery(event.target.value)}
+            rows={3}
+            value={query}
+          />
           <button className="primary-button" disabled={loading} type="submit">
             {loading ? "Searching..." : "Search"}
           </button>

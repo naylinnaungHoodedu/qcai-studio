@@ -21,6 +21,7 @@ apps/api/qcai_dev.db
 *.log
 *.out.log
 *.err.log
+dist/
 
 # Internal working notes and non-submission artifacts
 01_Repository_Artifact_Study_and_Assessment.docx

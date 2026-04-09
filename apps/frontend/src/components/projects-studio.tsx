@@ -13,6 +13,7 @@ import {
   requestRealtimeFeedback,
   submitPeerReview,
 } from "@/lib/api";
+import { formatProjectAuthorLabel, SEEDED_DEMO_DISCLOSURE } from "@/lib/seeded-demo";
 import { ProjectBrief, ProjectSubmission, RealtimeFeedback, ReviewQueueItem } from "@/lib/types";
 
 
@@ -69,6 +70,8 @@ export function ProjectsStudio({ initialCatalog, initialSubmissions, initialQueu
 
   const selectedProject = (catalogQuery.data ?? []).find((project) => project.slug === selectedProjectSlug) ?? catalogQuery.data?.[0];
   const deferredDraft = useDeferredValue(`${submission.solution_summary}\n${submission.implementation_notes}`);
+  const publicSubmissionCount = (catalogQuery.data ?? []).reduce((total, project) => total + project.submitted_count, 0);
+  const publicReviewCount = (catalogQuery.data ?? []).reduce((total, project) => total + project.peer_reviews_received, 0);
 
   const liveFeedbackMutation = useMutation({
     mutationFn: () =>
@@ -182,14 +185,19 @@ export function ProjectsStudio({ initialCatalog, initialSubmissions, initialQueu
         </div>
         <div className="analytics-metric-grid">
           <article className="metric-card emphasis-card">
-            <span className="eyebrow">Projects submitted</span>
-            <strong>{submissionsQuery.data?.length ?? 0}</strong>
-            <p>Each submission becomes durable evidence for your adaptive path and skill model.</p>
+            <span className="eyebrow">Public submissions</span>
+            <strong>{publicSubmissionCount}</strong>
+            <p>Visible project evidence now includes labeled seeded demo work for immediate evaluation.</p>
+          </article>
+          <article className="metric-card">
+            <span className="eyebrow">Public peer reviews</span>
+            <strong>{publicReviewCount}</strong>
+            <p>Rubric-backed review activity is visible before the first live learner submission arrives.</p>
           </article>
           <article className="metric-card">
             <span className="eyebrow">Peer queue</span>
             <strong>{queueQuery.data?.length ?? 0}</strong>
-            <p>Review work from other learners to strengthen your evaluation instincts.</p>
+            <p>Review work from other learners and seeded audit fixtures to strengthen evaluation instincts.</p>
           </article>
           <article className="metric-card">
             <span className="eyebrow">Live feedback</span>
@@ -197,6 +205,10 @@ export function ProjectsStudio({ initialCatalog, initialSubmissions, initialQueu
             <p>Draft analysis updates as your submission becomes more concrete.</p>
           </article>
         </div>
+        <p className="muted">
+          {SEEDED_DEMO_DISCLOSURE} Review the <Link href="/audit-fixtures">audit fixtures</Link> to trace the fictional
+          personas behind any labeled seeded records.
+        </p>
       </section>
 
       <div className="projects-grid">
@@ -254,11 +266,13 @@ export function ProjectsStudio({ initialCatalog, initialSubmissions, initialQueu
               </div>
               <form className="stack" onSubmit={handleSubmission}>
                 <input
+                  aria-label="Submission title"
                   value={submission.title}
                   onChange={(event) => setSubmission((current) => ({ ...current, title: event.target.value }))}
                   placeholder="Submission title"
                 />
                 <textarea
+                  aria-label="Solution summary"
                   className="note-input"
                   rows={6}
                   value={submission.solution_summary}
@@ -269,6 +283,7 @@ export function ProjectsStudio({ initialCatalog, initialSubmissions, initialQueu
                   placeholder="Describe the system design, decision boundary, or migration plan you are proposing."
                 />
                 <textarea
+                  aria-label="Implementation notes"
                   className="note-input"
                   rows={6}
                   value={submission.implementation_notes}
@@ -401,7 +416,7 @@ export function ProjectsStudio({ initialCatalog, initialSubmissions, initialQueu
                 <article className="project-submission-card" key={item.submission_id}>
                   <strong>{item.title}</strong>
                   <p className="muted">
-                    {item.project_title} | submitted by {item.author_id}
+                    {item.project_title} | submitted by {formatProjectAuthorLabel(item.author_id)}
                   </p>
                   <p>{item.solution_summary}</p>
                   <p className="muted">{item.implementation_notes}</p>
@@ -431,6 +446,7 @@ export function ProjectsStudio({ initialCatalog, initialSubmissions, initialQueu
                     ))}
                   </div>
                   <textarea
+                    aria-label="Peer review feedback"
                     className="note-input"
                     rows={4}
                     value={reviewDraft.feedback}

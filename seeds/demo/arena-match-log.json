@@ -1,0 +1,25 @@
+{
+  "profile": {
+    "player_id": "fixture-ac-07",
+    "display_name": "Seeded demo | Audit fixture AC-07",
+    "xp": 1480,
+    "matches_played": 6,
+    "wins": 4,
+    "skill_rating": 1185,
+    "adaptive_level": 4,
+    "created_at": "2026-04-09T08:55:00Z",
+    "updated_at": "2026-04-09T09:30:00Z"
+  },
+  "match_record": {
+    "player_id": "fixture-ac-07",
+    "opponent_id": "bot-seeded-demo",
+    "mode": "bot",
+    "result": "win",
+    "score": 864,
+    "correct_answers": 4,
+    "total_rounds": 5,
+    "xp_delta": 220,
+    "difficulty_band": 4,
+    "created_at": "2026-04-09T09:30:00Z"
+  }
+}

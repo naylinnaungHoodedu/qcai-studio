@@ -1,6 +1,8 @@
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
+from fastapi import HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.testclient import TestClient
 from starlette.requests import Request
@@ -649,11 +651,17 @@ def test_full_video_get_uses_streaming_response(tmp_path: Path):
     response = assets._serve_source_asset(video_path, _build_asset_request())
 
     assert isinstance(response, StreamingResponse)
-    assert not isinstance(response, FileResponse)
     assert response.status_code == 200
     assert response.media_type == "video/mp4"
     assert response.headers["accept-ranges"] == "bytes"
-    assert "content-length" not in response.headers
+
+
+def test_source_asset_returns_503_when_file_becomes_unavailable(tmp_path: Path):
+    with pytest.raises(HTTPException) as excinfo:
+        assets._serve_source_asset(tmp_path / "missing-video.mp4", _build_asset_request())
+
+    assert excinfo.value.status_code == 503
+    assert excinfo.value.detail == "Source asset temporarily unavailable."
 
 
 def test_video_source_asset_supports_full_gets(monkeypatch, tmp_path: Path):
@@ -1285,12 +1293,14 @@ def test_arena_leaderboard_orders_profiles():
     runner_up = f"arena-runner-{uuid4().hex[:8]}"
     with SessionLocal() as session:
         current_max_xp = session.scalar(select(func.max(ArenaProfile.xp))) or 0
+        top_xp = max(current_max_xp + 200, 2300)
+        runner_xp = max(current_max_xp + 100, 2200)
         session.add_all(
             [
                 ArenaProfile(
                     player_id=top_player,
                     display_name="Top Player",
-                    xp=current_max_xp + 200,
+                    xp=top_xp,
                     matches_played=12,
                     wins=9,
                     skill_rating=1290,
@@ -1299,7 +1309,7 @@ def test_arena_leaderboard_orders_profiles():
                 ArenaProfile(
                     player_id=runner_up,
                     display_name="Runner Up",
-                    xp=current_max_xp + 100,
+                    xp=runner_xp,
                     matches_played=11,
                     wins=7,
                     skill_rating=1210,

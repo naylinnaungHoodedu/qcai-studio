@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { fetchArenaLeaderboard, fetchArenaProfile, fetchArenaStatus } from "@/lib/api";
+import { isSeededAuditFixtureUserId, SEEDED_DEMO_DISCLOSURE } from "@/lib/seeded-demo";
 import { ArenaLeaderboardEntry, ArenaProfile, ArenaStatus } from "@/lib/types";
 
 type ArenaPanelProps = {
@@ -413,6 +414,7 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
                 <form className="stack" onSubmit={submitAnswer}>
                   <pre className="arena-code">{challenge.starter_code}</pre>
                   <textarea
+                    aria-label="Code answer"
                     className="note-input"
                     onChange={(event) => setPendingAnswer(event.target.value)}
                     placeholder="Enter the missing token or expression"
@@ -491,6 +493,10 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
                 <h2>XP ladder</h2>
               </div>
             </div>
+            <p className="muted">
+              {SEEDED_DEMO_DISCLOSURE} Review the <Link href="/audit-fixtures">audit fixtures</Link> to trace any
+              labeled seeded leaderboard entries.
+            </p>
             <div className="stack">
               {sortedLeaderboard.map((entry: ArenaLeaderboardEntry, index) => (
                 <article className="arena-leaderboard-row" key={entry.player_id}>
@@ -498,6 +504,7 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
                     #{index + 1} {entry.display_name}
                   </strong>
                   <p className="muted">
+                    {isSeededAuditFixtureUserId(entry.player_id) ? "Seeded demo | " : ""}
                     {entry.rank_label} | {entry.xp} XP | win rate {entry.win_rate_percent}%
                   </p>
                 </article>

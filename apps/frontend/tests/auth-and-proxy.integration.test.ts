@@ -4,6 +4,7 @@ import test from "node:test";
 import { NextRequest, NextResponse } from "next/server";
 
 import { GET as backendProxyGet } from "../src/app/api/backend/[...path]/route";
+import { POST as backendProxyPost } from "../src/app/api/backend/[...path]/route";
 import { GET as frontendHealthRoute } from "../src/app/health/route";
 import { GET as frontendReadyRoute } from "../src/app/ready/route";
 import { GET as authCallbackRoute } from "../src/app/auth/callback/route";
@@ -245,6 +246,121 @@ test("asset proxy full GET uses a plain streamed response when guest cookies alr
   }
 });
 
+test("backend proxy returns a structured bad-gateway response when the upstream is unreachable", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => {
+    throw new TypeError("fetch failed");
+  };
+
+  try {
+    const response = await backendProxyGet(
+      new NextRequest("https://qantumlearn.academy/api/backend/health"),
+      {
+        params: Promise.resolve({ path: ["health"] }),
+      },
+    );
+    const payload = await response.json();
+
+    assert.equal(response.status, 502);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(payload.error, "upstream_unavailable");
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("asset proxy retries one transient upstream 500 before returning the media response", async () => {
+  const originalFetch = global.fetch;
+  const payload = new TextEncoder().encode("video-range-payload");
+  let attempts = 0;
+  global.fetch = async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      return new Response(JSON.stringify({ detail: "temporary media failure" }), {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    }
+    return new Response(payload, {
+      status: 206,
+      headers: {
+        "Content-Type": "video/mp4",
+        "Content-Length": String(payload.byteLength),
+        "Content-Range": `bytes 0-${payload.byteLength - 1}/${payload.byteLength}`,
+        "Accept-Ranges": "bytes",
+      },
+    });
+  };
+
+  try {
+    const response = await backendProxyGet(
+      new NextRequest("https://qantumlearn.academy/api/backend/source-assets/by-id/industry-use-cases", {
+        headers: {
+          cookie: cookieHeader({
+            qcai_guest_id: "guest-123e4567-e89b-12d3-a456-426614174000",
+            qcai_guest_csrf: "3b1f2f40-7132-4778-8df5-44c1c5cf6bb0",
+          }),
+        },
+      }),
+      {
+        params: Promise.resolve({ path: ["source-assets", "by-id", "industry-use-cases"] }),
+      },
+    );
+
+    assert.equal(attempts, 2);
+    assert.equal(response.status, 206);
+    assert.equal(response.headers.get("content-type"), "video/mp4");
+    assert.equal(response.headers.get("accept-ranges"), "bytes");
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("public web-vitals proxy retries one transient upstream timeout before returning accepted", async () => {
+  const originalFetch = global.fetch;
+  let attempts = 0;
+  global.fetch = async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      const error = new Error("timed out");
+      error.name = "AbortError";
+      throw error;
+    }
+    return Response.json({ status: "accepted" });
+  };
+
+  try {
+    const response = await backendProxyPost(
+      new NextRequest("https://qantumlearn.academy/api/backend/analytics/public-web-vitals", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://qantumlearn.academy",
+        },
+        body: JSON.stringify({
+          metric_id: "vital-retry",
+          metric_name: "LCP",
+          path: "/",
+          value: 1234,
+          rating: "good",
+        }),
+      }),
+      {
+        params: Promise.resolve({ path: ["analytics", "public-web-vitals"] }),
+      },
+    );
+    const payload = await response.json();
+
+    assert.equal(attempts, 2);
+    assert.equal(response.status, 200);
+    assert.equal(payload.status, "accepted");
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test("frontend health route returns a no-store operational payload", async () => {
   const response = frontendHealthRoute();
   const payload = await response.json();
@@ -262,7 +378,7 @@ test("frontend ready route fails closed when the API base URL is missing", async
   delete process.env.NEXT_PUBLIC_API_BASE_URL;
 
   try {
-    const response = frontendReadyRoute();
+    const response = await frontendReadyRoute();
     const payload = await response.json();
 
     assert.equal(response.status, 503);
@@ -282,23 +398,103 @@ test("frontend ready route fails closed when the API base URL is missing", async
   }
 });
 
-test("frontend ready route reports ready when the API base URL is valid", async () => {
+test("frontend ready route degrades when the backend readiness check cannot be reached", async () => {
   const originalApiBaseUrl = process.env.API_BASE_URL;
+  const originalFetch = global.fetch;
   process.env.API_BASE_URL = "https://api.qantumlearn.academy";
+  global.fetch = async () => {
+    throw new TypeError("fetch failed");
+  };
 
   try {
-    const response = frontendReadyRoute();
+    const response = await frontendReadyRoute();
     const payload = await response.json();
 
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 503);
     assert.equal(response.headers.get("cache-control"), "no-store");
-    assert.equal(payload.status, "ready");
+    assert.equal(payload.status, "degraded");
     assert.equal(payload.api_origin, "https://api.qantumlearn.academy");
+    assert.equal(payload.api_status, "unavailable");
   } finally {
     if (originalApiBaseUrl == null) {
       delete process.env.API_BASE_URL;
     } else {
       process.env.API_BASE_URL = originalApiBaseUrl;
     }
+    global.fetch = originalFetch;
+  }
+});
+
+test("frontend ready route reports ready when the backend readiness check succeeds", async () => {
+  const originalApiBaseUrl = process.env.API_BASE_URL;
+  const originalFetch = global.fetch;
+  process.env.API_BASE_URL = "https://api.qantumlearn.academy";
+  global.fetch = async (input, init) => {
+    assert.equal(String(input), "https://api.qantumlearn.academy/ready");
+    assert.equal(init?.method, "GET");
+    return new Response(JSON.stringify({ status: "ready", lessons: 12, source_assets: 24 }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  };
+
+  try {
+    const response = await frontendReadyRoute();
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(payload.status, "ready");
+    assert.equal(payload.api_origin, "https://api.qantumlearn.academy");
+    assert.equal(payload.api_status, "ready");
+  } finally {
+    if (originalApiBaseUrl == null) {
+      delete process.env.API_BASE_URL;
+    } else {
+      process.env.API_BASE_URL = originalApiBaseUrl;
+    }
+    global.fetch = originalFetch;
+  }
+});
+
+test("frontend ready route retries one transient timeout before returning ready", async () => {
+  const originalApiBaseUrl = process.env.API_BASE_URL;
+  const originalFetch = global.fetch;
+  let attempts = 0;
+  process.env.API_BASE_URL = "https://api.qantumlearn.academy";
+  global.fetch = async (input, init) => {
+    attempts += 1;
+    assert.equal(String(input), "https://api.qantumlearn.academy/ready");
+    assert.equal(init?.method, "GET");
+    if (attempts === 1) {
+      const error = new Error("timed out");
+      error.name = "AbortError";
+      throw error;
+    }
+    return new Response(JSON.stringify({ status: "ready", lessons: 12, source_assets: 24 }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  };
+
+  try {
+    const response = await frontendReadyRoute();
+    const payload = await response.json();
+
+    assert.equal(attempts, 2);
+    assert.equal(response.status, 200);
+    assert.equal(payload.status, "ready");
+    assert.equal(payload.api_status, "ready");
+  } finally {
+    if (originalApiBaseUrl == null) {
+      delete process.env.API_BASE_URL;
+    } else {
+      process.env.API_BASE_URL = originalApiBaseUrl;
+    }
+    global.fetch = originalFetch;
   }
 });

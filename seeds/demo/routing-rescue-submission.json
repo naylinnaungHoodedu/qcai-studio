@@ -1,0 +1,28 @@
+{
+  "submission": {
+    "user_id": "fixture-ac-03",
+    "project_slug": "routing-rescue-playbook",
+    "title": "Seeded demo: Routing rescue for constrained logistics",
+    "solution_summary": "This seeded demo submission frames routing overhead as the governing failure mode, shrinks the QUBO graph before quantum execution, and keeps a classical baseline in the loop so the claimed rescue remains auditable instead of aspirational.",
+    "implementation_notes": "The plan records SWAP depth, routed circuit depth, and solution quality against a classical control path. It compresses the graph before placement, names rollback conditions, and keeps the validation story explicit enough for partner review.",
+    "confidence_level": 4,
+    "status": "submitted",
+    "ai_feedback_summary": "The seeded demo is structurally strong. Keep routing depth, graph shrinking, and baseline metrics visible so first-pass evaluation stays honest.",
+    "ai_recommendations": [
+      "Keep the classical baseline and fallback path visible in the submission body.",
+      "Call out routing depth and SWAP overhead as first-order constraints instead of secondary implementation details.",
+      "Tie validation to measurable thresholds so the rescue path can be audited later."
+    ],
+    "created_at": "2026-04-09T09:15:00Z"
+  },
+  "review": {
+    "reviewer_user_id": "fixture-ac-06",
+    "rubric_scores": {
+      "systems_grounding": 5,
+      "optimization_design": 4,
+      "validation_plan": 4
+    },
+    "feedback": "Seeded demo review: strong systems grounding and baseline awareness. The proposal makes routing cost, graph reduction, and validation criteria inspectable enough for immediate external evaluation.",
+    "created_at": "2026-04-09T09:25:00Z"
+  }
+}

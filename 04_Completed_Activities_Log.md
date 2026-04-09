@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-04-01 19:03:43 -04:00`
+Last updated on: `2026-04-09 13:50:56 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp_QC_AI_Studio`
 
 ## 1. Scope of Work Completed
@@ -5736,3 +5736,336 @@ Completed logging and synchronization work:
 - confirmed the publication target branch remains:
   - `main`
 - synchronized the updated completed-activities record to the related GitHub repository so the current folder's missing post-Module2 history is now reflected remotely
+
+## 181. Responsive Small-Screen, Accessibility, and Public-Request Hardening Batch Completed Locally
+
+After the current frontend source and the provided small-screen reference captures were studied in depth, a focused frontend hardening batch was completed to correct phone/tablet navigation behavior, tighten small-screen layout safety, improve input accessibility semantics, and preserve guest CSRF handling on public browser requests.
+
+Completed implementation work:
+
+- studied the current-folder responsive reference captures:
+  - `screenshot_from_iphone13pro.jpeg`
+  - `screenshot_from_galaxy_fold6_phone.jpeg`
+  - `screenshot_from_laptop1.jpg`
+  - `screenshot_from_laptop2.jpg`
+- corrected the shared responsive shell and primary navigation behavior across:
+  - `apps/frontend/src/components/primary-nav.tsx`
+  - `apps/frontend/src/app/globals.css`
+- implemented the responsive navigation hardening so the frontend now:
+  - uses a controlled mobile/tablet menu toggle instead of exposing the desktop pill layout on narrow screens
+  - closes the menu on navigation, outside click, and `Escape`
+  - constrains navigation width correctly on tablets and phones
+  - adds safe-area-aware assistant placement and bottom breathing room for smaller screens
+  - tightens layout min-width behavior so shared panels, cards, and grids do not force horizontal overflow
+- corrected one real tablet-specific defect during implementation:
+  - the opened tablet navigation panel was initially capped to the toggle width rather than the intended overlay width
+  - the responsive CSS was corrected so the navigation panel can expand to the intended tablet width while still collapsing cleanly to full width on phones
+- improved public and study-surface accessibility semantics across:
+  - `apps/frontend/src/components/arena-panel.tsx`
+  - `apps/frontend/src/components/builder-studio.tsx`
+  - `apps/frontend/src/components/learning-dashboard.tsx`
+  - `apps/frontend/src/components/notes-panel.tsx`
+  - `apps/frontend/src/components/projects-studio.tsx`
+  - `apps/frontend/src/components/qa-panel.tsx`
+  - `apps/frontend/src/components/quiz-panel.tsx`
+  - `apps/frontend/src/components/search-page.tsx`
+  - `apps/frontend/src/components/video-panel.tsx`
+- added explicit input labels and improved structural semantics so:
+  - authored text areas now expose concrete accessible labels
+  - builder slots expose clearer slot-content state in their labels
+  - the video chapter transcript surface now uses native ordered-list semantics
+- hardened the public frontend API client behavior in:
+  - `apps/frontend/src/lib/api.ts`
+  so safe public browser requests continue forwarding guest CSRF protection without adding demo-auth headers
+- expanded regression coverage for this batch across:
+  - `apps/frontend/tests/primary-nav.integration.test.ts`
+  - `apps/frontend/tests/auth-and-proxy.integration.test.ts`
+  - `apps/frontend/tests/accessibility.integration.test.ts`
+  - `apps/frontend/tests/public-api.integration.test.ts`
+
+Completed verification work:
+
+- reran frontend lint:
+  - `npm run lint`
+  - result: passed
+- reran frontend integration coverage:
+  - `npm run test:integration`
+  - result: `84 passed`
+- reran frontend production-build verification:
+  - `npm run build`
+  - result: passed
+
+## 182. Responsive Frontend and Frontend-Readiness Hardening Batch Deployed to Production
+
+After the local responsive and frontend-hardening batch was completed, the updated frontend runtime was built and deployed to the live production frontend so the small-screen shell fixes and the frontend readiness/proxy hardening became active on the public domain.
+
+Completed implementation and deployment work:
+
+- hardened the frontend readiness route in:
+  - `apps/frontend/src/app/ready/route.ts`
+  so the public frontend now probes the backend `/ready` endpoint with a timeout and reports `degraded` instead of incorrectly reporting `ready` when the backend cannot actually be reached
+- hardened the frontend backend-proxy route in:
+  - `apps/frontend/src/app/api/backend/[...path]/route.ts`
+  so upstream timeouts and upstream-unreachable cases now return controlled `504` and `502` responses while preserving guest-session cookies
+- built and published the updated frontend image through Cloud Build:
+  - build id: `987372d0-9bb4-4c2a-937d-0cd0d1320b0b`
+  - images:
+    - `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest`
+    - `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:20260404142405`
+  - digest: `sha256:bd0ec24e47019fcb259a8c2f798ec7624f7190256caa6c1ae2dc89115fb1dc27`
+- deployed the frontend rollout to Cloud Run:
+  - service: `qcai-frontend`
+  - latest ready revision: `qcai-frontend-00050-fbk`
+  - traffic: `100%`
+  - service URL: `https://qcai-frontend-55f6mkphiq-uc.a.run.app`
+
+Completed live verification work:
+
+- confirmed the live public frontend health endpoint returns:
+  - `https://qantumlearn.academy/health`
+  - `200`
+  - `{"status":"ok","app":"QC+AI Studio Frontend","environment":"production"}`
+- confirmed the live public frontend readiness endpoint returns:
+  - `https://qantumlearn.academy/ready`
+  - `200`
+  - `{"status":"ready","api_origin":"https://qcai-api-55f6mkphiq-uc.a.run.app","api_status":"ready"}`
+- confirmed the live frontend proxy can still reach the backend health route:
+  - `https://qantumlearn.academy/api/backend/health`
+  - `200`
+  - `{"status":"ok","app":"QC+AI Learning API","environment":"production"}`
+- confirmed the live backend readiness route returns:
+  - `https://api.qantumlearn.academy/ready`
+  - `200`
+  - `{"status":"ready","database":"ok","lessons":12,"source_assets":24}`
+- reran live Lighthouse verification against:
+  - `https://qantumlearn.academy/`
+  - `https://qantumlearn.academy/modules`
+  - `https://qantumlearn.academy/lessons/nisq-reality-overview`
+  - `https://qantumlearn.academy/builder`
+  - `https://qantumlearn.academy/account`
+  - `https://qantumlearn.academy/support`
+- confirmed the live audit scores were:
+  - `/`: `99 / 100 / 100 / 100`
+  - `/modules`: `99 / 100 / 100 / 100`
+  - `/lessons/nisq-reality-overview`: `99 / 100 / 100 / 100`
+  - `/builder`: `100 / 100 / 100 / 66`
+  - `/account`: `99 / 100 / 100 / 66`
+  - `/support`: `100 / 100 / 100 / 100`
+
+## 183. Deep Double-Check Completed for the Responsive and Production-Hardening Batch
+
+After the responsive frontend rollout and the frontend readiness/proxy hardening were deployed, a second deep verification pass was completed against the current repository state, the local validation commands, the Cloud Build and Cloud Run metadata, the live public domain, and the Cloud Run request logs.
+
+Completed recheck work:
+
+- rechecked repository publication scope:
+  - the active publication branch for this batch is:
+    - `codex/log-responsive-production-batch`
+- reran frontend lint:
+  - `npm run lint`
+  - result: passed
+- reran frontend integration coverage:
+  - `npm run test:integration`
+  - result: `84 passed`
+- reran frontend production-build verification:
+  - `npm run build`
+  - result: passed
+- reran Lighthouse verification against the live production domain by setting:
+  - `LIGHTHOUSE_BASE_URL=https://qantumlearn.academy`
+  because the audit script defaults to `http://127.0.0.1:3000` and reports zeroed audits when no local target is running
+- rechecked deployed production state:
+  - Cloud Build `987372d0-9bb4-4c2a-937d-0cd0d1320b0b` is `SUCCESS`
+  - the live frontend revision remains `qcai-frontend-00050-fbk`
+  - the live frontend image remains `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:20260404142405`
+  - the live frontend traffic split remains `100%`
+- rechecked the live public endpoints:
+  - `https://qantumlearn.academy/health`
+  - `https://qantumlearn.academy/ready`
+  - `https://qantumlearn.academy/api/backend/health`
+  - `https://api.qantumlearn.academy/ready`
+- rechecked the prior readiness anomaly through Cloud Run request logs and confirmed one recorded frontend `503` request remains visible at:
+  - `2026-04-05T03:23:32.979694Z`
+  - request URL: `https://qantumlearn.academy/ready`
+  - revision: `qcai-frontend-00050-fbk`
+  - latency: `5.029326355s`
+
+Final-state confirmation from the responsive/production recheck:
+
+- no new concrete code or build failures were identified in the current repository state
+- the live public frontend and backend health/readiness endpoints were all returning `200` at recheck time
+- the previously observed intermittent `/ready` timeout remains the only concrete production-runtime issue identified during the recheck window, so a zero-issue claim would still be inaccurate
+
+## 184. Current Responsive and Production Batch Logged Locally and Synchronized to the Related GitHub Repository
+
+After the responsive, accessibility, public-request, and frontend-production-hardening work was reconstructed and reverified from the current folder, the repository logs were updated so the completed local work, the live deployment state, and the deep recheck findings are now recorded together, while the GitHub-published repository history is synchronized through the tracked completed-activities record.
+
+Completed logging and synchronization work:
+
+- updated the current-folder activity record in:
+  - `04_Completed_Activities_Log.md`
+- updated the current-folder production deployment record in:
+  - `07_Production_Deployment_Local_Log.md`
+- added the missing completed-activity sections:
+  - `181`
+  - `182`
+  - `183`
+  - `184`
+- confirmed the related GitHub repository remains:
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+- confirmed the remote default branch remains:
+  - `main`
+- confirmed the publication branch for this synchronization batch is:
+  - `codex/log-responsive-production-batch`
+- synchronized the updated completed-activities record and the current responsive/frontend-hardening batch to the related GitHub repository through the publication branch for this batch
+
+## 185. Deep Repository-Wide Study Completed from the Current Folder
+
+After the responsive-production batch had already been logged, a second deep repository-wide study was completed from the current folder so the present codebase, deployment scaffolding, seeded-demo package, release artifacts, and public-governance surfaces could be re-understood against the latest repository state rather than older implementation assumptions.
+
+Completed study work:
+
+- reviewed the root project records and challenge-facing documents:
+  - `README.md`
+  - `PROJECT_SUMMARY.md`
+  - `SUBMISSION_ATTRIBUTION.md`
+  - `04_Completed_Activities_Log.md`
+  - `07_Production_Deployment_Local_Log.md`
+  - `08_Fictional_User_Accounts_and_User_Commands.md`
+  - `production_website.txt`
+  - `Improvements.txt`
+- reviewed the backend implementation across:
+  - `apps/api/app/main.py`
+  - `apps/api/app/core/*`
+  - `apps/api/app/api/routes/*`
+  - `apps/api/app/services/*`
+  - `apps/api/app/db_models.py`
+  - `apps/api/app/schemas.py`
+  - `apps/api/app/workers/*`
+  - `apps/api/alembic/*`
+- reviewed the frontend implementation across:
+  - `apps/frontend/src/app/*`
+  - `apps/frontend/src/components/*`
+  - `apps/frontend/src/lib/*`
+  - `apps/frontend/src/proxy.ts`
+  - `apps/frontend/tests/*`
+- reviewed infrastructure, packaging, and support artifacts across:
+  - `infra/k8s/*`
+  - `infra/cloudrun/*`
+  - `infra/cloudbuild/*`
+  - `tools/package_release.py`
+  - `transcripts/*`
+  - `seeds/demo/*`
+  - `dist/release/*`
+- reconfirmed the present application footprint:
+  - FastAPI backend plus Next.js frontend
+  - eleven modules and twelve lesson entry points
+  - protected source-asset delivery with range-enabled MP4 streaming
+  - labeled seeded demo surfaces for projects, builder, and arena
+  - public trust, status, privacy, accessibility, and audit-fixture routes
+  - split hydrated release-bundle support for Git LFS media distribution
+
+Completed verification during the deep study:
+
+- reran the backend full test suite:
+  - `pytest`
+  - result: `83 passed`
+- reran the frontend full integration suite:
+  - `npm run test:integration`
+  - result: `92 passed`
+- confirmed the current publication branch remains:
+  - `codex/log-responsive-production-batch`
+- confirmed the related GitHub repository remains:
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+
+## 186. Transparency, Seeded-Demo, and Release-Integrity Hardening Completed
+
+After the deep repository study confirmed that the seeded-demo package, ethical disclosure copy, and hydrated release packaging were already materially present, the repository was hardened further so those transparency guarantees are now more explicit in the root documentation and enforced by regression tests rather than relying on manual interpretation alone.
+
+Completed implementation work:
+
+- updated `README.md` so it now states explicitly that:
+  - production instances start empty and only show seeded demo activity if the optional `python -m app.workers.seed_demo` worker is run intentionally
+  - the canonical seeded-demo fixture files are:
+    - `seeds/demo/routing-rescue-submission.json`
+    - `seeds/demo/builder-map-hybrid-loop.json`
+    - `seeds/demo/arena-match-log.json`
+  - hydrated split release artifacts are expected locally under:
+    - `dist/release/qcai-studio-v1.0.0-part1-app-docs-media.zip`
+    - `dist/release/qcai-studio-v1.0.0-part2-hydrated-media.zip`
+    - `dist/release/RELEASE_NOTES_v1.0.0.md`
+    - `dist/release/SHA256SUMS.txt`
+  - `python tools/package_release.py` is the canonical regeneration path for the hydrated split release bundle and checksums
+- extended backend deployment-artifact regression coverage in:
+  - `apps/api/tests/test_deployment_artifacts.py`
+- added two new backend regression tests proving:
+  - the split release ZIPs, release notes, and checksums are present and the release notes explicitly describe seeded-demo transparency
+  - the root README continues to document the ethical addendum, seeded-demo fixture paths, roadmap section, and local `dist/release` artifact paths
+
+Completed factual verification for this hardening pass:
+
+- confirmed the seeded-demo fixture files already exist in:
+  - `seeds/demo/`
+- confirmed the local release artifacts already exist in:
+  - `dist/release/`
+- confirmed `git lfs ls-files` currently reports:
+  - `12` curated MP4 entries
+  - `12` hydrated MP4 payloads
+
+Completed targeted verification for the hardening pass:
+
+- reran backend release and seeded-demo verification:
+  - `pytest tests/test_deployment_artifacts.py tests/test_demo_seed.py`
+  - result: `13 passed`
+- reran frontend integration verification after the transparency hardening:
+  - `npm run test:integration`
+  - result: `92 passed`
+
+## 187. Deep Output Double-Check Completed Against the Current Repository State
+
+After the transparency hardening work and the updated verification runs were completed, a second line-by-line factual recheck was carried out against the prior written closeout so the response itself could be validated against the repository state, the actual test outputs, the LFS state, the release-artifact directory, and the current git worktree.
+
+Completed double-check work:
+
+- rechecked:
+  - `README.md`
+  - `apps/api/tests/test_deployment_artifacts.py`
+  - `dist/release/*`
+  - `seeds/demo/*`
+  - `hydrate-assets.sh`
+  - `git status --short`
+  - `git lfs ls-files`
+- confirmed the prior closeout claims about:
+  - the README updates
+  - the seeded-demo fixture files
+  - the hydrated release artifacts
+  - the `12 / 12` hydrated MP4 state
+  - the `13 passed` targeted backend verification
+  - the `92 passed` frontend verification
+  were all factually correct against the current repository state
+- identified one minor wording issue in an intermediary progress update:
+  - one intermediary note described the frontend verification as targeted
+  - the actual command that ran was the full frontend integration suite
+  - the final closeout itself remained accurate because it reported the real `92 passed` result
+- confirmed the unrelated screenshot files remained untracked and outside the intended publication scope:
+  - `screenshot_from_galaxy_fold6_phone.jpeg`
+  - `screenshot_from_iphone13pro.jpeg`
+  - `screenshot_from_laptop1.jpg`
+  - `screenshot_from_laptop2.jpg`
+
+## 188. Current Folder Logging and GitHub Synchronization Batch Completed
+
+After the deep repository study, the transparency hardening pass, and the output double-check were completed from the current folder, the canonical completed-activities log was updated again so the latest local work is recorded in the repository itself, and the intended repository changes were prepared for synchronization to the related GitHub repository without staging the unrelated screenshot files.
+
+Completed logging and synchronization preparation work:
+
+- updated the current-folder activity record in:
+  - `04_Completed_Activities_Log.md`
+- kept the intended Git publication scope limited to:
+  - `README.md`
+  - `apps/api/tests/test_deployment_artifacts.py`
+  - `04_Completed_Activities_Log.md`
+- intentionally excluded unrelated untracked screenshot files from the Git publication scope
+- reconfirmed the GitHub remote remains:
+  - `origin -> https://github.com/naylinnaungHoodedu/qcai-studio.git`
+- reconfirmed the active publication branch remains:
+  - `codex/log-responsive-production-batch`

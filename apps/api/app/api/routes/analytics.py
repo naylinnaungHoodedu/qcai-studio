@@ -55,6 +55,13 @@ def record_public_web_vital(
     settings: Settings = Depends(get_settings),
 ):
     validate_request_origin(request, settings)
+    existing_metric = (
+        db.query(PublicWebVital.id)
+        .filter(PublicWebVital.metric_id == payload.metric_id)
+        .first()
+    )
+    if existing_metric is not None:
+        return PublicWebVitalReceipt(status="accepted")
     metric = PublicWebVital(
         metric_id=payload.metric_id,
         metric_name=payload.metric_name,
