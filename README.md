@@ -15,6 +15,7 @@ This repository now contains a working MVP implementation of the interactive QC+
 ### Ethical Transparency Addendum (2026-04-09)
 
 - All seeded demo activity shown on public project, builder, or arena surfaces is explicitly labeled and derived from fictional audit personas documented in `08_Fictional_User_Accounts_and_User_Commands.md`.
+- Production instances start empty and grow organically unless the optional `python -m app.workers.seed_demo` worker is run intentionally.
 - No real learner data is fabricated as public evidence. First-visit activity can be seeded from `seeds/demo/` strictly to make immediate evaluation possible without implying live-user traffic.
 - Human review remains the final gate on curated source assets, public claims, partner-facing copy, and release packaging.
 - Automation and AI assistance are limited to implementation, refinement, testing, infrastructure, packaging, and documentation acceleration rather than unsupervised publication.
@@ -29,6 +30,12 @@ python -m app.workers.seed_demo
 ```
 
 This creates one labeled seeded project submission plus peer review, one labeled seeded builder share, and one labeled seeded arena ladder entry using the stable `fixture-ac-xx` identity convention.
+
+Canonical fixture files:
+
+- `seeds/demo/routing-rescue-submission.json`
+- `seeds/demo/builder-map-hybrid-loop.json`
+- `seeds/demo/arena-match-log.json`
 
 ## Structure
 
@@ -113,6 +120,12 @@ Important LFS note:
 - ZIP downloads from GitHub do not hydrate LFS-managed MP4 payloads.
 - If a clone was created before Git LFS was installed, run `git lfs install` and then `git lfs pull` from the repository root.
 - Use `git lfs ls-files` to confirm the curated MP4 assets were actually hydrated.
+- Run `python tools/package_release.py` to regenerate the hydrated split release bundle and checksums from a fully hydrated clone.
+- Local hydrated release artifacts are expected under `dist/release/`:
+  - `dist/release/qcai-studio-v1.0.0-part1-app-docs-media.zip`
+  - `dist/release/qcai-studio-v1.0.0-part2-hydrated-media.zip`
+  - `dist/release/RELEASE_NOTES_v1.0.0.md`
+  - `dist/release/SHA256SUMS.txt`
 - Release `v1.0.0` publishes split hydrated bundles because the curated source set is about `3.10 GB`: `qcai-studio-v1.0.0-part1-app-docs-media.zip` and `qcai-studio-v1.0.0-part2-hydrated-media.zip`.
 - Extract part 1 first, then extract part 2 into the same folder so the six remaining MP4 payloads merge into the runnable tree.
 - Verify the release assets with `SHA256SUMS.txt` before distributing or mirroring them.

@@ -1,7 +1,7 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-04-01 19:03:43 -04:00`
+Last updated on: `2026-04-09 13:50:56 -04:00`
 Folder: `c:\Users\user\Downloads\Codex_Webapp_QC_AI_Studio`
 
 ## 1. Scope of Work Completed
@@ -5917,3 +5917,155 @@ Completed logging and synchronization work:
 - confirmed the publication branch for this synchronization batch is:
   - `codex/log-responsive-production-batch`
 - synchronized the updated completed-activities record and the current responsive/frontend-hardening batch to the related GitHub repository through the publication branch for this batch
+
+## 185. Deep Repository-Wide Study Completed from the Current Folder
+
+After the responsive-production batch had already been logged, a second deep repository-wide study was completed from the current folder so the present codebase, deployment scaffolding, seeded-demo package, release artifacts, and public-governance surfaces could be re-understood against the latest repository state rather than older implementation assumptions.
+
+Completed study work:
+
+- reviewed the root project records and challenge-facing documents:
+  - `README.md`
+  - `PROJECT_SUMMARY.md`
+  - `SUBMISSION_ATTRIBUTION.md`
+  - `04_Completed_Activities_Log.md`
+  - `07_Production_Deployment_Local_Log.md`
+  - `08_Fictional_User_Accounts_and_User_Commands.md`
+  - `production_website.txt`
+  - `Improvements.txt`
+- reviewed the backend implementation across:
+  - `apps/api/app/main.py`
+  - `apps/api/app/core/*`
+  - `apps/api/app/api/routes/*`
+  - `apps/api/app/services/*`
+  - `apps/api/app/db_models.py`
+  - `apps/api/app/schemas.py`
+  - `apps/api/app/workers/*`
+  - `apps/api/alembic/*`
+- reviewed the frontend implementation across:
+  - `apps/frontend/src/app/*`
+  - `apps/frontend/src/components/*`
+  - `apps/frontend/src/lib/*`
+  - `apps/frontend/src/proxy.ts`
+  - `apps/frontend/tests/*`
+- reviewed infrastructure, packaging, and support artifacts across:
+  - `infra/k8s/*`
+  - `infra/cloudrun/*`
+  - `infra/cloudbuild/*`
+  - `tools/package_release.py`
+  - `transcripts/*`
+  - `seeds/demo/*`
+  - `dist/release/*`
+- reconfirmed the present application footprint:
+  - FastAPI backend plus Next.js frontend
+  - eleven modules and twelve lesson entry points
+  - protected source-asset delivery with range-enabled MP4 streaming
+  - labeled seeded demo surfaces for projects, builder, and arena
+  - public trust, status, privacy, accessibility, and audit-fixture routes
+  - split hydrated release-bundle support for Git LFS media distribution
+
+Completed verification during the deep study:
+
+- reran the backend full test suite:
+  - `pytest`
+  - result: `83 passed`
+- reran the frontend full integration suite:
+  - `npm run test:integration`
+  - result: `92 passed`
+- confirmed the current publication branch remains:
+  - `codex/log-responsive-production-batch`
+- confirmed the related GitHub repository remains:
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+
+## 186. Transparency, Seeded-Demo, and Release-Integrity Hardening Completed
+
+After the deep repository study confirmed that the seeded-demo package, ethical disclosure copy, and hydrated release packaging were already materially present, the repository was hardened further so those transparency guarantees are now more explicit in the root documentation and enforced by regression tests rather than relying on manual interpretation alone.
+
+Completed implementation work:
+
+- updated `README.md` so it now states explicitly that:
+  - production instances start empty and only show seeded demo activity if the optional `python -m app.workers.seed_demo` worker is run intentionally
+  - the canonical seeded-demo fixture files are:
+    - `seeds/demo/routing-rescue-submission.json`
+    - `seeds/demo/builder-map-hybrid-loop.json`
+    - `seeds/demo/arena-match-log.json`
+  - hydrated split release artifacts are expected locally under:
+    - `dist/release/qcai-studio-v1.0.0-part1-app-docs-media.zip`
+    - `dist/release/qcai-studio-v1.0.0-part2-hydrated-media.zip`
+    - `dist/release/RELEASE_NOTES_v1.0.0.md`
+    - `dist/release/SHA256SUMS.txt`
+  - `python tools/package_release.py` is the canonical regeneration path for the hydrated split release bundle and checksums
+- extended backend deployment-artifact regression coverage in:
+  - `apps/api/tests/test_deployment_artifacts.py`
+- added two new backend regression tests proving:
+  - the split release ZIPs, release notes, and checksums are present and the release notes explicitly describe seeded-demo transparency
+  - the root README continues to document the ethical addendum, seeded-demo fixture paths, roadmap section, and local `dist/release` artifact paths
+
+Completed factual verification for this hardening pass:
+
+- confirmed the seeded-demo fixture files already exist in:
+  - `seeds/demo/`
+- confirmed the local release artifacts already exist in:
+  - `dist/release/`
+- confirmed `git lfs ls-files` currently reports:
+  - `12` curated MP4 entries
+  - `12` hydrated MP4 payloads
+
+Completed targeted verification for the hardening pass:
+
+- reran backend release and seeded-demo verification:
+  - `pytest tests/test_deployment_artifacts.py tests/test_demo_seed.py`
+  - result: `13 passed`
+- reran frontend integration verification after the transparency hardening:
+  - `npm run test:integration`
+  - result: `92 passed`
+
+## 187. Deep Output Double-Check Completed Against the Current Repository State
+
+After the transparency hardening work and the updated verification runs were completed, a second line-by-line factual recheck was carried out against the prior written closeout so the response itself could be validated against the repository state, the actual test outputs, the LFS state, the release-artifact directory, and the current git worktree.
+
+Completed double-check work:
+
+- rechecked:
+  - `README.md`
+  - `apps/api/tests/test_deployment_artifacts.py`
+  - `dist/release/*`
+  - `seeds/demo/*`
+  - `hydrate-assets.sh`
+  - `git status --short`
+  - `git lfs ls-files`
+- confirmed the prior closeout claims about:
+  - the README updates
+  - the seeded-demo fixture files
+  - the hydrated release artifacts
+  - the `12 / 12` hydrated MP4 state
+  - the `13 passed` targeted backend verification
+  - the `92 passed` frontend verification
+  were all factually correct against the current repository state
+- identified one minor wording issue in an intermediary progress update:
+  - one intermediary note described the frontend verification as targeted
+  - the actual command that ran was the full frontend integration suite
+  - the final closeout itself remained accurate because it reported the real `92 passed` result
+- confirmed the unrelated screenshot files remained untracked and outside the intended publication scope:
+  - `screenshot_from_galaxy_fold6_phone.jpeg`
+  - `screenshot_from_iphone13pro.jpeg`
+  - `screenshot_from_laptop1.jpg`
+  - `screenshot_from_laptop2.jpg`
+
+## 188. Current Folder Logging and GitHub Synchronization Batch Completed
+
+After the deep repository study, the transparency hardening pass, and the output double-check were completed from the current folder, the canonical completed-activities log was updated again so the latest local work is recorded in the repository itself, and the intended repository changes were prepared for synchronization to the related GitHub repository without staging the unrelated screenshot files.
+
+Completed logging and synchronization preparation work:
+
+- updated the current-folder activity record in:
+  - `04_Completed_Activities_Log.md`
+- kept the intended Git publication scope limited to:
+  - `README.md`
+  - `apps/api/tests/test_deployment_artifacts.py`
+  - `04_Completed_Activities_Log.md`
+- intentionally excluded unrelated untracked screenshot files from the Git publication scope
+- reconfirmed the GitHub remote remains:
+  - `origin -> https://github.com/naylinnaungHoodedu/qcai-studio.git`
+- reconfirmed the active publication branch remains:
+  - `codex/log-responsive-production-batch`

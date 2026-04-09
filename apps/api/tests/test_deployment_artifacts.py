@@ -67,6 +67,45 @@ def test_release_support_scripts_are_present():
     assert 'RELEASE_TAG = "v1.0.0"' in package_release
 
 
+def test_release_artifacts_exist_and_describe_seeded_demo_transparency():
+    dist_release = REPO_ROOT / "dist" / "release"
+    part1_zip = dist_release / "qcai-studio-v1.0.0-part1-app-docs-media.zip"
+    part2_zip = dist_release / "qcai-studio-v1.0.0-part2-hydrated-media.zip"
+    release_notes = dist_release / "RELEASE_NOTES_v1.0.0.md"
+    checksums = dist_release / "SHA256SUMS.txt"
+
+    assert part1_zip.exists()
+    assert part2_zip.exists()
+    assert release_notes.exists()
+    assert checksums.exists()
+
+    release_notes_text = release_notes.read_text(encoding="utf-8")
+    checksums_text = checksums.read_text(encoding="utf-8")
+
+    assert "Seeded demo activity" in release_notes_text
+    assert "fictional audit personas" in release_notes_text
+    assert "hydrate-assets.sh" in release_notes_text
+    assert part1_zip.name in checksums_text
+    assert part2_zip.name in checksums_text
+    assert release_notes.name in checksums_text
+
+
+def test_readme_documents_demo_seed_files_ethics_and_release_paths():
+    readme = _read_text("README.md")
+
+    assert "### Ethical Transparency Addendum (2026-04-09)" in readme
+    assert "Production instances start empty and grow organically" in readme
+    assert "### Demo Seeding for Immediate Evaluation" in readme
+    assert "seeds/demo/routing-rescue-submission.json" in readme
+    assert "seeds/demo/builder-map-hybrid-loop.json" in readme
+    assert "seeds/demo/arena-match-log.json" in readme
+    assert "Roadmap to Full Academy (v2-Q3 2026)" in readme
+    assert "dist/release/qcai-studio-v1.0.0-part1-app-docs-media.zip" in readme
+    assert "dist/release/qcai-studio-v1.0.0-part2-hydrated-media.zip" in readme
+    assert "dist/release/RELEASE_NOTES_v1.0.0.md" in readme
+    assert "dist/release/SHA256SUMS.txt" in readme
+
+
 def test_k8s_manifests_use_artifact_registry_images():
     expected_api_image = "us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-api:latest"
     expected_frontend_image = "us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest"
