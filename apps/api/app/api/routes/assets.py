@@ -1,3 +1,4 @@
+import logging
 import mimetypes
 from pathlib import Path
 from typing import Iterator
@@ -14,6 +15,7 @@ from app.core.source_assets import source_asset_lookup_ids
 
 router = APIRouter(prefix="/source-assets", tags=["source-assets"])
 VIDEO_OPEN_ENDED_RANGE_CHUNK_SIZE = 8 * 1024 * 1024
+LOGGER = logging.getLogger("qcai.api.assets")
 MEDIA_TYPE_OVERRIDES = {
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
@@ -122,7 +124,11 @@ def _serve_source_asset(
     path: Path,
     request: Request,
 ) -> Response:
-    file_size = path.stat().st_size
+    try:
+        file_size = path.stat().st_size
+    except OSError:
+        LOGGER.warning("Source asset temporarily unavailable for %s", path, exc_info=True)
+        raise HTTPException(status_code=503, detail="Source asset temporarily unavailable.")
     media_type = _resolve_media_type(path)
     headers = {"Accept-Ranges": "bytes", "Content-Length": str(file_size)}
     range_header = request.headers.get("range")
@@ -151,12 +157,13 @@ def _serve_source_asset(
         return Response(status_code=200, media_type=media_type, headers=headers)
 
     if media_type.startswith("video/"):
-        headers = {"Accept-Ranges": "bytes"}
+        # Large video assets need chunked streaming on Cloud Run; eager file responses
+        # can fail on full-body GETs even when ranged delivery is healthy.
         return StreamingResponse(
             _iter_file_range(path, 0, file_size - 1),
             status_code=200,
             media_type=media_type,
-            headers=headers,
+            headers={"Accept-Ranges": "bytes"},
         )
 
     return FileResponse(path, media_type=media_type, headers=headers)

@@ -47,6 +47,26 @@ def test_worker_entrypoints_start_cleanly():
         assert timed_out or expected_message in output
 
 
+def test_seed_demo_worker_exits_cleanly():
+    timed_out, output = _run_worker_entrypoint("app.workers.seed_demo")
+
+    assert timed_out is False
+    assert "Traceback" not in output
+    assert "seed_demo completed:" in output
+
+
+def test_release_support_scripts_are_present():
+    hydrate_script = _read_text("hydrate-assets.sh")
+    package_release = _read_text("tools/package_release.py")
+
+    assert "git lfs install" in hydrate_script
+    assert "git lfs pull" in hydrate_script
+    assert "git lfs ls-files" in hydrate_script
+    assert "part1-app-docs-media.zip" in package_release
+    assert "part2-hydrated-media.zip" in package_release
+    assert 'RELEASE_TAG = "v1.0.0"' in package_release
+
+
 def test_k8s_manifests_use_artifact_registry_images():
     expected_api_image = "us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-api:latest"
     expected_frontend_image = "us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest"

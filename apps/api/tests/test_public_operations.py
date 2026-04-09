@@ -112,3 +112,35 @@ def test_public_web_vitals_summary_reports_recent_metrics():
     assert lcp["sample_count"] >= 2
     assert lcp["p75_value"] >= 1450.0
     assert lcp["good_rate_percent"] <= 100.0
+
+
+def test_public_web_vitals_is_idempotent_by_metric_id():
+    metric_id = f"vital-{uuid4()}"
+    payload = {
+        "metric_id": metric_id,
+        "metric_name": "LCP",
+        "path": "/support",
+        "value": 1820.4,
+        "delta": 125.0,
+        "rating": "good",
+        "navigation_type": "navigate",
+        "connection_type": "4g",
+    }
+
+    first = client.post(
+        "/analytics/public-web-vitals",
+        headers={"origin": TRUSTED_ORIGIN, "user-agent": "pytest-vitals"},
+        json=payload,
+    )
+    second = client.post(
+        "/analytics/public-web-vitals",
+        headers={"origin": TRUSTED_ORIGIN, "user-agent": "pytest-vitals"},
+        json=payload,
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+
+    with SessionLocal() as db:
+        stored = db.scalars(select(PublicWebVital).where(PublicWebVital.metric_id == metric_id)).all()
+        assert len(stored) == 1

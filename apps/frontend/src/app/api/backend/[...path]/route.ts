@@ -23,7 +23,11 @@ const ENABLE_DEMO_AUTH =
     : process.env.NEXT_PUBLIC_ENABLE_DEMO_AUTH != null
       ? process.env.NEXT_PUBLIC_ENABLE_DEMO_AUTH === "true"
       : process.env.NODE_ENV !== "production";
-const UPSTREAM_TIMEOUT_MS = 8000;
+const DEFAULT_UPSTREAM_TIMEOUT_MS = 8000;
+const SOURCE_ASSET_UPSTREAM_TIMEOUT_MS = 45000;
+const PUBLIC_WEB_VITALS_UPSTREAM_TIMEOUT_MS = 15000;
+const RETRYABLE_UPSTREAM_STATUSES = new Set([500, 502, 503, 504]);
+const RETRYABLE_UPSTREAM_DELAY_MS = 150;
 const NO_STORE_HEADERS = {
   "Cache-Control": "no-store",
 };
@@ -34,6 +38,26 @@ function buildTargetUrl(pathParts: string[], request: NextRequest): string {
   const url = new URL(`${base}/${path}`);
   url.search = request.nextUrl.search;
   return url.toString();
+}
+
+function resolveUpstreamTimeoutMs(path: string): number {
+  if (path.startsWith("/source-assets/")) {
+    return SOURCE_ASSET_UPSTREAM_TIMEOUT_MS;
+  }
+  if (path === "/analytics/public-web-vitals") {
+    return PUBLIC_WEB_VITALS_UPSTREAM_TIMEOUT_MS;
+  }
+  return DEFAULT_UPSTREAM_TIMEOUT_MS;
+}
+
+function resolveMaxUpstreamAttempts(path: string, method: string): number {
+  if (path.startsWith("/source-assets/") && ["GET", "HEAD"].includes(method)) {
+    return 2;
+  }
+  if (path === "/analytics/public-web-vitals" && method === "POST") {
+    return 2;
+  }
+  return 1;
 }
 
 function applyGuestSessionCookiesToResponse(
@@ -130,21 +154,41 @@ async function proxyRequest(
     headers.delete("content-length");
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
-  let upstream: Response;
-  try {
-    upstream = await fetch(buildTargetUrl(path, request), {
-      method,
-      headers,
-      body,
-      cache: "no-store",
-      signal: controller.signal,
-    });
-  } catch (error) {
-    return buildUpstreamErrorResponse(request, method, error, session);
-  } finally {
-    clearTimeout(timeout);
+  const targetUrl = buildTargetUrl(path, request);
+  const upstreamTimeoutMs = resolveUpstreamTimeoutMs(normalizedPath);
+  const maxAttempts = resolveMaxUpstreamAttempts(normalizedPath, method);
+  let lastError: unknown;
+  let upstream: Response | null = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), upstreamTimeoutMs);
+    try {
+      upstream = await fetch(targetUrl, {
+        method,
+        headers,
+        body,
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (attempt < maxAttempts && RETRYABLE_UPSTREAM_STATUSES.has(upstream.status)) {
+        await new Promise((resolve) => setTimeout(resolve, RETRYABLE_UPSTREAM_DELAY_MS));
+        continue;
+      }
+      break;
+    } catch (error) {
+      lastError = error;
+      if (attempt === maxAttempts) {
+        return buildUpstreamErrorResponse(request, method, error, session);
+      }
+      await new Promise((resolve) => setTimeout(resolve, RETRYABLE_UPSTREAM_DELAY_MS));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  if (!upstream) {
+    return buildUpstreamErrorResponse(request, method, lastError, session);
   }
 
   const responseHeaders = new Headers(upstream.headers);

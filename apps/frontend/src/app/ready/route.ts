@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
-const API_READY_TIMEOUT_MS = 5000;
+const API_READY_TIMEOUT_MS = 6500;
+const API_READY_RETRY_DELAY_MS = 200;
+const API_READY_MAX_ATTEMPTS = 2;
 
 const NO_STORE_HEADERS = {
   "Cache-Control": "no-store",
@@ -27,54 +29,68 @@ async function probeApiReadiness(apiBaseUrl: string): Promise<{
   status: number;
 }> {
   const readyUrl = buildApiReadyUrl(apiBaseUrl);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), API_READY_TIMEOUT_MS);
+  let transientDetail = "API readiness check could not reach the backend.";
 
-  try {
-    const response = await fetch(readyUrl, {
-      method: "GET",
-      cache: "no-store",
-      headers: {
-        Accept: "application/json",
-      },
-      signal: controller.signal,
-    });
-    let payload: Record<string, unknown> | undefined;
+  for (let attempt = 1; attempt <= API_READY_MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), API_READY_TIMEOUT_MS);
+
     try {
-      payload = (await response.json()) as Record<string, unknown>;
-    } catch {
-      payload = undefined;
-    }
+      const response = await fetch(readyUrl, {
+        method: "GET",
+        cache: "no-store",
+        headers: {
+          Accept: "application/json",
+        },
+        signal: controller.signal,
+      });
+      let payload: Record<string, unknown> | undefined;
+      try {
+        payload = (await response.json()) as Record<string, unknown>;
+      } catch {
+        payload = undefined;
+      }
 
-    if (!response.ok || payload?.status !== "ready") {
+      if (!response.ok || payload?.status !== "ready") {
+        return {
+          apiOrigin: readyUrl.origin,
+          detail:
+            typeof payload?.status === "string"
+              ? `API readiness check returned ${payload.status}.`
+              : `API readiness check returned HTTP ${response.status}.`,
+          payload,
+          status: 503,
+        };
+      }
+
       return {
         apiOrigin: readyUrl.origin,
-        detail:
-          typeof payload?.status === "string"
-            ? `API readiness check returned ${payload.status}.`
-            : `API readiness check returned HTTP ${response.status}.`,
         payload,
-        status: 503,
+        status: 200,
       };
-    }
-
-    return {
-      apiOrigin: readyUrl.origin,
-      payload,
-      status: 200,
-    };
-  } catch (error) {
-    return {
-      apiOrigin: readyUrl.origin,
-      detail:
+    } catch (error) {
+      transientDetail =
         error instanceof Error && error.name === "AbortError"
           ? "API readiness check timed out."
-          : "API readiness check could not reach the backend.",
-      status: 503,
-    };
-  } finally {
-    clearTimeout(timeout);
+          : "API readiness check could not reach the backend.";
+      if (attempt === API_READY_MAX_ATTEMPTS) {
+        return {
+          apiOrigin: readyUrl.origin,
+          detail: transientDetail,
+          status: 503,
+        };
+      }
+      await new Promise((resolve) => setTimeout(resolve, API_READY_RETRY_DELAY_MS));
+    } finally {
+      clearTimeout(timeout);
+    }
   }
+
+  return {
+    apiOrigin: readyUrl.origin,
+    detail: transientDetail,
+    status: 503,
+  };
 }
 
 async function buildReadinessResponse() {

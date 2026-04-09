@@ -49,6 +49,7 @@ const DEMO_USER_ID = "demo-learner";
 const DEMO_ROLE = "learner";
 const PUBLIC_REVALIDATE_SECONDS = 300;
 const GUEST_CSRF_COOKIE_NAME = "qcai_guest_csrf";
+const PUBLIC_WEB_VITAL_RETRY_DELAY_MS = 250;
 const ENABLE_DEMO_AUTH =
   process.env.ENABLE_DEMO_AUTH != null
     ? process.env.ENABLE_DEMO_AUTH === "true"
@@ -365,12 +366,38 @@ export async function postPublicWebVital(payload: {
   navigation_type?: string | null;
   connection_type?: string | null;
 }): Promise<void> {
-  await apiFetch("/analytics/public-web-vitals", {
-    method: "POST",
-    cacheMode: "public",
-    keepalive: true,
-    body: JSON.stringify(payload),
-  });
+  const isRetryableTelemetryError = (error: unknown): boolean => {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+    const message = error.message.toLowerCase();
+    return (
+      message.includes("timed out") ||
+      message.includes("could not reach") ||
+      message.includes("upstream_timeout") ||
+      message.includes("upstream_unavailable") ||
+      message.includes("api request failed: 502") ||
+      message.includes("api request failed: 503") ||
+      message.includes("api request failed: 504")
+    );
+  };
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      await apiFetch("/analytics/public-web-vitals", {
+        method: "POST",
+        cacheMode: "public",
+        keepalive: true,
+        body: JSON.stringify(payload),
+      });
+      return;
+    } catch (error) {
+      if (attempt === 2 || !isRetryableTelemetryError(error)) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, PUBLIC_WEB_VITAL_RETRY_DELAY_MS));
+    }
+  }
 }
 
 export async function fetchPublicWebVitalsSummary(): Promise<PublicWebVitalSummary> {

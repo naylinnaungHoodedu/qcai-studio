@@ -65,11 +65,14 @@ export function VideoPanel({
 
       try {
         const response = await fetch(streamUrl, {
-          method: "HEAD",
+          method: "GET",
           cache: "no-store",
           credentials: "same-origin",
+          headers: {
+            Range: "bytes=0-1023",
+          },
         });
-        if (!response.ok) {
+        if (!response.ok || ![200, 206].includes(response.status)) {
           throw new Error(`bootstrap ${response.status}`);
         }
         if (cancelled) {

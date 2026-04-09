@@ -12,6 +12,11 @@ import {
   submitBuilderScenario,
 } from "@/lib/api";
 import { getBuilderCanvasLayout, placeBuilderNode, removeBuilderNode } from "@/lib/builder";
+import {
+  formatBuilderFeedAuthorLabel,
+  isSeededAuditFixtureUserId,
+  SEEDED_DEMO_DISCLOSURE,
+} from "@/lib/seeded-demo";
 import { BuilderFeedItem, BuilderProfile, BuilderScenario, BuilderSubmissionResult } from "@/lib/types";
 
 type BuilderStudioProps = {
@@ -26,11 +31,6 @@ function toErrorMessage(error: unknown, fallback: string): string {
 
 function formatDateLabel(value: string): string {
   return new Date(value).toLocaleString();
-}
-
-function formatFeedAuthorLabel(userId: string): string {
-  const suffix = userId.replace(/[^a-zA-Z0-9]/g, "").slice(-4).toUpperCase();
-  return suffix ? `Learner ${suffix}` : "Learner";
 }
 
 function cx(...tokens: Array<string | false | null | undefined>): string {
@@ -553,13 +553,18 @@ export function BuilderStudio({
               <h2>Published learning maps</h2>
             </div>
           </div>
+          <p className="muted">
+            {SEEDED_DEMO_DISCLOSURE} Review the <Link href="/audit-fixtures">audit fixtures</Link> to trace the
+            fictional personas used for seeded examples.
+          </p>
           <div className="stack">
             {(feedQuery.data ?? []).map((item: BuilderFeedItem) => (
               <article className="citation-card" key={item.id}>
                 <strong>{item.scenario_title}</strong>
                 <p className="muted">
-                  {formatFeedAuthorLabel(item.user_id)} | {item.completion_percent}% | {formatDateLabel(item.created_at)}
+                  {formatBuilderFeedAuthorLabel(item.user_id)} | {item.completion_percent}% | {formatDateLabel(item.created_at)}
                 </p>
+                {isSeededAuditFixtureUserId(item.user_id) ? <span className="status-pill">Seeded demo</span> : null}
                 <p>{item.caption}</p>
               </article>
             ))}
