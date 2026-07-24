@@ -6387,3 +6387,36 @@ Development-only finding recorded for the software backlog:
 - recommended follow-up: relax the CSP in development (allow the HMR websocket and
   dev styles) or serve a dev-specific CSP; tracked in
   `09_UIUX_and_Software_Update_Log.txt` Sections 6 and 7
+
+## 197. UI/UX Simplification Batch 8 (Interactive Surfaces + Arena Parity) Completed
+
+The interactive learning tools (Arena, Builder, Labs) were unified under a clear "Learn / Practice / Play / Build" guide, and keyboard accessibility was made discoverable for the Arena.
+
+Completed interactive surface wayfinding work (P1):
+
+- added a unified `learning-modes.ts` data model and `<LearningModesGuide>` component that states what each surface is and when to use it (ordered passive to active).
+- replaced the scattered "Interactive practice" section on the Home page with this guide and embedded it at the top of the Simulations page.
+- updated Arena MCQ options to display a numbered `<kbd>` badge, making the existing 1-4 keyboard shortcuts explicitly discoverable.
+
+Completed verification for this batch:
+
+- reran the full frontend integration suite: `npm run test:integration` -> `104 passed`
+- reran the frontend linter: `npm run lint` -> clean
+- visually confirmed the new `learning-modes-guide` renders on Home and Simulations, and that Arena badges match keyboard bindings.
+
+## 198. UI/UX Batch 1-8 Production Deployment & Domain Mapping Completed
+
+The accumulated UI/UX enhancements (Batches 1 through 8, including design tokens, light theme, progressive jargon disclosure, simplified navigation, and the interactive surfaces guide) were deployed to the live production environment.
+
+Completed production deployment activities:
+
+- executed a clean frontend container build via Cloud Build (image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest`).
+- deployed the resulting container to the `qcai-frontend` Cloud Run service in `us-central1`.
+- mapped the registered custom domain `qantumlearn.academy` to the `qcai-frontend` service.
+- mapped the API subdomain `api.qantumlearn.academy` to the `qcai-api` service.
+
+Completed verification for this deployment:
+
+- live verification confirmed the `https://qantumlearn.academy` domain correctly serves the Next.js frontend with all UI/UX enhancements active.
+- the API domain successfully proxies traffic to the backend services.
+- verified that all DNSSEC and domain registration requirements were successfully configured on Google Cloud Domains.
