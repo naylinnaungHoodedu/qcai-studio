@@ -6069,3 +6069,321 @@ Completed logging and synchronization preparation work:
   - `origin -> https://github.com/naylinnaungHoodedu/qcai-studio.git`
 - reconfirmed the active publication branch remains:
   - `codex/log-responsive-production-batch`
+
+## 189. Deep Repository + Live-Site Study and UI/UX Simplification Batch (P0) Completed
+
+A full professional study of the current folder and the live site
+`https://qantumlearn.academy/` was completed, a durable UI/UX + software-update
+log file was created, and the first batch of high-value, low-risk UI/UX
+simplifications (the P0 "quick wins") was implemented and verified. The goal of
+this batch is a simpler, more user-friendly experience while keeping the platform
+honest and maintainable.
+
+Completed study work:
+
+- studied the whole repository (frontend `apps/frontend` Next.js 16 App Router,
+  backend `apps/api` FastAPI + SQLAlchemy, infra, seeds, transcripts) and the
+  core specification/blueprint DOCX documents
+- studied the live site surfaces (`/`, `/modules`, `/dashboard`) for UX friction
+- captured the findings and a phased roadmap in a new plain-text living log:
+  - `09_UIUX_and_Software_Update_Log.txt`
+
+Completed UI/UX simplification work (P0):
+
+- added an additive design-token layer (spacing, radius, type, and semantic
+  color aliases) at the top of:
+  - `apps/frontend/src/app/globals.css`
+- added a `prefers-reduced-motion: reduce` block that stops the animated shimmer,
+  disables smooth scroll and hover/transition motion, and quiets the decorative
+  fixed grid/gradient overlays, in:
+  - `apps/frontend/src/app/globals.css`
+- simplified the primary navigation from eight top-level items to five
+  (`Modules`, `Simulations`, `Practice`, `Search`, `Account`), removing the
+  redundant `Overview` (the brand mark already links home), moving `About` to the
+  footer, and folding `Projects` into the `Practice` menu, in:
+  - `apps/frontend/src/lib/navigation.ts`
+- reduced the homepage hero to one dominant primary call-to-action
+  (`Start the course`) plus two secondary links, removing the extra hero CTAs
+  (guest dashboard, search) that remain reachable from the navigation, in:
+  - `apps/frontend/src/app/page.tsx`
+- clarified the module card primary action label from `Visit course` to
+  `View module` (it links to a module page, not a course), in:
+  - `apps/frontend/src/components/module-card.tsx`
+- improved syllabus discoverability by adding a `Full syllabus` link to the
+  footer project links, in:
+  - `apps/frontend/src/components/site-footer.tsx`
+- updated the navigation contract test to assert the new five-item order, in:
+  - `apps/frontend/tests/course-structure.integration.test.ts`
+
+Completed verification for this batch:
+
+- reran the full frontend integration suite:
+  - `npm run test:integration`
+  - result: `92 passed`
+- reran the frontend linter:
+  - `npm run lint`
+  - result: clean (no errors)
+
+Notes recorded for later batches (tracked in `09_UIUX_and_Software_Update_Log.txt`):
+
+- the site already ships responsive breakpoints at 1100 / 980 / 720 / 640 px, so
+  mobile support is more developed than an external page scan suggested; future
+  mobile work is refinement, not a first build
+- higher-effort items (light + dark theming, jargon progressive disclosure,
+  dashboard onboarding, module progress indicators) remain queued as P1/P2
+
+## 190. UI/UX Simplification Batch 2 (P1 — Plain-Language / Jargon) Completed
+
+The second batch of user-friendliness work focused on the platform's single
+biggest first-visit barrier: quantum-computing jargon (NISQ, QUBO, VQC,
+QAI vs AI4QC) appearing before any plain-language framing. A plain-language
+onboarding layer was added so a newcomer can understand the premise in everyday
+terms before meeting the technical vocabulary.
+
+Completed plain-language / jargon work (P1):
+
+- added a plain-language glossary library exposing four newcomer "core concepts"
+  and a broader jargon-free term bank, in:
+  - `apps/frontend/src/lib/glossary.ts`
+- added a reusable, zero-JavaScript, CSP-safe inline term helper (native
+  `<abbr title>`) plus its dotted-underline styling, in:
+  - `apps/frontend/src/components/glossary-term.tsx`
+  - `apps/frontend/src/app/globals.css`
+- added a "New to QC+AI? — the whole course in plain language" onboarding
+  explainer to the home page, placed before the jargon-heavy architecture
+  section, in:
+  - `apps/frontend/src/app/page.tsx`
+- added a glossary regression suite (core concepts, definition lookup, and
+  home-page explainer presence), in:
+  - `apps/frontend/tests/glossary.integration.test.ts`
+
+Completed verification for this batch:
+
+- reran the full frontend integration suite:
+  - `npm run test:integration`
+  - result: `95 passed` (3 new glossary tests added)
+- reran the frontend linter:
+  - `npm run lint`
+  - result: clean (no errors)
+
+Notes recorded for later batches (tracked in `09_UIUX_and_Software_Update_Log.txt`):
+
+- the dashboard already ships an onboarding banner
+  (`learning-dashboard.tsx`), so that P1 onboarding item is largely covered
+- wiring the `<GlossaryTerm>` helper into dashboard and module copy is a
+  follow-up refinement
+- light + dark theming remains queued and needs a preceding token-migration pass,
+  because most surfaces currently use hardcoded `rgba(...)` colors rather than the
+  new semantic tokens
+
+## 191. UI/UX Simplification Batch 3 (P1 — Opt-In Light/Dark Theming) Completed
+
+The third batch delivered the most-requested "ultimate version" capability: a
+light/dark theme. It was built to carry zero regression risk — the existing dark
+theme remains the default and is byte-for-byte unchanged, and light mode is a
+fully additive, opt-in override that users turn on with a header toggle.
+
+Completed theming work (P1):
+
+- added an isolated, opt-in light theme as a `:root[data-theme="light"]` override
+  block (semantic variable overrides plus scoped overrides for the primary
+  reading, navigation, card, form, footer, pill, and table surfaces, and a light
+  body background), with accent and label colors darkened for AA contrast on
+  light backgrounds, in:
+  - `apps/frontend/src/app/globals.css`
+- added a header theme toggle (sun/moon) that reads the `<html>` `data-theme`
+  attribute via `useSyncExternalStore` (clean hydration, no effect/setState) and
+  persists the choice to `localStorage` key `qcai-theme`, in:
+  - `apps/frontend/src/components/theme-toggle.tsx`
+  - `apps/frontend/src/components/app-shell.tsx`
+- added a flash-free, pre-paint theme initializer as a nonce'd (CSP-safe) inline
+  script that applies the saved theme before render and defaults to dark, in:
+  - `apps/frontend/src/app/layout.tsx`
+- added a theme regression suite (toggle persistence and accessibility,
+  app-shell mount, nonce'd initializer, and the dark-default / light-additive CSS
+  structure), in:
+  - `apps/frontend/tests/theme.integration.test.ts`
+
+Completed verification for this batch:
+
+- reran the full frontend integration suite:
+  - `npm run test:integration`
+  - result: `99 passed` (4 new theme tests added)
+- reran the frontend linter:
+  - `npm run lint`
+  - result: clean (no errors)
+
+Notes recorded for later batches (tracked in `09_UIUX_and_Software_Update_Log.txt`):
+
+- light mode is a first pass: deep interactive studios (builder, arena, simulation
+  labs, and the floating assistant chat) intentionally keep their dark styling for
+  now and are the next theming refinement
+- because the theme is opt-in with dark as the default, none of this changes the
+  currently shipped experience; a visual QA pass on light mode is recommended
+  before it is promoted from opt-in to a first-class default option
+
+## 192. UI/UX Simplification Batch 4 (Wayfinding, In-Place Jargon Help, Light Studio Coverage) Completed
+
+The fourth batch improved orientation and reduced jargon friction in place, and
+broadened light-theme coverage to the interactive studio pages.
+
+Completed work (P1):
+
+- primary navigation now marks the current page with `aria-current="page"` and an
+  `.is-active` accent (a subtle inset left bar), resolved by an
+  `isActiveHref(pathname, href)` helper that matches the exact page or any page
+  beneath it, in:
+  - `apps/frontend/src/components/primary-nav.tsx`
+  - `apps/frontend/src/app/globals.css`
+- module-card acronym tags now render through the `<GlossaryTerm>` helper so the
+  jargon gets plain-language hovers, and the glossary vocabulary was expanded to
+  cover the tag terms (VQCs, RL-Q-ALM, QGSHAP, CV-QNN, MLIR, Shots, Parameter
+  shift, Pulse control, Barren plateaus, Graph shrinking), in:
+  - `apps/frontend/src/components/module-card.tsx`
+  - `apps/frontend/src/lib/glossary.ts`
+- extended the opt-in light theme to the interactive studios (builder canvas and
+  slots, arena cards, simulation cards/labs/panels, video and transcript panels,
+  inset panels) so light mode reads coherently on the content pages; the floating
+  assistant chat intentionally keeps its dark styling, in:
+  - `apps/frontend/src/app/globals.css`
+
+Completed verification for this batch:
+
+- reran the full frontend integration suite:
+  - `npm run test:integration`
+  - result: `101 passed` (2 new tests added)
+- reran the frontend linter:
+  - `npm run lint`
+  - result: clean (no errors)
+
+## 193. Local Full-Stack Run and Visual QA of Batches 1-4 Completed
+
+The platform was run locally end-to-end and the accumulated UI/UX improvements
+were visually verified in the real application (no code was changed in this
+step — it was verification and evidence capture).
+
+Completed run-and-verify work:
+
+- started the backend locally:
+  - `python -m uvicorn app.main:app --host 127.0.0.1 --port 8001`
+  - `/health` returned ok; `/ready` reported `12` lessons and `24` source assets
+- started the frontend locally:
+  - `npm run dev` on `127.0.0.1:3000` (reads `API_BASE_URL=http://127.0.0.1:8001`
+    from `apps/frontend/.env.local`)
+- verified in the rendered HTML of the running app:
+  - the simplified five-item primary navigation
+  - the single "Start the course" hero call-to-action
+  - the pre-paint theme initializer and the header theme toggle
+  - the "New to QC+AI?" plain-language explainer
+  - live glossary tooltips on the module cards (for example NISQ, Graph shrinking)
+  - the `aria-current="page"` active-navigation marker on `/modules`
+  - the same-origin proxy path `/api/backend/content/course` returning `200`
+  - the served CSS chunk carrying the light-theme, glossary, active-navigation,
+    and reduced-motion rules
+- captured headless-Chrome screenshots through the DevTools Protocol (driven with
+  the Node built-in WebSocket, no added dependencies) of the home page in dark
+  mode and the home and modules pages in light mode; both themes render coherently
+  with good contrast, and light mode covers the module cards and studio surfaces
+  without broken areas
+
+Outcome:
+
+- all four UI/UX batches were confirmed working in the real, locally running
+  full-stack application, in both the default dark theme and the opt-in light
+  theme
+- no regressions observed; dark mode remains the unchanged default
+
+## 194. UI/UX Simplification Batch 5 (Dashboard Metric Clarity) Completed
+
+With the app running locally, the learning dashboard was reviewed visually and its
+bare numeric signals were made self-explanatory for newcomers.
+
+Completed clarity work (P1):
+
+- the 0-100 signals now show their scale inline: Motivation and Focus render as
+  "N / 100" via a quiet `.metric-scale` suffix, and the Consistency pill reads
+  "N / 100", in:
+  - `apps/frontend/src/components/learning-dashboard.tsx`
+  - `apps/frontend/src/app/globals.css`
+- the dashboard hero copy now states the 0-100 scale explicitly, so the numbers
+  are not ambiguous, in:
+  - `apps/frontend/src/components/learning-dashboard.tsx`
+- added a plain-language note under the module insights explaining what "mastery"
+  estimates and what a "fragile" label means (worth another pass before building
+  on it), in:
+  - `apps/frontend/src/components/learning-dashboard.tsx`
+
+Completed verification for this batch:
+
+- reran the full frontend integration suite:
+  - `npm run test:integration`
+  - result: `101 passed`
+- reran the frontend linter:
+  - `npm run lint`
+  - result: clean (no errors)
+- visually confirmed the change in the running app via a headless-Chrome
+  screenshot of `/dashboard` (Motivation "62 / 100", Focus "58 / 100",
+  Consistency "0 / 100", and the new scale sentence in the hero)
+
+## 195. UI/UX Simplification Batch 6 (Lesson Video Messaging) Completed
+
+Reviewing the lesson page in the running app surfaced a confusing, technical video
+status message. It was rewritten into plain, reassuring language that keeps the
+learner moving even when the video cannot load.
+
+Completed clarity work (P1):
+
+- replaced the video-panel status copy in:
+  - `apps/frontend/src/components/video-panel.tsx`
+  - "Preparing authenticated lesson stream." became "Loading the lesson video…"
+  - the failure message now reads: "We couldn't load the video here. You can
+    retry or open it directly — or just keep going: the chapter summaries and
+    transcript below are available now."
+  - the playback-error and ready messages were likewise simplified
+
+Completed verification for this batch:
+
+- reran the full frontend integration suite:
+  - `npm run test:integration`
+  - result: `101 passed`
+- reran the frontend linter:
+  - `npm run lint`
+  - result: clean (no errors)
+- visually confirmed the friendlier "Loading the lesson video…" message in the
+  running lesson page via a headless-Chrome screenshot
+
+## 196. UI/UX Simplification Batch 7 (Search Onboarding) + Dev-CSP Finding Completed
+
+The search page presented a blank box with no guidance. Clickable example-query
+chips were added so a first-time visitor always has an obvious starting point.
+While verifying interactively, a development-only Content-Security-Policy issue
+was discovered and recorded.
+
+Completed search onboarding work (P1):
+
+- added a "Try an example" row of clickable query chips (NISQ constraints, QUBO
+  logistics, quantum vision, few-shot learning, quantum finance) and refactored
+  the search logic into a shared `runSearch(query)` so a chip runs the search
+  instantly (reused by the Search button), in:
+  - `apps/frontend/src/components/search-page.tsx`
+
+Completed verification for this batch:
+
+- reran the full frontend integration suite: `npm run test:integration` -> `101 passed`
+- reran the frontend linter: `npm run lint` -> clean
+- confirmed the chips render in the running app (screenshot) and that the search
+  path returns real, source-grounded results through the same-origin proxy
+  (`GET /api/backend/search?query=NISQ%20constraints` returns document/chapter
+  hits)
+
+Development-only finding recorded for the software backlog:
+
+- the production-oriented CSP blocks Next.js dev tooling under `next dev`: the HMR
+  websocket (`ws://127.0.0.1:3000/_next/webpack-hmr`) fails the `connect-src`
+  check and dev inline `<style>` elements fail `style-src-elem`. This impairs
+  client interactivity and hot reload in LOCAL DEVELOPMENT only (it prevented
+  automated click-through in headless Chrome, including the known-good theme
+  toggle). Production is unaffected because it has no HMR and uses external CSS.
+- recommended follow-up: relax the CSP in development (allow the HMR websocket and
+  dev styles) or serve a dev-specific CSP; tracked in
+  `09_UIUX_and_Software_Update_Log.txt` Sections 6 and 7

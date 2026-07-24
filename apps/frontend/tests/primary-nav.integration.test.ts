@@ -63,3 +63,10 @@ test("responsive navigation CSS swaps desktop pills for a controlled mobile pane
   assert.match(GLOBALS_SOURCE, /@media \(max-width: 720px\)[\s\S]*\.site-nav-shell\s*\{[\s\S]*width: 100%;/);
   assert.match(GLOBALS_SOURCE, /@media \(max-width: 720px\)[\s\S]*\.site-nav\s*\{[\s\S]*max-width: 100%;/);
 });
+
+test("primary nav marks the current page with aria-current and an active class", () => {
+  assert.match(PRIMARY_NAV_SOURCE, /function isActiveHref/);
+  assert.match(PRIMARY_NAV_SOURCE, /aria-current=\{[^}]*"page"[^}]*\}/);
+  assert.match(PRIMARY_NAV_SOURCE, /className=\{[^}]*"is-active"[^}]*\}/);
+  assert.match(GLOBALS_SOURCE, /\.site-nav a\.is-active/);
+});

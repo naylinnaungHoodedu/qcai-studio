@@ -1,0 +1,736 @@
+================================================================================
+QC+AI STUDIO — UI/UX AND SOFTWARE UPDATE LOG
+Living reference + roadmap for the "ultimate improved version" of
+https://qantumlearn.academy/
+================================================================================
+Product owner : Nay Linn Aung (na27@hood.edu)
+Repository    : Codex_Webapp_QC_AI_Studio  (apps/frontend + apps/api monorepo)
+Created       : 2026-07-23
+Maintained by : append to Section 7 (Change Log) on every future update.
+Primary goal  : make the UI/UX simpler and more user-friendly, while keeping a
+                coordinated backend/software-update backlog.
+
+HOW TO USE THIS FILE
+--------------------
+- Sections 1-6 are the standing reference (study + audit + roadmap). Update them
+  in place when the codebase changes materially.
+- Section 7 is APPEND-ONLY. Every code change (UI/UX or software) gets one line:
+      YYYY-MM-DD | area | change | files | status
+- Priorities: P0 = quick, high-value, low-risk. P1 = important. P2 = larger/later.
+- Impact = H/M/L. Effort = 1 (low) / 3 (med) / 5 (high). Same scale as
+  Improvements.txt so the two documents cross-reference cleanly.
+- Where an item overlaps an existing Improvements.txt entry, its ID is cited,
+  e.g. [Imp D6], so nothing is duplicated or contradicted.
+
+
+================================================================================
+SECTION 1 — WHAT THIS PRODUCT IS
+================================================================================
+
+QC+AI Studio is a full-stack learning platform for Quantum Computing + AI,
+taught through the discipline of "hardware-constrained hybrid design" (NISQ
+realism). It is a submission for the Handshake x OpenAI Codex Creator Challenge.
+
+Learner-facing surface (live at qantumlearn.academy):
+  - 11 modules / 12 lesson entry points (curriculum grounded in curated DOCX +
+    MP4 source material).
+  - Grounded search and Q&A with citations.
+  - Teaching Assistant chat (page/lesson aware, RAG-grounded).
+  - Lesson pages: video, key ideas, notes, formulas, source sections, quiz,
+    flashcards.
+  - Practice surfaces: Dashboard (learning analytics), Arena (real-time quiz
+    game), Builder (drag-and-drop dependency game).
+  - Simulations: 16 course studios + 18 academy labs (client-side models).
+  - Projects: portfolio submissions + peer review.
+  - Trust/ops surfaces: privacy, terms, accessibility, status, support,
+    audit-fixtures, security.txt.
+
+Access model: fully public curriculum (no login required); guest cookies enable
+per-session dashboard/projects/builder/arena; Auth0 sign-in is optional.
+
+NOTE on framing: this document treats the platform as a real product to be
+hardened and simplified. The competition context is background, not the
+organizing principle.
+
+
+================================================================================
+SECTION 2 — SYSTEM SNAPSHOT (ARCHITECTURE MAP)
+================================================================================
+
+2.1 FRONTEND  (apps/frontend)
+-----------------------------
+- Next.js 16.2.1 (App Router), React 19, TypeScript strict, TanStack Query
+  (@tanstack/react-query). Utility: clsx. NO CSS framework and NO component
+  library — styling is one hand-written stylesheet.
+- Design system: a single monolithic file, apps/frontend/src/app/globals.css
+  (~3,264 lines). ~10 CSS custom properties only. Self-hosted Space Grotesk font.
+  DARK MODE ONLY.
+- Rendering strategy (mixed):
+    * ISR (revalidate 300s) for public content: /, /modules, /modules/[slug],
+      /lessons/[slug], /syllabus, /quiz/[lessonSlug], /flashcards/[lessonSlug].
+    * SSG (generateStaticParams) for simulation catalog: /simulations/[slug],
+      /simulations/subjects/[subjectSlug](/[simulationSlug]).
+    * SSR force-dynamic for private surfaces: /dashboard, /arena, /builder,
+      /projects, /account, /search.
+- Networking:
+    * Same-origin reverse proxy: src/app/api/backend/[...path]/route.ts. All
+      browser data calls go to relative /api/backend/... (satisfies CSP
+      connect-src 'self'); the proxy forwards to the FastAPI backend, promotes
+      the qcai_auth_token cookie to Authorization: Bearer, applies guest/CSRF
+      headers, injects/strips demo-auth headers, streams bodies, applies
+      per-path timeouts + one retry, returns structured 502/504 on failure.
+    * Next-16 middleware: src/proxy.ts (Next 16 renamed middleware.ts ->
+      proxy.ts). Mints a per-request CSP NONCE (x-nonce header, threaded to
+      <body> in layout.tsx), builds the CSP, bootstraps guest sessions,
+      re-asserts COOP/CORP.
+    * EXCEPTION: ArenaPanel opens a DIRECT WebSocket to the backend origin
+      (NEXT_PUBLIC_API_BASE_URL), NOT through /api/backend. This is the single
+      break in the otherwise-clean same-origin pattern and is why CSP
+      connect-src must include the API origin + wss://.
+- Auth (hand-rolled, no SDK): Auth0 PKCE via src/app/auth/{login,callback,
+  logout}/route.ts + src/lib/auth.ts; guest cookies via src/lib/guest-session.ts;
+  demo-auth fallback (ENABLE_DEMO_AUTH, on in non-prod, off in prod).
+- Security headers: split across TWO sources — static headers in next.config.ts,
+  and the CSP + COOP/CORP (re)set per-request in src/proxy.ts. CSP relies on
+  style-src-attr 'unsafe-inline' (inline style= attributes allowed app-wide).
+- Tests: 19 integration suites under apps/frontend/tests (server-logic focused,
+  tsx --test). Deepest is auth-and-proxy.integration.test.ts.
+
+Key frontend files:
+  src/app/page.tsx ............... home (hero, module cards, references, feature
+                                   availability, dashboard/projects/sim links)
+  src/app/modules/page.tsx ....... curriculum hub (stages, prerequisites, rubric)
+  src/app/lessons/[slug]/page.tsx  lesson composition
+  src/app/dashboard/page.tsx ..... private analytics (LearningDashboardView)
+  src/components/primary-nav.tsx . responsive nav with <details> dropdown groups
+  src/components/app-shell.tsx ... header + nav + footer + global assistant chat
+  src/lib/navigation.ts .......... PRIMARY_NAV_ITEMS definition (8 groups)
+  src/lib/api.ts ................. ~40 typed endpoint wrappers + cache modes
+  src/lib/types.ts ............... all shared backend DTOs
+
+2.2 BACKEND  (apps/api)
+-----------------------
+- FastAPI 0.128 + Uvicorn. SQLAlchemy 2.0 (Mapped/mapped_column). Pydantic v2 +
+  pydantic-settings.
+- DB: SQLite in dev (apps/api/qcai_dev.db), Postgres + Cloud SQL in prod
+  (psycopg / pg8000 + cloud-sql-python-connector). Alembic 1.17 is PRESENT
+  (one migration) but BYPASSED at runtime — schema comes from
+  Base.metadata.create_all + a hand-rolled run_schema_upgrades() (core/
+  schema_upgrades.py) that ALTERs in project_submissions.is_deleted and creates
+  six composite indexes.
+- 13 routers mounted in app/main.py: auth, content, assets, search, qa,
+  assistant, analytics, admin, arena, builder, insights, projects, support.
+- Middleware (executes: CORS -> security-headers(nonce CSP) -> request-id ->
+  guest/CSRF protection -> routers). SlowAPI rate limiting on auth/qa/assistant/
+  search/support/web-vitals.
+- 15 tables (app/db_models.py), NO ORM relationships declared — joins are done
+  manually in Python. Tables: user_accounts, user_sessions, notes,
+  quiz_attempts, qa_interactions, analytics_events, public_web_vitals,
+  support_requests, arena_profiles, arena_match_records, builder_runs,
+  builder_shares, learner_profiles, learning_pulses, project_submissions,
+  peer_reviews.
+- Auth precedence in core/auth.get_current_user: (1) Auth0 RS256 Bearer via
+  JWKS, (2) local session cookie (PBKDF2, 240k iters, 30-day sessions),
+  (3) demo headers (if enabled), (4) guest cookie, (5) 401. RBAC via
+  require_role().
+- CSRF/origin protection: core/request_protection.py as global middleware for
+  unsafe methods; bearer + demo exempt; session/guest must present matching
+  CSRF cookie+header AND trusted Origin/Referer.
+
+2.3 CONTENT PIPELINE (the heart of the backend)
+-----------------------------------------------
+- Course is BLUEPRINT-DRIVEN, not fully data-driven:
+  services/content_assembler.py MODULE_BLUEPRINTS is a ~780-line hardcoded list
+  of modules/lessons with authored title/summary/key_ideas/flashcards/quiz plus
+  section_refs, video_file, document_file.
+- services/docx_parser.py reads allowlisted .docx (python-docx), splitting at
+  Heading/Title styles into SectionRecords.
+- CourseStore.build() matches each lesson's section_refs against parsed headings
+  via SUBSTRING MATCHING (fragile — a heading rename in a source doc silently
+  drops sections, falling back to authored chunks).
+- Video chapters: transcripts/<stem>.json if present, else a hardcoded
+  CURATED_VIDEO_CHAPTERS fallback (services/transcripts.py).
+- Retrieval chunks: RecursiveCharacterTextSplitter(700/120). Lessons with no
+  DOCX match synthesize chunks from authored blueprint text so retrieval is
+  never empty.
+
+2.4 RETRIEVAL / RAG (services/retrieval_engine.py, qa_engine.py,
+    teaching_assistant.py)
+----------------------------------------------------------------
+- Lexical token-overlap search ALWAYS on (pure Python, no external deps).
+- Semantic backend (Pinecone + OpenAI embeddings) OPT-IN — enabled only when
+  OpenAI key + embedding model + Pinecone key + index are all set. Fused with
+  lexical via Reciprocal Rank Fusion (RRF_K=60, semantic weight 1.35).
+- Retrieval mode reported to client via X-Retrieval-Mode header / retrieval_mode
+  field: "lexical" | "lexical-fallback" | "hybrid-pinecone".
+- Q&A (/qa/ask): OpenAI ChatOpenAI when key set, else a deterministic templated
+  fallback ("local-grounded-fallback"). Persisted to qa_interactions.
+- Teaching Assistant (/assistant/chat): Vertex AI Gemini preferred (raw httpx),
+  else local grounded fallback. Page/lesson aware.
+
+2.5 INFRA / DEPLOYMENT
+----------------------
+- Dockerfiles for api + frontend; root docker-compose.yml; infra/k8s manifests;
+  Cloud Run production (ENABLE_DEMO_AUTH=false). Frontend output: standalone.
+- Background workers (app/workers/): heartbeat loops, NOT a task queue —
+  ingestion (rebuild course store, 300s), rag (refresh Pinecone, 180s),
+  analytics (counts, 240s), seed_demo (one-shot). common.run_worker handles
+  SIGTERM/SIGINT.
+
+2.6 SPEC-vs-AS-BUILT GAP (worth remembering)
+--------------------------------------------
+The blueprint/spec (02_..., 03_...) envisioned: PostgreSQL on Cloud SQL,
+Pinecone semantic retrieval, Auth0 with instructor/admin RBAC + review
+workflows, GKE Autopilot, real video transcripts, instructor content-authoring
+UI. The as-built MVP runs: SQLite by default, LEXICAL retrieval by default
+(Pinecone only if keys present), hand-rolled auth with demo/guest fallback,
+CURATED (not transcribed) video chapters, and a fully hardcoded curriculum with
+NO instructor-authoring UI. "AI feedback"/"coach feedback" are keyword
+heuristics, not LLM calls. This gap is not a defect list — it is the honest
+delta between vision and MVP, and it frames where "software update" effort goes.
+
+
+================================================================================
+SECTION 3 — CURRENT-STATE UX AUDIT (per surface)
+================================================================================
+
+Cross-cutting problems (apply to most surfaces):
+  X1. Navigation overload. 8 primary nav items: Overview, About, Modules,
+      Projects, Practice[Dashboard,Arena,Builder], Simulations, Account, Search
+      (src/lib/navigation.ts, rendered by src/components/primary-nav.tsx). No
+      clear hierarchy between "learn" and "practice/meta".
+  X2. Jargon-first. NISQ / VQA / QUBO / "qubit-budget" appear before any plain-
+      language framing. Assumes graduate-level baseline even on "Beginner"
+      labels.
+  X3. Dark-only, heavy visual system. globals.css: --canvas #050915,
+      --accent #1bd4ff (cyan), --accent-deep #7a6cff (purple), glassmorphism
+      (backdrop-filter blur), a fixed body::before grid overlay + multiple
+      stacked radial gradients. Striking, but noisy; contrast of --muted
+      (#95acd1) on dark surfaces is borderline for WCAG AA on small text.
+  X4. No design-token scale. Spacing/radius/type sizes are ad-hoc literals
+      throughout the 3,264-line file (radii 14/16/18/20/22/24/28px; gaps
+      10/12/14/16/18/20/28px). Hard to keep consistent or theme.
+  X5. Responsiveness is present but unrefined. The stylesheet DOES define
+      breakpoints at 1100 / 980 / 720 / 640px (verified in globals.css), so this
+      is not a first build — remaining work is refinement: larger touch targets,
+      denser-grid tuning, flashcard swipe, portrait arena timer. [Imp D10]
+
+3.1 HOME  (src/app/page.tsx)
+  - ~11 CTAs across 6+ dense sections (hero CTAs: "Start with the course path",
+    "Browse modules", "Explore simulations", "Open guest dashboard", "Search
+    materials"; plus per-module "Visit course" + "Open first lesson" pairs).
+  - No single dominant "Start here" action; the eye has too many equal-weight
+    targets.
+  - Module cards split 1-6 then 7-11 with no explanation of why.
+
+3.2 MODULES  (src/app/modules/page.tsx)
+  - Staged narrative layout (Foundations/Algorithms/Applications/Programming/
+    Specialization) requires understanding stage context BEFORE choosing a
+    module — two-layer cognitive load.
+  - Twin links per module ("Visit course" vs "Open first lesson") are
+    ambiguous for first-timers.
+  - No progress indicator / "you are here" across the 11-module arc.
+
+3.3 LESSON  (src/app/lessons/[slug]/page.tsx + video-panel, notes-panel,
+     qa-panel, quiz-panel, flashcard-deck)
+  - Dense multi-panel composition. Good feature coverage, but a first-time
+    learner sees video + key ideas + notes + formulas + sections + Q&A + related
+    lessons at once. Progressive disclosure would reduce overwhelm.
+  - Video requires authenticated byte-range streaming; video-panel probes a
+    range before attaching <video src>. Failure states exist but add UI weight.
+
+3.4 DASHBOARD  (src/app/dashboard/page.tsx + learning-dashboard.tsx)
+  - Highest jargon density. First-time guest sees: Progress 0%, Motivation 62,
+    Focus 58, Goal Pacing 0%, 11 modules all "12% mastery / fragile", a 7-skill
+    skill-gap ("Applied QC+AI architecture: Current 2/5 | target 4.8/5"), an
+    adaptive path with "steady lesson / stretch project / steady game".
+  - Numbers appear without explanation of how they are computed or what to do.
+    The values are heuristic (learning_intelligence.py), not ML — but the UI
+    presents them with unearned precision.
+  - No onboarding to set the skill baseline that drives these numbers. [Imp E5]
+
+3.5 ARENA  (src/app/arena/page.tsx + arena-panel.tsx)
+  - Real-time quiz game over a direct WebSocket. UI must communicate connecting/
+    matchmaking/queue states; presence info is thin (see arena-presence-bar).
+  - Mouse-centric answer selection; no keyboard 1-4 shortcuts. [Imp D5]
+
+3.6 BUILDER  (src/app/builder/page.tsx + builder-studio.tsx)
+  - Drag-and-drop dependency game. Keyboard accessibility exists but touch
+    targets/drag handles are small on mobile. [Imp D5/D10]
+
+3.7 SIMULATIONS  (src/app/simulations/... + simulation-* components)
+  - Large catalog (16 + 18). Sidebar + grid browser. Rich but heavy; the value
+    proposition of "labs" vs "lessons" vs "arena/builder" is not obvious to a
+    newcomer — four different "interactive" surfaces compete for attention.
+
+3.8 PROJECTS  (src/app/projects/page.tsx + projects-studio.tsx)
+  - Submissions + peer review. Seeded demo activity is (correctly) labeled, but
+    the distinction between real and seeded content adds interpretation load.
+
+3.9 ACCOUNT  (src/app/account/page.tsx + account-console.tsx)
+  - Three identity modes (guest / local / Auth0) surfaced in one console. Useful,
+    but the mental model ("am I signed in? as what?") is not immediately clear.
+
+3.10 SEARCH  (src/app/search/page.tsx + search-page.tsx)
+  - Functional lexical/hybrid search. Retrieval mode is surfaced; good. Empty and
+    fallback states could be friendlier.
+
+
+================================================================================
+SECTION 4 — DESIGN PRINCIPLES FOR THE "ULTIMATE" VERSION
+================================================================================
+
+These principles govern every item in Section 5. Keep them stable.
+
+P-1. ONE PRIMARY ACTION PER SCREEN. Every page has exactly one visually dominant
+     CTA. Everything else is secondary/tertiary. Home leads with a single
+     "Start learning" path.
+
+P-2. PROGRESSIVE DISCLOSURE OF JARGON. Lead with plain language; make the
+     technical term the second layer. Provide an inline glossary/term-hover
+     ("NISQ = today's noisy, small quantum hardware"). A "Plain language" default
+     with an optional "Show technical detail" toggle.
+
+P-3. REAL DESIGN-TOKEN SYSTEM. Replace ad-hoc literals with a token layer:
+     --space-1..8, --radius-sm/md/lg/pill, --text-xs..2xl, semantic color
+     tokens (--bg, --surface, --text, --text-muted, --border, --accent,
+     --success, --danger). This is the prerequisite for theming and consistency.
+
+P-4. LIGHT + DARK THEMING. Add a light theme and honor prefers-color-scheme,
+     with a persisted manual toggle (data-theme on <html>). [Imp D6] Ensure the
+     nonce-CSP still allows the theme mechanism (no inline <style> blocks needed;
+     use tokens).
+
+P-5. ACCESSIBILITY AS A GATE. WCAG AA contrast for all text (re-check --muted on
+     dark surfaces), full keyboard operation (arena 1-4, builder placement),
+     visible focus (already present), and prefers-reduced-motion to disable the
+     grid overlay / gradient animation / shimmer.
+
+P-6. MOBILE-FIRST. Add a genuine small-phone breakpoint (~640px), larger touch
+     targets, swipe for flashcards, portrait-friendly arena timer. [Imp D10]
+
+P-7. CALM VISUALS. Dial back simultaneous gradients + fixed grid overlay; make
+     the "quantum" aesthetic an accent, not a constant. Reserve motion for
+     meaning.
+
+P-8. HONEST LABELS. Where the UI says "AI feedback"/"mastery"/"readiness" but the
+     value is a heuristic, either soften the copy or add a "how this is
+     calculated" affordance. Trust is the product's core promise.
+
+
+================================================================================
+SECTION 5 — PRIORITIZED UI/UX ROADMAP
+================================================================================
+
+Format per item: [Pn][Impact/Effort] Title
+   Problem / Change / Files / Accept
+
+--- P0: QUICK WINS (high value, low risk) ---
+
+[P0][H/2] Design-token layer at the top of globals.css
+  Problem: X4 — no token scale; theming impossible; inconsistency.
+  Change : Introduce --space-*, --radius-*, --text-*, and SEMANTIC color tokens
+           in :root; map existing --canvas/--ink/--accent onto them. Do NOT
+           restyle yet — just establish the vocabulary so later items are cheap.
+  Files  : apps/frontend/src/app/globals.css (:root block).
+  Accept : Build + lint pass; visual diff ~zero; tokens referenced by at least
+           the hero/nav/button rules.
+
+[P0][H/2] Single "Start here" primary path on Home
+  Problem: 3.1 — ~11 equal-weight CTAs, no dominant action.
+  Change : Promote ONE primary CTA ("Start learning -> Module 1 / NISQ") to
+           hero; demote the rest to secondary buttons/links. Remove or merge the
+           "Visit course" vs "Open first lesson" duplication into one clear
+           action.
+  Files  : src/app/page.tsx, src/components/module-card.tsx, globals.css
+           (.primary-button vs .secondary-button usage).
+  Accept : Home has exactly one .primary-button above the fold; module cards have
+           a single default action.
+
+[P0][M/2] Simplify primary navigation
+  Problem: X1 — 8 top-level items.
+  Change : Group into fewer buckets: Learn (Modules/Simulations), Practice
+           (Dashboard/Arena/Builder), plus Search + Account. Move About into the
+           footer. Target <= 5 top-level targets.
+  Files  : src/lib/navigation.ts (PRIMARY_NAV_ITEMS), src/components/
+           primary-nav.tsx, tests/primary-nav.integration.test.ts (update
+           expectations).
+  Accept : primary-nav test updated + green; <=5 top-level nav items render.
+
+[P0][M/1] prefers-reduced-motion + calmer default background
+  Problem: X3/P-7 — fixed grid overlay, stacked gradients, shimmer always on.
+  Change : Wrap body::before/::after decoration and shimmer/animation in
+           @media (prefers-reduced-motion: no-preference); reduce default
+           gradient opacity.
+  Files  : globals.css (body::before/::after, @keyframes shimmer, hero).
+  Accept : Reduced-motion users get a static, lower-noise background; no layout
+           shift.
+
+[P0][M/1] Public course syllabus discoverability (already exists — verify)
+  Problem: [Imp D8] — /syllabus exists; ensure it is linked as a low-friction
+           entry point.
+  Change : Add a prominent "See the full syllabus" secondary link from Home/
+           Modules.
+  Files  : src/app/page.tsx, src/app/modules/page.tsx.
+  Accept : Syllabus reachable in one click from Home.
+
+--- P1: IMPORTANT ---
+
+[P1][H/3] Light + dark theming
+  Problem: P-4 — dark only.
+  Change : Build a light theme on the token layer; honor prefers-color-scheme;
+           add a persisted toggle (data-theme on <html>, localStorage). [Imp D6]
+  Files  : globals.css (token overrides per theme), a small theme-toggle client
+           component, src/app/layout.tsx.
+  Accept : Both themes pass AA contrast; toggle persists; no CSP violation.
+
+[P1][H/3] Jargon progressive disclosure + inline glossary
+  Problem: X2/P-2.
+  Change : Plain-language lead copy on Home/Modules/Dashboard; a term-hover/
+           expand glossary component for NISQ/VQA/QUBO/etc.; optional "Show
+           technical detail" toggle.
+  Files  : src/lib/public-course.ts / course-references.ts (copy), a new
+           glossary component, src/app/page.tsx, modules/page.tsx.
+  Accept : First screen of each surface is readable by a non-specialist; terms
+           are explained on demand.
+
+[P1][H/2] Dashboard first-run onboarding + metric explanations
+  Problem: 3.4 — unexplained heuristic numbers; no baseline capture. [Imp E5]
+  Change : First-visit banner to set skill baseline; tooltips/"how this is
+           calculated" on Motivation/Focus/Mastery/Readiness; empty-state coach
+           copy instead of walls of zeros.
+  Files  : src/components/learning-dashboard.tsx, src/app/dashboard/page.tsx.
+  Accept : New guest sees guidance, not raw zeros; each metric has an
+           explanation affordance. Supports P-8.
+
+[P1][M/2] Module progress + "you are here"
+  Problem: 3.2 — no progression indicator. [Imp E4-adjacent]
+  Change : Show per-module progress and a current-position marker across the
+           11-module arc (progress data already aggregated by
+           learner_progress.build_course_progress via /content/progress).
+  Files  : src/app/modules/page.tsx, module-card.tsx, uses lib/api.ts
+           fetchCourseProgress.
+  Accept : Learner can see where they are and what is next.
+
+[P1][M/2] Keyboard + touch parity for Arena/Builder
+  Problem: 3.5/3.6. [Imp D5/D10]
+  Change : Arena answer keys 1-4; Builder larger drag handles + keyboard placement
+           already partial — finish it; flashcard swipe.
+  Files  : arena-panel.tsx, builder-studio.tsx, flashcard-deck.tsx, globals.css.
+  Accept : Full keyboard play in Arena; touch targets >=44px.
+
+[P1][M/2] Clarify the four "interactive" surfaces
+  Problem: 3.7 — Lessons vs Simulations vs Arena vs Builder overlap.
+  Change : One explainer strip ("Learn / Practice / Play / Build") that states
+           what each is and when to use it.
+  Files  : src/app/simulations/page.tsx, src/app/page.tsx feature section.
+  Accept : A newcomer can articulate the difference in one read.
+
+--- P2: LARGER / LATER ---
+
+[P2][H/4] Concept-map visualization across modules
+  Problem: linear curriculum hides cross-module dependencies. [Imp E3]
+  Change : Lightweight graph (no heavy dep if avoidable) linking NISQ -> Routing
+           -> QUBO -> ... clickable to lessons.
+  Files  : new component + data from lib/site.ts MODULE/LESSON slugs.
+  Accept : Renders, is keyboard-navigable, links resolve.
+
+[P2][M/3] Study-streak calendar on Dashboard
+  Problem: motivation/retention. [Imp E4] (heatmap CSS already exists in
+           globals.css .heatmap-grid).
+  Change : GitHub-style 90-day activity heatmap from analytics_events.
+  Files  : learning-dashboard.tsx, backend insights endpoint (see Section 6).
+  Accept : Renders real activity; empty state is graceful.
+
+[P2][M/3] Video transcript panel with click-to-seek
+  Problem: passive video. [Imp D3] (transcript-panel/.transcript-segment CSS
+           already exists; backend supports transcripts/*.json).
+  Change : Show transcript beside video, highlight active segment, click to seek.
+  Files  : video-panel.tsx. Depends on real transcripts (Section 6 item).
+  Accept : With a transcript present, segments highlight + seek.
+
+[P2][M/2] Break up globals.css
+  Problem: X4 — 3,264-line monolith is hard to maintain.
+  Change : After the token layer lands, split into logical partials (base,
+           layout, nav, cards, lesson, simulations, dashboard) imported by
+           globals.css, OR co-locate CSS modules. Behavior-preserving.
+  Files  : apps/frontend/src/app/globals.css -> multiple files.
+  Accept : Byte-for-byte equivalent render; easier navigation.
+
+
+================================================================================
+SECTION 6 — SOFTWARE-UPDATE BACKLOG (backend / infra)
+================================================================================
+
+These keep the platform honest and scalable so UI work rests on solid ground.
+IDs in [] reference Improvements.txt where they overlap.
+
+--- CORRECTNESS / DATA INTEGRITY ---
+
+[S][M/2] Stop bypassing Alembic at runtime
+  Alembic exists but startup uses Base.metadata.create_all + hand-rolled
+  run_schema_upgrades() (core/schema_upgrades.py). Schema can drift between
+  models, the ad-hoc upgrader, and the single migration. Move to
+  Alembic-on-deploy (or generate migrations from models and run them). [Imp B3]
+
+[S][M/1] Pin google-auth in requirements
+  teaching_assistant.py imports google.auth for Vertex service-account mode but
+  google-auth is NOT in apps/api/requirements.txt (wrapped in try/except, so
+  service-account Vertex silently fails where the package is absent). Add + pin.
+
+[S][M/1] Remove committed dev artifacts
+  apps/api/qcai_dev.db (~3.7 MB) and api-server.{log,err,out} are checked in.
+  Remove and .gitignore them.
+
+[S][M/1] Schema-level input length validation
+  Add max_length to text fields (project summary/notes/feedback) in
+  app/schemas.py. [Imp B4]
+
+--- PERFORMANCE / SCALE ---
+
+[S][H/2] Fix /insights/dashboard redundant recompute (N+1-ish)
+  learning_intelligence recomputes build_course_progress / build_skill_gap_report
+  multiple times per dashboard request, each issuing many per-table
+  select(...).all(). Compute once and pass down. Directly speeds the Dashboard
+  UI work in Section 5.
+
+[S][M/2] Real DB pagination
+  content.py/qa.py/project_studio.py paginate in Python after .all()
+  ([offset:offset+limit]). Push limit/offset into SQL. [Imp C8]
+
+[S][H/3] SQLite -> Postgres for dev parity
+  SQLite single-writer contends with the 3 workers; Postgres already supported in
+  prod. Provide a docker-compose Postgres for local dev. [Imp B2]
+
+[S][M/2] Missing indexes
+  Confirm/extend composite indexes (LearningPulse(user_id,created_at),
+  BuilderRun(user_id,scenario_slug), AnalyticsEvent(user_id,event_type),
+  PeerReview(submission_id)). Some are asserted in schema_upgrades — verify all.
+  [Imp B1]
+
+[S][H/3] Arena horizontal-scale backplane
+  arena_engine is in-memory, single-process (@lru_cache singleton, dict queue/
+  matches). Cannot scale across Uvicorn workers / Cloud Run instances. Introduce
+  Redis pub/sub for matchmaking + WS fan-out before scaling. [relates Imp C7/D2]
+
+--- SECURITY ---
+
+[S][H/2] CSP hardening — remove reliance on unsafe-inline
+  Frontend CSP uses style-src-attr 'unsafe-inline' (inline style= app-wide). As
+  the token layer lands and inline styles are removed, tighten style-src-attr.
+  Audit for any remaining inline styles (OG route uses them legitimately). [Imp G1]
+
+[S][H/2] WebSocket auth for Arena
+  The Arena WS is reached via NEXT_PUBLIC_API_BASE_URL with player_id; ensure a
+  short-lived signed token (HMAC/JWT) gates the connection so player_id cannot be
+  spoofed, and add per-IP connection + message rate limits. [Imp C7/G5]
+
+[S][M/1] Consolidate duplicated API-base + demo-auth logic
+  The env-precedence and demo-header rules are re-implemented across lib/api.ts,
+  app/api/backend/[...path]/route.ts, src/proxy.ts, app/ready/route.ts (prod
+  fallback https://api.qantumlearn.academy hardcoded in 3 files). Centralize to
+  avoid drift.
+
+[S][M/1] Strengthen user-text sanitization
+  services/text_utils.sanitize_user_text merely strips < and >. Rely on it less;
+  ensure frontend never uses dangerouslySetInnerHTML (verify) and consider a real
+  sanitizer for stored text. [Imp G4]
+
+--- RETRIEVAL / CONTENT QUALITY ---
+
+[S][H/4] Wire semantic retrieval end-to-end + document the key path
+  Pinecone + OpenAI embeddings are integrated but OPT-IN. Provide a clear runbook
+  + a rag worker verification so "hybrid-pinecone" mode is reproducible; keep
+  lexical fallback. [Imp C3]
+
+[S][H/3] Real transcript ingestion
+  transcripts/ is empty; chapters are curated fallbacks. Add a Whisper-based
+  script to produce conforming transcript JSON so the transcript UI (Section 5
+  P2) and segment-level Q&A become real. [Imp E8/D3]
+
+[S][M/2] Robuster DOCX section matching
+  content_assembler section_refs use fragile substring matching against DOCX
+  headings; a heading rename silently drops sections. Add fuzzy/normalized
+  matching + a warning when a lesson falls back entirely to authored chunks.
+
+--- DEVOPS ---
+
+[S][H/4] CI/CD pipeline
+  Add lint + test (pytest + tsx --test) on PR, build/push images on main, deploy
+  on tag. Closes the manual-deploy gap. [Imp F6]
+
+[S][H/2] Secrets management
+  Move OPENAI/AUTH0/PINECONE/VERTEX keys to k8s Secrets (not ConfigMap); rotate.
+  [Imp F7]
+
+[S][M/1] Complete docker-compose full stack
+  Expand root docker-compose.yml to boot postgres + api + frontend + workers in
+  one command. [Imp F1]
+
+
+================================================================================
+SECTION 7 — CHANGE LOG  (APPEND-ONLY)
+================================================================================
+Format: YYYY-MM-DD | area(UI/UX|SW) | change | files | status(planned|done|
+        verified)
+
+2026-07-23 | DOC | Created this log from a full study of the repo + live site
+           (frontend Next 16 + FastAPI backend + spec/blueprint + Improvements.txt
+           + live qantumlearn.academy UX). No application code changed. |
+           09_UIUX_and_Software_Update_Log.txt | done
+2026-07-23 | UI/UX | P0: added additive design-token layer (space/radius/type/
+           semantic color aliases) to :root. Zero visual change; enables later
+           theming + consistency. | apps/frontend/src/app/globals.css | verified
+           (lint clean, 92 tests pass)
+2026-07-23 | UI/UX | P0: added prefers-reduced-motion block (disables shimmer,
+           smooth scroll, hover/transition motion; quiets decorative overlays). |
+           apps/frontend/src/app/globals.css | verified
+2026-07-23 | UI/UX | P0: simplified primary nav 8 -> 5 items (Modules,
+           Simulations, Practice, Search, Account). Removed redundant Overview
+           (brand mark links home); moved About to footer; folded Projects into
+           Practice. Updated nav contract test. | src/lib/navigation.ts,
+           tests/course-structure.integration.test.ts | verified
+2026-07-23 | UI/UX | P0: reduced homepage hero to one dominant CTA
+           ("Start the course") + 2 secondary links (was 1 primary + 4
+           secondary). | apps/frontend/src/app/page.tsx | verified
+2026-07-23 | UI/UX | P0: relabeled module card primary CTA "Visit course" ->
+           "View module" (accurate: links to a module page). |
+           apps/frontend/src/components/module-card.tsx | verified
+2026-07-23 | UI/UX | P0: added "Full syllabus" link to footer project links for
+           discoverability. | apps/frontend/src/components/site-footer.tsx |
+           verified
+2026-07-23 | DOC | Corrected audit item X5: site already has 1100/980/720/640px
+           breakpoints (verified) — mobile work is refinement, not a first build.
+           | 09_UIUX_and_Software_Update_Log.txt | done
+2026-07-23 | UI/UX | P1 (jargon, batch 2): added a plain-language glossary
+           library (CORE_CONCEPTS + GLOSSARY term bank with jargon-free
+           definitions). | apps/frontend/src/lib/glossary.ts | verified
+2026-07-23 | UI/UX | P1 (jargon): added a reusable zero-JS <GlossaryTerm> inline
+           helper (native <abbr title>, CSP-safe) + .glossary-term styling. |
+           src/components/glossary-term.tsx, src/app/globals.css | verified
+2026-07-23 | UI/UX | P1 (jargon): added a "New to QC+AI? — the whole course in
+           plain language" onboarding explainer to the home page (4 core concepts
+           in everyday terms, before the jargon-heavy architecture section). |
+           apps/frontend/src/app/page.tsx | verified
+2026-07-23 | TEST | Added glossary regression suite (3 tests): core concepts,
+           definition lookup, and home-page explainer presence. Suite now 95
+           tests pass; lint clean. | tests/glossary.integration.test.ts | verified
+           NOTE: partial progress on P1 "jargon progressive disclosure" — the
+           glossary + plain-language layer is in; wiring <GlossaryTerm> into
+           dashboard/module copy is a follow-up. Dashboard onboarding banner
+           already exists (learning-dashboard.tsx), so that P1 item is largely
+           covered. Light+dark theming remains queued (needs a token-migration
+           pass first, since most surfaces use hardcoded rgba, not the new tokens).
+2026-07-23 | UI/UX | P1 (light/dark theming, batch 3): added an OPT-IN light
+           theme. Dark stays the default and is byte-for-byte unchanged (zero
+           regression). Light lives entirely in an isolated
+           :root[data-theme="light"] override block covering the primary reading,
+           nav, card, form, and footer surfaces + a light body background;
+           accent/warm colors darkened for AA contrast on light. |
+           apps/frontend/src/app/globals.css | verified
+2026-07-23 | UI/UX | Added header theme toggle (sun/moon), reads the html
+           data-theme attr via useSyncExternalStore; persists choice to
+           localStorage "qcai-theme". | src/components/theme-toggle.tsx,
+           src/components/app-shell.tsx (+ .theme-toggle / .site-header-actions
+           CSS) | verified
+2026-07-23 | UI/UX | Added FOUC-safe pre-paint theme init: nonce'd inline script
+           in <head> applies the saved theme before render (defaults to dark),
+           CSP-safe. | apps/frontend/src/app/layout.tsx | verified
+2026-07-23 | TEST | Added theme regression suite (4 tests: toggle persistence +
+           a11y, app-shell mount, nonce'd init, dark-default/light-additive CSS).
+           Suite now 99 tests pass; lint clean. |
+           tests/theme.integration.test.ts | verified
+           NOTE: light theme is a v1. Deep interactive studios (builder, arena,
+           simulation labs, the floating assistant chat) intentionally keep their
+           dark styling for now and are the next theming refinement. Because the
+           theme is opt-in with dark as default, none of this changes the current
+           shipped experience. A visual QA pass on light mode is recommended
+           before promoting it (contrast + the deep-studio surfaces).
+2026-07-23 | UI/UX | P1 (wayfinding, batch 4): primary nav now marks the current
+           page with aria-current="page" + an .is-active accent (inset left bar),
+           via an isActiveHref(pathname, href) helper (exact match or path
+           prefix). | src/components/primary-nav.tsx, src/app/globals.css |
+           verified
+2026-07-23 | UI/UX | P1 (jargon, batch 4): module card acronym tags now render
+           through <GlossaryTerm>, giving plain-language hovers on the jargon;
+           expanded the glossary with the tag vocabulary (VQCs, RL-Q-ALM, QGSHAP,
+           CV-QNN, MLIR, Shots, Parameter shift, Pulse control, Barren plateaus,
+           Graph shrinking). | src/components/module-card.tsx, src/lib/glossary.ts
+           | verified
+2026-07-23 | UI/UX | Extended the opt-in light theme to the interactive studios
+           (builder, arena, simulation labs, video/transcript, inset panels) so
+           light mode reads coherently on content pages. The floating assistant
+           chat keeps dark styling by design. | apps/frontend/src/app/globals.css
+           | verified
+2026-07-23 | TEST | Extended nav + glossary suites (2 tests: active-nav marker,
+           module-tag glossary wiring). Suite now 101 tests pass; lint clean. |
+           tests/primary-nav.integration.test.ts, tests/glossary.integration.test.ts
+           | verified
+2026-07-23 | QA | Ran the full stack locally and visually verified batches 1-4 in
+           the REAL app. Backend: python -m uvicorn app.main:app on 127.0.0.1:8001
+           (health ok; /ready = 12 lessons, 24 assets). Frontend: npm run dev on
+           127.0.0.1:3000 (reads API_BASE_URL=8001 from .env.local). Confirmed in
+           rendered HTML: simplified 5-item nav, single "Start the course" CTA,
+           theme init script + toggle, "New to QC+AI?" explainer, live glossary
+           tooltips on module tags, aria-current active-nav on /modules, and the
+           same-origin proxy /api/backend/content/course -> 200. Served CSS chunk
+           carried 20 light-theme rules + glossary + active-nav + reduced-motion.
+           Captured headless-Chrome screenshots (CDP via Node built-in WebSocket)
+           of home (dark) and home+modules (light): both themes render coherently
+           with good contrast; light mode is NOT broken and covers the module
+           cards and studios. | (no code changed — verification only) | verified
+2026-07-23 | UI/UX | P1 (dashboard clarity, batch 5): the bare 0-100 signals now
+           show their scale (Motivation "62 / 100", Focus "58 / 100", Consistency
+           pill "N / 100") via a quiet .metric-scale suffix, and the hero copy now
+           states the 0-100 scale explicitly. Added a plain-language note under the
+           module insights explaining what "mastery" and a "fragile" label mean.
+           Verified live in the running app (screenshot). |
+           src/components/learning-dashboard.tsx, src/app/globals.css | verified
+           (101 tests pass, lint clean)
+2026-07-23 | UI/UX | P1 (lesson video messaging, batch 6): replaced the technical
+           video-panel copy with plain, reassuring language. "Preparing
+           authenticated lesson stream" -> "Loading the lesson video…"; the error
+           state now tells the learner they can retry, open it directly, OR just
+           keep going because the chapter summaries and transcript below are
+           available. Verified live in the running lesson page (screenshot). |
+           apps/frontend/src/components/video-panel.tsx | verified (101 tests pass,
+           lint clean)
+2026-07-23 | UI/UX | P1 (search onboarding, batch 7): added clickable
+           example-query chips ("Try an example": NISQ constraints, QUBO logistics,
+           quantum vision, few-shot learning, quantum finance) so a first-time
+           visitor is never staring at a blank search box. Refactored the search
+           logic into runSearch(q) so a chip runs the search instantly, reused by
+           the Search button. | apps/frontend/src/components/search-page.tsx |
+           verified (chips render; backend/proxy search returns real results;
+           101 tests pass, lint clean)
+2026-07-23 | SW/OBS | Dev-CSP finding (from local QA): the production-oriented CSP
+           blocks Next.js dev tooling in `next dev` — the HMR websocket
+           (ws://127.0.0.1:3000/_next/webpack-hmr) fails the CSP connect-src check
+           and dev inline <style> elements fail style-src-elem. This impairs client
+           interactivity/HMR in LOCAL DEV only (it broke automated click-through in
+           headless, incl. the known-good theme toggle). Production is unaffected
+           (no HMR, external CSS). Backlog: relax CSP in development to allow the
+           HMR ws + dev styles (or serve a dev-only CSP). See Section 6 CSP item. |
+           apps/frontend/src/proxy.ts (buildConnectSources / style-src-elem) | noted
+2026-07-23 | UI/UX | P1 (clarify the four interactive surfaces, batch 8): added a
+           single "Learn / Practice / Play / Build" explainer strip that states
+           what each surface is AND when to use it, ordered passive->active
+           (Lessons -> Simulations -> Arena -> Builder). Data lives in one shared
+           module; one reusable component renders it on BOTH Home (replacing the
+           scattered "Interactive practice" three-card section) and the top of the
+           Simulations page. Resolves audit 3.7 (four "interactive" surfaces
+           competing with no when-to-use framing). | src/lib/learning-modes.ts
+           (new), src/components/learning-modes-guide.tsx (new), src/app/page.tsx,
+           src/app/simulations/page.tsx, src/app/globals.css (.learning-modes-grid)
+           | verified (104 tests pass, lint clean, tsc clean for changed files)
+2026-07-23 | UI/UX | P1 (arena keyboard parity, batch 8): finished the Arena 1-4
+           keyboard item by making the shortcut DISCOVERABLE — each MCQ option now
+           shows a numbered <kbd> badge matching the 1-4 key it responds to (the
+           key handler + hint text already existed). | src/components/
+           arena-panel.tsx, src/app/globals.css (.arena-choice-key) | verified
+2026-07-23 | TEST | Added learning-modes regression suite (3 tests: four-surface
+           what/when data, guide wired into home + simulations, arena numbered-key
+           badges). Suite now 104 tests pass; lint clean. |
+           tests/learning-modes.integration.test.ts | verified
+--------------------------------------------------------------------------------
+(add new entries below)

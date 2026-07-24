@@ -398,13 +398,16 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
                 <>
                   <p className="muted">Keyboard shortcut: press 1-4 to select an answer.</p>
                   <div className="choice-list">
-                    {challenge.options.map((option) => (
+                    {challenge.options.map((option, index) => (
                       <button
                         className={`choice-item arena-choice ${pendingAnswer === option ? "selected" : ""}`}
                         key={option}
                         onClick={() => setPendingAnswer(option)}
                         type="button"
                       >
+                        <kbd className="arena-choice-key" aria-hidden="true">
+                          {index + 1}
+                        </kbd>
                         <span>{option}</span>
                       </button>
                     ))}

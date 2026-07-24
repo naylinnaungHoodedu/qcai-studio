@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { LearningModesGuide } from "@/components/learning-modes-guide";
 import { ModuleCard } from "@/components/module-card";
 import { PageErrorState } from "@/components/page-state";
 import { StructuredData } from "@/components/structured-data";
 import { fetchCourseOverview } from "@/lib/api";
+import { CORE_CONCEPTS } from "@/lib/glossary";
 import { OVERVIEW_COURSE_REFERENCES } from "@/lib/course-references";
 import { buildPageMetadata } from "@/lib/metadata";
 import { FEATURE_AVAILABILITY } from "@/lib/public-status";
@@ -64,19 +66,13 @@ export default async function HomePage() {
           <p className="hero-text">{COURSE_SCOPE_NOTE}</p>
           <div className="button-row">
             <Link className="primary-button" href={startHref}>
-              Start with the course path
+              Start the course
             </Link>
             <Link className="secondary-button" href="/modules">
               Browse modules
             </Link>
             <Link className="secondary-button" href="/simulations">
               Explore simulations
-            </Link>
-            <Link className="secondary-button" href="/dashboard">
-              Open guest dashboard
-            </Link>
-            <Link className="secondary-button" href="/search">
-              Search materials
             </Link>
           </div>
         </div>
@@ -99,6 +95,25 @@ export default async function HomePage() {
               ))}
             </ul>
           </div>
+        </div>
+      </section>
+
+      <section className="section-block">
+        <div className="section-heading">
+          <p className="eyebrow">New to QC+AI?</p>
+          <h2>The whole course in plain language</h2>
+          <p>
+            You do not need to already speak the jargon. Here are the few ideas everything else builds on, explained in everyday terms. Technical detail comes later, one lesson at a time.
+          </p>
+        </div>
+        <div className="module-grid">
+          {CORE_CONCEPTS.map((concept) => (
+            <article className="panel" key={concept.term}>
+              <p className="eyebrow">In plain terms</p>
+              <h3>{concept.term}</h3>
+              <p>{concept.plain}</p>
+            </article>
+          ))}
         </div>
       </section>
 
@@ -201,53 +216,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="section-block">
-        <div className="section-heading">
-          <p className="eyebrow">Interactive practice</p>
-          <h2>Competition and construction modes</h2>
-          <p>
-            Arena and Builder keep the course from collapsing into static reading. They create additional recall, comparison, and systems-thinking loops for returning learners.
-          </p>
-        </div>
-        <div className="lesson-list">
-          <article className="lesson-card">
-            <div>
-              <p className="eyebrow">Simulations</p>
-              <h3>Browser-playable QC+AI simulation studio</h3>
-              <p>Run the sixteen verified labs directly in the browser, inspect the corrected concept notes, and review the deeper rollout path for persistence and analytics.</p>
-            </div>
-            <div className="lesson-actions">
-              <Link className="primary-button" href="/simulations">
-                Open simulations
-              </Link>
-            </div>
-          </article>
-          <article className="lesson-card">
-            <div>
-              <p className="eyebrow">Arena</p>
-              <h3>AI &amp; Quantum Challenge Arena</h3>
-              <p>Face ranked rivals or an adaptive bot across real-time AI/ML and quantum systems challenges.</p>
-            </div>
-            <div className="lesson-actions">
-              <Link className="primary-button" href="/arena">
-                Enter arena
-              </Link>
-            </div>
-          </article>
-          <article className="lesson-card">
-            <div>
-              <p className="eyebrow">Builder</p>
-              <h3>Microlearning Drag-and-Drop Builder</h3>
-              <p>Assemble dependency graphs, unlock the next circuit, and share completed learning maps to the feed.</p>
-            </div>
-            <div className="lesson-actions">
-              <Link className="primary-button" href="/builder">
-                Open builder
-              </Link>
-            </div>
-          </article>
-        </div>
-      </section>
+      <LearningModesGuide />
     </div>
   );
 }

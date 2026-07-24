@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { AcademySubjectCatalog } from "@/components/academy-simulation-browser";
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { LearningModesGuide } from "@/components/learning-modes-guide";
 import { SimulationBrowser } from "@/components/simulation-browser";
 import { StructuredData } from "@/components/structured-data";
 import {
@@ -146,6 +147,8 @@ export default function SimulationsPage() {
           </article>
         </div>
       </section>
+
+      <LearningModesGuide />
 
       <section className="section-block" id="simulation-browser">
         <div className="section-heading">

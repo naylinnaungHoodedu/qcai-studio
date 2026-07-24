@@ -14,6 +14,40 @@
     0 0 0 1px rgba(27, 212, 255, 0.08),
     0 26px 80px rgba(1, 5, 15, 0.56),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
+
+  /* --- Design tokens (additive layer; see 09_UIUX_and_Software_Update_Log.txt P0) --- */
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 40px;
+  /* Radius scale */
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+  /* Type scale */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  /* Semantic color aliases (mapped onto existing palette so nothing changes yet) */
+  --bg: var(--canvas);
+  --surface-1: var(--surface);
+  --surface-2: var(--surface-strong);
+  --text: var(--ink);
+  --text-muted: var(--muted);
+  --border: var(--line);
+  --focus-ring: rgba(15, 118, 110, 0.42);
+  --success: #24b765;
+  --danger: #ff6086;
 }
 
 * {
@@ -311,10 +345,19 @@ select option:focus {
 
 .site-nav a:hover,
 .site-nav summary:hover,
-.site-nav-group[open] summary {
+.site-nav-group[open] summary,
+.site-nav a.is-active,
+.site-nav summary.is-active {
   color: var(--ink);
   border-color: rgba(116, 174, 255, 0.42);
   background: linear-gradient(135deg, rgba(27, 212, 255, 0.16), rgba(122, 108, 255, 0.14));
+}
+
+/* Current page marker: a stronger left accent so "where am I" reads at a glance. */
+.site-nav a.is-active,
+.site-nav summary.is-active {
+  border-color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .site-nav summary {
@@ -500,6 +543,51 @@ select option:focus {
 
 .module-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+}
+
+.learning-modes-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: none;
+}
+
+.learning-mode-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.learning-mode-card .eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.learning-mode-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(27, 212, 255, 0.32);
+  background: rgba(27, 212, 255, 0.14);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink, #eaf2ff);
+}
+
+.learning-mode-when {
+  margin-top: -2px;
+}
+
+.learning-mode-card .secondary-button {
+  margin-top: auto;
+  align-self: flex-start;
 }
 
 .curriculum-card-grid {
@@ -934,6 +1022,21 @@ select option:focus {
 
 .muted {
   color: var(--muted);
+}
+
+/* Inline plain-language term: dotted underline signals "hover for a definition". */
+.glossary-term {
+  text-decoration: none;
+  border-bottom: 1px dotted var(--accent);
+  cursor: help;
+}
+
+/* Scale suffix on a big metric number, e.g. "62 / 100" — keeps the unit quiet. */
+.metric-scale {
+  color: var(--muted);
+  font-size: 0.5em;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .qa-response,
@@ -2247,6 +2350,24 @@ button:disabled,
   background: rgba(15, 118, 110, 0.14);
 }
 
+.arena-choice-key {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(27, 212, 255, 0.28);
+  background: rgba(27, 212, 255, 0.12);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--ink, #eaf2ff);
+}
+
 .arena-metric-grid,
 .builder-metric-grid {
   display: grid;
@@ -3260,4 +3381,249 @@ button:disabled,
   .choice-item {
     padding: 14px 16px;
   }
+}
+
+/* --- Reduced motion: honor the user's OS setting (a11y P-5) --- */
+/* Disables the animated shimmer, smooth scroll, and hover/transition motion, */
+/* and quiets the decorative fixed grid/gradient overlays for a calmer surface. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  body::before,
+  body::after {
+    opacity: 0.12;
+  }
+}
+
+/* --- Theme toggle control (header) --- */
+.site-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.theme-toggle {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 10px;
+  border: 1px solid rgba(88, 137, 255, 0.16);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.theme-toggle:hover {
+  border-color: rgba(116, 174, 255, 0.42);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* =====================================================================
+   LIGHT THEME (opt-in via data-theme="light"; dark stays the default).
+   Isolated override block: it does not touch any dark rule above, so the
+   default experience is unchanged. Covers the primary reading, navigation,
+   card, form, and footer surfaces. Deep interactive studios (builder, arena,
+   simulation labs, assistant chat) intentionally remain dark in this first
+   pass — tracked in 09_UIUX_and_Software_Update_Log.txt.
+   ===================================================================== */
+:root[data-theme="light"] {
+  --canvas: #eef3fb;
+  --ink: #0d1b2e;
+  --muted: #46566f;
+  --surface: rgba(255, 255, 255, 0.86);
+  --surface-strong: #ffffff;
+  --line: rgba(31, 61, 122, 0.18);
+  --accent: #0b8fb8;
+  --accent-deep: #5a4fd6;
+  --accent-soft: rgba(11, 143, 184, 0.12);
+  --warm: #0b6e8c;
+  --shadow:
+    0 1px 2px rgba(16, 42, 90, 0.08),
+    0 18px 44px rgba(16, 42, 90, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --bg: var(--canvas);
+  --text: var(--ink);
+  --text-muted: var(--muted);
+  --border: var(--line);
+  --focus-ring: rgba(11, 143, 184, 0.45);
+}
+
+:root[data-theme="light"] body {
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 18% 12%, rgba(27, 212, 255, 0.1), transparent 24%),
+    radial-gradient(circle at 84% 10%, rgba(122, 108, 255, 0.1), transparent 20%),
+    linear-gradient(180deg, #e9eff9 0%, #f5f8ff 48%, #e9eff9 100%);
+}
+
+:root[data-theme="light"] body::before {
+  opacity: 0.1;
+  mix-blend-mode: multiply;
+}
+
+:root[data-theme="light"] body::after {
+  opacity: 0.1;
+}
+
+:root[data-theme="light"] .site-header {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+:root[data-theme="light"] .site-nav a,
+:root[data-theme="light"] .site-nav summary,
+:root[data-theme="light"] .site-nav-toggle,
+:root[data-theme="light"] .theme-toggle,
+:root[data-theme="light"] .secondary-button,
+:root[data-theme="light"] .prompt-pill {
+  background: #ffffff;
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+:root[data-theme="light"] .site-nav a,
+:root[data-theme="light"] .site-nav summary {
+  color: var(--muted);
+}
+
+:root[data-theme="light"] .site-nav a:hover,
+:root[data-theme="light"] .site-nav summary:hover,
+:root[data-theme="light"] .theme-toggle:hover,
+:root[data-theme="light"] .secondary-button:hover,
+:root[data-theme="light"] .prompt-pill:hover {
+  background: #eef3fb;
+  border-color: rgba(11, 143, 184, 0.4);
+}
+
+:root[data-theme="light"] .hero,
+:root[data-theme="light"] .section-block,
+:root[data-theme="light"] .panel,
+:root[data-theme="light"] .module-card,
+:root[data-theme="light"] .lesson-card,
+:root[data-theme="light"] .hero-panel,
+:root[data-theme="light"] .chapter-card,
+:root[data-theme="light"] .note-card,
+:root[data-theme="light"] .citation-card,
+:root[data-theme="light"] .quiz-card,
+:root[data-theme="light"] .flashcard,
+:root[data-theme="light"] .metric-card,
+:root[data-theme="light"] .insight-card,
+:root[data-theme="light"] .path-step-card,
+:root[data-theme="light"] .skill-gap-card,
+:root[data-theme="light"] .project-submission-card,
+:root[data-theme="light"] .audience-card,
+:root[data-theme="light"] .progression-shell,
+:root[data-theme="light"] .progression-step-card {
+  background: linear-gradient(180deg, #ffffff, #eef3fb);
+  border-color: var(--line);
+}
+
+:root[data-theme="light"] .hero,
+:root[data-theme="light"] .about-hero,
+:root[data-theme="light"] .analytics-hero,
+:root[data-theme="light"] .simulation-hero {
+  background:
+    radial-gradient(circle at top left, rgba(27, 212, 255, 0.12), transparent 30%),
+    radial-gradient(circle at 80% 6%, rgba(122, 108, 255, 0.12), transparent 26%),
+    linear-gradient(180deg, #ffffff, #eef3fb);
+}
+
+:root[data-theme="light"] .emphasis-card {
+  background: linear-gradient(180deg, rgba(11, 143, 184, 0.12), #ffffff);
+  border-color: rgba(11, 143, 184, 0.28);
+}
+
+:root[data-theme="light"] textarea,
+:root[data-theme="light"] select,
+:root[data-theme="light"] input:not([type="range"]),
+:root[data-theme="light"] .note-input {
+  color: var(--ink);
+  background: #ffffff;
+  border-color: var(--line);
+}
+
+:root[data-theme="light"] .site-footer {
+  background: linear-gradient(180deg, #ffffff, #eef3fb);
+}
+
+:root[data-theme="light"] .status-pill,
+:root[data-theme="light"] .module-chip,
+:root[data-theme="light"] .simulation-chip {
+  background: #eef3fb;
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+:root[data-theme="light"] .governance-table thead th {
+  background: #e6edf9;
+  color: var(--ink);
+}
+
+:root[data-theme="light"] .footer-link,
+:root[data-theme="light"] .footer-link-list a {
+  color: #0b6e8c;
+}
+
+/* Light theme, extended to the interactive studios (builder / arena /
+   simulations / video / transcript) so the content pages read coherently. The
+   floating assistant chat keeps its dark styling by design. */
+:root[data-theme="light"] .arena-score-card,
+:root[data-theme="light"] .arena-result-card,
+:root[data-theme="light"] .arena-challenge-card,
+:root[data-theme="light"] .builder-result-card,
+:root[data-theme="light"] .builder-scenario-card,
+:root[data-theme="light"] .empty-state-card,
+:root[data-theme="light"] .simulation-card,
+:root[data-theme="light"] .simulation-state-card,
+:root[data-theme="light"] .simulation-detail-item,
+:root[data-theme="light"] .simulation-lab,
+:root[data-theme="light"] .simulation-mini-card,
+:root[data-theme="light"] .simulation-metric-tile,
+:root[data-theme="light"] .simulation-routing-node,
+:root[data-theme="light"] .simulation-sidebar-card,
+:root[data-theme="light"] .simulation-launch-card,
+:root[data-theme="light"] .simulation-card-preview,
+:root[data-theme="light"] .video-status-banner,
+:root[data-theme="light"] .transcript-panel,
+:root[data-theme="light"] .inset-panel {
+  background: linear-gradient(180deg, #ffffff, #eef3fb);
+  border-color: var(--line);
+}
+
+:root[data-theme="light"] .builder-canvas {
+  background:
+    radial-gradient(circle at top, rgba(11, 143, 184, 0.08), transparent 34%),
+    linear-gradient(180deg, #ffffff, #eef3fb);
+}
+
+:root[data-theme="light"] .builder-slot {
+  background: #ffffff;
+  border-color: var(--line);
+}
+
+:root[data-theme="light"] .transcript-segment,
+:root[data-theme="light"] .simulation-lab-panel {
+  background: #f5f8ff;
+  border-color: var(--line);
 }

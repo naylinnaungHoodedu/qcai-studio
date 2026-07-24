@@ -7,6 +7,15 @@ import { useEffect, useRef, useState } from "react";
 import { closeOpenNavGroups } from "@/lib/nav-disclosure";
 import { PRIMARY_NAV_ITEMS } from "@/lib/navigation";
 
+// A nav target is "active" when the current path is that page or lives under it,
+// so learners always see where they are. Home ("/") only matches exactly.
+function isActiveHref(pathname: string, href: string): boolean {
+  if (href === "/") {
+    return pathname === "/";
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export function PrimaryNav() {
   const pathname = usePathname();
   const shellRef = useRef<HTMLDivElement>(null);
@@ -79,17 +88,38 @@ export function PrimaryNav() {
         {PRIMARY_NAV_ITEMS.map((item) =>
           "children" in item ? (
             <details className="site-nav-group" key={item.label}>
-              <summary>{item.label}</summary>
+              <summary
+                className={
+                  item.children.some((child) => isActiveHref(pathname, child.href)) ? "is-active" : undefined
+                }
+              >
+                {item.label}
+              </summary>
               <div className="site-subnav" role="group" aria-label={`${item.label} links`}>
-                {item.children.map((child) => (
-                  <Link href={child.href} key={child.href} onClick={handleNavAction}>
-                    {child.label}
-                  </Link>
-                ))}
+                {item.children.map((child) => {
+                  const active = isActiveHref(pathname, child.href);
+                  return (
+                    <Link
+                      aria-current={active ? "page" : undefined}
+                      className={active ? "is-active" : undefined}
+                      href={child.href}
+                      key={child.href}
+                      onClick={handleNavAction}
+                    >
+                      {child.label}
+                    </Link>
+                  );
+                })}
               </div>
             </details>
           ) : (
-            <Link href={item.href} key={item.href} onClick={handleNavAction}>
+            <Link
+              aria-current={isActiveHref(pathname, item.href) ? "page" : undefined}
+              className={isActiveHref(pathname, item.href) ? "is-active" : undefined}
+              href={item.href}
+              key={item.href}
+              onClick={handleNavAction}
+            >
               {item.label}
             </Link>
           ),

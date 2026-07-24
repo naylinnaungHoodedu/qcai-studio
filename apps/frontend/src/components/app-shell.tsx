@@ -4,6 +4,7 @@ import { ReactNode } from "react";
 import { PrimaryNav } from "@/components/primary-nav";
 import { SiteFooter } from "@/components/site-footer";
 import { TeachingAssistantChat } from "@/components/teaching-assistant-chat";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -20,7 +21,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             Hardware-constrained learning for quantum computing and artificial intelligence
           </p>
         </div>
-        <PrimaryNav />
+        <div className="site-header-actions">
+          <ThemeToggle />
+          <PrimaryNav />
+        </div>
       </header>
       <main id="main-content">{children}</main>
       <SiteFooter />
