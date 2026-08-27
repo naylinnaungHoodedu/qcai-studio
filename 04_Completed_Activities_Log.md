@@ -1,8 +1,8 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-04-09 13:50:56 -04:00`
-Folder: `c:\Users\user\Downloads\Codex_Webapp_QC_AI_Studio`
+Last updated on: `2026-08-27 10:56:27 -04:00`
+Folder: `D:\QC_AI_Studio\Codex_Webapp_QC_AI_Studio`
 
 ## 1. Scope of Work Completed
 
@@ -6420,3 +6420,219 @@ Completed verification for this deployment:
 - live verification confirmed the `https://qantumlearn.academy` domain correctly serves the Next.js frontend with all UI/UX enhancements active.
 - the API domain successfully proxies traffic to the backend services.
 - verified that all DNSSEC and domain registration requirements were successfully configured on Google Cloud Domains.
+
+## 199. CS595 Repository Transformation, Verification, and GitHub Publication Completed
+
+**Completed on:** `2026-08-27 10:56:27 -04:00`
+**Repository:** `naylinnaungHoodedu/qcai-studio`
+**Scope authority:** `CS595_Software_Engineering_Project_Proposal_RevB_NayLinnAung.pdf`
+**Implementation commit:** `dfab1594fbaa4736ceb1955555eb28995eb8fce0`
+**Published branch:** `codex/log-responsive-production-batch`
+
+### 199.1 Proposal Decomposition and Repository Re-Study Completed
+
+The CS595 Revision B proposal was treated as the sole scope authority for this
+transformation. The proposal was read and normalized into a requirements model
+covering objectives O1-O6, research questions RQ1-RQ3, the enrollment-period
+engineering increment, corpus governance, security, testing, evaluation,
+deliverables, milestones, and acceptance criteria.
+
+Completed analysis activities:
+
+- performed a repository-wide inventory of the FastAPI backend, Next.js frontend,
+  persistence model, API routes, authentication paths, retrieval/Tutor services,
+  infrastructure, release tooling, tests, source assets, and adjacent evaluation
+  working data;
+- recorded a requirements traceability matrix with implemented, partial, missing,
+  and unknown status distinctions rather than treating pre-existing features as
+  automatic CS595 compliance;
+- documented target context, component, deployment, data-flow, use-case,
+  sequence, and class models;
+- identified the critical academic distinction in RevB §4.1: the deployed platform
+  is preliminary work, while the evaluated engineering increment and thesis
+  artifacts must be evidenced as enrollment-period work.
+
+The resulting principal-architect transformation record is:
+
+- `docs/CS595_REPOSITORY_TRANSFORMATION_BLUEPRINT.md`
+
+### 199.2 Durable Learner Record Increment Implemented
+
+The cross-device Learner Record foundation required by RevB §6.1 was implemented
+as an append-only, idempotent operation model rather than a last-write-wins
+dashboard aggregate.
+
+Completed backend work:
+
+- added `LearnerRecord`, `LearnerReplica`, and `LearnerRecordOperation` persistence
+  models;
+- added Alembic migration `20260827_cs595_increment.py`;
+- added `GET /learner-record` and `POST /learner-record/operations`;
+- restricted Learner Record mutation/read access to durable authenticated identities
+  rather than guest/demo identities;
+- implemented maximum-register mastery, set-union completions, grow-only
+  per-replica attempt counters, and logical-clock LWW semantics only for cursor and
+  preferences;
+- recorded operation IDs, payload hashes, replica IDs, causal vectors, and logical
+  counters to make replay detectable and operations idempotent;
+- connected durable-account quiz outcomes to the authoritative Learner Record;
+- added frontend contracts and a browser replica/logical-clock operation builder.
+
+Principal implementation paths:
+
+- `apps/api/app/services/learner_record.py`
+- `apps/api/app/api/routes/learner_record.py`
+- `apps/api/app/db_models.py`
+- `apps/frontend/src/lib/learner-record-sync.ts`
+
+### 199.3 Persistent Grounded Tutor Increment Implemented
+
+The Tutor was upgraded from an interaction-only surface to a persistent,
+provenance-aware service boundary.
+
+Completed Tutor work:
+
+- added persistent Tutor thread, message, and turn records;
+- added thread create/list/read operations and persistent thread identifiers in the
+  existing chat contract;
+- resolved short follow-up questions against persisted conversation state and stored
+  the resolved query for audit;
+- separated pedagogical guidance derived from learner state from the factual query
+  used for retrieval;
+- implemented a conservative claim gate that binds factual answer sentences to
+  retrieved spans or returns a transparent abstention decision;
+- made local-provider degradation use an extractive evidence digest rather than an
+  unlabelled parametric answer;
+- added content-addressed citation provenance: stable span ID, excerpt hash, corpus
+  manifest version, retrieval mode, policy version, decision reason, citations, and
+  claims are persisted per Tutor turn;
+- updated the Tutor UI to resume the learner's latest persisted thread and report
+  grounding decisions through analytics metadata.
+
+Principal implementation paths:
+
+- `apps/api/app/services/tutor_orchestrator.py`
+- `apps/api/app/services/claim_gate.py`
+- `apps/api/app/services/provenance.py`
+- `apps/api/app/services/teaching_assistant.py`
+- `apps/frontend/src/components/teaching-assistant-chat.tsx`
+
+### 199.4 Corpus Governance and Public-Release Boundary Implemented
+
+The repository now fails closed in non-development environments until public source
+assets are affirmatively reviewed. This implements the RevB requirement to separate
+publicly served open/permissive material from the private evaluation corpus.
+
+Completed governance work:
+
+- added `corpus/public/manifest.json` as the reviewed public-service allowlist
+  contract;
+- added `corpus/license-register.csv` with the required per-item fields;
+- added `corpus/private/README.md` defining non-distribution and controlled-use
+  requirements for licensed evaluation material;
+- added runtime `CorpusRegistry` validation and source-asset serving enforcement;
+- configured non-development runtime examples to set
+  `ENFORCE_CORPUS_GOVERNANCE=true`;
+- added release-packaging preflight so `tools/package_release.py` stops before
+  packaging public media when configured assets lack manifest approval;
+- documented the intentionally empty manifest as a pending legal/library review,
+  rather than fabricating a license determination.
+
+### 199.5 LQS, Evaluation Harness, and Research Artifacts Implemented
+
+The repository now contains the reusable evaluation framework required to perform,
+but not yet falsely claim completion of, RevB §§8.1-8.5.
+
+Completed evaluation work:
+
+- added LQS schema, rubric, draft manifest, protected ratings boundary, and a strict
+  validator that requires 120-200 items and all required strata at freeze time;
+- added evaluator modules for LQS loading, retrieval sufficiency, citation
+  existence, claim taxonomy, citation faithfulness, fabrication rate, correct
+  abstention, multi-turn abstention decay, RQ2 invariance, four-arm ablation parity,
+  Wilson intervals, paired McNemar tests, and reproducibility-report generation;
+- added `scripts/validate_lqs.py`, `scripts/validate_corpus.py`, and
+  `scripts/run_evaluation.py`;
+- added the seven required ADRs, PlantUML package, target architecture specification,
+  testing strategy, evaluation protocol, security threat model, thesis artifact
+  register, implementation status document, and transformation blueprint;
+- added GitHub Actions quality gates for backend/evaluation tests, frontend lint and
+  integration tests, corpus/LQS draft validation, and Python dependency audit.
+
+Primary artifact roots:
+
+- `lqs/`
+- `evaluation/`
+- `scripts/`
+- `docs/adr/`
+- `docs/uml/`
+- `docs/testing/`
+- `docs/evaluation/`
+- `.github/workflows/ci.yml`
+
+### 199.6 Verification Completed
+
+The completed transformation was verified locally after implementation.
+
+Completed verification results:
+
+- `python -m pytest -q apps/api/tests evaluation/tests`
+  - result: `94 passed`;
+- `npm run test:integration` in `apps/frontend`
+  - result: `107 passed`;
+- `npm run lint` in `apps/frontend`
+  - result: passed with no lint errors;
+- `python -m compileall -q apps/api/app evaluation scripts`
+  - result: passed;
+- `python scripts/validate_corpus.py`
+  - result: passed for the reviewed-manifest template;
+- `python scripts/validate_lqs.py --allow-draft`
+  - result: passed for the pre-freeze draft state;
+- Git whitespace validation
+  - result: `git diff --check` passed before commit.
+
+The increment-specific tests include durable-session endpoint access, idempotent
+replay rejection, divergent replica merge behavior, no lost completion/attempt
+outcomes, logical-clock cursor resolution, persistent Tutor follow-up resolution,
+claim/span provenance, and production corpus allowlist behavior.
+
+### 199.7 GitHub Publication Completed
+
+The implementation was committed and published without force-pushing or altering
+the repository's `main` branch.
+
+Completed version-control activities:
+
+- staged the complete transformation package: 83 files changed, 3,230 additions,
+  and 40 deletions;
+- committed with message:
+  - `feat: implement CS595 grounding and learner record increment`;
+- pushed commit `dfab1594fbaa4736ceb1955555eb28995eb8fce0` to:
+  - `origin/codex/log-responsive-production-batch`;
+- verified that the local branch and remote tracking branch are synchronized;
+- intentionally left `origin/main` unchanged for normal review/merge handling.
+
+### 199.8 Explicitly Not Logged as Completed
+
+The following RevB gates remain pending external evidence or future execution and
+are deliberately not represented as completed work:
+
+- reviewed, populated corpus license register and written library determination;
+- final public corpus allowlist and resulting production service/release approval;
+- frozen 120-200 item LQS, full rating set, independent second-rater subsample,
+  Cohen's kappa confidence interval, and adjudications;
+- completed four-arm experimental results and publication-quality figures;
+- target-browser E2E, formal accessibility, performance, and dependency-scan
+  reports retained as G2/G3 evidence;
+- IRB determination, consent/task scripts, and moderated usability results;
+- adviser/committee approval, thesis-equivalent manuscript, mock defense, and
+  final CS595 defense/submission artifacts.
+
+Current status is recorded separately in:
+
+- `docs/CS595_IMPLEMENTATION_STATUS.md`
+
+This entry records completed engineering, documentation, verification, and GitHub
+publication activities accurately while preserving the proposal's distinction between
+implemented foundations and evidence that still must be collected for CS595
+completion.
