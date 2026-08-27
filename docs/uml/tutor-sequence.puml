@@ -1,0 +1,20 @@
+@startuml
+actor Learner
+participant "Tutor orchestrator" as Tutor
+participant "Pedagogical context" as Pedagogy
+participant "Retrieval gateway" as Retrieval
+participant "Claim gate" as Gate
+database "Tutor provenance" as Store
+Learner -> Tutor : message + thread ID
+Tutor -> Pedagogy : style guidance only
+Tutor -> Retrieval : resolved factual query
+Retrieval --> Tutor : immutable evidence spans
+Tutor -> Gate : answer + span IDs
+alt all claims bound
+  Gate -> Store : claims, citations, policy version
+  Gate --> Learner : answer + citations
+else weak evidence or failed binding
+  Gate -> Store : abstention decision/reason
+  Gate --> Learner : transparent abstention
+end
+@enduml

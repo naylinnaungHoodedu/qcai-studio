@@ -1,0 +1,19 @@
+@startuml
+title Data-flow and trust boundary
+rectangle "Learner personal state" as P
+rectangle "Pedagogical channel" as G
+rectangle "Approved corpus spans" as E
+rectangle "Retrieval and claim gate" as R
+rectangle "Model prompt / answer" as M
+rectangle "Private evaluation outputs" as V
+P --> G : style only
+E --> R : evidence + version
+G -[hidden]-> R
+R --> M : evidence, never learner facts as proof
+M --> R : candidate claims/citations
+R --> V : provenance and metrics
+note right of R
+Only approved spans support
+factual claims or citations.
+end note
+@enduml

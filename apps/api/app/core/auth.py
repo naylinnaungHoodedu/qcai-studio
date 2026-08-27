@@ -92,3 +92,15 @@ def require_role(*allowed_roles: str):
         return user
 
     return dependency
+
+
+def require_durable_learner(user: AuthUser = Depends(get_current_user)) -> AuthUser:
+    """Reject browser-only guest/demo identities from the cross-device record boundary."""
+    if user.provider in {"guest", "demo"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A signed-in durable account is required for the Learner Record.",
+        )
+    if user.role not in {"learner", "admin"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Learner role is required.")
+    return user

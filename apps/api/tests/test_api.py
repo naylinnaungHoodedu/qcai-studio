@@ -381,13 +381,15 @@ def test_qa_returns_citations():
     data = response.json()
     assert data["citations"]
     assert data["answer"]
+    assert all(citation["span_id"].startswith("span-") for citation in data["citations"])
+    assert all(citation["content_hash"] for citation in data["citations"])
     assert not ({citation["source_title"] for citation in data["citations"]} & RAW_DOCUMENT_TITLES)
 
 
 def test_assistant_chat_returns_vertex_backed_contract(monkeypatch):
-    class StubAssistant:
-        def chat(self, message: str, **_: object):
-            assert message == "How should I study routing depth?"
+    class StubTutor:
+        def chat(self, _db, _user, payload):
+            assert payload.message == "How should I study routing depth?"
             return AssistantChatResponse(
                 answer="Start with routing as a hardware constraint, then compare graph shrinking and baseline checks [1].",
                 citations=[
@@ -406,7 +408,7 @@ def test_assistant_chat_returns_vertex_backed_contract(monkeypatch):
                 grounded=True,
             )
 
-    monkeypatch.setattr(assistant, "get_teaching_assistant", lambda: StubAssistant())
+    monkeypatch.setattr(assistant, "get_tutor_orchestrator", lambda: StubTutor())
 
     user_headers = {"x-demo-user": f"assistant-{uuid4().hex[:8]}", "x-demo-role": "learner"}
     response = client.post(
@@ -433,13 +435,11 @@ def test_assistant_chat_returns_vertex_backed_contract(monkeypatch):
 def test_assistant_chat_truncates_oversized_history_instead_of_rejecting_it(monkeypatch):
     oversized_history = "A" * 4501
 
-    class StubAssistant:
-        def chat(self, message: str, **kwargs: object):
-            history = kwargs["history"]
-            assert history is not None
-            assert len(history) == 2
-            assert history[0].content == "Tell me about routing depth."
-            assert history[1].content == oversized_history[:4000]
+    class StubTutor:
+        def chat(self, _db, _user, payload):
+            assert len(payload.history) == 2
+            assert payload.history[0].content == "Tell me about routing depth."
+            assert payload.history[1].content == oversized_history[:4000]
             return AssistantChatResponse(
                 answer="Noise and routing overhead both matter [1].",
                 citations=[
@@ -458,7 +458,7 @@ def test_assistant_chat_truncates_oversized_history_instead_of_rejecting_it(monk
                 grounded=True,
             )
 
-    monkeypatch.setattr(assistant, "get_teaching_assistant", lambda: StubAssistant())
+    monkeypatch.setattr(assistant, "get_tutor_orchestrator", lambda: StubTutor())
 
     user_headers = {"x-demo-user": f"assistant-{uuid4().hex[:8]}", "x-demo-role": "learner"}
     response = client.post(

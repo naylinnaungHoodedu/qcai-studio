@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.auth import AuthUser, get_current_user
+from app.core.corpus_governance import get_corpus_registry
 from app.core.config import Settings, get_settings
 from app.core.db import get_db
 from app.services.local_accounts import AUTH_SESSION_COOKIE_NAME
@@ -48,6 +49,7 @@ def _require_asset_access(
 
 def _resolve_asset_path(filename: str) -> Path:
     settings = get_settings()
+    get_corpus_registry(settings).require_public_asset(filename)
     allowed_paths = settings.source_documents + settings.source_videos
     for path in allowed_paths:
         if path.name == filename and path.exists():
@@ -60,6 +62,7 @@ def _resolve_asset_path_by_id(asset_id: str) -> Path:
     allowed_paths = settings.source_documents + settings.source_videos
     for path in allowed_paths:
         if asset_id in source_asset_lookup_ids(path.name) and path.exists():
+            get_corpus_registry(settings).require_public_asset(path.name)
             return path
     raise HTTPException(status_code=404, detail="Source asset not found.")
 

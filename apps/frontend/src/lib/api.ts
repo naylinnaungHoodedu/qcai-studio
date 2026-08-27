@@ -14,6 +14,8 @@ import {
   CourseProgress,
   CourseOverview,
   LearningDashboard,
+  LearnerRecord,
+  LearnerRecordOperation,
   LearningPulse,
   LearnerProfile,
   LessonDetail,
@@ -32,6 +34,8 @@ import {
   ServiceHealth,
   SkillGapReport,
   SupportRequestReceipt,
+  TutorThread,
+  TutorThreadDetail,
   UserProfile,
 } from "@/lib/types";
 import { normalizeAssistantHistory } from "@/lib/assistant-chat";
@@ -265,6 +269,7 @@ export async function askQuestion(
 
 export async function chatWithTeachingAssistant(payload: {
   message: string;
+  thread_id?: string | null;
   lesson_slug?: string | null;
   page_path?: string | null;
   history?: AssistantChatMessage[];
@@ -274,11 +279,40 @@ export async function chatWithTeachingAssistant(payload: {
     method: "POST",
     body: JSON.stringify({
       message: payload.message,
+      thread_id: payload.thread_id ?? null,
       lesson_slug: payload.lesson_slug ?? null,
       page_path: payload.page_path ?? null,
       history: normalizeAssistantHistory(payload.history ?? []),
       top_k: payload.top_k ?? 4,
     }),
+  });
+}
+
+export async function fetchTutorThreads(): Promise<TutorThread[]> {
+  return apiFetch<TutorThread[]>("/assistant/threads");
+}
+
+export async function fetchTutorThread(threadId: string): Promise<TutorThreadDetail> {
+  return apiFetch<TutorThreadDetail>(`/assistant/threads/${encodeURIComponent(threadId)}`);
+}
+
+export async function createTutorThread(title?: string): Promise<TutorThread> {
+  return apiFetch<TutorThread>("/assistant/threads", {
+    method: "POST",
+    body: JSON.stringify({ title: title ?? null }),
+  });
+}
+
+export async function fetchLearnerRecord(): Promise<LearnerRecord> {
+  return apiFetch<LearnerRecord>("/learner-record");
+}
+
+export async function postLearnerRecordOperations(
+  operations: LearnerRecordOperation[],
+): Promise<{ receipts: Array<{ operation_id: string; status: "applied" | "duplicate" }>; record: LearnerRecord }> {
+  return apiFetch("/learner-record/operations", {
+    method: "POST",
+    body: JSON.stringify({ operations }),
   });
 }
 

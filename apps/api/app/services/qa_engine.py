@@ -3,7 +3,9 @@ from langchain_openai import ChatOpenAI
 
 from app.core.config import Settings
 from app.schemas import Citation, QAResponse
+from app.services.claim_gate import ClaimGate, evidence_digest
 from app.services.retrieval_engine import RetrievalEngine
+from app.services.provenance import evidence_provenance
 from app.services.text_utils import truncate_display_excerpt
 
 
@@ -11,21 +13,34 @@ class QAEngine:
     def __init__(self, retrieval_engine: RetrievalEngine, settings: Settings):
         self.retrieval_engine = retrieval_engine
         self.settings = settings
+        self.claim_gate = ClaimGate()
 
     def ask(self, question: str, lesson_slug: str | None = None, top_k: int = 4) -> QAResponse:
         retrieval = self.retrieval_engine.search(question, lesson_slug=lesson_slug, top_k=top_k)
         hits = retrieval.results
-        citations = [
-            Citation(
+        citations = []
+        for hit in hits:
+            span_id, content_hash, corpus_version = evidence_provenance(
+                settings=self.settings,
                 chunk_id=hit.chunk_id,
                 source_title=hit.source_title,
                 source_kind=hit.source_kind,
-                section_title=hit.title,
-                excerpt=truncate_display_excerpt(hit.excerpt, 320),
+                excerpt=hit.excerpt,
                 timestamp_label=hit.timestamp_label,
             )
-            for hit in hits
-        ]
+            citations.append(
+                Citation(
+                    chunk_id=hit.chunk_id,
+                    span_id=span_id,
+                    corpus_version=corpus_version,
+                    content_hash=content_hash,
+                    source_title=hit.source_title,
+                    source_kind=hit.source_kind,
+                    section_title=hit.title,
+                    excerpt=truncate_display_excerpt(hit.excerpt, 320),
+                    timestamp_label=hit.timestamp_label,
+                )
+            )
         if not hits:
             return QAResponse(
                 answer="I could not ground an answer in the indexed course sources. Try a more specific question about routing, QUBO optimization, quantum kernels, thermodynamic quantum agents, or another named topic from the course.",
@@ -39,7 +54,9 @@ class QAEngine:
         else:
             answer = self._fallback_answer(question, citations)
             mode = "semantic-grounded-fallback" if retrieval.mode == "hybrid-pinecone" else "local-grounded-fallback"
-        return QAResponse(answer=answer, citations=citations, retrieval_mode=mode)
+        answer_to_gate = answer if self.settings.openai_api_key else evidence_digest(citations)
+        gate_result = self.claim_gate.evaluate(answer_to_gate, citations)
+        return QAResponse(answer=gate_result.answer, citations=citations, retrieval_mode=mode)
 
     def _ask_with_openai(self, question: str, citations: list[Citation]) -> str:
         llm = ChatOpenAI(

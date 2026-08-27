@@ -1,0 +1,19 @@
+@startuml
+node "Learner browser" as Browser
+node "CDN / TLS / WAF" as Edge
+node "Next.js service" as FE
+node "FastAPI service" as API
+database "Managed PostgreSQL" as DB
+folder "Public / private object storage" as Store
+cloud "OIDC, vector, model providers" as Providers
+node "Private evaluation job" as Eval
+Browser --> Edge
+Edge --> FE
+FE --> API
+FE --> Providers : OIDC only
+API --> DB
+API --> Store
+API --> Providers
+Eval --> DB
+Eval --> Store
+@enduml

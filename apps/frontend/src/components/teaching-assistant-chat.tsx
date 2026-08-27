@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
 import { normalizeAssistantHistory } from "@/lib/assistant-chat";
-import { chatWithTeachingAssistant, postAnalyticsEvent } from "@/lib/api";
+import { chatWithTeachingAssistant, fetchTutorThread, fetchTutorThreads, postAnalyticsEvent } from "@/lib/api";
 import { AssistantChatMessage, AssistantChatResponse } from "@/lib/types";
 
 type ChatBubble = {
@@ -95,6 +95,7 @@ export function TeachingAssistantChat() {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<ChatBubble[]>(() => [buildWelcomeMessage()]);
   const [isSending, setIsSending] = useState(false);
+  const [threadId, setThreadId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -108,6 +109,39 @@ export function TeachingAssistantChat() {
     });
     return () => cancelAnimationFrame(frame);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || threadId) {
+      return;
+    }
+    let active = true;
+    void fetchTutorThreads()
+      .then(async (threads) => {
+        const latest = threads[0];
+        if (!latest || !active) {
+          return;
+        }
+        const detail = await fetchTutorThread(latest.id);
+        if (!active) {
+          return;
+        }
+        setThreadId(detail.id);
+        if (detail.messages.length) {
+          setMessages(
+            detail.messages.map((message) => ({
+              id: message.id,
+              role: message.role,
+              content: message.content,
+              createdAt: message.created_at,
+            })),
+          );
+        }
+      })
+      .catch(() => null);
+    return () => {
+      active = false;
+    };
+  }, [isOpen, threadId]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -162,10 +196,14 @@ export function TeachingAssistantChat() {
     try {
       const response = await chatWithTeachingAssistant({
         message,
+        thread_id: threadId,
         lesson_slug: lessonSlug,
         page_path: pathname,
         history,
       });
+      if (response.thread_id) {
+        setThreadId(response.thread_id);
+      }
 
       const assistantBubble: ChatBubble = {
         id: buildMessageId("assistant"),
@@ -180,6 +218,8 @@ export function TeachingAssistantChat() {
         provider: response.provider,
         model: response.model,
         citation_count: response.citations.length,
+        tutor_thread_id: response.thread_id ?? null,
+        grounding_decision: response.decision ?? "answer",
       }).catch(() => null);
     } catch (nextError) {
       const messageText = toErrorMessage(nextError);
@@ -314,7 +354,7 @@ export function TeachingAssistantChat() {
               </button>
             </div>
             <p className="assistant-compose-note muted" id="assistant-compose-note">
-              Ask me about qubits, gates, algorithms, or our course materials.
+              Ask me about qubits, gates, algorithms, or our course materials. I cite approved course evidence and will say when the evidence is not strong enough to answer.
             </p>
             {error ? <p className="assistant-compose-error">{error}</p> : null}
           </form>

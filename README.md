@@ -2,6 +2,15 @@
 
 This repository now contains a working MVP implementation of the interactive QC+AI learning platform described in the local specifications.
 
+## CS595 modernization status
+
+The CS595 implementation plan is maintained in [`docs/CS595_REPOSITORY_TRANSFORMATION_BLUEPRINT.md`](docs/CS595_REPOSITORY_TRANSFORMATION_BLUEPRINT.md). The existing platform remains preliminary work under the approved proposal framing; the documented enrollment-period increment is tracked through the durable Learner Record, persistent grounded Tutor, corpus-governance boundary, LQS/evaluation harness, ADRs, UML, and CI evidence introduced by that plan.
+
+- `corpus/public/manifest.json` is the public-service allowlist. Non-development deployments fail closed until every served asset has a reviewed license entry. Restricted evaluation material belongs outside this repository under the `corpus/private/README.md` policy.
+- `lqs/` and `evaluation/` contain the public schema/rubric/harness only. `python scripts/validate_lqs.py --allow-draft` validates the pre-freeze instrument; removing that flag is the 120-200 item freeze gate.
+- `python scripts/validate_corpus.py --check-public-assets` is required before public source/media release packaging. `tools/package_release.py` calls it automatically and will stop until the license register is complete.
+- The persistent Tutor records thread, resolved query, retrieval mode, claim/span bindings, abstention decision, corpus version, and policy version. The Learner Record uses idempotent logical-clock operations rather than last-write-wins for learning progress.
+
 ## Challenge Submission
 
 - Project name: `QC+AI Studio`
@@ -72,7 +81,7 @@ Canonical fixture files:
   - `Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4`
   - `Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4`
 
-The current public curriculum is intentionally scoped to twelve curated DOCX sources and twelve curated MP4 lesson assets, with the routing-and-optimization, hybrid-applications, representation-language, and thermodynamics lessons now grounded in the dedicated Module 2, Module 3, Module 4, and Module 6 source pairs under `update_data/`.
+The checked-in curriculum source set contains twelve DOCX files and twelve MP4 lesson assets, with the routing-and-optimization, hybrid-applications, representation-language, and thermodynamics lessons aligned to dedicated Module 2, Module 3, Module 4, and Module 6 source pairs under `update_data/`. They are **pre-review assets**, not automatically approved public corpus material: production service startup and public release packaging stay blocked until each item is entered into the reviewed corpus manifest and license register.
 
 ## Roadmap to Full Academy (v2-Q3 2026)
 

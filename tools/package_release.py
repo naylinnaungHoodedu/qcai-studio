@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import zipfile
 
 
@@ -59,6 +60,11 @@ CORE_REPO_PATHS = [
     Path("transcripts"),
     Path("seeds"),
     Path("tools"),
+    Path("docs"),
+    Path("corpus"),
+    Path("evaluation"),
+    Path("lqs"),
+    Path("scripts"),
     Path("hydrate-assets.sh"),
 ]
 
@@ -71,6 +77,15 @@ def _assert_curated_assets_exist() -> None:
     missing = [path for path in CURATED_DOCX + CURATED_VIDEOS if not (REPO_ROOT / path).exists()]
     if missing:
         raise FileNotFoundError(f"Missing curated assets: {', '.join(str(path) for path in missing)}")
+
+
+def _assert_public_release_assets_are_approved() -> None:
+    """Never produce a public bundle until the corpus license gate passes."""
+    subprocess.run(
+        [sys.executable, "scripts/validate_corpus.py", "--check-public-assets"],
+        cwd=REPO_ROOT,
+        check=True,
+    )
 
 
 def _assert_videos_are_hydrated() -> None:
@@ -105,6 +120,13 @@ def _iter_files(root: Path) -> list[Path]:
         if any(part in {"node_modules", ".next", "__pycache__", ".pytest_cache", "dist"} for part in path.parts):
             continue
         if path.name.startswith("qcai_dev.db"):
+            continue
+        relative_path = path.relative_to(REPO_ROOT)
+        if relative_path.parts[:2] in {("corpus", "private"), ("lqs", "private")}:
+            continue
+        if relative_path.parts[:3] == ("docs", "thesis", "ethics") and "private" in relative_path.parts:
+            continue
+        if path.name.endswith(".private.json") or path.name.endswith(".private.jsonl"):
             continue
         files.append(path)
     return files
@@ -152,6 +174,7 @@ def _build_release_notes(part1_name: str, part2_name: str) -> str:
 
 - Seeded demo activity in project, builder, and arena surfaces is explicitly labeled and derived from fictional audit personas documented on `/audit-fixtures`.
 - The release bundles preserve repo-relative paths so hydration, playback, and source discovery behave the same way they do in a hydrated git clone.
+- Public release packaging is blocked unless every served asset is explicitly approved in `corpus/public/manifest.json`; private evaluation material is excluded.
 """
 
 
@@ -164,6 +187,7 @@ def _sha256(path: Path) -> str:
 
 
 def main() -> None:
+    _assert_public_release_assets_are_approved()
     _assert_curated_assets_exist()
     _assert_videos_are_hydrated()
 

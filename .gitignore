@@ -17,6 +17,14 @@ apps/api/qcai_dev.db
 **/qcai_dev.db-wal
 **/qcai_dev.db-journal
 
+# CS595 protected evaluation inputs and human-subject artifacts
+corpus/private/*
+!corpus/private/README.md
+lqs/private/
+lqs/ratings/*.private.jsonl
+docs/thesis/ethics/private/
+evaluation/reports/*.private.json
+
 # Logs
 *.log
 *.out.log

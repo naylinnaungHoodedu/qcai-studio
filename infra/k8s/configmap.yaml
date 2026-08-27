@@ -10,6 +10,9 @@ data:
   SITE_URL: "https://qantumlearn.academy"
   NEXT_PUBLIC_SITE_URL: "https://qantumlearn.academy"
   SOURCE_ASSETS_ROOT: "/app/source-assets"
+  CORPUS_MANIFEST_PATH: "/app/corpus/public/manifest.json"
+  ENFORCE_CORPUS_GOVERNANCE: "true"
+  GROUNDING_POLICY_VERSION: "cs595-v1"
   ALLOWED_ORIGINS: '["https://qantumlearn.academy"]'
   ENABLE_DEMO_AUTH: "false"
   NEXT_PUBLIC_ENABLE_DEMO_AUTH: "false"

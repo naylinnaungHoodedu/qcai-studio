@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "QC+AI Studio CS595 LQS item",
+  "type": "object",
+  "required": ["id", "stratum", "question", "expected_answerable", "expected_span_ids"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^ULQS-[A-Z]-[0-9]{3,}$"},
+    "stratum": {
+      "enum": [
+        "answerable_single_source",
+        "answerable_multi_hop",
+        "near_miss_outside_corpus",
+        "out_of_scope_adversarial",
+        "unanswerable_by_construction",
+        "multi_turn",
+        "progress_conditioned"
+      ]
+    },
+    "question": {"type": "string", "minLength": 1},
+    "expected_answerable": {"type": "boolean"},
+    "expected_span_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "conversation": {"type": "array", "items": {"type": "object"}},
+    "mastery_levels": {"type": "array", "items": {"enum": ["low", "medium", "high"]}, "uniqueItems": true},
+    "corpus_version": {"type": "string"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"expected_answerable": {"const": true}}},
+      "then": {"properties": {"expected_span_ids": {"minItems": 1}}}
+    },
+    {
+      "if": {"properties": {"stratum": {"const": "progress_conditioned"}}},
+      "then": {"properties": {"mastery_levels": {"const": ["low", "medium", "high"]}}}
+    }
+  ]
+}
