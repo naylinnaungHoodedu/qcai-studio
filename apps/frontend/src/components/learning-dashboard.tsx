@@ -186,7 +186,8 @@ export function LearningDashboardView({
           <h1>Your learning dashboard</h1>
           <p>
             Progress, motivation, focus, adaptive pacing, role-fit skill gaps, and AI coaching are all derived from your
-            real learning activity across lessons, games, and projects.
+            real learning activity across lessons, games, and projects. Motivation, focus, and consistency are shown on a
+            0&ndash;100 scale; they start from sensible defaults and sharpen as you complete lessons, quizzes, and practice.
           </p>
         </div>
         <div className="analytics-metric-grid">
@@ -197,12 +198,18 @@ export function LearningDashboardView({
           </article>
           <article className="metric-card">
             <span className="eyebrow">Motivation</span>
-            <strong>{dashboard.metrics.motivation_score}</strong>
+            <strong>
+              {dashboard.metrics.motivation_score}
+              <span className="metric-scale"> / 100</span>
+            </strong>
             <p>Momentum informed by your recent check-ins and completion rhythm.</p>
           </article>
           <article className="metric-card">
             <span className="eyebrow">Focus</span>
-            <strong>{dashboard.metrics.focus_score}</strong>
+            <strong>
+              {dashboard.metrics.focus_score}
+              <span className="metric-scale"> / 100</span>
+            </strong>
             <p>{dashboard.metrics.active_streak_days} active days in the current streak.</p>
           </article>
           <article className="metric-card">
@@ -238,7 +245,7 @@ export function LearningDashboardView({
               <p className="eyebrow">Analytics dashboard</p>
               <h2>Progress, focus, and motivation trends</h2>
             </div>
-            <span className="score-pill">Consistency {dashboard.metrics.consistency_score}</span>
+            <span className="score-pill">Consistency {dashboard.metrics.consistency_score} / 100</span>
           </div>
           <div className="analytics-band">
             {dashboard.activity.map((point) => (
@@ -254,6 +261,10 @@ export function LearningDashboardView({
               </div>
             ))}
           </div>
+          <p className="muted">
+            &ldquo;Mastery&rdquo; estimates how solid each module looks from your notes, quizzes, and practice. A
+            &ldquo;fragile&rdquo; label just means it is worth another pass before you build on it.
+          </p>
           <div className="stack">
             {dashboard.module_insights.map((insight) => (
               <article className="insight-card" key={insight.module_slug}>
@@ -346,6 +357,7 @@ export function LearningDashboardView({
               </label>
             </div>
             <textarea
+              aria-label="Most important outcome for this session"
               className="note-input"
               rows={3}
               placeholder="What is the most important outcome for this session?"
@@ -353,6 +365,7 @@ export function LearningDashboardView({
               onChange={(event) => setCheckIn((current) => ({ ...current, today_goal: event.target.value }))}
             />
             <textarea
+              aria-label="Current blocker"
               className="note-input"
               rows={3}
               placeholder="What is slowing you down right now?"
@@ -426,6 +439,7 @@ export function LearningDashboardView({
           </div>
           <form className="stack" onSubmit={handleCoachSubmit}>
             <textarea
+              aria-label="Prompt for the AI coach"
               className="note-input"
               rows={5}
               placeholder="Describe the concept, blocker, or draft plan you want feedback on."

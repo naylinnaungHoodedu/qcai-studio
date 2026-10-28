@@ -51,6 +51,7 @@ export function NotesPanel({ lessonSlug }: { lessonSlug: string }) {
       </div>
       <form className="stack" onSubmit={handleSubmit}>
         <textarea
+          aria-label="Lesson note"
           className="note-input"
           value={value}
           onChange={(event) => setValue(event.target.value)}

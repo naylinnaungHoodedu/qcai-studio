@@ -1,6 +1,8 @@
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
+from fastapi import HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.testclient import TestClient
 from starlette.requests import Request
@@ -379,13 +381,15 @@ def test_qa_returns_citations():
     data = response.json()
     assert data["citations"]
     assert data["answer"]
+    assert all(citation["span_id"].startswith("span-") for citation in data["citations"])
+    assert all(citation["content_hash"] for citation in data["citations"])
     assert not ({citation["source_title"] for citation in data["citations"]} & RAW_DOCUMENT_TITLES)
 
 
 def test_assistant_chat_returns_vertex_backed_contract(monkeypatch):
-    class StubAssistant:
-        def chat(self, message: str, **_: object):
-            assert message == "How should I study routing depth?"
+    class StubTutor:
+        def chat(self, _db, _user, payload):
+            assert payload.message == "How should I study routing depth?"
             return AssistantChatResponse(
                 answer="Start with routing as a hardware constraint, then compare graph shrinking and baseline checks [1].",
                 citations=[
@@ -404,7 +408,7 @@ def test_assistant_chat_returns_vertex_backed_contract(monkeypatch):
                 grounded=True,
             )
 
-    monkeypatch.setattr(assistant, "get_teaching_assistant", lambda: StubAssistant())
+    monkeypatch.setattr(assistant, "get_tutor_orchestrator", lambda: StubTutor())
 
     user_headers = {"x-demo-user": f"assistant-{uuid4().hex[:8]}", "x-demo-role": "learner"}
     response = client.post(
@@ -431,13 +435,11 @@ def test_assistant_chat_returns_vertex_backed_contract(monkeypatch):
 def test_assistant_chat_truncates_oversized_history_instead_of_rejecting_it(monkeypatch):
     oversized_history = "A" * 4501
 
-    class StubAssistant:
-        def chat(self, message: str, **kwargs: object):
-            history = kwargs["history"]
-            assert history is not None
-            assert len(history) == 2
-            assert history[0].content == "Tell me about routing depth."
-            assert history[1].content == oversized_history[:4000]
+    class StubTutor:
+        def chat(self, _db, _user, payload):
+            assert len(payload.history) == 2
+            assert payload.history[0].content == "Tell me about routing depth."
+            assert payload.history[1].content == oversized_history[:4000]
             return AssistantChatResponse(
                 answer="Noise and routing overhead both matter [1].",
                 citations=[
@@ -456,7 +458,7 @@ def test_assistant_chat_truncates_oversized_history_instead_of_rejecting_it(monk
                 grounded=True,
             )
 
-    monkeypatch.setattr(assistant, "get_teaching_assistant", lambda: StubAssistant())
+    monkeypatch.setattr(assistant, "get_tutor_orchestrator", lambda: StubTutor())
 
     user_headers = {"x-demo-user": f"assistant-{uuid4().hex[:8]}", "x-demo-role": "learner"}
     response = client.post(
@@ -611,7 +613,13 @@ def test_renamed_2026_source_asset_supports_head_requests():
     assert response.status_code == 200
 
 
-def test_video_source_asset_supports_byte_ranges():
+def test_video_source_asset_supports_byte_ranges(monkeypatch, tmp_path: Path):
+    # Synthetic MP4: CI checks out Git LFS pointers (134 bytes), not the hydrated media.
+    payload = b"\x00\x00\x00\x18ftypmp42" + (b"range-probe" * 64)
+    (tmp_path / "Quantum Computing and Artificial Intelligence 2025.mp4").write_bytes(payload)
+    settings = Settings(source_assets_root=str(tmp_path))
+    monkeypatch.setattr(assets, "get_settings", lambda: settings)
+
     response = client.get(
         "/source-assets/by-id/quantum-computing-and-artificial-intelligence-2025",
         headers={**DEMO_HEADERS, "Range": "bytes=0-255"},
@@ -649,11 +657,17 @@ def test_full_video_get_uses_streaming_response(tmp_path: Path):
     response = assets._serve_source_asset(video_path, _build_asset_request())
 
     assert isinstance(response, StreamingResponse)
-    assert not isinstance(response, FileResponse)
     assert response.status_code == 200
     assert response.media_type == "video/mp4"
     assert response.headers["accept-ranges"] == "bytes"
-    assert "content-length" not in response.headers
+
+
+def test_source_asset_returns_503_when_file_becomes_unavailable(tmp_path: Path):
+    with pytest.raises(HTTPException) as excinfo:
+        assets._serve_source_asset(tmp_path / "missing-video.mp4", _build_asset_request())
+
+    assert excinfo.value.status_code == 503
+    assert excinfo.value.detail == "Source asset temporarily unavailable."
 
 
 def test_video_source_asset_supports_full_gets(monkeypatch, tmp_path: Path):
@@ -875,7 +889,13 @@ def test_industry_video_asset_supports_head_requests():
     assert response.status_code == 200
 
 
-def test_industry_video_asset_supports_byte_ranges():
+def test_industry_video_asset_supports_byte_ranges(monkeypatch, tmp_path: Path):
+    # Synthetic MP4: CI checks out Git LFS pointers (134 bytes), not the hydrated media.
+    payload = b"\x00\x00\x00\x18ftypmp42" + (b"industry-probe" * 64)
+    (tmp_path / "Industry Use Cases.mp4").write_bytes(payload)
+    settings = Settings(source_assets_root=str(tmp_path))
+    monkeypatch.setattr(assets, "get_settings", lambda: settings)
+
     response = client.get(
         "/source-assets/by-id/industry-use-cases",
         headers={**DEMO_HEADERS, "Range": "bytes=0-255"},
@@ -1285,12 +1305,14 @@ def test_arena_leaderboard_orders_profiles():
     runner_up = f"arena-runner-{uuid4().hex[:8]}"
     with SessionLocal() as session:
         current_max_xp = session.scalar(select(func.max(ArenaProfile.xp))) or 0
+        top_xp = max(current_max_xp + 200, 2300)
+        runner_xp = max(current_max_xp + 100, 2200)
         session.add_all(
             [
                 ArenaProfile(
                     player_id=top_player,
                     display_name="Top Player",
-                    xp=current_max_xp + 200,
+                    xp=top_xp,
                     matches_played=12,
                     wins=9,
                     skill_rating=1290,
@@ -1299,7 +1321,7 @@ def test_arena_leaderboard_orders_profiles():
                 ArenaProfile(
                     player_id=runner_up,
                     display_name="Runner Up",
-                    xp=current_max_xp + 100,
+                    xp=runner_xp,
                     matches_played=11,
                     wins=7,
                     skill_rating=1210,

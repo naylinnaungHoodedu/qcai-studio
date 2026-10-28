@@ -1,3 +1,4 @@
+import logging
 import mimetypes
 from pathlib import Path
 from typing import Iterator
@@ -7,6 +8,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.auth import AuthUser, get_current_user
+from app.core.corpus_governance import get_corpus_registry
 from app.core.config import Settings, get_settings
 from app.core.db import get_db
 from app.services.local_accounts import AUTH_SESSION_COOKIE_NAME
@@ -14,6 +16,7 @@ from app.core.source_assets import source_asset_lookup_ids
 
 router = APIRouter(prefix="/source-assets", tags=["source-assets"])
 VIDEO_OPEN_ENDED_RANGE_CHUNK_SIZE = 8 * 1024 * 1024
+LOGGER = logging.getLogger("qcai.api.assets")
 MEDIA_TYPE_OVERRIDES = {
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
@@ -46,6 +49,7 @@ def _require_asset_access(
 
 def _resolve_asset_path(filename: str) -> Path:
     settings = get_settings()
+    get_corpus_registry(settings).require_public_asset(filename)
     allowed_paths = settings.source_documents + settings.source_videos
     for path in allowed_paths:
         if path.name == filename and path.exists():
@@ -58,6 +62,7 @@ def _resolve_asset_path_by_id(asset_id: str) -> Path:
     allowed_paths = settings.source_documents + settings.source_videos
     for path in allowed_paths:
         if asset_id in source_asset_lookup_ids(path.name) and path.exists():
+            get_corpus_registry(settings).require_public_asset(path.name)
             return path
     raise HTTPException(status_code=404, detail="Source asset not found.")
 
@@ -122,7 +127,11 @@ def _serve_source_asset(
     path: Path,
     request: Request,
 ) -> Response:
-    file_size = path.stat().st_size
+    try:
+        file_size = path.stat().st_size
+    except OSError:
+        LOGGER.warning("Source asset temporarily unavailable for %s", path, exc_info=True)
+        raise HTTPException(status_code=503, detail="Source asset temporarily unavailable.")
     media_type = _resolve_media_type(path)
     headers = {"Accept-Ranges": "bytes", "Content-Length": str(file_size)}
     range_header = request.headers.get("range")
@@ -151,12 +160,13 @@ def _serve_source_asset(
         return Response(status_code=200, media_type=media_type, headers=headers)
 
     if media_type.startswith("video/"):
-        headers = {"Accept-Ranges": "bytes"}
+        # Large video assets need chunked streaming on Cloud Run; eager file responses
+        # can fail on full-body GETs even when ranged delivery is healthy.
         return StreamingResponse(
             _iter_file_range(path, 0, file_size - 1),
             status_code=200,
             media_type=media_type,
-            headers=headers,
+            headers={"Accept-Ranges": "bytes"},
         )
 
     return FileResponse(path, media_type=media_type, headers=headers)

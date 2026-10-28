@@ -1,0 +1,14 @@
+@startuml
+class LearnerRecord { user_id; mastery; completed_items; attempt_counters; cursor; version_vector }
+class LearnerReplica { replica_id; last_logical_counter }
+class LearnerRecordOperation { operation_id; logical_counter; operation_type; payload_hash }
+class TutorThread { id; user_id; title }
+class TutorMessage { id; role; content }
+class TutorTurn { resolved_query; decision; citations; claims; policy_version }
+class EvidenceSpan { chunk_id; corpus_version }
+LearnerRecord "1" -- "*" LearnerRecordOperation
+LearnerReplica "1" -- "*" LearnerRecordOperation
+TutorThread "1" -- "*" TutorMessage
+TutorThread "1" -- "*" TutorTurn
+TutorTurn "1" -- "*" EvidenceSpan
+@enduml

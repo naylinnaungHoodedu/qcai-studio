@@ -54,6 +54,15 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Apply the saved theme before paint so there is no light/dark flash.
+            Nonce'd so it satisfies the strict CSP. Defaults to dark. */}
+        <script
+          nonce={nonce}
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var t=localStorage.getItem('qcai-theme');if(t!=='light'&&t!=='dark'){t='dark';}document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme='dark';}})();",
+          }}
+        />
         <link href="https://api.qantumlearn.academy" rel="preconnect" crossOrigin="" />
         <link href="https://api.qantumlearn.academy" rel="dns-prefetch" />
       </head>

@@ -15,7 +15,9 @@ from app.schemas import (
     NoteRead,
     QuizAttemptCreate,
     QuizAttemptRead,
+    LearnerRecordOperationInput,
 )
+from app.services.learner_record import apply_learner_record_operations
 from app.services.learner_progress import build_course_progress
 from app.services.store import get_course_store
 from app.services.text_utils import sanitize_user_text
@@ -151,6 +153,40 @@ def record_quiz_attempt(
         responses=payload.responses,
     )
     db.add(record)
+    db.flush()
+    # Durable identities write the same outcome to the authoritative record.
+    # Guest/demo behavior remains a non-cross-device preview surface.
+    if user.provider not in {"guest", "demo"}:
+        lesson = get_course_store().lessons.get(payload.lesson_slug)
+        question_count = len(lesson.quiz_questions) if lesson else 0
+        mastery = round(min(1.0, payload.score / question_count), 6) if question_count else 0.0
+        operations = [
+            LearnerRecordOperationInput(
+                operation_id=f"quiz-{record.id}-mastery",
+                replica_id="server-content-v1",
+                logical_counter=(record.id * 2) + 1,
+                operation_type="mastery_set",
+                payload={"skill_id": f"lesson:{payload.lesson_slug}", "value": mastery},
+            ),
+            LearnerRecordOperationInput(
+                operation_id=f"quiz-{record.id}-attempt",
+                replica_id="server-content-v1",
+                logical_counter=(record.id * 2) + 2,
+                operation_type="increment_attempt",
+                payload={"item_id": f"lesson:{payload.lesson_slug}", "delta": 1},
+            ),
+        ]
+        if mastery >= 0.7:
+            operations.append(
+                LearnerRecordOperationInput(
+                    operation_id=f"quiz-{record.id}-complete",
+                    replica_id="server-content-v1",
+                    logical_counter=(record.id * 2) + 3,
+                    operation_type="complete_item",
+                    payload={"item_id": f"lesson:{payload.lesson_slug}"},
+                )
+            )
+        apply_learner_record_operations(db, user.user_id, operations)
     db.commit()
     db.refresh(record)
     return {"status": "saved", "attempt_id": record.id, "score": record.score}

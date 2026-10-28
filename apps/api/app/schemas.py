@@ -20,6 +20,9 @@ class SourceAsset(BaseModel):
 
 class Citation(BaseModel):
     chunk_id: str
+    span_id: str | None = None
+    corpus_version: str | None = None
+    content_hash: str | None = None
     source_title: str
     source_kind: str
     section_title: str
@@ -173,6 +176,7 @@ class AssistantChatMessage(BaseModel):
 
 class AssistantChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
+    thread_id: str | None = Field(default=None, min_length=8, max_length=64)
     lesson_slug: str | None = None
     page_path: str | None = Field(default=None, max_length=255)
     history: list[AssistantChatMessage] = Field(default_factory=list)
@@ -211,6 +215,82 @@ class AssistantChatResponse(BaseModel):
     provider: str
     model: str
     grounded: bool = True
+    thread_id: str | None = None
+    turn_id: str | None = None
+    decision: Literal["answer", "abstain", "clarify"] = "answer"
+    decision_reason: str | None = None
+    claims: list["GroundedClaim"] = Field(default_factory=list)
+
+
+class GroundedClaim(BaseModel):
+    text: str
+    cited_span_ids: list[str] = Field(default_factory=list)
+    supported: bool
+
+
+class TutorThreadCreate(BaseModel):
+    title: str | None = Field(default=None, max_length=255)
+
+
+class TutorThreadRead(BaseModel):
+    id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class TutorMessageRead(BaseModel):
+    id: str
+    role: Literal["user", "assistant"]
+    content: str
+    created_at: datetime
+
+
+class TutorThreadDetail(TutorThreadRead):
+    messages: list[TutorMessageRead] = Field(default_factory=list)
+
+
+class LearnerRecordOperationInput(BaseModel):
+    operation_id: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
+    replica_id: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
+    logical_counter: int = Field(ge=1, le=2_000_000_000)
+    causal_vector: dict[str, int] = Field(default_factory=dict)
+    operation_type: Literal["mastery_set", "complete_item", "increment_attempt", "set_cursor", "set_preference"]
+    payload: dict = Field(default_factory=dict)
+
+    @field_validator("causal_vector")
+    @classmethod
+    def validate_causal_vector(cls, value: dict[str, int]) -> dict[str, int]:
+        if len(value) > 128:
+            raise ValueError("Causal vector is too large.")
+        if any(not key or len(key) > 128 or not isinstance(counter, int) or counter < 0 for key, counter in value.items()):
+            raise ValueError("Causal vectors require non-negative replica counters.")
+        return value
+
+
+class LearnerRecordOperationsRequest(BaseModel):
+    operations: list[LearnerRecordOperationInput] = Field(min_length=1, max_length=100)
+
+
+class LearnerRecordOperationReceipt(BaseModel):
+    operation_id: str
+    status: Literal["applied", "duplicate"]
+
+
+class LearnerRecordRead(BaseModel):
+    user_id: str
+    record_version: int
+    mastery: dict[str, float] = Field(default_factory=dict)
+    completed_item_ids: list[str] = Field(default_factory=list)
+    attempt_counts: dict[str, int] = Field(default_factory=dict)
+    cursor: str | None = None
+    preferences: dict = Field(default_factory=dict)
+    version_vector: dict[str, int] = Field(default_factory=dict)
+
+
+class LearnerRecordOperationsResponse(BaseModel):
+    receipts: list[LearnerRecordOperationReceipt]
+    record: LearnerRecordRead
 
 
 class AnalyticsEventCreate(BaseModel):

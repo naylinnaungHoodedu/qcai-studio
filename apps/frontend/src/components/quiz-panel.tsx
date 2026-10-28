@@ -91,6 +91,7 @@ export function QuizPanel({
               </div>
             ) : (
               <textarea
+                aria-label={`Answer for question ${index + 1}: ${question.prompt}`}
                 className="note-input"
                 onChange={(event) =>
                   setAnswers((current) => ({

@@ -41,6 +41,7 @@ export function SiteFooter() {
           </p>
           <nav className="footer-link-list" aria-label="Project links">
             <Link href="/modules">Modules and prerequisites</Link>
+            <Link href="/syllabus">Full syllabus</Link>
             <Link href="/simulations">Simulation program</Link>
             <Link href="/whats-new">What&apos;s new</Link>
             <Link href="/about">About QC+AI Studio</Link>

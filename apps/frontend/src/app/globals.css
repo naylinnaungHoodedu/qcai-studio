@@ -14,6 +14,40 @@
     0 0 0 1px rgba(27, 212, 255, 0.08),
     0 26px 80px rgba(1, 5, 15, 0.56),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
+
+  /* --- Design tokens (additive layer; see 09_UIUX_and_Software_Update_Log.txt P0) --- */
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 40px;
+  /* Radius scale */
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+  /* Type scale */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  /* Semantic color aliases (mapped onto existing palette so nothing changes yet) */
+  --bg: var(--canvas);
+  --surface-1: var(--surface);
+  --surface-2: var(--surface-strong);
+  --text: var(--ink);
+  --text-muted: var(--muted);
+  --border: var(--line);
+  --focus-ring: rgba(15, 118, 110, 0.42);
+  --success: #24b765;
+  --danger: #ff6086;
 }
 
 * {
@@ -170,6 +204,10 @@ select option:focus {
   grid-template-rows: auto 1fr auto;
 }
 
+#main-content {
+  min-width: 0;
+}
+
 .skip-link {
   position: absolute;
   left: 24px;
@@ -202,6 +240,10 @@ select option:focus {
   backdrop-filter: blur(20px);
 }
 
+.site-header > * {
+  min-width: 0;
+}
+
 .brand-mark {
   font-size: 1.55rem;
   font-weight: 700;
@@ -215,17 +257,85 @@ select option:focus {
   font-size: 0.95rem;
 }
 
+.site-nav-shell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  position: relative;
+  flex: 0 1 auto;
+}
+
+.site-nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 50px;
+  padding: 12px 16px;
+  border: 1px solid rgba(88, 137, 255, 0.18);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+}
+
+.site-nav-toggle-icon {
+  width: 18px;
+  height: 14px;
+  display: inline-grid;
+  align-items: center;
+}
+
+.site-nav-toggle-icon span {
+  grid-area: 1 / 1;
+  width: 18px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  transition:
+    transform 140ms ease,
+    opacity 140ms ease;
+}
+
+.site-nav-toggle-icon span:nth-child(1) {
+  transform: translateY(-5px);
+}
+
+.site-nav-toggle-icon span:nth-child(3) {
+  transform: translateY(5px);
+}
+
+.site-nav-toggle-icon[data-open="true"] span:nth-child(1) {
+  transform: rotate(45deg);
+}
+
+.site-nav-toggle-icon[data-open="true"] span:nth-child(2) {
+  opacity: 0;
+}
+
+.site-nav-toggle-icon[data-open="true"] span:nth-child(3) {
+  transform: rotate(-45deg);
+}
+
 .site-nav {
   display: flex;
   gap: 16px;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .site-nav a,
 .site-nav summary {
-    padding: 10px 14px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
   border: 1px solid rgba(88, 137, 255, 0.16);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.04);
@@ -235,10 +345,19 @@ select option:focus {
 
 .site-nav a:hover,
 .site-nav summary:hover,
-.site-nav-group[open] summary {
+.site-nav-group[open] summary,
+.site-nav a.is-active,
+.site-nav summary.is-active {
   color: var(--ink);
   border-color: rgba(116, 174, 255, 0.42);
   background: linear-gradient(135deg, rgba(27, 212, 255, 0.16), rgba(122, 108, 255, 0.14));
+}
+
+/* Current page marker: a stronger left accent so "where am I" reads at a glance. */
+.site-nav a.is-active,
+.site-nav summary.is-active {
+  border-color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .site-nav summary {
@@ -252,6 +371,7 @@ select option:focus {
 
 .site-nav-group {
   position: relative;
+  min-width: 0;
 }
 
 .site-subnav {
@@ -271,6 +391,8 @@ select option:focus {
 
 .site-subnav a {
   width: 100%;
+  display: flex;
+  align-items: center;
   text-align: left;
   background: rgba(255, 255, 255, 0.03);
 }
@@ -278,6 +400,7 @@ select option:focus {
 .page-stack {
   display: grid;
   gap: 28px;
+  min-width: 0;
 }
 
 .site-footer {
@@ -348,6 +471,7 @@ select option:focus {
 .panel,
 .module-card,
 .lesson-card {
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: 24px;
   background: linear-gradient(180deg, rgba(9, 18, 38, 0.9), rgba(5, 11, 24, 0.92));
@@ -418,11 +542,56 @@ select option:focus {
 }
 
 .module-grid {
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+}
+
+.learning-modes-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: none;
+}
+
+.learning-mode-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.learning-mode-card .eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.learning-mode-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(27, 212, 255, 0.32);
+  background: rgba(27, 212, 255, 0.14);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink, #eaf2ff);
+}
+
+.learning-mode-when {
+  margin-top: -2px;
+}
+
+.learning-mode-card .secondary-button {
+  margin-top: auto;
+  align-self: flex-start;
 }
 
 .curriculum-card-grid {
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
   gap: 28px;
 }
 
@@ -853,6 +1022,21 @@ select option:focus {
 
 .muted {
   color: var(--muted);
+}
+
+/* Inline plain-language term: dotted underline signals "hover for a definition". */
+.glossary-term {
+  text-decoration: none;
+  border-bottom: 1px dotted var(--accent);
+  cursor: help;
+}
+
+/* Scale suffix on a big metric number, e.g. "62 / 100" — keeps the unit quiet. */
+.metric-scale {
+  color: var(--muted);
+  font-size: 0.5em;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .qa-response,
@@ -1982,6 +2166,9 @@ select option:focus {
   gap: 10px;
   max-height: 720px;
   overflow: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 .transcript-segment {
@@ -2161,6 +2348,24 @@ button:disabled,
 .arena-choice.selected {
   border-color: rgba(15, 118, 110, 0.36);
   background: rgba(15, 118, 110, 0.14);
+}
+
+.arena-choice-key {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(27, 212, 255, 0.28);
+  background: rgba(27, 212, 255, 0.12);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--ink, #eaf2ff);
 }
 
 .arena-metric-grid,
@@ -2479,8 +2684,8 @@ button:disabled,
 
 .assistant-shell {
   position: fixed;
-  right: 24px;
-  bottom: 24px;
+  right: max(24px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom));
   z-index: 50;
   display: flex;
   align-items: flex-end;
@@ -2836,69 +3041,116 @@ button:disabled,
   font-size: 0.88rem;
 }
 
-@media (max-width: 640px) {
-  .app-shell {
-    padding: 16px;
+@media (max-width: 1100px) {
+  .site-header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 18px;
+  }
+
+  .brand-subtitle {
+    max-width: 62ch;
+  }
+
+  .site-nav-shell {
+    margin-left: auto;
+    flex: 0 0 auto;
+  }
+
+  .site-nav-toggle {
+    min-width: 148px;
+    display: inline-flex;
   }
 
   .site-nav {
+    position: absolute;
+    top: calc(100% + 14px);
+    right: 0;
+    left: auto;
+    width: min(420px, calc(100vw - 48px));
+    max-width: none;
+    max-height: min(calc(100dvh - 150px), 72vh);
+    overflow-y: auto;
+    display: none;
+    padding: 14px;
+    gap: 12px;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    justify-content: flex-start;
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    background: rgba(5, 12, 25, 0.96);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(18px);
+    z-index: 20;
+  }
+
+  .site-nav.is-open {
+    display: grid;
+  }
+
+  .site-nav-group,
+  .site-nav a,
+  .site-nav summary {
     width: 100%;
   }
 
   .site-nav a,
-  .site-nav summary,
-  .primary-button,
-  .academy-primary-button,
-  .secondary-button,
-  .prompt-pill {
-    width: 100%;
-    justify-content: center;
-    text-align: center;
+  .site-nav summary {
+    justify-content: flex-start;
+    text-align: left;
+    white-space: normal;
   }
 
   .site-subnav {
     position: static;
     min-width: 0;
     width: 100%;
-  }
-
-  .assistant-shell {
-    right: 12px;
-    bottom: 12px;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 12px;
-    max-width: calc(100vw - 24px);
-  }
-
-  .assistant-panel {
-    width: min(100vw - 16px, 430px);
-    height: min(calc(100dvh - 18px), 88dvh);
-    border-radius: 24px;
-  }
-
-  .assistant-bubble {
-    max-width: 100%;
-  }
-
-  .assistant-panel-header {
-    padding: 18px 18px 16px;
-  }
-
-  .assistant-transcript-surface {
-    padding: 16px 10px 10px 16px;
-  }
-
-  .assistant-compose {
-    padding: 14px 14px 12px;
-  }
-
-  .choice-item {
-    padding: 14px 16px;
+    margin-top: 10px;
   }
 }
 
 @media (max-width: 980px) {
+  .app-shell {
+    gap: 24px;
+    padding-bottom: 120px;
+  }
+
+  .site-header {
+    padding: 18px 20px;
+  }
+
+  .page-stack {
+    gap: 24px;
+  }
+
+  .hero,
+  .section-block {
+    padding: 24px;
+  }
+
+  .hero {
+    gap: 20px;
+  }
+
+  .site-footer {
+    padding: 22px;
+  }
+
+  .module-card,
+  .lesson-card,
+  .panel {
+    padding: 20px;
+  }
+
+  .button-row,
+  .lesson-actions,
+  .panel-header,
+  .module-card-top {
+    align-items: flex-start;
+  }
+
   .hero,
   .two-column-grid,
   .lesson-layout-grid,
@@ -2917,10 +3169,6 @@ button:disabled,
   .simulation-state-grid,
   .simulation-lab-grid {
     grid-template-columns: 1fr;
-  }
-
-  .site-header {
-    flex-direction: column;
   }
 
   .site-footer-grid {
@@ -2966,4 +3214,416 @@ button:disabled,
   .heatmap-grid {
     grid-template-columns: repeat(12, minmax(0, 1fr));
   }
+
+  .assistant-shell {
+    right: max(16px, env(safe-area-inset-right));
+    bottom: max(16px, env(safe-area-inset-bottom));
+  }
+
+  .assistant-launcher {
+    width: 70px;
+    height: 70px;
+  }
+
+  .assistant-launcher-icon {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (max-width: 720px) {
+  .site-nav-shell {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .site-nav-toggle {
+    width: 100%;
+  }
+
+  .site-nav {
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: 100%;
+    max-height: min(calc(100dvh - 180px), 68vh);
+  }
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    gap: 22px;
+    padding: 16px 16px 108px;
+  }
+
+  .site-header {
+    top: 12px;
+    padding: 16px 18px;
+    border-radius: 24px;
+  }
+
+  .brand-mark {
+    font-size: 1.4rem;
+  }
+
+  .brand-subtitle {
+    font-size: 0.9rem;
+  }
+
+  .page-stack {
+    gap: 22px;
+  }
+
+  .hero,
+  .section-block {
+    padding: 20px;
+    border-radius: 22px;
+  }
+
+  .hero {
+    gap: 18px;
+  }
+
+  .hero h1 {
+    font-size: clamp(2rem, 10vw, 3rem);
+    max-width: none;
+  }
+
+  .hero-panel,
+  .module-card,
+  .lesson-card,
+  .panel {
+    padding: 18px;
+  }
+
+  .module-card-top {
+    flex-direction: column;
+  }
+
+  .module-card-number {
+    min-width: 0;
+  }
+
+  .site-nav {
+    width: 100%;
+  }
+
+  .site-nav a,
+  .site-nav summary {
+    width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .primary-button,
+  .academy-primary-button,
+  .secondary-button,
+  .prompt-pill {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .button-row,
+  .lesson-actions,
+  .module-card-actions {
+    align-items: stretch;
+  }
+
+  .assistant-shell {
+    right: max(12px, env(safe-area-inset-right));
+    bottom: max(12px, env(safe-area-inset-bottom));
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+    max-width: calc(100vw - 24px);
+  }
+
+  .assistant-launcher {
+    width: 64px;
+    height: 64px;
+  }
+
+  .assistant-launcher-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .assistant-launcher-star {
+    top: -4px;
+    right: -4px;
+    width: 18px;
+    height: 18px;
+  }
+
+  .assistant-panel {
+    width: min(100vw - 16px, 430px);
+    height: min(calc(100dvh - 18px), 88dvh);
+    border-radius: 24px;
+  }
+
+  .assistant-bubble {
+    max-width: 100%;
+  }
+
+  .assistant-panel-header {
+    padding: 18px 18px 16px;
+  }
+
+  .assistant-transcript-surface {
+    padding: 16px 10px 10px 16px;
+  }
+
+  .assistant-compose {
+    padding: 14px 14px 12px;
+  }
+
+  .choice-item {
+    padding: 14px 16px;
+  }
+}
+
+/* --- Reduced motion: honor the user's OS setting (a11y P-5) --- */
+/* Disables the animated shimmer, smooth scroll, and hover/transition motion, */
+/* and quiets the decorative fixed grid/gradient overlays for a calmer surface. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  body::before,
+  body::after {
+    opacity: 0.12;
+  }
+}
+
+/* --- Theme toggle control (header) --- */
+.site-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.theme-toggle {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 10px;
+  border: 1px solid rgba(88, 137, 255, 0.16);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.theme-toggle:hover {
+  border-color: rgba(116, 174, 255, 0.42);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* =====================================================================
+   LIGHT THEME (opt-in via data-theme="light"; dark stays the default).
+   Isolated override block: it does not touch any dark rule above, so the
+   default experience is unchanged. Covers the primary reading, navigation,
+   card, form, and footer surfaces. Deep interactive studios (builder, arena,
+   simulation labs, assistant chat) intentionally remain dark in this first
+   pass — tracked in 09_UIUX_and_Software_Update_Log.txt.
+   ===================================================================== */
+:root[data-theme="light"] {
+  --canvas: #eef3fb;
+  --ink: #0d1b2e;
+  --muted: #46566f;
+  --surface: rgba(255, 255, 255, 0.86);
+  --surface-strong: #ffffff;
+  --line: rgba(31, 61, 122, 0.18);
+  --accent: #0b8fb8;
+  --accent-deep: #5a4fd6;
+  --accent-soft: rgba(11, 143, 184, 0.12);
+  --warm: #0b6e8c;
+  --shadow:
+    0 1px 2px rgba(16, 42, 90, 0.08),
+    0 18px 44px rgba(16, 42, 90, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --bg: var(--canvas);
+  --text: var(--ink);
+  --text-muted: var(--muted);
+  --border: var(--line);
+  --focus-ring: rgba(11, 143, 184, 0.45);
+}
+
+:root[data-theme="light"] body {
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 18% 12%, rgba(27, 212, 255, 0.1), transparent 24%),
+    radial-gradient(circle at 84% 10%, rgba(122, 108, 255, 0.1), transparent 20%),
+    linear-gradient(180deg, #e9eff9 0%, #f5f8ff 48%, #e9eff9 100%);
+}
+
+:root[data-theme="light"] body::before {
+  opacity: 0.1;
+  mix-blend-mode: multiply;
+}
+
+:root[data-theme="light"] body::after {
+  opacity: 0.1;
+}
+
+:root[data-theme="light"] .site-header {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+:root[data-theme="light"] .site-nav a,
+:root[data-theme="light"] .site-nav summary,
+:root[data-theme="light"] .site-nav-toggle,
+:root[data-theme="light"] .theme-toggle,
+:root[data-theme="light"] .secondary-button,
+:root[data-theme="light"] .prompt-pill {
+  background: #ffffff;
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+:root[data-theme="light"] .site-nav a,
+:root[data-theme="light"] .site-nav summary {
+  color: var(--muted);
+}
+
+:root[data-theme="light"] .site-nav a:hover,
+:root[data-theme="light"] .site-nav summary:hover,
+:root[data-theme="light"] .theme-toggle:hover,
+:root[data-theme="light"] .secondary-button:hover,
+:root[data-theme="light"] .prompt-pill:hover {
+  background: #eef3fb;
+  border-color: rgba(11, 143, 184, 0.4);
+}
+
+:root[data-theme="light"] .hero,
+:root[data-theme="light"] .section-block,
+:root[data-theme="light"] .panel,
+:root[data-theme="light"] .module-card,
+:root[data-theme="light"] .lesson-card,
+:root[data-theme="light"] .hero-panel,
+:root[data-theme="light"] .chapter-card,
+:root[data-theme="light"] .note-card,
+:root[data-theme="light"] .citation-card,
+:root[data-theme="light"] .quiz-card,
+:root[data-theme="light"] .flashcard,
+:root[data-theme="light"] .metric-card,
+:root[data-theme="light"] .insight-card,
+:root[data-theme="light"] .path-step-card,
+:root[data-theme="light"] .skill-gap-card,
+:root[data-theme="light"] .project-submission-card,
+:root[data-theme="light"] .audience-card,
+:root[data-theme="light"] .progression-shell,
+:root[data-theme="light"] .progression-step-card {
+  background: linear-gradient(180deg, #ffffff, #eef3fb);
+  border-color: var(--line);
+}
+
+:root[data-theme="light"] .hero,
+:root[data-theme="light"] .about-hero,
+:root[data-theme="light"] .analytics-hero,
+:root[data-theme="light"] .simulation-hero {
+  background:
+    radial-gradient(circle at top left, rgba(27, 212, 255, 0.12), transparent 30%),
+    radial-gradient(circle at 80% 6%, rgba(122, 108, 255, 0.12), transparent 26%),
+    linear-gradient(180deg, #ffffff, #eef3fb);
+}
+
+:root[data-theme="light"] .emphasis-card {
+  background: linear-gradient(180deg, rgba(11, 143, 184, 0.12), #ffffff);
+  border-color: rgba(11, 143, 184, 0.28);
+}
+
+:root[data-theme="light"] textarea,
+:root[data-theme="light"] select,
+:root[data-theme="light"] input:not([type="range"]),
+:root[data-theme="light"] .note-input {
+  color: var(--ink);
+  background: #ffffff;
+  border-color: var(--line);
+}
+
+:root[data-theme="light"] .site-footer {
+  background: linear-gradient(180deg, #ffffff, #eef3fb);
+}
+
+:root[data-theme="light"] .status-pill,
+:root[data-theme="light"] .module-chip,
+:root[data-theme="light"] .simulation-chip {
+  background: #eef3fb;
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+:root[data-theme="light"] .governance-table thead th {
+  background: #e6edf9;
+  color: var(--ink);
+}
+
+:root[data-theme="light"] .footer-link,
+:root[data-theme="light"] .footer-link-list a {
+  color: #0b6e8c;
+}
+
+/* Light theme, extended to the interactive studios (builder / arena /
+   simulations / video / transcript) so the content pages read coherently. The
+   floating assistant chat keeps its dark styling by design. */
+:root[data-theme="light"] .arena-score-card,
+:root[data-theme="light"] .arena-result-card,
+:root[data-theme="light"] .arena-challenge-card,
+:root[data-theme="light"] .builder-result-card,
+:root[data-theme="light"] .builder-scenario-card,
+:root[data-theme="light"] .empty-state-card,
+:root[data-theme="light"] .simulation-card,
+:root[data-theme="light"] .simulation-state-card,
+:root[data-theme="light"] .simulation-detail-item,
+:root[data-theme="light"] .simulation-lab,
+:root[data-theme="light"] .simulation-mini-card,
+:root[data-theme="light"] .simulation-metric-tile,
+:root[data-theme="light"] .simulation-routing-node,
+:root[data-theme="light"] .simulation-sidebar-card,
+:root[data-theme="light"] .simulation-launch-card,
+:root[data-theme="light"] .simulation-card-preview,
+:root[data-theme="light"] .video-status-banner,
+:root[data-theme="light"] .transcript-panel,
+:root[data-theme="light"] .inset-panel {
+  background: linear-gradient(180deg, #ffffff, #eef3fb);
+  border-color: var(--line);
+}
+
+:root[data-theme="light"] .builder-canvas {
+  background:
+    radial-gradient(circle at top, rgba(11, 143, 184, 0.08), transparent 34%),
+    linear-gradient(180deg, #ffffff, #eef3fb);
+}
+
+:root[data-theme="light"] .builder-slot {
+  background: #ffffff;
+  border-color: var(--line);
+}
+
+:root[data-theme="light"] .transcript-segment,
+:root[data-theme="light"] .simulation-lab-panel {
+  background: #f5f8ff;
+  border-color: var(--line);
 }

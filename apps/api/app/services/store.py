@@ -5,6 +5,7 @@ from app.services.content_assembler import CourseStore
 from app.services.qa_engine import QAEngine
 from app.services.retrieval_engine import RetrievalEngine
 from app.services.teaching_assistant import TeachingAssistantService
+from app.services.tutor_orchestrator import TutorOrchestrator
 
 
 @lru_cache
@@ -27,9 +28,15 @@ def get_teaching_assistant() -> TeachingAssistantService:
     return TeachingAssistantService(get_retrieval_engine(), get_settings())
 
 
+@lru_cache
+def get_tutor_orchestrator() -> TutorOrchestrator:
+    return TutorOrchestrator(get_teaching_assistant(), get_settings())
+
+
 def rebuild_course_store() -> CourseStore:
     get_course_store.cache_clear()
     get_retrieval_engine.cache_clear()
     get_qa_engine.cache_clear()
     get_teaching_assistant.cache_clear()
+    get_tutor_orchestrator.cache_clear()
     return get_course_store()

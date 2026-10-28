@@ -14,6 +14,8 @@ import {
   CourseProgress,
   CourseOverview,
   LearningDashboard,
+  LearnerRecord,
+  LearnerRecordOperation,
   LearningPulse,
   LearnerProfile,
   LessonDetail,
@@ -32,6 +34,8 @@ import {
   ServiceHealth,
   SkillGapReport,
   SupportRequestReceipt,
+  TutorThread,
+  TutorThreadDetail,
   UserProfile,
 } from "@/lib/types";
 import { normalizeAssistantHistory } from "@/lib/assistant-chat";
@@ -49,6 +53,7 @@ const DEMO_USER_ID = "demo-learner";
 const DEMO_ROLE = "learner";
 const PUBLIC_REVALIDATE_SECONDS = 300;
 const GUEST_CSRF_COOKIE_NAME = "qcai_guest_csrf";
+const PUBLIC_WEB_VITAL_RETRY_DELAY_MS = 250;
 const ENABLE_DEMO_AUTH =
   process.env.ENABLE_DEMO_AUTH != null
     ? process.env.ENABLE_DEMO_AUTH === "true"
@@ -150,13 +155,16 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
   if (requestOptions.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
+  const method = (requestOptions.method ?? "GET").toUpperCase();
   const isPublicRequest = cacheMode === "public";
-  if (!isPublicRequest) {
+  const isSafeMethod = method === "GET" || method === "HEAD" || method === "OPTIONS";
+  if (!isPublicRequest || !isSafeMethod) {
     await applyServerRequestHeaders(headers);
+  }
+  if (!isPublicRequest) {
     applyDemoAuthHeaders(headers);
   }
 
-  const method = (requestOptions.method ?? "GET").toUpperCase();
   const fetchOptions = {
     ...requestOptions,
     headers,
@@ -261,6 +269,7 @@ export async function askQuestion(
 
 export async function chatWithTeachingAssistant(payload: {
   message: string;
+  thread_id?: string | null;
   lesson_slug?: string | null;
   page_path?: string | null;
   history?: AssistantChatMessage[];
@@ -270,11 +279,40 @@ export async function chatWithTeachingAssistant(payload: {
     method: "POST",
     body: JSON.stringify({
       message: payload.message,
+      thread_id: payload.thread_id ?? null,
       lesson_slug: payload.lesson_slug ?? null,
       page_path: payload.page_path ?? null,
       history: normalizeAssistantHistory(payload.history ?? []),
       top_k: payload.top_k ?? 4,
     }),
+  });
+}
+
+export async function fetchTutorThreads(): Promise<TutorThread[]> {
+  return apiFetch<TutorThread[]>("/assistant/threads");
+}
+
+export async function fetchTutorThread(threadId: string): Promise<TutorThreadDetail> {
+  return apiFetch<TutorThreadDetail>(`/assistant/threads/${encodeURIComponent(threadId)}`);
+}
+
+export async function createTutorThread(title?: string): Promise<TutorThread> {
+  return apiFetch<TutorThread>("/assistant/threads", {
+    method: "POST",
+    body: JSON.stringify({ title: title ?? null }),
+  });
+}
+
+export async function fetchLearnerRecord(): Promise<LearnerRecord> {
+  return apiFetch<LearnerRecord>("/learner-record");
+}
+
+export async function postLearnerRecordOperations(
+  operations: LearnerRecordOperation[],
+): Promise<{ receipts: Array<{ operation_id: string; status: "applied" | "duplicate" }>; record: LearnerRecord }> {
+  return apiFetch("/learner-record/operations", {
+    method: "POST",
+    body: JSON.stringify({ operations }),
   });
 }
 
@@ -362,12 +400,38 @@ export async function postPublicWebVital(payload: {
   navigation_type?: string | null;
   connection_type?: string | null;
 }): Promise<void> {
-  await apiFetch("/analytics/public-web-vitals", {
-    method: "POST",
-    cacheMode: "public",
-    keepalive: true,
-    body: JSON.stringify(payload),
-  });
+  const isRetryableTelemetryError = (error: unknown): boolean => {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+    const message = error.message.toLowerCase();
+    return (
+      message.includes("timed out") ||
+      message.includes("could not reach") ||
+      message.includes("upstream_timeout") ||
+      message.includes("upstream_unavailable") ||
+      message.includes("api request failed: 502") ||
+      message.includes("api request failed: 503") ||
+      message.includes("api request failed: 504")
+    );
+  };
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      await apiFetch("/analytics/public-web-vitals", {
+        method: "POST",
+        cacheMode: "public",
+        keepalive: true,
+        body: JSON.stringify(payload),
+      });
+      return;
+    } catch (error) {
+      if (attempt === 2 || !isRetryableTelemetryError(error)) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, PUBLIC_WEB_VITAL_RETRY_DELAY_MS));
+    }
+  }
 }
 
 export async function fetchPublicWebVitalsSummary(): Promise<PublicWebVitalSummary> {

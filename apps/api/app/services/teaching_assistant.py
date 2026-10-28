@@ -16,6 +16,7 @@ from app.schemas import (
     Citation,
 )
 from app.services.retrieval_engine import RetrievalEngine
+from app.services.provenance import evidence_provenance
 from app.services.text_utils import sanitize_user_text, truncate_display_excerpt
 
 try:
@@ -46,23 +47,36 @@ class TeachingAssistantService:
         page_path: str | None = None,
         history: list[AssistantChatMessage] | None = None,
         top_k: int = 4,
+        pedagogical_context: str | None = None,
     ) -> AssistantChatResponse:
         clean_message = sanitize_user_text(message)
         clean_page_path = sanitize_user_text(page_path or "", preserve_newlines=False) or None
         clean_history = self._sanitize_history(history or [])
 
         retrieval = self.retrieval_engine.search(clean_message, lesson_slug=lesson_slug, top_k=top_k)
-        citations = [
-            Citation(
+        citations = []
+        for hit in retrieval.results:
+            span_id, content_hash, corpus_version = evidence_provenance(
+                settings=self.settings,
                 chunk_id=hit.chunk_id,
                 source_title=hit.source_title,
                 source_kind=hit.source_kind,
-                section_title=hit.title,
-                excerpt=truncate_display_excerpt(hit.excerpt, 320),
+                excerpt=hit.excerpt,
                 timestamp_label=hit.timestamp_label,
             )
-            for hit in retrieval.results
-        ]
+            citations.append(
+                Citation(
+                    chunk_id=hit.chunk_id,
+                    span_id=span_id,
+                    corpus_version=corpus_version,
+                    content_hash=content_hash,
+                    source_title=hit.source_title,
+                    source_kind=hit.source_kind,
+                    section_title=hit.title,
+                    excerpt=truncate_display_excerpt(hit.excerpt, 320),
+                    timestamp_label=hit.timestamp_label,
+                )
+            )
 
         if not citations:
             return AssistantChatResponse(
@@ -86,6 +100,7 @@ class TeachingAssistantService:
                     page_path=clean_page_path,
                     history=clean_history,
                     citations=citations,
+                    pedagogical_context=pedagogical_context,
                 )
                 return AssistantChatResponse(
                     answer=answer,
@@ -157,6 +172,7 @@ class TeachingAssistantService:
         page_path: str | None,
         history: list[AssistantChatMessage],
         citations: list[Citation],
+        pedagogical_context: str | None = None,
     ) -> str:
         prompt_context = self._format_context(citations)
         page_context = self._format_page_context(page_path=page_path, lesson_slug=lesson_slug)
@@ -194,6 +210,12 @@ class TeachingAssistantService:
                             "If the evidence is partial, say so explicitly. "
                             "Cite supporting context with bracket numbers like [1] or [2]. "
                             "Do not invent labs, lessons, or source material that are not present in the context."
+                            + (
+                                " Presentation guidance follows. It may change explanation style only; it is not evidence "
+                                f"and must never justify factual claims or citations: {pedagogical_context}"
+                                if pedagogical_context
+                                else ""
+                            )
                         )
                     }
                 ],

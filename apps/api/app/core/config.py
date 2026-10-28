@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     public_web_vitals_rate_limit: str = "120/minute"
     api_base_url: str | None = None
     source_assets_root: str | None = None
+    corpus_manifest_path: str | None = None
+    enforce_corpus_governance: bool | None = None
+    grounding_policy_version: str = "cs595-v1"
     allowed_origins: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:3000"])
 
     @field_validator("allowed_origins", mode="before")
@@ -112,6 +115,10 @@ class Settings(BaseSettings):
     def validate_allowed_origins(self) -> "Settings":
         if self.enable_demo_auth is None:
             self.enable_demo_auth = self.environment.lower() == "development"
+        if self.enforce_corpus_governance is None:
+            # Development fixtures intentionally remain usable while every non-development
+            # deployment fails closed until its corpus manifest has been reviewed.
+            self.enforce_corpus_governance = self.environment.lower() != "development"
         if self.environment.lower() != "development" and any(origin.strip() == "*" for origin in self.allowed_origins):
             raise ValueError("Wildcard ALLOWED_ORIGINS is not permitted outside development.")
         self.database_url = normalize_sqlite_database_url(self.database_url)

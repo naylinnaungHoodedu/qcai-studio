@@ -18,10 +18,10 @@ const HOME_PAGE_SOURCE = readFileSync(resolve(TEST_DIR, "../src/app/page.tsx"), 
 const MODULES_PAGE_SOURCE = readFileSync(resolve(TEST_DIR, "../src/app/modules/page.tsx"), "utf8");
 const MODULE_CARD_SOURCE = readFileSync(resolve(TEST_DIR, "../src/components/module-card.tsx"), "utf8");
 
-test("primary navigation follows the requested production order", () => {
+test("primary navigation is simplified to five top-level targets", () => {
   assert.deepEqual(
     PRIMARY_NAV_ITEMS.map((item) => item.label),
-    ["Overview", "About", "Modules", "Projects", "Practice", "Simulations", "Account", "Search"],
+    ["Modules", "Simulations", "Practice", "Search", "Account"],
   );
 });
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 
+import { GlossaryTerm } from "@/components/glossary-term";
 import { formatModuleLabel } from "@/lib/module-labels";
 import { ModuleProgress, ModuleSummary } from "@/lib/types";
 
@@ -256,7 +257,7 @@ export function ModuleCard({
       <div className="module-card-tags">
         {meta.tags.map((tag) => (
           <span className="module-chip" key={tag}>
-            {tag}
+            <GlossaryTerm term={tag}>{tag}</GlossaryTerm>
           </span>
         ))}
       </div>
@@ -277,7 +278,7 @@ export function ModuleCard({
 
       <div className="module-card-actions">
         <Link className="primary-button module-card-button" href={`/modules/${module.slug}`}>
-          Visit course
+          View module
         </Link>
         <Link className="secondary-button module-card-button" href={firstLessonHref}>
           {secondaryLabel}

@@ -1,0 +1,21 @@
+@startuml
+left to right direction
+actor Learner
+actor Evaluator
+rectangle "QC+AI Studio" {
+  usecase "Sign in with PKCE" as U1
+  usecase "Sync learner-record operations" as U2
+  usecase "Resume on another device" as U3
+  usecase "Ask persistent grounded Tutor" as U4
+  usecase "Inspect citation / abstention" as U5
+  usecase "Run four-arm evaluation" as U6
+  usecase "Approve corpus item" as U7
+}
+Learner --> U1
+Learner --> U2
+Learner --> U3
+Learner --> U4
+Learner --> U5
+Evaluator --> U6
+Evaluator --> U7
+@enduml

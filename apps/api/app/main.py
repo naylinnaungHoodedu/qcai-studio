@@ -13,8 +13,9 @@ from slowapi.extension import _rate_limit_exceeded_handler
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
-from app.api.routes import admin, analytics, arena, assets, assistant, auth, builder, content, insights, projects, qa, search, support
-from app.core.config import get_settings
+from app.api.routes import admin, analytics, arena, assets, assistant, auth, builder, content, insights, learner_record, projects, qa, search, support
+from app.core.corpus_governance import get_corpus_registry
+from app.core.config import SOURCE_DOCUMENT_NAMES, SOURCE_VIDEO_NAMES, get_settings
 from app.core.db import Base, SessionLocal, engine
 from app.core.rate_limit import limiter
 from app.core.request_protection import protect_guest_mutation_request
@@ -119,6 +120,9 @@ def _initialize_database() -> None:
         try:
             Base.metadata.create_all(bind=engine)
             run_schema_upgrades(engine)
+            get_corpus_registry(settings).assert_public_assets_ready(
+                [*SOURCE_DOCUMENT_NAMES, *SOURCE_VIDEO_NAMES]
+            )
             with SessionLocal() as db:
                 run_retention_cleanup(db)
             return
@@ -167,6 +171,7 @@ app.include_router(admin.router)
 app.include_router(arena.router)
 app.include_router(builder.router)
 app.include_router(insights.router)
+app.include_router(learner_record.router)
 app.include_router(projects.router)
 app.include_router(support.router)
 

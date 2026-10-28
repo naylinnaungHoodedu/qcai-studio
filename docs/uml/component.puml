@@ -1,0 +1,24 @@
+@startuml
+package "Presentation" {
+  [Next.js Tutor UI]
+  [Learner record sync client]
+}
+package "API" {
+  [Identity/session adapter]
+  [Learner record service]
+  [Tutor orchestrator]
+  [Retrieval engine]
+  [Claim gate]
+  [Corpus registry]
+}
+database "PostgreSQL" as DB
+cloud "Vector/model providers" as AI
+[Next.js Tutor UI] --> [Tutor orchestrator]
+[Learner record sync client] --> [Learner record service]
+[Tutor orchestrator] --> [Retrieval engine]
+[Tutor orchestrator] --> [Claim gate]
+[Retrieval engine] --> [Corpus registry]
+[Retrieval engine] --> AI
+[Learner record service] --> DB
+[Tutor orchestrator] --> DB
+@enduml

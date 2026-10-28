@@ -39,6 +39,12 @@ export const STATUS_CHANNELS = [
     status: "Live",
     detail: "Core Web Vitals are reported from the browser to a first-party endpoint and summarized for public monitoring.",
   },
+  {
+    title: "Seeded demo transparency",
+    status: "Live",
+    detail:
+      "First-visit project, builder, and arena activity may include labeled seeded demo records derived from fictional audit personas rather than undisclosed live-user traffic.",
+  },
 ] as const;
 
 export const ACCESSIBILITY_VALIDATION_LOG = [

@@ -112,6 +112,9 @@ export type QAResponse = {
   answer: string;
   citations: Array<{
     chunk_id: string;
+    span_id?: string | null;
+    corpus_version?: string | null;
+    content_hash?: string | null;
     source_title: string;
     source_kind: string;
     section_title: string;
@@ -128,6 +131,9 @@ export type QAHistoryItem = {
   answer: string;
   citations: Array<{
     chunk_id: string;
+    span_id?: string | null;
+    corpus_version?: string | null;
+    content_hash?: string | null;
     source_title: string;
     source_kind: string;
     section_title: string;
@@ -146,6 +152,9 @@ export type AssistantChatResponse = {
   answer: string;
   citations: Array<{
     chunk_id: string;
+    span_id?: string | null;
+    corpus_version?: string | null;
+    content_hash?: string | null;
     source_title: string;
     source_kind: string;
     section_title: string;
@@ -156,6 +165,51 @@ export type AssistantChatResponse = {
   provider: string;
   model: string;
   grounded: boolean;
+  thread_id?: string | null;
+  turn_id?: string | null;
+  decision?: "answer" | "abstain" | "clarify";
+  decision_reason?: string | null;
+  claims?: Array<{
+    text: string;
+    cited_span_ids: string[];
+    supported: boolean;
+  }>;
+};
+
+export type TutorThread = {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TutorThreadDetail = TutorThread & {
+  messages: Array<{
+    id: string;
+    role: "user" | "assistant";
+    content: string;
+    created_at: string;
+  }>;
+};
+
+export type LearnerRecord = {
+  user_id: string;
+  record_version: number;
+  mastery: Record<string, number>;
+  completed_item_ids: string[];
+  attempt_counts: Record<string, number>;
+  cursor?: string | null;
+  preferences: Record<string, unknown>;
+  version_vector: Record<string, number>;
+};
+
+export type LearnerRecordOperation = {
+  operation_id: string;
+  replica_id: string;
+  logical_counter: number;
+  causal_vector: Record<string, number>;
+  operation_type: "mastery_set" | "complete_item" | "increment_attempt" | "set_cursor" | "set_preference";
+  payload: Record<string, unknown>;
 };
 
 export type QuizAttemptResult = {

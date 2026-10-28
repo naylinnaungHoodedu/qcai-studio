@@ -1,8 +1,8 @@
 # Completed Activities Log
 
 Prepared on: `2026-03-26 13:27:10 -04:00`
-Last updated on: `2026-04-01 19:03:43 -04:00`
-Folder: `c:\Users\user\Downloads\Codex_Webapp_QC_AI_Studio`
+Last updated on: `2026-08-27 10:56:27 -04:00`
+Folder: `D:\QC_AI_Studio\Codex_Webapp_QC_AI_Studio`
 
 ## 1. Scope of Work Completed
 
@@ -5736,3 +5736,903 @@ Completed logging and synchronization work:
 - confirmed the publication target branch remains:
   - `main`
 - synchronized the updated completed-activities record to the related GitHub repository so the current folder's missing post-Module2 history is now reflected remotely
+
+## 181. Responsive Small-Screen, Accessibility, and Public-Request Hardening Batch Completed Locally
+
+After the current frontend source and the provided small-screen reference captures were studied in depth, a focused frontend hardening batch was completed to correct phone/tablet navigation behavior, tighten small-screen layout safety, improve input accessibility semantics, and preserve guest CSRF handling on public browser requests.
+
+Completed implementation work:
+
+- studied the current-folder responsive reference captures:
+  - `screenshot_from_iphone13pro.jpeg`
+  - `screenshot_from_galaxy_fold6_phone.jpeg`
+  - `screenshot_from_laptop1.jpg`
+  - `screenshot_from_laptop2.jpg`
+- corrected the shared responsive shell and primary navigation behavior across:
+  - `apps/frontend/src/components/primary-nav.tsx`
+  - `apps/frontend/src/app/globals.css`
+- implemented the responsive navigation hardening so the frontend now:
+  - uses a controlled mobile/tablet menu toggle instead of exposing the desktop pill layout on narrow screens
+  - closes the menu on navigation, outside click, and `Escape`
+  - constrains navigation width correctly on tablets and phones
+  - adds safe-area-aware assistant placement and bottom breathing room for smaller screens
+  - tightens layout min-width behavior so shared panels, cards, and grids do not force horizontal overflow
+- corrected one real tablet-specific defect during implementation:
+  - the opened tablet navigation panel was initially capped to the toggle width rather than the intended overlay width
+  - the responsive CSS was corrected so the navigation panel can expand to the intended tablet width while still collapsing cleanly to full width on phones
+- improved public and study-surface accessibility semantics across:
+  - `apps/frontend/src/components/arena-panel.tsx`
+  - `apps/frontend/src/components/builder-studio.tsx`
+  - `apps/frontend/src/components/learning-dashboard.tsx`
+  - `apps/frontend/src/components/notes-panel.tsx`
+  - `apps/frontend/src/components/projects-studio.tsx`
+  - `apps/frontend/src/components/qa-panel.tsx`
+  - `apps/frontend/src/components/quiz-panel.tsx`
+  - `apps/frontend/src/components/search-page.tsx`
+  - `apps/frontend/src/components/video-panel.tsx`
+- added explicit input labels and improved structural semantics so:
+  - authored text areas now expose concrete accessible labels
+  - builder slots expose clearer slot-content state in their labels
+  - the video chapter transcript surface now uses native ordered-list semantics
+- hardened the public frontend API client behavior in:
+  - `apps/frontend/src/lib/api.ts`
+  so safe public browser requests continue forwarding guest CSRF protection without adding demo-auth headers
+- expanded regression coverage for this batch across:
+  - `apps/frontend/tests/primary-nav.integration.test.ts`
+  - `apps/frontend/tests/auth-and-proxy.integration.test.ts`
+  - `apps/frontend/tests/accessibility.integration.test.ts`
+  - `apps/frontend/tests/public-api.integration.test.ts`
+
+Completed verification work:
+
+- reran frontend lint:
+  - `npm run lint`
+  - result: passed
+- reran frontend integration coverage:
+  - `npm run test:integration`
+  - result: `84 passed`
+- reran frontend production-build verification:
+  - `npm run build`
+  - result: passed
+
+## 182. Responsive Frontend and Frontend-Readiness Hardening Batch Deployed to Production
+
+After the local responsive and frontend-hardening batch was completed, the updated frontend runtime was built and deployed to the live production frontend so the small-screen shell fixes and the frontend readiness/proxy hardening became active on the public domain.
+
+Completed implementation and deployment work:
+
+- hardened the frontend readiness route in:
+  - `apps/frontend/src/app/ready/route.ts`
+  so the public frontend now probes the backend `/ready` endpoint with a timeout and reports `degraded` instead of incorrectly reporting `ready` when the backend cannot actually be reached
+- hardened the frontend backend-proxy route in:
+  - `apps/frontend/src/app/api/backend/[...path]/route.ts`
+  so upstream timeouts and upstream-unreachable cases now return controlled `504` and `502` responses while preserving guest-session cookies
+- built and published the updated frontend image through Cloud Build:
+  - build id: `987372d0-9bb4-4c2a-937d-0cd0d1320b0b`
+  - images:
+    - `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest`
+    - `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:20260404142405`
+  - digest: `sha256:bd0ec24e47019fcb259a8c2f798ec7624f7190256caa6c1ae2dc89115fb1dc27`
+- deployed the frontend rollout to Cloud Run:
+  - service: `qcai-frontend`
+  - latest ready revision: `qcai-frontend-00050-fbk`
+  - traffic: `100%`
+  - service URL: `https://qcai-frontend-55f6mkphiq-uc.a.run.app`
+
+Completed live verification work:
+
+- confirmed the live public frontend health endpoint returns:
+  - `https://qantumlearn.academy/health`
+  - `200`
+  - `{"status":"ok","app":"QC+AI Studio Frontend","environment":"production"}`
+- confirmed the live public frontend readiness endpoint returns:
+  - `https://qantumlearn.academy/ready`
+  - `200`
+  - `{"status":"ready","api_origin":"https://qcai-api-55f6mkphiq-uc.a.run.app","api_status":"ready"}`
+- confirmed the live frontend proxy can still reach the backend health route:
+  - `https://qantumlearn.academy/api/backend/health`
+  - `200`
+  - `{"status":"ok","app":"QC+AI Learning API","environment":"production"}`
+- confirmed the live backend readiness route returns:
+  - `https://api.qantumlearn.academy/ready`
+  - `200`
+  - `{"status":"ready","database":"ok","lessons":12,"source_assets":24}`
+- reran live Lighthouse verification against:
+  - `https://qantumlearn.academy/`
+  - `https://qantumlearn.academy/modules`
+  - `https://qantumlearn.academy/lessons/nisq-reality-overview`
+  - `https://qantumlearn.academy/builder`
+  - `https://qantumlearn.academy/account`
+  - `https://qantumlearn.academy/support`
+- confirmed the live audit scores were:
+  - `/`: `99 / 100 / 100 / 100`
+  - `/modules`: `99 / 100 / 100 / 100`
+  - `/lessons/nisq-reality-overview`: `99 / 100 / 100 / 100`
+  - `/builder`: `100 / 100 / 100 / 66`
+  - `/account`: `99 / 100 / 100 / 66`
+  - `/support`: `100 / 100 / 100 / 100`
+
+## 183. Deep Double-Check Completed for the Responsive and Production-Hardening Batch
+
+After the responsive frontend rollout and the frontend readiness/proxy hardening were deployed, a second deep verification pass was completed against the current repository state, the local validation commands, the Cloud Build and Cloud Run metadata, the live public domain, and the Cloud Run request logs.
+
+Completed recheck work:
+
+- rechecked repository publication scope:
+  - the active publication branch for this batch is:
+    - `codex/log-responsive-production-batch`
+- reran frontend lint:
+  - `npm run lint`
+  - result: passed
+- reran frontend integration coverage:
+  - `npm run test:integration`
+  - result: `84 passed`
+- reran frontend production-build verification:
+  - `npm run build`
+  - result: passed
+- reran Lighthouse verification against the live production domain by setting:
+  - `LIGHTHOUSE_BASE_URL=https://qantumlearn.academy`
+  because the audit script defaults to `http://127.0.0.1:3000` and reports zeroed audits when no local target is running
+- rechecked deployed production state:
+  - Cloud Build `987372d0-9bb4-4c2a-937d-0cd0d1320b0b` is `SUCCESS`
+  - the live frontend revision remains `qcai-frontend-00050-fbk`
+  - the live frontend image remains `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:20260404142405`
+  - the live frontend traffic split remains `100%`
+- rechecked the live public endpoints:
+  - `https://qantumlearn.academy/health`
+  - `https://qantumlearn.academy/ready`
+  - `https://qantumlearn.academy/api/backend/health`
+  - `https://api.qantumlearn.academy/ready`
+- rechecked the prior readiness anomaly through Cloud Run request logs and confirmed one recorded frontend `503` request remains visible at:
+  - `2026-04-05T03:23:32.979694Z`
+  - request URL: `https://qantumlearn.academy/ready`
+  - revision: `qcai-frontend-00050-fbk`
+  - latency: `5.029326355s`
+
+Final-state confirmation from the responsive/production recheck:
+
+- no new concrete code or build failures were identified in the current repository state
+- the live public frontend and backend health/readiness endpoints were all returning `200` at recheck time
+- the previously observed intermittent `/ready` timeout remains the only concrete production-runtime issue identified during the recheck window, so a zero-issue claim would still be inaccurate
+
+## 184. Current Responsive and Production Batch Logged Locally and Synchronized to the Related GitHub Repository
+
+After the responsive, accessibility, public-request, and frontend-production-hardening work was reconstructed and reverified from the current folder, the repository logs were updated so the completed local work, the live deployment state, and the deep recheck findings are now recorded together, while the GitHub-published repository history is synchronized through the tracked completed-activities record.
+
+Completed logging and synchronization work:
+
+- updated the current-folder activity record in:
+  - `04_Completed_Activities_Log.md`
+- updated the current-folder production deployment record in:
+  - `07_Production_Deployment_Local_Log.md`
+- added the missing completed-activity sections:
+  - `181`
+  - `182`
+  - `183`
+  - `184`
+- confirmed the related GitHub repository remains:
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+- confirmed the remote default branch remains:
+  - `main`
+- confirmed the publication branch for this synchronization batch is:
+  - `codex/log-responsive-production-batch`
+- synchronized the updated completed-activities record and the current responsive/frontend-hardening batch to the related GitHub repository through the publication branch for this batch
+
+## 185. Deep Repository-Wide Study Completed from the Current Folder
+
+After the responsive-production batch had already been logged, a second deep repository-wide study was completed from the current folder so the present codebase, deployment scaffolding, seeded-demo package, release artifacts, and public-governance surfaces could be re-understood against the latest repository state rather than older implementation assumptions.
+
+Completed study work:
+
+- reviewed the root project records and challenge-facing documents:
+  - `README.md`
+  - `PROJECT_SUMMARY.md`
+  - `SUBMISSION_ATTRIBUTION.md`
+  - `04_Completed_Activities_Log.md`
+  - `07_Production_Deployment_Local_Log.md`
+  - `08_Fictional_User_Accounts_and_User_Commands.md`
+  - `production_website.txt`
+  - `Improvements.txt`
+- reviewed the backend implementation across:
+  - `apps/api/app/main.py`
+  - `apps/api/app/core/*`
+  - `apps/api/app/api/routes/*`
+  - `apps/api/app/services/*`
+  - `apps/api/app/db_models.py`
+  - `apps/api/app/schemas.py`
+  - `apps/api/app/workers/*`
+  - `apps/api/alembic/*`
+- reviewed the frontend implementation across:
+  - `apps/frontend/src/app/*`
+  - `apps/frontend/src/components/*`
+  - `apps/frontend/src/lib/*`
+  - `apps/frontend/src/proxy.ts`
+  - `apps/frontend/tests/*`
+- reviewed infrastructure, packaging, and support artifacts across:
+  - `infra/k8s/*`
+  - `infra/cloudrun/*`
+  - `infra/cloudbuild/*`
+  - `tools/package_release.py`
+  - `transcripts/*`
+  - `seeds/demo/*`
+  - `dist/release/*`
+- reconfirmed the present application footprint:
+  - FastAPI backend plus Next.js frontend
+  - eleven modules and twelve lesson entry points
+  - protected source-asset delivery with range-enabled MP4 streaming
+  - labeled seeded demo surfaces for projects, builder, and arena
+  - public trust, status, privacy, accessibility, and audit-fixture routes
+  - split hydrated release-bundle support for Git LFS media distribution
+
+Completed verification during the deep study:
+
+- reran the backend full test suite:
+  - `pytest`
+  - result: `83 passed`
+- reran the frontend full integration suite:
+  - `npm run test:integration`
+  - result: `92 passed`
+- confirmed the current publication branch remains:
+  - `codex/log-responsive-production-batch`
+- confirmed the related GitHub repository remains:
+  - `https://github.com/naylinnaungHoodedu/qcai-studio`
+
+## 186. Transparency, Seeded-Demo, and Release-Integrity Hardening Completed
+
+After the deep repository study confirmed that the seeded-demo package, ethical disclosure copy, and hydrated release packaging were already materially present, the repository was hardened further so those transparency guarantees are now more explicit in the root documentation and enforced by regression tests rather than relying on manual interpretation alone.
+
+Completed implementation work:
+
+- updated `README.md` so it now states explicitly that:
+  - production instances start empty and only show seeded demo activity if the optional `python -m app.workers.seed_demo` worker is run intentionally
+  - the canonical seeded-demo fixture files are:
+    - `seeds/demo/routing-rescue-submission.json`
+    - `seeds/demo/builder-map-hybrid-loop.json`
+    - `seeds/demo/arena-match-log.json`
+  - hydrated split release artifacts are expected locally under:
+    - `dist/release/qcai-studio-v1.0.0-part1-app-docs-media.zip`
+    - `dist/release/qcai-studio-v1.0.0-part2-hydrated-media.zip`
+    - `dist/release/RELEASE_NOTES_v1.0.0.md`
+    - `dist/release/SHA256SUMS.txt`
+  - `python tools/package_release.py` is the canonical regeneration path for the hydrated split release bundle and checksums
+- extended backend deployment-artifact regression coverage in:
+  - `apps/api/tests/test_deployment_artifacts.py`
+- added two new backend regression tests proving:
+  - the split release ZIPs, release notes, and checksums are present and the release notes explicitly describe seeded-demo transparency
+  - the root README continues to document the ethical addendum, seeded-demo fixture paths, roadmap section, and local `dist/release` artifact paths
+
+Completed factual verification for this hardening pass:
+
+- confirmed the seeded-demo fixture files already exist in:
+  - `seeds/demo/`
+- confirmed the local release artifacts already exist in:
+  - `dist/release/`
+- confirmed `git lfs ls-files` currently reports:
+  - `12` curated MP4 entries
+  - `12` hydrated MP4 payloads
+
+Completed targeted verification for the hardening pass:
+
+- reran backend release and seeded-demo verification:
+  - `pytest tests/test_deployment_artifacts.py tests/test_demo_seed.py`
+  - result: `13 passed`
+- reran frontend integration verification after the transparency hardening:
+  - `npm run test:integration`
+  - result: `92 passed`
+
+## 187. Deep Output Double-Check Completed Against the Current Repository State
+
+After the transparency hardening work and the updated verification runs were completed, a second line-by-line factual recheck was carried out against the prior written closeout so the response itself could be validated against the repository state, the actual test outputs, the LFS state, the release-artifact directory, and the current git worktree.
+
+Completed double-check work:
+
+- rechecked:
+  - `README.md`
+  - `apps/api/tests/test_deployment_artifacts.py`
+  - `dist/release/*`
+  - `seeds/demo/*`
+  - `hydrate-assets.sh`
+  - `git status --short`
+  - `git lfs ls-files`
+- confirmed the prior closeout claims about:
+  - the README updates
+  - the seeded-demo fixture files
+  - the hydrated release artifacts
+  - the `12 / 12` hydrated MP4 state
+  - the `13 passed` targeted backend verification
+  - the `92 passed` frontend verification
+  were all factually correct against the current repository state
+- identified one minor wording issue in an intermediary progress update:
+  - one intermediary note described the frontend verification as targeted
+  - the actual command that ran was the full frontend integration suite
+  - the final closeout itself remained accurate because it reported the real `92 passed` result
+- confirmed the unrelated screenshot files remained untracked and outside the intended publication scope:
+  - `screenshot_from_galaxy_fold6_phone.jpeg`
+  - `screenshot_from_iphone13pro.jpeg`
+  - `screenshot_from_laptop1.jpg`
+  - `screenshot_from_laptop2.jpg`
+
+## 188. Current Folder Logging and GitHub Synchronization Batch Completed
+
+After the deep repository study, the transparency hardening pass, and the output double-check were completed from the current folder, the canonical completed-activities log was updated again so the latest local work is recorded in the repository itself, and the intended repository changes were prepared for synchronization to the related GitHub repository without staging the unrelated screenshot files.
+
+Completed logging and synchronization preparation work:
+
+- updated the current-folder activity record in:
+  - `04_Completed_Activities_Log.md`
+- kept the intended Git publication scope limited to:
+  - `README.md`
+  - `apps/api/tests/test_deployment_artifacts.py`
+  - `04_Completed_Activities_Log.md`
+- intentionally excluded unrelated untracked screenshot files from the Git publication scope
+- reconfirmed the GitHub remote remains:
+  - `origin -> https://github.com/naylinnaungHoodedu/qcai-studio.git`
+- reconfirmed the active publication branch remains:
+  - `codex/log-responsive-production-batch`
+
+## 189. Deep Repository + Live-Site Study and UI/UX Simplification Batch (P0) Completed
+
+A full professional study of the current folder and the live site
+`https://qantumlearn.academy/` was completed, a durable UI/UX + software-update
+log file was created, and the first batch of high-value, low-risk UI/UX
+simplifications (the P0 "quick wins") was implemented and verified. The goal of
+this batch is a simpler, more user-friendly experience while keeping the platform
+honest and maintainable.
+
+Completed study work:
+
+- studied the whole repository (frontend `apps/frontend` Next.js 16 App Router,
+  backend `apps/api` FastAPI + SQLAlchemy, infra, seeds, transcripts) and the
+  core specification/blueprint DOCX documents
+- studied the live site surfaces (`/`, `/modules`, `/dashboard`) for UX friction
+- captured the findings and a phased roadmap in a new plain-text living log:
+  - `09_UIUX_and_Software_Update_Log.txt`
+
+Completed UI/UX simplification work (P0):
+
+- added an additive design-token layer (spacing, radius, type, and semantic
+  color aliases) at the top of:
+  - `apps/frontend/src/app/globals.css`
+- added a `prefers-reduced-motion: reduce` block that stops the animated shimmer,
+  disables smooth scroll and hover/transition motion, and quiets the decorative
+  fixed grid/gradient overlays, in:
+  - `apps/frontend/src/app/globals.css`
+- simplified the primary navigation from eight top-level items to five
+  (`Modules`, `Simulations`, `Practice`, `Search`, `Account`), removing the
+  redundant `Overview` (the brand mark already links home), moving `About` to the
+  footer, and folding `Projects` into the `Practice` menu, in:
+  - `apps/frontend/src/lib/navigation.ts`
+- reduced the homepage hero to one dominant primary call-to-action
+  (`Start the course`) plus two secondary links, removing the extra hero CTAs
+  (guest dashboard, search) that remain reachable from the navigation, in:
+  - `apps/frontend/src/app/page.tsx`
+- clarified the module card primary action label from `Visit course` to
+  `View module` (it links to a module page, not a course), in:
+  - `apps/frontend/src/components/module-card.tsx`
+- improved syllabus discoverability by adding a `Full syllabus` link to the
+  footer project links, in:
+  - `apps/frontend/src/components/site-footer.tsx`
+- updated the navigation contract test to assert the new five-item order, in:
+  - `apps/frontend/tests/course-structure.integration.test.ts`
+
+Completed verification for this batch:
+
+- reran the full frontend integration suite:
+  - `npm run test:integration`
+  - result: `92 passed`
+- reran the frontend linter:
+  - `npm run lint`
+  - result: clean (no errors)
+
+Notes recorded for later batches (tracked in `09_UIUX_and_Software_Update_Log.txt`):
+
+- the site already ships responsive breakpoints at 1100 / 980 / 720 / 640 px, so
+  mobile support is more developed than an external page scan suggested; future
+  mobile work is refinement, not a first build
+- higher-effort items (light + dark theming, jargon progressive disclosure,
+  dashboard onboarding, module progress indicators) remain queued as P1/P2
+
+## 190. UI/UX Simplification Batch 2 (P1 — Plain-Language / Jargon) Completed
+
+The second batch of user-friendliness work focused on the platform's single
+biggest first-visit barrier: quantum-computing jargon (NISQ, QUBO, VQC,
+QAI vs AI4QC) appearing before any plain-language framing. A plain-language
+onboarding layer was added so a newcomer can understand the premise in everyday
+terms before meeting the technical vocabulary.
+
+Completed plain-language / jargon work (P1):
+
+- added a plain-language glossary library exposing four newcomer "core concepts"
+  and a broader jargon-free term bank, in:
+  - `apps/frontend/src/lib/glossary.ts`
+- added a reusable, zero-JavaScript, CSP-safe inline term helper (native
+  `<abbr title>`) plus its dotted-underline styling, in:
+  - `apps/frontend/src/components/glossary-term.tsx`
+  - `apps/frontend/src/app/globals.css`
+- added a "New to QC+AI? — the whole course in plain language" onboarding
+  explainer to the home page, placed before the jargon-heavy architecture
+  section, in:
+  - `apps/frontend/src/app/page.tsx`
+- added a glossary regression suite (core concepts, definition lookup, and
+  home-page explainer presence), in:
+  - `apps/frontend/tests/glossary.integration.test.ts`
+
+Completed verification for this batch:
+
+- reran the full frontend integration suite:
+  - `npm run test:integration`
+  - result: `95 passed` (3 new glossary tests added)
+- reran the frontend linter:
+  - `npm run lint`
+  - result: clean (no errors)
+
+Notes recorded for later batches (tracked in `09_UIUX_and_Software_Update_Log.txt`):
+
+- the dashboard already ships an onboarding banner
+  (`learning-dashboard.tsx`), so that P1 onboarding item is largely covered
+- wiring the `<GlossaryTerm>` helper into dashboard and module copy is a
+  follow-up refinement
+- light + dark theming remains queued and needs a preceding token-migration pass,
+  because most surfaces currently use hardcoded `rgba(...)` colors rather than the
+  new semantic tokens
+
+## 191. UI/UX Simplification Batch 3 (P1 — Opt-In Light/Dark Theming) Completed
+
+The third batch delivered the most-requested "ultimate version" capability: a
+light/dark theme. It was built to carry zero regression risk — the existing dark
+theme remains the default and is byte-for-byte unchanged, and light mode is a
+fully additive, opt-in override that users turn on with a header toggle.
+
+Completed theming work (P1):
+
+- added an isolated, opt-in light theme as a `:root[data-theme="light"]` override
+  block (semantic variable overrides plus scoped overrides for the primary
+  reading, navigation, card, form, footer, pill, and table surfaces, and a light
+  body background), with accent and label colors darkened for AA contrast on
+  light backgrounds, in:
+  - `apps/frontend/src/app/globals.css`
+- added a header theme toggle (sun/moon) that reads the `<html>` `data-theme`
+  attribute via `useSyncExternalStore` (clean hydration, no effect/setState) and
+  persists the choice to `localStorage` key `qcai-theme`, in:
+  - `apps/frontend/src/components/theme-toggle.tsx`
+  - `apps/frontend/src/components/app-shell.tsx`
+- added a flash-free, pre-paint theme initializer as a nonce'd (CSP-safe) inline
+  script that applies the saved theme before render and defaults to dark, in:
+  - `apps/frontend/src/app/layout.tsx`
+- added a theme regression suite (toggle persistence and accessibility,
+  app-shell mount, nonce'd initializer, and the dark-default / light-additive CSS
+  structure), in:
+  - `apps/frontend/tests/theme.integration.test.ts`
+
+Completed verification for this batch:
+
+- reran the full frontend integration suite:
+  - `npm run test:integration`
+  - result: `99 passed` (4 new theme tests added)
+- reran the frontend linter:
+  - `npm run lint`
+  - result: clean (no errors)
+
+Notes recorded for later batches (tracked in `09_UIUX_and_Software_Update_Log.txt`):
+
+- light mode is a first pass: deep interactive studios (builder, arena, simulation
+  labs, and the floating assistant chat) intentionally keep their dark styling for
+  now and are the next theming refinement
+- because the theme is opt-in with dark as the default, none of this changes the
+  currently shipped experience; a visual QA pass on light mode is recommended
+  before it is promoted from opt-in to a first-class default option
+
+## 192. UI/UX Simplification Batch 4 (Wayfinding, In-Place Jargon Help, Light Studio Coverage) Completed
+
+The fourth batch improved orientation and reduced jargon friction in place, and
+broadened light-theme coverage to the interactive studio pages.
+
+Completed work (P1):
+
+- primary navigation now marks the current page with `aria-current="page"` and an
+  `.is-active` accent (a subtle inset left bar), resolved by an
+  `isActiveHref(pathname, href)` helper that matches the exact page or any page
+  beneath it, in:
+  - `apps/frontend/src/components/primary-nav.tsx`
+  - `apps/frontend/src/app/globals.css`
+- module-card acronym tags now render through the `<GlossaryTerm>` helper so the
+  jargon gets plain-language hovers, and the glossary vocabulary was expanded to
+  cover the tag terms (VQCs, RL-Q-ALM, QGSHAP, CV-QNN, MLIR, Shots, Parameter
+  shift, Pulse control, Barren plateaus, Graph shrinking), in:
+  - `apps/frontend/src/components/module-card.tsx`
+  - `apps/frontend/src/lib/glossary.ts`
+- extended the opt-in light theme to the interactive studios (builder canvas and
+  slots, arena cards, simulation cards/labs/panels, video and transcript panels,
+  inset panels) so light mode reads coherently on the content pages; the floating
+  assistant chat intentionally keeps its dark styling, in:
+  - `apps/frontend/src/app/globals.css`
+
+Completed verification for this batch:
+
+- reran the full frontend integration suite:
+  - `npm run test:integration`
+  - result: `101 passed` (2 new tests added)
+- reran the frontend linter:
+  - `npm run lint`
+  - result: clean (no errors)
+
+## 193. Local Full-Stack Run and Visual QA of Batches 1-4 Completed
+
+The platform was run locally end-to-end and the accumulated UI/UX improvements
+were visually verified in the real application (no code was changed in this
+step — it was verification and evidence capture).
+
+Completed run-and-verify work:
+
+- started the backend locally:
+  - `python -m uvicorn app.main:app --host 127.0.0.1 --port 8001`
+  - `/health` returned ok; `/ready` reported `12` lessons and `24` source assets
+- started the frontend locally:
+  - `npm run dev` on `127.0.0.1:3000` (reads `API_BASE_URL=http://127.0.0.1:8001`
+    from `apps/frontend/.env.local`)
+- verified in the rendered HTML of the running app:
+  - the simplified five-item primary navigation
+  - the single "Start the course" hero call-to-action
+  - the pre-paint theme initializer and the header theme toggle
+  - the "New to QC+AI?" plain-language explainer
+  - live glossary tooltips on the module cards (for example NISQ, Graph shrinking)
+  - the `aria-current="page"` active-navigation marker on `/modules`
+  - the same-origin proxy path `/api/backend/content/course` returning `200`
+  - the served CSS chunk carrying the light-theme, glossary, active-navigation,
+    and reduced-motion rules
+- captured headless-Chrome screenshots through the DevTools Protocol (driven with
+  the Node built-in WebSocket, no added dependencies) of the home page in dark
+  mode and the home and modules pages in light mode; both themes render coherently
+  with good contrast, and light mode covers the module cards and studio surfaces
+  without broken areas
+
+Outcome:
+
+- all four UI/UX batches were confirmed working in the real, locally running
+  full-stack application, in both the default dark theme and the opt-in light
+  theme
+- no regressions observed; dark mode remains the unchanged default
+
+## 194. UI/UX Simplification Batch 5 (Dashboard Metric Clarity) Completed
+
+With the app running locally, the learning dashboard was reviewed visually and its
+bare numeric signals were made self-explanatory for newcomers.
+
+Completed clarity work (P1):
+
+- the 0-100 signals now show their scale inline: Motivation and Focus render as
+  "N / 100" via a quiet `.metric-scale` suffix, and the Consistency pill reads
+  "N / 100", in:
+  - `apps/frontend/src/components/learning-dashboard.tsx`
+  - `apps/frontend/src/app/globals.css`
+- the dashboard hero copy now states the 0-100 scale explicitly, so the numbers
+  are not ambiguous, in:
+  - `apps/frontend/src/components/learning-dashboard.tsx`
+- added a plain-language note under the module insights explaining what "mastery"
+  estimates and what a "fragile" label means (worth another pass before building
+  on it), in:
+  - `apps/frontend/src/components/learning-dashboard.tsx`
+
+Completed verification for this batch:
+
+- reran the full frontend integration suite:
+  - `npm run test:integration`
+  - result: `101 passed`
+- reran the frontend linter:
+  - `npm run lint`
+  - result: clean (no errors)
+- visually confirmed the change in the running app via a headless-Chrome
+  screenshot of `/dashboard` (Motivation "62 / 100", Focus "58 / 100",
+  Consistency "0 / 100", and the new scale sentence in the hero)
+
+## 195. UI/UX Simplification Batch 6 (Lesson Video Messaging) Completed
+
+Reviewing the lesson page in the running app surfaced a confusing, technical video
+status message. It was rewritten into plain, reassuring language that keeps the
+learner moving even when the video cannot load.
+
+Completed clarity work (P1):
+
+- replaced the video-panel status copy in:
+  - `apps/frontend/src/components/video-panel.tsx`
+  - "Preparing authenticated lesson stream." became "Loading the lesson video…"
+  - the failure message now reads: "We couldn't load the video here. You can
+    retry or open it directly — or just keep going: the chapter summaries and
+    transcript below are available now."
+  - the playback-error and ready messages were likewise simplified
+
+Completed verification for this batch:
+
+- reran the full frontend integration suite:
+  - `npm run test:integration`
+  - result: `101 passed`
+- reran the frontend linter:
+  - `npm run lint`
+  - result: clean (no errors)
+- visually confirmed the friendlier "Loading the lesson video…" message in the
+  running lesson page via a headless-Chrome screenshot
+
+## 196. UI/UX Simplification Batch 7 (Search Onboarding) + Dev-CSP Finding Completed
+
+The search page presented a blank box with no guidance. Clickable example-query
+chips were added so a first-time visitor always has an obvious starting point.
+While verifying interactively, a development-only Content-Security-Policy issue
+was discovered and recorded.
+
+Completed search onboarding work (P1):
+
+- added a "Try an example" row of clickable query chips (NISQ constraints, QUBO
+  logistics, quantum vision, few-shot learning, quantum finance) and refactored
+  the search logic into a shared `runSearch(query)` so a chip runs the search
+  instantly (reused by the Search button), in:
+  - `apps/frontend/src/components/search-page.tsx`
+
+Completed verification for this batch:
+
+- reran the full frontend integration suite: `npm run test:integration` -> `101 passed`
+- reran the frontend linter: `npm run lint` -> clean
+- confirmed the chips render in the running app (screenshot) and that the search
+  path returns real, source-grounded results through the same-origin proxy
+  (`GET /api/backend/search?query=NISQ%20constraints` returns document/chapter
+  hits)
+
+Development-only finding recorded for the software backlog:
+
+- the production-oriented CSP blocks Next.js dev tooling under `next dev`: the HMR
+  websocket (`ws://127.0.0.1:3000/_next/webpack-hmr`) fails the `connect-src`
+  check and dev inline `<style>` elements fail `style-src-elem`. This impairs
+  client interactivity and hot reload in LOCAL DEVELOPMENT only (it prevented
+  automated click-through in headless Chrome, including the known-good theme
+  toggle). Production is unaffected because it has no HMR and uses external CSS.
+- recommended follow-up: relax the CSP in development (allow the HMR websocket and
+  dev styles) or serve a dev-specific CSP; tracked in
+  `09_UIUX_and_Software_Update_Log.txt` Sections 6 and 7
+
+## 197. UI/UX Simplification Batch 8 (Interactive Surfaces + Arena Parity) Completed
+
+The interactive learning tools (Arena, Builder, Labs) were unified under a clear "Learn / Practice / Play / Build" guide, and keyboard accessibility was made discoverable for the Arena.
+
+Completed interactive surface wayfinding work (P1):
+
+- added a unified `learning-modes.ts` data model and `<LearningModesGuide>` component that states what each surface is and when to use it (ordered passive to active).
+- replaced the scattered "Interactive practice" section on the Home page with this guide and embedded it at the top of the Simulations page.
+- updated Arena MCQ options to display a numbered `<kbd>` badge, making the existing 1-4 keyboard shortcuts explicitly discoverable.
+
+Completed verification for this batch:
+
+- reran the full frontend integration suite: `npm run test:integration` -> `104 passed`
+- reran the frontend linter: `npm run lint` -> clean
+- visually confirmed the new `learning-modes-guide` renders on Home and Simulations, and that Arena badges match keyboard bindings.
+
+## 198. UI/UX Batch 1-8 Production Deployment & Domain Mapping Completed
+
+The accumulated UI/UX enhancements (Batches 1 through 8, including design tokens, light theme, progressive jargon disclosure, simplified navigation, and the interactive surfaces guide) were deployed to the live production environment.
+
+Completed production deployment activities:
+
+- executed a clean frontend container build via Cloud Build (image: `us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend:latest`).
+- deployed the resulting container to the `qcai-frontend` Cloud Run service in `us-central1`.
+- mapped the registered custom domain `qantumlearn.academy` to the `qcai-frontend` service.
+- mapped the API subdomain `api.qantumlearn.academy` to the `qcai-api` service.
+
+Completed verification for this deployment:
+
+- live verification confirmed the `https://qantumlearn.academy` domain correctly serves the Next.js frontend with all UI/UX enhancements active.
+- the API domain successfully proxies traffic to the backend services.
+- verified that all DNSSEC and domain registration requirements were successfully configured on Google Cloud Domains.
+
+## 199. CS595 Repository Transformation, Verification, and GitHub Publication Completed
+
+**Completed on:** `2026-08-27 10:56:27 -04:00`
+**Repository:** `naylinnaungHoodedu/qcai-studio`
+**Scope authority:** `CS595_Software_Engineering_Project_Proposal_RevB_NayLinnAung.pdf`
+**Implementation commit:** `dfab1594fbaa4736ceb1955555eb28995eb8fce0`
+**Published branch:** `codex/log-responsive-production-batch`
+
+### 199.1 Proposal Decomposition and Repository Re-Study Completed
+
+The CS595 Revision B proposal was treated as the sole scope authority for this
+transformation. The proposal was read and normalized into a requirements model
+covering objectives O1-O6, research questions RQ1-RQ3, the enrollment-period
+engineering increment, corpus governance, security, testing, evaluation,
+deliverables, milestones, and acceptance criteria.
+
+Completed analysis activities:
+
+- performed a repository-wide inventory of the FastAPI backend, Next.js frontend,
+  persistence model, API routes, authentication paths, retrieval/Tutor services,
+  infrastructure, release tooling, tests, source assets, and adjacent evaluation
+  working data;
+- recorded a requirements traceability matrix with implemented, partial, missing,
+  and unknown status distinctions rather than treating pre-existing features as
+  automatic CS595 compliance;
+- documented target context, component, deployment, data-flow, use-case,
+  sequence, and class models;
+- identified the critical academic distinction in RevB §4.1: the deployed platform
+  is preliminary work, while the evaluated engineering increment and thesis
+  artifacts must be evidenced as enrollment-period work.
+
+The resulting principal-architect transformation record is:
+
+- `docs/CS595_REPOSITORY_TRANSFORMATION_BLUEPRINT.md`
+
+### 199.2 Durable Learner Record Increment Implemented
+
+The cross-device Learner Record foundation required by RevB §6.1 was implemented
+as an append-only, idempotent operation model rather than a last-write-wins
+dashboard aggregate.
+
+Completed backend work:
+
+- added `LearnerRecord`, `LearnerReplica`, and `LearnerRecordOperation` persistence
+  models;
+- added Alembic migration `20260827_cs595_increment.py`;
+- added `GET /learner-record` and `POST /learner-record/operations`;
+- restricted Learner Record mutation/read access to durable authenticated identities
+  rather than guest/demo identities;
+- implemented maximum-register mastery, set-union completions, grow-only
+  per-replica attempt counters, and logical-clock LWW semantics only for cursor and
+  preferences;
+- recorded operation IDs, payload hashes, replica IDs, causal vectors, and logical
+  counters to make replay detectable and operations idempotent;
+- connected durable-account quiz outcomes to the authoritative Learner Record;
+- added frontend contracts and a browser replica/logical-clock operation builder.
+
+Principal implementation paths:
+
+- `apps/api/app/services/learner_record.py`
+- `apps/api/app/api/routes/learner_record.py`
+- `apps/api/app/db_models.py`
+- `apps/frontend/src/lib/learner-record-sync.ts`
+
+### 199.3 Persistent Grounded Tutor Increment Implemented
+
+The Tutor was upgraded from an interaction-only surface to a persistent,
+provenance-aware service boundary.
+
+Completed Tutor work:
+
+- added persistent Tutor thread, message, and turn records;
+- added thread create/list/read operations and persistent thread identifiers in the
+  existing chat contract;
+- resolved short follow-up questions against persisted conversation state and stored
+  the resolved query for audit;
+- separated pedagogical guidance derived from learner state from the factual query
+  used for retrieval;
+- implemented a conservative claim gate that binds factual answer sentences to
+  retrieved spans or returns a transparent abstention decision;
+- made local-provider degradation use an extractive evidence digest rather than an
+  unlabelled parametric answer;
+- added content-addressed citation provenance: stable span ID, excerpt hash, corpus
+  manifest version, retrieval mode, policy version, decision reason, citations, and
+  claims are persisted per Tutor turn;
+- updated the Tutor UI to resume the learner's latest persisted thread and report
+  grounding decisions through analytics metadata.
+
+Principal implementation paths:
+
+- `apps/api/app/services/tutor_orchestrator.py`
+- `apps/api/app/services/claim_gate.py`
+- `apps/api/app/services/provenance.py`
+- `apps/api/app/services/teaching_assistant.py`
+- `apps/frontend/src/components/teaching-assistant-chat.tsx`
+
+### 199.4 Corpus Governance and Public-Release Boundary Implemented
+
+The repository now fails closed in non-development environments until public source
+assets are affirmatively reviewed. This implements the RevB requirement to separate
+publicly served open/permissive material from the private evaluation corpus.
+
+Completed governance work:
+
+- added `corpus/public/manifest.json` as the reviewed public-service allowlist
+  contract;
+- added `corpus/license-register.csv` with the required per-item fields;
+- added `corpus/private/README.md` defining non-distribution and controlled-use
+  requirements for licensed evaluation material;
+- added runtime `CorpusRegistry` validation and source-asset serving enforcement;
+- configured non-development runtime examples to set
+  `ENFORCE_CORPUS_GOVERNANCE=true`;
+- added release-packaging preflight so `tools/package_release.py` stops before
+  packaging public media when configured assets lack manifest approval;
+- documented the intentionally empty manifest as a pending legal/library review,
+  rather than fabricating a license determination.
+
+### 199.5 LQS, Evaluation Harness, and Research Artifacts Implemented
+
+The repository now contains the reusable evaluation framework required to perform,
+but not yet falsely claim completion of, RevB §§8.1-8.5.
+
+Completed evaluation work:
+
+- added LQS schema, rubric, draft manifest, protected ratings boundary, and a strict
+  validator that requires 120-200 items and all required strata at freeze time;
+- added evaluator modules for LQS loading, retrieval sufficiency, citation
+  existence, claim taxonomy, citation faithfulness, fabrication rate, correct
+  abstention, multi-turn abstention decay, RQ2 invariance, four-arm ablation parity,
+  Wilson intervals, paired McNemar tests, and reproducibility-report generation;
+- added `scripts/validate_lqs.py`, `scripts/validate_corpus.py`, and
+  `scripts/run_evaluation.py`;
+- added the seven required ADRs, PlantUML package, target architecture specification,
+  testing strategy, evaluation protocol, security threat model, thesis artifact
+  register, implementation status document, and transformation blueprint;
+- added GitHub Actions quality gates for backend/evaluation tests, frontend lint and
+  integration tests, corpus/LQS draft validation, and Python dependency audit.
+
+Primary artifact roots:
+
+- `lqs/`
+- `evaluation/`
+- `scripts/`
+- `docs/adr/`
+- `docs/uml/`
+- `docs/testing/`
+- `docs/evaluation/`
+- `.github/workflows/ci.yml`
+
+### 199.6 Verification Completed
+
+The completed transformation was verified locally after implementation.
+
+Completed verification results:
+
+- `python -m pytest -q apps/api/tests evaluation/tests`
+  - result: `94 passed`;
+- `npm run test:integration` in `apps/frontend`
+  - result: `107 passed`;
+- `npm run lint` in `apps/frontend`
+  - result: passed with no lint errors;
+- `python -m compileall -q apps/api/app evaluation scripts`
+  - result: passed;
+- `python scripts/validate_corpus.py`
+  - result: passed for the reviewed-manifest template;
+- `python scripts/validate_lqs.py --allow-draft`
+  - result: passed for the pre-freeze draft state;
+- Git whitespace validation
+  - result: `git diff --check` passed before commit.
+
+The increment-specific tests include durable-session endpoint access, idempotent
+replay rejection, divergent replica merge behavior, no lost completion/attempt
+outcomes, logical-clock cursor resolution, persistent Tutor follow-up resolution,
+claim/span provenance, and production corpus allowlist behavior.
+
+### 199.7 GitHub Publication Completed
+
+The implementation was committed and published without force-pushing or altering
+the repository's `main` branch.
+
+Completed version-control activities:
+
+- staged the complete transformation package: 83 files changed, 3,230 additions,
+  and 40 deletions;
+- committed with message:
+  - `feat: implement CS595 grounding and learner record increment`;
+- pushed commit `dfab1594fbaa4736ceb1955555eb28995eb8fce0` to:
+  - `origin/codex/log-responsive-production-batch`;
+- verified that the local branch and remote tracking branch are synchronized;
+- intentionally left `origin/main` unchanged for normal review/merge handling.
+
+### 199.8 Explicitly Not Logged as Completed
+
+The following RevB gates remain pending external evidence or future execution and
+are deliberately not represented as completed work:
+
+- reviewed, populated corpus license register and written library determination;
+- final public corpus allowlist and resulting production service/release approval;
+- frozen 120-200 item LQS, full rating set, independent second-rater subsample,
+  Cohen's kappa confidence interval, and adjudications;
+- completed four-arm experimental results and publication-quality figures;
+- target-browser E2E, formal accessibility, performance, and dependency-scan
+  reports retained as G2/G3 evidence;
+- IRB determination, consent/task scripts, and moderated usability results;
+- adviser/committee approval, thesis-equivalent manuscript, mock defense, and
+  final CS595 defense/submission artifacts.
+
+Current status is recorded separately in:
+
+- `docs/CS595_IMPLEMENTATION_STATUS.md`
+
+This entry records completed engineering, documentation, verification, and GitHub
+publication activities accurately while preserving the proposal's distinction between
+implemented foundations and evidence that still must be collected for CS595
+completion.

@@ -24,7 +24,7 @@ export function VideoPanel({
   const [activeChapterId, setActiveChapterId] = useState(chapters[0]?.id ?? "");
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [streamState, setStreamState] = useState<"preparing" | "ready" | "error">("preparing");
-  const [streamMessage, setStreamMessage] = useState("Preparing authenticated lesson stream.");
+  const [streamMessage, setStreamMessage] = useState("Loading the lesson video…");
   const [refreshToken, setRefreshToken] = useState(0);
   const resolvedVideoUrl =
     videoAsset?.download_url != null ? `${getClientApiBaseUrl()}${videoAsset.download_url}` : null;
@@ -61,15 +61,18 @@ export function VideoPanel({
     async function bootstrapStream() {
       setVideoUrl(null);
       setStreamState("preparing");
-      setStreamMessage("Preparing authenticated lesson stream.");
+      setStreamMessage("Loading the lesson video…");
 
       try {
         const response = await fetch(streamUrl, {
-          method: "HEAD",
+          method: "GET",
           cache: "no-store",
           credentials: "same-origin",
+          headers: {
+            Range: "bytes=0-1023",
+          },
         });
-        if (!response.ok) {
+        if (!response.ok || ![200, 206].includes(response.status)) {
           throw new Error(`bootstrap ${response.status}`);
         }
         if (cancelled) {
@@ -77,14 +80,14 @@ export function VideoPanel({
         }
         setVideoUrl(streamUrl);
         setStreamState("ready");
-        setStreamMessage("Video stream ready. If playback stalls, retry the stream attach.");
+        setStreamMessage("Video ready to play. If it stalls, retry.");
       } catch {
         if (cancelled) {
           return;
         }
         setStreamState("error");
         setStreamMessage(
-          "The browser could not attach the lesson video. Retry the stream or open the direct asset link.",
+          "We couldn't load the video here. You can retry or open it directly — or just keep going: the chapter summaries and transcript below are available now.",
         );
       }
     }
@@ -160,7 +163,7 @@ export function VideoPanel({
             onError={() => {
               setStreamState("error");
               setStreamMessage(
-                "The browser reported a playback error. Retry the stream attach or open the direct asset link.",
+                "The video ran into a playback problem. Retry, open it directly, or use the chapter summaries and transcript below.",
               );
             }}
             onLoadedData={() => {
@@ -199,22 +202,23 @@ export function VideoPanel({
               <h3>Navigable segments</h3>
             </div>
           </div>
-          <div className="transcript-list" role="list">
+          <ol className="transcript-list">
             {chapters.map((chapter, index) => (
-              <button
-                className={`transcript-segment ${chapter.id === activeChapterId ? "is-active" : ""}`}
-                key={chapter.id}
-                onClick={() => seekToChapter(chapter)}
-                type="button"
-              >
-                <span className="eyebrow">
-                  {index + 1}. {formatTimestamp(chapter.timestamp_start)}
-                </span>
-                <strong>{chapter.title}</strong>
-                <p>{chapter.transcript_excerpt || chapter.summary}</p>
-              </button>
+              <li key={chapter.id}>
+                <button
+                  className={`transcript-segment ${chapter.id === activeChapterId ? "is-active" : ""}`}
+                  onClick={() => seekToChapter(chapter)}
+                  type="button"
+                >
+                  <span className="eyebrow">
+                    {index + 1}. {formatTimestamp(chapter.timestamp_start)}
+                  </span>
+                  <strong>{chapter.title}</strong>
+                  <p>{chapter.transcript_excerpt || chapter.summary}</p>
+                </button>
+              </li>
             ))}
-          </div>
+          </ol>
         </aside>
       </div>
     </section>

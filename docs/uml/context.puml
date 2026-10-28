@@ -1,0 +1,20 @@
+@startuml
+title QC+AI Studio CS595 context
+actor Learner
+actor "Adviser / evaluator" as Committee
+rectangle "Next.js learning web" as Web
+rectangle "FastAPI QC+AI API" as API
+cloud "OIDC provider" as IdP
+database "Learner record / Tutor provenance" as DB
+folder "Approved public corpus" as Public
+folder "Private evaluation corpus" as Private
+rectangle "Private evaluation harness" as Eval
+Learner --> Web
+Web --> IdP : PKCE
+Web --> API
+API --> DB
+API --> Public
+Eval --> Private
+Eval --> DB
+Committee --> Eval : reports
+@enduml

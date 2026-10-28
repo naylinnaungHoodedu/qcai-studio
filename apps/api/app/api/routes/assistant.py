@@ -6,8 +6,8 @@ from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.rate_limit import limiter
 from app.db_models import QAInteraction
-from app.schemas import AssistantChatRequest, AssistantChatResponse
-from app.services.store import get_teaching_assistant
+from app.schemas import AssistantChatRequest, AssistantChatResponse, TutorThreadCreate, TutorThreadDetail, TutorThreadRead
+from app.services.store import get_tutor_orchestrator
 from app.services.text_utils import sanitize_user_text
 
 
@@ -27,13 +27,7 @@ def chat_with_teaching_assistant(
     if not clean_message:
         raise HTTPException(status_code=422, detail="Message cannot be empty.")
 
-    assistant_response = get_teaching_assistant().chat(
-        clean_message,
-        lesson_slug=payload.lesson_slug,
-        page_path=payload.page_path,
-        history=payload.history,
-        top_k=payload.top_k,
-    )
+    assistant_response = get_tutor_orchestrator().chat(db, user, payload.model_copy(update={"message": clean_message}))
     db.add(
         QAInteraction(
             user_id=user.user_id,
@@ -47,3 +41,31 @@ def chat_with_teaching_assistant(
     response.headers["x-assistant-provider"] = assistant_response.provider
     response.headers["x-assistant-model"] = assistant_response.model
     return assistant_response
+
+
+@router.get("/threads", response_model=list[TutorThreadRead])
+def list_tutor_threads(
+    db: Session = Depends(get_db),
+    user: AuthUser = Depends(get_current_user),
+):
+    return get_tutor_orchestrator().list_threads(db, user)
+
+
+@router.post("/threads", response_model=TutorThreadRead, status_code=201)
+def create_tutor_thread(
+    payload: TutorThreadCreate,
+    db: Session = Depends(get_db),
+    user: AuthUser = Depends(get_current_user),
+):
+    thread = get_tutor_orchestrator().create_thread(db, user, payload.title)
+    db.commit()
+    return thread
+
+
+@router.get("/threads/{thread_id}", response_model=TutorThreadDetail)
+def read_tutor_thread(
+    thread_id: str,
+    db: Session = Depends(get_db),
+    user: AuthUser = Depends(get_current_user),
+):
+    return get_tutor_orchestrator().read_thread(db, user, thread_id)

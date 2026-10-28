@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -263,4 +263,100 @@ class PeerReview(Base):
     rubric_scores: Mapped[dict] = mapped_column(JSON)
     overall_score: Mapped[float] = mapped_column(Float)
     feedback: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LearnerRecord(Base):
+    """Authoritative materialized learner state; derived dashboard progress remains read-only."""
+
+    __tablename__ = "learner_records"
+
+    user_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    record_version: Mapped[int] = mapped_column(Integer, default=0)
+    mastery: Mapped[dict] = mapped_column(JSON, default=dict)
+    completed_items: Mapped[list] = mapped_column(JSON, default=list)
+    attempt_counters: Mapped[dict] = mapped_column(JSON, default=dict)
+    cursor: Mapped[dict] = mapped_column(JSON, default=dict)
+    preferences: Mapped[dict] = mapped_column(JSON, default=dict)
+    version_vector: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), index=True
+    )
+
+
+class LearnerReplica(Base):
+    __tablename__ = "learner_replicas"
+    __table_args__ = (UniqueConstraint("user_id", "replica_id", name="uq_learner_replica_user_replica"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(255), index=True)
+    replica_id: Mapped[str] = mapped_column(String(128), index=True)
+    last_logical_counter: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class LearnerRecordOperation(Base):
+    __tablename__ = "learner_record_operations"
+    __table_args__ = (
+        UniqueConstraint("user_id", "operation_id", name="uq_learner_record_operation_user_operation"),
+        Index("ix_learner_record_operations_user_id_created_at", "user_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(255), index=True)
+    operation_id: Mapped[str] = mapped_column(String(128), index=True)
+    replica_id: Mapped[str] = mapped_column(String(128), index=True)
+    logical_counter: Mapped[int] = mapped_column(Integer)
+    causal_vector: Mapped[dict] = mapped_column(JSON, default=dict)
+    operation_type: Mapped[str] = mapped_column(String(64), index=True)
+    payload: Mapped[dict] = mapped_column(JSON)
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TutorThread(Base):
+    __tablename__ = "tutor_threads"
+    __table_args__ = (Index("ix_tutor_threads_user_id_updated_at", "user_id", "updated_at"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(255), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TutorMessage(Base):
+    __tablename__ = "tutor_messages"
+    __table_args__ = (Index("ix_tutor_messages_thread_id_created_at", "thread_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(String(64), ForeignKey("tutor_threads.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(String(16), index=True)
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TutorTurn(Base):
+    __tablename__ = "tutor_turns"
+    __table_args__ = (Index("ix_tutor_turns_thread_id_created_at", "thread_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(String(64), ForeignKey("tutor_threads.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[str] = mapped_column(String(255), index=True)
+    resolved_query: Mapped[str] = mapped_column(Text)
+    retrieval_mode: Mapped[str] = mapped_column(String(64))
+    provider: Mapped[str] = mapped_column(String(128))
+    model: Mapped[str] = mapped_column(String(255))
+    decision: Mapped[str] = mapped_column(String(32), index=True)
+    decision_reason: Mapped[str] = mapped_column(String(255))
+    citations: Mapped[list] = mapped_column(JSON, default=list)
+    claims: Mapped[list] = mapped_column(JSON, default=list)
+    corpus_version: Mapped[str] = mapped_column(String(255))
+    policy_version: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
