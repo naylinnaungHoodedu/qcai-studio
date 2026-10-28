@@ -13,6 +13,7 @@ from app.schemas import (
     BuilderSlot,
     BuilderSubmissionResult,
 )
+from app.services.public_handles import public_handle, public_handles
 from app.services.text_utils import sanitize_user_text
 
 
@@ -471,7 +472,7 @@ def share_builder_map(
     db.refresh(share)
     return BuilderFeedItem(
         id=share.id,
-        user_id=share.user_id,
+        public_handle=public_handle(db, share.user_id),
         scenario_slug=share.scenario_slug,
         scenario_title=scenario["title"],
         caption=share.caption,
@@ -482,13 +483,15 @@ def share_builder_map(
 
 def list_builder_feed(db: Session, limit: int = 12, offset: int = 0) -> list[BuilderFeedItem]:
     shares = db.scalars(select(BuilderShare).order_by(BuilderShare.created_at.desc(), BuilderShare.id.desc())).all()
+    page = shares[offset : offset + limit]
+    handles = public_handles(db, (share.user_id for share in page))
     items: list[BuilderFeedItem] = []
-    for share in shares[offset : offset + limit]:
+    for share in page:
         scenario = _find_scenario(share.scenario_slug)
         items.append(
             BuilderFeedItem(
                 id=share.id,
-                user_id=share.user_id,
+                public_handle=handles[share.user_id],
                 scenario_slug=share.scenario_slug,
                 scenario_title=scenario["title"] if scenario else share.scenario_slug,
                 caption=share.caption,

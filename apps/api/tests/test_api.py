@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 from uuid import uuid4
 
 import pytest
@@ -12,10 +13,11 @@ from sqlalchemy import func, select
 
 from app.api.routes import arena, assets, assistant
 from app.core.db import SessionLocal
-from app.db_models import ArenaProfile, Note, UserAccount
+from app.db_models import ArenaProfile, BuilderShare, Note, ProjectSubmission, PublicHandle, UserAccount
 from app.core.config import Settings
 from app.main import _build_security_headers, _initialize_database, app
 from app.schemas import AssistantChatResponse, Citation
+from app.services.public_handles import public_handle, public_handles
 from app.services.retrieval_engine import RetrievalEngine
 from app.services.store import get_course_store
 from app.services.teaching_assistant import TeachingAssistantService
@@ -1198,6 +1200,9 @@ def test_local_account_register_login_logout_and_delete():
         )
         assert login_response.status_code == 200
         assert login_response.json()["user"]["email"] == email
+        with SessionLocal() as db:
+            public_handle(db, registered_user["user_id"])
+            assert db.get(PublicHandle, registered_user["user_id"]) is not None
 
         delete_csrf = account_client.cookies.get("qcai_auth_csrf")
         delete_response = account_client.request(
@@ -1212,6 +1217,7 @@ def test_local_account_register_login_logout_and_delete():
     with SessionLocal() as db:
         assert db.scalars(select(UserAccount).where(UserAccount.email == email)).first() is None
         assert not db.scalars(select(Note).where(Note.body == note_body)).all()
+        assert db.get(PublicHandle, registered_user["user_id"]) is None
 
 
 def test_local_account_rejects_bad_password_on_login():
@@ -1305,6 +1311,8 @@ def test_progress_endpoint_aggregates_activity():
 def test_arena_leaderboard_orders_profiles():
     top_player = f"arena-top-{uuid4().hex[:8]}"
     runner_up = f"arena-runner-{uuid4().hex[:8]}"
+    top_name = f"Top Player {uuid4().hex[:6]}"
+    runner_name = f"Runner Up {uuid4().hex[:6]}"
     with SessionLocal() as session:
         current_max_xp = session.scalar(select(func.max(ArenaProfile.xp))) or 0
         top_xp = max(current_max_xp + 200, 2300)
@@ -1313,7 +1321,7 @@ def test_arena_leaderboard_orders_profiles():
             [
                 ArenaProfile(
                     player_id=top_player,
-                    display_name="Top Player",
+                    display_name=top_name,
                     xp=top_xp,
                     matches_played=12,
                     wins=9,
@@ -1322,7 +1330,7 @@ def test_arena_leaderboard_orders_profiles():
                 ),
                 ArenaProfile(
                     player_id=runner_up,
-                    display_name="Runner Up",
+                    display_name=runner_name,
                     xp=runner_xp,
                     matches_played=11,
                     wins=7,
@@ -1336,9 +1344,10 @@ def test_arena_leaderboard_orders_profiles():
     response = client.get("/arena/leaderboard", params={"limit": 50})
     assert response.status_code == 200
     data = response.json()
-    top_index = next(index for index, item in enumerate(data) if item["player_id"] == top_player)
-    runner_index = next(index for index, item in enumerate(data) if item["player_id"] == runner_up)
+    top_index = next(index for index, item in enumerate(data) if item["display_name"] == top_name)
+    runner_index = next(index for index, item in enumerate(data) if item["display_name"] == runner_name)
     assert top_index < runner_index
+    assert top_player not in response.text and runner_up not in response.text
     assert data[top_index]["rank_label"] == "Quantum Master"
 
 
@@ -1436,6 +1445,77 @@ def test_arena_status_reports_disabled(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["enabled"] is False
+
+
+# Internal id shapes that must never reach a public response (AC-1-3); the same shapes the BEP identifier scan uses.
+INTERNAL_ID_PATTERN = re.compile(
+    r"(?i)\b(?:acct|guest|player|arena|bot)[-_][0-9a-f]{6,}"
+    r"|\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b"
+)
+
+
+def test_public_feed_leaderboard_and_review_queue_carry_no_internal_ids():
+    account_id = f"acct-{uuid4()}"
+    guest_id = f"guest-{uuid4().hex}"
+    player_id = f"arena-{uuid4().hex[:8]}"
+    with SessionLocal() as session:
+        top_xp = (session.scalar(select(func.max(ArenaProfile.xp))) or 0) + 500
+        session.add_all(
+            [
+                BuilderShare(
+                    user_id=account_id,
+                    scenario_slug="qcai-hybrid-loop",
+                    caption="Public id probe share.",
+                    completion_percent=100,
+                    map_snapshot={},
+                ),
+                ProjectSubmission(
+                    user_id=guest_id,
+                    project_slug="routing-rescue-playbook",
+                    title="Public id probe submission",
+                    solution_summary="A probe submission that should appear in the review queue.",
+                    implementation_notes="Probe notes.",
+                    status="submitted",
+                ),
+                ArenaProfile(
+                    player_id=player_id,
+                    display_name="Public id probe player",
+                    xp=top_xp,
+                    matches_played=1,
+                    wins=1,
+                    skill_rating=1000,
+                    adaptive_level=2,
+                ),
+            ]
+        )
+        session.commit()
+
+    responses = {
+        "feed": client.get("/builder/feed", params={"limit": 30}),
+        "leaderboard": client.get("/arena/leaderboard", params={"limit": 50}),
+        "review_queue": client.get("/projects/review-queue", params={"limit": 25}),
+    }
+
+    for name, response in responses.items():
+        assert response.status_code == 200, name
+        assert INTERNAL_ID_PATTERN.search(response.text) is None, name
+    assert any(item["caption"] == "Public id probe share." for item in responses["feed"].json())
+    assert any(item["display_name"] == "Public id probe player" for item in responses["leaderboard"].json())
+    assert any(item["title"] == "Public id probe submission" for item in responses["review_queue"].json())
+
+
+def test_public_handles_are_stable_random_and_pass_fixture_personas_through():
+    first_id = f"guest-{uuid4().hex}"
+    second_id = f"acct-{uuid4()}"
+    with SessionLocal() as session:
+        handles = public_handles(session, [first_id, second_id, "fixture-ac-07"])
+        again = public_handles(session, [first_id])
+
+    assert again[first_id] == handles[first_id]
+    assert handles[first_id] != handles[second_id]
+    assert handles["fixture-ac-07"] == "fixture-ac-07"
+    for internal_id in (first_id, second_id):
+        assert re.fullmatch(r"learner-[0-9a-f]{12}", handles[internal_id])
 
 
 def test_builder_submit_unlocks_next_scenario_and_share_feed():

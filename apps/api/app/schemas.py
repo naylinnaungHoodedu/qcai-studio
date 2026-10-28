@@ -502,8 +502,7 @@ class CourseProgress(BaseModel):
     recent_quiz_attempts: list[QuizAttemptRead]
 
 
-class ArenaLeaderboardEntry(BaseModel):
-    player_id: str
+class ArenaStanding(BaseModel):
     display_name: str
     xp: int
     matches_played: int
@@ -514,7 +513,12 @@ class ArenaLeaderboardEntry(BaseModel):
     rank_label: str
 
 
-class ArenaProfileRead(ArenaLeaderboardEntry):
+class ArenaLeaderboardEntry(ArenaStanding):
+    public_handle: str
+
+
+class ArenaProfileRead(ArenaStanding):
+    player_id: str
     recent_form: str
 
 
@@ -566,7 +570,7 @@ class BuilderProfile(BaseModel):
 
 class BuilderFeedItem(BaseModel):
     id: int
-    user_id: str
+    public_handle: str
     scenario_slug: str
     scenario_title: str
     caption: str
@@ -801,7 +805,7 @@ class ReviewQueueItem(BaseModel):
     project_slug: str
     project_title: str
     title: str
-    author_id: str
+    author_handle: str
     solution_summary: str
     implementation_notes: str
     rubric: list[ProjectRubricCriterion] = Field(default_factory=list)

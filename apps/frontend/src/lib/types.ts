@@ -309,7 +309,7 @@ export type CourseProgress = {
 };
 
 export type ArenaLeaderboardEntry = {
-  player_id: string;
+  public_handle: string;
   display_name: string;
   xp: number;
   matches_played: number;
@@ -320,7 +320,8 @@ export type ArenaLeaderboardEntry = {
   rank_label: string;
 };
 
-export type ArenaProfile = ArenaLeaderboardEntry & {
+export type ArenaProfile = Omit<ArenaLeaderboardEntry, "public_handle"> & {
+  player_id: string;
   recent_form: string;
 };
 
@@ -379,7 +380,7 @@ export type BuilderProfile = {
 
 export type BuilderFeedItem = {
   id: number;
-  user_id: string;
+  public_handle: string;
   scenario_slug: string;
   scenario_title: string;
   caption: string;
@@ -563,7 +564,7 @@ export type ReviewQueueItem = {
   project_slug: string;
   project_title: string;
   title: string;
-  author_id: string;
+  author_handle: string;
   solution_summary: string;
   implementation_notes: string;
   rubric: ProjectRubricCriterion[];

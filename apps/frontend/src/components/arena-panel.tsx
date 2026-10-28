@@ -513,12 +513,12 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
             </p>
             <div className="stack">
               {sortedLeaderboard.map((entry: ArenaLeaderboardEntry, index) => (
-                <article className="arena-leaderboard-row" key={entry.player_id}>
+                <article className="arena-leaderboard-row" key={entry.public_handle}>
                   <strong>
                     #{index + 1} {entry.display_name}
                   </strong>
                   <p className="muted">
-                    {isSeededAuditFixtureUserId(entry.player_id) ? "Seeded demo | " : ""}
+                    {isSeededAuditFixtureUserId(entry.public_handle) ? "Seeded demo | " : ""}
                     {entry.rank_label} | {entry.xp} XP | win rate {entry.win_rate_percent}%
                   </p>
                 </article>

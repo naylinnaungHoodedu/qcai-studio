@@ -20,6 +20,7 @@ from app.db_models import (
     Note,
     PeerReview,
     ProjectSubmission,
+    PublicHandle,
     QAInteraction,
     QuizAttempt,
     UserAccount,
@@ -175,6 +176,7 @@ def delete_local_account(db: Session, user_id: str, password: str) -> None:
     db.execute(delete(Note).where(Note.user_id == user_id))
     db.execute(delete(ArenaProfile).where(ArenaProfile.player_id == user_id))
     db.execute(delete(ArenaMatchRecord).where(or_(ArenaMatchRecord.player_id == user_id, ArenaMatchRecord.opponent_id == user_id)))
+    db.execute(delete(PublicHandle).where(PublicHandle.user_id == user_id))
     db.execute(delete(UserSession).where(UserSession.user_id == user_id))
     db.execute(delete(UserAccount).where(UserAccount.user_id == user_id))
     db.commit()

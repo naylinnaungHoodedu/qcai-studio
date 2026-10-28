@@ -9,6 +9,7 @@ from app.schemas import (
     ProjectSubmissionRead,
     ReviewQueueItem,
 )
+from app.services.public_handles import public_handles
 from app.services.text_utils import sanitize_user_text
 
 
@@ -226,26 +227,28 @@ def list_review_queue(db: Session, user_id: str, limit: int = 8, offset: int = 0
         review.submission_id
         for review in db.scalars(select(PeerReview).where(PeerReview.reviewer_user_id == user_id)).all()
     }
+    queued = [
+        submission
+        for submission in submissions
+        if submission.id not in existing_reviewed_ids and submission.project_slug in _PROJECT_INDEX
+    ][offset : offset + limit]
+    handles = public_handles(db, (submission.user_id for submission in queued))
     items: list[ReviewQueueItem] = []
-    for submission in submissions:
-        if submission.id in existing_reviewed_ids:
-            continue
-        project = _PROJECT_INDEX.get(submission.project_slug)
-        if not project:
-            continue
+    for submission in queued:
+        project = _PROJECT_INDEX[submission.project_slug]
         items.append(
             ReviewQueueItem(
                 submission_id=submission.id,
                 project_slug=submission.project_slug,
                 project_title=project["title"],
                 title=submission.title,
-                author_id=submission.user_id,
+                author_handle=handles[submission.user_id],
                 solution_summary=submission.solution_summary,
                 implementation_notes=submission.implementation_notes,
                 rubric=[ProjectRubricCriterion(**criterion) for criterion in project["rubric"]],
             )
         )
-    return items[offset : offset + limit]
+    return items
 
 
 def submit_peer_review(

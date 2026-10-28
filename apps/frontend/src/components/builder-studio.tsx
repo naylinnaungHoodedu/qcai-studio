@@ -562,9 +562,9 @@ export function BuilderStudio({
               <article className="citation-card" key={item.id}>
                 <strong>{item.scenario_title}</strong>
                 <p className="muted">
-                  {formatBuilderFeedAuthorLabel(item.user_id)} | {item.completion_percent}% | {formatDateLabel(item.created_at)}
+                  {formatBuilderFeedAuthorLabel(item.public_handle)} | {item.completion_percent}% | {formatDateLabel(item.created_at)}
                 </p>
-                {isSeededAuditFixtureUserId(item.user_id) ? <span className="status-pill">Seeded demo</span> : null}
+                {isSeededAuditFixtureUserId(item.public_handle) ? <span className="status-pill">Seeded demo</span> : null}
                 <p>{item.caption}</p>
               </article>
             ))}
