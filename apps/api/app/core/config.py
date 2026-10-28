@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     corpus_manifest_path: str | None = None
     enforce_corpus_governance: bool | None = None
     grounding_policy_version: str = "cs595-v1"
+    arena_enabled: bool | None = None
     allowed_origins: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:3000"])
 
     @field_validator("allowed_origins", mode="before")
@@ -119,6 +120,12 @@ class Settings(BaseSettings):
             # Development fixtures intentionally remain usable while every non-development
             # deployment fails closed until its corpus manifest has been reviewed.
             self.enforce_corpus_governance = self.environment.lower() != "development"
+        if self.arena_enabled is None:
+            # Decision D-03: the Arena socket accepts a client-asserted player id with no Origin check,
+            # so it stays offline outside development until it authenticates the player.
+            self.arena_enabled = self.environment.lower() == "development"
+        if self.arena_enabled and self.environment.lower() != "development":
+            raise ValueError("ARENA_ENABLED is not permitted outside development until the Arena socket authenticates players.")
         if self.environment.lower() != "development" and any(origin.strip() == "*" for origin in self.allowed_origins):
             raise ValueError("Wildcard ALLOWED_ORIGINS is not permitted outside development.")
         self.database_url = normalize_sqlite_database_url(self.database_url)

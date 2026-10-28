@@ -5,10 +5,12 @@ import pytest
 from fastapi import HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from starlette.requests import Request
+from starlette.websockets import WebSocketDisconnect
 from sqlalchemy import func, select
 
-from app.api.routes import assets, assistant
+from app.api.routes import arena, assets, assistant
 from app.core.db import SessionLocal
 from app.db_models import ArenaProfile, Note, UserAccount
 from app.core.config import Settings
@@ -1372,6 +1374,68 @@ def test_arena_status_endpoint_reports_live_counts():
     assert response.status_code == 200
     data = response.json()
     assert {"queue_size", "active_matches", "connected_players"} <= set(data)
+    assert data["enabled"] is True
+
+
+def test_arena_is_off_by_default_outside_development_and_cannot_be_enabled():
+    production_origins = ["https://qantumlearn.academy"]
+
+    assert Settings(environment="development").arena_enabled is True
+    assert Settings(environment="production", allowed_origins=production_origins).arena_enabled is False
+    with pytest.raises(ValidationError):
+        Settings(environment="production", allowed_origins=production_origins, arena_enabled=True)
+
+
+@pytest.mark.parametrize(
+    ("query", "headers"),
+    [
+        ("", {}),
+        ("?player_id=arena-spoof-one&display_name=Spoof&mode=ranked", {}),
+        ("?player_id=arena-spoof-two&mode=bot", {"origin": "https://untrusted.example"}),
+    ],
+    ids=["no-principal", "client-asserted-identity", "untrusted-origin"],
+)
+def test_arena_socket_closes_with_4403_while_disabled(monkeypatch, query, headers):
+    settings = Settings(arena_enabled=False)
+    monkeypatch.setattr(arena, "get_settings", lambda: settings)
+
+    with pytest.raises(WebSocketDisconnect) as excinfo:
+        with client.websocket_connect(f"/arena/ws{query}", headers=headers) as websocket:
+            websocket.receive_json()
+
+    assert excinfo.value.code == 4403
+    with SessionLocal() as session:
+        written = session.scalar(
+            select(func.count())
+            .select_from(ArenaProfile)
+            .where(ArenaProfile.player_id.in_(["arena-spoof-one", "arena-spoof-two"]))
+        )
+    assert written == 0
+
+
+def test_arena_profile_lookup_writes_nothing_while_disabled(monkeypatch):
+    settings = Settings(arena_enabled=False)
+    monkeypatch.setattr(arena, "get_settings", lambda: settings)
+    player_id = f"arena-ghost-{uuid4().hex[:8]}"
+
+    response = client.get(f"/arena/profiles/{player_id}")
+
+    assert response.status_code == 404
+    with SessionLocal() as session:
+        written = session.scalar(
+            select(func.count()).select_from(ArenaProfile).where(ArenaProfile.player_id == player_id)
+        )
+    assert written == 0
+
+
+def test_arena_status_reports_disabled(monkeypatch):
+    settings = Settings(arena_enabled=False)
+    monkeypatch.setattr(arena, "get_settings", lambda: settings)
+
+    response = client.get("/arena/status")
+
+    assert response.status_code == 200
+    assert response.json()["enabled"] is False
 
 
 def test_builder_submit_unlocks_next_scenario_and_share_feed():

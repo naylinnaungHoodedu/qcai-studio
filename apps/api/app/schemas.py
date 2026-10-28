@@ -747,6 +747,7 @@ class LearningDashboardRead(BaseModel):
 
 
 class ArenaStatusRead(BaseModel):
+    enabled: bool
     queue_size: int
     active_matches: int
     connected_players: int
