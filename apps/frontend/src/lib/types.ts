@@ -325,6 +325,7 @@ export type ArenaProfile = ArenaLeaderboardEntry & {
 };
 
 export type ArenaStatus = {
+  enabled?: boolean;
   queue_size: number;
   active_matches: number;
   connected_players: number;

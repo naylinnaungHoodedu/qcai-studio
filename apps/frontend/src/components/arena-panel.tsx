@@ -183,10 +183,13 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
     refetchInterval: 5_000,
   });
 
+  // Older APIs omit `enabled`; only an explicit false switches the arena off.
+  const arenaEnabled = statusQuery.data?.enabled !== false;
+
   const profileQuery = useQuery({
     queryKey: ["arena-profile", playerId],
     queryFn: () => fetchArenaProfile(playerId),
-    enabled: Boolean(playerId),
+    enabled: Boolean(playerId) && arenaEnabled,
   });
 
   const sortedLeaderboard = useMemo(() => leaderboardQuery.data ?? [], [leaderboardQuery.data]);
@@ -199,7 +202,7 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
   }, [clockTick, roundDurationSeconds, roundStartedAt]);
 
   function openSocket(nextMode: "ranked" | "bot") {
-    if (!playerId || !displayName.trim()) {
+    if (!arenaEnabled || !playerId || !displayName.trim()) {
       return;
     }
     socketRef.current?.close();
@@ -296,6 +299,9 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
   }
 
   function renderProfile(profile?: ArenaProfile) {
+    if (!arenaEnabled) {
+      return <p className="muted">Arena profiles are paused while the arena is offline.</p>;
+    }
     if (profileQuery.isError) {
       return <p className="muted">The arena profile could not be loaded for this browser session.</p>;
     }
@@ -342,13 +348,18 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
             <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={40} />
           </label>
           <div className="button-row">
-            <button className="primary-button" onClick={() => openSocket("ranked")} type="button">
+            <button className="primary-button" disabled={!arenaEnabled} onClick={() => openSocket("ranked")} type="button">
               Join ranked
             </button>
-            <button className="secondary-button" onClick={() => openSocket("bot")} type="button">
+            <button className="secondary-button" disabled={!arenaEnabled} onClick={() => openSocket("bot")} type="button">
               Practice vs bot
             </button>
           </div>
+          {arenaEnabled ? null : (
+            <p className="muted" role="status">
+              The arena is offline for now. Past results stay visible below.
+            </p>
+          )}
           <p className="muted">
             Status: <strong>{formatConnectionState(connectionState)}</strong>. Mode <strong>{mode}</strong>.{" "}
             {statusMessage}

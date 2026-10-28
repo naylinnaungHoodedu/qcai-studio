@@ -306,10 +306,12 @@ class ArenaService:
             )
         return entries
 
-    def profile(self, player_id: str) -> ArenaProfileRead:
+    def profile(self, player_id: str, create_missing: bool = True) -> ArenaProfileRead | None:
         with SessionLocal() as session:
             profile = session.scalars(select(ArenaProfile).where(ArenaProfile.player_id == player_id)).first()
             if not profile:
+                if not create_missing:
+                    return None
                 profile = ArenaProfile(
                     player_id=player_id,
                     display_name=player_id,
