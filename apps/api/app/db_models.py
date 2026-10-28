@@ -21,6 +21,15 @@ class UserAccount(Base):
     )
 
 
+class PublicHandle(Base):
+    # Random stand-in for a user, guest or Arena player id in public responses; nothing derives it from the id.
+    __tablename__ = "public_handles"
+
+    user_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    handle: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class UserSession(Base):
     __tablename__ = "user_sessions"
     __table_args__ = (

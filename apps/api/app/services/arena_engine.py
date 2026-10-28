@@ -13,6 +13,7 @@ from sqlalchemy import select
 from app.core.db import SessionLocal
 from app.db_models import ArenaMatchRecord, ArenaProfile
 from app.schemas import ArenaLeaderboardEntry, ArenaProfileRead
+from app.services.public_handles import public_handles
 from app.services.text_utils import sanitize_user_text
 
 
@@ -287,13 +288,16 @@ class ArenaService:
         with SessionLocal() as session:
             profiles = session.scalars(
                 select(ArenaProfile).order_by(ArenaProfile.xp.desc(), ArenaProfile.skill_rating.desc(), ArenaProfile.id.asc())
-            ).all()
+            ).all()[:limit]
+        # Separate session: assigning handles commits, which would expire the profiles above.
+        with SessionLocal() as session:
+            handles = public_handles(session, (profile.player_id for profile in profiles))
         entries: list[ArenaLeaderboardEntry] = []
-        for profile in profiles[:limit]:
+        for profile in profiles:
             win_rate = round((profile.wins / profile.matches_played) * 100, 1) if profile.matches_played else 0.0
             entries.append(
                 ArenaLeaderboardEntry(
-                    player_id=profile.player_id,
+                    public_handle=handles[profile.player_id],
                     display_name=profile.display_name,
                     xp=profile.xp,
                     matches_played=profile.matches_played,

@@ -66,15 +66,15 @@ def test_demo_seed_is_idempotent_and_populates_public_activity():
 
     queue_response = client.get("/projects/review-queue", headers={"x-demo-user": "demo-reviewer", "x-demo-role": "learner"})
     assert queue_response.status_code == 200
-    assert any(item["author_id"] == "fixture-ac-03" for item in queue_response.json())
+    assert any(item["author_handle"] == "fixture-ac-03" for item in queue_response.json())
 
     feed_response = client.get("/builder/feed", headers={"x-demo-user": "demo-builder", "x-demo-role": "learner"})
     assert feed_response.status_code == 200
-    assert any(item["user_id"] == "fixture-ac-05" for item in feed_response.json())
+    assert any(item["public_handle"] == "fixture-ac-05" for item in feed_response.json())
 
     leaderboard_response = client.get("/arena/leaderboard", params={"limit": 50})
     assert leaderboard_response.status_code == 200
-    assert any(item["player_id"] == "fixture-ac-07" for item in leaderboard_response.json())
+    assert any(item["public_handle"] == "fixture-ac-07" for item in leaderboard_response.json())
 
     status_response = client.get("/arena/status")
     assert status_response.status_code == 200

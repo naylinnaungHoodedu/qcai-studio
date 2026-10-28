@@ -416,7 +416,7 @@ export function ProjectsStudio({ initialCatalog, initialSubmissions, initialQueu
                 <article className="project-submission-card" key={item.submission_id}>
                   <strong>{item.title}</strong>
                   <p className="muted">
-                    {item.project_title} | submitted by {formatProjectAuthorLabel(item.author_id)}
+                    {item.project_title} | submitted by {formatProjectAuthorLabel(item.author_handle)}
                   </p>
                   <p>{item.solution_summary}</p>
                   <p className="muted">{item.implementation_notes}</p>
