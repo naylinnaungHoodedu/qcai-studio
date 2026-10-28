@@ -613,7 +613,13 @@ def test_renamed_2026_source_asset_supports_head_requests():
     assert response.status_code == 200
 
 
-def test_video_source_asset_supports_byte_ranges():
+def test_video_source_asset_supports_byte_ranges(monkeypatch, tmp_path: Path):
+    # Synthetic MP4: CI checks out Git LFS pointers (134 bytes), not the hydrated media.
+    payload = b"\x00\x00\x00\x18ftypmp42" + (b"range-probe" * 64)
+    (tmp_path / "Quantum Computing and Artificial Intelligence 2025.mp4").write_bytes(payload)
+    settings = Settings(source_assets_root=str(tmp_path))
+    monkeypatch.setattr(assets, "get_settings", lambda: settings)
+
     response = client.get(
         "/source-assets/by-id/quantum-computing-and-artificial-intelligence-2025",
         headers={**DEMO_HEADERS, "Range": "bytes=0-255"},
@@ -883,7 +889,13 @@ def test_industry_video_asset_supports_head_requests():
     assert response.status_code == 200
 
 
-def test_industry_video_asset_supports_byte_ranges():
+def test_industry_video_asset_supports_byte_ranges(monkeypatch, tmp_path: Path):
+    # Synthetic MP4: CI checks out Git LFS pointers (134 bytes), not the hydrated media.
+    payload = b"\x00\x00\x00\x18ftypmp42" + (b"industry-probe" * 64)
+    (tmp_path / "Industry Use Cases.mp4").write_bytes(payload)
+    settings = Settings(source_assets_root=str(tmp_path))
+    monkeypatch.setattr(assets, "get_settings", lambda: settings)
+
     response = client.get(
         "/source-assets/by-id/industry-use-cases",
         headers={**DEMO_HEADERS, "Range": "bytes=0-255"},

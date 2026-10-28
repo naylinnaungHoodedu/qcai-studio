@@ -17,7 +17,7 @@ jobs:
           python-version: "3.13"
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -r apps/api/requirements.txt pip-audit
-      - run: python -m pytest -q apps/api/tests evaluation/tests
+      - run: python -m pytest -q -m "not release_artifacts" apps/api/tests evaluation/tests
       - run: python scripts/validate_corpus.py
       - run: python scripts/validate_lqs.py --allow-draft
       - run: pip-audit -r apps/api/requirements.txt
@@ -37,3 +37,19 @@ jobs:
         working-directory: apps/frontend
       - run: npm run test:integration
         working-directory: apps/frontend
+
+  # Release bundles exist only when a version is cut; packaging refuses unapproved public assets.
+  release-artifacts:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r apps/api/requirements.txt
+      - run: python tools/package_release.py
+      - run: python -m pytest -q -m release_artifacts apps/api/tests/test_deployment_artifacts.py

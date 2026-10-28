@@ -5,6 +5,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+import pytest
+
 from app.services.text_utils import truncate_display_excerpt
 
 
@@ -31,7 +33,11 @@ def _run_worker_entrypoint(module_name: str) -> tuple[bool, str]:
         )
         return False, completed.stdout
     except subprocess.TimeoutExpired as exc:
-        return True, exc.stdout or ""
+        # TimeoutExpired keeps captured output as bytes even when text=True (POSIX).
+        output = exc.stdout or ""
+        if isinstance(output, bytes):
+            output = output.decode("utf-8", errors="replace")
+        return True, output
 
 
 def test_worker_entrypoints_start_cleanly():
@@ -67,6 +73,7 @@ def test_release_support_scripts_are_present():
     assert 'RELEASE_TAG = "v1.0.0"' in package_release
 
 
+@pytest.mark.release_artifacts
 def test_release_artifacts_exist_and_describe_seeded_demo_transparency():
     dist_release = REPO_ROOT / "dist" / "release"
     part1_zip = dist_release / "qcai-studio-v1.0.0-part1-app-docs-media.zip"

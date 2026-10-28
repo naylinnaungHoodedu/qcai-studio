@@ -8,3 +8,10 @@ os.environ.setdefault("ENVIRONMENT", "development")
 from app.main import _initialize_database
 
 _initialize_database()
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "release_artifacts: needs packaged dist/release bundles; runs only in the release-artifacts CI job",
+    )
