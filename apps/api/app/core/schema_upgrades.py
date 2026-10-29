@@ -18,8 +18,9 @@ def run_schema_upgrades(engine: Engine) -> None:
         if "project_submissions" in tables:
             submission_columns = {column["name"] for column in inspector.get_columns("project_submissions")}
             if "is_deleted" not in submission_columns:
+                # FALSE, not 0: PostgreSQL rejects an integer default on a boolean column; SQLite accepts both.
                 connection.exec_driver_sql(
-                    "ALTER TABLE project_submissions ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT 0"
+                    "ALTER TABLE project_submissions ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE"
                 )
 
         for statement in INDEX_STATEMENTS:
