@@ -5,6 +5,7 @@ import { getAuthorizationHeaderFromRequest } from "@/lib/auth";
 import {
   applyGuestSessionToHeaders,
   resolveGuestSession,
+  resolveGuestSessionWithLegacyUpgrade,
   routeRequiresGuestSession,
   setGuestSessionCookies,
 } from "@/lib/guest-session";
@@ -124,7 +125,7 @@ async function proxyRequest(
   const hasAuthorization = headers.has("authorization");
   const session =
     !ENABLE_DEMO_AUTH && !hasAuthorization && routeRequiresGuestSession(normalizedPath)
-      ? resolveGuestSession(request)
+      ? await resolveGuestSessionWithLegacyUpgrade(request, API_BASE_URL)
       : null;
 
   if (session) {

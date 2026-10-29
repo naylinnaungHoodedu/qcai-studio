@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.core.db import get_db
 from app.core.guest_tokens import GUEST_TOKEN_COOKIE, verify_guest_token
+from app.services.guest_sessions import is_guest_revoked
 from app.services.local_accounts import AUTH_SESSION_COOKIE_NAME, resolve_local_account_from_session
 
 
@@ -76,6 +77,8 @@ def get_current_user(
         guest = verify_guest_token(qcai_guest_token, settings)
         if guest is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid guest session.")
+        if is_guest_revoked(db, guest.guest_id):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Guest session revoked.")
         return AuthUser(user_id=guest.guest_id, email=None, role="learner", provider="guest")
 
     if settings.enable_demo_auth:

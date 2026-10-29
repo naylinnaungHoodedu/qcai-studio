@@ -30,6 +30,23 @@ class PublicHandle(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class GuestRevocation(Base):
+    # Every token for a revoked guest id is rejected, whenever it was issued.
+    __tablename__ = "guest_revocations"
+
+    guest_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    reason: Mapped[str] = mapped_column(String(255))
+    revoked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class GuestLegacyUpgrade(Base):
+    # A legacy unsigned guest id is re-issued a signed token at most once.
+    __tablename__ = "guest_legacy_upgrades"
+
+    guest_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    upgraded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class UserSession(Base):
     __tablename__ = "user_sessions"
     __table_args__ = (
