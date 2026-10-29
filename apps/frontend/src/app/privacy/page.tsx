@@ -5,7 +5,12 @@ import { Breadcrumbs } from "@/components/breadcrumbs";
 import { StructuredData } from "@/components/structured-data";
 import { buildBreadcrumbStructuredData, buildPageMetadata } from "@/lib/metadata";
 import { CONTACT_EMAIL } from "@/lib/site";
-import { COOKIE_INVENTORY, PRIVACY_IMPLEMENTATION_NOTES, RETENTION_SCHEDULE } from "@/lib/privacy-disclosures";
+import {
+  BROWSER_STORAGE_INVENTORY,
+  COOKIE_INVENTORY,
+  PRIVACY_IMPLEMENTATION_NOTES,
+  RETENTION_SCHEDULE,
+} from "@/lib/privacy-disclosures";
 
 export const metadata: Metadata = buildPageMetadata({
   title: "Privacy Policy",
@@ -103,6 +108,31 @@ export default function PrivacyPage() {
           </table>
         </div>
         <p>Current deployment status: the public site uses strictly necessary first-party cookies only.</p>
+
+        <h2>Browser storage</h2>
+        <div className="panel-table-wrap">
+          <table className="governance-table">
+            <thead>
+              <tr>
+                <th scope="col">Key</th>
+                <th scope="col">Purpose</th>
+                <th scope="col">Stored where</th>
+                <th scope="col">When it is set</th>
+              </tr>
+            </thead>
+            <tbody>
+              {BROWSER_STORAGE_INVENTORY.map((item) => (
+                <tr key={item.key}>
+                  <th scope="row">{item.key}</th>
+                  <td>{item.purpose}</td>
+                  <td>{item.storedWhere}</td>
+                  <td>{item.setWhen}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p>These keys stay in this browser. Clearing site data removes them.</p>
 
         <h2>How data is used</h2>
         <p>

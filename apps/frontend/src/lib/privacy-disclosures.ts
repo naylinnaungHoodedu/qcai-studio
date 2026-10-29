@@ -66,6 +66,74 @@ export const COOKIE_INVENTORY = [
     necessary: "Strictly necessary",
     setWhen: "Set alongside the local-account session cookie after sign-in.",
   },
+  {
+    name: "qcai_auth_token",
+    purpose: "Holds the access token from the optional federated (Auth0) sign-in.",
+    lifetime: "The token lifetime the identity provider returns (1 hour when it returns none)",
+    necessary: "Strictly necessary",
+    setWhen: "Set only after a completed federated sign-in; that sign-in is not enabled on the public deployment.",
+  },
+  {
+    name: "qcai_auth_state",
+    purpose: "Protects the federated sign-in redirect against forged responses.",
+    lifetime: "10 minutes",
+    necessary: "Strictly necessary",
+    setWhen: "Set when a federated sign-in starts, and cleared when it completes.",
+  },
+  {
+    name: "qcai_auth_verifier",
+    purpose: "Holds the PKCE verifier for the federated sign-in.",
+    lifetime: "10 minutes",
+    necessary: "Strictly necessary",
+    setWhen: "Set when a federated sign-in starts, and cleared when it completes.",
+  },
+  {
+    name: "qcai_auth_return_to",
+    purpose: "Remembers which page to return to after the federated sign-in.",
+    lifetime: "10 minutes",
+    necessary: "Strictly necessary",
+    setWhen: "Set when a federated sign-in starts, and cleared when it completes.",
+  },
+  {
+    name: "qcai_guest_id",
+    purpose: "Legacy unsigned guest identifier, replaced by qcai_guest_token.",
+    lifetime: "Deleted on the next visit",
+    necessary: "Strictly necessary",
+    setWhen: "No longer set; an existing one is deleted when the browser next opens a guest study surface.",
+  },
+] as const;
+
+export const BROWSER_STORAGE_INVENTORY = [
+  {
+    key: "qcai-theme",
+    purpose: "Remembers the light or dark theme choice.",
+    storedWhere: "This browser's local storage",
+    setWhen: "Set when the theme toggle is used.",
+  },
+  {
+    key: "qcai-arena-player-id",
+    purpose: "Random Arena player id for this browser.",
+    storedWhere: "This browser's local storage",
+    setWhen: "Set when the Arena page is first opened in this browser.",
+  },
+  {
+    key: "qcai-arena-player-name",
+    purpose: "The Arena handle typed into the Arena page.",
+    storedWhere: "This browser's local storage",
+    setWhen: "Set when an Arena handle is entered.",
+  },
+  {
+    key: "qcai-learner-record-replica",
+    purpose: "Device copy of the signed-in learner record, for offline continuity.",
+    storedWhere: "This browser's local storage",
+    setWhen: "Set only for a signed-in learner using the learner record.",
+  },
+  {
+    key: "qcai-learner-record-clock",
+    purpose: "Version clock that keeps the device copy of the learner record in step with the server.",
+    storedWhere: "This browser's local storage",
+    setWhen: "Set alongside the learner-record device copy.",
+  },
 ] as const;
 
 export const PRIVACY_IMPLEMENTATION_NOTES = [
