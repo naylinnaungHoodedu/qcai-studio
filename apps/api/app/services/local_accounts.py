@@ -6,26 +6,11 @@ import secrets
 from uuid import uuid4
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.db_models import (
-    AnalyticsEvent,
-    ArenaMatchRecord,
-    ArenaProfile,
-    BuilderRun,
-    BuilderShare,
-    LearnerProfile,
-    LearningPulse,
-    Note,
-    PeerReview,
-    ProjectSubmission,
-    PublicHandle,
-    QAInteraction,
-    QuizAttempt,
-    UserAccount,
-    UserSession,
-)
+from app.db_models import UserAccount, UserSession
+from app.services.erasure import erase_user
 
 
 AUTH_SESSION_COOKIE_NAME = "qcai_session_token"
@@ -152,31 +137,13 @@ def revoke_local_session(db: Session, session_token: str | None) -> None:
     db.commit()
 
 
-def delete_local_account(db: Session, user_id: str, password: str) -> None:
+def delete_local_account(db: Session, user_id: str, password: str) -> dict[str, int]:
     account = db.scalars(select(UserAccount).where(UserAccount.user_id == user_id)).first()
     if not account or not verify_password(password, account.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Password confirmation failed.")
 
-    submission_ids = list(
-        db.scalars(select(ProjectSubmission.id).where(ProjectSubmission.user_id == user_id))
-    )
-
-    if submission_ids:
-        db.execute(delete(PeerReview).where(PeerReview.submission_id.in_(submission_ids)))
-
-    db.execute(delete(PeerReview).where(PeerReview.reviewer_user_id == user_id))
-    db.execute(delete(ProjectSubmission).where(ProjectSubmission.user_id == user_id))
-    db.execute(delete(LearningPulse).where(LearningPulse.user_id == user_id))
-    db.execute(delete(LearnerProfile).where(LearnerProfile.user_id == user_id))
-    db.execute(delete(BuilderShare).where(BuilderShare.user_id == user_id))
-    db.execute(delete(BuilderRun).where(BuilderRun.user_id == user_id))
-    db.execute(delete(AnalyticsEvent).where(AnalyticsEvent.user_id == user_id))
-    db.execute(delete(QAInteraction).where(QAInteraction.user_id == user_id))
-    db.execute(delete(QuizAttempt).where(QuizAttempt.user_id == user_id))
-    db.execute(delete(Note).where(Note.user_id == user_id))
-    db.execute(delete(ArenaProfile).where(ArenaProfile.player_id == user_id))
-    db.execute(delete(ArenaMatchRecord).where(or_(ArenaMatchRecord.player_id == user_id, ArenaMatchRecord.opponent_id == user_id)))
-    db.execute(delete(PublicHandle).where(PublicHandle.user_id == user_id))
-    db.execute(delete(UserSession).where(UserSession.user_id == user_id))
-    db.execute(delete(UserAccount).where(UserAccount.user_id == user_id))
+    # Every user-keyed table, found from the schema (task 1.5); this replaces a hand-kept list that
+    # had missed the learner-record and tutor tables.
+    counts = erase_user(db, user_id)
     db.commit()
+    return counts
