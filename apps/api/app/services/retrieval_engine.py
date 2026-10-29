@@ -119,6 +119,7 @@ class PineconeSemanticBackend:
                         "lesson_slug": chunk.lesson_slug,
                         "score_boost": chunk.score_boost,
                         "timestamp_label": chunk.timestamp_label,
+                        "source_filename": chunk.source_filename or "",
                     },
                 }
             )
@@ -152,6 +153,7 @@ class PineconeSemanticBackend:
                     lesson_slug=metadata.get("lesson_slug"),
                     score=round(float(raw_score or 0.0) + score_boost, 6),
                     timestamp_label=metadata.get("timestamp_label"),
+                    source_filename=metadata.get("source_filename") or None,
                 )
             )
         return results

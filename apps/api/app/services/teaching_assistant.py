@@ -7,6 +7,7 @@ from functools import cached_property
 import httpx
 
 from app.core.config import Settings
+from app.core.corpus_governance import get_corpus_registry
 from app.schemas import (
     ASSISTANT_HISTORY_MAX_MESSAGES,
     ASSISTANT_HISTORY_MESSAGE_MAX_LENGTH,
@@ -14,6 +15,7 @@ from app.schemas import (
     AssistantChatResponse,
     Citation,
 )
+from app.services.contained_answers import EXTRACTIVE_MODE, contain_answer
 from app.services.retrieval_engine import RetrievalEngine
 from app.services.provenance import evidence_provenance
 from app.services.text_utils import sanitize_user_text, truncate_display_excerpt
@@ -46,13 +48,11 @@ class TeachingAssistantService:
         page_path: str | None = None,
         history: list[AssistantChatMessage] | None = None,
         top_k: int = 4,
-        pedagogical_context: str | None = None,
     ) -> AssistantChatResponse:
+        # page_path and history are accepted for interface stability; contained answers do not use them.
         clean_message = sanitize_user_text(message)
-        clean_page_path = sanitize_user_text(page_path or "", preserve_newlines=False) or None
-        clean_history = self._sanitize_history(history or [])
 
-        retrieval = self.retrieval_engine.search(clean_message, lesson_slug=lesson_slug, top_k=top_k)
+        retrieval =self.retrieval_engine.search(clean_message, lesson_slug=lesson_slug, top_k=top_k)
         citations = []
         for hit in retrieval.results:
             span_id, content_hash, corpus_version = evidence_provenance(
@@ -74,51 +74,23 @@ class TeachingAssistantService:
                     section_title=hit.title,
                     excerpt=truncate_display_excerpt(hit.excerpt, 320),
                     timestamp_label=hit.timestamp_label,
+                    source_filename=hit.source_filename,
                 )
             )
 
-        if not citations:
-            return AssistantChatResponse(
-                answer=(
-                    "I could not ground an answer in the indexed QC+AI course sources yet. "
-                    "Try naming a module, lesson, workflow, or specific topic such as routing, kernels, "
-                    "QUBO optimization, quantum finance programming, or hardware-constrained model validation."
-                ),
-                citations=[],
-                retrieval_mode=f"{retrieval.mode}-no-match",
-                provider="local-grounded-fallback",
-                model="qcai-course-corpus",
-                grounded=False,
-            )
-
-        if self.vertex_enabled:
-            try:
-                answer = self._ask_vertex(
-                    message=clean_message,
-                    lesson_slug=lesson_slug,
-                    page_path=clean_page_path,
-                    history=clean_history,
-                    citations=citations,
-                    pedagogical_context=pedagogical_context,
-                )
-                return AssistantChatResponse(
-                    answer=answer,
-                    citations=citations,
-                    retrieval_mode=f"vertex-rag-{retrieval.mode}",
-                    provider=self._vertex_provider_label,
-                    model=self.settings.vertex_ai_chat_model,
-                    grounded=True,
-                )
-            except Exception as exc:
-                LOGGER.warning("Vertex assistant failed; using grounded fallback: %s", exc)
-
+        # Decision D-19: no provider is called and nothing generated is delivered until the verified
+        # tutor exists; the learner gets verbatim approved spans or an abstention (AC-1-14).
+        contained = contain_answer(citations, get_corpus_registry(self.settings))
         return AssistantChatResponse(
-            answer=self._fallback_answer(clean_message, citations, page_path=clean_page_path),
-            citations=citations,
-            retrieval_mode=f"{retrieval.mode}-grounded-fallback",
-            provider="local-grounded-fallback",
-            model="qcai-course-corpus",
-            grounded=True,
+            answer=contained.answer,
+            citations=contained.citations,
+            retrieval_mode=f"{retrieval.mode}-{EXTRACTIVE_MODE}",
+            provider="none",
+            model=EXTRACTIVE_MODE,
+            grounded=contained.grounded,
+            decision=contained.decision,
+            decision_reason=contained.reason,
+            claims=contained.claims,
         )
 
     @property
@@ -171,7 +143,6 @@ class TeachingAssistantService:
         page_path: str | None,
         history: list[AssistantChatMessage],
         citations: list[Citation],
-        pedagogical_context: str | None = None,
     ) -> str:
         prompt_context = self._format_context(citations)
         page_context = self._format_page_context(page_path=page_path, lesson_slug=lesson_slug)
@@ -209,12 +180,6 @@ class TeachingAssistantService:
                             "If the evidence is partial, say so explicitly. "
                             "Cite supporting context with bracket numbers like [1] or [2]. "
                             "Do not invent labs, lessons, or source material that are not present in the context."
-                            + (
-                                " Presentation guidance follows. It may change explanation style only; it is not evidence "
-                                f"and must never justify factual claims or citations: {pedagogical_context}"
-                                if pedagogical_context
-                                else ""
-                            )
                         )
                     }
                 ],
@@ -321,56 +286,3 @@ class TeachingAssistantService:
                 if isinstance(part, dict) and isinstance(part.get("text"), str):
                     fragments.append(part["text"])
         return "\n".join(fragment.strip() for fragment in fragments if fragment.strip()).strip()
-
-    def _fallback_answer(
-        self,
-        question: str,
-        citations: list[Citation],
-        *,
-        page_path: str | None = None,
-    ) -> str:
-        lead = citations[0]
-        supporting = citations[1:3]
-        lowered = question.lower()
-        parts = [f"The strongest grounded evidence comes from {lead.source_title} in '{lead.section_title}'."]
-
-        if page_path:
-            parts.append(f"I answered this in the context of {page_path}.")
-
-        if "study" in lowered or "learn" in lowered:
-            parts.extend(
-                [
-                    "A sound way to study this material is to move from the module summary to the named lesson, "
-                    "then focus on the bottleneck, workflow, or validation rule the sources keep repeating.",
-                    lead.excerpt,
-                ]
-            )
-        else:
-            parts.append(lead.excerpt)
-
-        if supporting:
-            parts.append(
-                "Supporting context also appears in "
-                + "; ".join(
-                    f"{item.source_title} ({item.section_title}{', ' + item.timestamp_label if item.timestamp_label else ''})"
-                    for item in supporting
-                )
-                + "."
-            )
-
-        if "how" in lowered:
-            parts.append(
-                "Operationally, the course materials keep returning to a hybrid flow: classical framing, "
-                "a smaller constrained quantum subroutine, then classical interpretation or control."
-            )
-        elif "why" in lowered:
-            parts.append(
-                "The repeated reason across the corpus is hardware realism: noise, routing cost, qubit limits, "
-                "and validation discipline shape what is worth doing."
-            )
-        else:
-            parts.append(
-                "The safest interpretation is to read the answer through hardware-constrained hybrid systems rather than abstract quantum advantage alone."
-            )
-
-        return " ".join(parts)

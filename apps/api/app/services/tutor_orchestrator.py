@@ -21,8 +21,7 @@ from app.schemas import (
     TutorThreadDetail,
     TutorThreadRead,
 )
-from app.services.claim_gate import ClaimGate, evidence_digest
-from app.services.learner_record import build_pedagogical_context
+from app.services.contained_answers import contain_answer
 from app.services.teaching_assistant import TeachingAssistantService
 
 
@@ -35,7 +34,6 @@ class TutorOrchestrator:
     def __init__(self, assistant: TeachingAssistantService, settings: Settings):
         self.assistant = assistant
         self.settings = settings
-        self.gate = ClaimGate()
 
     def list_threads(self, db: Session, user: AuthUser) -> list[TutorThreadRead]:
         records = db.scalars(
@@ -76,25 +74,21 @@ class TutorOrchestrator:
             db.flush()
 
         resolved_query, history = self._resolve_query(db, thread, payload.message, payload.history)
-        pedagogical_context = build_pedagogical_context(db, user.user_id) if user.provider not in {"guest", "demo"} else (
-            "Use a concise explanatory style suitable for a browser guest."
-        )
+        # Learner state stays out of the assistant until the two-pass tutor exists (AC-1-14, R-41).
         candidate = self.assistant.chat(
             resolved_query,
             lesson_slug=payload.lesson_slug,
             page_path=payload.page_path,
             history=history,
             top_k=payload.top_k,
-            pedagogical_context=pedagogical_context,
         )
 
-        # Local fallback is intentionally an extractive evidence digest. It remains useful
-        # when providers are unavailable and makes its claim/span bindings mechanically auditable.
-        answer_to_gate = evidence_digest(candidate.citations) if candidate.provider == "local-grounded-fallback" else candidate.answer
-        gate_result = self.gate.evaluate(answer_to_gate, candidate.citations)
+        # Decision D-19, enforced here whatever the assistant returned: only verbatim approved spans or
+        # an abstention reach the learner, never candidate.answer itself.
+        contained = contain_answer(candidate.citations, get_corpus_registry(self.settings))
         turn_id = f"turn-{uuid4()}"
         db.add(TutorMessage(id=f"message-{uuid4()}", thread_id=thread.id, role="user", content=payload.message))
-        db.add(TutorMessage(id=f"message-{uuid4()}", thread_id=thread.id, role="assistant", content=gate_result.answer))
+        db.add(TutorMessage(id=f"message-{uuid4()}", thread_id=thread.id, role="assistant", content=contained.answer))
         db.add(
             TutorTurn(
                 id=turn_id,
@@ -104,10 +98,10 @@ class TutorOrchestrator:
                 retrieval_mode=candidate.retrieval_mode,
                 provider=candidate.provider,
                 model=candidate.model,
-                decision=gate_result.decision,
-                decision_reason=gate_result.reason,
-                citations=[citation.model_dump() for citation in candidate.citations],
-                claims=[claim.model_dump() for claim in gate_result.claims],
+                decision=contained.decision,
+                decision_reason=contained.reason,
+                citations=[citation.model_dump() for citation in contained.citations],
+                claims=[claim.model_dump() for claim in contained.claims],
                 corpus_version=get_corpus_registry(self.settings).corpus_version,
                 policy_version=self.settings.grounding_policy_version,
             )
@@ -115,17 +109,17 @@ class TutorOrchestrator:
         thread.updated_at = datetime.now(timezone.utc)
         db.flush()
         return AssistantChatResponse(
-            answer=gate_result.answer,
-            citations=candidate.citations,
+            answer=contained.answer,
+            citations=contained.citations,
             retrieval_mode=candidate.retrieval_mode,
             provider=candidate.provider,
             model=candidate.model,
-            grounded=gate_result.grounded,
+            grounded=contained.grounded,
             thread_id=thread.id,
             turn_id=turn_id,
-            decision=gate_result.decision,
-            decision_reason=gate_result.reason,
-            claims=gate_result.claims,
+            decision=contained.decision,
+            decision_reason=contained.reason,
+            claims=contained.claims,
         )
 
     def _resolve_query(

@@ -311,6 +311,7 @@ export function TeachingAssistantChat() {
                           <span>
                             {citation.source_title}
                             {citation.timestamp_label ? ` | ${citation.timestamp_label}` : ""}
+                            {citation.provisional ? " | Provisional citation" : ""}
                           </span>
                         </div>
                       ))}

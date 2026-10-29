@@ -111,6 +111,7 @@ export function QAPanel({
                 <p className="muted">
                   {citation.source_title}
                   {citation.timestamp_label ? ` | ${citation.timestamp_label}` : ""}
+                  {citation.provisional ? " | Provisional citation" : ""}
                 </p>
                 <p>{citation.excerpt}</p>
               </article>

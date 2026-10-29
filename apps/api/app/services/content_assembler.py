@@ -64,6 +64,8 @@ class IndexedChunk:
     lesson_slug: str | None
     score_boost: float
     timestamp_label: str | None = None
+    # Set only for spans of a source document; video chapters and authored notes are not quotable spans.
+    source_filename: str | None = None
 
 
 def _lesson_blueprint(
@@ -1131,6 +1133,7 @@ class CourseStore:
                         excerpt=excerpt,
                         lesson_slug=lesson.slug,
                         score_boost=float(module_index),
+                        source_filename=section.source_filename or None,
                     )
                 )
         if lesson.video_asset:
@@ -1204,6 +1207,7 @@ class CourseStore:
                     lesson_slug=chunk.lesson_slug,
                     score=round(score, 3),
                     timestamp_label=chunk.timestamp_label,
+                    source_filename=chunk.source_filename,
                 )
             )
         results.sort(key=lambda item: item.score, reverse=True)
