@@ -1,10 +1,15 @@
+import json
+import os
+from datetime import datetime
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import create_engine, func, select
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.db import SessionLocal
+from app.core.db import SessionLocal, engine
 from app.db_models import ArenaMatchRecord, ArenaProfile, BuilderRun, BuilderShare, PeerReview, ProjectSubmission
 from app.main import _initialize_database, app
 from app.services.demo_seed import seed_demo_data
@@ -15,8 +20,9 @@ client = TestClient(app)
 FIXTURES_ROOT = Path(__file__).resolve().parents[3] / "seeds" / "demo"
 
 
-def test_api_test_session_uses_in_memory_database():
-    assert get_settings().database_url == "sqlite:///:memory:"
+def test_api_test_session_uses_a_disposable_database():
+    # conftest ignores an ambient DATABASE_URL; only in-memory SQLite or the CI's TEST_DATABASE_URL is used.
+    assert get_settings().database_url == os.environ.get("TEST_DATABASE_URL", "sqlite:///:memory:")
 
 
 def test_demo_seed_is_idempotent_and_populates_public_activity():
@@ -79,3 +85,22 @@ def test_demo_seed_is_idempotent_and_populates_public_activity():
     status_response = client.get("/arena/status")
     assert status_response.status_code == 200
     assert {"queue_size", "active_matches", "connected_players"} <= set(status_response.json())
+
+
+@pytest.mark.skipif(engine.dialect.name != "postgresql", reason="timestamptz session time zones are PostgreSQL behaviour")
+def test_demo_seed_keeps_fixture_instants_under_a_non_utc_session_time_zone():
+    # A naive UTC value written to timestamptz is read as session-local time, which shifted these rows.
+    fixture = json.loads((FIXTURES_ROOT / "routing-rescue-submission.json").read_text(encoding="utf-8"))
+    expected = datetime.fromisoformat(fixture["submission"]["created_at"].replace("Z", "+00:00"))
+    new_york = create_engine(engine.url, connect_args={"options": "-c timezone=America/New_York"})
+    try:
+        with Session(new_york) as session:
+            seed_demo_data(session, FIXTURES_ROOT)
+            seed_demo_data(session, FIXTURES_ROOT)
+            stored = session.scalar(
+                select(ProjectSubmission.created_at).where(ProjectSubmission.user_id == "fixture-ac-03")
+            )
+    finally:
+        new_york.dispose()
+
+    assert stored == expected

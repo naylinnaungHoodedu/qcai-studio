@@ -75,23 +75,32 @@ class DemoSeedReport:
         )
 
 
+def _as_utc(value: datetime) -> datetime:
+    # SQLite returns timestamps without a zone (stored as UTC); PostgreSQL returns them with one.
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
 def _parse_timestamp(value: str | None) -> datetime | None:
+    # Aware UTC, so a timestamptz column keeps the fixture's instant whatever the session time zone is.
     if not value:
         return None
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    if parsed.tzinfo is None:
-        return parsed
-    return parsed.astimezone(UTC).replace(tzinfo=None)
+    return _as_utc(datetime.fromisoformat(value.replace("Z", "+00:00")))
 
 
 def _load_fixture(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _same_value(current: Any, wanted: Any) -> bool:
+    if isinstance(current, datetime) and isinstance(wanted, datetime):
+        return _as_utc(current) == _as_utc(wanted)
+    return current == wanted
+
+
 def _set_fields_if_changed(model: object, values: dict[str, Any]) -> bool:
     changed = False
     for field_name, value in values.items():
-        if getattr(model, field_name) != value:
+        if not _same_value(getattr(model, field_name), value):
             setattr(model, field_name, value)
             changed = True
     return changed

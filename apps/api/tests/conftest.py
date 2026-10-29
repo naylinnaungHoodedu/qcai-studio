@@ -1,7 +1,9 @@
 import os
 
 
-os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+# Tests write and delete rows, so they never use an ambient DATABASE_URL: only in-memory SQLite, or the
+# disposable database named by TEST_DATABASE_URL (the PostgreSQL CI job, task 1.10).
+os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("ENVIRONMENT", "development")
 
 # Keep direct service tests on the same complete in-memory schema as API tests.

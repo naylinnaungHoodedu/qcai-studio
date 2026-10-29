@@ -124,6 +124,8 @@ def _response_headers_for_request(request: Request) -> dict[str, str]:
 
 
 def _initialize_database() -> None:
+    # Before the schema step, so an unapproved corpus stops start-up without creating or altering a table.
+    get_corpus_registry(settings).assert_public_assets_ready([*SOURCE_DOCUMENT_NAMES, *SOURCE_VIDEO_NAMES])
     database_url = settings.database_url.lower()
     max_attempts = 8 if database_url.startswith(("postgresql", "postgres")) else 1
     last_error: OperationalError | None = None
@@ -131,9 +133,6 @@ def _initialize_database() -> None:
         try:
             Base.metadata.create_all(bind=engine)
             run_schema_upgrades(engine)
-            get_corpus_registry(settings).assert_public_assets_ready(
-                [*SOURCE_DOCUMENT_NAMES, *SOURCE_VIDEO_NAMES]
-            )
             with SessionLocal() as db:
                 run_retention_cleanup(db)
             return
