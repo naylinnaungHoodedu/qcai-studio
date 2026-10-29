@@ -162,7 +162,7 @@ test("auth logout route clears cookies and redirects to Auth0 logout", async () 
 });
 
 test("proxy adds nonce-based CSP without issuing guest cookies on public pages", async () => {
-  const response = proxy(new NextRequest("https://qantumlearn.academy/"));
+  const response = await proxy(new NextRequest("https://qantumlearn.academy/"));
 
   const csp = response.headers.get("content-security-policy") ?? "";
   assert.match(csp, /script-src 'self' 'nonce-[^']+'/);
@@ -179,7 +179,7 @@ test("proxy adds nonce-based CSP without issuing guest cookies on public pages",
 });
 
 test("proxy bootstraps a signed guest token and its bound CSRF value for private account pages", async () => {
-  const response = proxy(new NextRequest("https://qantumlearn.academy/account"));
+  const response = await proxy(new NextRequest("https://qantumlearn.academy/account"));
 
   const token = response.cookies.get("qcai_guest_token")?.value ?? "";
   assert.match(token, SIGNED_GUEST_TOKEN_PATTERN);
@@ -187,7 +187,7 @@ test("proxy bootstraps a signed guest token and its bound CSRF value for private
 });
 
 test("proxy also bootstraps guest cookies for lesson pages so media assets can stream", async () => {
-  const response = proxy(
+  const response = await proxy(
     new NextRequest("https://qantumlearn.academy/lessons/nisq-reality-overview"),
   );
 
@@ -197,7 +197,7 @@ test("proxy also bootstraps guest cookies for lesson pages so media assets can s
 
 test("proxy preserves a valid signed guest session without reissuing cookies", async () => {
   const issued = issueGuestToken("guest-0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", Math.floor(Date.now() / 1000));
-  const response = proxy(
+  const response = await proxy(
     new NextRequest("https://qantumlearn.academy/account", {
       headers: {
         cookie: cookieHeader({ qcai_guest_token: issued.token, qcai_guest_csrf: issued.csrf }),
@@ -213,7 +213,7 @@ test("proxy preserves a valid signed guest session without reissuing cookies", a
 test("proxy replaces a guest token whose MAC does not verify", async () => {
   const issued = issueGuestToken("guest-0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", Math.floor(Date.now() / 1000));
   const forged = `${issued.token.slice(0, -4)}0000`;
-  const response = proxy(
+  const response = await proxy(
     new NextRequest("https://qantumlearn.academy/account", {
       headers: { cookie: cookieHeader({ qcai_guest_token: forged, qcai_guest_csrf: issued.csrf }) },
     }),
@@ -224,8 +224,87 @@ test("proxy replaces a guest token whose MAC does not verify", async () => {
   assert.notEqual(verifyGuestToken(replacement)?.guestId, "guest-0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0");
 });
 
+async function withLegacyUpgrade<T>(
+  enabled: boolean,
+  apiReply: (body: { legacy_guest_id: string }) => Record<string, unknown>,
+  run: (calls: string[]) => Promise<T>,
+): Promise<T> {
+  const originalFetch = global.fetch;
+  const originalFlag = process.env.GUEST_LEGACY_UPGRADE_ENABLED;
+  const calls: string[] = [];
+  global.fetch = async (input, init) => {
+    calls.push(String(input));
+    return Response.json(apiReply(JSON.parse(String(init?.body ?? "{}"))));
+  };
+  if (enabled) {
+    process.env.GUEST_LEGACY_UPGRADE_ENABLED = "true";
+  } else {
+    delete process.env.GUEST_LEGACY_UPGRADE_ENABLED;
+  }
+  try {
+    return await run(calls);
+  } finally {
+    global.fetch = originalFetch;
+    if (originalFlag === undefined) {
+      delete process.env.GUEST_LEGACY_UPGRADE_ENABLED;
+    } else {
+      process.env.GUEST_LEGACY_UPGRADE_ENABLED = originalFlag;
+    }
+  }
+}
+
+function legacyAccountRequest() {
+  return new NextRequest("https://qantumlearn.academy/account", {
+    headers: {
+      cookie: cookieHeader({ qcai_guest_id: LEGACY_GUEST_ID, qcai_guest_csrf: "3b1f2f40-7132-4778-8df5-44c1c5cf6bb0" }),
+    },
+  });
+}
+
+test("with the migration window enabled, an upgrade the API grants keeps the legacy guest id", async () => {
+  await withLegacyUpgrade(
+    true,
+    (body) => {
+      // Stands in for the API, which signs with the same development secret.
+      const issued = issueGuestToken(body.legacy_guest_id, Math.floor(Date.now() / 1000));
+      return { upgraded: true, guest_token: issued.token, csrf: issued.csrf };
+    },
+    async (calls) => {
+      const response = await proxy(legacyAccountRequest());
+      const token = response.cookies.get("qcai_guest_token")?.value ?? "";
+      assert.equal(calls.length, 1);
+      assert.match(calls[0], /\/auth\/guest-upgrade$/);
+      assert.equal(verifyGuestToken(token)?.guestId, LEGACY_GUEST_ID);
+      assert.equal(response.cookies.get("qcai_guest_csrf")?.value, verifyGuestToken(token)?.csrf);
+      assert.equal(response.cookies.get("qcai_guest_id")?.value, "");
+    },
+  );
+});
+
+test("with the migration window enabled, a refused or mismatched upgrade falls back to a fresh identity", async () => {
+  const otherId = "guest-0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0";
+  for (const reply of [
+    () => ({ upgraded: false, guest_token: null, csrf: null }),
+    () => ({ upgraded: true, guest_token: issueGuestToken(otherId, Math.floor(Date.now() / 1000)).token }),
+  ]) {
+    await withLegacyUpgrade(true, reply, async () => {
+      const response = await proxy(legacyAccountRequest());
+      const guestId = verifyGuestToken(response.cookies.get("qcai_guest_token")?.value)?.guestId;
+      assert.ok(guestId);
+      assert.notEqual(guestId, LEGACY_GUEST_ID);
+      assert.notEqual(guestId, otherId);
+    });
+  }
+});
+
 test("proxy never upgrades a legacy unsigned guest id: it issues a fresh identity and clears the old cookie", async () => {
-  const response = proxy(
+  const calls: string[] = [];
+  const originalFetch = global.fetch;
+  global.fetch = async (input) => {
+    calls.push(String(input));
+    return Response.json({});
+  };
+  const response = await proxy(
     new NextRequest("https://qantumlearn.academy/account", {
       headers: { cookie: cookieHeader({ qcai_guest_id: LEGACY_GUEST_ID }) },
     }),
@@ -233,8 +312,10 @@ test("proxy never upgrades a legacy unsigned guest id: it issues a fresh identit
 
   const token = response.cookies.get("qcai_guest_token")?.value ?? "";
   assert.match(token, SIGNED_GUEST_TOKEN_PATTERN);
+  global.fetch = originalFetch;
   assert.notEqual(verifyGuestToken(token)?.guestId, LEGACY_GUEST_ID);
   assert.equal(response.cookies.get("qcai_guest_id")?.value, "");
+  assert.equal(calls.length, 0);
 });
 
 test("asset proxy full GET uses a plain streamed response when guest cookies already exist", async () => {

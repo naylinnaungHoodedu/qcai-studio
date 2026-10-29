@@ -8,6 +8,8 @@ from app.core.rate_limit import limiter
 from app.schemas import (
     AuthActionRead,
     AuthSessionRead,
+    GuestUpgradeRead,
+    GuestUpgradeRequest,
     LocalAccountDeleteRequest,
     LocalAccountLoginRequest,
     LocalAccountRegisterRequest,
@@ -23,6 +25,7 @@ from app.services.local_accounts import (
     register_local_account,
     revoke_local_session,
 )
+from app.services.guest_sessions import upgrade_legacy_guest
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -159,3 +162,20 @@ def delete_account(
     revoke_local_session(db, qcai_session_token)
     _clear_auth_cookies(response)
     return AuthActionRead(status="deleted")
+
+
+@router.post("/guest-upgrade", response_model=GuestUpgradeRead)
+@limiter.limit(lambda: get_settings().guest_legacy_upgrade_rate_limit)
+def upgrade_legacy_guest_session(
+    request: Request,
+    response: Response,
+    payload: GuestUpgradeRequest,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    # Called by the frontend server for a browser that still holds a legacy unsigned guest id.
+    issued = upgrade_legacy_guest(db, settings, payload.legacy_guest_id, payload.legacy_csrf)
+    if issued is None:
+        return GuestUpgradeRead(upgraded=False)
+    guest_token, csrf = issued
+    return GuestUpgradeRead(upgraded=True, guest_token=guest_token, csrf=csrf)

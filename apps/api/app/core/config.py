@@ -1,3 +1,4 @@
+from datetime import datetime
 import json
 from functools import lru_cache
 from pathlib import Path
@@ -98,6 +99,9 @@ class Settings(BaseSettings):
     arena_enabled: bool | None = None
     guest_token_secret: str | None = None
     guest_token_previous_secret: str | None = None
+    # Legacy guest-id migration window (plan L1108-1110): closed unless an end time is set.
+    guest_legacy_upgrade_until: datetime | None = None
+    guest_legacy_upgrade_rate_limit: str = "5/hour"
     allowed_origins: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:3000"])
 
     @field_validator("allowed_origins", mode="before")
@@ -133,6 +137,8 @@ class Settings(BaseSettings):
             raise ValueError("ARENA_ENABLED is not permitted outside development until the Arena socket authenticates players.")
         if self.guest_token_secret is None and self.environment.lower() == "development":
             self.guest_token_secret = DEVELOPMENT_GUEST_TOKEN_SECRET
+        if self.guest_legacy_upgrade_until is not None and self.guest_legacy_upgrade_until.tzinfo is None:
+            raise ValueError("GUEST_LEGACY_UPGRADE_UNTIL must include a timezone, for example 2026-11-30T00:00:00Z.")
         if self.environment.lower() != "development" and any(origin.strip() == "*" for origin in self.allowed_origins):
             raise ValueError("Wildcard ALLOWED_ORIGINS is not permitted outside development.")
         self.database_url = normalize_sqlite_database_url(self.database_url)

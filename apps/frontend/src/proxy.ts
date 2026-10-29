@@ -2,13 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 
 import {
   applyGuestSessionToHeaders,
-  resolveGuestSession,
+  resolveGuestSessionWithLegacyUpgrade,
   setGuestSessionCookies,
 } from "@/lib/guest-session";
 
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const GUEST_BOOTSTRAP_PREFIXES = ["/account", "/builder", "/dashboard", "/projects", "/lessons"];
 const DEFAULT_PRODUCTION_API_ORIGIN = "https://api.qantumlearn.academy";
+const UPSTREAM_API_BASE_URL =
+  process.env.API_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  (IS_PRODUCTION ? DEFAULT_PRODUCTION_API_ORIGIN : "http://127.0.0.1:8000");
 
 function createNonce(): string {
   const bytes = new Uint8Array(16);
@@ -79,13 +83,15 @@ function pageRequiresGuestBootstrap(pathname: string): boolean {
   );
 }
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const nonce = createNonce();
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("Content-Security-Policy", buildContentSecurityPolicy(request, nonce));
 
-  const session = pageRequiresGuestBootstrap(request.nextUrl.pathname) ? resolveGuestSession(request) : null;
+  const session = pageRequiresGuestBootstrap(request.nextUrl.pathname)
+    ? await resolveGuestSessionWithLegacyUpgrade(request, UPSTREAM_API_BASE_URL)
+    : null;
   if (session) {
     applyGuestSessionToHeaders(request, requestHeaders, session);
   }

@@ -458,6 +458,27 @@ class AuthActionRead(BaseModel):
     status: str
 
 
+class GuestUpgradeRequest(BaseModel):
+    legacy_guest_id: str = Field(max_length=80)
+    legacy_csrf: str = Field(max_length=160)
+
+
+class GuestUpgradeRead(BaseModel):
+    upgraded: bool
+    guest_token: str | None = None
+    csrf: str | None = None
+
+
+class GuestRevocationCreate(BaseModel):
+    guest_id: str = Field(pattern=r"^guest-[0-9a-f-]{8,64}$")
+    reason: str = Field(min_length=3, max_length=255)
+
+
+class GuestRevocationRead(BaseModel):
+    status: str
+    revoked_at: datetime
+
+
 class QuizAttemptRead(BaseModel):
     id: int
     lesson_slug: str

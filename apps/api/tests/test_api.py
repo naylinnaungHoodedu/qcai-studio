@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import re
 import time
@@ -14,7 +15,7 @@ from sqlalchemy import func, select
 
 from app.api.routes import arena, assets, assistant
 from app.core.db import SessionLocal
-from app.db_models import ArenaProfile, BuilderShare, Note, ProjectSubmission, PublicHandle, UserAccount
+from app.db_models import ArenaProfile, BuilderShare, GuestRevocation, Note, ProjectSubmission, PublicHandle, UserAccount
 from app.core.config import DEVELOPMENT_GUEST_TOKEN_SECRET, Settings, get_settings
 from app.core.guest_tokens import (
     GUEST_TOKEN_COOKIE,
@@ -25,6 +26,7 @@ from app.core.guest_tokens import (
 )
 from app.main import _build_security_headers, _initialize_database, app
 from app.schemas import AssistantChatResponse, Citation
+from app.services.guest_sessions import revoke_guest
 from app.services.public_handles import public_handle, public_handles
 from app.services.retrieval_engine import RetrievalEngine
 from app.services.store import get_course_store
@@ -1226,6 +1228,131 @@ def test_startup_requires_a_guest_token_secret_outside_development():
     for secret in (None, "too-short"):
         with pytest.raises(RuntimeError):
             require_guest_token_secret(Settings(**production, guest_token_secret=secret))
+
+
+def test_revoked_guest_token_returns_401_and_spares_other_guests():
+    revoked_id = f"guest-{uuid4()}"
+    other_token, _ = _signed_guest(guest_id=f"guest-{uuid4()}")
+    revoked_token, _ = _signed_guest(guest_id=revoked_id)
+    with SessionLocal() as db:
+        revoke_guest(db, revoked_id, "test revocation")
+
+    with TestClient(app) as guest_client:
+        guest_client.cookies.set(GUEST_TOKEN_COOKIE, revoked_token)
+        revoked = guest_client.get("/auth/me")
+    with TestClient(app) as guest_client:
+        guest_client.cookies.set(GUEST_TOKEN_COOKIE, other_token)
+        other = guest_client.get("/auth/me")
+
+    assert revoked.status_code == 401
+    assert revoked.json()["detail"] == "Guest session revoked."
+    assert other.status_code == 200
+
+
+def test_only_admins_can_revoke_guest_sessions():
+    guest_id = f"guest-{uuid4()}"
+    body = {"guest_id": guest_id, "reason": "abuse report"}
+
+    learner = client.post("/admin/guest-revocations", headers={"x-demo-user": "demo-learner", "x-demo-role": "learner"}, json=body)
+    admin = client.post("/admin/guest-revocations", headers={"x-demo-user": "demo-admin", "x-demo-role": "admin"}, json=body)
+
+    assert learner.status_code == 403
+    assert admin.status_code == 200
+    assert admin.json()["status"] == "revoked"
+    with SessionLocal() as db:
+        assert db.get(GuestRevocation, guest_id) is not None
+
+
+@pytest.fixture
+def legacy_window():
+    settings = Settings(guest_legacy_upgrade_until=datetime.now(timezone.utc) + timedelta(days=1))
+    app.dependency_overrides[get_settings] = lambda: settings
+    yield settings
+    app.dependency_overrides.pop(get_settings, None)
+
+
+def _upgrade(legacy_guest_id, legacy_csrf="3b1f2f40-7132-4778-8df5-44c1c5cf6bb0"):
+    # A distinct client address per call keeps the per-address rate limit out of the way.
+    return client.post(
+        "/auth/guest-upgrade",
+        headers={"x-forwarded-for": f"198.51.100.{uuid4().int % 250}-{uuid4().hex[:6]}"},
+        json={"legacy_guest_id": legacy_guest_id, "legacy_csrf": legacy_csrf},
+    )
+
+
+def test_legacy_upgrade_window_is_closed_by_default():
+    response = _upgrade(f"guest-{uuid4()}")
+    assert response.status_code == 200
+    assert response.json() == {"upgraded": False, "guest_token": None, "csrf": None}
+
+
+def test_legacy_upgrade_reissues_a_never_public_id_once_and_logs_only_a_hash(legacy_window, caplog):
+    legacy_id = f"guest-{uuid4()}"
+    with caplog.at_level("WARNING"):
+        first = _upgrade(legacy_id)
+    second = _upgrade(legacy_id)
+
+    assert first.json()["upgraded"] is True
+    guest = verify_guest_token(first.json()["guest_token"], legacy_window)
+    assert guest is not None and guest.guest_id == legacy_id and guest.csrf == first.json()["csrf"]
+    assert second.json()["upgraded"] is False
+    assert any("Legacy guest upgraded ref=" in message for message in caplog.messages)
+    assert not any(legacy_id in message for message in caplog.messages)
+
+
+def test_legacy_id_from_a_public_response_cannot_be_upgraded(legacy_window):
+    # AC-1-12: ids that the builder feed, review queue or leaderboard served before public handles.
+    shared_id, submitted_id, player_id = (f"guest-{uuid4()}" for _ in range(3))
+    with SessionLocal() as session:
+        session.add_all(
+            [
+                BuilderShare(user_id=shared_id, scenario_slug="qcai-hybrid-loop", caption="Shared.", completion_percent=100, map_snapshot={}),
+                ProjectSubmission(
+                    user_id=submitted_id,
+                    project_slug="routing-rescue-playbook",
+                    title="Public submission",
+                    solution_summary="Was visible in the review queue.",
+                    implementation_notes="Notes.",
+                ),
+                ArenaProfile(player_id=player_id, display_name="Public player", xp=0, matches_played=0, wins=0, skill_rating=1000, adaptive_level=2),
+            ]
+        )
+        session.commit()
+
+    for public_id in (shared_id, submitted_id, player_id):
+        assert _upgrade(public_id).json()["upgraded"] is False
+
+
+@pytest.mark.parametrize("case", ["malformed-csrf", "malformed-id", "revoked", "window-ended"])
+def test_legacy_upgrade_refusals(legacy_window, case):
+    legacy_id = f"guest-{uuid4()}"
+    if case == "malformed-csrf":
+        response = _upgrade(legacy_id, legacy_csrf="not-a-csrf-value!")
+    elif case == "malformed-id":
+        response = _upgrade("acct-123e4567-e89b-12d3-a456-426614174000")
+    elif case == "revoked":
+        with SessionLocal() as db:
+            revoke_guest(db, legacy_id, "test revocation")
+        response = _upgrade(legacy_id)
+    else:
+        app.dependency_overrides[get_settings] = lambda: Settings(
+            guest_legacy_upgrade_until=datetime.now(timezone.utc) - timedelta(minutes=1)
+        )
+        response = _upgrade(legacy_id)
+    assert response.json()["upgraded"] is False
+
+
+def test_legacy_upgrade_is_rate_limited_per_client_address():
+    address = {"x-forwarded-for": f"203.0.113.{uuid4().hex[:8]}"}
+    body = {"legacy_guest_id": f"guest-{uuid4()}", "legacy_csrf": "3b1f2f40-7132-4778-8df5-44c1c5cf6bb0"}
+    statuses = [client.post("/auth/guest-upgrade", headers=address, json=body).status_code for _ in range(6)]
+    assert statuses[:5] == [200] * 5
+    assert statuses[5] == 429
+
+
+def test_legacy_upgrade_end_time_must_carry_a_timezone():
+    with pytest.raises(ValidationError):
+        Settings(guest_legacy_upgrade_until=datetime(2026, 11, 30))
 
 
 def test_local_account_register_login_logout_and_delete():

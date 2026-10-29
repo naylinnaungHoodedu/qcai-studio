@@ -143,6 +143,52 @@ export function resolveGuestSession(request: NextRequest): GuestSession {
   };
 }
 
+const LEGACY_UPGRADE_TIMEOUT_MS = 3000;
+
+// During the bounded migration window (plan L1108-1110) the API may re-issue a signed token for a
+// legacy guest id; it refuses ids that were ever public (AC-1-12). Off unless GUEST_LEGACY_UPGRADE_ENABLED=true.
+export async function resolveGuestSessionWithLegacyUpgrade(
+  request: NextRequest,
+  apiBaseUrl: string,
+): Promise<GuestSession> {
+  const session = resolveGuestSession(request);
+  if (process.env.GUEST_LEGACY_UPGRADE_ENABLED !== "true" || !session.createdGuestToken || !session.clearLegacyGuestCookie) {
+    return session;
+  }
+  const legacyGuestId = request.cookies.get(LEGACY_GUEST_COOKIE_NAME)?.value?.trim().toLowerCase();
+  const legacyCsrf = request.cookies.get(GUEST_CSRF_COOKIE_NAME)?.value?.trim().toLowerCase();
+  if (!legacyGuestId || !legacyCsrf) {
+    return session;
+  }
+
+  const headers = new Headers({ "content-type": "application/json" });
+  const forwardedFor = request.headers.get("x-forwarded-for");
+  if (forwardedFor) {
+    headers.set("x-forwarded-for", forwardedFor);
+  }
+  try {
+    const response = await fetch(`${apiBaseUrl.replace(/\/$/, "")}/auth/guest-upgrade`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ legacy_guest_id: legacyGuestId, legacy_csrf: legacyCsrf }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(LEGACY_UPGRADE_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      return session;
+    }
+    const payload = (await response.json()) as { upgraded?: boolean; guest_token?: string | null };
+    const verified = payload.upgraded ? verifyGuestToken(payload.guest_token ?? undefined) : null;
+    if (!verified || verified.guestId !== legacyGuestId || !payload.guest_token) {
+      return session;
+    }
+    return { ...session, guestToken: payload.guest_token, guestCsrf: verified.csrf };
+  } catch {
+    // Any failure keeps the fresh identity; the upgrade is a convenience, never a requirement.
+    return session;
+  }
+}
+
 export function applyGuestSessionToHeaders(
   request: NextRequest,
   headers: Headers,
