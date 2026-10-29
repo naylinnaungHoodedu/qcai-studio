@@ -37,6 +37,9 @@ SOURCE_VIDEO_NAMES = [
     "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4",
 ]
 SQLITE_URL_PREFIX = "sqlite:///"
+# Signs guest tokens in development and tests only; every other environment must set GUEST_TOKEN_SECRET.
+# The frontend's guest-session.ts falls back to the same value outside production.
+DEVELOPMENT_GUEST_TOKEN_SECRET = "qcai-development-only-guest-token-secret"
 API_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -93,6 +96,8 @@ class Settings(BaseSettings):
     enforce_corpus_governance: bool | None = None
     grounding_policy_version: str = "cs595-v1"
     arena_enabled: bool | None = None
+    guest_token_secret: str | None = None
+    guest_token_previous_secret: str | None = None
     allowed_origins: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:3000"])
 
     @field_validator("allowed_origins", mode="before")
@@ -126,6 +131,8 @@ class Settings(BaseSettings):
             self.arena_enabled = self.environment.lower() == "development"
         if self.arena_enabled and self.environment.lower() != "development":
             raise ValueError("ARENA_ENABLED is not permitted outside development until the Arena socket authenticates players.")
+        if self.guest_token_secret is None and self.environment.lower() == "development":
+            self.guest_token_secret = DEVELOPMENT_GUEST_TOKEN_SECRET
         if self.environment.lower() != "development" and any(origin.strip() == "*" for origin in self.allowed_origins):
             raise ValueError("Wildcard ALLOWED_ORIGINS is not permitted outside development.")
         self.database_url = normalize_sqlite_database_url(self.database_url)

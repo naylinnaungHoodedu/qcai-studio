@@ -5,19 +5,16 @@ from urllib.parse import urlsplit
 from fastapi import HTTPException, Request, status
 
 from app.core.config import Settings
+from app.core.guest_tokens import GUEST_TOKEN_COOKIE, verify_guest_token
 
 
 AUTH_SESSION_COOKIE = "qcai_session_token"
 AUTH_CSRF_COOKIE = "qcai_auth_csrf"
-GUEST_ID_COOKIE = "qcai_guest_id"
-GUEST_CSRF_COOKIE = "qcai_guest_csrf"
 GUEST_CSRF_HEADER = "x-qcai-csrf"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 _AUTH_SESSION_PATTERN = re.compile(r"^[A-Za-z0-9_\-]{24,256}$")
 _AUTH_CSRF_PATTERN = re.compile(r"^[A-Za-z0-9_\-]{16,256}$")
-_GUEST_ID_PATTERN = re.compile(r"^guest-[0-9a-f-]{8,64}$")
-_GUEST_CSRF_PATTERN = re.compile(r"^[0-9a-f-]{16,128}$")
 
 
 def _origin_from_url(value: str | None) -> str | None:
@@ -81,19 +78,19 @@ def protect_guest_mutation_request(request: Request, settings: Settings) -> None
         validate_request_origin(request, settings)
         return
 
-    guest_id = (request.cookies.get(GUEST_ID_COOKIE) or "").strip().lower()
-    if not guest_id:
+    guest_token = (request.cookies.get(GUEST_TOKEN_COOKIE) or "").strip()
+    if not guest_token:
         return
-    if not _GUEST_ID_PATTERN.fullmatch(guest_id):
+    guest = verify_guest_token(guest_token, settings)
+    if guest is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid guest session.")
 
-    csrf_cookie = (request.cookies.get(GUEST_CSRF_COOKIE) or "").strip().lower()
+    # Session-bound CSRF: the header must carry the value derived from this guest token, so a
+    # CSRF value from one guest session is useless with another session's cookie.
     csrf_header = (request.headers.get(GUEST_CSRF_HEADER) or "").strip().lower()
-    if not csrf_cookie or not csrf_header:
+    if not csrf_header:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Missing CSRF protection.")
-    if not _GUEST_CSRF_PATTERN.fullmatch(csrf_cookie):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid CSRF token.")
-    if not hmac.compare_digest(csrf_cookie, csrf_header):
+    if not hmac.compare_digest(csrf_header, guest.csrf):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF validation failed.")
 
     validate_request_origin(request, settings)

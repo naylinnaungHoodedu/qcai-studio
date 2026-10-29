@@ -4,6 +4,9 @@ from fastapi import Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from app.core.config import get_settings
+from app.core.guest_tokens import GUEST_TOKEN_COOKIE, verify_guest_token
+
 
 def build_rate_limit_key(request: Request) -> str:
     authorization = request.headers.get("authorization")
@@ -15,9 +18,9 @@ def build_rate_limit_key(request: Request) -> str:
     if demo_user:
         return f"demo:{demo_user.strip().lower()}"
 
-    guest_user = request.cookies.get("qcai_guest_id")
-    if guest_user:
-        return f"guest:{guest_user.strip().lower()}"
+    guest = verify_guest_token(request.cookies.get(GUEST_TOKEN_COOKIE), get_settings())
+    if guest:
+        return f"guest:{guest.guest_id}"
 
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
