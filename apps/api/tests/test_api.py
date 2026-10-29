@@ -1,9 +1,11 @@
 from datetime import datetime, timedelta, timezone
+import logging
 from pathlib import Path
 import re
 import time
 from uuid import uuid4
 
+import httpx
 import pytest
 from fastapi import HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
@@ -17,6 +19,7 @@ from app.api.routes import arena, assets, assistant
 from app.core.db import SessionLocal
 from app.db_models import ArenaProfile, BuilderShare, GuestRevocation, Note, ProjectSubmission, PublicHandle, UserAccount
 from app.core.config import DEVELOPMENT_GUEST_TOKEN_SECRET, Settings, get_settings
+from app.core.log_redaction import install_log_redaction
 from app.core.guest_tokens import (
     GUEST_TOKEN_COOKIE,
     guest_csrf_for,
@@ -575,9 +578,54 @@ def test_teaching_assistant_uses_api_key_endpoint_without_bearer_header():
 
     assert response.provider == "vertex-ai-api-key"
     assert response.model == "gemini-3.1-flash-lite-preview"
-    assert "key=test-api-key" in client_stub.captured_url
+    assert "test-api-key" not in client_stub.captured_url
+    assert "key=" not in client_stub.captured_url
+    assert client_stub.captured_headers["x-goog-api-key"] == "test-api-key"
     assert "/publishers/google/models/gemini-3.1-flash-lite-preview:generateContent" in client_stub.captured_url
     assert "Authorization" not in client_stub.captured_headers
+
+
+def test_provider_error_logs_no_key(caplog):
+    # AC-1-8: a real httpx call that the provider rejects; the key must appear in no log record.
+    provider_key = "provider-key-ac18-0123456789abcdef"
+    seen = {}
+
+    def reject(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["header"] = request.headers.get("x-goog-api-key")
+        return httpx.Response(403, json={"error": {"message": "API key not valid"}})
+
+    class RejectedAssistant(TeachingAssistantService):
+        @property
+        def _vertex_client(self):
+            return httpx.Client(transport=httpx.MockTransport(reject))
+
+    service = RejectedAssistant(RetrievalEngine(get_course_store(), Settings()), Settings(vertex_ai_api_key=provider_key))
+    with caplog.at_level("DEBUG"):
+        response = service.chat("How should I start?", page_path="/")
+
+    assert response.provider == "local-grounded-fallback"
+    assert seen["header"] == provider_key and provider_key not in seen["url"]
+    assert any("Vertex assistant failed" in record.getMessage() for record in caplog.records)
+    assert provider_key not in caplog.text
+    assert "key=" not in caplog.text
+
+
+def test_log_redaction_masks_urls_headers_secrets_and_tracebacks(caplog):
+    install_log_redaction(["configured-secret-value-42"])
+    logger = logging.getLogger("qcai.test.redaction")
+    with caplog.at_level("INFO", logger="qcai.test.redaction"):
+        logger.info("POST https://example.test/v1/model?key=leaked-query-key&alt=json")
+        logger.info("headers %s", {"x-goog-api-key": "leaked-header-key", "Authorization": "Bearer leaked-bearer"})
+        logger.info("value %s", "configured-secret-value-42")
+        try:
+            raise RuntimeError("failed for url https://example.test/v1?access_token=leaked-token")
+        except RuntimeError:
+            logger.exception("provider call failed")
+
+    for leaked in ("leaked-query-key", "leaked-header-key", "leaked-bearer", "configured-secret-value-42", "leaked-token"):
+        assert leaked not in caplog.text
+    assert caplog.text.count("[REDACTED]") >= 5
 
 def test_source_asset_requires_authentication_headers():
     response = client.head("/source-assets/Quantum%20Computing%20and%20Artificial%20Intelligence%202025.mp4")

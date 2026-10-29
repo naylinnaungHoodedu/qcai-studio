@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import os
 from functools import cached_property
-from urllib.parse import urlencode
 
 import httpx
 
@@ -247,8 +246,9 @@ class TeachingAssistantService:
     def _vertex_endpoint(self) -> str:
         model = self.settings.vertex_ai_chat_model.strip()
         if self.vertex_api_key:
-            query = urlencode({"key": self.vertex_api_key})
-            return f"https://aiplatform.googleapis.com/v1/publishers/google/models/{model}:generateContent?{query}"
+            # The key travels in the x-goog-api-key header, never the URL, so it cannot reach logs or
+            # error messages that quote the URL (plan Action 24, R-06).
+            return f"https://aiplatform.googleapis.com/v1/publishers/google/models/{model}:generateContent"
 
         project_id = self.vertex_project_id
         if not project_id:
@@ -277,6 +277,7 @@ class TeachingAssistantService:
     def _vertex_headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if self.vertex_api_key:
+            headers["x-goog-api-key"] = self.vertex_api_key
             return headers
         headers["Authorization"] = f"Bearer {self._access_token()}"
         return headers

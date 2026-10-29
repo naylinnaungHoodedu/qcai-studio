@@ -19,6 +19,7 @@ from app.core.config import SOURCE_DOCUMENT_NAMES, SOURCE_VIDEO_NAMES, get_setti
 from app.core.db import Base, SessionLocal, engine
 from app.core.rate_limit import limiter
 from app.core.guest_tokens import require_guest_token_secret
+from app.core.log_redaction import install_log_redaction
 from app.core.request_protection import protect_guest_mutation_request
 from app.core.schema_upgrades import run_schema_upgrades
 from app.services.retention import run_retention_cleanup
@@ -27,6 +28,15 @@ from app.services.store import get_course_store
 
 settings = get_settings()
 IS_PRODUCTION = settings.environment.lower() != "development"
+install_log_redaction(
+    [
+        settings.vertex_ai_api_key,
+        settings.openai_api_key,
+        settings.pinecone_api_key,
+        settings.guest_token_secret,
+        settings.guest_token_previous_secret,
+    ]
+)
 LOGGER = logging.getLogger("qcai.api")
 
 def _build_content_security_policy(app_settings = settings, nonce: str | None = None) -> str:
