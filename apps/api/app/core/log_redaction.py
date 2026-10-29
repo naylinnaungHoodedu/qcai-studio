@@ -30,7 +30,7 @@ def install_log_redaction(secret_values: Iterable[str | None] = ()) -> None:
     """Register secret values to mask and install the redacting record factory (idempotent)."""
     _secrets.update(value.strip() for value in secret_values if value and len(value.strip()) >= _MIN_SECRET_LENGTH)
     previous = logging.getLogRecordFactory()
-    if getattr(previous, "qcai_redacting", False):
+    if getattr(previous, "redacts_credentials", False):
         return
 
     def factory(*args, **kwargs) -> logging.LogRecord:
@@ -44,5 +44,5 @@ def install_log_redaction(secret_values: Iterable[str | None] = ()) -> None:
             record.msg, record.args = "[log message withheld: redaction failed]", None
         return record
 
-    factory.qcai_redacting = True
+    factory.redacts_credentials = True
     logging.setLogRecordFactory(factory)
