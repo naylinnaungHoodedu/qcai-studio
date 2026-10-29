@@ -11,6 +11,7 @@ from app.core.auth import AuthUser, get_current_user
 from app.core.corpus_governance import get_corpus_registry
 from app.core.config import Settings, get_settings
 from app.core.db import get_db
+from app.core.guest_tokens import GUEST_TOKEN_COOKIE
 from app.services.local_accounts import AUTH_SESSION_COOKIE_NAME
 from app.core.source_assets import source_asset_lookup_ids
 
@@ -27,18 +28,18 @@ def _require_asset_access(
     x_demo_user: str | None = Header(default=None),
     x_demo_role: str | None = Header(default=None),
     qcai_session_token: str | None = Cookie(default=None, alias=AUTH_SESSION_COOKIE_NAME),
-    qcai_guest_id: str | None = Cookie(default=None),
+    qcai_guest_token: str | None = Cookie(default=None, alias=GUEST_TOKEN_COOKIE),
     settings: Settings = Depends(get_settings),
     db: Session = Depends(get_db),
 ) -> AuthUser:
-    if not authorization and not x_demo_user and not x_demo_role and not qcai_session_token and not qcai_guest_id:
+    if not authorization and not x_demo_user and not x_demo_role and not qcai_session_token and not qcai_guest_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required for source assets.")
     user = get_current_user(
         authorization=authorization,
         x_demo_user=x_demo_user,
         x_demo_role=x_demo_role,
         qcai_session_token=qcai_session_token,
-        qcai_guest_id=qcai_guest_id,
+        qcai_guest_token=qcai_guest_token,
         settings=settings,
         db=db,
     )

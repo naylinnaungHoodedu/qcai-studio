@@ -18,6 +18,7 @@ from app.core.corpus_governance import get_corpus_registry
 from app.core.config import SOURCE_DOCUMENT_NAMES, SOURCE_VIDEO_NAMES, get_settings
 from app.core.db import Base, SessionLocal, engine
 from app.core.rate_limit import limiter
+from app.core.guest_tokens import require_guest_token_secret
 from app.core.request_protection import protect_guest_mutation_request
 from app.core.schema_upgrades import run_schema_upgrades
 from app.services.retention import run_retention_cleanup
@@ -137,6 +138,8 @@ def _initialize_database() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Before the database step, so a missing secret stops start-up without touching the schema.
+    require_guest_token_secret(settings)
     _initialize_database()
     get_course_store()
     yield

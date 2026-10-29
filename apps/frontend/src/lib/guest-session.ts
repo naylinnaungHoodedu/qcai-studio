@@ -1,13 +1,24 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+
 import { NextRequest, NextResponse } from "next/server";
 
-export const GUEST_COOKIE_NAME = "qcai_guest_id";
+// Keyed-MAC guest tokens (plan task 1.1, Decision D-09): `g1.<guest_id>.<issued_unix>.<hmac>`.
+// The API verifies the same format in apps/api/app/core/guest_tokens.py; keep the two in step.
+export const GUEST_TOKEN_COOKIE_NAME = "qcai_guest_token";
 export const GUEST_CSRF_COOKIE_NAME = "qcai_guest_csrf";
 export const GUEST_CSRF_HEADER = "x-qcai-csrf";
+// The unsigned id cookie used before signed tokens; it is no longer a credential and gets cleared.
+export const LEGACY_GUEST_COOKIE_NAME = "qcai_guest_id";
 
-const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
+const GUEST_TOKEN_VERSION = "g1";
+const GUEST_CSRF_LENGTH = 48;
+const GUEST_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
+const CLOCK_SKEW_SECONDS = 300;
+// Matches DEVELOPMENT_GUEST_TOKEN_SECRET in apps/api/app/core/config.py; never used in production.
+const DEVELOPMENT_GUEST_TOKEN_SECRET = "qcai-development-only-guest-token-secret";
+const COOKIE_MAX_AGE_SECONDS = GUEST_TOKEN_MAX_AGE_SECONDS;
 const COOKIE_DOMAIN = process.env.NEXT_PUBLIC_COOKIE_DOMAIN || process.env.COOKIE_DOMAIN;
 const GUEST_ID_PATTERN = /^guest-[0-9a-f-]{8,64}$/;
-const GUEST_CSRF_PATTERN = /^[0-9a-f-]{16,128}$/;
 const PUBLIC_API_ROUTE_PATTERNS = [
   /^\/health$/,
   /^\/ready$/,
@@ -21,47 +32,114 @@ const PUBLIC_API_ROUTE_PATTERNS = [
 ];
 
 export type GuestSession = {
-  guestId: string;
+  guestToken: string;
   guestCsrf: string;
-  createdGuestId: boolean;
+  createdGuestToken: boolean;
   createdGuestCsrf: boolean;
+  clearLegacyGuestCookie: boolean;
 };
+
+function signingSecret(): string {
+  const secret = process.env.GUEST_TOKEN_SECRET;
+  if (secret) {
+    return secret;
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("GUEST_TOKEN_SECRET is required in production.");
+  }
+  return DEVELOPMENT_GUEST_TOKEN_SECRET;
+}
+
+function verificationSecrets(): string[] {
+  const previous = process.env.GUEST_TOKEN_PREVIOUS_SECRET;
+  return previous ? [signingSecret(), previous] : [signingSecret()];
+}
+
+function mac(secret: string, purpose: string, guestId: string, issuedAt: number): string {
+  return createHmac("sha256", secret)
+    .update(`${GUEST_TOKEN_VERSION}|${purpose}|${guestId}|${issuedAt}`)
+    .digest("hex");
+}
+
+function sameText(left: string, right: string): boolean {
+  const leftBytes = Buffer.from(left);
+  const rightBytes = Buffer.from(right);
+  return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
+}
+
+function csrfFor(secret: string, guestId: string, issuedAt: number): string {
+  return mac(secret, "csrf", guestId, issuedAt).slice(0, GUEST_CSRF_LENGTH);
+}
+
+export function issueGuestToken(guestId: string, issuedAt: number): { token: string; csrf: string } {
+  const secret = signingSecret();
+  return {
+    token: `${GUEST_TOKEN_VERSION}.${guestId}.${issuedAt}.${mac(secret, "token", guestId, issuedAt)}`,
+    csrf: csrfFor(secret, guestId, issuedAt),
+  };
+}
+
+export function verifyGuestToken(
+  token: string | undefined,
+  now: number = Math.floor(Date.now() / 1000),
+): { guestId: string; csrf: string } | null {
+  const parts = token?.trim().split(".") ?? [];
+  if (parts.length !== 4 || parts[0] !== GUEST_TOKEN_VERSION) {
+    return null;
+  }
+  const [, guestId, issuedText, signature] = parts;
+  if (!GUEST_ID_PATTERN.test(guestId) || !/^\d+$/.test(issuedText)) {
+    return null;
+  }
+  const issuedAt = Number(issuedText);
+  if (issuedAt > now + CLOCK_SKEW_SECONDS || now - issuedAt > GUEST_TOKEN_MAX_AGE_SECONDS) {
+    return null;
+  }
+  for (const secret of verificationSecrets()) {
+    if (sameText(signature, mac(secret, "token", guestId, issuedAt))) {
+      return { guestId, csrf: csrfFor(secret, guestId, issuedAt) };
+    }
+  }
+  return null;
+}
 
 function createGuestId(): string {
   return `guest-${crypto.randomUUID().toLowerCase()}`;
 }
 
-function createGuestCsrfToken(): string {
-  return crypto.randomUUID().toLowerCase();
-}
-
-function appendCookieHeader(existing: string | null, cookie: string): string {
-  if (!existing) {
-    return cookie;
-  }
-  return `${existing}; ${cookie}`;
-}
-
-function isValidGuestId(value: string | undefined): value is string {
-  return Boolean(value && GUEST_ID_PATTERN.test(value));
-}
-
-function isValidGuestCsrf(value: string | undefined): value is string {
-  return Boolean(value && GUEST_CSRF_PATTERN.test(value));
+function replaceCookies(existing: string | null, replacements: Record<string, string>): string {
+  const names = new Set(Object.keys(replacements));
+  const kept = (existing ?? "")
+    .split(";")
+    .map((part) => part.trim())
+    .filter((part) => part && !names.has(part.split("=")[0]?.trim() ?? ""));
+  return [...kept, ...Object.entries(replacements).map(([name, value]) => `${name}=${value}`)].join("; ");
 }
 
 export function resolveGuestSession(request: NextRequest): GuestSession {
-  const existingGuestId = request.cookies.get(GUEST_COOKIE_NAME)?.value?.trim().toLowerCase();
-  const existingGuestCsrf = request.cookies.get(GUEST_CSRF_COOKIE_NAME)?.value?.trim().toLowerCase();
+  const existingToken = request.cookies.get(GUEST_TOKEN_COOKIE_NAME)?.value;
+  const existingCsrf = request.cookies.get(GUEST_CSRF_COOKIE_NAME)?.value?.trim().toLowerCase();
+  const clearLegacyGuestCookie = request.cookies.has(LEGACY_GUEST_COOKIE_NAME);
 
-  const guestIdIsValid = isValidGuestId(existingGuestId);
-  const guestCsrfIsValid = guestIdIsValid && isValidGuestCsrf(existingGuestCsrf);
+  const verified = verifyGuestToken(existingToken);
+  if (verified && existingToken) {
+    return {
+      guestToken: existingToken.trim(),
+      guestCsrf: verified.csrf,
+      createdGuestToken: false,
+      createdGuestCsrf: existingCsrf !== verified.csrf,
+      clearLegacyGuestCookie,
+    };
+  }
 
+  // No valid token (absent, forged, expired or a legacy id cookie): start a fresh guest identity.
+  const issued = issueGuestToken(createGuestId(), Math.floor(Date.now() / 1000));
   return {
-    guestId: guestIdIsValid ? existingGuestId : createGuestId(),
-    guestCsrf: guestCsrfIsValid ? existingGuestCsrf : createGuestCsrfToken(),
-    createdGuestId: !guestIdIsValid,
-    createdGuestCsrf: !guestCsrfIsValid,
+    guestToken: issued.token,
+    guestCsrf: issued.csrf,
+    createdGuestToken: true,
+    createdGuestCsrf: true,
+    clearLegacyGuestCookie,
   };
 }
 
@@ -71,15 +149,17 @@ export function applyGuestSessionToHeaders(
   session: GuestSession,
   options: { ensureCsrfHeader?: boolean } = {},
 ): void {
-  let cookieHeader = request.headers.get("cookie");
-
-  if (session.createdGuestId) {
-    cookieHeader = appendCookieHeader(cookieHeader, `${GUEST_COOKIE_NAME}=${session.guestId}`);
+  const replacements: Record<string, string> = {};
+  if (session.createdGuestToken) {
+    replacements[GUEST_TOKEN_COOKIE_NAME] = session.guestToken;
   }
   if (session.createdGuestCsrf) {
-    cookieHeader = appendCookieHeader(cookieHeader, `${GUEST_CSRF_COOKIE_NAME}=${session.guestCsrf}`);
+    replacements[GUEST_CSRF_COOKIE_NAME] = session.guestCsrf;
   }
 
+  const cookieHeader = Object.keys(replacements).length
+    ? replaceCookies(request.headers.get("cookie"), replacements)
+    : request.headers.get("cookie");
   if (cookieHeader) {
     headers.set("cookie", cookieHeader);
   }
@@ -93,22 +173,25 @@ export function setGuestSessionCookies(
   request: NextRequest,
   session: GuestSession,
 ): void {
-  if (!session.createdGuestId && !session.createdGuestCsrf) {
+  if (!session.createdGuestToken && !session.createdGuestCsrf && !session.clearLegacyGuestCookie) {
     return;
   }
 
   const secure = request.nextUrl.protocol === "https:" || process.env.NODE_ENV === "production";
+  const shared = {
+    sameSite: "lax" as const,
+    secure,
+    path: "/",
+    ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
+  };
 
-  if (session.createdGuestId) {
+  if (session.createdGuestToken) {
     response.cookies.set({
-      name: GUEST_COOKIE_NAME,
-      value: session.guestId,
+      name: GUEST_TOKEN_COOKIE_NAME,
+      value: session.guestToken,
       httpOnly: true,
-      sameSite: "lax",
-      secure,
-      path: "/",
       maxAge: COOKIE_MAX_AGE_SECONDS,
-      ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
+      ...shared,
     });
   }
   if (session.createdGuestCsrf) {
@@ -116,12 +199,12 @@ export function setGuestSessionCookies(
       name: GUEST_CSRF_COOKIE_NAME,
       value: session.guestCsrf,
       httpOnly: false,
-      sameSite: "lax",
-      secure,
-      path: "/",
       maxAge: COOKIE_MAX_AGE_SECONDS,
-      ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
+      ...shared,
     });
+  }
+  if (session.clearLegacyGuestCookie) {
+    response.cookies.set({ name: LEGACY_GUEST_COOKIE_NAME, value: "", httpOnly: true, maxAge: 0, ...shared });
   }
 }
 

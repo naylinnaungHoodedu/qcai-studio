@@ -27,7 +27,7 @@ const PRIVACY_DISCLOSURE_SOURCE = readFileSync(resolve(TEST_DIR, "../src/lib/pri
 test("privacy page discloses retention, cookies, deletion, subprocessors, rights, and minors handling", () => {
   assert.match(PRIVACY_PAGE_SOURCE, /Retention schedule/);
   assert.match(PRIVACY_PAGE_SOURCE, /Cookie inventory/);
-  assert.match(PRIVACY_DISCLOSURE_SOURCE, /qcai_guest_id/);
+  assert.match(PRIVACY_DISCLOSURE_SOURCE, /qcai_guest_token/);
   assert.match(PRIVACY_DISCLOSURE_SOURCE, /540 days/);
   assert.match(PRIVACY_DISCLOSURE_SOURCE, /Strictly necessary/);
   assert.match(PRIVACY_PAGE_SOURCE, /Infrastructure and subprocessors/);

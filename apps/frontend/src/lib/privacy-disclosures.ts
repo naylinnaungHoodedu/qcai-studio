@@ -1,7 +1,7 @@
 export const RETENTION_SCHEDULE = [
   {
     dataClass: "Guest continuity cookies",
-    personalData: "Random guest identifier and CSRF token only.",
+    personalData: "Random guest identifier in a server-signed token, and a CSRF token derived from it.",
     retention: "365 days from issuance or refresh.",
     trigger: "Expires automatically or is replaced when the guest session is reset.",
   },
@@ -39,15 +39,15 @@ export const RETENTION_SCHEDULE = [
 
 export const COOKIE_INVENTORY = [
   {
-    name: "qcai_guest_id",
-    purpose: "Keeps a guest learner on the same study path across lessons, builder, dashboard, and project surfaces.",
+    name: "qcai_guest_token",
+    purpose: "Server-signed guest token that keeps a guest learner on the same study path across lessons, builder, dashboard, and project surfaces.",
     lifetime: "365 days",
     necessary: "Strictly necessary",
     setWhen: "Set when a visitor opens a guest-supported study surface that needs continuity.",
   },
   {
     name: "qcai_guest_csrf",
-    purpose: "Protects guest-side mutations against cross-site request forgery.",
+    purpose: "Protects guest-side mutations against cross-site request forgery; derived from, and only valid with, the guest token.",
     lifetime: "365 days",
     necessary: "Strictly necessary",
     setWhen: "Set alongside the guest continuity cookie when guest mutation protection is needed.",

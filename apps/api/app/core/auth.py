@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import re
 
 import jwt
 from fastapi import Cookie, Depends, Header, HTTPException, status
@@ -8,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.db import get_db
+from app.core.guest_tokens import GUEST_TOKEN_COOKIE, verify_guest_token
 from app.services.local_accounts import AUTH_SESSION_COOKIE_NAME, resolve_local_account_from_session
 
 
@@ -46,7 +46,7 @@ def get_current_user(
     x_demo_user: str | None = Header(default=None),
     x_demo_role: str | None = Header(default=None),
     qcai_session_token: str | None = Cookie(default=None, alias=AUTH_SESSION_COOKIE_NAME),
-    qcai_guest_id: str | None = Cookie(default=None),
+    qcai_guest_token: str | None = Cookie(default=None, alias=GUEST_TOKEN_COOKIE),
     settings: Settings = Depends(get_settings),
     db: Session = Depends(get_db),
 ) -> AuthUser:
@@ -71,10 +71,12 @@ def get_current_user(
             provider="demo",
         )
 
-    if qcai_guest_id:
-        guest_id = qcai_guest_id.strip().lower()
-        if re.fullmatch(r"guest-[0-9a-f-]{8,64}", guest_id):
-            return AuthUser(user_id=guest_id, email=None, role="learner", provider="guest")
+    if qcai_guest_token:
+        # A presented guest credential must verify; it never falls through to another identity (AC-1-1).
+        guest = verify_guest_token(qcai_guest_token, settings)
+        if guest is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid guest session.")
+        return AuthUser(user_id=guest.guest_id, email=None, role="learner", provider="guest")
 
     if settings.enable_demo_auth:
         return AuthUser(user_id="demo-learner", email="demo@qcai.local", role="learner", provider="demo")

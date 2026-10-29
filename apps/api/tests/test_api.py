@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+import time
 from uuid import uuid4
 
 import pytest
@@ -14,7 +15,14 @@ from sqlalchemy import func, select
 from app.api.routes import arena, assets, assistant
 from app.core.db import SessionLocal
 from app.db_models import ArenaProfile, BuilderShare, Note, ProjectSubmission, PublicHandle, UserAccount
-from app.core.config import Settings
+from app.core.config import DEVELOPMENT_GUEST_TOKEN_SECRET, Settings, get_settings
+from app.core.guest_tokens import (
+    GUEST_TOKEN_COOKIE,
+    guest_csrf_for,
+    issue_guest_token,
+    require_guest_token_secret,
+    verify_guest_token,
+)
 from app.main import _build_security_headers, _initialize_database, app
 from app.schemas import AssistantChatResponse, Citation
 from app.services.public_handles import public_handle, public_handles
@@ -1100,56 +1108,124 @@ def test_source_asset_selection_discovers_nested_update_data_assets(tmp_path: Pa
     ]
 
 
-def test_guest_cookie_auth_is_supported():
-    guest_id = "guest-123e4567-e89b-12d3-a456-426614174000"
-    with TestClient(app) as cookie_client:
-        cookie_client.cookies.set("qcai_guest_id", guest_id)
-        response = cookie_client.get("/auth/me")
+GUEST_ID = "guest-123e4567-e89b-12d3-a456-426614174000"
+OTHER_GUEST_ID = "guest-0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"
+CHECK_IN = {
+    "motivation_level": 3,
+    "focus_level": 3,
+    "energy_level": 3,
+    "session_minutes": 10,
+    "today_goal": "Audit the protections.",
+    "blocker": "None",
+}
+
+
+def _signed_guest(guest_id=GUEST_ID, secret=DEVELOPMENT_GUEST_TOKEN_SECRET, issued_at=None):
+    issued = int(time.time()) if issued_at is None else issued_at
+    return issue_guest_token(secret, guest_id, issued), guest_csrf_for(secret, guest_id, issued)
+
+
+def test_signed_guest_token_authenticates_the_guest():
+    token, _ = _signed_guest()
+    with TestClient(app) as guest_client:
+        guest_client.cookies.set(GUEST_TOKEN_COOKIE, token)
+        response = guest_client.get("/auth/me")
         assert response.status_code == 200
-        assert response.json()["user_id"] == guest_id
+        assert response.json()["user_id"] == GUEST_ID
         assert response.json()["role"] == "learner"
 
 
-def test_guest_mutation_requires_csrf_protection():
+@pytest.mark.parametrize(
+    "token",
+    [
+        _signed_guest()[0][:-4] + "0000",
+        GUEST_ID,
+        _signed_guest(issued_at=int(time.time()) - 366 * 24 * 60 * 60)[0],
+        _signed_guest(secret="an-attacker-chosen-secret-of-32-characters")[0],
+        _signed_guest(issued_at=int(time.time()) + 3600)[0],
+    ],
+    ids=["forged-mac", "unsigned-legacy-id", "expired", "wrong-key", "future-dated"],
+)
+def test_guest_token_without_a_valid_mac_returns_401(token):
+    # AC-1-1: even with demo auth on (development), a bad guest credential never falls through.
     with TestClient(app) as guest_client:
-        guest_client.cookies.set("qcai_guest_id", "guest-123e4567-e89b-12d3-a456-426614174000")
-        response = guest_client.post(
-            "/insights/check-ins",
-            json={
-                "motivation_level": 3,
-                "focus_level": 3,
-                "energy_level": 3,
-                "session_minutes": 10,
-                "today_goal": "Audit the protections.",
-                "blocker": "None",
-            },
-        )
+        guest_client.cookies.set(GUEST_TOKEN_COOKIE, token)
+        response = guest_client.get("/auth/me")
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid guest session."
+
+
+def test_legacy_unsigned_guest_id_cookie_is_no_longer_a_credential():
+    app.dependency_overrides[get_settings] = lambda: Settings(enable_demo_auth=False)
+    try:
+        with TestClient(app) as guest_client:
+            guest_client.cookies.set("qcai_guest_id", GUEST_ID)
+            response = guest_client.get("/auth/me")
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
+    assert response.status_code == 401
+
+
+def test_guest_mutation_requires_csrf_protection():
+    token, _ = _signed_guest()
+    with TestClient(app) as guest_client:
+        guest_client.cookies.set(GUEST_TOKEN_COOKIE, token)
+        response = guest_client.post("/insights/check-ins", json=CHECK_IN)
         assert response.status_code == 403
         assert response.json()["detail"] == "Missing CSRF protection."
 
 
-def test_guest_mutation_accepts_trusted_origin_with_matching_csrf():
+def test_guest_mutation_accepts_trusted_origin_with_session_bound_csrf():
+    token, csrf = _signed_guest()
     with TestClient(app) as guest_client:
-        guest_client.cookies.set("qcai_guest_id", "guest-123e4567-e89b-12d3-a456-426614174000")
-        guest_client.cookies.set("qcai_guest_csrf", "3b1f2f40-7132-4778-8df5-44c1c5cf6bb0")
+        guest_client.cookies.set(GUEST_TOKEN_COOKIE, token)
+        guest_client.cookies.set("qcai_guest_csrf", csrf)
         response = guest_client.post(
             "/insights/check-ins",
-            headers={
-                "origin": "http://localhost:3000",
-                "x-qcai-csrf": "3b1f2f40-7132-4778-8df5-44c1c5cf6bb0",
-            },
-            json={
-                "motivation_level": 3,
-                "focus_level": 3,
-                "energy_level": 3,
-                "session_minutes": 10,
-                "today_goal": "Audit the protections.",
-                "blocker": "None",
-            },
+            headers={"origin": "http://localhost:3000", "x-qcai-csrf": csrf},
+            json=CHECK_IN,
         )
         assert response.status_code == 200
         assert response.json()["session_minutes"] == 10
         assert response.json()["today_goal"] == "Audit the protections."
+
+
+def test_guest_csrf_from_another_session_is_rejected():
+    token, _ = _signed_guest()
+    _, other_csrf = _signed_guest(guest_id=OTHER_GUEST_ID)
+    with TestClient(app) as guest_client:
+        guest_client.cookies.set(GUEST_TOKEN_COOKIE, token)
+        guest_client.cookies.set("qcai_guest_csrf", other_csrf)
+        response = guest_client.post(
+            "/insights/check-ins",
+            headers={"origin": "http://localhost:3000", "x-qcai-csrf": other_csrf},
+            json=CHECK_IN,
+        )
+        assert response.status_code == 403
+        assert response.json()["detail"] == "CSRF validation failed."
+
+
+def test_guest_tokens_survive_a_key_rotation_through_the_previous_secret():
+    old_secret = "the-previous-guest-token-secret-0001"
+    new_secret = "the-current-guest-token-secret-00002"
+    token, csrf = _signed_guest(secret=old_secret)
+    rotated = Settings(environment="production", allowed_origins=["https://qantumlearn.academy"],
+                       guest_token_secret=new_secret, guest_token_previous_secret=old_secret)
+    retired = Settings(environment="production", allowed_origins=["https://qantumlearn.academy"],
+                       guest_token_secret=new_secret)
+
+    guest = verify_guest_token(token, rotated)
+    assert guest is not None and guest.guest_id == GUEST_ID and guest.csrf == csrf
+    assert verify_guest_token(token, retired) is None
+
+
+def test_startup_requires_a_guest_token_secret_outside_development():
+    production = {"environment": "production", "allowed_origins": ["https://qantumlearn.academy"]}
+    require_guest_token_secret(Settings(environment="development"))
+    require_guest_token_secret(Settings(**production, guest_token_secret="x" * 32))
+    for secret in (None, "too-short"):
+        with pytest.raises(RuntimeError):
+            require_guest_token_secret(Settings(**production, guest_token_secret=secret))
 
 
 def test_local_account_register_login_logout_and_delete():
