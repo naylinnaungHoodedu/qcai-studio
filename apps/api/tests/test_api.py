@@ -392,9 +392,11 @@ def test_search_uses_clean_video_source_titles():
 
 
 def test_qa_returns_citations():
+    # "Why does routing overhead matter in the NISQ era?" now abstains in this lesson under the score floor
+    # (best passage 5 < 6: "routing" in a heading, "nisq" in text); the citation contract is checked on a passing question.
     response = client.post(
         "/qa/ask",
-        json={"question": "Why does routing overhead matter in the NISQ era?", "lesson_slug": "ai4qc-routing-and-optimization"},
+        json={"question": "Why does routing depth matter?", "lesson_slug": "ai4qc-routing-and-optimization"},
     )
     assert response.status_code == 200
     data = response.json()
