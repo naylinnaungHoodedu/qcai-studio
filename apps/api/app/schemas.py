@@ -28,6 +28,9 @@ class Citation(BaseModel):
     section_title: str
     excerpt: str
     timestamp_label: str | None = None
+    source_filename: str | None = None
+    # AC-1-13: span identity is not stable until Phase 2, so every citation is provisional until then.
+    provisional: bool = True
 
 
 class VideoChapter(BaseModel):
@@ -119,6 +122,7 @@ class SearchResult(BaseModel):
     lesson_slug: str | None = None
     score: float
     timestamp_label: str | None = None
+    source_filename: str | None = None
 
 
 class NoteCreate(BaseModel):
@@ -146,6 +150,8 @@ class QAResponse(BaseModel):
     answer: str
     citations: list[Citation]
     retrieval_mode: str
+    decision: Literal["answer", "abstain"] = "answer"
+    grounded: bool = False
 
 
 class QAHistoryItem(BaseModel):

@@ -19,6 +19,7 @@ from app.api.routes import arena, assets, assistant
 from app.core.db import SessionLocal
 from app.db_models import ArenaProfile, BuilderShare, GuestRevocation, Note, ProjectSubmission, PublicHandle, UserAccount
 from app.core.config import DEVELOPMENT_GUEST_TOKEN_SECRET, Settings, get_settings
+from app.core.corpus_governance import CorpusRegistry
 from app.core.log_redaction import install_log_redaction
 from app.core.guest_tokens import (
     GUEST_TOKEN_COOKIE,
@@ -30,6 +31,7 @@ from app.core.guest_tokens import (
 from app.main import _build_security_headers, _initialize_database, app
 from app.schemas import AssistantChatResponse, Citation
 from app.services.guest_sessions import revoke_guest
+from app.services.contained_answers import ABSTENTION, QUOTATION_LEAD, contain_answer
 from app.services.public_handles import public_handle, public_handles
 from app.services.retrieval_engine import RetrievalEngine
 from app.services.store import get_course_store
@@ -498,60 +500,83 @@ def test_assistant_chat_truncates_oversized_history_instead_of_rejecting_it(monk
     assert data["citations"]
 
 
-def test_teaching_assistant_falls_back_to_grounded_local_answer_without_vertex():
-    store = get_course_store()
-    engine = RetrievalEngine(store, Settings())
+class _NoProviderCalls:
+    def post(self, *_args, **_kwargs):
+        raise AssertionError("contained answers must not call a provider")
 
-    class NoVertexAssistant(TeachingAssistantService):
+
+def test_teaching_assistant_quotes_approved_spans_and_never_calls_a_provider():
+    # D-19 / AC-1-14: even with a provider key configured, the answer is verbatim approved spans.
+    class KeyedAssistant(TeachingAssistantService):
         @property
-        def vertex_project_id(self) -> str | None:
-            return None
+        def _vertex_client(self):
+            return _NoProviderCalls()
 
-    service = NoVertexAssistant(
-        engine,
-        Settings(vertex_ai_project_id="", vertex_ai_chat_model="gemini-3.1-flash-lite-preview"),
-    )
+    service = KeyedAssistant(RetrievalEngine(get_course_store(), Settings()), Settings(vertex_ai_api_key="configured-key-0123456789"))
+    response = service.chat("Why does routing depth matter?", lesson_slug="ai4qc-routing-and-optimization")
 
-    response = service.chat(
-        "Why does routing depth matter?",
-        lesson_slug="ai4qc-routing-and-optimization",
-        page_path="/lessons/ai4qc-routing-and-optimization",
-    )
-
-    assert response.provider == "local-grounded-fallback"
-    assert response.model == "qcai-course-corpus"
-    assert response.grounded is True
+    assert response.provider == "none"
+    assert response.grounded is False
+    assert response.decision == "answer"
     assert response.citations
-    assert "routing" in response.answer.lower()
+    for citation in response.citations:
+        assert citation.source_kind == "document" and citation.source_filename and citation.provisional is True
+        assert " ".join(citation.excerpt.split()) in response.answer
+    assert response.answer.startswith(QUOTATION_LEAD)
 
 
-def test_teaching_assistant_uses_api_key_endpoint_without_bearer_header():
-    store = get_course_store()
-    engine = RetrievalEngine(store, Settings())
+def test_contained_answer_abstains_without_an_approved_document_span(tmp_path: Path):
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text('{"schema_version": "1.0", "items": []}', encoding="utf-8")
+    governed = CorpusRegistry(
+        Settings(environment="production", allowed_origins=["https://qantumlearn.academy"], corpus_manifest_path=str(manifest))
+    )
+    document = Citation(chunk_id="c1", source_title="Doc", source_kind="document", section_title="S", excerpt="Routing adds SWAPs.", source_filename="routing.docx")
+    summary = Citation(chunk_id="c2", source_title="Video", source_kind="video", section_title="Ch", excerpt="Routing adds SWAPs.")
 
+    assert contain_answer([document], governed).decision == "abstain"
+    ungoverned = CorpusRegistry(Settings())
+    assert contain_answer([summary], ungoverned).decision == "abstain"
+    assert contain_answer([document], ungoverned).decision == "answer"
+
+
+@pytest.mark.parametrize("path", ["/assistant/chat", "/qa/ask"])
+def test_learner_answers_carry_no_generated_text_and_provisional_citations(path):
+    # AC-1-13 and AC-1-14 at the route level.
+    body = {"message": "Why does routing depth matter?"} if path == "/assistant/chat" else {"question": "Why does routing depth matter?"}
+    headers = {"x-demo-user": f"contained-{uuid4().hex[:8]}", "x-demo-role": "learner"}
+    response = client.post(path, headers=headers, json=body)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["grounded"] is False
+    if data["decision"] == "abstain":
+        assert data["answer"] == ABSTENTION and data["citations"] == []
+    else:
+        lines = data["answer"].split("\n")
+        assert lines[0] == QUOTATION_LEAD
+        excerpts = [" ".join(citation["excerpt"].split()) for citation in data["citations"]]
+        assert len(lines) - 1 == len(excerpts)
+        assert all(excerpt in line for excerpt, line in zip(excerpts, lines[1:]))
+    assert all(citation["provisional"] is True for citation in data["citations"])
+
+
+def test_teaching_assistant_uses_api_key_header_and_no_learner_state_in_the_prompt():
     class RecordingClient:
         def __init__(self):
             self.captured_url = ""
             self.captured_headers = {}
+            self.captured_payload = {}
 
         def post(self, url: str, *, headers: dict[str, str], json: dict):
-            self.captured_url = url
-            self.captured_headers = headers
+            self.captured_url, self.captured_headers, self.captured_payload = url, headers, json
 
             class Response:
                 def raise_for_status(self):
                     return None
 
                 def json(self):
-                    return {
-                        "candidates": [
-                            {
-                                "content": {
-                                    "parts": [{"text": "Use the hardware-constrained lessons as your study anchor [1]."}]
-                                }
-                            }
-                        ]
-                    }
+                    return {"candidates": [{"content": {"parts": [{"text": "unused"}]}}]}
 
             return Response()
 
@@ -559,30 +584,23 @@ def test_teaching_assistant_uses_api_key_endpoint_without_bearer_header():
 
     class ApiKeyAssistant(TeachingAssistantService):
         @property
-        def vertex_api_key(self) -> str | None:
-            return "test-api-key"
-
-        @property
         def _vertex_client(self):
             return client_stub
 
     service = ApiKeyAssistant(
-        engine,
-        Settings(
-            vertex_ai_api_key="test-api-key",
-            vertex_ai_chat_model="gemini-3.1-flash-lite-preview",
-        ),
+        RetrievalEngine(get_course_store(), Settings()),
+        Settings(vertex_ai_api_key="test-api-key", vertex_ai_chat_model="gemini-3.1-flash-lite-preview"),
     )
+    citation = Citation(chunk_id="c1", source_title="Doc", source_kind="document", section_title="S", excerpt="Routing adds SWAPs.")
+    service._ask_vertex(message="How should I start?", lesson_slug=None, page_path="/", history=[], citations=[citation])
 
-    response = service.chat("How should I start?", page_path="/")
-
-    assert response.provider == "vertex-ai-api-key"
-    assert response.model == "gemini-3.1-flash-lite-preview"
     assert "test-api-key" not in client_stub.captured_url
     assert "key=" not in client_stub.captured_url
     assert client_stub.captured_headers["x-goog-api-key"] == "test-api-key"
     assert "/publishers/google/models/gemini-3.1-flash-lite-preview:generateContent" in client_stub.captured_url
     assert "Authorization" not in client_stub.captured_headers
+    prompt = str(client_stub.captured_payload)
+    assert "Presentation guidance" not in prompt and "mastery" not in prompt.lower()
 
 
 def test_provider_error_logs_no_key(caplog):
@@ -601,12 +619,14 @@ def test_provider_error_logs_no_key(caplog):
             return httpx.Client(transport=httpx.MockTransport(reject))
 
     service = RejectedAssistant(RetrievalEngine(get_course_store(), Settings()), Settings(vertex_ai_api_key=provider_key))
+    citation = Citation(chunk_id="c1", source_title="Doc", source_kind="document", section_title="S", excerpt="Routing adds SWAPs.")
     with caplog.at_level("DEBUG"):
-        response = service.chat("How should I start?", page_path="/")
+        with pytest.raises(httpx.HTTPStatusError) as excinfo:
+            service._ask_vertex(message="How should I start?", lesson_slug=None, page_path="/", history=[], citations=[citation])
+        logging.getLogger("app.services.teaching_assistant").warning("Vertex call failed: %s", excinfo.value)
 
-    assert response.provider == "local-grounded-fallback"
     assert seen["header"] == provider_key and provider_key not in seen["url"]
-    assert any("Vertex assistant failed" in record.getMessage() for record in caplog.records)
+    assert any("Vertex call failed" in record.getMessage() for record in caplog.records)
     assert provider_key not in caplog.text
     assert "key=" not in caplog.text
 

@@ -120,6 +120,8 @@ export type QAResponse = {
     section_title: string;
     excerpt: string;
     timestamp_label?: string | null;
+    source_filename?: string | null;
+    provisional?: boolean;
   }>;
   retrieval_mode: string;
 };
@@ -139,6 +141,8 @@ export type QAHistoryItem = {
     section_title: string;
     excerpt: string;
     timestamp_label?: string | null;
+    source_filename?: string | null;
+    provisional?: boolean;
   }>;
   created_at: string;
 };
@@ -160,6 +164,8 @@ export type AssistantChatResponse = {
     section_title: string;
     excerpt: string;
     timestamp_label?: string | null;
+    source_filename?: string | null;
+    provisional?: boolean;
   }>;
   retrieval_mode: string;
   provider: string;

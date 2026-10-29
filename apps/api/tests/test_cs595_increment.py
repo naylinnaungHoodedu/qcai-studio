@@ -87,6 +87,7 @@ def test_persistent_tutor_stores_resolved_follow_up_and_claim_provenance():
                         source_kind="document",
                         section_title="Routing overhead",
                         excerpt="Routing overhead grows when constrained hardware connectivity forces additional swap operations.",
+                        source_filename="routing.docx",
                     )
                 ],
                 retrieval_mode="lexical",
@@ -108,10 +109,44 @@ def test_persistent_tutor_stores_resolved_follow_up_and_claim_provenance():
 
         assert first.thread_id == second.thread_id
         assert first.decision == "answer"
+        assert first.grounded is False
+        assert "unused local provider answer" not in first.answer
+        assert "Routing overhead grows when constrained hardware connectivity" in first.answer
         assert first.claims and first.claims[0].cited_span_ids == ["routing-span-v1"]
         persisted = db.scalars(select(TutorTurn).where(TutorTurn.id == second.turn_id)).one()
         assert "Previous question: Why does routing overhead matter?" in persisted.resolved_query
         assert persisted.policy_version == "cs595-v1"
+
+
+def test_tutor_delivers_no_generated_text_and_passes_no_learner_state():
+    # D-19 / AC-1-14: a generated answer with only summary citations is withheld; no learner state is sent.
+    received = {}
+
+    class GeneratingAssistant:
+        def chat(self, _message: str, **kwargs):
+            received.update(kwargs)
+            return AssistantChatResponse(
+                answer="A confident generated paragraph that no span supports.",
+                citations=[
+                    Citation(chunk_id="v1", source_title="Lecture", source_kind="video", section_title="Ch 1", excerpt="An authored chapter summary."),
+                    Citation(chunk_id="l1", source_title="Lesson", source_kind="lesson", section_title="Notes", excerpt="Authored lesson notes."),
+                ],
+                retrieval_mode="lexical",
+                provider="vertex-ai-api-key",
+                model="test-model",
+                grounded=True,
+            )
+
+    user = AuthUser(user_id=f"tutor-{uuid4()}", email="learner@example.edu", role="learner", provider="local")
+    with SessionLocal() as db:
+        response = TutorOrchestrator(GeneratingAssistant(), Settings()).chat(db, user, AssistantChatRequest(message="Why?"))
+        db.commit()
+
+    assert response.decision == "abstain"
+    assert response.grounded is False
+    assert "confident generated paragraph" not in response.answer
+    assert response.citations == []
+    assert "pedagogical_context" not in received
 
 
 def test_production_corpus_registry_requires_explicit_public_asset(tmp_path: Path):

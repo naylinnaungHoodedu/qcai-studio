@@ -11,6 +11,7 @@ class SectionRecord:
     heading: str
     level: int
     body: str
+    source_filename: str = ""
 
 
 def parse_docx_sections(path: Path) -> list[SectionRecord]:
@@ -29,6 +30,7 @@ def parse_docx_sections(path: Path) -> list[SectionRecord]:
                     heading=current_heading,
                     level=current_level,
                     body="\n\n".join(current_paragraphs).strip(),
+                    source_filename=path.name,
                 )
             )
 
