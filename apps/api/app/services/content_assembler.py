@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +53,28 @@ ASSET_TITLE_MAP = {
     "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4": "Quantum Finance Programming and Optimization for Hardware-Constrained QC+AI",
 }
 
+# Score floor (plan Action 27, R-15, AC-1-11), approved as P1-D-04; evidence in BEP-1/27_score_floor/PROPOSAL.md.
+# A passage is returned only when its floor score reaches SCORE_FLOOR. The floor score counts whole-word matches
+# of the question's non-stopword terms (3 per heading match, 2 per text match) plus the phrase bonus, and leaves
+# out the module boost, so one shared word (at most 5) never passes. Ranking still uses the full score.
+# Phase 2 (tasks 2.5-2.6) replaces this with a calibrated BM25 floor and margin.
+SCORE_FLOOR_VERSION = "score-floor-p1-v1"
+SCORE_FLOOR = 6
+QUERY_STOPWORDS = frozenset(
+    """
+    about above after again all also always and any anyone anything are aren because been before being below
+    between both but can can't could describe did didn does doesn doesn't doing don don't done down during each
+    even ever everything explain few for from further get gets give got had has have hello her here hers hey him
+    his how into isn isn't its itself just kind know let lets like made make makes many may mean means meant
+    might more most much must myself need never nor not nothing now off often okay once one ones only onto other
+    our ours ourselves out over own per please really said same say shall she should some someone something
+    still such tell than thank thanks that the their theirs them themselves then there these they thing things
+    think this those through too under until upon use used uses using very via want was way ways well were what
+    when where which while who whom whose why will with without won work works would yes yet you your yours
+    yourself
+    """.split()
+)
+
 
 @dataclass
 class IndexedChunk:
@@ -66,6 +88,12 @@ class IndexedChunk:
     timestamp_label: str | None = None
     # Set only for spans of a source document; video chapters and authored notes are not quotable spans.
     source_filename: str | None = None
+    title_words: frozenset[str] = field(init=False, repr=False)
+    excerpt_words: frozenset[str] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self.title_words = frozenset(_tokenize(self.title))
+        self.excerpt_words = frozenset(_tokenize(self.excerpt))
 
 
 def _lesson_blueprint(
@@ -1180,6 +1208,7 @@ class CourseStore:
 
     def search(self, query: str, lesson_slug: str | None = None, top_k: int = 8) -> list[SearchResult]:
         query_terms = {token for token in _tokenize(query) if token}
+        floor_terms = query_terms - QUERY_STOPWORDS
         raw_query = query.strip().lower()
         if not raw_query:
             return []
@@ -1195,6 +1224,8 @@ class CourseStore:
             if len(raw_query) >= 3:
                 phrase_bonus = 4 if raw_query in title_text else 2 if raw_query in excerpt_text else 0
             if title_overlap == 0 and excerpt_overlap == 0 and phrase_bonus == 0:
+                continue
+            if _floor_score(floor_terms, chunk, phrase_bonus) < SCORE_FLOOR:
                 continue
             score = title_overlap * 3 + excerpt_overlap * 2 + phrase_bonus + chunk.score_boost
             results.append(
@@ -1263,6 +1294,12 @@ class CourseStore:
 def _tokenize(text: str) -> list[str]:
     cleaned = "".join(ch.lower() if ch.isalnum() else " " for ch in text)
     return [token for token in cleaned.split() if len(token) > 2]
+
+
+def _floor_score(floor_terms: set[str], chunk: IndexedChunk, phrase_bonus: int) -> int:
+    title_hits = sum(1 for term in floor_terms if term in chunk.title_words)
+    excerpt_hits = sum(1 for term in floor_terms if term in chunk.excerpt_words)
+    return title_hits * 3 + excerpt_hits * 2 + phrase_bonus
 
 
 def _format_timestamp(seconds: int) -> str:

@@ -1,0 +1,1263 @@
+{
+ "about": "Public questions for the Action 27 score floor (AC-1-11); no licensed text, ULQS item or learner data. Copied from BEP-1/27_score_floor fixture A and hold-out B; in-domain excludes the four topic-free quiz stems.",
+ "source_sha256": {
+  "fixture_a": "87b7be2116b9c28fbb97ecfc48fdab8c4bd40a34c0111449c6f04dfc47e5b6fa",
+  "holdout_b": "3f51a9e44a78068d618a8783af4a50e610a361479f929e08dae1c0ac1ae859db"
+ },
+ "off_topic": [
+  "What is the capital of France?",
+  "Who won the World Cup in 2018?",
+  "How do I bake sourdough bread?",
+  "What time is it in Tokyo?",
+  "Recommend a good movie for tonight",
+  "How tall is Mount Everest?",
+  "What is the boiling point of water in Fahrenheit?",
+  "Translate good morning into Spanish",
+  "How do I change a flat tire?",
+  "Who wrote Pride and Prejudice?",
+  "What is the best diet to lose weight?",
+  "How many legs does a spider have?",
+  "What is the population of Brazil?",
+  "How do I reset my email password?",
+  "Write me a poem about the ocean",
+  "How does castling work in chess?",
+  "When did World War II end?",
+  "How do I grow tomatoes on a balcony?",
+  "Which planet is closest to the sun?",
+  "How do I tie a tie?",
+  "Best pizza toppings",
+  "What is the plot of Hamlet?",
+  "How much does a used car cost?",
+  "Where is the nearest pharmacy?",
+  "What is photosynthesis?",
+  "Who is the president of the United States?",
+  "How do I learn to play guitar?",
+  "What do cats eat?",
+  "How far is the moon from Earth?",
+  "Explain the offside rule in soccer",
+  "What is the square root of 144?",
+  "How do I make cold brew coffee?",
+  "Tell me a joke",
+  "What is the tallest building in the world?",
+  "How do airplanes stay in the air?",
+  "What causes rainbows?",
+  "How do I write a cover letter?",
+  "Which language is spoken in Brazil?",
+  "What is the meaning of life?",
+  "How do I unclog a kitchen sink?",
+  "What year did the Titanic sink?",
+  "How many calories are in an apple?",
+  "What is the speed of sound?",
+  "Who painted the Mona Lisa?",
+  "How do I knit a scarf?",
+  "What are the symptoms of the flu?",
+  "Plan a weekend trip to Rome",
+  "How do bees make honey?",
+  "What is the difference between a crocodile and an alligator?",
+  "How do I center a div in CSS?",
+  "What is the GDP of Japan?",
+  "Is it going to rain this weekend?",
+  "How do I train my dog to sit?",
+  "What is a good name for a goldfish?",
+  "How long should I boil an egg?",
+  "Who discovered penicillin?",
+  "What is the largest ocean?",
+  "Define the word serendipity",
+  "How do magnets work?",
+  "What's a good birthday gift for my mom?",
+  "How do I fix a leaking faucet?",
+  "What is the best way to learn French?",
+  "Who invented the telephone?",
+  "How many players are on a basketball team?",
+  "What should I cook for dinner tonight?",
+  "How do I get rid of ants in the kitchen?",
+  "What is the longest river in Africa?",
+  "Can you recommend a fantasy novel?",
+  "How do I improve my credit score?",
+  "When is the next solar eclipse?",
+  "How do I make a paper airplane?",
+  "What is the chemical symbol for gold?",
+  "Why is the sky blue?",
+  "How do I stop snoring?",
+  "What are good exercises for back pain?",
+  "How old is the universe?",
+  "Who was Napoleon?",
+  "How do I write a wedding speech?",
+  "What is the best time to visit Japan?",
+  "How do I clean a cast iron pan?",
+  "What does a dentist do?",
+  "How do I start running?",
+  "What is inflation?",
+  "How do I care for a cactus?",
+  "What is the national animal of Scotland?",
+  "How do I play poker?",
+  "What is the freezing point of water?",
+  "How do I make friends in a new city?",
+  "Who sang Bohemian Rhapsody?",
+  "How do I fold a fitted sheet?",
+  "What are the planets in the solar system?",
+  "How can I sleep better?",
+  "What is a haiku?",
+  "How do I wash a wool sweater?",
+  "What is the currency of Mexico?",
+  "How many bones are in the human body?",
+  "Where do penguins live?",
+  "How do I study for a history exam?",
+  "What is the recipe for pancakes?",
+  "How do I set up a fish tank?"
+ ],
+ "stopword_only": [
+  "what is the",
+  "how does it work",
+  "and then?",
+  "why is that",
+  "tell me more",
+  "can you explain this",
+  "what about the other one",
+  "is this true",
+  "what do you mean",
+  "ok",
+  "yes",
+  "thanks",
+  "hello",
+  "help",
+  "what",
+  "who are you",
+  "go on",
+  "and?",
+  "what else",
+  "say more",
+  "why not",
+  "really?",
+  "can you help me",
+  "is that so"
+ ],
+ "in_domain": [
+  {
+   "query": "What is the difference between QAI and AI4QC?",
+   "expected_lessons": [
+    "nisq-reality-overview"
+   ]
+  },
+  {
+   "query": "Why do the sources repeatedly emphasize hybrid loops instead of end-to-end quantum models?",
+   "expected_lessons": [
+    "nisq-reality-overview"
+   ]
+  },
+  {
+   "query": "What makes a QC+AI claim plausible in the NISQ era?",
+   "expected_lessons": [
+    "nisq-reality-overview"
+   ]
+  },
+  {
+   "query": "What does AI4QC mean in the course corpus?",
+   "expected_lessons": [
+    "nisq-reality-overview"
+   ]
+  },
+  {
+   "query": "What does QAI mean in the course corpus?",
+   "expected_lessons": [
+    "nisq-reality-overview"
+   ]
+  },
+  {
+   "query": "Why is hybridization the dominant near-term pattern?",
+   "expected_lessons": [
+    "nisq-reality-overview"
+   ]
+  },
+  {
+   "query": "Why does learning-based graph shrinking matter before any quantum solve?",
+   "expected_lessons": [
+    "ai4qc-routing-and-optimization"
+   ]
+  },
+  {
+   "query": "What problem does SAC solve inside the augmented Lagrangian workflow?",
+   "expected_lessons": [
+    "ai4qc-routing-and-optimization"
+   ]
+  },
+  {
+   "query": "Why can nested qubit routing still dominate runtime after the optimization model is compressed?",
+   "expected_lessons": [
+    "ai4qc-routing-and-optimization"
+   ]
+  },
+  {
+   "query": "Explain why quantum logistics needs both problem reduction before execution and routing control during compilation.",
+   "expected_lessons": [
+    "ai4qc-routing-and-optimization"
+   ]
+  },
+  {
+   "query": "Why use graph shrinking before quantum optimization in logistics?",
+   "expected_lessons": [
+    "ai4qc-routing-and-optimization"
+   ]
+  },
+  {
+   "query": "What does the GNN policy learn in the graph-shrinking pipeline?",
+   "expected_lessons": [
+    "ai4qc-routing-and-optimization"
+   ]
+  },
+  {
+   "query": "Why is SAC useful inside RL-Q-ALM?",
+   "expected_lessons": [
+    "ai4qc-routing-and-optimization"
+   ]
+  },
+  {
+   "query": "Why does the authored Module 3 document keep returning to the quantum bottleneck instead of claiming end-to-end quantum perception?",
+   "expected_lessons": [
+    "hybrid-applications-healthcare-vision"
+   ]
+  },
+  {
+   "query": "What do QViT, QC-GCN jet tagging, and conditioned quantum diffusion gain from extreme parameter efficiency or low-data performance?",
+   "expected_lessons": [
+    "hybrid-applications-healthcare-vision"
+   ]
+  },
+  {
+   "query": "Why do orchestration latency, decoherence, and explainability constraints still limit how these hybrid vision and graph systems should be deployed?",
+   "expected_lessons": [
+    "hybrid-applications-healthcare-vision"
+   ]
+  },
+  {
+   "query": "Which architectural pattern best matches the authored Module 3 vision, graph, and few-shot cases?",
+   "expected_lessons": [
+    "hybrid-applications-healthcare-vision"
+   ]
+  },
+  {
+   "query": "What placement pattern dominates the authored Module 3 hybrid architectures?",
+   "expected_lessons": [
+    "hybrid-applications-healthcare-vision"
+   ]
+  },
+  {
+   "query": "Why are the QViT and QC-GCN jet-tagging examples useful teaching cases?",
+   "expected_lessons": [
+    "hybrid-applications-healthcare-vision"
+   ]
+  },
+  {
+   "query": "Why does the Module 3 few-shot diffusion material emphasize conditioning and orchestration together?",
+   "expected_lessons": [
+    "hybrid-applications-healthcare-vision"
+   ]
+  },
+  {
+   "query": "What does a quantum kernel add in the aneurysm classification example?",
+   "expected_lessons": [
+    "clinical-and-kernel-qcai-systems"
+   ]
+  },
+  {
+   "query": "Why should QC-DQN be taught carefully in a clinical context?",
+   "expected_lessons": [
+    "clinical-and-kernel-qcai-systems"
+   ]
+  },
+  {
+   "query": "What makes these healthcare-flavored examples more operationally constrained than the perception examples?",
+   "expected_lessons": [
+    "clinical-and-kernel-qcai-systems"
+   ]
+  },
+  {
+   "query": "Explain why QC-DQN and biomedical quantum-kernel methods should be evaluated as narrow hybrid architectures rather than end-to-end quantum replacements.",
+   "expected_lessons": [
+    "clinical-and-kernel-qcai-systems"
+   ]
+  },
+  {
+   "query": "Why is QUEN interesting pedagogically?",
+   "expected_lessons": [
+    "clinical-and-kernel-qcai-systems"
+   ]
+  },
+  {
+   "query": "Why should QC-DQN be taught carefully?",
+   "expected_lessons": [
+    "clinical-and-kernel-qcai-systems"
+   ]
+  },
+  {
+   "query": "What makes healthcare QC+AI architectures operationally demanding?",
+   "expected_lessons": [
+    "clinical-and-kernel-qcai-systems"
+   ]
+  },
+  {
+   "query": "Why does the authored Module 4 source define expressive bottlenecks as structural failures rather than simple under-parameterization?",
+   "expected_lessons": [
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "What do quINR and quantum contrastive word embeddings gain by changing the representational geometry instead of only scaling classical models?",
+   "expected_lessons": [
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "Why should quantum explainability methods still be taught with strong caveats about graph structure, attribution cost, and deployment assumptions?",
+   "expected_lessons": [
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "Explain how the authored Module 4 document connects expressive bottlenecks across compression, language, and explanation.",
+   "expected_lessons": [
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "What is an expressive bottleneck in the authored Module 4 source?",
+   "expected_lessons": [
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "Why is quantum contrastive word embedding not just a quantum Word2Vec clone?",
+   "expected_lessons": [
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "Why is the quantum explainability section taught cautiously?",
+   "expected_lessons": [
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "Which sectors in the document primarily depend on combinatorial optimization rather than quantum-native simulation?",
+   "expected_lessons": [
+    "industry-use-cases"
+   ]
+  },
+  {
+   "query": "Why does cybersecurity have a more urgent migration profile than consumer recommendation or gaming use cases?",
+   "expected_lessons": [
+    "industry-use-cases"
+   ]
+  },
+  {
+   "query": "How does the Industry 5.0 framing change the way the document justifies adoption?",
+   "expected_lessons": [
+    "industry-use-cases"
+   ]
+  },
+  {
+   "query": "Which industry group in the document is most tightly tied to native molecular simulation?",
+   "expected_lessons": [
+    "industry-use-cases"
+   ]
+  },
+  {
+   "query": "Why is post-quantum cryptography treated as urgent rather than speculative?",
+   "expected_lessons": [
+    "industry-use-cases"
+   ]
+  },
+  {
+   "query": "Why are logistics and telecom use cases still hybrid even when the document is optimistic?",
+   "expected_lessons": [
+    "industry-use-cases"
+   ]
+  },
+  {
+   "query": "Why does the authored Module 6 source treat VQAs, AI4QC, and industry sustainability as parts of one roadmap instead of separate topics?",
+   "expected_lessons": [
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "How do logistics, renewable-grid, healthcare, and language-efficiency examples support the Industry 5.0 framing of sustainable hybrid systems?",
+   "expected_lessons": [
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "Why are thermodynamic quantum agents and post-quantum migration taught together as future-direction topics rather than isolated research curiosities?",
+   "expected_lessons": [
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "Explain how the authored Module 6 document turns QC+AI into a sustainable hybrid-systems roadmap.",
+   "expected_lessons": [
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "What does Module 6 mean by moving beyond algorithmic novelty?",
+   "expected_lessons": [
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "Why are graph shrinking and qubit routing part of a sustainability lesson?",
+   "expected_lessons": [
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "Why are thermodynamic quantum agents and post-quantum migration part of the same roadmap?",
+   "expected_lessons": [
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "Why does simulator-first reasoning break down on deployed NISQ hardware?",
+   "expected_lessons": [
+    "introduction-to-hardware-constrained-learning"
+   ]
+  },
+  {
+   "query": "What makes noise and shot budgets architectural parameters instead of mere runtime annoyances?",
+   "expected_lessons": [
+    "introduction-to-hardware-constrained-learning"
+   ]
+  },
+  {
+   "query": "How should a practitioner recognize when a QC+AI claim is outside the near-term Goldilocks regime?",
+   "expected_lessons": [
+    "introduction-to-hardware-constrained-learning"
+   ]
+  },
+  {
+   "query": "What does hardware-constrained learning mean in this course?",
+   "expected_lessons": [
+    "introduction-to-hardware-constrained-learning"
+   ]
+  },
+  {
+   "query": "Why are barren plateaus so damaging in the NISQ era?",
+   "expected_lessons": [
+    "introduction-to-hardware-constrained-learning"
+   ]
+  },
+  {
+   "query": "Why is error mitigation not a free escape hatch?",
+   "expected_lessons": [
+    "introduction-to-hardware-constrained-learning"
+   ]
+  },
+  {
+   "query": "Why can shallow circuits be too weak even when deep circuits are untrainable?",
+   "expected_lessons": [
+    "hardware-constrained-qcai-models"
+   ]
+  },
+  {
+   "query": "What makes quantum kernel concentration such a serious failure mode?",
+   "expected_lessons": [
+    "hardware-constrained-qcai-models"
+   ]
+  },
+  {
+   "query": "How do acceptance criteria change the way a practitioner chooses between model families?",
+   "expected_lessons": [
+    "hardware-constrained-qcai-models"
+   ]
+  },
+  {
+   "query": "Explain why model-family selection in QC+AI must be driven by both trainability limits and measurable acceptance criteria.",
+   "expected_lessons": [
+    "hardware-constrained-qcai-models"
+   ]
+  },
+  {
+   "query": "What is the reachability deficit?",
+   "expected_lessons": [
+    "hardware-constrained-qcai-models"
+   ]
+  },
+  {
+   "query": "What happens when a quantum kernel concentrates exponentially?",
+   "expected_lessons": [
+    "hardware-constrained-qcai-models"
+   ]
+  },
+  {
+   "query": "Why are acceptance criteria part of model design?",
+   "expected_lessons": [
+    "hardware-constrained-qcai-models"
+   ]
+  },
+  {
+   "query": "Why is the parameter-shift rule more robust than finite differences on noisy hardware?",
+   "expected_lessons": [
+    "intermediate-quantum-programming-patterns"
+   ]
+  },
+  {
+   "query": "How do measurement grouping and adaptive shot allocation change real execution budgets?",
+   "expected_lessons": [
+    "intermediate-quantum-programming-patterns"
+   ]
+  },
+  {
+   "query": "What should a programmer log to distinguish model failure from hardware failure?",
+   "expected_lessons": [
+    "intermediate-quantum-programming-patterns"
+   ]
+  },
+  {
+   "query": "Which pairing best reflects intermediate hardware-constrained programming practice?",
+   "expected_lessons": [
+    "intermediate-quantum-programming-patterns"
+   ]
+  },
+  {
+   "query": "Why is finite-difference differentiation a poor default on NISQ hardware?",
+   "expected_lessons": [
+    "intermediate-quantum-programming-patterns"
+   ]
+  },
+  {
+   "query": "What does qubit-wise commutativity measurement grouping accomplish?",
+   "expected_lessons": [
+    "intermediate-quantum-programming-patterns"
+   ]
+  },
+  {
+   "query": "Why is benchmarking more than predictive accuracy in this programming layer?",
+   "expected_lessons": [
+    "intermediate-quantum-programming-patterns"
+   ]
+  },
+  {
+   "query": "Why does MLIR matter in advanced quantum software development?",
+   "expected_lessons": [
+    "advanced-quantum-software-development"
+   ]
+  },
+  {
+   "query": "What is gained by optimizing at the pulse level instead of staying at the logical-gate level?",
+   "expected_lessons": [
+    "advanced-quantum-software-development"
+   ]
+  },
+  {
+   "query": "How do caching and reproducibility policies affect real hybrid-system reliability?",
+   "expected_lessons": [
+    "advanced-quantum-software-development"
+   ]
+  },
+  {
+   "query": "Describe why advanced QC+AI software engineering must treat compilation, caching, and pulse-level execution as first-class design concerns.",
+   "expected_lessons": [
+    "advanced-quantum-software-development"
+   ]
+  },
+  {
+   "query": "What does differentiable programming mean in this QC+AI context?",
+   "expected_lessons": [
+    "advanced-quantum-software-development"
+   ]
+  },
+  {
+   "query": "Why are MLIR dialects useful for QC+AI software?",
+   "expected_lessons": [
+    "advanced-quantum-software-development"
+   ]
+  },
+  {
+   "query": "Why is pulse-level control a major advanced-software topic?",
+   "expected_lessons": [
+    "advanced-quantum-software-development"
+   ]
+  },
+  {
+   "query": "Why are hybrid optimization loops so dominant in near-term quantum finance?",
+   "expected_lessons": [
+    "quantum-finance-programming-and-optimization"
+   ]
+  },
+  {
+   "query": "How do portfolio optimization and option pricing differ in their hardware fit?",
+   "expected_lessons": [
+    "quantum-finance-programming-and-optimization"
+   ]
+  },
+  {
+   "query": "What does model-risk management add to a quantum-finance deployment decision?",
+   "expected_lessons": [
+    "quantum-finance-programming-and-optimization"
+   ]
+  },
+  {
+   "query": "Why is quantum finance framed as hardware-first in this document?",
+   "expected_lessons": [
+    "quantum-finance-programming-and-optimization"
+   ]
+  },
+  {
+   "query": "What makes quantum kernels attractive in some finance settings?",
+   "expected_lessons": [
+    "quantum-finance-programming-and-optimization"
+   ]
+  },
+  {
+   "query": "Why is model-risk management central to quantum finance adoption?",
+   "expected_lessons": [
+    "quantum-finance-programming-and-optimization"
+   ]
+  },
+  {
+   "query": "NISQ era",
+   "expected_lessons": [
+    "nisq-reality-overview",
+    "introduction-to-hardware-constrained-learning",
+    "hybrid-applications-healthcare-vision",
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "what is hybrid quantum-classical computing",
+   "expected_lessons": [
+    "nisq-reality-overview",
+    "thermodynamics-and-roadmap",
+    "hybrid-applications-healthcare-vision"
+   ]
+  },
+  {
+   "query": "QAI vs AI4QC",
+   "expected_lessons": [
+    "nisq-reality-overview",
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "graph shrinking",
+   "expected_lessons": [
+    "ai4qc-routing-and-optimization",
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "qubit routing",
+   "expected_lessons": [
+    "ai4qc-routing-and-optimization",
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "soft actor critic penalty tuning",
+   "expected_lessons": [
+    "ai4qc-routing-and-optimization"
+   ]
+  },
+  {
+   "query": "quantum vision transformer",
+   "expected_lessons": [
+    "hybrid-applications-healthcare-vision"
+   ]
+  },
+  {
+   "query": "quantum graph neural networks",
+   "expected_lessons": [
+    "hybrid-applications-healthcare-vision",
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "quantum diffusion models few-shot",
+   "expected_lessons": [
+    "hybrid-applications-healthcare-vision",
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "quantum kernel biomedical imaging",
+   "expected_lessons": [
+    "clinical-and-kernel-qcai-systems"
+   ]
+  },
+  {
+   "query": "quantum reinforcement learning clinical control",
+   "expected_lessons": [
+    "clinical-and-kernel-qcai-systems"
+   ]
+  },
+  {
+   "query": "aneurysm classification",
+   "expected_lessons": [
+    "clinical-and-kernel-qcai-systems"
+   ]
+  },
+  {
+   "query": "expressive bottleneck",
+   "expected_lessons": [
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "quantum contrastive word embeddings",
+   "expected_lessons": [
+    "representation-language-and-xai",
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "quantum implicit neural compression",
+   "expected_lessons": [
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "post-quantum cryptography",
+   "expected_lessons": [
+    "industry-use-cases",
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "quantum computing in healthcare and drug discovery",
+   "expected_lessons": [
+    "industry-use-cases",
+    "thermodynamics-and-roadmap",
+    "clinical-and-kernel-qcai-systems",
+    "hybrid-applications-healthcare-vision"
+   ]
+  },
+  {
+   "query": "weather forecasting and climate modeling",
+   "expected_lessons": [
+    "industry-use-cases"
+   ]
+  },
+  {
+   "query": "energy efficiency of quantum agents",
+   "expected_lessons": [
+    "thermodynamics-and-roadmap",
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "QUBO subset selection for fine-tuning",
+   "expected_lessons": [
+    "thermodynamics-and-roadmap",
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "sustainable energy grids",
+   "expected_lessons": [
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "barren plateaus",
+   "expected_lessons": [
+    "introduction-to-hardware-constrained-learning",
+    "hardware-constrained-qcai-models",
+    "intermediate-quantum-programming-patterns"
+   ]
+  },
+  {
+   "query": "noise and shot budgets",
+   "expected_lessons": [
+    "introduction-to-hardware-constrained-learning",
+    "intermediate-quantum-programming-patterns",
+    "hardware-constrained-qcai-models"
+   ]
+  },
+  {
+   "query": "simulator-first thinking",
+   "expected_lessons": [
+    "introduction-to-hardware-constrained-learning"
+   ]
+  },
+  {
+   "query": "kernel concentration",
+   "expected_lessons": [
+    "hardware-constrained-qcai-models"
+   ]
+  },
+  {
+   "query": "trainability of variational circuits",
+   "expected_lessons": [
+    "hardware-constrained-qcai-models",
+    "introduction-to-hardware-constrained-learning"
+   ]
+  },
+  {
+   "query": "acceptance criteria for quantum machine learning models",
+   "expected_lessons": [
+    "hardware-constrained-qcai-models",
+    "intermediate-quantum-programming-patterns",
+    "advanced-quantum-software-development",
+    "quantum-finance-programming-and-optimization"
+   ]
+  },
+  {
+   "query": "parameter-shift rule",
+   "expected_lessons": [
+    "intermediate-quantum-programming-patterns"
+   ]
+  },
+  {
+   "query": "measurement grouping",
+   "expected_lessons": [
+    "intermediate-quantum-programming-patterns"
+   ]
+  },
+  {
+   "query": "diagnostics and debugging playbook",
+   "expected_lessons": [
+    "intermediate-quantum-programming-patterns"
+   ]
+  },
+  {
+   "query": "MLIR quantum compilation",
+   "expected_lessons": [
+    "advanced-quantum-software-development"
+   ]
+  },
+  {
+   "query": "pulse-level control",
+   "expected_lessons": [
+    "advanced-quantum-software-development"
+   ]
+  },
+  {
+   "query": "differentiable programming",
+   "expected_lessons": [
+    "advanced-quantum-software-development"
+   ]
+  },
+  {
+   "query": "quantum portfolio optimization",
+   "expected_lessons": [
+    "quantum-finance-programming-and-optimization",
+    "industry-use-cases"
+   ]
+  },
+  {
+   "query": "option pricing",
+   "expected_lessons": [
+    "quantum-finance-programming-and-optimization"
+   ]
+  },
+  {
+   "query": "model risk management",
+   "expected_lessons": [
+    "quantum-finance-programming-and-optimization"
+   ]
+  },
+  {
+   "query": "Why can't today's noisy quantum machines run complete AI models on their own?",
+   "expected_lessons": [
+    "nisq-reality-overview",
+    "introduction-to-hardware-constrained-learning",
+    "hybrid-applications-healthcare-vision"
+   ]
+  },
+  {
+   "query": "How do classical computers and quantum processors split the work in current systems?",
+   "expected_lessons": [
+    "nisq-reality-overview",
+    "hybrid-applications-healthcare-vision",
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "How can machine learning make a delivery-route problem small enough for a quantum computer?",
+   "expected_lessons": [
+    "ai4qc-routing-and-optimization",
+    "thermodynamics-and-roadmap",
+    "industry-use-cases"
+   ]
+  },
+  {
+   "query": "Why does moving qubits around on the chip slow things down?",
+   "expected_lessons": [
+    "ai4qc-routing-and-optimization",
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "Can quantum circuits help computers recognize images with very few training examples?",
+   "expected_lessons": [
+    "hybrid-applications-healthcare-vision"
+   ]
+  },
+  {
+   "query": "How do quantum models handle data made of connected points and links?",
+   "expected_lessons": [
+    "hybrid-applications-healthcare-vision",
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "Is it safe to let a quantum learning agent control medical treatment decisions?",
+   "expected_lessons": [
+    "clinical-and-kernel-qcai-systems"
+   ]
+  },
+  {
+   "query": "How might quantum methods help detect bulging blood vessels in brain scans?",
+   "expected_lessons": [
+    "clinical-and-kernel-qcai-systems"
+   ]
+  },
+  {
+   "query": "Why do some neural networks fail to capture complex structure no matter how big they get?",
+   "expected_lessons": [
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "Can quantum methods make it cheaper to explain why a model made a prediction?",
+   "expected_lessons": [
+    "representation-language-and-xai",
+    "hybrid-applications-healthcare-vision",
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "Which businesses could profit first from quantum computing?",
+   "expected_lessons": [
+    "industry-use-cases"
+   ]
+  },
+  {
+   "query": "Will quantum computers break the encryption that protects bank accounts?",
+   "expected_lessons": [
+    "industry-use-cases",
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "Could quantum computers use less electricity than classical ones for AI?",
+   "expected_lessons": [
+    "thermodynamics-and-roadmap",
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "What is the long-term plan for making quantum AI practical and green?",
+   "expected_lessons": [
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "Why do results from a perfect simulator not hold up on real quantum chips?",
+   "expected_lessons": [
+    "introduction-to-hardware-constrained-learning",
+    "intermediate-quantum-programming-patterns"
+   ]
+  },
+  {
+   "query": "Why does training a quantum model sometimes get stuck with flat gradients?",
+   "expected_lessons": [
+    "introduction-to-hardware-constrained-learning",
+    "hardware-constrained-qcai-models",
+    "intermediate-quantum-programming-patterns"
+   ]
+  },
+  {
+   "query": "How do I decide which quantum machine learning model to choose for a project?",
+   "expected_lessons": [
+    "hardware-constrained-qcai-models"
+   ]
+  },
+  {
+   "query": "Why do quantum similarity measures become useless as more qubits are added?",
+   "expected_lessons": [
+    "hardware-constrained-qcai-models"
+   ]
+  },
+  {
+   "query": "How do you compute gradients of a quantum circuit when the hardware is noisy?",
+   "expected_lessons": [
+    "intermediate-quantum-programming-patterns",
+    "hardware-constrained-qcai-models"
+   ]
+  },
+  {
+   "query": "How can I tell whether a bad result comes from my code or from the quantum device?",
+   "expected_lessons": [
+    "intermediate-quantum-programming-patterns"
+   ]
+  },
+  {
+   "query": "What tools translate high-level quantum programs into instructions the hardware understands?",
+   "expected_lessons": [
+    "advanced-quantum-software-development"
+   ]
+  },
+  {
+   "query": "Why would engineers program the microwave signals that drive qubits directly?",
+   "expected_lessons": [
+    "advanced-quantum-software-development"
+   ]
+  },
+  {
+   "query": "Can a quantum computer help pick stocks for an investment portfolio?",
+   "expected_lessons": [
+    "quantum-finance-programming-and-optimization",
+    "industry-use-cases"
+   ]
+  },
+  {
+   "query": "How do banks check that a quantum model is trustworthy before using it?",
+   "expected_lessons": [
+    "quantum-finance-programming-and-optimization"
+   ]
+  },
+  {
+   "query": "How do quantum kernels differ between healthcare and finance applications?",
+   "expected_lessons": [
+    "clinical-and-kernel-qcai-systems",
+    "quantum-finance-programming-and-optimization",
+    "hardware-constrained-qcai-models"
+   ]
+  },
+  {
+   "query": "Where do graph neural networks appear in quantum optimization and explainability?",
+   "expected_lessons": [
+    "ai4qc-routing-and-optimization",
+    "hybrid-applications-healthcare-vision",
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "What role does reinforcement learning play in quantum optimization and clinical control?",
+   "expected_lessons": [
+    "ai4qc-routing-and-optimization",
+    "clinical-and-kernel-qcai-systems"
+   ]
+  },
+  {
+   "query": "Why are near-term QC+AI systems hybrid rather than fully quantum?",
+   "expected_lessons": [
+    "nisq-reality-overview",
+    "hybrid-applications-healthcare-vision",
+    "thermodynamics-and-roadmap",
+    "introduction-to-hardware-constrained-learning"
+   ]
+  },
+  {
+   "query": "How does hardware noise affect both training and compilation?",
+   "expected_lessons": [
+    "introduction-to-hardware-constrained-learning",
+    "hardware-constrained-qcai-models",
+    "intermediate-quantum-programming-patterns",
+    "advanced-quantum-software-development"
+   ]
+  },
+  {
+   "query": "How are logistics and finance problems written as QUBO optimization?",
+   "expected_lessons": [
+    "ai4qc-routing-and-optimization",
+    "industry-use-cases",
+    "quantum-finance-programming-and-optimization",
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "What acceptance criteria and test strategy does the course recommend for QC+AI models?",
+   "expected_lessons": [
+    "hardware-constrained-qcai-models",
+    "intermediate-quantum-programming-patterns",
+    "advanced-quantum-software-development",
+    "quantum-finance-programming-and-optimization"
+   ]
+  },
+  {
+   "query": "How does the Industry 5.0 framing connect to sustainability?",
+   "expected_lessons": [
+    "industry-use-cases",
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "What are the main risks and mitigations when deploying quantum machine learning?",
+   "expected_lessons": [
+    "introduction-to-hardware-constrained-learning",
+    "hardware-constrained-qcai-models",
+    "quantum-finance-programming-and-optimization",
+    "intermediate-quantum-programming-patterns"
+   ]
+  },
+  {
+   "query": "How is QGShap used for explainability?",
+   "expected_lessons": [
+    "hybrid-applications-healthcare-vision",
+    "representation-language-and-xai",
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "What does NISQ stand for and why does it matter?",
+   "expected_lessons": [
+    "nisq-reality-overview",
+    "introduction-to-hardware-constrained-learning"
+   ]
+  },
+  {
+   "query": "Why are hybrid loops preferred in the NISQ era?",
+   "expected_lessons": [
+    "nisq-reality-overview",
+    "thermodynamics-and-roadmap",
+    "hybrid-applications-healthcare-vision"
+   ]
+  },
+  {
+   "query": "How does a graph neural network decide which nodes to merge before optimization?",
+   "expected_lessons": [
+    "ai4qc-routing-and-optimization"
+   ]
+  },
+  {
+   "query": "What is nested Monte Carlo search used for in qubit routing?",
+   "expected_lessons": [
+    "ai4qc-routing-and-optimization"
+   ]
+  },
+  {
+   "query": "How do quantum vision transformers reduce attention cost?",
+   "expected_lessons": [
+    "hybrid-applications-healthcare-vision"
+   ]
+  },
+  {
+   "query": "Why are quantum diffusion models useful for few-shot learning?",
+   "expected_lessons": [
+    "hybrid-applications-healthcare-vision"
+   ]
+  },
+  {
+   "query": "How is a quantum kernel used to classify medical images?",
+   "expected_lessons": [
+    "clinical-and-kernel-qcai-systems"
+   ]
+  },
+  {
+   "query": "What are the risks of quantum reinforcement learning in clinical settings?",
+   "expected_lessons": [
+    "clinical-and-kernel-qcai-systems"
+   ]
+  },
+  {
+   "query": "What is quantum implicit neural compression?",
+   "expected_lessons": [
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "How does QGShap compute exact feature attributions?",
+   "expected_lessons": [
+    "hybrid-applications-healthcare-vision",
+    "representation-language-and-xai",
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "How could quantum computing change pharmaceutical research?",
+   "expected_lessons": [
+    "industry-use-cases",
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "Why is post-quantum migration urgent for cybersecurity?",
+   "expected_lessons": [
+    "industry-use-cases",
+    "thermodynamics-and-roadmap"
+   ]
+  },
+  {
+   "query": "How can QUBO help choose data for fine-tuning language models?",
+   "expected_lessons": [
+    "thermodynamics-and-roadmap",
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "Why do quantum agents have an energetic advantage?",
+   "expected_lessons": [
+    "thermodynamics-and-roadmap",
+    "representation-language-and-xai"
+   ]
+  },
+  {
+   "query": "What are the main hardware constraints that shape quantum learning?",
+   "expected_lessons": [
+    "introduction-to-hardware-constrained-learning",
+    "intermediate-quantum-programming-patterns",
+    "hardware-constrained-qcai-models"
+   ]
+  },
+  {
+   "query": "What failure modes should I diagnose in hardware-constrained learning?",
+   "expected_lessons": [
+    "introduction-to-hardware-constrained-learning",
+    "intermediate-quantum-programming-patterns"
+   ]
+  },
+  {
+   "query": "What is the trade-off between circuit depth and trainability?",
+   "expected_lessons": [
+    "hardware-constrained-qcai-models",
+    "introduction-to-hardware-constrained-learning"
+   ]
+  },
+  {
+   "query": "Which test strategy does the course recommend for QC+AI models?",
+   "expected_lessons": [
+    "hardware-constrained-qcai-models",
+    "intermediate-quantum-programming-patterns",
+    "advanced-quantum-software-development",
+    "quantum-finance-programming-and-optimization"
+   ]
+  },
+  {
+   "query": "How does adaptive shot allocation reduce execution cost?",
+   "expected_lessons": [
+    "intermediate-quantum-programming-patterns"
+   ]
+  },
+  {
+   "query": "What patterns help debug variational circuits on real devices?",
+   "expected_lessons": [
+    "intermediate-quantum-programming-patterns"
+   ]
+  },
+  {
+   "query": "How does caching improve reproducibility in hybrid quantum software?",
+   "expected_lessons": [
+    "advanced-quantum-software-development"
+   ]
+  },
+  {
+   "query": "What is the role of MLIR dialects in quantum compilers?",
+   "expected_lessons": [
+    "advanced-quantum-software-development"
+   ]
+  },
+  {
+   "query": "How is amplitude estimation used for option pricing?",
+   "expected_lessons": [
+    "quantum-finance-programming-and-optimization"
+   ]
+  },
+  {
+   "query": "Why does quantum finance need model-risk management?",
+   "expected_lessons": [
+    "quantum-finance-programming-and-optimization"
+   ]
+  }
+ ]
+}
