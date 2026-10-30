@@ -1,0 +1,52 @@
+name: Domain and TLS monitor
+
+# Plan task 1.12 (R-34, E-34, Q-21): alert while there is time to act on a lapsing domain registration or TLS
+# certificate. A run fails when the registration is 60 days or fewer from expiry, a certificate is 21 days
+# or fewer from expiry, or either cannot be checked; GitHub notifies about a failed scheduled run.
+# To prove the alert fires, run it by hand with a high threshold (for example domain_alert_days 400).
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      domain_alert_days:
+        description: "Alert when the registration expires within this many days"
+        type: number
+        default: 60
+      tls_alert_days:
+        description: "Alert when a TLS certificate expires within this many days"
+        type: number
+        default: 21
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Check registration and certificates
+        env:
+          DOMAIN_ALERT_DAYS: ${{ inputs.domain_alert_days || 60 }}
+          TLS_ALERT_DAYS: ${{ inputs.tls_alert_days || 21 }}
+        run: >-
+          python scripts/domain_monitor.py
+          --domain qantumlearn.academy
+          --host qantumlearn.academy
+          --host api.qantumlearn.academy
+          --domain-alert-days "$DOMAIN_ALERT_DAYS"
+          --tls-alert-days "$TLS_ALERT_DAYS"
+          --json domain-monitor.json
+      - name: Keep the dated record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: domain-monitor-${{ github.run_id }}
+          path: domain-monitor.json
+          retention-days: 90
