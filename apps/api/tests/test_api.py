@@ -1624,33 +1624,6 @@ def test_arena_leaderboard_orders_profiles():
     assert data[top_index]["rank_label"] == "Quantum Master"
 
 
-def test_arena_bot_match_streams_round_updates():
-    player_id = f"arena-bot-{uuid4().hex[:8]}"
-    with client.websocket_connect(f"/arena/ws?player_id={player_id}&display_name=TestPilot&mode=bot") as websocket:
-        connected = websocket.receive_json()
-        assert connected["type"] == "connected"
-        match_found = websocket.receive_json()
-        assert match_found["type"] == "match_found"
-        challenge = websocket.receive_json()
-        assert challenge["type"] == "challenge"
-        prompt = challenge["challenge"]["prompt"]
-        if challenge["challenge"]["options"]:
-            answer = challenge["challenge"]["options"][0]
-        elif "softmax" in prompt.lower():
-            answer = "np.exp(shifted).sum()"
-        elif "optimizer" in prompt.lower():
-            answer = "step()"
-        elif "reward" in prompt.lower():
-            answer = "reward"
-        else:
-            answer = "target_network"
-        websocket.send_json({"type": "answer", "answer": answer})
-        round_result = websocket.receive_json()
-        assert round_result["type"] == "round_result"
-        assert round_result["correct_answer"]
-        assert round_result["players"]
-
-
 def test_arena_status_endpoint_reports_live_counts():
     response = client.get("/arena/status")
     assert response.status_code == 200

@@ -20,6 +20,11 @@ from app.services.text_utils import sanitize_user_text
 ROUND_COUNT = 5
 ROUND_DURATION_SECONDS = 24
 ROUND_ADVANCE_DELAY_SECONDS = 2.2
+# Shown when a player gives no name. Never the player id, which is an internal identifier (R-03).
+DEFAULT_DISPLAY_NAME = "Challenger"
+BOT_PUBLIC_HANDLE = "arena-bot"
+# Sent to a socket that a newer connection of the same principal replaced: one live socket per principal.
+REPLACED_CLOSE_CODE = 4409
 
 
 @dataclass(frozen=True)
@@ -236,6 +241,7 @@ CHALLENGE_BANK: list[ArenaChallenge] = [
 @dataclass
 class MatchPlayer:
     player_id: str
+    public_handle: str
     display_name: str
     adaptive_level: int
     websocket: WebSocket | None = None
@@ -262,6 +268,18 @@ class ArenaMatch:
 
 def _normalize_answer(value: str) -> str:
     return "".join(ch.lower() for ch in value.strip() if ch.isalnum())
+
+
+def _public_display_name(profile: ArenaProfile) -> str:
+    # Before task 1.4 a profile could take the player id as its name; never publish that.
+    if profile.display_name and profile.display_name != profile.player_id:
+        return profile.display_name
+    return DEFAULT_DISPLAY_NAME
+
+
+def _public_handles(player_ids: list[str]) -> dict[str, str]:
+    with SessionLocal() as session:
+        return public_handles(session, player_ids)
 
 
 def _rank_label_from_xp(xp: int) -> str:
@@ -298,7 +316,7 @@ class ArenaService:
             entries.append(
                 ArenaLeaderboardEntry(
                     public_handle=handles[profile.player_id],
-                    display_name=profile.display_name,
+                    display_name=_public_display_name(profile),
                     xp=profile.xp,
                     matches_played=profile.matches_played,
                     wins=profile.wins,
@@ -318,7 +336,7 @@ class ArenaService:
                     return None
                 profile = ArenaProfile(
                     player_id=player_id,
-                    display_name=player_id,
+                    display_name=DEFAULT_DISPLAY_NAME,
                     xp=0,
                     matches_played=0,
                     wins=0,
@@ -338,8 +356,8 @@ class ArenaService:
             for record in records[:5]
         ) or "No matches yet"
         return ArenaProfileRead(
-            player_id=profile.player_id,
-            display_name=profile.display_name,
+            public_handle=_public_handles([player_id])[player_id],
+            display_name=_public_display_name(profile),
             xp=profile.xp,
             matches_played=profile.matches_played,
             wins=profile.wins,
@@ -358,21 +376,23 @@ class ArenaService:
         }
 
     async def connect(self, websocket: WebSocket, player_id: str, display_name: str, mode: str) -> None:
-        await websocket.accept()
-        display_name = sanitize_user_text(display_name, preserve_newlines=False) or player_id
+        # The route has accepted the socket and validated the principal; player_id is that principal's id.
+        display_name = sanitize_user_text(display_name, preserve_newlines=False) or DEFAULT_DISPLAY_NAME
         await self._ensure_profile(player_id, display_name)
+        handle = _public_handles([player_id])[player_id]
         match_start_id: str | None = None
         payload: dict[str, Any] | None = None
         queue_updates: list[tuple[str, dict[str, Any]]] = []
         direct_messages: list[tuple[str, dict[str, Any]]] = []
         async with self._lock:
+            replaced = self._connections.get(player_id)
             self._connections[player_id] = websocket
             self._remove_from_wait_queue(player_id)
             if player_id in self._player_match:
                 match = self._matches.get(self._player_match[player_id])
                 payload = self._match_found_payload(match, player_id) if match else None
             elif mode == "bot":
-                match = self._build_bot_match(player_id, display_name, websocket)
+                match = self._build_bot_match(player_id, handle, display_name, websocket)
                 self._matches[match.match_id] = match
                 self._player_match[player_id] = match.match_id
                 payload = self._match_found_payload(match, player_id)
@@ -397,7 +417,9 @@ class ArenaService:
                 else:
                     payload = self._queue_status_payload(player_id)
                 queue_updates = self._waiting_queue_updates()
-        await self._send(player_id, {"type": "connected", "player_id": player_id, "display_name": display_name})
+        if replaced is not None and replaced is not websocket:
+            await self._close_quietly(replaced, REPLACED_CLOSE_CODE, "Replaced by a newer Arena connection.")
+        await self._send(player_id, {"type": "connected", "public_handle": handle, "display_name": display_name})
         for target_player_id, queued_payload in queue_updates:
             await self._send(target_player_id, queued_payload)
         for target_player_id, direct_payload in direct_messages:
@@ -407,11 +429,15 @@ class ArenaService:
         if match_start_id:
             await self._schedule_next_round(match_start_id, immediate=True)
 
-    async def disconnect(self, player_id: str) -> None:
+    async def disconnect(self, player_id: str, websocket: WebSocket) -> None:
         should_finish = False
         match_id: str | None = None
         queue_updates: list[tuple[str, dict[str, Any]]] = []
         async with self._lock:
+            current = self._connections.get(player_id)
+            if current is not None and current is not websocket:
+                # A newer connection of this principal replaced this one and keeps its queue place and match.
+                return
             self._connections.pop(player_id, None)
             self._remove_from_wait_queue(player_id)
             queue_updates = self._waiting_queue_updates()
@@ -455,18 +481,21 @@ class ArenaService:
     def _build_ranked_match(self, opponent_id: str, player_id: str) -> ArenaMatch:
         opponent_profile = self.profile(opponent_id)
         current_profile = self.profile(player_id)
+        handles = _public_handles([opponent_id, player_id])
         return ArenaMatch(
             match_id=f"match-{uuid4().hex[:10]}",
             mode="ranked",
             players={
                 opponent_id: MatchPlayer(
                     player_id=opponent_id,
+                    public_handle=handles[opponent_id],
                     display_name=opponent_profile.display_name,
                     adaptive_level=opponent_profile.adaptive_level,
                     websocket=self._connections[opponent_id],
                 ),
                 player_id: MatchPlayer(
                     player_id=player_id,
+                    public_handle=handles[player_id],
                     display_name=current_profile.display_name,
                     adaptive_level=current_profile.adaptive_level,
                     websocket=self._connections[player_id],
@@ -475,11 +504,12 @@ class ArenaService:
             difficulty_band=max(1, min(5, round((opponent_profile.adaptive_level + current_profile.adaptive_level) / 2))),
         )
 
-    def _build_bot_match(self, player_id: str, display_name: str, websocket: WebSocket) -> ArenaMatch:
+    def _build_bot_match(self, player_id: str, handle: str, display_name: str, websocket: WebSocket) -> ArenaMatch:
         profile = self.profile(player_id)
         bot_level = max(1, min(5, profile.adaptive_level + random.choice([-1, 0, 1])))
         bot_player = MatchPlayer(
             player_id=f"bot-{uuid4().hex[:6]}",
+            public_handle=BOT_PUBLIC_HANDLE,
             display_name="Adaptive Arena Bot",
             adaptive_level=bot_level,
             websocket=None,
@@ -487,6 +517,7 @@ class ArenaService:
         )
         human_player = MatchPlayer(
             player_id=player_id,
+            public_handle=handle,
             display_name=display_name or profile.display_name,
             adaptive_level=profile.adaptive_level,
             websocket=websocket,
@@ -513,7 +544,7 @@ class ArenaService:
     def _scoreboard(self, match: ArenaMatch, self_player_id: str | None = None) -> list[dict[str, Any]]:
         return [
             {
-                "player_id": player.player_id,
+                "public_handle": player.public_handle,
                 "display_name": player.display_name,
                 "score": player.score,
                 "correct_answers": player.correct_answers,
@@ -684,7 +715,7 @@ class ArenaService:
                     player.score += score_delta
                 answer_state.append(
                     {
-                        "player_id": player.player_id,
+                        "public_handle": player.public_handle,
                         "display_name": player.display_name,
                         "answer": answer,
                         "correct": correct,
@@ -728,7 +759,7 @@ class ArenaService:
             winner_ids = {player.player_id for player in players if player.score == highest_score}
         payload = {
             "type": "match_complete",
-            "winner_ids": sorted(winner_ids),
+            "winner_handles": sorted(match.players[winner_id].public_handle for winner_id in winner_ids),
             "players": self._scoreboard(match),
             "xp_updates": self._persist_results(match, winner_ids),
         }
@@ -790,7 +821,7 @@ class ArenaService:
                 )
                 xp_updates.append(
                     {
-                        "player_id": player.player_id,
+                        "public_handle": player.public_handle,
                         "display_name": player.display_name,
                         "xp_delta": xp_delta,
                         "new_xp": profile.xp,
@@ -813,7 +844,7 @@ class ArenaService:
             session.add(
                 ArenaProfile(
                     player_id=player_id,
-                    display_name=display_name or player_id,
+                    display_name=display_name or DEFAULT_DISPLAY_NAME,
                     xp=0,
                     matches_played=0,
                     wins=0,
@@ -831,6 +862,13 @@ class ArenaService:
             await websocket.send_json(payload)
         except Exception:
             self._connections.pop(player_id, None)
+
+    @staticmethod
+    async def _close_quietly(websocket: WebSocket, code: int, reason: str) -> None:
+        try:
+            await websocket.close(code=code, reason=reason)
+        except Exception:
+            pass
 
     async def _broadcast(self, match_or_id: ArenaMatch | str, payload: dict[str, Any]) -> None:
         if isinstance(match_or_id, ArenaMatch):

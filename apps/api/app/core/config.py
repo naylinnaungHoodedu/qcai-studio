@@ -97,6 +97,7 @@ class Settings(BaseSettings):
     enforce_corpus_governance: bool | None = None
     grounding_policy_version: str = "cs595-v1"
     arena_enabled: bool | None = None
+    arena_ticket_rate_limit: str = "10/minute"
     guest_token_secret: str | None = None
     guest_token_previous_secret: str | None = None
     # Legacy guest-id migration window (plan L1108-1110): closed unless an end time is set.
@@ -130,11 +131,11 @@ class Settings(BaseSettings):
             # deployment fails closed until its corpus manifest has been reviewed.
             self.enforce_corpus_governance = self.environment.lower() != "development"
         if self.arena_enabled is None:
-            # Decision D-03: the Arena socket accepts a client-asserted player id with no Origin check,
-            # so it stays offline outside development until it authenticates the player.
+            # Decision D-03 chose "disable": the Arena stays offline outside development. The socket now checks
+            # the principal and the Origin (task 1.4); switching it on elsewhere needs a new D-03 decision.
             self.arena_enabled = self.environment.lower() == "development"
         if self.arena_enabled and self.environment.lower() != "development":
-            raise ValueError("ARENA_ENABLED is not permitted outside development until the Arena socket authenticates players.")
+            raise ValueError("ARENA_ENABLED is not permitted outside development (Decision D-03).")
         if self.guest_token_secret is None and self.environment.lower() == "development":
             self.guest_token_secret = DEVELOPMENT_GUEST_TOKEN_SECRET
         if self.guest_legacy_upgrade_until is not None and self.guest_legacy_upgrade_until.tzinfo is None:

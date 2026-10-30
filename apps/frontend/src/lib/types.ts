@@ -326,9 +326,15 @@ export type ArenaLeaderboardEntry = {
   rank_label: string;
 };
 
-export type ArenaProfile = Omit<ArenaLeaderboardEntry, "public_handle"> & {
-  player_id: string;
+export type ArenaProfile = ArenaLeaderboardEntry & {
   recent_form: string;
+};
+
+// A short-lived, single-use credential for the Arena socket, offered as a WebSocket subprotocol.
+export type ArenaTicket = {
+  ticket: string;
+  protocol: string;
+  expires_in: number;
 };
 
 export type ArenaStatus = {
