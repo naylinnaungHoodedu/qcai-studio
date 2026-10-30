@@ -24,6 +24,7 @@ MEDIA_TYPE_OVERRIDES = {
 
 
 def _require_asset_access(
+    request: Request,
     authorization: str | None = Header(default=None),
     x_demo_user: str | None = Header(default=None),
     x_demo_role: str | None = Header(default=None),
@@ -35,6 +36,7 @@ def _require_asset_access(
     if not authorization and not x_demo_user and not x_demo_role and not qcai_session_token and not qcai_guest_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required for source assets.")
     user = get_current_user(
+        request=request,
         authorization=authorization,
         x_demo_user=x_demo_user,
         x_demo_role=x_demo_role,

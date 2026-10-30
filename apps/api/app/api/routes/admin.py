@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.core.auth import AuthUser, require_role
 from app.core.db import get_db
 from app.schemas import GuestRevocationCreate, GuestRevocationRead
 from app.services.guest_sessions import revoke_guest
+from app.services.security_log import record_security_event
 from app.services.store import rebuild_course_store
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -23,9 +24,14 @@ def rebuild_content(_: AuthUser = Depends(require_role("instructor", "admin"))):
 
 @router.post("/guest-revocations", response_model=GuestRevocationRead)
 def revoke_guest_session(
+    request: Request,
     payload: GuestRevocationCreate,
     db: Session = Depends(get_db),
-    _: AuthUser = Depends(require_role("admin")),
+    admin: AuthUser = Depends(require_role("admin")),
 ):
     revocation = revoke_guest(db, payload.guest_id, payload.reason)
+    # The free-text reason stays in guest_revocations; the log keeps who acted on which digest.
+    record_security_event(
+        "guest.revoked", "success", connection=request, actor_role=admin.role, subject=payload.guest_id
+    )
     return GuestRevocationRead(status="revoked", revoked_at=revocation.revoked_at)

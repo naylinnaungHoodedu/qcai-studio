@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 import jwt
-from fastapi import Cookie, Depends, Header, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, Request, status
 from jwt import PyJWKClient
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,7 @@ from app.core.db import get_db
 from app.core.guest_tokens import GUEST_TOKEN_COOKIE, verify_guest_token
 from app.services.guest_sessions import is_guest_revoked
 from app.services.local_accounts import AUTH_SESSION_COOKIE_NAME, resolve_local_account_from_session
+from app.services.security_log import record_security_event
 
 
 @dataclass
@@ -43,6 +44,7 @@ def _decode_auth0_token(token: str, settings: Settings) -> AuthUser:
 
 
 def get_current_user(
+    request: Request,
     authorization: str | None = Header(default=None),
     x_demo_user: str | None = Header(default=None),
     x_demo_role: str | None = Header(default=None),
@@ -53,7 +55,13 @@ def get_current_user(
 ) -> AuthUser:
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1].strip()
-        return _decode_auth0_token(token, settings)
+        try:
+            return _decode_auth0_token(token, settings)
+        except HTTPException:
+            record_security_event(
+                "auth.credential_rejected", "denied", connection=request, details={"credential": "bearer"}
+            )
+            raise
 
     local_account = resolve_local_account_from_session(db, qcai_session_token)
     if local_account:
@@ -76,8 +84,21 @@ def get_current_user(
         # A presented guest credential must verify; it never falls through to another identity (AC-1-1).
         guest = verify_guest_token(qcai_guest_token, settings)
         if guest is None:
+            record_security_event(
+                "auth.credential_rejected",
+                "denied",
+                connection=request,
+                details={"credential": "guest_token", "reason": "invalid"},
+            )
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid guest session.")
         if is_guest_revoked(db, guest.guest_id):
+            record_security_event(
+                "auth.credential_rejected",
+                "denied",
+                connection=request,
+                subject=guest.guest_id,
+                details={"credential": "guest_token", "reason": "revoked"},
+            )
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Guest session revoked.")
         return AuthUser(user_id=guest.guest_id, email=None, role="learner", provider="guest")
 

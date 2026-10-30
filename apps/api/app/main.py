@@ -23,6 +23,7 @@ from app.core.log_redaction import install_log_redaction
 from app.core.request_protection import protect_guest_mutation_request
 from app.core.schema_upgrades import run_schema_upgrades
 from app.services.retention import run_retention_cleanup
+from app.services.security_log import record_security_event, record_security_event_async, route_template
 from app.services.store import get_course_store
 
 
@@ -150,6 +151,7 @@ async def lifespan(_: FastAPI):
     # Before the database step, so a missing secret stops start-up without touching the schema.
     require_guest_token_secret(settings)
     _initialize_database()
+    _record_configuration_overrides()
     get_course_store()
     yield
 
@@ -161,8 +163,34 @@ app = FastAPI(
     redoc_url="/redoc" if not IS_PRODUCTION else None,
     openapi_url="/openapi.json" if not IS_PRODUCTION else None,
 )
+def _record_configuration_overrides() -> None:
+    # "Alert on overrides" (plan Phase 1, item I): a deployment that relaxes a fail-safe default says so in the log.
+    if not IS_PRODUCTION:
+        return
+    overrides = {
+        name: True
+        for name, active in (
+            ("demo_auth_enabled", settings.enable_demo_auth),
+            ("corpus_governance_disabled", not settings.enforce_corpus_governance),
+        )
+        if active
+    }
+    if overrides:
+        record_security_event("config.override", "warning", actor_role="system", details=overrides)
+
+
+def _rate_limit_exceeded(request: Request, exc: RateLimitExceeded):
+    record_security_event(
+        "rate_limit.exceeded",
+        "denied",
+        connection=request,
+        details={"route": route_template(request), "limit": str(exc.detail)},
+    )
+    return _rate_limit_exceeded_handler(request, exc)
+
+
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded)
 
 app.add_middleware(
     CORSMiddleware,
@@ -172,20 +200,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router)
-app.include_router(content.router)
-app.include_router(assets.router)
-app.include_router(search.router)
-app.include_router(qa.router)
-app.include_router(assistant.router)
-app.include_router(analytics.router)
-app.include_router(admin.router)
-app.include_router(arena.router)
-app.include_router(builder.router)
-app.include_router(insights.router)
-app.include_router(learner_record.router)
-app.include_router(projects.router)
-app.include_router(support.router)
+ROUTERS = (
+    auth.router,
+    content.router,
+    assets.router,
+    search.router,
+    qa.router,
+    assistant.router,
+    analytics.router,
+    admin.router,
+    arena.router,
+    builder.router,
+    insights.router,
+    learner_record.router,
+    projects.router,
+    support.router,
+)
+for router in ROUTERS:
+    app.include_router(router)
+# Middleware runs before routing, so it finds a request's route template by matching these.
+ROUTE_INDEX = tuple(route for router in ROUTERS for route in router.routes)
 
 
 @app.middleware("http")
@@ -193,6 +227,12 @@ async def enforce_guest_request_protection(request: Request, call_next):
     try:
         protect_guest_mutation_request(request, settings)
     except HTTPException as exc:
+        await record_security_event_async(
+            "request.forbidden",
+            "denied",
+            connection=request,
+            details={"route": route_template(request, ROUTE_INDEX), "method": request.method, "reason": exc.detail},
+        )
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.detail},

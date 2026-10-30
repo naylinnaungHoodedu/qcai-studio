@@ -18,6 +18,7 @@ from app.core.request_protection import websocket_origin_is_trusted
 from app.schemas import ArenaProfileRead, ArenaStatusRead, ArenaTicketRead
 from app.services.arena_engine import DEFAULT_DISPLAY_NAME, get_arena_service
 from app.services.guest_sessions import is_guest_revoked
+from app.services.security_log import record_security_event_async
 from app.services.text_utils import sanitize_user_text
 
 router = APIRouter(prefix="/arena", tags=["arena"])
@@ -88,6 +89,17 @@ def _display_name(value: str | None) -> str:
     return cleaned or DEFAULT_DISPLAY_NAME
 
 
+async def _reject(websocket: WebSocket, code: int, reason: str, subject: str | None = None) -> None:
+    await record_security_event_async(
+        "arena.socket_rejected",
+        "denied",
+        connection=websocket,
+        subject=subject,
+        details={"close_code": code, "reason": reason},
+    )
+    await websocket.close(code=code, reason=reason)
+
+
 @router.websocket("/ws")
 async def arena_socket(websocket: WebSocket):
     settings = get_settings()
@@ -99,14 +111,14 @@ async def arena_socket(websocket: WebSocket):
         await websocket.close(code=4403, reason="Arena is disabled.")
         return
     if not websocket_origin_is_trusted(websocket, settings):
-        await websocket.close(code=4403, reason="Untrusted origin.")
+        await _reject(websocket, 4403, "Untrusted origin.")
         return
     principal = _socket_principal(offered, settings)
     if principal is None:
-        await websocket.close(code=4401, reason="A valid Arena ticket is required.")
+        await _reject(websocket, 4401, "A valid Arena ticket is required.")
         return
     if not _connection_attempts.allow(principal.user_id):
-        await websocket.close(code=4429, reason="Too many Arena connections.")
+        await _reject(websocket, 4429, "Too many Arena connections.", subject=principal.user_id)
         return
     # Any player_id in the query is ignored: the player is the ticket's principal.
     mode = websocket.query_params.get("mode", "ranked").strip().lower() or "ranked"
@@ -129,7 +141,7 @@ async def arena_socket(websocket: WebSocket):
                 await websocket.close(code=1009, reason="Arena messages are limited to 2 KiB.")
                 break
             if not _messages.allow(principal.user_id):
-                await websocket.close(code=4429, reason="Too many Arena messages.")
+                await _reject(websocket, 4429, "Too many Arena messages.", subject=principal.user_id)
                 break
             try:
                 payload = json.loads(text)
