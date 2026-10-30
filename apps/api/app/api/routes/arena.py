@@ -43,15 +43,6 @@ def read_own_arena_profile(user: AuthUser = Depends(get_current_user)):
     return get_arena_service().profile(user.user_id, create_missing=False)
 
 
-@router.get("/profiles/{player_id}", response_model=ArenaProfileRead)
-def read_arena_profile(player_id: str):
-    # Read-only: profiles are created only by an authenticated socket, for its own principal.
-    profile = get_arena_service().profile(player_id, create_missing=False)
-    if profile is None:
-        raise HTTPException(status_code=404, detail="Arena profile not found.")
-    return profile
-
-
 @router.get("/status", response_model=ArenaStatusRead)
 def read_arena_status():
     return {**get_arena_service().status(), "enabled": bool(get_settings().arena_enabled)}

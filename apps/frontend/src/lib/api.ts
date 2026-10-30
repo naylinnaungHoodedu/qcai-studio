@@ -461,16 +461,15 @@ export async function submitSupportRequest(payload: {
   });
 }
 
+// The API scores the responses itself; the score in the result is the one it stored.
 export async function recordQuizAttempt(
   lessonSlug: string,
-  score: number,
   responses: Record<string, string>,
 ): Promise<QuizAttemptResult> {
   return apiFetch<QuizAttemptResult>("/content/quiz-attempts", {
     method: "POST",
     body: JSON.stringify({
       lesson_slug: lessonSlug,
-      score,
       responses,
     }),
   });

@@ -20,7 +20,7 @@ export function QuizPanel({
   const [showResults, setShowResults] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [savedAttemptId, setSavedAttemptId] = useState<number | null>(null);
+  const [savedAttempt, setSavedAttempt] = useState<{ id: number; score: number } | null>(null);
 
   const score = useMemo(() => {
     return questions.reduce((total, question) => {
@@ -41,8 +41,8 @@ export function QuizPanel({
     setIsSaving(true);
     setSaveError(null);
     try {
-      const result = await recordQuizAttempt(lessonSlug, score, answers);
-      setSavedAttemptId(result.attempt_id);
+      const result = await recordQuizAttempt(lessonSlug, answers);
+      setSavedAttempt({ id: result.attempt_id, score: result.score });
       void postAnalyticsEvent("quiz_attempt_saved", lessonSlug, {
         answered_count: answeredCount,
         question_count: questions.length,
@@ -136,7 +136,11 @@ export function QuizPanel({
         <p className="muted">Short-answer items use an auto-score preview for study flow. Use the rubric for final judgment.</p>
       ) : null}
       {saveError ? <p className="muted">{saveError}</p> : null}
-      {savedAttemptId ? <p className="muted">Saved attempt #{savedAttemptId}.</p> : null}
+      {savedAttempt ? (
+        <p className="muted">
+          Saved attempt #{savedAttempt.id}. Recorded score: {savedAttempt.score} / {questions.length}.
+        </p>
+      ) : null}
     </section>
   );
 }

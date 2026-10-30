@@ -1533,10 +1533,13 @@ def test_progress_endpoint_aggregates_activity():
     quiz_response = client.post(
         "/content/quiz-attempts",
         headers=user_headers,
+        # The server scores the responses (task 1.2), so the lesson is completed only by right answers.
         json={
             "lesson_slug": "ai4qc-routing-and-optimization",
-            "score": 1,
-            "responses": {"ai4qc-routing-and-optimization-quiz-1": "sample"},
+            "responses": {
+                question.id: question.answer
+                for question in get_course_store().lessons["ai4qc-routing-and-optimization"].quiz_questions
+            },
         },
     )
     assert quiz_response.status_code == 200
@@ -1664,21 +1667,6 @@ def test_arena_socket_closes_with_4403_while_disabled(monkeypatch, query, header
             select(func.count())
             .select_from(ArenaProfile)
             .where(ArenaProfile.player_id.in_(["arena-spoof-one", "arena-spoof-two"]))
-        )
-    assert written == 0
-
-
-def test_arena_profile_lookup_writes_nothing_while_disabled(monkeypatch):
-    settings = Settings(arena_enabled=False)
-    monkeypatch.setattr(arena, "get_settings", lambda: settings)
-    player_id = f"arena-ghost-{uuid4().hex[:8]}"
-
-    response = client.get(f"/arena/profiles/{player_id}")
-
-    assert response.status_code == 404
-    with SessionLocal() as session:
-        written = session.scalar(
-            select(func.count()).select_from(ArenaProfile).where(ArenaProfile.player_id == player_id)
         )
     assert written == 0
 
@@ -1845,7 +1833,6 @@ def test_learning_dashboard_path_and_skill_gap_flow():
         headers=user_headers,
         json={
             "lesson_slug": "ai4qc-routing-and-optimization",
-            "score": 1,
             "responses": {"ai4qc-routing-and-optimization-quiz-1": "sample"},
         },
     )

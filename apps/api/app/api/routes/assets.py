@@ -14,6 +14,7 @@ from app.core.db import get_db
 from app.core.guest_tokens import GUEST_TOKEN_COOKIE
 from app.services.local_accounts import AUTH_SESSION_COOKIE_NAME
 from app.core.source_assets import source_asset_lookup_ids
+from app.services.security_log import record_security_event, route_template
 
 router = APIRouter(prefix="/source-assets", tags=["source-assets"])
 VIDEO_OPEN_ENDED_RANGE_CHUNK_SIZE = 8 * 1024 * 1024
@@ -46,6 +47,14 @@ def _require_asset_access(
         db=db,
     )
     if user.role not in {"learner", "admin"}:
+        record_security_event(
+            "authz.denied",
+            "denied",
+            connection=request,
+            actor_role=user.role,
+            subject=user.user_id,
+            details={"route": route_template(request), "required": "role:admin|learner", "provider": user.provider},
+        )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role for source assets.")
     return user
 

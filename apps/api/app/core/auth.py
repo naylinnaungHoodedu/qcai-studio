@@ -10,7 +10,7 @@ from app.core.db import get_db
 from app.core.guest_tokens import GUEST_TOKEN_COOKIE, verify_guest_token
 from app.services.guest_sessions import is_guest_revoked
 from app.services.local_accounts import AUTH_SESSION_COOKIE_NAME, resolve_local_account_from_session
-from app.services.security_log import record_security_event
+from app.services.security_log import record_security_event, route_template
 
 
 @dataclass
@@ -108,25 +108,41 @@ def get_current_user(
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
 
 
+def _record_denial(request: Request, user: AuthUser, required: str) -> None:
+    record_security_event(
+        "authz.denied",
+        "denied",
+        connection=request,
+        actor_role=user.role,
+        subject=user.user_id,
+        details={"route": route_template(request), "required": required, "provider": user.provider},
+    )
+
+
 def require_role(*allowed_roles: str):
-    def dependency(user: AuthUser = Depends(get_current_user)) -> AuthUser:
+    def dependency(request: Request, user: AuthUser = Depends(get_current_user)) -> AuthUser:
         if user.role not in allowed_roles:
+            _record_denial(request, user, "role:" + "|".join(sorted(allowed_roles)))
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Role '{user.role}' cannot access this resource.",
             )
         return user
 
+    # Read by the authorization matrix (app.core.authorization) to check each route against its policy.
+    dependency.allowed_roles = frozenset(allowed_roles)
     return dependency
 
 
-def require_durable_learner(user: AuthUser = Depends(get_current_user)) -> AuthUser:
+def require_durable_learner(request: Request, user: AuthUser = Depends(get_current_user)) -> AuthUser:
     """Reject browser-only guest/demo identities from the cross-device record boundary."""
     if user.provider in {"guest", "demo"}:
+        _record_denial(request, user, "durable_learner")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="A signed-in durable account is required for the Learner Record.",
         )
     if user.role not in {"learner", "admin"}:
+        _record_denial(request, user, "role:admin|learner")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Learner role is required.")
     return user
