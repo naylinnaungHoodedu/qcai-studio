@@ -259,10 +259,9 @@ def submit_peer_review(
     feedback: str,
 ) -> PeerReviewRead:
     submission = db.scalars(select(ProjectSubmission).where(ProjectSubmission.id == submission_id)).first()
-    if not submission:
-        raise ValueError("Submission not found.")
-    if submission.is_deleted:
-        raise ValueError("This submission has been retracted.")
+    if not submission or submission.is_deleted:
+        # One answer for missing and retracted, so sequential ids do not reveal which were retracted.
+        raise LookupError("Submission not found.")
     if submission.user_id == reviewer_user_id:
         raise ValueError("You cannot review your own submission.")
     existing = db.scalars(

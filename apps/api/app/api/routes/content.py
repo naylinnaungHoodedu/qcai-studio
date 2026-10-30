@@ -24,6 +24,21 @@ from app.services.text_utils import sanitize_user_text
 
 router = APIRouter(prefix="/content", tags=["content"])
 PUBLIC_CONTENT_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=60"
+QUIZ_RESPONSE_MAX_LENGTH = 2000
+
+
+def _score_quiz(questions, responses: dict) -> tuple[int, dict[str, str]]:
+    """Score on the server (task 1.2, E-110), by the quiz panel's rule: an exact match of the answer.
+
+    Only answers to this lesson's questions are kept, each bounded, so the stored attempt cannot carry
+    arbitrary data. A client-sent score is never read.
+    """
+    kept = {
+        question.id: responses[question.id][:QUIZ_RESPONSE_MAX_LENGTH]
+        for question in questions
+        if isinstance(responses.get(question.id), str)
+    }
+    return sum(1 for question in questions if kept.get(question.id) == question.answer), kept
 
 
 def _public_content_head_response() -> Response:
@@ -146,20 +161,23 @@ def record_quiz_attempt(
     db: Session = Depends(get_db),
     user: AuthUser = Depends(get_current_user),
 ):
+    lesson = get_course_store().lessons.get(payload.lesson_slug)
+    if lesson is None:
+        raise HTTPException(status_code=404, detail="Lesson not found.")
+    score, responses = _score_quiz(lesson.quiz_questions, payload.responses)
     record = QuizAttempt(
         user_id=user.user_id,
         lesson_slug=payload.lesson_slug,
-        score=payload.score,
-        responses=payload.responses,
+        score=score,
+        responses=responses,
     )
     db.add(record)
     db.flush()
     # Durable identities write the same outcome to the authoritative record.
     # Guest/demo behavior remains a non-cross-device preview surface.
     if user.provider not in {"guest", "demo"}:
-        lesson = get_course_store().lessons.get(payload.lesson_slug)
-        question_count = len(lesson.quiz_questions) if lesson else 0
-        mastery = round(min(1.0, payload.score / question_count), 6) if question_count else 0.0
+        question_count = len(lesson.quiz_questions)
+        mastery = round(min(1.0, score / question_count), 6) if question_count else 0.0
         operations = [
             LearnerRecordOperationInput(
                 operation_id=f"quiz-{record.id}-mastery",

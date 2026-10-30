@@ -1,6 +1,6 @@
 from datetime import datetime
 import re
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -412,9 +412,10 @@ class SupportRequestRead(BaseModel):
 
 
 class QuizAttemptCreate(BaseModel):
-    lesson_slug: str
-    score: int = Field(ge=0)
-    responses: dict = Field(default_factory=dict)
+    # No score: the server scores `responses` against the lesson's answer key (task 1.2). A client that
+    # still sends one has it ignored.
+    lesson_slug: str = Field(max_length=200)
+    responses: dict[str, Any] = Field(default_factory=dict, max_length=100)
 
 
 class UserProfile(BaseModel):

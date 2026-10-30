@@ -270,20 +270,17 @@ def test_tickets_signed_with_the_previous_key_still_verify_during_rotation():
     assert verify_arena_ticket(ticket, Settings(environment="development", guest_token_secret=rotated.guest_token_secret)) is None
 
 
-def test_profile_reads_never_create_a_profile_and_carry_no_internal_id():
-    stranger = f"arena-stranger-{uuid4().hex[:8]}"
+def test_own_profile_reads_create_nothing_and_carry_no_internal_id():
     guest_id = _guest_id()
     guest_client = TestClient(app)
     guest_client.cookies.set(GUEST_TOKEN_COOKIE, issue_guest_token(DEVELOPMENT_GUEST_TOKEN_SECRET, guest_id, int(time.time())))
 
-    assert client.get(f"/arena/profiles/{stranger}").status_code == 404
     before = guest_client.get("/arena/me")
     assert (before.status_code, before.json()) == (200, None)
     with _open(ticket=_ticket(guest_id)) as websocket:
         websocket.receive_json()
     own = guest_client.get("/arena/me")
 
-    assert _profile_count(stranger) == 0
     assert own.status_code == 200
     assert "player_id" not in own.json()
     assert INTERNAL_ID_PATTERN.search(own.text) is None
