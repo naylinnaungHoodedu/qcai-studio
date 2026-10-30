@@ -2,7 +2,7 @@ from datetime import datetime
 import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -91,6 +91,14 @@ class Settings(BaseSettings):
     search_rate_limit: str = "10/minute"
     support_request_rate_limit: str = "5/hour"
     public_web_vitals_rate_limit: str = "120/minute"
+    # Rate-limit counters (task 1.6, Decision P1-D-06): "database" shares them across API instances; "memory"
+    # keeps them per process, the rollback.
+    rate_limit_storage: Literal["database", "memory"] = "database"
+    # How many X-Forwarded-For entries, counted from the right, the platform's own front end appends.
+    client_address_hops: int = Field(default=1, ge=1, le=5)
+    # Sign-in lockout: this many failed sign-ins for one email within the window lock it for the rest of it.
+    auth_lockout_failures: int = Field(default=5, ge=1)
+    auth_lockout_window_seconds: int = Field(default=900, ge=60)
     api_base_url: str | None = None
     source_assets_root: str | None = None
     corpus_manifest_path: str | None = None

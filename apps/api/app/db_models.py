@@ -47,6 +47,16 @@ class GuestLegacyUpgrade(Base):
     upgraded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class RateLimitCounter(Base):
+    # Fixed-window counters shared by every API instance: the rate limiter and the sign-in lockout (task 1.6).
+    # The key is a keyed digest, never a raw principal, email or address.
+    __tablename__ = "rate_limit_counters"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    count: Mapped[int] = mapped_column(Integer)
+    expires_at: Mapped[float] = mapped_column(Float, index=True)
+
+
 class SecurityEvent(Base):
     # Append-only and hash-chained (plan task 1.7); see app.services.security_log. Database triggers refuse
     # UPDATE, and DELETE inside the retention period. No learner id is stored: subject and source are keyed

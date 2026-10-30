@@ -3,7 +3,9 @@ import { stringifyCookie } from "next/dist/server/web/spec-extension/cookies";
 
 import { getAuthorizationHeaderFromRequest } from "@/lib/auth";
 import {
+  CLIENT_ADDRESS_HEADER_NAME,
   applyGuestSessionToHeaders,
+  clientAddressHeaderValue,
   resolveGuestSession,
   resolveGuestSessionWithLegacyUpgrade,
   routeRequiresGuestSession,
@@ -117,6 +119,12 @@ async function proxyRequest(
   const headers = new Headers(request.headers);
   headers.delete("host");
   headers.delete("expect");
+  // Only this server vouches for the client's address (task 1.6); a browser's own copy is never passed on.
+  headers.delete(CLIENT_ADDRESS_HEADER_NAME);
+  const clientAddress = clientAddressHeaderValue(request);
+  if (clientAddress) {
+    headers.set(CLIENT_ADDRESS_HEADER_NAME, clientAddress);
+  }
   const cookieAuthorization = getAuthorizationHeaderFromRequest(request);
   if (cookieAuthorization && !headers.has("authorization")) {
     headers.set("authorization", cookieAuthorization);

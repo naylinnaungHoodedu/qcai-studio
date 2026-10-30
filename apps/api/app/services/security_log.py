@@ -13,7 +13,6 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import hashlib
-import hmac
 import json
 import logging
 import random
@@ -28,7 +27,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import HTTPConnection
 from starlette.routing import BaseRoute, Match
 
-from app.core.config import get_settings
+from app.core.client_identity import client_address, keyed_digest
 from app.core.db import SessionLocal
 from app.core.rate_limit import SlidingWindowLimiter
 from app.db_models import SecurityEvent
@@ -71,17 +70,9 @@ def _utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
-def keyed_digest(value: str, purpose: str) -> str:
-    """A pseudonym for an id or address: stable while the key is, and not reversible without it."""
-    key = (get_settings().guest_token_secret or "").encode("utf-8")
-    return hmac.new(key, f"security-log|{purpose}|{value}".encode("utf-8"), hashlib.sha256).hexdigest()[:32]
-
-
-def client_source(connection: HTTPConnection) -> str | None:
-    forwarded_for = connection.headers.get("x-forwarded-for")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip() or None
-    return connection.client.host if connection.client else None
+def client_source(connection: HTTPConnection) -> str:
+    # The trusted client address (task 1.6): the leftmost X-Forwarded-For entry is the client's own choice.
+    return client_address(connection)
 
 
 def route_template(connection: HTTPConnection, candidates: Iterable[BaseRoute] = ()) -> str:

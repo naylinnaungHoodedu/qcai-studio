@@ -1994,12 +1994,20 @@ def test_qa_endpoint_rate_limits_repeated_requests():
 
 
 def test_search_endpoint_rate_limits_repeated_requests():
-    user_headers = {"x-demo-user": f"search-limit-{uuid4().hex[:8]}", "x-demo-role": "learner"}
-    for _ in range(10):
-        response = client.get("/search", headers=user_headers, params={"query": "QUBO logistics"})
+    # Search is anonymous, so it is limited per trusted client address; a header the client chooses does not
+    # start a fresh window (E-39, task 1.6).
+    address = {"x-forwarded-for": f"198.51.100.{uuid4().hex[:8]}"}
+    for index in range(10):
+        response = client.get(
+            "/search", headers={**address, "x-demo-user": f"search-spoof-{index}"}, params={"query": "QUBO logistics"}
+        )
         assert response.status_code == 200
 
-    blocked = client.get("/search", headers=user_headers, params={"query": "QUBO logistics"})
+    blocked = client.get(
+        "/search",
+        headers={**address, "x-demo-user": "search-spoof-new", "authorization": "Bearer made-up"},
+        params={"query": "QUBO logistics"},
+    )
     assert blocked.status_code == 429
 
 

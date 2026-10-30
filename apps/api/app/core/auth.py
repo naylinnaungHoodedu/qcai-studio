@@ -53,6 +53,24 @@ def get_current_user(
     settings: Settings = Depends(get_settings),
     db: Session = Depends(get_db),
 ) -> AuthUser:
+    user = _authenticate(
+        request, authorization, x_demo_user, x_demo_role, qcai_session_token, qcai_guest_token, settings, db
+    )
+    # The rate limiter keys on this validated principal, never on a client header (task 1.6).
+    request.state.principal = user
+    return user
+
+
+def _authenticate(
+    request: Request,
+    authorization: str | None,
+    x_demo_user: str | None,
+    x_demo_role: str | None,
+    qcai_session_token: str | None,
+    qcai_guest_token: str | None,
+    settings: Settings,
+    db: Session,
+) -> AuthUser:
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1].strip()
         try:

@@ -299,7 +299,8 @@ def _stored_text(event: SecurityEvent) -> str:
 
 def _source() -> dict[str, str]:
     # A distinct client address per test keeps the per-address HTTP rate limits apart.
-    return {"x-forwarded-for": f"198.51.100.{uuid4().int % 250 + 1}, 10.0.0.1"}
+    # The trusted address is the rightmost entry (task 1.6); the one on the left is what a client could forge.
+    return {"x-forwarded-for": f"10.0.0.1, 198.51.100.{uuid4().hex[:8]}"}
 
 
 def test_sign_in_events_carry_digests_not_identifiers():
@@ -319,7 +320,7 @@ def test_sign_in_events_carry_digests_not_identifiers():
     assert events == [("auth.register", "success"), ("auth.login", "failure"), ("auth.login", "success")]
     success = _events_since(start, "auth.login")[-1]
     assert success.subject_digest == keyed_digest(user_id, "subject")
-    assert success.source_digest == keyed_digest(headers["x-forwarded-for"].split(",")[0], "source")
+    assert success.source_digest == keyed_digest(headers["x-forwarded-for"].split(",")[-1].strip(), "source")
     for event in _events_since(start):
         stored = _stored_text(event)
         assert user_id not in stored and email not in stored
@@ -363,8 +364,11 @@ def test_a_rate_limit_denial_is_recorded():
     headers = _source()
     start = _head_seq()
 
+    # A different email each time, so the per-email sign-in lockout (task 1.6) stays out of this test.
     statuses = [
-        client.post("/auth/login", json={"email": "nobody@example.com", "password": "wrong-password-123"}, headers=headers).status_code
+        client.post(
+            "/auth/login", json={"email": f"nobody-{uuid4().hex[:8]}@example.com", "password": "wrong-password-123"}, headers=headers
+        ).status_code
         for _ in range(11)
     ]
 
@@ -454,7 +458,7 @@ def test_a_recording_fault_never_changes_the_response(monkeypatch, caplog):
 
     with caplog.at_level(logging.ERROR, logger="qcai.security"):
         response = client.post(
-            "/auth/login", json={"email": "nobody@example.com", "password": "wrong-password-123"}, headers=_source()
+            "/auth/login", json={"email": f"nobody-{uuid4().hex[:8]}@example.com", "password": "wrong-password-123"}, headers=_source()
         )
 
     assert response.status_code == 401

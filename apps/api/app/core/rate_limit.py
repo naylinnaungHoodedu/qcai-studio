@@ -1,38 +1,32 @@
 from collections import deque
-import hashlib
 import threading
 import time
 
 from fastapi import Request
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 
+from app.core.client_identity import client_address
 from app.core.config import get_settings
-from app.core.guest_tokens import GUEST_TOKEN_COOKIE, verify_guest_token
+from app.core.rate_limit_storage import DATABASE_STORAGE_URI
 
 
 def build_rate_limit_key(request: Request) -> str:
-    authorization = request.headers.get("authorization")
-    if authorization and authorization.lower().startswith("bearer "):
-        token_fingerprint = hashlib.sha256(authorization.encode("utf-8")).hexdigest()[:24]
-        return f"auth:{token_fingerprint}"
+    """The validated principal, or the trusted client address; never a header the client chose (E-39).
 
-    demo_user = request.headers.get("x-demo-user")
-    if demo_user:
-        return f"demo:{demo_user.strip().lower()}"
-
-    guest = verify_guest_token(request.cookies.get(GUEST_TOKEN_COOKIE), get_settings())
-    if guest:
-        return f"guest:{guest.guest_id}"
-
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        return f"ip:{forwarded_for.split(',')[0].strip()}"
-
-    return f"ip:{get_remote_address(request)}"
+    The limiter runs inside the endpoint, after its dependencies, so a route that authenticates has
+    already stored its principal on the request (`app.core.auth.get_current_user`).
+    """
+    principal = getattr(request.state, "principal", None)
+    if principal is not None:
+        return f"{principal.provider}:{principal.user_id}"
+    return f"ip:{client_address(request)}"
 
 
-limiter = Limiter(key_func=build_rate_limit_key, headers_enabled=True)
+limiter = Limiter(
+    key_func=build_rate_limit_key,
+    headers_enabled=True,
+    storage_uri=DATABASE_STORAGE_URI if get_settings().rate_limit_storage == "database" else "memory://",
+)
 
 
 class SlidingWindowLimiter:
