@@ -19,6 +19,11 @@ COPY --chown=qcai:qcai ["Quantum Computing AI Research Synthesis 2026.docx", "An
 COPY --chown=qcai:qcai ["Quantum Computing and Artificial Intelligence 2025.mp4", "Quantum Computing and Artificial Intelligence 2026.mp4", "Industry Use Cases.mp4", "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4", "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4", "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4", "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4", "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4", "./source-assets/"]
 COPY --chown=qcai:qcai ["update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx", "update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4", "update_data/Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.docx", "update_data/Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.mp4", "update_data/Module4_Expressive Bottlenecks Compression, Language, and Explanation.docx", "update_data/Module4_Expressive Bottlenecks Compression, Language, and Explanation.mp4", "update_data/Module6_From Algorithmic Novelty to Sustainable Hybrid Systems.docx", "update_data/Module6_From Algorithmic Novelty to Sustainable Hybrid Systems.mp4", "./source-assets/update_data/"]
 
+# The commit this image was built from, reported by /health and /ready (AC-1-7). Last, so a new commit
+# rebuilds only this layer. Cloud Build passes it (infra/cloudbuild/api-image.yaml).
+ARG GIT_SHA=unknown
+ENV GIT_SHA=$GIT_SHA
+
 USER qcai
 
 EXPOSE 8000

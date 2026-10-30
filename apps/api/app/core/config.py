@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "QC+AI Learning API"
+    # The commit the running image was built from (Dockerfile ARG GIT_SHA); "unknown" outside a built image.
+    git_sha: str = "unknown"
     environment: str = "development"
     site_url: str | None = None
     database_url: str = "sqlite:///./qcai_dev.db"
