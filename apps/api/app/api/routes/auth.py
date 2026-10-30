@@ -15,6 +15,7 @@ from app.schemas import (
     LocalAccountRegisterRequest,
     UserProfile,
 )
+from app.services.security_log import record_security_event
 from app.services.local_accounts import (
     AUTH_CSRF_COOKIE_NAME,
     AUTH_SESSION_COOKIE_NAME,
@@ -95,9 +96,16 @@ def register_account(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ):
-    account = register_local_account(db, payload.email, payload.password)
+    try:
+        account = register_local_account(db, payload.email, payload.password)
+    except HTTPException as exc:
+        record_security_event("auth.register", "failure", connection=request, details={"status": exc.status_code})
+        raise
     session_token, csrf_token, _expires_at = create_local_session(db, account.user_id)
     _set_auth_cookies(response, request, settings, session_token, csrf_token)
+    record_security_event(
+        "auth.register", "success", connection=request, actor_role=account.role, subject=account.user_id
+    )
     return AuthSessionRead(
         status="registered",
         user=UserProfile(
@@ -119,9 +127,14 @@ def login_account(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ):
-    account = authenticate_local_account(db, payload.email, payload.password)
+    try:
+        account = authenticate_local_account(db, payload.email, payload.password)
+    except HTTPException as exc:
+        record_security_event("auth.login", "failure", connection=request, details={"status": exc.status_code})
+        raise
     session_token, csrf_token, _expires_at = create_local_session(db, account.user_id)
     _set_auth_cookies(response, request, settings, session_token, csrf_token)
+    record_security_event("auth.login", "success", connection=request, actor_role=account.role, subject=account.user_id)
     return AuthSessionRead(
         status="signed_in",
         user=UserProfile(
@@ -147,6 +160,7 @@ def logout_account(
 
 @router.delete("/account", response_model=AuthActionRead)
 def delete_account(
+    request: Request,
     payload: LocalAccountDeleteRequest,
     response: Response,
     user: AuthUser = Depends(get_current_user),
@@ -158,9 +172,22 @@ def delete_account(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only locally managed accounts can be deleted from this deployment.",
         )
-    delete_local_account(db, user.user_id, payload.password)
+    try:
+        delete_local_account(db, user.user_id, payload.password)
+    except HTTPException as exc:
+        record_security_event(
+            "account.delete",
+            "failure",
+            connection=request,
+            actor_role=user.role,
+            subject=user.user_id,
+            details={"status": exc.status_code},
+        )
+        raise
     revoke_local_session(db, qcai_session_token)
     _clear_auth_cookies(response)
+    # The digest outlives the account's rows by design: it cannot be turned back into the deleted id.
+    record_security_event("account.delete", "success", connection=request, actor_role=user.role, subject=user.user_id)
     return AuthActionRead(status="deleted")
 
 
@@ -175,6 +202,12 @@ def upgrade_legacy_guest_session(
 ):
     # Called by the frontend server for a browser that still holds a legacy unsigned guest id.
     issued = upgrade_legacy_guest(db, settings, payload.legacy_guest_id, payload.legacy_csrf)
+    record_security_event(
+        "guest.legacy_upgrade",
+        "denied" if issued is None else "success",
+        connection=request,
+        subject=payload.legacy_guest_id.strip().lower(),
+    )
     if issued is None:
         return GuestUpgradeRead(upgraded=False)
     guest_token, csrf = issued

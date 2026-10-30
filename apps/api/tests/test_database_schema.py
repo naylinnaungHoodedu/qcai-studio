@@ -9,43 +9,20 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from uuid import uuid4
 
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 import pytest
 from sqlalchemy import create_engine, inspect
-from sqlalchemy.engine import Engine, make_url
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.core.db import Base, engine
 from app.core.schema_upgrades import run_schema_upgrades
 from app.db_models import ProjectSubmission
 
 
 API_ROOT = Path(__file__).resolve().parents[1]
-
-
-@pytest.fixture
-def fresh_database_url(tmp_path: Path) -> Iterator[str]:
-    # An empty database of the session's dialect, so start-up can be watched from nothing.
-    session_url = make_url(get_settings().database_url)
-    if session_url.get_backend_name() == "sqlite":
-        yield f"sqlite:///{(tmp_path / 'fresh.db').as_posix()}"
-        return
-    name = f"qcai_fresh_{uuid4().hex[:12]}"
-    admin = create_engine(session_url, isolation_level="AUTOCOMMIT")
-    try:
-        with admin.connect() as connection:
-            connection.exec_driver_sql(f'CREATE DATABASE "{name}"')
-        try:
-            yield session_url.set(database=name).render_as_string(hide_password=False)
-        finally:
-            with admin.connect() as connection:
-                connection.exec_driver_sql(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
-    finally:
-        admin.dispose()
 
 
 @pytest.fixture

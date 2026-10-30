@@ -1,15 +1,17 @@
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.db_models import PublicWebVital, SupportRequest, UserSession
+from app.db_models import PublicWebVital, SecurityEvent, SupportRequest, UserSession
 from app.services.erasure import erase_stale_guest_rows
 
 
 PUBLIC_WEB_VITAL_RETENTION_DAYS = 30
 SUPPORT_REQUEST_RETENTION_DAYS = 540
 GUEST_STUDY_RETENTION_DAYS = 365
+# The security log's DELETE trigger (app.core.schema_upgrades) refuses rows younger than this.
+SECURITY_EVENT_RETENTION_DAYS = 365
 
 
 def utc_now() -> datetime:
@@ -42,6 +44,17 @@ def run_retention_cleanup(db: Session, now: datetime | None = None) -> dict[str,
         db.execute(
             delete(SupportRequest).where(
                 SupportRequest.created_at < now - timedelta(days=SUPPORT_REQUEST_RETENTION_DAYS)
+            )
+        ).rowcount,
+    )
+    # A day past the trigger's limit, so a database clock a little behind this one cannot refuse the pass.
+    # The newest event always stays, so the chain continues instead of restarting from the genesis hash.
+    record(
+        "security_events",
+        db.execute(
+            delete(SecurityEvent).where(
+                SecurityEvent.created_at < now - timedelta(days=SECURITY_EVENT_RETENTION_DAYS + 1),
+                SecurityEvent.seq < select(func.max(SecurityEvent.seq)).scalar_subquery(),
             )
         ).rowcount,
     )

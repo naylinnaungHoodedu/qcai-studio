@@ -47,6 +47,24 @@ class GuestLegacyUpgrade(Base):
     upgraded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class SecurityEvent(Base):
+    # Append-only and hash-chained (plan task 1.7); see app.services.security_log. Database triggers refuse
+    # UPDATE, and DELETE inside the retention period. No learner id is stored: subject and source are keyed
+    # digests, so erasure has nothing to remove here.
+    __tablename__ = "security_events"
+
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    outcome: Mapped[str] = mapped_column(String(16))
+    actor_role: Mapped[str] = mapped_column(String(32))
+    subject_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    prev_hash: Mapped[str] = mapped_column(String(64))
+    hash: Mapped[str] = mapped_column(String(64))
+
+
 class UserSession(Base):
     __tablename__ = "user_sessions"
     __table_args__ = (

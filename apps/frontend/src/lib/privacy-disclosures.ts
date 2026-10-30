@@ -35,6 +35,14 @@ export const RETENTION_SCHEDULE = [
     retention: "540 days.",
     trigger: "Automatic retention cleanup removes older support records after the review/support window closes.",
   },
+  {
+    dataClass: "Security event log",
+    personalData:
+      "Sign-ins, sign-ups, account deletions, rejected credentials, blocked or rate-limited requests and administrator actions on guest sessions: the event, time, outcome and role, with keyed one-way digests of the account or guest ID and of the network address. No name, email address or raw ID is stored.",
+    retention: "365 days.",
+    trigger:
+      "Automatic retention cleanup removes older events. Events cannot be edited or deleted sooner, including on account deletion; a deleted account's digest no longer matches any stored ID.",
+  },
 ] as const;
 
 export const COOKIE_INVENTORY = [

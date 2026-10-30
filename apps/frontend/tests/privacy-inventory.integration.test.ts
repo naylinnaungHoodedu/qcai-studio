@@ -74,6 +74,7 @@ test("privacy page retention periods equal the API's retention constants", () =>
   assert.match(retentionFor("Guest-linked study activity"), new RegExp(`\\b${apiConstant("services/retention.py", "GUEST_STUDY_RETENTION_DAYS")} days`));
   assert.match(retentionFor("Public web-vitals telemetry"), new RegExp(`\\b${apiConstant("services/retention.py", "PUBLIC_WEB_VITAL_RETENTION_DAYS")} days`));
   assert.match(retentionFor("Support requests"), new RegExp(`\\b${apiConstant("services/retention.py", "SUPPORT_REQUEST_RETENTION_DAYS")} days`));
+  assert.match(retentionFor("Security event log"), new RegExp(`\\b${apiConstant("services/retention.py", "SECURITY_EVENT_RETENTION_DAYS")} days`));
   assert.match(retentionFor("Local account sessions"), new RegExp(`\\b${days(apiConstant("services/local_accounts.py", "AUTH_SESSION_MAX_AGE_SECONDS"))} days`));
   assert.match(retentionFor("Guest continuity cookies"), new RegExp(`\\b${days(apiConstant("core/guest_tokens.py", "GUEST_TOKEN_MAX_AGE_SECONDS"))} days`));
 });
