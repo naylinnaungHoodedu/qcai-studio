@@ -545,8 +545,14 @@ class ArenaLeaderboardEntry(ArenaStanding):
 
 
 class ArenaProfileRead(ArenaStanding):
-    player_id: str
+    public_handle: str
     recent_form: str
+
+
+class ArenaTicketRead(BaseModel):
+    ticket: str
+    protocol: str
+    expires_in: int
 
 
 class BuilderNode(BaseModel):

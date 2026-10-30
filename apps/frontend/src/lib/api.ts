@@ -5,6 +5,7 @@ import {
   AuthSession,
   ArenaLeaderboardEntry,
   ArenaProfile,
+  ArenaTicket,
   ArenaStatus,
   AdaptivePath,
   BuilderFeedItem,
@@ -479,8 +480,12 @@ export async function fetchArenaLeaderboard(): Promise<ArenaLeaderboardEntry[]> 
   return apiFetch<ArenaLeaderboardEntry[]>("/arena/leaderboard");
 }
 
-export async function fetchArenaProfile(playerId: string): Promise<ArenaProfile> {
-  return apiFetch<ArenaProfile>(`/arena/profiles/${playerId}`);
+export async function fetchOwnArenaProfile(): Promise<ArenaProfile | null> {
+  return apiFetch<ArenaProfile | null>("/arena/me");
+}
+
+export async function requestArenaTicket(): Promise<ArenaTicket> {
+  return apiFetch<ArenaTicket>("/arena/ticket", { method: "POST" });
 }
 
 export async function fetchArenaStatus(): Promise<ArenaStatus> {

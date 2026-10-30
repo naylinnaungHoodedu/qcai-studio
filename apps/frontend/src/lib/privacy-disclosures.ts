@@ -112,9 +112,9 @@ export const BROWSER_STORAGE_INVENTORY = [
   },
   {
     key: "qcai-arena-player-id",
-    purpose: "Random Arena player id for this browser.",
+    purpose: "Random Arena player id this browser chose before the Arena used the session's identity.",
     storedWhere: "This browser's local storage",
-    setWhen: "Set when the Arena page is first opened in this browser.",
+    setWhen: "No longer set; an existing one is deleted when the Arena page next opens.",
   },
   {
     key: "qcai-arena-player-name",

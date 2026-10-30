@@ -2,7 +2,7 @@ import hmac
 import re
 from urllib.parse import urlsplit
 
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request, WebSocket, status
 
 from app.core.config import Settings
 from app.core.guest_tokens import GUEST_TOKEN_COOKIE, verify_guest_token
@@ -46,6 +46,13 @@ def validate_request_origin(request: Request, settings: Settings) -> str:
     if request_origin not in trusted_request_origins(settings):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Untrusted request origin.")
     return request_origin
+
+
+def websocket_origin_is_trusted(websocket: WebSocket, settings: Settings) -> bool:
+    # Browsers always send Origin on a WebSocket handshake. Unlike the HTTP check, a Referer is no substitute,
+    # and a missing Origin is not trusted.
+    origin = _origin_from_url(websocket.headers.get("origin"))
+    return origin is not None and origin in trusted_request_origins(settings)
 
 
 def protect_guest_mutation_request(request: Request, settings: Settings) -> None:

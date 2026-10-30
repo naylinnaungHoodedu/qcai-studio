@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-import { fetchArenaLeaderboard, fetchArenaProfile, fetchArenaStatus } from "@/lib/api";
+import { fetchArenaLeaderboard, fetchArenaStatus, fetchOwnArenaProfile, requestArenaTicket } from "@/lib/api";
 import { isSeededAuditFixtureUserId, SEEDED_DEMO_DISCLOSURE } from "@/lib/seeded-demo";
 import { ArenaLeaderboardEntry, ArenaProfile, ArenaStatus } from "@/lib/types";
 
@@ -32,7 +32,7 @@ type ArenaChallenge = {
 };
 
 type ArenaPlayerScore = {
-  player_id: string;
+  public_handle: string;
   display_name: string;
   score: number;
   correct_answers: number;
@@ -47,7 +47,7 @@ type ArenaRoundResult = {
   correct_answer: string;
   explanation: string;
   answer_state: Array<{
-    player_id: string;
+    public_handle: string;
     display_name: string;
     answer: string;
     correct: boolean;
@@ -57,18 +57,10 @@ type ArenaRoundResult = {
   }>;
 };
 
-const PLAYER_ID_STORAGE_KEY = "qcai-arena-player-id";
+// Before task 1.4 the browser chose its own Arena player id. The socket now takes the player from the
+// session's ticket, so an old id is only deleted.
+const LEGACY_PLAYER_ID_STORAGE_KEY = "qcai-arena-player-id";
 const PLAYER_NAME_STORAGE_KEY = "qcai-arena-player-name";
-
-function ensurePlayerId(): string {
-  const existing = window.localStorage.getItem(PLAYER_ID_STORAGE_KEY);
-  if (existing) {
-    return existing;
-  }
-  const nextId = `arena-${crypto.randomUUID().slice(0, 8)}`;
-  window.localStorage.setItem(PLAYER_ID_STORAGE_KEY, nextId);
-  return nextId;
-}
 
 function ensureDisplayName(): string {
   const existing = window.localStorage.getItem(PLAYER_NAME_STORAGE_KEY);
@@ -89,6 +81,22 @@ function toWebSocketUrl(apiBaseUrl: string): string {
   url.pathname = "/arena/ws";
   url.search = "";
   return url.toString();
+}
+
+function describeArenaClose(code: number): string | null {
+  if (code === 4401) {
+    return "The arena could not verify this session. Reload the page and try again.";
+  }
+  if (code === 4403) {
+    return "The arena is not available from this page right now.";
+  }
+  if (code === 4409) {
+    return "This arena session continued in another tab or window.";
+  }
+  if (code === 4429) {
+    return "Too many arena connections or messages. Wait a minute and try again.";
+  }
+  return null;
 }
 
 function formatMillis(milliseconds: number): string {
@@ -114,7 +122,6 @@ function formatConnectionState(state: string): string {
 export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus }: ArenaPanelProps) {
   const queryClient = useQueryClient();
   const socketRef = useRef<WebSocket | null>(null);
-  const [playerId] = useState(() => (typeof window === "undefined" ? "" : ensurePlayerId()));
   const [displayName, setDisplayName] = useState(() => (typeof window === "undefined" ? "" : ensureDisplayName()));
   const [mode, setMode] = useState<"ranked" | "bot">("bot");
   const [connectionState, setConnectionState] = useState("idle");
@@ -130,6 +137,10 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
   const [pendingAnswer, setPendingAnswer] = useState("");
   const [roundResult, setRoundResult] = useState<ArenaRoundResult | null>(null);
   const [matchSummary, setMatchSummary] = useState<ArenaMessage | null>(null);
+
+  useEffect(() => {
+    window.localStorage.removeItem(LEGACY_PLAYER_ID_STORAGE_KEY);
+  }, []);
 
   useEffect(() => {
     if (!displayName) {
@@ -187,9 +198,9 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
   const arenaEnabled = statusQuery.data?.enabled !== false;
 
   const profileQuery = useQuery({
-    queryKey: ["arena-profile", playerId],
-    queryFn: () => fetchArenaProfile(playerId),
-    enabled: Boolean(playerId) && arenaEnabled,
+    queryKey: ["arena-profile"],
+    queryFn: fetchOwnArenaProfile,
+    enabled: arenaEnabled,
   });
 
   const sortedLeaderboard = useMemo(() => leaderboardQuery.data ?? [], [leaderboardQuery.data]);
@@ -201,17 +212,11 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
     return Math.max(0, Math.ceil(roundStartedAt + roundDurationSeconds - clockTick / 1000));
   }, [clockTick, roundDurationSeconds, roundStartedAt]);
 
-  function openSocket(nextMode: "ranked" | "bot") {
-    if (!arenaEnabled || !playerId || !displayName.trim()) {
+  async function openSocket(nextMode: "ranked" | "bot") {
+    if (!arenaEnabled || !displayName.trim()) {
       return;
     }
     socketRef.current?.close();
-    const url = new URL(toWebSocketUrl(apiBaseUrl));
-    url.searchParams.set("player_id", playerId);
-    url.searchParams.set("display_name", displayName.trim());
-    url.searchParams.set("mode", nextMode);
-    const socket = new WebSocket(url);
-    socketRef.current = socket;
     setMode(nextMode);
     setConnectionState("connecting");
     setStatusMessage(nextMode === "ranked" ? "Joining the ranked queue..." : "Launching an adaptive bot match...");
@@ -220,6 +225,21 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
     setMatchSummary(null);
     setPlayers([]);
     setPendingAnswer("");
+
+    let ticket;
+    try {
+      ticket = await requestArenaTicket();
+    } catch {
+      setConnectionState("idle");
+      setStatusMessage("The arena could not verify this session. Reload the page and try again.");
+      return;
+    }
+    const url = new URL(toWebSocketUrl(apiBaseUrl));
+    url.searchParams.set("display_name", displayName.trim());
+    url.searchParams.set("mode", nextMode);
+    // The ticket goes in the subprotocol list, so it stays out of URLs and access logs.
+    const socket = new WebSocket(url, [ticket.protocol, ticket.ticket]);
+    socketRef.current = socket;
 
     socket.onmessage = (event) => {
       const message = JSON.parse(event.data) as ArenaMessage;
@@ -278,13 +298,21 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
         setConnectionState("complete");
         setStatusMessage("Match complete. XP and adaptive rating updated.");
         void queryClient.invalidateQueries({ queryKey: ["arena-leaderboard"] });
-        void queryClient.invalidateQueries({ queryKey: ["arena-profile", playerId] });
+        void queryClient.invalidateQueries({ queryKey: ["arena-profile"] });
         void queryClient.invalidateQueries({ queryKey: ["arena-status"] });
       }
     };
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
+      // A socket this panel already replaced (a second click, say) says nothing about the current one.
+      if (socketRef.current !== socket) {
+        return;
+      }
       setConnectionState((current) => (current === "complete" ? current : "idle"));
+      const closeMessage = describeArenaClose(event.code);
+      if (closeMessage) {
+        setStatusMessage(closeMessage);
+      }
       void queryClient.invalidateQueries({ queryKey: ["arena-status"] });
     };
   }
@@ -298,15 +326,18 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
     setStatusMessage("Answer locked in. Waiting for the round to resolve.");
   }
 
-  function renderProfile(profile?: ArenaProfile) {
+  function renderProfile(profile?: ArenaProfile | null) {
     if (!arenaEnabled) {
       return <p className="muted">Arena profiles are paused while the arena is offline.</p>;
     }
     if (profileQuery.isError) {
       return <p className="muted">The arena profile could not be loaded for this browser session.</p>;
     }
-    if (!profile) {
+    if (profileQuery.isPending) {
       return <p className="muted">Arena profile is loading.</p>;
+    }
+    if (!profile) {
+      return <p className="muted">No arena matches yet. Finish a match to start your profile.</p>;
     }
     return (
       <div className="stack">
@@ -348,10 +379,10 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
             <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={40} />
           </label>
           <div className="button-row">
-            <button className="primary-button" disabled={!arenaEnabled} onClick={() => openSocket("ranked")} type="button">
+            <button className="primary-button" disabled={!arenaEnabled} onClick={() => void openSocket("ranked")} type="button">
               Join ranked
             </button>
-            <button className="secondary-button" disabled={!arenaEnabled} onClick={() => openSocket("bot")} type="button">
+            <button className="secondary-button" disabled={!arenaEnabled} onClick={() => void openSocket("bot")} type="button">
               Practice vs bot
             </button>
           </div>
@@ -389,7 +420,7 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
 
           <div className="arena-scoreboard">
             {players.map((player) => (
-              <article className={`arena-score-card ${player.is_self ? "is-self" : ""}`} key={player.player_id}>
+              <article className={`arena-score-card ${player.is_self ? "is-self" : ""}`} key={player.public_handle}>
                 <span className="eyebrow">{player.is_bot ? "AI rival" : player.is_self ? "You" : "Opponent"}</span>
                 <strong>{player.display_name}</strong>
                 <p>Score {player.score} | correct {player.correct_answers}</p>
@@ -457,7 +488,7 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
               <p>{roundResult.explanation}</p>
               <div className="stack">
                 {roundResult.answer_state.map((entry) => (
-                  <div className="citation-card" key={entry.player_id}>
+                  <div className="citation-card" key={entry.public_handle}>
                     <strong>{entry.display_name}</strong>
                     <p className="muted">
                       {entry.correct ? "Correct" : "Missed"} | delta {entry.score_delta} | {formatMillis(entry.time_taken_ms)}
@@ -475,7 +506,7 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
               <h3>XP settlement</h3>
               <div className="stack">
                 {((matchSummary.xp_updates as ArenaMessage[]) ?? []).map((update) => (
-                  <div className="citation-card" key={update.player_id as string}>
+                  <div className="citation-card" key={update.public_handle as string}>
                     <strong>{update.display_name as string}</strong>
                     <p className="muted">
                       +{update.xp_delta as number} XP | rating {update.skill_rating as number} | band{" "}
@@ -530,7 +561,7 @@ export function ArenaPanel({ apiBaseUrl, initialLeaderboard = [], initialStatus 
                     The arena leaderboard is still empty on this deployment. Join ranked play or complete a bot match to seed the first visible results.
                   </p>
                   <div className="button-row">
-                    <button className="primary-button" onClick={() => openSocket("ranked")} type="button">
+                    <button className="primary-button" onClick={() => void openSocket("ranked")} type="button">
                       Start ranked play
                     </button>
                     <Link className="secondary-button" href="/account">
