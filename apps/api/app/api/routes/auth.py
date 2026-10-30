@@ -187,7 +187,7 @@ def delete_account(
             detail="Only locally managed accounts can be deleted from this deployment.",
         )
     try:
-        delete_local_account(db, user.user_id, payload.password)
+        erasure = delete_local_account(db, user.user_id, payload.password)
     except HTTPException as exc:
         record_security_event(
             "account.delete",
@@ -201,7 +201,14 @@ def delete_account(
     revoke_local_session(db, qcai_session_token)
     _clear_auth_cookies(response)
     # The digest outlives the account's rows by design: it cannot be turned back into the deleted id.
-    record_security_event("account.delete", "success", connection=request, actor_role=user.role, subject=user.user_id)
+    record_security_event(
+        "account.delete",
+        "success",
+        connection=request,
+        actor_role=user.role,
+        subject=user.user_id,
+        details={"duration_ms": erasure.duration_ms, "rows": sum(erasure.rows.values())},
+    )
     return AuthActionRead(status="deleted")
 
 

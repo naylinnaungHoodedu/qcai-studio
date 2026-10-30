@@ -29,6 +29,7 @@ from starlette.routing import BaseRoute, Match
 
 from app.core.client_identity import client_address, keyed_digest
 from app.core.db import SessionLocal
+from app.core.structured_logging import FIELDS
 from app.core.rate_limit import SlidingWindowLimiter
 from app.db_models import SecurityEvent
 
@@ -233,7 +234,7 @@ def record_security_event(
             if dropped:
                 details["dropped_before"] = dropped
         source = client_source(connection) if connection is not None else None
-        append_security_event(
+        appended = append_security_event(
             event_type,
             outcome,
             actor_role=actor_role,
@@ -241,8 +242,31 @@ def record_security_event(
             source_digest=keyed_digest(source, "source") if source else None,
             details=details,
         )
+        # Mirrored to the platform logs, where the SLIs and alerts are built. Without the digests: the
+        # platform needs counts by type and outcome, not who.
+        LOGGER.log(
+            logging.INFO if outcome == "success" else logging.WARNING,
+            "Security event %s/%s",
+            event_type,
+            outcome,
+            extra={
+                FIELDS: {
+                    "event_type": event_type,
+                    "outcome": outcome,
+                    "actor_role": actor_role,
+                    "seq": appended.seq,
+                    "hash": appended.hash,
+                    "details": _clean_details(details),
+                }
+            },
+        )
     except Exception:
-        LOGGER.exception("Security event %s/%s could not be recorded.", event_type, outcome)
+        LOGGER.exception(
+            "Security event %s/%s could not be recorded.",
+            event_type,
+            outcome,
+            extra={FIELDS: {"event_type": event_type, "outcome": outcome, "recorded": False}},
+        )
 
 
 async def record_security_event_async(event_type: str, outcome: str, **kwargs: Any) -> None:

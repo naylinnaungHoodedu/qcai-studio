@@ -266,13 +266,14 @@ def test_the_job_logs_the_head_hash_and_fails_on_a_broken_chain(fresh_database_u
     returncode, report = _run_job(fresh_database_url)
     assert returncode == 0
     assert (report["status"], report["events"], report["head_hash"]) == ("ok", 2, appended[-1].hash)
+    assert report["severity"] == "INFO"
 
     with _guards_lifted(engine):
         with engine.begin() as connection:
             connection.execute(text("UPDATE security_events SET actor_role = 'admin' WHERE seq = 1"))
     returncode, report = _run_job(fresh_database_url)
     assert returncode == 1
-    assert (report["status"], report["problems"]) == ("broken", ["seq 1 does not match its hash"])
+    assert (report["status"], report["problems"], report["severity"]) == ("broken", ["seq 1 does not match its hash"], "ERROR")
 
 
 # --- Events recorded by the running app, in the shared test database. ---

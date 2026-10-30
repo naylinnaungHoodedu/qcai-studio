@@ -48,7 +48,7 @@ export const RETENTION_SCHEDULE = [
       "Sign-ins, sign-ups, account deletions, rejected credentials, blocked or rate-limited requests and administrator actions on guest sessions: the event, time, outcome and role, with keyed one-way digests of the account or guest ID and of the network address. No name, email address or raw ID is stored.",
     retention: "365 days.",
     trigger:
-      "Automatic retention cleanup removes older events. Events cannot be edited or deleted sooner, including on account deletion; a deleted account's digest no longer matches any stored ID.",
+      "Automatic retention cleanup removes older events. Events cannot be edited or deleted sooner, including on account deletion; a deleted account's digest no longer matches any stored ID. Each event is also written to the hosting provider's logs without either digest: the event, time, outcome, role and technical details such as the route, status code or reason, never an ID, address or email.",
   },
 ] as const;
 
