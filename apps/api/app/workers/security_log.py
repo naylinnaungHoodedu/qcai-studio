@@ -6,11 +6,11 @@ earlier logged head shows the history was rewritten. A broken chain or a failure
 Run as: python -m app.workers.security_log
 """
 
-import json
 import sys
 import time
 
 from app.core.db import SessionLocal
+from app.core.structured_logging import FIELDS
 from app.services.security_log import verify_security_log
 from app.workers.common import LOGGER
 
@@ -21,25 +21,22 @@ def main() -> int:
         with SessionLocal() as db:
             check = verify_security_log(db)
     except Exception:
-        LOGGER.exception(json.dumps({"job": "security_log", "status": "failed"}))
+        LOGGER.exception("Security log check failed", extra={FIELDS: {"job": "security_log", "status": "failed"}})
         return 1
-    line = json.dumps(
-        {
-            "job": "security_log",
-            "status": "ok" if check.ok else "broken",
-            "events": check.count,
-            "first_seq": check.first_seq,
-            "last_seq": check.last_seq,
-            "head_hash": check.head_hash,
-            "problems": list(check.problems),
-            "duration_ms": round((time.monotonic() - started) * 1000),
-        },
-        sort_keys=True,
-    )
+    fields = {
+        "job": "security_log",
+        "status": "ok" if check.ok else "broken",
+        "events": check.count,
+        "first_seq": check.first_seq,
+        "last_seq": check.last_seq,
+        "head_hash": check.head_hash,
+        "problems": list(check.problems),
+        "duration_ms": round((time.monotonic() - started) * 1000),
+    }
     if not check.ok:
-        LOGGER.error(line)
+        LOGGER.error("Security log chain is broken", extra={FIELDS: fields})
         return 1
-    LOGGER.info(line)
+    LOGGER.info("Security log chain verified", extra={FIELDS: fields})
     return 0
 
 

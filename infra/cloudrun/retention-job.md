@@ -1,8 +1,8 @@
 # Scheduled retention job (plan Action 22)
 
 `python -m app.workers.retention` runs every retention rule once (`app/services/retention.py`).
-It logs one JSON line, `{"job": "retention", "status": "ok", "deleted": {...}, "duration_ms": ...}`, and exits 0.
-On any error it logs `"status": "failed"` with the traceback and exits 1, so the run shows as failed instead of passing silently.
+It logs one structured JSON line with the fields `"job": "retention"`, `"status": "ok"`, `"deleted": {...}` and `"duration_ms"`, and exits 0 (format: `observability.md`).
+On any error it logs `"status": "failed"` at ERROR with the traceback and exits 1, so the run shows as failed instead of passing silently.
 The API still runs the same pass once at start-up; this job makes it run daily even when no new revision starts.
 
 These commands are a runbook, not something CI runs. Each is a cloud write that needs Platform Owner approval (D-05).

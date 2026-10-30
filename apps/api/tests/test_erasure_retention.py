@@ -1,5 +1,6 @@
 import os
 from datetime import datetime, timedelta, timezone
+import json
 from pathlib import Path
 import re
 import subprocess
@@ -167,7 +168,10 @@ def test_retention_job_logs_counts_and_exits_zero(tmp_path: Path):
     completed = _run_retention_job(database_url)
 
     assert completed.returncode == 0, completed.stderr
-    assert '"job": "retention"' in completed.stderr and '"status": "ok"' in completed.stderr
+    # One structured entry the platform can query by field (plan Phase 1, item I).
+    (entry,) = [json.loads(line) for line in completed.stderr.splitlines() if '"job": "retention"' in line]
+    assert (entry["severity"], entry["logger"], entry["status"]) == ("INFO", "qcai.worker", "ok")
+    assert isinstance(entry["deleted"], dict) and isinstance(entry["duration_ms"], int)
 
 
 def test_retention_job_fails_loudly(tmp_path: Path):

@@ -1,8 +1,10 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import re
 import secrets
+import time
 from uuid import uuid4
 
 from fastapi import HTTPException, status
@@ -137,13 +139,21 @@ def revoke_local_session(db: Session, session_token: str | None) -> None:
     db.commit()
 
 
-def delete_local_account(db: Session, user_id: str, password: str) -> dict[str, int]:
+@dataclass(frozen=True)
+class AccountErasure:
+    rows: dict[str, int]
+    # The erasure-time SLI (plan Phase 1, item I): the erase and its commit, not the password check.
+    duration_ms: int
+
+
+def delete_local_account(db: Session, user_id: str, password: str) -> AccountErasure:
     account = db.scalars(select(UserAccount).where(UserAccount.user_id == user_id)).first()
     if not account or not verify_password(password, account.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Password confirmation failed.")
 
     # Every user-keyed table, found from the schema (task 1.5); this replaces a hand-kept list that
     # had missed the learner-record and tutor tables.
+    started = time.monotonic()
     counts = erase_user(db, user_id)
     db.commit()
-    return counts
+    return AccountErasure(rows=counts, duration_ms=round((time.monotonic() - started) * 1000))

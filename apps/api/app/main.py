@@ -22,6 +22,7 @@ from app.core.guest_tokens import require_guest_token_secret
 from app.core.log_redaction import install_log_redaction
 from app.core.request_protection import protect_guest_mutation_request
 from app.core.schema_upgrades import run_schema_upgrades
+from app.core.structured_logging import FIELDS, configure_logging
 from app.services.retention import run_retention_cleanup
 from app.services.security_log import record_security_event, record_security_event_async, route_template
 from app.services.store import get_course_store
@@ -38,6 +39,7 @@ install_log_redaction(
         settings.guest_token_previous_secret,
     ]
 )
+configure_logging()
 LOGGER = logging.getLogger("qcai.api")
 
 def _build_content_security_policy(app_settings = settings, nonce: str | None = None) -> str:
@@ -153,6 +155,8 @@ async def lifespan(_: FastAPI):
     _initialize_database()
     _record_configuration_overrides()
     get_course_store()
+    # The governance_enforced SLI (plan Phase 1, item I): each instance says what it started with.
+    LOGGER.info("API started", extra={FIELDS: {"event": "startup", "environment": settings.environment, **_build_fields()}})
     yield
 
 

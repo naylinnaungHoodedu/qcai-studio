@@ -5,11 +5,11 @@ A failure logs the error and exits with status 1, so the scheduler records a fai
 of a silent one. Run as: python -m app.workers.retention
 """
 
-import json
 import sys
 import time
 
 from app.core.db import SessionLocal
+from app.core.structured_logging import FIELDS
 from app.services.retention import run_retention_cleanup
 from app.workers.common import LOGGER
 
@@ -20,18 +20,18 @@ def main() -> int:
         with SessionLocal() as db:
             counts = run_retention_cleanup(db)
     except Exception:
-        LOGGER.exception(json.dumps({"job": "retention", "status": "failed"}))
+        LOGGER.exception("Retention job failed", extra={FIELDS: {"job": "retention", "status": "failed"}})
         return 1
     LOGGER.info(
-        json.dumps(
-            {
+        "Retention job finished",
+        extra={
+            FIELDS: {
                 "job": "retention",
                 "status": "ok",
                 "deleted": counts,
                 "duration_ms": round((time.monotonic() - started) * 1000),
-            },
-            sort_keys=True,
-        )
+            }
+        },
     )
     return 0
 
