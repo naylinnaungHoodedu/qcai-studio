@@ -270,7 +270,17 @@ async def unhandled_exception_handler(request, exc):
 
 @app.get("/health")
 def healthcheck():
-    return {"status": "ok", "app": settings.app_name, "environment": settings.environment}
+    # `commit` lets a deployment record be checked against what actually serves (AC-1-7).
+    return {"status": "ok", "app": settings.app_name, "environment": settings.environment, "commit": settings.git_sha}
+
+
+def _build_fields() -> dict:
+    # Plan L2324-2325: /ready exposes governance_enforced, corpus_version and the build SHA (R-50).
+    return {
+        "governance_enforced": bool(settings.enforce_corpus_governance),
+        "corpus_version": get_corpus_registry(settings).corpus_version,
+        "commit": settings.git_sha,
+    }
 
 
 @app.get("/ready")
@@ -280,14 +290,15 @@ def readiness_check():
             db.execute(text("SELECT 1"))
     except Exception:
         LOGGER.warning("Readiness database check failed", exc_info=True)
-        return JSONResponse(status_code=503, content={"status": "degraded", "database": "unavailable"})
+        return JSONResponse(status_code=503, content={"status": "degraded", "database": "unavailable", **_build_fields()})
 
     store = get_course_store()
     if not store.lessons:
-        return JSONResponse(status_code=503, content={"status": "building", "database": "ok"})
+        return JSONResponse(status_code=503, content={"status": "building", "database": "ok", **_build_fields()})
     return {
         "status": "ready",
         "database": "ok",
         "lessons": len(store.lessons),
         "source_assets": len(store.overview.source_assets) if store.overview else 0,
+        **_build_fields(),
     }

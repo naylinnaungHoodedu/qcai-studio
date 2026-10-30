@@ -12,6 +12,8 @@ export function GET() {
       status: "ok",
       app: "QC+AI Studio Frontend",
       environment: process.env.NODE_ENV ?? "development",
+      // The commit this image was built from (Dockerfile ARG GIT_SHA), checked by the deployment record (AC-1-7).
+      commit: process.env.GIT_SHA ?? "unknown",
     },
     {
       headers: NO_STORE_HEADERS,

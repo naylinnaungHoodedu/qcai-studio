@@ -1,14 +1,24 @@
+# Frontend image, built by Cloud Build from a clean checkout of one commit (never on a workstation).
+# Run: gcloud builds submit --config infra/cloudbuild/frontend-image.yaml --substitutions _GIT_SHA=<40-char commit> .
+# The image is tagged with that commit, never :latest, and stamped with it (/health reports it). Cloud Build
+# records the pushed digest; deploy that digest with scripts/deploy_by_digest.py (infra/cloudrun/deployment.md).
 steps:
-  - name: gcr.io/cloud-builders/docker
+  - id: require-commit
+    name: bash
+    args:
+      - -c
+      - '[[ "${_GIT_SHA}" =~ ^[0-9a-f]{40}$ ]] || { echo "_GIT_SHA must be a full 40-character commit"; exit 1; }'
+  - id: build
+    name: gcr.io/cloud-builders/docker
     dir: apps/frontend
     args:
       - build
       - -f
       - Dockerfile
       - -t
-      - us-central1-docker.pkg.dev/$PROJECT_ID/qcai-repo/qcai-frontend:latest
-      - -t
-      - us-central1-docker.pkg.dev/$PROJECT_ID/qcai-repo/qcai-frontend:${_IMAGE_TAG}
+      - us-central1-docker.pkg.dev/$PROJECT_ID/qcai-repo/qcai-frontend:${_GIT_SHA}
+      - --build-arg
+      - GIT_SHA=${_GIT_SHA}
       - --build-arg
       - API_BASE_URL=${_API_BASE_URL}
       - --build-arg
@@ -24,12 +34,13 @@ steps:
       - .
 
 images:
-  - us-central1-docker.pkg.dev/$PROJECT_ID/qcai-repo/qcai-frontend:latest
-  - us-central1-docker.pkg.dev/$PROJECT_ID/qcai-repo/qcai-frontend:${_IMAGE_TAG}
+  - us-central1-docker.pkg.dev/$PROJECT_ID/qcai-repo/qcai-frontend:${_GIT_SHA}
 
 substitutions:
-  _IMAGE_TAG: manual
   _API_BASE_URL: https://api.qantumlearn.academy
   _ENABLE_DEMO_AUTH: "false"
   _COOKIE_DOMAIN: .qantumlearn.academy
   _SITE_URL: https://qantumlearn.academy
+
+options:
+  substitutionOption: MUST_MATCH
