@@ -61,6 +61,29 @@ function mac(secret: string, purpose: string, guestId: string, issuedAt: number)
     .digest("hex");
 }
 
+// The API trusts a client address for rate limits only when this server vouches for it (plan task 1.6): the
+// X-Forwarded-For entry the platform's front end appended, counted CLIENT_ADDRESS_HOPS from the right, with a
+// MAC under the shared secret. apps/api/app/core/client_identity.py verifies the same format.
+export const CLIENT_ADDRESS_HEADER_NAME = "x-qcai-client-address";
+const CLIENT_ADDRESS_MAX_LENGTH = 64;
+
+export function clientAddressHeaderValue(request: Pick<NextRequest, "headers">): string | null {
+  const hops = Math.max(1, Number.parseInt(process.env.CLIENT_ADDRESS_HOPS ?? "1", 10) || 1);
+  const entries = (request.headers.get("x-forwarded-for") ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (entries.length < hops) {
+    return null;
+  }
+  const address = entries[entries.length - hops].slice(0, CLIENT_ADDRESS_MAX_LENGTH);
+  const addressMac = createHmac("sha256", signingSecret())
+    .update(`c1|client-address|${address}`)
+    .digest("hex")
+    .slice(0, 32);
+  return `${address} ${addressMac}`;
+}
+
 function sameText(left: string, right: string): boolean {
   const leftBytes = Buffer.from(left);
   const rightBytes = Buffer.from(right);
@@ -165,6 +188,11 @@ export async function resolveGuestSessionWithLegacyUpgrade(
   const forwardedFor = request.headers.get("x-forwarded-for");
   if (forwardedFor) {
     headers.set("x-forwarded-for", forwardedFor);
+  }
+  // The upgrade route is rate-limited per client; without this, every learner would share this server's address.
+  const clientAddress = clientAddressHeaderValue(request);
+  if (clientAddress) {
+    headers.set(CLIENT_ADDRESS_HEADER_NAME, clientAddress);
   }
   try {
     const response = await fetch(`${apiBaseUrl.replace(/\/$/, "")}/auth/guest-upgrade`, {

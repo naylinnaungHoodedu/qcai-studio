@@ -15,6 +15,7 @@ from app.schemas import (
     LocalAccountRegisterRequest,
     UserProfile,
 )
+from app.services import sign_in_lockout
 from app.services.security_log import record_security_event
 from app.services.local_accounts import (
     AUTH_CSRF_COOKIE_NAME,
@@ -127,11 +128,24 @@ def login_account(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ):
+    locked_seconds = sign_in_lockout.seconds_locked(payload.email)
+    if locked_seconds:
+        # Checked before the password, so a locked email gives a guesser nothing, right or wrong.
+        record_security_event("auth.lockout", "denied", connection=request, details={"retry_after": locked_seconds})
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many failed sign-ins for this account. Try again later.",
+            headers={"Retry-After": str(locked_seconds)},
+        )
     try:
         account = authenticate_local_account(db, payload.email, payload.password)
     except HTTPException as exc:
+        failures = sign_in_lockout.register_failure(payload.email) if exc.status_code == 401 else 0
         record_security_event("auth.login", "failure", connection=request, details={"status": exc.status_code})
+        if failures == settings.auth_lockout_failures:
+            record_security_event("auth.lockout", "warning", connection=request, details={"failures": failures})
         raise
+    sign_in_lockout.clear(payload.email)
     session_token, csrf_token, _expires_at = create_local_session(db, account.user_id)
     _set_auth_cookies(response, request, settings, session_token, csrf_token)
     record_security_event("auth.login", "success", connection=request, actor_role=account.role, subject=account.user_id)

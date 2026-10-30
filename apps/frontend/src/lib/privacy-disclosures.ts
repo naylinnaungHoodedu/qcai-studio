@@ -36,6 +36,13 @@ export const RETENTION_SCHEDULE = [
     trigger: "Automatic retention cleanup removes older support records after the review/support window closes.",
   },
   {
+    dataClass: "Rate-limit and sign-in lockout counters",
+    personalData:
+      "A keyed one-way digest of the account or guest ID, the network address or the sign-in email, with a request count. No raw ID, address or email is stored.",
+    retention: "Until the counting window ends: at most one hour, or 15 minutes for a sign-in lockout.",
+    trigger: "A counter restarts when its window ends, and automatic retention cleanup removes ended windows.",
+  },
+  {
     dataClass: "Security event log",
     personalData:
       "Sign-ins, sign-ups, account deletions, rejected credentials, blocked or rate-limited requests and administrator actions on guest sessions: the event, time, outcome and role, with keyed one-way digests of the account or guest ID and of the network address. No name, email address or raw ID is stored.",
