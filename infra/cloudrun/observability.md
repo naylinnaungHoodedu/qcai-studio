@@ -27,7 +27,7 @@ In production the Next.js server writes its console output the same way (`apps/f
 - warnings and errors go to stderr, everything else to stdout;
 - a stack stays inside its entry, and credentials in a message are masked.
 
-The four lines Next.js prints as it starts (its banner, two addresses and "Ready") stay plain text. Development output is unchanged. No Phase 1 SLI is built from these lines. Two filters may still help, each after `resource.type="cloud_run_revision" AND resource.labels.service_name="qcai-frontend"`:
+The few lines Next.js prints as it starts (its banner, two addresses, "Ready" and, since 16.4, the next.config timing) stay plain text. Development output is unchanged. No Phase 1 SLI is built from these lines. Two filters may still help, each after `resource.type="cloud_run_revision" AND resource.labels.service_name="qcai-frontend"`:
 - `severity>=ERROR` finds server errors;
 - `jsonPayload.digest="<digest>"` finds the entry for a digest seen in the browser.
 
