@@ -72,14 +72,33 @@ def test_startup_schema_matches_orm_metadata():
     assert _schema_differences(engine) == []
 
 
-def test_unapproved_corpus_stops_startup_before_any_table_exists(fresh_database_url: str, empty_manifest: Path):
+@pytest.mark.parametrize(
+    "manifest_text",
+    [None, "not json", json.dumps({"schema_version": "0.9", "items": []}), json.dumps({"schema_version": "1.0", "items": {}})],
+    ids=["missing", "unreadable", "wrong-schema", "items-not-a-list"],
+)
+def test_a_missing_or_invalid_manifest_stops_startup_before_any_table_exists(fresh_database_url: str, tmp_path: Path, manifest_text):
     # BEP-0 boot smoke: start-up used to create and upgrade the schema, then fail closed on the corpus.
-    completed = _start_up(fresh_database_url, empty_manifest, enforce_governance=True)
+    manifest = tmp_path / "public" / "manifest.json"
+    if manifest_text is not None:
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(manifest_text, encoding="utf-8")
+    completed = _start_up(fresh_database_url, manifest, enforce_governance=True)
 
     assert completed.returncode != 0
     assert "CorpusGovernanceError" in completed.stderr
     with _probe(fresh_database_url) as probe:
         assert _table_names(probe) == set()
+
+
+def test_a_governed_startup_with_an_empty_manifest_proceeds(fresh_database_url: str, empty_manifest: Path):
+    # Decision P1-D-07 (D-31): an empty manifest is a reviewed catalogue of nothing, so a governed build starts
+    # and serves no asset (test_corpus_catalogue.py).
+    completed = _start_up(fresh_database_url, empty_manifest, enforce_governance=True)
+
+    assert completed.returncode == 0, completed.stderr
+    with _probe(fresh_database_url) as probe:
+        assert _table_names(probe) == set(Base.metadata.tables)
 
 
 def test_startup_builds_every_orm_table_and_can_run_again(fresh_database_url: str, empty_manifest: Path):

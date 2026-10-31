@@ -79,13 +79,30 @@ def _assert_curated_assets_exist() -> None:
         raise FileNotFoundError(f"Missing curated assets: {', '.join(str(path) for path in missing)}")
 
 
+def _unapproved_curated_assets() -> list[str]:
+    api_root = REPO_ROOT / "apps" / "api"
+    if str(api_root) not in sys.path:
+        sys.path.insert(0, str(api_root))
+    from app.core.config import Settings
+    from app.core.corpus_governance import CorpusRegistry
+
+    registry = CorpusRegistry(Settings(environment="production", enforce_corpus_governance=True))
+    return sorted(path.name for path in CURATED_DOCX + CURATED_VIDEOS if not registry.is_public_asset(path.name))
+
+
 def _assert_public_release_assets_are_approved() -> None:
-    """Never produce a public bundle until the corpus license gate passes."""
+    """Never produce a public bundle until the corpus license gate passes (AC-1-5: neither served nor packaged)."""
     subprocess.run(
         [sys.executable, "scripts/validate_corpus.py", "--check-public-assets"],
         cwd=REPO_ROOT,
         check=True,
     )
+    # The served catalogue may be empty (Decision P1-D-07, D-31); a bundle that ships the curated media may not.
+    unapproved = _unapproved_curated_assets()
+    if unapproved:
+        raise RuntimeError(
+            f"{len(unapproved)} curated asset(s) are not approved for public release, for example: {unapproved[0]}"
+        )
 
 
 def _assert_videos_are_hydrated() -> None:

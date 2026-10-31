@@ -196,16 +196,20 @@ export default async function LessonPage({ params }: LessonPageProps) {
                 <h2>Downloads and references</h2>
               </div>
             </div>
-            <ul className="source-list compact">
-              {lesson.source_assets.map((asset) => (
-                <li key={asset.id}>
-                  <span>{asset.kind}</span>
-                  <a href={`${assetBaseUrl}${asset.download_url}`}>
-                    {asset.title}
-                  </a>
-                </li>
-              ))}
-            </ul>
+            {lesson.source_assets.length ? (
+              <ul className="source-list compact">
+                {lesson.source_assets.map((asset) => (
+                  <li key={asset.id}>
+                    <span>{asset.kind}</span>
+                    <a href={`${assetBaseUrl}${asset.download_url}`}>
+                      {asset.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted">No source asset for this lesson is approved for public download yet.</p>
+            )}
           </section>
 
           <section className="panel">

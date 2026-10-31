@@ -83,7 +83,9 @@ export default async function HomePage() {
               {course.modules.length} modules, {totalLessons} lessons
             </h2>
             <p className="muted">
-              {course.source_assets.length} source assets, including {videoCount} video lessons and curated document synthesis.
+              {course.source_assets.length
+                ? `${course.source_assets.length} source assets, including ${videoCount} video lessons and curated document synthesis.`
+                : "Source documents and videos are withheld until their rights review is complete."}
             </p>
           </div>
           <div className="hero-panel">
