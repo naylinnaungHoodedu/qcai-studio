@@ -21,6 +21,16 @@ Before this change the API configured no logging: INFO records were dropped, and
 
 Failure and denial events are capped at 60 a minute per type per instance. Events dropped by the cap are not logged either; the next logged event of that type carries `details.dropped_before`.
 
+### Frontend server
+In production the Next.js server writes its console output the same way (`apps/frontend/src/lib/server-log.ts`, installed by `src/instrumentation.ts`):
+- each line has `severity`, `message`, `logger: "frontend"` and `time`, plus `digest` when Next.js gave the error one;
+- warnings and errors go to stderr, everything else to stdout;
+- a stack stays inside its entry, and credentials in a message are masked.
+
+The four lines Next.js prints as it starts (its banner, two addresses and "Ready") stay plain text. Development output is unchanged. No Phase 1 SLI is built from these lines. Two filters may still help, each after `resource.type="cloud_run_revision" AND resource.labels.service_name="qcai-frontend"`:
+- `severity>=ERROR` finds server errors;
+- `jsonPayload.digest="<digest>"` finds the entry for a digest seen in the browser.
+
 ## Filters
 All the API filters start with `resource.type="cloud_run_revision" AND resource.labels.service_name="qcai-api"`. The jobs use `resource.type="cloud_run_job"`.
 

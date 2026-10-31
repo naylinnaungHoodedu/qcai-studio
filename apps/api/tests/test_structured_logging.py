@@ -11,6 +11,7 @@ import socket
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
 from uuid import uuid4
 
 import httpx
@@ -26,7 +27,7 @@ from app.core.log_redaction import install_log_redaction
 from app.core.structured_logging import FIELDS, JsonLineFormatter, JsonLineHandler, configure_logging
 from app.db_models import SecurityEvent
 from app.main import app
-from app.services import security_log
+from app.services import local_accounts, security_log
 from app.services.security_log import keyed_digest, record_security_event
 
 API_ROOT = Path(__file__).resolve().parents[1]
@@ -214,6 +215,30 @@ def test_account_deletion_reports_how_long_the_erasure_took(caplog):
     with SessionLocal() as db:
         stored = db.scalars(select(SecurityEvent).where(SecurityEvent.seq == fields["seq"])).one()
     assert stored.details == fields["details"]
+
+
+def test_erasure_time_covers_the_erase_and_its_commit_but_not_the_password_check(monkeypatch):
+    # A fake clock: the password check takes 5 s, the erase 7 ms and its commit 3 ms, so the SLI reads 10.
+    clock = {"now": 100.0}
+
+    def taking(seconds: float, call):
+        def timed(*args, **kwargs):
+            clock["now"] += seconds
+            return call(*args, **kwargs)
+
+        return timed
+
+    password = "S3cureQuantumPath"
+    with SessionLocal() as db:
+        account = local_accounts.register_local_account(db, f"erasure-clock-{uuid4().hex[:8]}@example.com", password)
+        monkeypatch.setattr(local_accounts, "time", SimpleNamespace(monotonic=lambda: clock["now"]))
+        monkeypatch.setattr(local_accounts, "verify_password", taking(5.0, local_accounts.verify_password))
+        monkeypatch.setattr(local_accounts, "erase_user", taking(0.007, local_accounts.erase_user))
+        monkeypatch.setattr(db, "commit", taking(0.003, db.commit))
+        erasure = local_accounts.delete_local_account(db, account.user_id, password)
+
+    assert erasure.duration_ms == 10
+    assert erasure.rows["user_accounts"] == 1
 
 
 def test_startup_logs_what_the_instance_started_with(caplog):
