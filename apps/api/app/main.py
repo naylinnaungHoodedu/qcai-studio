@@ -15,7 +15,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.api.routes import admin, analytics, arena, assets, assistant, auth, builder, content, insights, learner_record, projects, qa, search, support
 from app.core.corpus_governance import get_corpus_registry
-from app.core.config import SOURCE_DOCUMENT_NAMES, SOURCE_VIDEO_NAMES, get_settings
+from app.core.config import get_settings
 from app.core.db import Base, SessionLocal, engine
 from app.core.rate_limit import limiter
 from app.core.guest_tokens import require_guest_token_secret
@@ -127,8 +127,9 @@ def _response_headers_for_request(request: Request) -> dict[str, str]:
 
 
 def _initialize_database() -> None:
-    # Before the schema step, so an unapproved corpus stops start-up without creating or altering a table.
-    get_corpus_registry(settings).assert_public_assets_ready([*SOURCE_DOCUMENT_NAMES, *SOURCE_VIDEO_NAMES])
+    # Before the schema step, so a missing or invalid manifest stops start-up without creating or altering a table.
+    # The served catalogue is the manifest (Decision P1-D-07, D-31): an empty one starts and serves no asset.
+    get_corpus_registry(settings).assert_ready_to_serve()
     database_url = settings.database_url.lower()
     max_attempts = 8 if database_url.startswith(("postgresql", "postgres")) else 1
     last_error: OperationalError | None = None

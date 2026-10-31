@@ -5,6 +5,7 @@ from typing import Any
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.core.config import Settings
+from app.core.corpus_governance import get_corpus_registry
 from app.core.source_assets import source_asset_id
 from app.schemas import (
     CourseOverview,
@@ -931,9 +932,14 @@ class CourseStore:
         self.build()
 
     def build(self) -> None:
-        sections = self._load_sections()
-        doc_assets = [self._build_source_asset(path, "document") for path in self.settings.source_documents]
-        video_assets = [self._build_source_asset(path, "video") for path in self.settings.source_videos]
+        # Only approved assets feed the course (Decision P1-D-07, D-31): an unapproved document contributes no
+        # section, excerpt or search chunk, and an unapproved video no chapter, transcript or listing.
+        registry = get_corpus_registry(self.settings)
+        documents = registry.served(self.settings.source_documents)
+        videos = registry.served(self.settings.source_videos)
+        sections = self._load_sections(documents)
+        doc_assets = [self._build_source_asset(path, "document") for path in documents]
+        video_assets = [self._build_source_asset(path, "video") for path in videos]
         assets = doc_assets + video_assets
 
         modules: list[ModuleSummary] = []
@@ -1013,9 +1019,9 @@ class CourseStore:
             description="Local project source asset",
         )
 
-    def _load_sections(self) -> list[SectionRecord]:
+    def _load_sections(self, documents: list[Path]) -> list[SectionRecord]:
         all_sections: list[SectionRecord] = []
-        for path in self.settings.source_documents:
+        for path in documents:
             if path.exists():
                 document_title = DOCUMENT_TITLE_MAP.get(path.name, path.stem)
                 sections = parse_docx_sections(path)

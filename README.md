@@ -6,9 +6,9 @@ This repository now contains a working MVP implementation of the interactive QC+
 
 The CS595 implementation plan is maintained in [`docs/CS595_REPOSITORY_TRANSFORMATION_BLUEPRINT.md`](docs/CS595_REPOSITORY_TRANSFORMATION_BLUEPRINT.md). The existing platform remains preliminary work under the approved proposal framing; the documented enrollment-period increment is tracked through the durable Learner Record, persistent grounded Tutor, corpus-governance boundary, LQS/evaluation harness, ADRs, UML, and CI evidence introduced by that plan.
 
-- `corpus/public/manifest.json` is the public-service allowlist. Non-development deployments fail closed until every served asset has a reviewed license entry. Restricted evaluation material belongs outside this repository under the `corpus/private/README.md` policy.
+- `corpus/public/manifest.json` is the public-service allowlist, and the served catalogue is exactly what it approves (Decision P1-D-07, D-31): a non-development deployment serves no file, excerpt, chapter or listing from an unapproved asset, and an empty manifest serves none. A missing or invalid manifest stops start-up. Restricted evaluation material belongs outside this repository under the `corpus/private/README.md` policy.
 - `lqs/` and `evaluation/` contain the public schema/rubric/harness only. `python scripts/validate_lqs.py --allow-draft` validates the pre-freeze instrument; removing that flag is the 120-200 item freeze gate.
-- `python scripts/validate_corpus.py --check-public-assets` is required before public source/media release packaging. `tools/package_release.py` calls it automatically and will stop until the license register is complete.
+- `python scripts/validate_corpus.py --check-public-assets` runs in CI: every approved item needs exactly one reviewed row in `corpus/license-register.csv` (library confirmation, reviewer and date; `asset_filenames` separated by `;`). `tools/package_release.py` also runs it, and refuses to package while any curated asset is unapproved.
 - The persistent Tutor records thread, resolved query, retrieval mode, claim/span bindings, abstention decision, corpus version, and policy version. The Learner Record uses idempotent logical-clock operations rather than last-write-wins for learning progress.
 
 ## Challenge Submission

@@ -18,7 +18,7 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -r apps/api/requirements.txt pip-audit
       - run: python -m pytest -q -m "not release_artifacts" apps/api/tests evaluation/tests
-      - run: python scripts/validate_corpus.py
+      - run: python scripts/validate_corpus.py --check-public-assets
       - run: python scripts/validate_lqs.py --allow-draft
       - run: pip-audit -r apps/api/requirements.txt
 
