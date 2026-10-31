@@ -8,14 +8,15 @@
     "postbuild": "node ./scripts/assert-account-route.mjs",
     "start": "next start",
     "lint": "eslint",
-    "test:integration": "tsx --test tests/**/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "test:integration":"tsx --test tests/**/*.test.ts",
     "test:lighthouse": "node ./scripts/run-lighthouse-audit.mjs",
     "test:a11y": "node ./scripts/run-lighthouse-audit.mjs --mode=a11y"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.95.2",
     "clsx": "^2.1.1",
-    "next": "16.2.1",
+    "next": "16.4.3",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
@@ -25,9 +26,9 @@
     "@types/react-dom": "^19",
     "chrome-launcher": "^1.2.1",
     "eslint": "^9",
-    "eslint-config-next": "16.2.1",
-    "lighthouse": "^12.8.2",
-    "tsx": "^4.20.6",
+    "eslint-config-next": "16.4.3",
+    "lighthouse": "^13.6.0",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }
