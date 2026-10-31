@@ -61,7 +61,9 @@ test("status and accessibility pages publish operational and WCAG tracking discl
 
 test("audit fixtures page publishes fictional users and commands as a noindex trust surface", () => {
   assert.equal(auditFixturesMetadata.title, "Fictional Audit Users and QA Commands");
-  assert.equal(auditFixturesMetadata.robots?.index, false);
+  const robots = auditFixturesMetadata.robots;
+  assert.ok(robots && typeof robots === "object", "robots is set as an object");
+  assert.equal(robots.index, false);
   assert.match(AUDIT_FIXTURES_PAGE_SOURCE, /All records below are fictional, privacy-safe/);
   assert.match(AUDIT_FIXTURES_PAGE_SOURCE, /Account catalog/);
   assert.match(AUDIT_FIXTURES_PAGE_SOURCE, /User commands/);

@@ -49,10 +49,9 @@ export function VideoPanel({
   }, [chapters]);
 
   useEffect(() => {
+    // Without a video URL the panel renders its document-only notice and reads none of the stream state;
+    // bootstrapStream resets that state when a URL arrives.
     if (!resolvedVideoUrl) {
-      setVideoUrl(null);
-      setStreamState("preparing");
-      setStreamMessage("Lesson uses document-grounded content only.");
       return;
     }
     const streamUrl = resolvedVideoUrl;

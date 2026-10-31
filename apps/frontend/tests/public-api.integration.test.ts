@@ -3,13 +3,14 @@ import test from "node:test";
 
 import { postPublicWebVital, submitSupportRequest } from "../src/lib/api";
 
-type BrowserGlobals = typeof globalThis & {
+// Only the two globals this test stubs; the DOM library types would make them non-optional.
+type BrowserGlobals = {
   window?: unknown;
   document?: { cookie: string };
 };
 
 function withBrowserCookies(cookie: string) {
-  const browserGlobals = globalThis as BrowserGlobals;
+  const browserGlobals = globalThis as unknown as BrowserGlobals;
   const originalWindow = browserGlobals.window;
   const originalDocument = browserGlobals.document;
 
@@ -36,7 +37,8 @@ test("public web-vitals requests keep guest CSRF protection in browser mode", as
     "qcai_guest_id=guest-123e4567-e89b-12d3-a456-426614174000; qcai_guest_csrf=3b1f2f40-7132-4778-8df5-44c1c5cf6bb0",
   );
   const originalFetch = global.fetch;
-  let capturedHeaders: Headers | null = null;
+  // Assigned inside the fetch stub, so the declared type must not narrow to null.
+  let capturedHeaders = null as Headers | null;
 
   global.fetch = async (_input, init) => {
     capturedHeaders = new Headers(init?.headers);
@@ -66,7 +68,8 @@ test("public web-vitals retries once after a transient timeout and keeps guest C
   );
   const originalFetch = global.fetch;
   let attempts = 0;
-  let capturedHeaders: Headers | null = null;
+  // Assigned inside the fetch stub, so the declared type must not narrow to null.
+  let capturedHeaders = null as Headers | null;
 
   global.fetch = async (_input, init) => {
     attempts += 1;
@@ -100,7 +103,8 @@ test("public support requests also forward guest CSRF headers when present", asy
     "qcai_guest_id=guest-123e4567-e89b-12d3-a456-426614174000; qcai_guest_csrf=3b1f2f40-7132-4778-8df5-44c1c5cf6bb0",
   );
   const originalFetch = global.fetch;
-  let capturedHeaders: Headers | null = null;
+  // Assigned inside the fetch stub, so the declared type must not narrow to null.
+  let capturedHeaders = null as Headers | null;
 
   global.fetch = async (_input, init) => {
     capturedHeaders = new Headers(init?.headers);
