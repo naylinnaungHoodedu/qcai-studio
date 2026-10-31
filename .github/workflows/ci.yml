@@ -64,7 +64,12 @@ jobs:
         working-directory: apps/frontend
       - run: npm run lint
         working-directory: apps/frontend
+      - run: npm run typecheck
+        working-directory: apps/frontend
       - run: npm run test:integration
+        working-directory: apps/frontend
+      # What ships must carry no high or critical advisory, as pip-audit holds the API; dev tooling is not shipped.
+      - run: npm audit --omit=dev --audit-level=high
         working-directory: apps/frontend
 
   # Release bundles exist only when a version is cut; packaging refuses unapproved public assets.
