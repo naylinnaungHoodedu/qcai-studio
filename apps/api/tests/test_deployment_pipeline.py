@@ -199,7 +199,7 @@ def test_a_tag_short_value_or_unknown_service_is_refused(arguments):
         deploy.main(arguments)
 
 
-def _execute(monkeypatch, reported_commit: str) -> tuple[int, list[list[str]]]:
+def _execute(monkeypatch, reported_commit: str, *extra: str) -> tuple[int, list[list[str]]]:
     calls: list[list[str]] = []
 
     def fake_gcloud(arguments):
@@ -215,7 +215,7 @@ def _execute(monkeypatch, reported_commit: str) -> tuple[int, list[list[str]]]:
 
     monkeypatch.setattr(deploy, "_gcloud", fake_gcloud)
     monkeypatch.setattr(deploy, "fetch_health", lambda url: {"status": "ok", "commit": reported_commit})
-    code = deploy.main(["--service", "qcai-api", "--commit", COMMIT, "--digest", DIGEST, "--execute"])
+    code = deploy.main(["--service", "qcai-api", "--commit", COMMIT, "--digest", DIGEST, "--execute", *extra])
     return code, calls
 
 
@@ -225,6 +225,26 @@ def test_execute_moves_traffic_only_after_the_new_revision_reports_the_commit(mo
     assert code == 0
     assert [call[:3] for call in calls] == [["run", "deploy", "qcai-api"], ["run", "services", "describe"], ["run", "services", "update-traffic"]]
     assert "qcai-api-00037-abc=100" in calls[-1]
+
+
+def test_no_pin_stops_after_the_health_check_with_no_traffic_moved(monkeypatch, capsys):
+    code, calls = _execute(monkeypatch, COMMIT, "--no-pin")
+
+    assert code == 0
+    assert [call[:3] for call in calls] == [["run", "deploy", "qcai-api"], ["run", "services", "describe"]]
+    assert "no traffic" in capsys.readouterr().out
+
+
+def test_secret_bindings_go_on_the_new_revision_by_name_and_version(monkeypatch):
+    _, calls = _execute(monkeypatch, COMMIT, "--no-pin", "--update-secret", "GUEST_TOKEN_SECRET=qcai-guest-token-secret:1")
+
+    assert calls[0][calls[0].index("--update-secrets") + 1] == "GUEST_TOKEN_SECRET=qcai-guest-token-secret:1"
+
+
+@pytest.mark.parametrize("binding", ["GUEST_TOKEN_SECRET=plain-value", "GUEST_TOKEN_SECRET", "lower=qcai-guest-token-secret:1"])
+def test_anything_but_a_secret_name_and_version_is_refused(binding):
+    with pytest.raises(SystemExit):
+        deploy.main(["--service", "qcai-api", "--commit", COMMIT, "--digest", DIGEST, "--update-secret", binding])
 
 
 def test_execute_stops_with_no_traffic_moved_when_the_commit_differs(monkeypatch, capsys):

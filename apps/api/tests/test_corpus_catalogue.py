@@ -158,6 +158,17 @@ def test_release_packaging_still_refuses_unapproved_curated_assets():
         package_release._assert_public_release_assets_are_approved()
 
 
+def test_no_source_asset_goes_in_the_image_or_the_build_context():
+    # AC-1-5: "neither served nor packaged". An image is a package.
+    dockerfile = (API_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    copied = " ".join(line for line in dockerfile.splitlines() if line.startswith(("COPY", "ADD")))
+    assert not any(extension in copied for extension in (".docx", ".mp4", ".pdf"))
+    for ignore_file in (".dockerignore", ".gcloudignore"):
+        lines = (REPO_ROOT / ignore_file).read_text(encoding="utf-8").splitlines()
+        assert {"*.docx", "*.mp4", "*.pdf", "update_data/"} <= set(lines), ignore_file
+        assert not any(line.startswith("!") for line in lines), f"{ignore_file} must not re-include an asset"
+
+
 # --- A real production-mode API process with the empty manifest (D-31): it starts and serves no asset ---
 
 
