@@ -70,7 +70,7 @@ def record_public_web_vital(
         delta=payload.delta,
         rating=payload.rating,
         navigation_type=payload.navigation_type,
-        user_agent=request.headers.get("user-agent"),
+        user_agent=(request.headers.get("user-agent") or "")[:512] or None,  # String(512)
         connection_type=payload.connection_type,
     )
     db.add(metric)

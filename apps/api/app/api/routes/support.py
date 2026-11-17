@@ -34,7 +34,7 @@ def create_support_request(
         page_url=payload.page_url,
         message=payload.message,
         requester_origin=request_origin,
-        user_agent=request.headers.get("user-agent"),
+        user_agent=(request.headers.get("user-agent") or "")[:512] or None,  # String(512)
         status="received",
     )
     db.add(support_request)

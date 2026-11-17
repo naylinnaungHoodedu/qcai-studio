@@ -16,6 +16,7 @@ import hmac
 from starlette.requests import HTTPConnection
 
 from app.core.config import get_settings
+from app.core.safe_input import text_matches
 
 CLIENT_ADDRESS_HEADER = "x-qcai-client-address"
 _CLIENT_ADDRESS_MAC_LENGTH = 32
@@ -42,7 +43,7 @@ def vouched_client_address(header_value: str | None) -> str | None:
         return None
     settings = get_settings()
     keys = [key for key in (settings.guest_token_secret, settings.guest_token_previous_secret) if key]
-    if any(hmac.compare_digest(mac, client_address_mac(key, address)) for key in keys):
+    if any(text_matches(mac, client_address_mac(key, address)) for key in keys):
         return address
     return None
 

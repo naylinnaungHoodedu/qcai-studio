@@ -32,6 +32,15 @@ def _as_list(value: object) -> list[Any]:
     return list(value) if isinstance(value, list) else []
 
 
+def _is_utf8_text(value: str) -> bool:
+    """False for a lone UTF-16 surrogate (a JSON "\\ud800" escape): stored, it would break every later response."""
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def _require_identifier(value: object, field: str) -> str:
     if not isinstance(value, str) or not _IDENTIFIER.fullmatch(value):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid {field}.")
@@ -100,7 +109,8 @@ def _apply_payload(record: LearnerRecord, operation: LearnerRecordOperationInput
     if operation.operation_type == "mastery_set":
         skill_id = _require_identifier(payload.get("skill_id"), "skill_id")
         value = payload.get("value")
-        if not isinstance(value, (int, float)) or isinstance(value, bool) or not 0 <= float(value) <= 1:
+        # Range-check before float(): a JSON integer beyond float's range would raise OverflowError there.
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not 0 <= value <= 1:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Mastery value must be between 0 and 1.")
         mastery[skill_id] = max(float(mastery.get(skill_id, 0.0) or 0.0), round(float(value), 6))
 
@@ -121,7 +131,7 @@ def _apply_payload(record: LearnerRecord, operation: LearnerRecordOperationInput
 
     elif operation.operation_type == "set_cursor":
         value = payload.get("value")
-        if not isinstance(value, str) or not value.strip() or len(value) > 1024:
+        if not isinstance(value, str) or not value.strip() or len(value) > 1024 or not _is_utf8_text(value):
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Cursor value is invalid.")
         if _wins(cursor, operation.logical_counter, operation.replica_id):
             cursor = {
@@ -133,7 +143,12 @@ def _apply_payload(record: LearnerRecord, operation: LearnerRecordOperationInput
     elif operation.operation_type == "set_preference":
         key = _require_identifier(payload.get("key"), "preference key")
         value = payload.get("value")
-        if isinstance(value, (dict, list)) or value is None or len(json.dumps(value)) > 1024:
+        if (
+            isinstance(value, (dict, list))
+            or value is None
+            or len(json.dumps(value)) > 1024
+            or (isinstance(value, str) and not _is_utf8_text(value))
+        ):
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Preference value is invalid.")
         existing = preferences.get(key)
         if _wins(existing, operation.logical_counter, operation.replica_id):

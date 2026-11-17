@@ -224,6 +224,18 @@ test("proxy replaces a guest token whose MAC does not verify", async () => {
   assert.notEqual(verifyGuestToken(replacement)?.guestId, "guest-0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0");
 });
 
+test("a guest token whose issue time is not canonical is refused here as the API refuses it", () => {
+  const guestId = "guest-0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0";
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const issued = issueGuestToken(guestId, issuedAt);
+  assert.equal(verifyGuestToken(issued.token)?.guestId, guestId);
+  // The MAC is over the number, so a zero-padded spelling carries a valid MAC; the API refuses it (R1.1).
+  const [version, id, issuedText, signature] = issued.token.split(".");
+  for (const spelling of [`0${issuedText}`, `00${issuedText}`, "1".repeat(13), "²"]) {
+    assert.equal(verifyGuestToken([version, id, spelling, signature].join(".")), null, spelling);
+  }
+});
+
 async function withLegacyUpgrade<T>(
   enabled: boolean,
   apiReply: (body: { legacy_guest_id: string }) => Record<string, unknown>,
