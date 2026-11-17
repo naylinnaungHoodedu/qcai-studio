@@ -17,6 +17,10 @@ _HEADER_SECRET = re.compile(
     r"(?i)((?:x-goog-api-key|x-api-key|authorization)['\"]?\s*[:=]\s*['\"]?(?:bearer\s+)?)[^\s'\",}]+"
 )
 _secrets: set[str] = set()
+# Uvicorn's access formatter unpacks the record's arguments (client, method, path, version, status), so its
+# records keep their argument tuple, each string in it masked. Flattened like every other record, each
+# access line became a "--- Logging error ---" traceback instead (found on the Release R1 tagged revision).
+_ARGUMENT_TUPLE_LOGGERS = frozenset({"uvicorn.access"})
 
 
 def redact(text: str) -> str:
@@ -36,8 +40,12 @@ def install_log_redaction(secret_values: Iterable[str | None] = ()) -> None:
     def factory(*args, **kwargs) -> logging.LogRecord:
         record = previous(*args, **kwargs)
         try:
-            record.msg = redact(record.getMessage())
-            record.args = None
+            if record.name in _ARGUMENT_TUPLE_LOGGERS and isinstance(record.args, tuple):
+                record.msg = redact(str(record.msg))
+                record.args = tuple(redact(value) if isinstance(value, str) else value for value in record.args)
+            else:
+                record.msg = redact(record.getMessage())
+                record.args = None
             if record.exc_info and not record.exc_text:
                 record.exc_text = redact("".join(traceback.format_exception(*record.exc_info)).rstrip("\n"))
         except Exception:  # never let redaction break logging itself
