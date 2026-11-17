@@ -1,4 +1,3 @@
-import hmac
 import re
 from urllib.parse import urlsplit
 
@@ -6,6 +5,7 @@ from fastapi import HTTPException, Request, WebSocket, status
 
 from app.core.config import Settings
 from app.core.guest_tokens import GUEST_TOKEN_COOKIE, verify_guest_token
+from app.core.safe_input import text_matches
 
 
 AUTH_SESSION_COOKIE = "qcai_session_token"
@@ -20,7 +20,10 @@ _AUTH_CSRF_PATTERN = re.compile(r"^[A-Za-z0-9_\-]{16,256}$")
 def _origin_from_url(value: str | None) -> str | None:
     if not value:
         return None
-    parsed = urlsplit(value)
+    try:
+        parsed = urlsplit(value)
+    except ValueError:  # e.g. an unbalanced IPv6 bracket ("http://["): not an origin, so never trusted
+        return None
     if not parsed.scheme or not parsed.netloc:
         return None
     return f"{parsed.scheme}://{parsed.netloc}"
@@ -79,7 +82,7 @@ def protect_guest_mutation_request(request: Request, settings: Settings) -> None
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Missing CSRF protection.")
         if not _AUTH_CSRF_PATTERN.fullmatch(csrf_cookie):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid CSRF token.")
-        if not hmac.compare_digest(csrf_cookie, csrf_header):
+        if not text_matches(csrf_cookie, csrf_header):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF validation failed.")
 
         validate_request_origin(request, settings)
@@ -97,7 +100,7 @@ def protect_guest_mutation_request(request: Request, settings: Settings) -> None
     csrf_header = (request.headers.get(GUEST_CSRF_HEADER) or "").strip().lower()
     if not csrf_header:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Missing CSRF protection.")
-    if not hmac.compare_digest(csrf_header, guest.csrf):
+    if not text_matches(csrf_header, guest.csrf):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF validation failed.")
 
     validate_request_origin(request, settings)

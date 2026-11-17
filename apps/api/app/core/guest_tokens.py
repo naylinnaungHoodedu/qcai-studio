@@ -13,6 +13,7 @@ import re
 import time
 
 from app.core.config import Settings
+from app.core.safe_input import parse_unix_time, text_matches
 
 GUEST_TOKEN_COOKIE = "qcai_guest_token"
 GUEST_TOKEN_VERSION = "g1"
@@ -55,15 +56,15 @@ def verify_guest_token(token: str | None, settings: Settings, now: int | None = 
     if len(parts) != 4 or parts[0] != GUEST_TOKEN_VERSION:
         return None
     _, guest_id, issued_text, mac = parts
-    if not _GUEST_ID_PATTERN.fullmatch(guest_id) or not issued_text.isdigit():
+    issued_at = parse_unix_time(issued_text)
+    if not _GUEST_ID_PATTERN.fullmatch(guest_id) or issued_at is None:
         return None
-    issued_at = int(issued_text)
     current = int(time.time()) if now is None else now
     if issued_at > current + _CLOCK_SKEW_SECONDS or current - issued_at > GUEST_TOKEN_MAX_AGE_SECONDS:
         return None
     # The previous secret stays valid during a key rotation; its CSRF values stay valid with it.
     for secret in _secrets(settings):
-        if hmac.compare_digest(mac, _mac(secret, "token", guest_id, issued_at)):
+        if text_matches(mac, _mac(secret, "token", guest_id, issued_at)):
             return GuestToken(guest_id=guest_id, issued_at=issued_at, csrf=guest_csrf_for(secret, guest_id, issued_at))
     return None
 

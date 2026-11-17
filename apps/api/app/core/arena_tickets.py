@@ -20,6 +20,7 @@ import threading
 import time
 
 from app.core.config import Settings
+from app.core.safe_input import parse_unix_time, text_matches
 
 ARENA_PROTOCOL = "qcai-arena.v1"
 ARENA_TICKET_VERSION = "at1"
@@ -72,15 +73,15 @@ def verify_arena_ticket(ticket: str | None, settings: Settings, now: int | None 
     if len(parts) != 6 or parts[0] != ARENA_TICKET_VERSION:
         return None
     _, encoded, provider, expires_text, nonce, mac = parts
-    if provider not in _PROVIDERS or not expires_text.isdigit() or not _NONCE_PATTERN.fullmatch(nonce):
+    expires_at = parse_unix_time(expires_text)
+    if provider not in _PROVIDERS or expires_at is None or not _NONCE_PATTERN.fullmatch(nonce):
         return None
-    expires_at = int(expires_text)
     current = int(time.time()) if now is None else now
     # Expired, or further ahead than any ticket this API issues.
     if current > expires_at or expires_at - current > ARENA_TICKET_TTL_SECONDS:
         return None
     keys = [key for key in (settings.guest_token_secret, settings.guest_token_previous_secret) if key]
-    if not any(hmac.compare_digest(mac, _mac(key, encoded, provider, expires_at, nonce)) for key in keys):
+    if not any(text_matches(mac, _mac(key, encoded, provider, expires_at, nonce)) for key in keys):
         return None
     user_id = _decode_user_id(encoded)
     if not user_id:

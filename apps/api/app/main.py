@@ -1,3 +1,4 @@
+import json
 import logging
 import secrets
 import time
@@ -6,8 +7,9 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from slowapi.errors import RateLimitExceeded
 from slowapi.extension import _rate_limit_exceeded_handler
 from sqlalchemy import text
@@ -261,6 +263,24 @@ async def add_security_headers(request, call_next):
     for key, value in _security_headers_for_request(request).items():
         response.headers.setdefault(key, value)
     return response
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError):
+    # FastAPI's default 422 echoes each rejected value back ("input", "ctx"). A lone UTF-16 surrogate in a JSON
+    # string cannot be encoded, and a deeply nested body overflows the encoder, so the refusal itself became a 500
+    # (Release R1.1). Echoing input also returned passwords to the caller. Keep only what clients read: type, loc
+    # and msg, rendered as ASCII JSON so no value can fail to encode.
+    detail = [
+        {"type": str(error.get("type", "")), "loc": [str(part) for part in error.get("loc", ())], "msg": str(error.get("msg", ""))}
+        for error in exc.errors()
+    ]
+    return Response(
+        content=json.dumps({"detail": detail}, ensure_ascii=True),
+        status_code=422,
+        media_type="application/json",
+        headers=_response_headers_for_request(request),
+    )
 
 
 @app.exception_handler(Exception)
