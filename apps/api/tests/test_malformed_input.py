@@ -9,19 +9,24 @@ Starlette's TestClient re-encodes header text as UTF-8, so a raw latin-1 byte su
 sent through it; those inputs are checked by calling the verifiers directly.
 """
 
+import asyncio
 import json
 import time
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import DBAPIError
+from starlette.requests import Request
 
 from app.core.arena_tickets import issue_arena_ticket, verify_arena_ticket
 from app.core.client_identity import CLIENT_ADDRESS_HEADER, client_address_mac, vouched_client_address
 from app.core.config import DEVELOPMENT_GUEST_TOKEN_SECRET, Settings, get_settings
 from app.core.guest_tokens import GUEST_TOKEN_COOKIE, guest_csrf_for, issue_guest_token, verify_guest_token
 from app.core.safe_input import parse_unix_time, text_matches
+from app.core.db import engine
 from app.main import app
+import app.main as main_module
 
 TRUSTED_ORIGIN = "http://localhost:3000"
 SETTINGS = Settings(environment="development", guest_token_secret=DEVELOPMENT_GUEST_TOKEN_SECRET)
@@ -240,3 +245,107 @@ def test_a_learner_record_value_that_cannot_be_stored_is_refused_and_the_record_
     written, read = _learner_record_write(payload, operation_type)
     assert written.status_code == 422, written.text
     assert read.status_code == 200
+
+
+# --- Values only PostgreSQL refuses (review of PR #28): a data exception is a 422, never a 500 ---
+
+
+class _DriverError(Exception):
+    pass
+
+
+def _driver_error(**fields) -> DBAPIError:
+    original = _DriverError(fields.pop("pg8000", None) or "driver error")
+    for name, value in fields.items():
+        setattr(original, name, value)
+    return DBAPIError("INSERT ...", {}, original)
+
+
+def _request() -> Request:
+    return Request({"type": "http", "method": "POST", "path": "/x", "headers": [], "query_string": b""})
+
+
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        (_driver_error(sqlstate="22021"), "22021"),
+        (_driver_error(pgcode="22P02"), "22P02"),
+        (_driver_error(pg8000={"S": "ERROR", "C": "22001", "M": "value too long"}), "22001"),
+        (_driver_error(), None),
+    ],
+    ids=["psycopg sqlstate", "psycopg2 pgcode", "pg8000 fields", "no code"],
+)
+def test_the_sqlstate_is_read_from_each_driver(error, code):
+    assert main_module._sqlstate(error) == code
+
+
+def test_a_data_exception_is_a_422_and_any_other_database_error_stays_a_500():
+    refused = asyncio.run(main_module.database_error_handler(_request(), _driver_error(sqlstate="22021")))
+    failed = asyncio.run(main_module.database_error_handler(_request(), _driver_error(sqlstate="57P01")))
+    assert (refused.status_code, json.loads(refused.body)) == (422, {"detail": "The request contains a value that cannot be stored."})
+    assert failed.status_code == 500
+
+
+ON_POSTGRES = engine.dialect.name == "postgresql"
+
+
+def test_a_nul_character_in_a_login_email_is_refused():
+    response = _client().post(
+        "/auth/login", json={"email": "a\u0000b@example.com", "password": "S3cureQuantumPath"}, headers={"origin": TRUSTED_ORIGIN, **_source()}
+    )
+    assert response.status_code == (422 if ON_POSTGRES else 401), response.text
+
+
+def test_an_over_long_user_agent_is_stored_truncated():
+    response = _client().post(
+        "/analytics/public-web-vitals",
+        headers={"origin": TRUSTED_ORIGIN, "user-agent": "u" * 2000, **_source()},
+        json={"metric_id": f"vital-{uuid4()}", "metric_name": "LCP", "path": "/support", "value": 1.0, "rating": "good"},
+    )
+    assert response.status_code == 200, response.text
+
+
+def test_a_non_finite_preference_is_refused_on_postgres_and_never_a_500():
+    written, read = _learner_record_write({"key": "k", "value": float("nan")}, "set_preference")
+    assert written.status_code == (422 if ON_POSTGRES else 200), written.text
+    assert read.status_code == 200
+
+
+def test_an_out_of_range_submission_id_is_refused():
+    client = _client()
+    token, csrf = _valid_guest()
+    client.cookies.set(GUEST_TOKEN_COOKIE, token)
+    headers = {"origin": TRUSTED_ORIGIN, "x-qcai-csrf": csrf, **_source()}
+    review = {"submission_id": 2**40, "rubric_scores": {}, "feedback": "A sufficiently long piece of feedback."}
+    assert client.post("/projects/reviews", json=review, headers=headers).status_code == 422
+    assert client.delete(f"/projects/submissions/{2**40}", headers=headers).status_code == 422
+
+
+def test_a_lone_surrogate_in_a_note_anchor_is_refused():
+    client = _client()
+    token, csrf = _valid_guest()
+    client.cookies.set(GUEST_TOKEN_COOKIE, token)
+    lesson = "nisq-reality-overview"
+    response = client.post(
+        f"/content/lessons/{lesson}/notes",
+        content=b'{"body":"note","anchor_type":"section","anchor_value":"\ud800"}',
+        headers={"content-type": "application/json", "origin": TRUSTED_ORIGIN, "x-qcai-csrf": csrf, **_source()},
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_an_auth0_key_outage_stays_a_logged_server_error(monkeypatch):
+    import jwt
+
+    def unreachable(self, token):
+        raise jwt.PyJWKClientConnectionError("JWKS endpoint unreachable")
+
+    monkeypatch.setattr(jwt.PyJWKClient, "get_signing_key_from_jwt", unreachable)
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        environment="development", auth0_domain="auth0.example.invalid", auth0_audience="https://api.example.invalid"
+    )
+    try:
+        response = _client().get("/auth/me", headers={"authorization": "Bearer a.b.c", **_source()})
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
+    assert response.status_code == 500, "an outage is not a bad credential"

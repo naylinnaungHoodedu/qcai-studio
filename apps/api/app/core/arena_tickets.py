@@ -28,6 +28,8 @@ ARENA_TICKET_TTL_SECONDS = 30
 _MAX_TICKET_LENGTH = 512
 _PROVIDERS = {"auth0", "demo", "guest", "local"}
 _NONCE_PATTERN = re.compile(r"[0-9a-f]{32}")
+# The user id as _encode_user_id writes it: unpadded base64url. Anything else is refused before it is hashed.
+_ENCODED_USER_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
 
 
 @dataclass(frozen=True)
@@ -74,7 +76,12 @@ def verify_arena_ticket(ticket: str | None, settings: Settings, now: int | None 
         return None
     _, encoded, provider, expires_text, nonce, mac = parts
     expires_at = parse_unix_time(expires_text)
-    if provider not in _PROVIDERS or expires_at is None or not _NONCE_PATTERN.fullmatch(nonce):
+    if (
+        provider not in _PROVIDERS
+        or expires_at is None
+        or not _NONCE_PATTERN.fullmatch(nonce)
+        or not _ENCODED_USER_ID_PATTERN.fullmatch(encoded)
+    ):
         return None
     current = int(time.time()) if now is None else now
     # Expired, or further ahead than any ticket this API issues.

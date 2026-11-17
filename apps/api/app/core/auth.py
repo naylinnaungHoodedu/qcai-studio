@@ -35,8 +35,12 @@ def _decode_auth0_token(token: str, settings: Settings) -> AuthUser:
             audience=settings.auth0_audience,
             issuer=f"https://{settings.auth0_domain}/",
         )
+    except jwt.PyJWKClientConnectionError:
+        # Auth0's keys could not be fetched: an outage on our side, not a bad credential. Left to the server-error
+        # handler, which logs it, so it is not counted as a credential rejection.
+        raise
     except jwt.PyJWTError as exc:
-        # A malformed, expired or wrongly signed token, or keys that cannot be fetched: a refusal, not a 500.
+        # A malformed, expired or wrongly signed token: a refusal, not a 500.
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid bearer token.") from exc
     roles = payload.get("https://qcai.dev/roles") or payload.get("roles") or ["learner"]
     return AuthUser(

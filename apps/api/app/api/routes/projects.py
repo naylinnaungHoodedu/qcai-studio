@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy.orm import Session
 
 from app.core.auth import AuthUser, get_current_user
@@ -86,7 +86,7 @@ def create_peer_review(
 
 @router.delete("/submissions/{submission_id}", response_model=ProjectSubmissionRead)
 def retract_submission(
-    submission_id: int,
+    submission_id: Annotated[int, Path(ge=1, le=2_147_483_647)],  # project_submissions.id is a 32-bit INTEGER
     db: Session = Depends(get_db),
     user: AuthUser = Depends(get_current_user),
 ):

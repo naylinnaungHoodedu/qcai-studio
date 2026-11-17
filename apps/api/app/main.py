@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, Response
 from slowapi.errors import RateLimitExceeded
 from slowapi.extension import _rate_limit_exceeded_handler
 from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import DataError, DBAPIError, OperationalError
 
 from app.api.routes import admin, analytics, arena, assets, assistant, auth, builder, content, insights, learner_record, projects, qa, search, support
 from app.core.corpus_governance import get_corpus_registry
@@ -291,6 +291,44 @@ async def unhandled_exception_handler(request, exc):
         content={"error": "internal", "detail": "Unexpected server error."},
         headers=_response_headers_for_request(request),
     )
+
+
+def _sqlstate(exc: DBAPIError) -> str | None:
+    """The PostgreSQL SQLSTATE of a driver error: psycopg's `sqlstate`/`pgcode`, or pg8000's field "C"."""
+    original = exc.orig
+    for attribute in ("sqlstate", "pgcode"):
+        code = getattr(original, attribute, None)
+        if isinstance(code, str):
+            return code
+    arguments = getattr(original, "args", ())
+    if arguments and isinstance(arguments[0], dict):
+        code = arguments[0].get("C")
+        return code if isinstance(code, str) else None
+    return None
+
+
+@app.exception_handler(DBAPIError)
+async def database_error_handler(request: Request, exc: DBAPIError):
+    # SQLSTATE class 22, "data exception": a client value the database cannot store or compare (a NUL character,
+    # a string longer than its column, NaN in a json column, an integer out of range). SQLite accepts these, so
+    # they surfaced only in production as HTTP 500 (Release R1.1). Refuse them; anything else stays a server error.
+    # psycopg refuses some values (a NUL byte) before sending them, as a DBAPI DataError with no SQLSTATE; pg8000
+    # sends them and reports the server's class-22 error.
+    code = _sqlstate(exc)
+    if isinstance(exc, DataError) or (code is not None and code.startswith("22")):
+        LOGGER.warning(
+            "Refused a value the database cannot store on %s %s [%s]: SQLSTATE %s",
+            request.method,
+            request.url.path,
+            _request_id(request),
+            code or type(exc.orig).__name__,
+        )
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "The request contains a value that cannot be stored."},
+            headers=_response_headers_for_request(request),
+        )
+    return await unhandled_exception_handler(request, exc)
 
 
 @app.get("/health")

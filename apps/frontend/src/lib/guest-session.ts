@@ -111,7 +111,9 @@ export function verifyGuestToken(
     return null;
   }
   const [, guestId, issuedText, signature] = parts;
-  if (!GUEST_ID_PATTERN.test(guestId) || !/^\d+$/.test(issuedText)) {
+  // Canonical unix time only (no leading zero, at most 12 digits), exactly as the API's parse_unix_time: a token the
+  // API refuses must not pass here, or this server would keep it instead of issuing a new one (Release R1.1).
+  if (!GUEST_ID_PATTERN.test(guestId) || !/^[1-9]\d{0,11}$/.test(issuedText)) {
     return null;
   }
   const issuedAt = Number(issuedText);

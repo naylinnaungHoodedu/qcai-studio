@@ -127,8 +127,10 @@ class SearchResult(BaseModel):
 
 class NoteCreate(BaseModel):
     body: str = Field(min_length=1, max_length=10000)
-    anchor_type: str | None = None
-    anchor_value: str | None = None
+    # Bounded like their columns (notes.anchor_type String(50), anchor_value String(255)). A constrained field also
+    # refuses a lone surrogate with 422 instead of letting it reach the database driver (Release R1.1).
+    anchor_type: str | None = Field(default=None, max_length=50)
+    anchor_value: str | None = Field(default=None, max_length=255)
 
 
 class NoteRead(BaseModel):
@@ -142,7 +144,7 @@ class NoteRead(BaseModel):
 
 class QARequest(BaseModel):
     question: str = Field(min_length=1, max_length=1000)
-    lesson_slug: str | None = None
+    lesson_slug: str | None = Field(default=None, max_length=255)
     top_k: int = Field(default=4, ge=1, le=12)
 
 
@@ -183,7 +185,7 @@ class AssistantChatMessage(BaseModel):
 class AssistantChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     thread_id: str | None = Field(default=None, min_length=8, max_length=64)
-    lesson_slug: str | None = None
+    lesson_slug: str | None = Field(default=None, max_length=255)
     page_path: str | None = Field(default=None, max_length=255)
     history: list[AssistantChatMessage] = Field(default_factory=list)
     top_k: int = Field(default=4, ge=1, le=8)
@@ -301,7 +303,7 @@ class LearnerRecordOperationsResponse(BaseModel):
 
 class AnalyticsEventCreate(BaseModel):
     event_type: str = Field(min_length=1, max_length=100)
-    lesson_slug: str | None = None
+    lesson_slug: str | None = Field(default=None, max_length=255)
     payload: dict = Field(default_factory=dict)
 
 
@@ -846,7 +848,7 @@ class ReviewQueueItem(BaseModel):
 
 
 class PeerReviewCreate(BaseModel):
-    submission_id: int
+    submission_id: int = Field(ge=1, le=2_147_483_647)  # project_submissions.id is a 32-bit INTEGER
     rubric_scores: dict[str, int] = Field(default_factory=dict)
     feedback: str = Field(min_length=20, max_length=4000)
 
