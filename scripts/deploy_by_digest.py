@@ -5,7 +5,8 @@ it makes Cloud Run writes, which need the Platform Owner's approval and a D-05 r
 
 1. resolve <registry>/<service>:<commit> to its digest (or take --digest);
 2. gcloud run deploy <service> --image <registry>/<service>@sha256:... --no-traffic --tag c-<commit[:12]>;
-3. check that the new revision's tagged URL reports the commit on /health;
+3. check that the new revision's tagged URL reports the commit on /health (--no-pin stops here, for checks on
+   the tagged URL before any traffic moves);
 4. gcloud run services update-traffic <service> --to-revisions <revision>=100: a named revision, so traffic
    no longer follows "latest";
 5. then run scripts/deployment_record.py --commit <commit> --write deploy/records and commit that record by PR.
@@ -31,6 +32,8 @@ from deployment_record import COMMIT_PATTERN, DEFAULT_PROJECT, DEFAULT_REGION, f
 
 REGISTRY = "us-central1-docker.pkg.dev/{project}/qcai-repo"
 DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}")
+# NAME=secret:version: the secret's name and version, never its value (P1-D-07 onward: GUEST_TOKEN_SECRET).
+SECRET_BINDING_PATTERN = re.compile(r"[A-Z][A-Z0-9_]*=[a-z][a-z0-9-]*:(latest|[0-9]+)")
 
 
 def _gcloud(arguments: list[str]) -> str:
@@ -52,7 +55,10 @@ def revision_tag(commit: str) -> str:
     return f"c-{commit[:12]}"
 
 
-def deploy_command(service: str, image: str, digest: str, commit: str, project: str, region: str) -> list[str]:
+def deploy_command(
+    service: str, image: str, digest: str, commit: str, project: str, region: str, secrets: tuple[str, ...] = ()
+) -> list[str]:
+    bindings = ["--update-secrets", ",".join(secrets)] if secrets else []
     return [
         "run", "deploy", service,
         "--image", f"{image}@{digest}",
@@ -60,6 +66,7 @@ def deploy_command(service: str, image: str, digest: str, commit: str, project: 
         "--region", region,
         "--no-traffic",
         "--tag", revision_tag(commit),
+        *bindings,
         "--quiet",
     ]
 
@@ -83,16 +90,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--digest", help="sha256:..., if already known (else resolved from the commit tag)")
     parser.add_argument("--project", default=DEFAULT_PROJECT)
     parser.add_argument("--region", default=DEFAULT_REGION)
+    parser.add_argument("--update-secret", action="append", default=[], help="NAME=secret:version to bind on the new revision (repeatable)")
+    parser.add_argument("--no-pin", action="store_true", help="stop after the /health check, with no traffic moved")
     parser.add_argument("--execute", action="store_true", help="make the Cloud Run writes (needs owner and D-05 approval)")
     args = parser.parse_args(argv)
     if not COMMIT_PATTERN.fullmatch(args.commit):
         parser.error("--commit must be a full 40-character commit")
     if args.digest and not DIGEST_PATTERN.fullmatch(args.digest):
         parser.error("--digest must be sha256:<64 hex>; a tag is never deployed")
+    if any(not SECRET_BINDING_PATTERN.fullmatch(binding) for binding in args.update_secret):
+        parser.error("--update-secret must be NAME=secret:version; a secret value never goes on the command line")
 
     image = f"{REGISTRY.format(project=args.project)}/{args.service}"
     digest = args.digest or resolve_digest(image, args.commit, args.project)
-    deploy = deploy_command(args.service, image, digest, args.commit, args.project, args.region)
+    deploy = deploy_command(args.service, image, digest, args.commit, args.project, args.region, tuple(args.update_secret))
     print("1. digest:", f"{image}@{digest}")
     print("2. deploy without traffic: gcloud", " ".join(deploy))
     print(f"3. check /health on the {revision_tag(args.commit)} tagged URL reports {args.commit}")
@@ -111,6 +122,9 @@ def main(argv: list[str] | None = None) -> int:
     if reported != args.commit:
         print(f"Stopped before any traffic moved: {tagged_url}/health reports {reported!r}, not {args.commit}.", file=sys.stderr)
         return 1
+    if args.no_pin:
+        print(f"{args.service}: {revision} is up at {tagged_url} with no traffic. To move traffic: gcloud", " ".join(pin_command(args.service, revision, args.project, args.region)))
+        return 0
     _gcloud(pin_command(args.service, revision, args.project, args.region))
     print(f"{args.service}: 100% of traffic now on {revision} ({image}@{digest}). Next: step 5.")
     return 0

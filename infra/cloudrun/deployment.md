@@ -8,7 +8,7 @@ AC-1-7: "A committed deployment record names digest and commit; /health returns 
 Build from a clean checkout of the exact commit on `main`, so that what is uploaded is that commit:
 
 ```bash
-git clone https://github.com/naylinnaungHoodedu/qcai-studio.git build-src
+GIT_LFS_SKIP_SMUDGE=1 git clone https://github.com/naylinnaungHoodedu/qcai-studio.git build-src
 cd build-src
 git checkout <commit>
 git status --porcelain   # must print nothing
@@ -16,14 +16,16 @@ gcloud builds submit --project naylinnaung --config infra/cloudbuild/api-image.y
 gcloud builds submit --project naylinnaung --config infra/cloudbuild/frontend-image.yaml --substitutions _GIT_SHA=$(git rev-parse HEAD) .
 ```
 
-Each image is tagged with the commit (never `:latest`) and stamped with it, so `/health` reports it. Cloud Build records each pushed digest. A missing or short `_GIT_SHA` stops the build.
+Source assets are not part of the build: `.gcloudignore` and `.dockerignore` keep them out of the upload and the image (AC-1-5; P1-D-07). Each image is tagged with the commit (never `:latest`) and stamped with it, so `/health` reports it. Cloud Build records each pushed digest. A missing or short `_GIT_SHA` stops the build.
 
 ## 2. Deploy by digest, check, then move traffic
 ```bash
 python scripts/deploy_by_digest.py --service qcai-api --commit <commit>             # the plan only
-python scripts/deploy_by_digest.py --service qcai-api --commit <commit> --execute
-python scripts/deploy_by_digest.py --service qcai-frontend --commit <commit> --execute
+python scripts/deploy_by_digest.py --service qcai-api --commit <commit> --execute --no-pin --update-secret GUEST_TOKEN_SECRET=qcai-guest-token-secret:1
+python scripts/deploy_by_digest.py --service qcai-frontend --commit <commit> --execute --no-pin --update-secret GUEST_TOKEN_SECRET=qcai-guest-token-secret:1
 ```
+
+`--update-secret` binds a secret by name and version, never by value. `--no-pin` stops before traffic moves, so the tagged URLs can be checked first; the script then prints the `update-traffic` command. Without it, the script moves traffic as soon as `/health` reports the commit.
 
 With `--execute`, the script:
 1. resolves the image digest;
