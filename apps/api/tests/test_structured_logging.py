@@ -109,6 +109,41 @@ def test_secrets_are_masked_in_the_message_the_fields_and_the_traceback():
     assert output.count("[REDACTED]") >= 4
 
 
+class _StrictHandler(logging.StreamHandler):
+    """A formatting failure raises here, instead of becoming a "--- Logging error ---" block on stderr."""
+
+    def handleError(self, record):
+        raise
+
+
+def test_uvicorn_access_lines_format_and_are_masked():
+    from uvicorn.logging import AccessFormatter
+
+    install_log_redaction([SECRET])
+    buffer = io.StringIO()
+    handler = _StrictHandler(buffer)
+    handler.setFormatter(AccessFormatter('%(client_addr)s - "%(request_line)s" %(status_code)s', use_colors=False))
+    logger = logging.getLogger("uvicorn.access")
+    saved = (logger.level, logger.propagate, list(logger.handlers))
+    logger.handlers = [handler]
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    try:
+        # The call uvicorn makes for each response (uvicorn/protocols/http/*_impl.py).
+        logger.info('%s - "%s %s HTTP/%s" %d', "203.0.113.7:5902", "GET", "/health?token=leaked-access-token", "1.1", 200)
+        logger.info('%s - "%s %s HTTP/%s" %d', "203.0.113.7:5902", "GET", f"/content/course?key={SECRET}", "1.1", 404)
+    finally:
+        logger.handlers = saved[2]
+        logger.setLevel(saved[0])
+        logger.propagate = saved[1]
+
+    lines = buffer.getvalue().splitlines()
+    assert len(lines) == 2
+    assert lines[0].startswith('203.0.113.7:5902 - "GET /health?token=[REDACTED] HTTP/1.1" 200')
+    assert lines[1].startswith('203.0.113.7:5902 - "GET /content/course?key=[REDACTED] HTTP/1.1" 404')
+    assert "leaked-access-token" not in buffer.getvalue() and SECRET not in buffer.getvalue()
+
+
 # --- The configuration ---
 
 
@@ -278,7 +313,8 @@ def test_a_real_api_process_writes_json_lines_for_startup_and_security_events(fr
     output = tmp_path / "api.log"
     with output.open("w", encoding="utf-8") as stream:
         process = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"],
+            # At info, so uvicorn's access lines run through the redacting record factory as in production.
+            [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port), "--log-level", "info"],
             cwd=API_ROOT,
             env=env,
             stdout=stream,
@@ -297,10 +333,14 @@ def test_a_real_api_process_writes_json_lines_for_startup_and_security_events(fr
                     raise RuntimeError("The API process did not start.")
                 time.sleep(0.3)
             forged = httpx.get(f"{base}/auth/me", cookies={GUEST_TOKEN_COOKIE: "g1.guest-00000000.1.not-a-mac"}, timeout=10)
+            probed = httpx.get(f"{base}/health?token=leaked-access-token", timeout=10)
         finally:
             _stop(process)
 
-    assert forged.status_code == 401
+    assert forged.status_code == 401 and probed.status_code == 200
+    text = output.read_text(encoding="utf-8")
+    assert "Logging error" not in text, "every access line must format"
+    assert '"GET /health?token=[REDACTED] HTTP/1.1" 200' in text and "leaked-access-token" not in text
     entries = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines() if line.startswith("{")]
     startup = [entry for entry in entries if entry.get("event") == "startup"]
     rejected = [entry for entry in entries if entry.get("event_type") == "auth.credential_rejected"]
