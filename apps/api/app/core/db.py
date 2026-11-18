@@ -1,16 +1,52 @@
-from collections.abc import Generator
+import atexit
+from collections.abc import Callable, Generator
+import logging
 
 from google.cloud.sql.connector import Connector, IPTypes
 from sqlalchemy import create_engine, event
-from sqlalchemy.engine import URL, make_url
+from sqlalchemy.engine import URL, Engine, make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import get_settings
+from app.core.structured_logging import FIELDS
 
 
 class Base(DeclarativeBase):
     pass
+
+
+LOGGER = logging.getLogger("qcai.db")
+
+# Replace a pooled connection after 30 minutes, before Cloud SQL or the network drops it while idle
+# (Google's recommended setting for Cloud SQL). The pre-ping below handles one that dies sooner.
+POOL_RECYCLE_SECONDS = 1800
+
+
+def treat_dead_sockets_as_disconnects(engine: Engine) -> None:
+    """Let the pool pre-ping recover from a connection whose socket has died.
+
+    SQLAlchemy's pre-ping reconnects only when the driver reports a DBAPI disconnect error. After an idle
+    period pg8000 reports a dead TLS socket to Cloud SQL as a raw OSError (BrokenPipeError), which the pool
+    re-raises, so each stale connection failed one request before it was discarded: 6 API 5xx on
+    2026-11-18 at 05:06-05:10Z (Release R1.3). A ping that fails at the socket now counts as a disconnect,
+    so the pool invalidates its older connections and the request gets a fresh one.
+    """
+    ping: Callable[[object], bool] = engine.dialect.do_ping
+
+    def do_ping(dbapi_connection) -> bool:
+        try:
+            return ping(dbapi_connection)
+        except OSError as exc:
+            # Countable in the logs, so a recovery is not mistaken for a server error (the pool still logs its
+            # own ERROR while closing the dead connection).
+            LOGGER.warning(
+                "Pool pre-ping found a dead database socket; reconnecting",
+                extra={FIELDS: {"event": "db.pool.dead_socket", "error": type(exc).__name__}},
+            )
+            return False
+
+    engine.dialect.do_ping = do_ping  # type: ignore[method-assign]
 
 
 settings = get_settings()
@@ -24,6 +60,7 @@ elif settings.database_url.startswith(("postgresql", "postgres")):
     engine_kwargs["pool_size"] = 20
     engine_kwargs["max_overflow"] = 10
     engine_kwargs["pool_pre_ping"] = True
+    engine_kwargs["pool_recycle"] = POOL_RECYCLE_SECONDS
 
 if settings.cloud_sql_connection_name and settings.database_url.startswith(("postgresql", "postgres")):
     parsed_url = make_url(settings.database_url)
@@ -33,6 +70,9 @@ if settings.cloud_sql_connection_name and settings.database_url.startswith(("pos
         raise ValueError("DATABASE_URL must include a database name and username when CLOUD_SQL_CONNECTION_NAME is set.")
 
     cloud_sql_connector = Connector(refresh_strategy="lazy")
+    # Close the connector's HTTP session at exit; otherwise every run of a short job (the retention job)
+    # ends with "Unclosed client session" errors in its log.
+    atexit.register(cloud_sql_connector.close)
     cloud_sql_ip_type = IPTypes.PRIVATE if settings.cloud_sql_ip_type.upper() == "PRIVATE" else IPTypes.PUBLIC
 
     def get_cloud_sql_connection():
@@ -48,6 +88,9 @@ if settings.cloud_sql_connection_name and settings.database_url.startswith(("pos
     engine = create_engine(URL.create("postgresql+pg8000"), creator=get_cloud_sql_connection, **engine_kwargs)
 else:
     engine = create_engine(settings.database_url, **engine_kwargs)
+
+if settings.database_url.startswith(("postgresql", "postgres")):
+    treat_dead_sockets_as_disconnects(engine)
 
 if settings.database_url.startswith("sqlite"):
     @event.listens_for(engine, "connect")
