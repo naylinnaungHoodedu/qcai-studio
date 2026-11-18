@@ -21,6 +21,7 @@ from app.schemas import (
     TutorThreadDetail,
     TutorThreadRead,
 )
+from app.services.answer_history import WITHDRAWN_ANSWER, stored_before_containment
 from app.services.contained_answers import contain_answer
 from app.services.teaching_assistant import TeachingAssistantService
 
@@ -28,6 +29,22 @@ from app.services.teaching_assistant import TeachingAssistantService
 def _thread_title(message: str) -> str:
     compact = " ".join(message.split())
     return (compact[:120] + "...") if len(compact) > 123 else compact
+
+
+def _withdrawn(message: TutorMessage) -> bool:
+    return message.role == "assistant" and stored_before_containment(message.created_at)
+
+
+def _message_read(message: TutorMessage) -> TutorMessageRead:
+    # A reply the uncontained build stored is withheld; the learner's own messages stay (R-16).
+    withdrawn = _withdrawn(message)
+    return TutorMessageRead(
+        id=message.id,
+        role=message.role,
+        content=WITHDRAWN_ANSWER if withdrawn else message.content,
+        created_at=message.created_at,
+        withdrawn=withdrawn,
+    )
 
 
 class TutorOrchestrator:
@@ -45,7 +62,7 @@ class TutorOrchestrator:
         return [self._thread_read(record) for record in records]
 
     def create_thread(self, db: Session, user: AuthUser, title: str | None = None) -> TutorThreadRead:
-        thread = TutorThread(id=f"thread-{uuid4()}", user_id=user.user_id, title=(title or "New grounded Tutor thread").strip()[:255])
+        thread = TutorThread(id=f"thread-{uuid4()}", user_id=user.user_id, title=(title or "New Tutor thread").strip()[:255])
         db.add(thread)
         db.flush()
         return self._thread_read(thread)
@@ -60,10 +77,7 @@ class TutorOrchestrator:
         ).all()
         return TutorThreadDetail(
             **self._thread_read(thread).model_dump(),
-            messages=[
-                TutorMessageRead(id=message.id, role=message.role, content=message.content, created_at=message.created_at)
-                for message in messages
-            ],
+            messages=[_message_read(message) for message in messages],
         )
 
     def chat(self, db: Session, user: AuthUser, payload: AssistantChatRequest) -> AssistantChatResponse:
@@ -136,10 +150,11 @@ class TutorOrchestrator:
             .limit(8)
         ).all()
         stored.reverse()
+        # A withheld reply never feeds a new turn (R-16).
         history = [
             AssistantChatMessage(role=record.role, content=record.content)
             for record in stored
-            if record.role in {"user", "assistant"}
+            if record.role == "user" or (record.role == "assistant" and not _withdrawn(record))
         ]
         if not history:
             history = supplied_history[-8:]

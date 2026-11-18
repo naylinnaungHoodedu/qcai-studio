@@ -191,7 +191,7 @@ const ENGINEERING_SURFACES = [
     eyebrow: "Backend",
     title: "FastAPI service architecture",
     description:
-      "The platform exposes a substantial API surface for lessons, grounded QA, analytics, projects, and interactive practice modes.",
+      "The platform exposes a substantial API surface for lessons, contained Q&A, analytics, projects, and interactive practice modes.",
     bullets: [
       "11 route groups cover content, auth, search, QA, analytics, assets, arena, builder, insights, projects, and admin flows.",
       "SQLAlchemy and Alembic support persistence across learner activity, notes, reviews, and progress data.",
@@ -200,12 +200,12 @@ const ENGINEERING_SURFACES = [
   },
   {
     eyebrow: "AI and retrieval",
-    title: "Grounded intelligence instead of generic chat",
+    title: "Contained answers instead of generated chat",
     description:
-      "QC+AI Studio uses retrieval-first AI services so niche quantum topics stay tied to evidence instead of model improvisation.",
+      "QC+AI Studio does not let a model write answers. Q&A and the tutor quote approved course sources word for word, or say they cannot answer.",
     bullets: [
-      "LangChain and OpenAI GPT-4.1-mini drive citation-first Q&A against the curated corpus when the OpenAI key is provisioned.",
-      "Pinecone-backed hybrid retrieval activates only when OpenAI and Pinecone secrets are present; otherwise the site stays on grounded lexical fallback.",
+      "No language model generates an answer. Quotations are matched to the question by retrieval and are not verified, so no answer is marked as checked.",
+      "Search is lexical over the authored course text. Pinecone-backed hybrid retrieval exists in the code but is not enabled in production.",
       "Adaptive insights, skill-gap reporting, and next-step recommendations extend the platform beyond static content delivery.",
     ],
   },
@@ -309,7 +309,7 @@ export default async function AboutPage() {
           <p className="eyebrow">About QC+AI Studio</p>
           <h1>A public QC+AI learning platform built for technical trust, not just surface polish.</h1>
           <p className="hero-text">
-            QC+AI Studio is a graduate-level learning environment for quantum computing and artificial intelligence. It turns curated proceedings, applied industry material, and lecture assets into a structured web product with modules, lessons, grounded Q&amp;A, projects, and learner analytics.
+            QC+AI Studio is a graduate-level learning environment for quantum computing and artificial intelligence. It turns curated proceedings, applied industry material, and lecture assets into a structured web product with modules, lessons, contained Q&amp;A, projects, and learner analytics.
           </p>
           <p className="hero-text">{COURSE_SCOPE_NOTE}</p>
           <div className="button-row">

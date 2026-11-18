@@ -145,6 +145,8 @@ export type QAHistoryItem = {
     provisional?: boolean;
   }>;
   created_at: string;
+  // The stored answer predates containment and is withheld (R-16).
+  withdrawn?: boolean;
 };
 
 export type AssistantChatMessage = {
@@ -195,6 +197,8 @@ export type TutorThreadDetail = TutorThread & {
     role: "user" | "assistant";
     content: string;
     created_at: string;
+    // A stored tutor reply that predates containment is withheld (R-16).
+    withdrawn?: boolean;
   }>;
 };
 

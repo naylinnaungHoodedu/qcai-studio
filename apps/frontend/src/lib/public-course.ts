@@ -129,7 +129,7 @@ export const INDUSTRY_METHOD_NOTE =
 export const GUEST_MODE_NOTES = [
   "Public visitors can browse curriculum pages and use guest-mode study surfaces in the current browser session.",
   "Guest activity is stored per browser session. Cross-device continuity requires authenticated identity when Auth0 client configuration is enabled for the deployment.",
-  "Search and Q&A remain citation-grounded. When Pinecone or OpenAI secrets are not provisioned, the site transparently falls back to grounded lexical retrieval.",
+  "Search uses lexical retrieval. Q&A and the tutor only quote approved course sources word for word or say they cannot answer; nothing is generated.",
 ] as const;
 
 export const PROJECT_PREVIEW = [
