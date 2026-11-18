@@ -30,12 +30,12 @@ export default function OpenGraphImage() {
             Quantum computing and AI, taught through real hardware constraints.
           </div>
           <div style={{ color: "#d7dfeb", fontSize: 30, lineHeight: 1.35 }}>
-            Graduate-level modules, grounded lesson search, cited Q&amp;A, projects, and guest-mode public previews.
+            Graduate-level modules, lesson search, course Q&amp;A, projects, and guest-mode public previews.
           </div>
         </div>
         <div style={{ color: "#f7f3eb", display: "flex", fontSize: 26, justifyContent: "space-between" }}>
           <span>qantumlearn.academy</span>
-          <span>Modules | Lessons | Grounded QA</span>
+          <span>Modules | Lessons | Course Q&amp;A</span>
         </div>
       </div>
     ),

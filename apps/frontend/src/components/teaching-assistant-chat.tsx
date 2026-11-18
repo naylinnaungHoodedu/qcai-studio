@@ -324,7 +324,7 @@ export function TeachingAssistantChat() {
               ))}
               {isSending ? (
                 <article className="assistant-bubble assistant-bubble--assistant">
-                  <p>Thinking through the grounded course material...</p>
+                  <p>Checking the course sources...</p>
                 </article>
               ) : null}
             </div>

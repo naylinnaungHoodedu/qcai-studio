@@ -6,10 +6,10 @@ export const FEATURE_AVAILABILITY = [
       "Modules, lessons, syllabus, About, Attribution, and the new Simulations hub are public and fully reachable without sign-in.",
   },
   {
-    title: "Grounded search and Q&A",
-    status: "Available with fallback",
+    title: "Search and Q&A",
+    status: "Available, contained",
     detail:
-      "Search and Q&A stay source-grounded in production. When OpenAI or Pinecone secrets are absent, the site falls back to grounded lexical retrieval instead of pretending semantic mode is active.",
+      "Search uses lexical retrieval over the course text. Q&A and the tutor answer only by quoting approved course sources word for word, or say they cannot answer; nothing is generated and no answer is marked as verified.",
   },
   {
     title: "Practice surfaces",

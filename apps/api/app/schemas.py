@@ -163,6 +163,8 @@ class QAHistoryItem(BaseModel):
     answer: str
     citations: list[Citation] = Field(default_factory=list)
     created_at: datetime
+    # True when the stored answer predates containment and is withheld (R-16; app/services/answer_history.py).
+    withdrawn: bool = False
 
 
 ASSISTANT_HISTORY_MAX_MESSAGES = 8
@@ -252,6 +254,8 @@ class TutorMessageRead(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     created_at: datetime
+    # True when a stored tutor reply predates containment and is withheld (R-16).
+    withdrawn: bool = False
 
 
 class TutorThreadDetail(TutorThreadRead):

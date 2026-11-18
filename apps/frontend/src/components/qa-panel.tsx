@@ -58,7 +58,7 @@ export function QAPanel({
       <article className="citation-card" key={item.id}>
         <strong>{item.question}</strong>
         <p className="muted">{new Date(item.created_at).toLocaleString()}</p>
-        <p>{item.answer}</p>
+        <p className={item.withdrawn ? "muted" : undefined}>{item.answer}</p>
       </article>
     );
   }
@@ -67,7 +67,7 @@ export function QAPanel({
     <section className="panel">
       <div className="panel-header">
         <div>
-          <p className="eyebrow">RAG Q&A</p>
+          <p className="eyebrow">Course Q&A</p>
           <h2>Ask this lesson</h2>
         </div>
       </div>
@@ -88,7 +88,7 @@ export function QAPanel({
         />
         <div className="button-row">
           <button className="primary-button" type="submit" disabled={isLoading}>
-            {isLoading ? "Retrieving..." : "Ask grounded question"}
+            {isLoading ? "Retrieving..." : "Ask a question"}
           </button>
           <button
             className="secondary-button"
@@ -124,7 +124,7 @@ export function QAPanel({
           <div className="panel-header">
             <div>
               <p className="eyebrow">Recent questions</p>
-              <h3>Last 5 grounded answers</h3>
+              <h3>Your last 5 questions</h3>
             </div>
           </div>
           {historyQuery.isLoading ? <p className="muted">Loading recent questions...</p> : null}

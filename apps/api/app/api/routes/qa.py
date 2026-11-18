@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.core.rate_limit import limiter
 from app.db_models import QAInteraction
 from app.schemas import Citation, QAHistoryItem, QARequest, QAResponse
+from app.services.answer_history import WITHDRAWN_ANSWER, stored_before_containment
 from app.services.store import get_qa_engine
 from app.services.text_utils import sanitize_user_text
 
@@ -58,14 +59,18 @@ def read_question_history(
         .where(*filters)
         .order_by(QAInteraction.created_at.desc(), QAInteraction.id.desc())
     ).all()[offset : offset + limit]
-    return [
-        QAHistoryItem(
-            id=record.id,
-            lesson_slug=record.lesson_slug,
-            question=record.question,
-            answer=record.answer,
-            citations=[Citation.model_validate(citation) for citation in (record.citations or [])],
-            created_at=record.created_at,
-        )
-        for record in records
-    ]
+    return [_history_item(record) for record in records]
+
+
+def _history_item(record: QAInteraction) -> QAHistoryItem:
+    # An answer the uncontained build stored is withheld with its citations; the question stays (R-16).
+    withdrawn = stored_before_containment(record.created_at)
+    return QAHistoryItem(
+        id=record.id,
+        lesson_slug=record.lesson_slug,
+        question=record.question,
+        answer=WITHDRAWN_ANSWER if withdrawn else record.answer,
+        citations=[] if withdrawn else [Citation.model_validate(citation) for citation in (record.citations or [])],
+        created_at=record.created_at,
+        withdrawn=withdrawn,
+    )
