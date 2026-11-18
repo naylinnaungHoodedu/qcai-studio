@@ -1,0 +1,53 @@
+{
+  "commit": "5bd5fef4458599317a4443238cd37fad6550c3b0",
+  "ok": true,
+  "project": "naylinnaung",
+  "recorded_utc": "2026-11-18T05:13:05Z",
+  "region": "us-central1",
+  "services": [
+    {
+      "health": {
+        "app": "QC+AI Learning API",
+        "commit": "5bd5fef4458599317a4443238cd37fad6550c3b0",
+        "environment": "production",
+        "status": "ok"
+      },
+      "problems": [],
+      "public_url": "https://api.qantumlearn.academy",
+      "run_url": "https://qcai-api-55f6mkphiq-uc.a.run.app",
+      "service": "qcai-api",
+      "traffic": [
+        {
+          "created_utc": "2026-11-18T05:07:47.079583Z",
+          "image_digest": "us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-api@sha256:c577ddfa102bd6627d1412f70fbbcba36dec83fbdccdd83fc2bee119b09c29d7",
+          "latest_revision": false,
+          "percent": 100,
+          "revision": "qcai-api-00044-duq",
+          "tag": "c-5bd5fef44585"
+        }
+      ]
+    },
+    {
+      "health": {
+        "app": "QC+AI Studio Frontend",
+        "commit": "5bd5fef4458599317a4443238cd37fad6550c3b0",
+        "environment": "production",
+        "status": "ok"
+      },
+      "problems": [],
+      "public_url": "https://qantumlearn.academy",
+      "run_url": "https://qcai-frontend-55f6mkphiq-uc.a.run.app",
+      "service": "qcai-frontend",
+      "traffic": [
+        {
+          "created_utc": "2026-11-18T05:08:43.540418Z",
+          "image_digest": "us-central1-docker.pkg.dev/naylinnaung/qcai-repo/qcai-frontend@sha256:4db48b3418d0fcebc63d399bc7a8a92f5a65f8c53976fb6b460156efe0a89686",
+          "latest_revision": false,
+          "percent": 100,
+          "revision": "qcai-frontend-00059-tuz",
+          "tag": "c-5bd5fef44585"
+        }
+      ]
+    }
+  ]
+}
