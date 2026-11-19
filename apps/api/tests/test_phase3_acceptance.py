@@ -426,7 +426,16 @@ def test_ac_3_2_the_replay_finds_no_mismatch_and_is_labelled_not_e3_or_lq1(tmp_p
         module.fixture_items(lqs)
     committed = json.loads((REPO_ROOT / "docs" / "evaluation" / "phase3" / "three_plan_replay_v1.json").read_text(encoding="utf-8"))
     assert committed["result"] == "pass" and committed["config_package"]["sha256"] == PACKAGE.sha256
-    assert re.fullmatch(r"[0-9a-f]{40}(-dirty)?", committed["commit"])  # a commit, marked when its tree was dirty
+    # Review round 4 (spec 18.7 E3): the committed record names a clean commit (a -dirty record is a working copy, and
+    # names no commit that holds the code it replayed) and, where the history is present, a commit of this branch.
+    assert re.fullmatch(r"[0-9a-f]{40}", committed["commit"]), committed["commit"]
+    try:
+        ancestry = subprocess.run(["git", "merge-base", "--is-ancestor", committed["commit"], "HEAD"], cwd=REPO_ROOT,
+                                  capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        ancestry = None
+    if ancestry is not None and ancestry.returncode in (0, 1):  # 128: a shallow clone (CI) without that commit
+        assert ancestry.returncode == 0, f"the record names {committed['commit']}, which is not an ancestor of HEAD"
 
 
 def test_ac_3_2_the_replay_record_names_its_commit_and_refuses_to_write_from_a_dirty_tree(monkeypatch, tmp_path):
