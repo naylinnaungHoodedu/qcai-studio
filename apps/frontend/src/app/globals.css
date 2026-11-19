@@ -2965,6 +2965,36 @@ button:disabled,
   color: var(--muted);
 }
 
+/* Phase 3 (task 3.8): the evidence panel of a contained answer, labels only. */
+.assistant-evidence-panel {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px dashed rgba(124, 146, 210, 0.22);
+  font-size: 0.82rem;
+}
+
+.assistant-evidence-panel p,
+.assistant-evidence-panel ul,
+.assistant-evidence-panel ol {
+  margin: 0;
+}
+
+.assistant-evidence-labels,
+.assistant-evidence-degraded,
+.assistant-evidence-verdict {
+  color: var(--muted);
+}
+
+.assistant-evidence-labels,
+.assistant-evidence-degraded,
+.assistant-evidence-spans {
+  display: grid;
+  gap: 4px;
+  padding-left: 18px;
+}
+
 .assistant-compose {
   display: grid;
   gap: 10px;

@@ -50,6 +50,14 @@ export const RETENTION_SCHEDULE = [
     trigger:
       "Automatic retention cleanup removes older events. Events cannot be edited or deleted sooner, including on account deletion; a deleted account's digest no longer matches any stored ID. Each event is also written to the hosting provider's logs without either digest: the event, time, outcome, role and technical details such as the route, status code or reason, never an ID, address or email.",
   },
+  {
+    dataClass: "Tutor response ledger",
+    personalData:
+      "For each tutor answer: which approved course passages were quoted, the quotations, the decision and version stamps, linked to your tutor turn by a random id. No name, email, account id or question text.",
+    retention: "Kept as an audit record; the retention period is an open owner decision.",
+    trigger:
+      "Deleting your account or tutor history removes the link, so the record can no longer be tied to you; records cannot be edited or deleted.",
+  },
 ] as const;
 
 export const COOKIE_INVENTORY = [
