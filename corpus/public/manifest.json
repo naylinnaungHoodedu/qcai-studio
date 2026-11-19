@@ -1,5 +1,707 @@
 {
-  "schema_version": "1.0",
-  "manifest_status": "template_pending_library_and_rights_review",
-  "items": []
+  "schema_version": "2.0",
+  "manifest_status": "generated_pending_rights_review",
+  "generator": "manifest-gen-v1",
+  "span_scheme": "span-v2",
+  "corpus_version": "corpus-f1fc2c12e7d9d01a",
+  "items": [
+    {
+      "id": "advanced_programming_and_software_development_for_hardware-constrained_learning_for_quantum_computing_and_artificial_intelligence-document",
+      "kind": "document",
+      "plane": "public",
+      "asset_filenames": [
+        "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx"
+      ],
+      "asset_paths": [
+        "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx"
+      ],
+      "storage": "git",
+      "sha256": "2785f7a73f514e9183fa005696397729f96dcc9b5d71046d50feaab391fad773",
+      "hash_basis": "content-sha256",
+      "size_bytes": 3148647,
+      "version": "sha256:2785f7a73f514e91",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": {
+        "scheme": "span-v2",
+        "canonical_text": "sections-v1",
+        "count": 89,
+        "set_sha256": "6aae73d25e3caa97077e32450c70f750d0032c4d9c089eb3c261e8f399c353ae"
+      },
+      "media": null,
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "advanced_programming_and_software_development_for_hardware-constrained_learning_for_quantum_computing_and_artificial_intelligence-video",
+      "kind": "video",
+      "plane": "public",
+      "asset_filenames": [
+        "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
+      ],
+      "asset_paths": [
+        "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
+      ],
+      "storage": "git-lfs",
+      "sha256": "7202ffc000e552f9f2ef616f9c4c17dc59f8ed9704d7aa7c6facff9a2a262acd",
+      "hash_basis": "content-sha256",
+      "size_bytes": 219432285,
+      "version": "sha256:7202ffc000e552f9",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": null,
+      "media": {
+        "duration_s": 589.01,
+        "basis": "mp4-mvhd-v1"
+      },
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "analyzing-quantum-computing-and-ai-paper-2025",
+      "kind": "document",
+      "plane": "public",
+      "asset_filenames": [
+        "Analyzing Quantum Computing and AI Paper 2025.docx"
+      ],
+      "asset_paths": [
+        "Analyzing Quantum Computing and AI Paper 2025.docx"
+      ],
+      "storage": "git",
+      "sha256": "151415a28a29659016c8dcf01d074d05f7af8be62c0d8f794aebc0305e1f2773",
+      "hash_basis": "content-sha256",
+      "size_bytes": 4486050,
+      "version": "sha256:151415a28a296590",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": {
+        "scheme": "span-v2",
+        "canonical_text": "sections-v1",
+        "count": 88,
+        "set_sha256": "018d8c0793b3afa479b7854d5f1f94aca5fc0bb82ef14cfd587b5b5c3af3b46a"
+      },
+      "media": null,
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "authored-curriculum",
+      "kind": "authored",
+      "plane": "public",
+      "asset_filenames": [],
+      "asset_paths": [],
+      "storage": "code",
+      "source_module": "apps/api/app/services/content_assembler.py:MODULE_BLUEPRINTS",
+      "sha256": "3db6201dc657b52e9b6a523196c84e5b6c49617048b76d73cf3105bd5f9939e2",
+      "hash_basis": "canonical-json-authored-v1",
+      "size_bytes": 20148,
+      "version": "sha256:3db6201dc657b52e",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": {
+        "scheme": "span-v2",
+        "canonical_text": "sections-v1",
+        "count": 41,
+        "set_sha256": "4b2328b9abddce20f53f164e77cfbe7a6500cc8605b6ec74e38ab4d7658e7e77"
+      },
+      "media": null,
+      "source": "QC+AI Studio authored curriculum",
+      "license": "UNDETERMINED",
+      "permitted_use": "platform curriculum text; indexed by kind, not a D-31 source asset",
+      "public_service": false
+    },
+    {
+      "id": "hardware-constrained_learning_for_quantum_computing_and_artificial_intelligence_models",
+      "kind": "document",
+      "plane": "public",
+      "asset_filenames": [
+        "Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx"
+      ],
+      "asset_paths": [
+        "Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx"
+      ],
+      "storage": "git",
+      "sha256": "7da5b12eb2a93755eb9e8f7ddada0dc39153a962fab6a071d33006fbc1f55a39",
+      "hash_basis": "content-sha256",
+      "size_bytes": 105916,
+      "version": "sha256:7da5b12eb2a93755",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": {
+        "scheme": "span-v2",
+        "canonical_text": "sections-v1",
+        "count": 103,
+        "set_sha256": "7c1460b8a1cf2e6dd1061af499bed53ba742ca4209f9b2c9d225014a2c1d9730"
+      },
+      "media": null,
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "industry-use-cases",
+      "kind": "video",
+      "plane": "public",
+      "asset_filenames": [
+        "Industry Use Cases.mp4"
+      ],
+      "asset_paths": [
+        "Industry Use Cases.mp4"
+      ],
+      "storage": "git-lfs",
+      "sha256": "2c969076258b7e8890d663b9367ed2fac99a9f186a693b4f1d6f820e09411c71",
+      "hash_basis": "content-sha256",
+      "size_bytes": 312993668,
+      "version": "sha256:2c969076258b7e88",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": null,
+      "media": {
+        "duration_s": 604.11,
+        "basis": "mp4-mvhd-v1"
+      },
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "intermediate_quantum_programming_for_hardware-constrained_learning_for_quantum_computing_and_artificial_intelligence-document",
+      "kind": "document",
+      "plane": "public",
+      "asset_filenames": [
+        "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx"
+      ],
+      "asset_paths": [
+        "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx"
+      ],
+      "storage": "git",
+      "sha256": "d64748204bf513399ec35978003cf7c1e0c9b3b91eef4d818abbe32afb23bf60",
+      "hash_basis": "content-sha256",
+      "size_bytes": 3048386,
+      "version": "sha256:d64748204bf51339",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": {
+        "scheme": "span-v2",
+        "canonical_text": "sections-v1",
+        "count": 94,
+        "set_sha256": "d765f20c473d3ad809a5c4188f2b67d079484bff907e2780201f9973f1a38f4c"
+      },
+      "media": null,
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "intermediate_quantum_programming_for_hardware-constrained_learning_for_quantum_computing_and_artificial_intelligence-video",
+      "kind": "video",
+      "plane": "public",
+      "asset_filenames": [
+        "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
+      ],
+      "asset_paths": [
+        "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
+      ],
+      "storage": "git-lfs",
+      "sha256": "a4bcc7bbcc7d479eaf484c8e8e403750b3bfe7846708805ece4e9acbb85a5355",
+      "hash_basis": "content-sha256",
+      "size_bytes": 230288137,
+      "version": "sha256:a4bcc7bbcc7d479e",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": null,
+      "media": {
+        "duration_s": 582.81,
+        "basis": "mp4-mvhd-v1"
+      },
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "introduction_to_hardware-constrained_learning_for_quantum_computing_and_artificial_intelligence-document",
+      "kind": "document",
+      "plane": "public",
+      "asset_filenames": [
+        "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx"
+      ],
+      "asset_paths": [
+        "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx"
+      ],
+      "storage": "git",
+      "sha256": "e61289e7df6eb8cc74c4b08e92b385bda70ad326f7314e3a732e3d1fbf25f887",
+      "hash_basis": "content-sha256",
+      "size_bytes": 3112182,
+      "version": "sha256:e61289e7df6eb8cc",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": {
+        "scheme": "span-v2",
+        "canonical_text": "sections-v1",
+        "count": 89,
+        "set_sha256": "5fb19240a951378a23fbb2b59db7197d60e149ded55108ac1052ffbc1c4a169f"
+      },
+      "media": null,
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "introduction_to_hardware-constrained_learning_for_quantum_computing_and_artificial_intelligence-video",
+      "kind": "video",
+      "plane": "public",
+      "asset_filenames": [
+        "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
+      ],
+      "asset_paths": [
+        "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
+      ],
+      "storage": "git-lfs",
+      "sha256": "c7f7b6fad085f584b7339f444c22ca398a380f5c313cad8e8bd677c33da50c59",
+      "hash_basis": "content-sha256",
+      "size_bytes": 319113108,
+      "version": "sha256:c7f7b6fad085f584",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": null,
+      "media": {
+        "duration_s": 684.51,
+        "basis": "mp4-mvhd-v1"
+      },
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "module2_routing-graph-shrinking-and-logistics-under-hardware-constraints-document",
+      "kind": "document",
+      "plane": "public",
+      "asset_filenames": [
+        "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx"
+      ],
+      "asset_paths": [
+        "update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx"
+      ],
+      "storage": "git",
+      "sha256": "c8d635fdf542eee42ece4cd3df962cab31085fe5c4b4ee0f74f4ea72587caeba",
+      "hash_basis": "content-sha256",
+      "size_bytes": 3040326,
+      "version": "sha256:c8d635fdf542eee4",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": {
+        "scheme": "span-v2",
+        "canonical_text": "sections-v1",
+        "count": 85,
+        "set_sha256": "196d8288960bb83c2d97911e638579a17fb1c0fc64f7ba76fc079afe67ea96d7"
+      },
+      "media": null,
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "module2_routing-graph-shrinking-and-logistics-under-hardware-constraints-video",
+      "kind": "video",
+      "plane": "public",
+      "asset_filenames": [
+        "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4"
+      ],
+      "asset_paths": [
+        "update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.mp4"
+      ],
+      "storage": "git-lfs",
+      "sha256": "26e93bd8eda0091ff657acc1683fa0326ba5687a5ebcea88be84eacf91a91fe6",
+      "hash_basis": "content-sha256",
+      "size_bytes": 272602918,
+      "version": "sha256:26e93bd8eda0091f",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": null,
+      "media": {
+        "duration_s": 732.443,
+        "basis": "mp4-mvhd-v1"
+      },
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "module3_quantum-vision-gnn-and-few-shot-hybrid-architectures-document",
+      "kind": "document",
+      "plane": "public",
+      "asset_filenames": [
+        "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.docx"
+      ],
+      "asset_paths": [
+        "update_data/Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.docx"
+      ],
+      "storage": "git",
+      "sha256": "d624fab042eaa6465f0f9f4ecb40f56e56f39937468e867307aa26c41f29554e",
+      "hash_basis": "content-sha256",
+      "size_bytes": 3065658,
+      "version": "sha256:d624fab042eaa646",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": {
+        "scheme": "span-v2",
+        "canonical_text": "sections-v1",
+        "count": 94,
+        "set_sha256": "74118fdfee8f4d1facdd1c06915e3e8e7168a38a4b6f66f48ac48a46ac9eb195"
+      },
+      "media": null,
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "module3_quantum-vision-gnn-and-few-shot-hybrid-architectures-video",
+      "kind": "video",
+      "plane": "public",
+      "asset_filenames": [
+        "Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.mp4"
+      ],
+      "asset_paths": [
+        "update_data/Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.mp4"
+      ],
+      "storage": "git-lfs",
+      "sha256": "0b1692931bff0df4c2e87f587e9c775540ff32cd27ebaf72787f3611f8624738",
+      "hash_basis": "content-sha256",
+      "size_bytes": 354036669,
+      "version": "sha256:0b1692931bff0df4",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": null,
+      "media": {
+        "duration_s": 632.276,
+        "basis": "mp4-mvhd-v1"
+      },
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "module4_expressive-bottlenecks-compression-language-and-explanation-document",
+      "kind": "document",
+      "plane": "public",
+      "asset_filenames": [
+        "Module4_Expressive Bottlenecks Compression, Language, and Explanation.docx"
+      ],
+      "asset_paths": [
+        "update_data/Module4_Expressive Bottlenecks Compression, Language, and Explanation.docx"
+      ],
+      "storage": "git",
+      "sha256": "0265f4ebd02b0585523439d44e321acb7b92108366e6cd8b18bb0ec0bc1534dc",
+      "hash_basis": "content-sha256",
+      "size_bytes": 3035876,
+      "version": "sha256:0265f4ebd02b0585",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": {
+        "scheme": "span-v2",
+        "canonical_text": "sections-v1",
+        "count": 70,
+        "set_sha256": "ad22c699783a6154001533bf8cb66296e6e1807362465660015a5a3fd5e5ce9d"
+      },
+      "media": null,
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "module4_expressive-bottlenecks-compression-language-and-explanation-video",
+      "kind": "video",
+      "plane": "public",
+      "asset_filenames": [
+        "Module4_Expressive Bottlenecks Compression, Language, and Explanation.mp4"
+      ],
+      "asset_paths": [
+        "update_data/Module4_Expressive Bottlenecks Compression, Language, and Explanation.mp4"
+      ],
+      "storage": "git-lfs",
+      "sha256": "8f571fbc2d43adf6ba9e792596411b8396076b09766de2d746a17ac70a6f00da",
+      "hash_basis": "content-sha256",
+      "size_bytes": 278506439,
+      "version": "sha256:8f571fbc2d43adf6",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": null,
+      "media": {
+        "duration_s": 681.343,
+        "basis": "mp4-mvhd-v1"
+      },
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "module6_from-algorithmic-novelty-to-sustainable-hybrid-systems-document",
+      "kind": "document",
+      "plane": "public",
+      "asset_filenames": [
+        "Module6_From Algorithmic Novelty to Sustainable Hybrid Systems.docx"
+      ],
+      "asset_paths": [
+        "update_data/Module6_From Algorithmic Novelty to Sustainable Hybrid Systems.docx"
+      ],
+      "storage": "git",
+      "sha256": "770b94c32a793f51bca68126aaf2117cc9473c49c1c543e90c0ea78ce08ebec7",
+      "hash_basis": "content-sha256",
+      "size_bytes": 3102711,
+      "version": "sha256:770b94c32a793f51",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": {
+        "scheme": "span-v2",
+        "canonical_text": "sections-v1",
+        "count": 94,
+        "set_sha256": "3a33c15d1be246aee5fe5dcba4b7018e3632ad35594681a47b213b519c25de28"
+      },
+      "media": null,
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "module6_from-algorithmic-novelty-to-sustainable-hybrid-systems-video",
+      "kind": "video",
+      "plane": "public",
+      "asset_filenames": [
+        "Module6_From Algorithmic Novelty to Sustainable Hybrid Systems.mp4"
+      ],
+      "asset_paths": [
+        "update_data/Module6_From Algorithmic Novelty to Sustainable Hybrid Systems.mp4"
+      ],
+      "storage": "git-lfs",
+      "sha256": "2e1beba533733267c0e7b9dd3eafdaf41f115bd13b29956df9ffd985db189be7",
+      "hash_basis": "content-sha256",
+      "size_bytes": 271652078,
+      "version": "sha256:2e1beba533733267",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": null,
+      "media": {
+        "duration_s": 738.143,
+        "basis": "mp4-mvhd-v1"
+      },
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "quantum-computing-ai-research-synthesis-2026",
+      "kind": "document",
+      "plane": "public",
+      "asset_filenames": [
+        "Quantum Computing AI Research Synthesis 2026.docx"
+      ],
+      "asset_paths": [
+        "Quantum Computing AI Research Synthesis 2026.docx"
+      ],
+      "storage": "git",
+      "sha256": "44a33c955e6ab78b544e15c716a51deaf1f0d9695786dd7bbcfda28c73d35df9",
+      "hash_basis": "content-sha256",
+      "size_bytes": 4442020,
+      "version": "sha256:44a33c955e6ab78b",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": {
+        "scheme": "span-v2",
+        "canonical_text": "sections-v1",
+        "count": 75,
+        "set_sha256": "fde955123830ce6ff3a7364aabebfa592b24dda8fe31e60954b6af16728400b8"
+      },
+      "media": null,
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "quantum-computing-and-artificial-intelligence-2025",
+      "kind": "video",
+      "plane": "public",
+      "asset_filenames": [
+        "Quantum Computing and Artificial Intelligence 2025.mp4"
+      ],
+      "asset_paths": [
+        "Quantum Computing and Artificial Intelligence 2025.mp4"
+      ],
+      "storage": "git-lfs",
+      "sha256": "31310664d882084d20fa5c92c8aea5ffc801d3b4f2fc7511c66b2e524c3e9310",
+      "hash_basis": "content-sha256",
+      "size_bytes": 286348553,
+      "version": "sha256:31310664d882084d",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": null,
+      "media": {
+        "duration_s": 575.176,
+        "basis": "mp4-mvhd-v1"
+      },
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "quantum-computing-and-artificial-intelligence-2026",
+      "kind": "video",
+      "plane": "public",
+      "asset_filenames": [
+        "Quantum Computing and Artificial Intelligence 2026.mp4"
+      ],
+      "asset_paths": [
+        "Quantum Computing and Artificial Intelligence 2026.mp4"
+      ],
+      "storage": "git-lfs",
+      "sha256": "569fa7f26924e094fc1b911359399f5e23131dae0502cd0d225f2fb058c529cd",
+      "hash_basis": "content-sha256",
+      "size_bytes": 286549020,
+      "version": "sha256:569fa7f26924e094",
+      "bound": false,
+      "unbound_reason": "Q-10 unresolved: 2025 asset only (plan Action 25); re-encode of the 2025 lecture [Evidence E-21]",
+      "spans": null,
+      "media": {
+        "duration_s": 575.176,
+        "basis": "mp4-mvhd-v1"
+      },
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "quantum-computing-and-artificial-intelligence-industry-use-cases",
+      "kind": "document",
+      "plane": "public",
+      "asset_filenames": [
+        "Quantum Computing and Artificial Intelligence Industry Use Cases.docx"
+      ],
+      "asset_paths": [
+        "Quantum Computing and Artificial Intelligence Industry Use Cases.docx"
+      ],
+      "storage": "git",
+      "sha256": "f4e4ad4a5b6add5caf4a086f2a8ce6300948db4c90ad9cad9c291d255d3674b2",
+      "hash_basis": "content-sha256",
+      "size_bytes": 1999961,
+      "version": "sha256:f4e4ad4a5b6add5c",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": {
+        "scheme": "span-v2",
+        "canonical_text": "sections-v1",
+        "count": 64,
+        "set_sha256": "b505bd2a5c97a13696b2e562ccf71b3db98c1f51f177d1544c0e43e5ea9a453d"
+      },
+      "media": null,
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "quantum_finance_programming_and_optimization_for_hardware-constrained_learning_for_quantum_computing_and_artificial_intelligence-document",
+      "kind": "document",
+      "plane": "public",
+      "asset_filenames": [
+        "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx"
+      ],
+      "asset_paths": [
+        "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx"
+      ],
+      "storage": "git",
+      "sha256": "3994337939c9b0062b10a8357113fc9481cfb03b692bdb001348fce0e9e3d81b",
+      "hash_basis": "content-sha256",
+      "size_bytes": 3068878,
+      "version": "sha256:3994337939c9b006",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": {
+        "scheme": "span-v2",
+        "canonical_text": "sections-v1",
+        "count": 85,
+        "set_sha256": "4f56809b181fe41574a8e6f3d7eff85d8a72238fd729eb3dbe9d078d32391a55"
+      },
+      "media": null,
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "quantum_finance_programming_and_optimization_for_hardware-constrained_learning_for_quantum_computing_and_artificial_intelligence-video",
+      "kind": "video",
+      "plane": "public",
+      "asset_filenames": [
+        "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
+      ],
+      "asset_paths": [
+        "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4"
+      ],
+      "storage": "git-lfs",
+      "sha256": "644e7a9507b0c83180d64a0ec916a746ae8a92edea8bb26125d24ad301595dd4",
+      "hash_basis": "content-sha256",
+      "size_bytes": 234962540,
+      "version": "sha256:644e7a9507b0c831",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": null,
+      "media": {
+        "duration_s": 450.51,
+        "basis": "mp4-mvhd-v1"
+      },
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    },
+    {
+      "id": "the-hardware-first-imperative-in-quantum-machine-learninghardware-constrained_learning_for_quantum_computing_and_artificial_intelligence_models",
+      "kind": "video",
+      "plane": "public",
+      "asset_filenames": [
+        "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4"
+      ],
+      "asset_paths": [
+        "The Hardware-First Imperative in Quantum Machine LearningHardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.mp4"
+      ],
+      "storage": "git-lfs",
+      "sha256": "8c6c5e060d243be71010f09801530d4588aa2c9913df58cb929b4fc0640ab9d3",
+      "hash_basis": "content-sha256",
+      "size_bytes": 227415860,
+      "version": "sha256:8c6c5e060d243be7",
+      "bound": true,
+      "unbound_reason": null,
+      "spans": null,
+      "media": {
+        "duration_s": 467.71,
+        "basis": "mp4-mvhd-v1"
+      },
+      "source": "QC+AI Studio repository asset (rights review pending, Decision D-02)",
+      "license": "UNDETERMINED",
+      "permitted_use": "none until rights review (Decision D-31)",
+      "public_service": false
+    }
+  ]
 }

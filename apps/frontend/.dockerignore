@@ -2,3 +2,6 @@ node_modules/
 .next/
 .env.local
 tests/
+# Secrets and env templates never enter the frontend build context (task 2.8; the build reads ARG/ENV only).
+.env
+.env.*

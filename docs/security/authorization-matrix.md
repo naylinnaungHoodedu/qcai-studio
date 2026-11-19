@@ -54,6 +54,7 @@ that each policy matches the route's real dependencies, and that this file is cu
 | GET | `/search` | `public` | `none` | Rate-limited. |
 | POST | `/qa/ask` | `principal` | `caller` | Rate-limited. |
 | GET | `/qa/history` | `principal` | `caller` |  |
+| GET | `/spans/{span_id}` | `public` | `none` | Rate-limited span metadata; 404 unless SPAN_RESOLVER_ROUTE_ENABLED; no excerpt under D-31. |
 | POST | `/assistant/chat` | `principal` | `owner` | A thread_id in the body must be the caller's thread. |
 | GET | `/assistant/threads` | `principal` | `caller` |  |
 | POST | `/assistant/threads` | `principal` | `caller` |  |

@@ -15,8 +15,9 @@ from slowapi.extension import _rate_limit_exceeded_handler
 from sqlalchemy import text
 from sqlalchemy.exc import DataError, DBAPIError, OperationalError
 
-from app.api.routes import admin, analytics, arena, assets, assistant, auth, builder, content, insights, learner_record, projects, qa, search, support
-from app.core.corpus_governance import get_corpus_registry
+from app.api.routes import admin, analytics, arena, assets, assistant, auth, builder, content, insights, learner_record, projects, qa, search, spans, support
+from app.core.config_package import get_config_package
+from app.core.corpus_governance import CorpusGovernanceError, DriftReport, get_corpus_registry
 from app.core.config import get_settings
 from app.core.db import Base, SessionLocal, engine
 from app.core.rate_limit import limiter
@@ -26,6 +27,7 @@ from app.core.request_protection import protect_guest_mutation_request
 from app.core.schema_upgrades import run_schema_upgrades
 from app.core.structured_logging import FIELDS, configure_logging
 from app.services.retention import run_retention_cleanup
+from app.services.retrieval_metrics import snapshot as retrieval_slis
 from app.services.security_log import record_security_event, record_security_event_async, route_template
 from app.services.store import get_course_store
 
@@ -128,10 +130,31 @@ def _response_headers_for_request(request: Request) -> dict[str, str]:
     return headers
 
 
+# The start-up manifest drift report (plan Phase 2 I, "manifest drift (0)"); /ready and the start-up line report it.
+STARTUP_DRIFT: DriftReport | None = None
+
+
+def _check_corpus_before_any_table() -> None:
+    """Configuration package, manifest and drift: all fail closed before any database work (Phase 2 spec 6.1)."""
+    global STARTUP_DRIFT
+    # The configuration package v1: a structural error always stops start-up, a hash mismatch in a governed build.
+    get_config_package(settings)
+    # The served catalogue is the manifest (Decision P1-D-07, D-31): an empty one starts and serves no asset.
+    registry = get_corpus_registry(settings)
+    registry.assert_ready_to_serve()
+    # Only the files present are checked: the image holds none, so there it checks the authored item alone.
+    report = registry.drift_report(settings.project_root, settings.manifest_drift_check, settings=settings)
+    STARTUP_DRIFT = report
+    if report.drifted:
+        details = "; ".join(f"{item_id}: {reason}" for item_id, reason in report.drifted)
+        if settings.enforce_corpus_governance:
+            raise CorpusGovernanceError(f"manifest drift: {details}")
+        LOGGER.warning("Manifest drift in development", extra={FIELDS: {"event": "corpus.drift", "drifted": len(report.drifted), "details": details}})
+
+
 def _initialize_database() -> None:
     # Before the schema step, so a missing or invalid manifest stops start-up without creating or altering a table.
-    # The served catalogue is the manifest (Decision P1-D-07, D-31): an empty one starts and serves no asset.
-    get_corpus_registry(settings).assert_ready_to_serve()
+    _check_corpus_before_any_table()
     database_url = settings.database_url.lower()
     max_attempts = 8 if database_url.startswith(("postgresql", "postgres")) else 1
     last_error: OperationalError | None = None
@@ -174,11 +197,19 @@ def _record_configuration_overrides() -> None:
     # "Alert on overrides" (plan Phase 1, item I): a deployment that relaxes a fail-safe default says so in the log.
     if not IS_PRODUCTION:
         return
+    package = get_config_package(settings)
     overrides = {
         name: True
         for name, active in (
             ("demo_auth_enabled", settings.enable_demo_auth),
             ("corpus_governance_disabled", not settings.enforce_corpus_governance),
+            # Phase 2 switches that change what learners see; each needs a D-05 approval outside development.
+            ("retrieval_gate_bm25", settings.retrieval_gate == "bm25f-v1"),
+            ("semantic_retrieval_enabled", settings.semantic_retrieval_enabled),
+            ("span_resolver_route_enabled", settings.span_resolver_route_enabled),
+            ("citation_provisional_lift_enabled", settings.citation_provisional_lift_enabled),
+            ("config_package_path_overridden", not package.is_default_path),
+            ("config_package_hash_unverified", not package.hash_verified),
         )
         if active
     }
@@ -213,6 +244,7 @@ ROUTERS = (
     assets.router,
     search.router,
     qa.router,
+    spans.router,
     assistant.router,
     analytics.router,
     admin.router,
@@ -338,11 +370,41 @@ def healthcheck():
 
 
 def _build_fields() -> dict:
-    # Plan L2324-2325: /ready exposes governance_enforced, corpus_version and the build SHA (R-50).
+    # Plan L2324-2325: /ready exposes governance_enforced, corpus_version and the build SHA (R-50). Phase 2 adds the
+    # configuration package, the span scheme, the index and gate, and the provisional thresholds (D9, D11).
+    # Deterministic: every value is fixed for the life of the process.
+    package = get_config_package(settings)
+    store = get_course_store()
+    gate = store.gate
     return {
         "governance_enforced": bool(settings.enforce_corpus_governance),
         "corpus_version": get_corpus_registry(settings).corpus_version,
         "commit": settings.git_sha,
+        "config_package_version": package.package_version,
+        "config_package_sha256": package.sha256,
+        "span_scheme": package.span_scheme,
+        "index_version": store.index_version,
+        "retrieval_gate": gate,
+        "duplicate_span_ids": store.duplicate_span_ids,
+        "manifest_drift": STARTUP_DRIFT.drift_count if STARTUP_DRIFT else 0,
+        # The package's calibrated bm25f-v1 thresholds (provisional until Phase 4); retrieval_gate says which applies.
+        "abstention_floor": package.abstention.floor,
+        "abstention_margin": package.abstention.margin,
+        "thresholds_provisional": bool(package.abstention.provisional),
+        "semantic_enabled": bool(settings.semantic_retrieval_enabled),
+    }
+
+
+def _slis() -> dict:
+    drift = STARTUP_DRIFT
+    return {
+        **retrieval_slis(),
+        "manifest_drift": {
+            "mode": drift.mode if drift else settings.manifest_drift_check,
+            "checked": drift.checked if drift else 0,
+            "absent": drift.absent if drift else 0,
+            "drifted": drift.drift_count if drift else 0,
+        },
     }
 
 
@@ -364,4 +426,5 @@ def readiness_check():
         "lessons": len(store.lessons),
         "source_assets": len(store.overview.source_assets) if store.overview else 0,
         **_build_fields(),
+        "slis": _slis(),
     }

@@ -9,9 +9,13 @@ from app.core.db import get_db
 from app.core.config import get_settings
 from app.core.rate_limit import limiter
 from app.db_models import QAInteraction
-from app.schemas import Citation, QAHistoryItem, QARequest, QAResponse
+from app.core.corpus_governance import get_corpus_registry
+from app.schemas import QAHistoryItem, QARequest, QAResponse
 from app.services.answer_history import WITHDRAWN_ANSWER, stored_before_containment
-from app.services.store import get_qa_engine
+from app.services.provenance import is_withheld_unapproved, label_stored_citation
+from app.services.retrieval_metrics import record_citations
+from app.services.span_store import persist_cited_spans
+from app.services.store import get_course_store, get_qa_engine, get_span_resolver
 from app.services.text_utils import sanitize_user_text
 
 router = APIRouter(prefix="/qa", tags=["qa"])
@@ -39,6 +43,8 @@ def ask_question(
             citations=[citation.model_dump() for citation in response.citations],
         )
     )
+    # Text-free identity of the cited spans, so these citations keep resolving (task 2.2).
+    persist_cited_spans(db, response.citations, get_course_store())
     db.commit()
     return response
 
@@ -59,18 +65,31 @@ def read_question_history(
         .where(*filters)
         .order_by(QAInteraction.created_at.desc(), QAInteraction.id.desc())
     ).all()[offset : offset + limit]
-    return [_history_item(record) for record in records]
+    return [_history_item(record, db) for record in records]
 
 
-def _history_item(record: QAInteraction) -> QAHistoryItem:
+def _history_item(record: QAInteraction, db: Session) -> QAHistoryItem:
     # An answer the uncontained build stored is withheld with its citations; the question stays (R-16).
     withdrawn = stored_before_containment(record.created_at)
+    citations = []
+    if not withdrawn:
+        # Dual-read (plan Phase 2 G): v0/v1 citations come back labelled legacy_unresolved, never as resolved
+        # (AC-2-3), and a governed build withholds citations of items the manifest does not approve ([R13]).
+        settings = get_settings()
+        registry = get_corpus_registry(settings)
+        resolver = get_span_resolver()
+        stored = record.citations or []
+        labelled = [label_stored_citation(raw, resolver=resolver, db=db, settings=settings, registry=registry) for raw in stored]
+        citations = [citation for citation in labelled if citation is not None]
+        withheld = sum(1 for raw in stored if is_withheld_unapproved(raw, settings=settings, registry=registry))
+        if withheld:
+            record_citations("qa_history", 0, 0, withheld)
     return QAHistoryItem(
         id=record.id,
         lesson_slug=record.lesson_slug,
         question=record.question,
         answer=WITHDRAWN_ANSWER if withdrawn else record.answer,
-        citations=[] if withdrawn else [Citation.model_validate(citation) for citation in (record.citations or [])],
+        citations=citations,
         created_at=record.created_at,
         withdrawn=withdrawn,
     )

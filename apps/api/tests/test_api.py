@@ -32,6 +32,7 @@ from app.main import _build_security_headers, _initialize_database, app
 from app.schemas import AssistantChatResponse, Citation
 from app.services.guest_sessions import revoke_guest
 from app.services.contained_answers import ABSTENTION, QUOTATION_LEAD, contain_answer
+from app.services.provenance import native_citation
 from app.services.public_handles import public_handle, public_handles
 from app.services.retrieval_engine import RetrievalEngine
 from app.services.store import get_course_store
@@ -380,15 +381,17 @@ def test_search_returns_industry_use_case_results():
     assert any(result["lesson_slug"] == "industry-use-cases" for result in data)
 
 
-def test_search_uses_clean_video_source_titles():
+def test_search_returns_no_chapter_summaries_and_clean_source_titles():
+    # Task 2.7: curated chapter summaries are never evidence, so no search result is a video chapter. The Phase 1
+    # intent (results carry display titles, never raw filenames) is kept for the results that remain.
     response = client.get("/search", params={"query": "nested routing"})
     assert response.status_code == 200
     data = response.json()
-    video_results = [result for result in data if result["source_kind"] == "video"]
-    assert video_results
-    source_titles = {result["source_title"] for result in video_results}
+    assert data, "the routing documents still answer this"
+    assert not [result for result in data if result["source_kind"] == "video" or result["timestamp_label"]]
+    source_titles = {result["source_title"] for result in data}
     assert "Routing, Graph Shrinking, and Logistics under Hardware Constraints" in source_titles
-    assert not (source_titles & RAW_VIDEO_TITLES)
+    assert not (source_titles & (RAW_VIDEO_TITLES | RAW_DOCUMENT_TITLES))
 
 
 def test_qa_returns_citations():
@@ -405,6 +408,11 @@ def test_qa_returns_citations():
     assert all(citation["span_id"].startswith("span-") for citation in data["citations"])
     assert all(citation["content_hash"] for citation in data["citations"])
     assert not ({citation["source_title"] for citation in data["citations"]} & RAW_DOCUMENT_TITLES)
+    # Phase 2 citation v2: each names a span record (item, offsets, full-span hash) and resolves (AC-2-3).
+    for citation in data["citations"]:
+        assert citation["resolution"] == "resolved" and citation["citation_schema"] == 2
+        assert citation["chunk_id"] == citation["span_id"]
+        assert citation["item_id"] and isinstance(citation["start"], int) and citation["end"] > citation["start"]
 
 
 def test_assistant_chat_returns_vertex_backed_contract(monkeypatch):
@@ -533,13 +541,19 @@ def test_contained_answer_abstains_without_an_approved_document_span(tmp_path: P
     governed = CorpusRegistry(
         Settings(environment="production", allowed_origins=["https://qantumlearn.academy"], corpus_manifest_path=str(manifest))
     )
-    document = Citation(chunk_id="c1", source_title="Doc", source_kind="document", section_title="S", excerpt="Routing adds SWAPs.", source_filename="routing.docx")
+    store = get_course_store()
+    # A real document span, cited the way the Phase 2 pipeline cites it.
+    hit = next(result for result in store.search("Why does routing depth matter?", top_k=8) if result.source_kind == "document")
+    document = native_citation(hit, corpus_version=store.corpus_version, settings=Settings())
     summary = Citation(chunk_id="c2", source_title="Video", source_kind="video", section_title="Ch", excerpt="Routing adds SWAPs.")
+    forged = Citation(chunk_id="c1", source_title="Doc", source_kind="document", section_title="S", excerpt="Routing adds SWAPs.", source_filename="routing.docx")
 
-    assert contain_answer([document], governed).decision == "abstain"
+    assert contain_answer([document], governed, store.span_registry).decision == "abstain"
     ungoverned = CorpusRegistry(Settings())
-    assert contain_answer([summary], ungoverned).decision == "abstain"
-    assert contain_answer([document], ungoverned).decision == "answer"
+    assert contain_answer([summary], ungoverned, store.span_registry).decision == "abstain"
+    assert contain_answer([document], ungoverned, store.span_registry).decision == "answer"
+    # Strictly stronger than Phase 1: a citation no span record verifies is never quoted, even ungoverned (AC-2-3).
+    assert contain_answer([forged], ungoverned, store.span_registry).decision == "abstain"
 
 
 @pytest.mark.parametrize("path", ["/assistant/chat", "/qa/ask"])
@@ -2012,21 +2026,25 @@ def test_search_endpoint_rate_limits_repeated_requests():
 
 
 def test_retrieval_engine_merges_semantic_and_lexical_results():
+    # Task 2.5: the semantic backend runs only when enabled and aligned (its vector ids are span ids), and every
+    # semantic result is re-gated with the active gate before fusion, so fusion cannot bypass the floor.
     store = get_course_store()
-    engine = RetrievalEngine(store, Settings())
+    engine = RetrievalEngine(store, Settings(semantic_retrieval_enabled=True))
+    lexical_top = store.search("QUBO logistics", top_k=1)[0]
+    other = store.search("post-quantum cryptography", top_k=1)[0]
 
     class StubSemanticBackend:
         enabled = True
+        aligned = True
 
         def search(self, query: str, lesson_slug: str | None = None, top_k: int = 8):
-            return [
-                store.search(query, lesson_slug=lesson_slug, top_k=1)[0].model_copy(update={"score": 0.99}),
-                store.search("post-quantum cryptography", top_k=1)[0].model_copy(update={"score": 0.91}),
-            ]
+            return [lexical_top.model_copy(update={"score": 0.99}), other.model_copy(update={"score": 0.91})]
 
     engine._semantic_backend = StubSemanticBackend()
     response = engine.search("QUBO logistics", top_k=3)
 
     assert response.mode == "hybrid-pinecone"
-    assert len(response.results) == 3
-    assert response.results[0].chunk_id == store.search("QUBO logistics", top_k=1)[0].chunk_id
+    assert 1 <= len(response.results) <= 3
+    assert response.results[0].chunk_id == lexical_top.chunk_id
+    for result in response.results:
+        assert store.index.gate_entry("QUBO logistics", store.entry(result.chunk_id), None) is not None

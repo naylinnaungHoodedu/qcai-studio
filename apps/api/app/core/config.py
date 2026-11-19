@@ -114,6 +114,27 @@ class Settings(BaseSettings):
     guest_legacy_upgrade_until: datetime | None = None
     guest_legacy_upgrade_rate_limit: str = "5/hour"
     allowed_origins: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:3000"])
+    # Phase 2 (corpus, span identity, retrieval integrity). Every learner-visible change defaults to today's
+    # behaviour outside development while the D-05 freeze holds (Phase 2 spec section 7).
+    # The configuration package v1 (app/config_package/v1.json) unless a test names another one.
+    config_package_path: str | None = None
+    # "p1-floor": the approved P1-D-04 floor over the span index (today's results); "bm25f-v1": the Phase 2 BM25F
+    # gate with the provisional calibrated floor and margin. None = bm25f-v1 in development, p1-floor elsewhere;
+    # switching production is a D-05 remediation release (R-15) and logs a config.override event.
+    retrieval_gate: Literal["p1-floor", "bm25f-v1"] | None = None
+    # Task 2.5: the semantic backend stays off, whatever keys are set, until its vector ids are span ids.
+    semantic_retrieval_enabled: bool = False
+    # GET /spans/{span_id}: None = on in development, off elsewhere (it is a new public route under the freeze).
+    span_resolver_route_enabled: bool | None = None
+    # Plan G "provisional marker lifted for resolved citations": off until AC-2-3 is green in a cited CI run and
+    # D-05 approves; enabling it outside development logs a config.override event.
+    citation_provisional_lift_enabled: bool = False
+    # Kill switch for the one new request-path write: cited span identity (no text) into corpus_spans.
+    span_registry_write_through: bool = True
+    # Start-up manifest drift check (D11): "fast" hashes documents and the authored item and checks videos by
+    # size or LFS pointer; "full" also hashes video content.
+    manifest_drift_check: Literal["off", "fast", "full"] = "fast"
+    spans_rate_limit: str = "30/minute"
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
@@ -144,6 +165,10 @@ class Settings(BaseSettings):
             # Decision D-03 chose "disable": the Arena stays offline outside development. The socket now checks
             # the principal and the Origin (task 1.4); switching it on elsewhere needs a new D-03 decision.
             self.arena_enabled = self.environment.lower() == "development"
+        if self.retrieval_gate is None:
+            self.retrieval_gate = "bm25f-v1" if self.environment.lower() == "development" else "p1-floor"
+        if self.span_resolver_route_enabled is None:
+            self.span_resolver_route_enabled = self.environment.lower() == "development"
         if self.arena_enabled and self.environment.lower() != "development":
             raise ValueError("ARENA_ENABLED is not permitted outside development (Decision D-03).")
         if self.guest_token_secret is None and self.environment.lower() == "development":

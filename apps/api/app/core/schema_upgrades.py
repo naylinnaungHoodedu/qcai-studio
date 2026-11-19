@@ -30,6 +30,8 @@ def run_schema_upgrades(engine: Engine) -> None:
 
         if "security_events" in tables:
             _guard_security_events(connection)
+        if "corpus_spans" in tables:
+            _guard_corpus_spans(connection)
 
 
 def _guard_security_events(connection: Connection) -> None:
@@ -69,5 +71,38 @@ def _guard_security_events(connection: Connection) -> None:
             "CREATE TRIGGER security_events_retention_delete BEFORE DELETE ON security_events "
             f"WHEN OLD.created_at >= datetime('now', '-{days} days') "
             "BEGIN SELECT RAISE(ABORT, 'security_events is append-only: DELETE refused inside the retention period'); END",
+        ):
+            connection.exec_driver_sql(statement)
+
+
+def _guard_corpus_spans(connection: Connection) -> None:
+    # Span identity is append-only (plan Phase 2 task 2.2): stored citations must keep resolving, so a span row is
+    # never updated, deleted or truncated. Inserts use ON CONFLICT DO NOTHING, which fires no UPDATE trigger.
+    # Re-created on every start, like the security-log guard. No '%' in these statements (psycopg parameters).
+    if connection.dialect.name == "postgresql":
+        connection.exec_driver_sql(
+            "CREATE OR REPLACE FUNCTION corpus_spans_append_only() RETURNS trigger LANGUAGE plpgsql AS $$\n"
+            "BEGIN\n"
+            "    RAISE EXCEPTION USING MESSAGE = 'corpus_spans is append-only: ' || TG_OP || ' refused';\n"
+            "END\n"
+            "$$"
+        )
+        connection.exec_driver_sql(
+            "CREATE OR REPLACE TRIGGER corpus_spans_append_only BEFORE UPDATE OR DELETE ON corpus_spans "
+            "FOR EACH ROW EXECUTE FUNCTION corpus_spans_append_only()"
+        )
+        connection.exec_driver_sql(
+            "CREATE OR REPLACE TRIGGER corpus_spans_no_truncate BEFORE TRUNCATE ON corpus_spans "
+            "FOR EACH STATEMENT EXECUTE FUNCTION corpus_spans_append_only()"
+        )
+        return
+    if connection.dialect.name == "sqlite":
+        for statement in (
+            "DROP TRIGGER IF EXISTS corpus_spans_no_update",
+            "CREATE TRIGGER corpus_spans_no_update BEFORE UPDATE ON corpus_spans "
+            "BEGIN SELECT RAISE(ABORT, 'corpus_spans is append-only: UPDATE refused'); END",
+            "DROP TRIGGER IF EXISTS corpus_spans_no_delete",
+            "CREATE TRIGGER corpus_spans_no_delete BEFORE DELETE ON corpus_spans "
+            "BEGIN SELECT RAISE(ABORT, 'corpus_spans is append-only: DELETE refused'); END",
         ):
             connection.exec_driver_sql(statement)

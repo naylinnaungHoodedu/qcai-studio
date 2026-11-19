@@ -1,10 +1,10 @@
 from app.core.config import Settings
 from app.core.corpus_governance import get_corpus_registry
-from app.schemas import Citation, QAResponse
+from app.schemas import QAResponse
 from app.services.contained_answers import EXTRACTIVE_MODE, contain_answer
+from app.services.provenance import native_citation
 from app.services.retrieval_engine import RetrievalEngine
-from app.services.provenance import evidence_provenance
-from app.services.text_utils import truncate_display_excerpt
+from app.services.retrieval_metrics import record_citations
 
 
 class QAEngine:
@@ -13,34 +13,14 @@ class QAEngine:
         self.settings = settings
 
     def ask(self, question: str, lesson_slug: str | None = None, top_k: int = 4) -> QAResponse:
-        retrieval = self.retrieval_engine.search(question, lesson_slug=lesson_slug, top_k=top_k)
-        citations = []
-        for hit in retrieval.results:
-            span_id, content_hash, corpus_version = evidence_provenance(
-                settings=self.settings,
-                chunk_id=hit.chunk_id,
-                source_title=hit.source_title,
-                source_kind=hit.source_kind,
-                excerpt=hit.excerpt,
-                timestamp_label=hit.timestamp_label,
-            )
-            citations.append(
-                Citation(
-                    chunk_id=hit.chunk_id,
-                    span_id=span_id,
-                    corpus_version=corpus_version,
-                    content_hash=content_hash,
-                    source_title=hit.source_title,
-                    source_kind=hit.source_kind,
-                    section_title=hit.title,
-                    excerpt=truncate_display_excerpt(hit.excerpt, 320),
-                    timestamp_label=hit.timestamp_label,
-                    source_filename=hit.source_filename,
-                )
-            )
+        store = self.retrieval_engine.store
+        retrieval = self.retrieval_engine.search(question, lesson_slug=lesson_slug, top_k=top_k, surface="qa")
+        # Phase 2: every citation names a span record (AC-2-3); corpus_version is a field, not an id input.
+        citations = [native_citation(hit, corpus_version=store.corpus_version, settings=self.settings) for hit in retrieval.results]
 
         # Decision D-19: no generation; verbatim approved spans or an abstention (AC-1-14).
-        contained = contain_answer(citations, get_corpus_registry(self.settings))
+        contained = contain_answer(citations, get_corpus_registry(self.settings), store.span_registry, settings=self.settings)
+        record_citations("qa", len(contained.citations), contained.dropped_unresolved, 0)
         return QAResponse(
             answer=contained.answer,
             citations=contained.citations,

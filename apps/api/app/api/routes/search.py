@@ -22,4 +22,7 @@ def search_content(
 ):
     retrieval = get_retrieval_engine().search(query=query.strip(), lesson_slug=lesson_slug, top_k=top_k + offset)
     response.headers["X-Retrieval-Mode"] = retrieval.mode
+    # Phase 2: whether the gate found evidence or abstained, and which gate decided (spec 4.20).
+    response.headers["X-Retrieval-Decision"] = "abstain" if retrieval.abstained else "evidence"
+    response.headers["X-Retrieval-Gate"] = retrieval.gate
     return retrieval.results[offset : offset + top_k]

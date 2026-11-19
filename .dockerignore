@@ -20,3 +20,18 @@ Vital_Concepts.docx
 *.mp4
 *.pdf
 update_data/
+# Private plane (plan 11.5, task 2.8): never in any build context.
+corpus/private/
+lqs/private/
+**/*.private.json
+**/*.private.jsonl
+docs/thesis/ethics/private/
+# Secrets, local state and release bundles never enter a build context (task 2.8; R-33).
+.env
+.env.*
+**/.env
+**/.env.*
+infra/cloudrun/*.env.yaml
+dist/
+qcai_dev.db
+**/qcai_dev.db*

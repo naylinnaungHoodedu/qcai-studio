@@ -12,6 +12,8 @@ class SectionRecord:
     level: int
     body: str
     source_filename: str = ""
+    # Position of the section in its document (Phase 2 span records, task 2.2).
+    ordinal: int = 0
 
 
 def parse_docx_sections(path: Path) -> list[SectionRecord]:
@@ -31,6 +33,7 @@ def parse_docx_sections(path: Path) -> list[SectionRecord]:
                     level=current_level,
                     body="\n\n".join(current_paragraphs).strip(),
                     source_filename=path.name,
+                    ordinal=len(sections),
                 )
             )
 

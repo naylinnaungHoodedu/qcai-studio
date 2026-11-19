@@ -1,1 +1,4 @@
 *.mp4 filter=lfs diff=lfs merge=lfs -text
+# Generated or hashed files stay LF in every checkout (Phase 2).
+corpus/public/manifest.json text eol=lf
+docs/architecture/phase2-implementation-spec.md text eol=lf
