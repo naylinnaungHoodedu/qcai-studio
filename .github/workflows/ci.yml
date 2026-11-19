@@ -36,6 +36,24 @@ jobs:
         run: cat boundary-scan.json || true
       - run: pip-audit -r apps/api/requirements.txt
 
+  # Task 2.8 / AC-2-7, path half over a BUILT image (not only its build context): build the API image exactly as
+  # Cloud Build does (apps/api/Dockerfile, repository root as context), then scan every layer of `docker save`.
+  # Nothing is pushed or deployed. The passage half still needs the private-plane fingerprints (D-14).
+  api-image-boundary-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r apps/api/requirements.txt
+      - run: docker build -f apps/api/Dockerfile --build-arg GIT_SHA=${{ github.sha }} -t qcai-api-scan:ci .
+      - run: docker save qcai-api-scan:ci -o api-image.tar
+      - run: python scripts/scan_boundary.py --image-tar api-image.tar --report image-boundary-scan.json
+      - if: always()
+        run: cat image-boundary-scan.json || true
+
   # Task 1.10 (R-52): the API suite and the schema checks against PostgreSQL 16, the Cloud SQL major version.
   # The service container is disposable; conftest uses TEST_DATABASE_URL and never an ambient DATABASE_URL.
   api-postgres:
