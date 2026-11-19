@@ -1,0 +1,104 @@
+{
+  "evidence": "qcai-phase2-boundary-scan",
+  "date": "2026-11-19",
+  "task": "plan Phase 2 task 2.8; AC-2-7",
+  "note": "Paths only; no file was opened for its content. Passage scanning needs the salted fingerprint file from the private plane (D-14 open), so it was not run, and nothing here claims it passed.",
+  "ci_equivalent": {
+    "command": "python scripts/scan_boundary.py --repo --docker-context apps/api/Dockerfile:. --docker-context apps/frontend/Dockerfile:apps/frontend",
+    "working_tree": "branch phase2/span-identity (base a257dd11), Windows workstation",
+    "report": {
+      "report": "qcai-boundary-scan",
+      "format_version": 1,
+      "policy": "boundary-v1",
+      "scans": [
+        {
+          "target": "repository",
+          "listing": "git ls-files",
+          "files": 380,
+          "private_plane_paths": [],
+          "licensed_volume_paths": [],
+          "secret_like_paths": [
+            "apps/api/.env.example",
+            "apps/frontend/.env.example"
+          ],
+          "fails_on_secret_like": false
+        },
+        {
+          "target": "docker-context",
+          "dockerfile": "apps/api/Dockerfile",
+          "context": ".",
+          "ignore_file": ".dockerignore",
+          "listing": "filesystem walk filtered by the context's .dockerignore",
+          "files": 411,
+          "image_source_files": 93,
+          "private_plane_paths": [],
+          "licensed_volume_paths": [],
+          "secret_like_paths": [],
+          "fails_on_secret_like": true
+        },
+        {
+          "target": "docker-context",
+          "dockerfile": "apps/frontend/Dockerfile",
+          "context": "apps/frontend",
+          "ignore_file": "apps/frontend/.dockerignore",
+          "listing": "filesystem walk filtered by the context's .dockerignore",
+          "files": 132,
+          "image_source_files": 132,
+          "private_plane_paths": [],
+          "licensed_volume_paths": [],
+          "secret_like_paths": [],
+          "fails_on_secret_like": true
+        }
+      ],
+      "passage_scan": {
+        "status": "not_run",
+        "reason": "no licensed-passage fingerprint file was supplied; passage scanning was not run"
+      },
+      "path_scan_result": "pass",
+      "passage_scan_result": "not_run"
+    }
+  },
+  "local_release_zips": {
+    "command": "python scripts/scan_boundary.py --release-zip dist/release/qcai-studio-v1.0.0-part1-app-docs-media.zip --release-zip dist/release/qcai-studio-v1.0.0-part2-hydrated-media.zip",
+    "finding": "FAIL by name: part1 holds five secret-like names (two tracked .env.example templates, apps/frontend/.env.local and the two infra/cloudrun/*.env.yaml files). Their contents were not opened. This is the BEP-1 Action 10/29 finding (the v1.0.0 draft must be withdrawn or re-cut without env files, logs and the 24 unapproved assets); zero private-plane paths and zero licensed volumes.",
+    "report": {
+      "report": "qcai-boundary-scan",
+      "format_version": 1,
+      "policy": "boundary-v1",
+      "scans": [
+        {
+          "target": "release-zip",
+          "path": "dist/release/qcai-studio-v1.0.0-part1-app-docs-media.zip",
+          "entries": 260,
+          "private_plane_paths": [],
+          "licensed_volume_paths": [],
+          "secret_like_paths": [
+            "apps/api/.env.example",
+            "apps/frontend/.env.example",
+            "apps/frontend/.env.local",
+            "infra/cloudrun/api-production.env.yaml",
+            "infra/cloudrun/frontend-production.env.yaml"
+          ],
+          "fails_on_secret_like": true,
+          "sha256": "8779d971bfadc6c3cd8468e6bfecebe2fee043b0fa9445c03d1930da566fe16a"
+        },
+        {
+          "target": "release-zip",
+          "path": "dist/release/qcai-studio-v1.0.0-part2-hydrated-media.zip",
+          "entries": 6,
+          "private_plane_paths": [],
+          "licensed_volume_paths": [],
+          "secret_like_paths": [],
+          "fails_on_secret_like": true,
+          "sha256": "4e5c543c11f1c4502b7114031e85336cd319ff6ed5578a051c6dc38f7cbf86eb"
+        }
+      ],
+      "passage_scan": {
+        "status": "not_run",
+        "reason": "no licensed-passage fingerprint file was supplied; passage scanning was not run"
+      },
+      "path_scan_result": "fail",
+      "passage_scan_result": "not_run"
+    }
+  }
+}

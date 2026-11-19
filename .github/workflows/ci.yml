@@ -20,6 +20,17 @@ jobs:
       - run: python -m pytest -q -m "not release_artifacts" apps/api/tests evaluation/tests
       - run: python scripts/validate_corpus.py --check-public-assets
       - run: python scripts/validate_lqs.py --allow-draft
+      # Phase 2 (corpus, span identity, retrieval integrity). The checkout has no LFS content, so video hashes are
+      # checked through their LFS pointer oids, which are the content sha256 (AC-2-6).
+      - run: python scripts/config_package.py --check
+      - run: python scripts/generate_manifest.py --check
+      - run: python scripts/validate_corpus.py --check-hashes --check-near-duplicates
+      - run: python scripts/calibrate_abstention.py --check docs/evaluation/phase2/calibration_record_v1.json
+      # AC-2-7 path scans of the tree and of each image's build context; no licensed-passage fingerprints reach
+      # CI (D-14), so the report says the passage scan was not run.
+      - run: python scripts/scan_boundary.py --repo --docker-context apps/api/Dockerfile:. --docker-context apps/frontend/Dockerfile:apps/frontend --report boundary-scan.json
+      - if: always()
+        run: cat boundary-scan.json || true
       - run: pip-audit -r apps/api/requirements.txt
 
   # Task 1.10 (R-52): the API suite and the schema checks against PostgreSQL 16, the Cloud SQL major version.
