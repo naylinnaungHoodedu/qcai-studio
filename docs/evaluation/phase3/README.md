@@ -26,6 +26,8 @@ Exit codes:
 
 Until 18.8 the record had to name a clean commit that was an ancestor of HEAD (18.7 E3). The project squash-merges its pull requests, so after the merge that commit is in no history of main, and the check failed in every clone that kept the branch's objects while CI's shallow clone skipped it.
 
+Two tests keep that from coming back (18.9 G1). One builds a real git repository merged the way the project merges (a branch commit named by the record, `git merge --squash` onto main, the branch's objects kept) and runs the committed-record check inside it. The other fails if any file that runs or checks the record (the script, its tests, CI) asks git about history.
+
 Any change to the configuration package (its sha256 is in the report) needs a fresh `--write`.
 
 ## Inputs and configurations

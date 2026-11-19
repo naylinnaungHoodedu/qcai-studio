@@ -1,8 +1,8 @@
 {
  "report": "qcai-three-plan-replay",
  "format_version": 1,
- "created_at": "2026-11-19T20:40:35+00:00",
- "commit": "928abd4fe4bc86c7d9125e534e11d20c616000c0-dirty",
+ "created_at": "2026-11-19T22:11:47+00:00",
+ "commit": "feb025fdea17a56fce6fb2044a2074b3d5d56f6a-dirty",
  "evidence_class": "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 evidence (plan Phase 3 H)",
  "public_corpus_only": true,
  "excluded_sources": [
@@ -166,7 +166,7 @@
   "files": {
    "apps/api/app/__init__.py": "a45661633011b095a62071507cf3309e100424dd64d34feabf2cc6d084696348",
    "apps/api/app/core/config.py": "15badd7b6689ba035a3d4eb6fa995abd0a8d01b08a0346a80da8e26dd7d6545c",
-   "apps/api/app/core/config_package.py": "001876e48e8f65f1a02a9344f3077fbbc6163b9599d150531eaebfa78e147cdd",
+   "apps/api/app/core/config_package.py": "07926b4328f102e8c6e3e7fd31c419f7bd6befc59966e79c7eefd0baab29e340",
    "apps/api/app/core/corpus_governance.py": "39153061b8d613ca0298a5210b4d9abeb4da2298608b1b471c0cf659a7f9a4fd",
    "apps/api/app/core/data_planes.py": "195f35a4a4a01cabeb32d48a0d81c1beb0ca714e943d7c154abe3e96a35a5976",
    "apps/api/app/core/db.py": "618e636a4e8578d1d6cdd2bfa019562e33bcce66c6fa5fa0bdd657bcaa0109c5",
@@ -203,6 +203,6 @@
    "apps/api/app/services/tutor_pipeline/text.py": "5c6110c9deddefc74c7466ea71ca7d0b5df784ea4cef64b7204b116d1b735bc3",
    "scripts/replay_tutor_plans.py": "eafe108f4b2fcbb2e1a9fc3b0f4928e6b0d65025a026532ea787d28ebae2d7d6"
   },
-  "sha256": "e8e376729366b65d59623bb1fea92b0d95efe5aade31b17750a4f7561e70a32f"
+  "sha256": "6b0a1b42b2c437cec4c681117c3c198b441f2a138b57328e5c13299317f051ef"
  }
 }

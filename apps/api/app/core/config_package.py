@@ -39,7 +39,8 @@ PACKAGE_NAME = "qcai-configuration-package"
 SPAN_SCHEME = "span-v2"
 P1_FLOOR_VERSION = "score-floor-p1-v1"
 P1_FLOOR = 6
-# D-12 open: no provider generator is wired (hold H6, PD-09); the D-19 extractive generator is the interim path.
+# D-12 open: no provider generator is wired. Hold H6 blocks the provider interim path (a single pinned provider;
+# PD-09) and stays held, so Phase 3 runs the D-19 extractive generator instead (PD-08), which sends no provider payload.
 WIRED_GENERATORS = frozenset({"extractive-d19-v1"})
 TUTOR_SCHEMA_NAMES = (
     "ResolvedQuestion",

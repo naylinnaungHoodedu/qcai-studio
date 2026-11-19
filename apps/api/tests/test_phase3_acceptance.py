@@ -424,13 +424,35 @@ def test_ac_3_2_the_replay_finds_no_mismatch_and_is_labelled_not_e3_or_lq1(tmp_p
     lqs = REPO_ROOT / "lqs" / "items.json"
     with pytest.raises(SystemExit, match="lqs"):
         module.fixture_items(lqs)
-    committed = json.loads((REPO_ROOT / "docs" / "evaluation" / "phase3" / "three_plan_replay_v1.json").read_text(encoding="utf-8"))
-    assert committed["result"] == "pass" and committed["config_package"]["sha256"] == PACKAGE.sha256
-    # Spec 18.8 F2 (replacing the 18.7 E3 ancestry check, which failed on main after the project's squash merges and
-    # never ran in CI's shallow clone): the record names the code it replayed by content. Every module it lists has
-    # exactly the checked-out text, in any clone, on the branch or after a squash merge, so the record can never
-    # describe code other than what is checked out; --check (CI) compares the whole inputs block with a fresh run.
-    assert module.input_problems(committed["inputs"]) == []
+    # Spec 18.8 F2 (replacing the 18.7 E3 rule, which failed on main after the project's squash merges and never ran
+    # in CI's shallow clone): the record names the code it replayed by content. The check is a function of its own so
+    # that a real squash-merged repository runs exactly this check (18.9 G1, the next test but one).
+    _, committed = _check_committed_replay_record()
+    assert committed["config_package"]["sha256"] == PACKAGE.sha256
+    listed = committed["inputs"]["files"]
+    # This run imported at least what the record lists (it may import more: other tests share the process), with the
+    # same text.
+    assert {path: report["inputs"]["files"].get(path) for path in listed} == listed
+
+
+REPLAY_RECORD = Path("docs") / "evaluation" / "phase3" / "three_plan_replay_v1.json"
+PACKAGE_FILE = Path("apps") / "api" / "app" / "config_package" / "v2.json"
+
+
+def _check_committed_replay_record():
+    """The committed replay record's provenance check (spec 18.8 F2, 18.9 G1) on the checkout at REPO_ROOT: the record
+    names, by content, exactly the code checked out there. It asks git nothing, so it holds on the branch, on a
+    squash-merged main that keeps the branch's objects and in a shallow clone alike. The squash-merge test runs this
+    same function with REPO_ROOT, the loaded script and the working directory all in a real squash-merged repository.
+    Returns the loaded script and the record."""
+    module = load_script("replay_tutor_plans")
+    committed = json.loads((REPO_ROOT / REPLAY_RECORD).read_text(encoding="utf-8"))
+    package = json.loads((REPO_ROOT / PACKAGE_FILE).read_text(encoding="utf-8"))
+    assert committed["result"] == "pass" and committed["config_package"]["sha256"] == canonical_sha256(package)
+    # Every module the record lists has exactly the checked-out text, so the record can never describe code other
+    # than what is checked out; --check (CI) compares the whole inputs block with a fresh run.
+    problems = module.input_problems(committed["inputs"])
+    assert problems == [], problems
     listed = committed["inputs"]["files"]
     # The two-pass pipeline's own modules (shadow.py schedules runs and package_check.py checks the package; the replay
     # needs neither).
@@ -439,18 +461,95 @@ def test_ac_3_2_the_replay_finds_no_mismatch_and_is_labelled_not_e3_or_lq1(tmp_p
     core = {module.SELF, "apps/api/app/services/contained_answers.py", "apps/api/app/services/retrieval_engine.py",
             "apps/api/app/core/config_package.py", "apps/api/app/services/claim_gate.py"} | pipeline_modules
     assert core <= set(listed), sorted(core - set(listed))
-    # This run imported at least what the record lists (it may import more: other tests share the process), with the
-    # same text.
-    assert {path: report["inputs"]["files"].get(path) for path in listed} == listed
     # commit is informational: the HEAD the record was written on, + "-dirty" when written from a working tree.
     assert re.fullmatch(r"[0-9a-f]{40}(-dirty)?", committed["commit"]), committed["commit"]
+    return module, committed
 
 
-def test_ac_3_2_the_replay_record_names_its_code_by_content_and_survives_a_squash_merge(tmp_path):
-    # Spec 18.8 F2: the check needs no git history. A copy of the listed files in another tree (a squash-merged
-    # main, a shallow clone) passes; a changed, missing or unlisted-digest file fails.
+def _squash_merged_main(tmp_path: Path) -> tuple[Path, str, int]:
+    """A real git repository merged the way this project merges its pull requests (spec 18.9 G1): main; a branch with a
+    code commit and then the replay record naming that commit; `git merge --squash` of the branch onto main, committed
+    with one parent. The branch ref, and so every branch object, is kept, as on this workstation after every phase.
+    Git runs with an empty global configuration and no system configuration.
+
+    Returns the checkout, the commit the record names, and the exit code of `git merge-base --is-ancestor <that
+    commit> HEAD`, the question the 18.7 E3 rule asked: it skipped on 128 (commit absent) and failed on 1."""
+    root = tmp_path / "squashed"
+    home = tmp_path / "git-home"
+    root.mkdir()
+    home.mkdir()
+    (home / "gitconfig").write_text("", encoding="utf-8")
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env.update({"HOME": str(home), "USERPROFILE": str(home), "XDG_CONFIG_HOME": str(home), "GIT_CONFIG_GLOBAL": str(home / "gitconfig"),
+                "GIT_CONFIG_NOSYSTEM": "1", "GIT_AUTHOR_NAME": "fixture", "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
+                "GIT_COMMITTER_NAME": "fixture", "GIT_COMMITTER_EMAIL": "fixture@example.invalid"})
+
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", *args], cwd=root, env=env, capture_output=True, text=True, timeout=60)
+
+    def ok(*args: str) -> str:
+        completed = git(*args)
+        assert completed.returncode == 0, (args, completed.stdout, completed.stderr)
+        return completed.stdout.strip()
+
+    ok("init", "-q")
+    ok("symbolic-ref", "HEAD", "refs/heads/main")
+    (root / "MAIN.txt").write_text("main before the phase\n", encoding="utf-8")
+    ok("add", "-A")
+    ok("commit", "-q", "-m", "main before the phase")
+    base = ok("rev-parse", "HEAD")
+    ok("checkout", "-q", "-b", "phase")
+    committed = json.loads((REPO_ROOT / REPLAY_RECORD).read_text(encoding="utf-8"))
+    for relative in [*committed["inputs"]["files"], PACKAGE_FILE.as_posix()]:
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((REPO_ROOT / relative).read_bytes().replace(b"\r\n", b"\n"))
+    ok("add", "-A")
+    ok("commit", "-q", "-m", "phase: code")
+    code_commit = ok("rev-parse", "HEAD")
+    (root / REPLAY_RECORD).parent.mkdir(parents=True, exist_ok=True)
+    (root / REPLAY_RECORD).write_text(json.dumps({**committed, "commit": code_commit}, indent=1, ensure_ascii=False) + "\n",
+                                      encoding="utf-8", newline="\n")
+    ok("add", "-A")
+    ok("commit", "-q", "-m", "phase: replay record")
+    ok("checkout", "-q", "main")
+    ok("merge", "--squash", "phase")
+    ok("commit", "-q", "-m", "phase (#1)")
+    # The shape the project's merges leave: one parent, the branch's tree, the branch's objects still present.
+    assert ok("rev-list", "--parents", "-n", "1", "HEAD").split()[1:] == [base]
+    assert ok("rev-parse", "HEAD^{tree}") == ok("rev-parse", "phase^{tree}")
+    assert git("cat-file", "-e", code_commit + "^{commit}").returncode == 0
+    return root, code_commit, git("merge-base", "--is-ancestor", code_commit, "HEAD").returncode
+
+
+def test_ac_3_2_the_committed_record_check_passes_on_a_squash_merged_main_that_keeps_the_branch_objects(tmp_path, monkeypatch):
+    # Spec 18.9 G1: a real squash merge, not a copied tree. The fixture holds the condition under which the 18.7 E3
+    # rule failed on main: the commit the record names is present (exit 128 would mean absent, which that rule
+    # skipped) and is not an ancestor of HEAD (exit 1).
+    root, code_commit, ancestry = _squash_merged_main(tmp_path)
+    assert ancestry == 1
+    # Run the committed-record check of the AC-3-2 test inside the squashed checkout: REPO_ROOT, the script that
+    # load_script loads (and so the script's own REPO_ROOT) and the working directory are all that checkout, so any
+    # question about history the check asked would be asked of the squash-merged main, and fail there.
+    monkeypatch.setattr(sys, "path", list(sys.path))  # the loaded script prepends its own roots
+    monkeypatch.setitem(globals(), "REPO_ROOT", root)
+    monkeypatch.chdir(root)
+    module, committed = _check_committed_replay_record()
+    assert Path(module.__file__).resolve() == (root / module.SELF).resolve() and module.REPO_ROOT == root.resolve()
+    assert committed["commit"] == code_commit
+    # The squash-merged main still refuses a stale record: a replayed module changed on main after the merge.
+    first = sorted(committed["inputs"]["files"])[0]
+    (root / first).write_bytes((root / first).read_bytes() + b"# changed on main after the merge\n")
+    with pytest.raises(AssertionError, match="differs from the code the record replayed"):
+        _check_committed_replay_record()
+
+
+def test_ac_3_2_the_replay_inputs_check_needs_no_history_and_refuses_a_changed_or_missing_file(tmp_path):
+    # Spec 18.8 F2 (renamed in 18.9 G1, which adds the real squash-merge test above): input_problems reads only file
+    # contents. A copy of the listed files in a tree with no history passes; a changed, missing or unlisted-digest
+    # file fails.
     module = load_script("replay_tutor_plans")
-    committed = json.loads((REPO_ROOT / "docs" / "evaluation" / "phase3" / "three_plan_replay_v1.json").read_text(encoding="utf-8"))
+    committed = json.loads((REPO_ROOT / REPLAY_RECORD).read_text(encoding="utf-8"))
     inputs = committed["inputs"]
     assert inputs["rule"] == module.INPUTS_RULE == "imported-repository-modules-sha256-lf-v1"
     for relative in inputs["files"]:
