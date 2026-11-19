@@ -5,13 +5,15 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, func, select, text
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
-from app.core.db import SessionLocal, engine
+from app.core.db import Base, engine, get_db
+from app.core.schema_upgrades import run_schema_upgrades
 from app.db_models import ArenaMatchRecord, ArenaProfile, BuilderRun, BuilderShare, PeerReview, ProjectSubmission
 from app.main import _initialize_database, app
+from app.services import arena_engine
 from app.services.demo_seed import seed_demo_data
 
 
@@ -25,8 +27,36 @@ def test_api_test_session_uses_a_disposable_database():
     assert get_settings().database_url == os.environ.get("TEST_DATABASE_URL", "sqlite:///:memory:")
 
 
-def test_demo_seed_is_idempotent_and_populates_public_activity():
-    with SessionLocal() as session:
+@pytest.fixture
+def isolated_database(fresh_database_url, monkeypatch):
+    """An empty database of the session's dialect with the full schema, which the routes this test reads are served
+    from (get_db and the Arena service's sessions). Rows that earlier tests, or earlier runs on a reused PostgreSQL
+    database, left behind can then neither turn the first seed into an update nor push the seeded submission off
+    the review queue's first page (eight items)."""
+    connect_args = {"check_same_thread": False} if fresh_database_url.startswith("sqlite") else {}
+    isolated = create_engine(fresh_database_url, connect_args=connect_args)
+    Base.metadata.create_all(bind=isolated)
+    run_schema_upgrades(isolated)
+    factory = sessionmaker(bind=isolated, autoflush=False, autocommit=False)
+
+    def isolated_db():
+        db = factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = isolated_db
+    monkeypatch.setattr(arena_engine, "SessionLocal", factory)
+    try:
+        yield factory
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        isolated.dispose()
+
+
+def test_demo_seed_is_idempotent_and_populates_public_activity(isolated_database):
+    with isolated_database() as session:
         first = seed_demo_data(session, FIXTURES_ROOT)
         second = seed_demo_data(session, FIXTURES_ROOT)
 
@@ -92,15 +122,19 @@ def test_demo_seed_keeps_fixture_instants_under_a_non_utc_session_time_zone():
     # A naive UTC value written to timestamptz is read as session-local time, which shifted these rows.
     fixture = json.loads((FIXTURES_ROOT / "routing-rescue-submission.json").read_text(encoding="utf-8"))
     expected = datetime.fromisoformat(fixture["submission"]["created_at"].replace("Z", "+00:00"))
-    new_york = create_engine(engine.url, connect_args={"options": "-c timezone=America/New_York"})
+    zone = "Asia/Kolkata"  # +05:30, and not the server default of any cluster these tests run on
+    # psycopg passes libpq options; pg8000 (the production driver) sends the setting as a startup parameter.
+    connect_args = {"startup_params": {"TimeZone": zone}} if engine.dialect.driver == "pg8000" else {"options": f"-c timezone={zone}"}
+    non_utc = create_engine(engine.url, connect_args=connect_args)
     try:
-        with Session(new_york) as session:
+        with Session(non_utc) as session:
+            assert session.execute(text("SHOW TimeZone")).scalar() == zone
             seed_demo_data(session, FIXTURES_ROOT)
             seed_demo_data(session, FIXTURES_ROOT)
             stored = session.scalar(
                 select(ProjectSubmission.created_at).where(ProjectSubmission.user_id == "fixture-ac-03")
             )
     finally:
-        new_york.dispose()
+        non_utc.dispose()
 
     assert stored == expected

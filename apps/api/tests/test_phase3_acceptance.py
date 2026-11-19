@@ -103,7 +103,7 @@ from app.services.tutor_pipeline.pipeline import DeliveryNotImplemented, Pipelin
 from app.services.tutor_pipeline.render import TEMPLATES, TemplateRenderer
 from app.services.tutor_pipeline.resolve import LearnerTurn, ResolverInputError, resolve_thread, resolve_turns
 from app.services.tutor_pipeline.shadow import ShadowJob, effective_mode, run_shadow
-from app.services.tutor_pipeline.text import sentences_v1
+from app.services.tutor_pipeline.text import sentences
 from app.services.claim_gate import check_subset
 from tutor_fakes import FAULT_MODES, FailingLedger, FaultyRenderer, ScriptedGenerator, SpyGenerator, make_entry
 
@@ -254,7 +254,7 @@ def _document_sentences(store: CourseStore) -> list[tuple[str, str]]:
         (record.span_id, sentence)
         for record in store.span_registry.records
         if record.item_kind == "document"
-        for sentence in sentences_v1(record.text, min_words=PARAMS.min_sentence_words, max_chars=PARAMS.max_sentence_chars)
+        for sentence in sentences(record.text, min_words=PARAMS.min_sentence_words, max_chars=PARAMS.max_sentence_chars)
     ]
 
 
@@ -552,21 +552,21 @@ def test_ac_3_3_the_overlap_gate_is_gone_and_claims_are_never_rebound():
     baseline = _run(TwoPassPipeline(engine, settings), query)
     assert baseline.decision == "answer" and len(baseline.envelope.evidence) >= 2
 
-    def sentences(span) -> list[str]:
-        return sentences_v1(span.text, min_words=PARAMS.min_sentence_words, max_chars=PARAMS.max_sentence_chars)
+    def span_sentences(span) -> list[str]:
+        return sentences(span.text, min_words=PARAMS.min_sentence_words, max_chars=PARAMS.max_sentence_chars)
 
     first, second, a_sentence = next(
         (x, y, s) for x in baseline.envelope.evidence for y in baseline.envelope.evidence if x.span_id != y.span_id
-        for s in sentences(x) if s not in sentences(y)
+        for s in span_sentences(x) if s not in span_sentences(y)
     )
-    whole = sentences(first)[-1]
+    whole = span_sentences(first)[-1]
     truncated = whole.split(", ")[0] + "." if ", " in whole else " ".join(whole.split()[:-2]) + "."
     outside = next(r for r in store.span_registry.records if r.item_kind == "document" and r.span_id not in {s.span_id for s in baseline.bundle.spans}
-                   and sentences_v1(r.text, min_words=4))
+                   and sentences(r.text, min_words=4, max_chars=PARAMS.max_sentence_chars))
     scripted = ScriptedGenerator([[
         (a_sentence, (second.span_id,)),  # A's words citing B: dropped, never rebound to A
         (truncated, (first.span_id,)),  # a qualifying clause (or the last words) removed
-        (sentences_v1(outside.text, min_words=4)[0], (outside.span_id,)),  # outside the bundle
+        (sentences(outside.text, min_words=4, max_chars=PARAMS.max_sentence_chars)[0], (outside.span_id,)),  # outside the bundle
         (a_sentence, ()),  # unbound
         ("Quantum computers always beat classical routing.", (first.span_id,)),  # invented
     ]])
@@ -1225,8 +1225,8 @@ def test_plan_l_flag_off_restores_the_labelled_legacy_path(monkeypatch):
 def _three_bound_one_unbound(package):
     def script(envelope):
         span = envelope.evidence[0]
-        sentences = sentences_v1(span.text, min_words=PARAMS.min_sentence_words, max_chars=PARAMS.max_sentence_chars)[:3]
-        return [(sentence, (span.span_id,)) for sentence in sentences] + [(sentences[0], ())]
+        picked = sentences(span.text, min_words=PARAMS.min_sentence_words, max_chars=PARAMS.max_sentence_chars)[:3]
+        return [(sentence, (span.span_id,)) for sentence in picked] + [(picked[0], ())]
 
     return ScriptedGenerator([script])
 
@@ -1406,7 +1406,8 @@ def test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_emp
                     parents.add(node.value.value)
     assert revisions - parents == {SCHEMA_REVISION} and len(SCHEMA_REVISION) <= 32  # the single head; fits alembic_version
     engine = create_engine(fresh_database_url)
-    ledger_tables = {"response_ledger", "response_ledger_head"}
+    # Every table the Phase 3 revision creates (the Idempotency-Key records of POST /tutor/turns joined it, DI-40).
+    ledger_tables = {"response_ledger", "response_ledger_head", "tutor_turn_idempotency"}
     try:
         Base.metadata.create_all(engine, tables=[table for table in Base.metadata.sorted_tables if table.name not in ledger_tables])
         for args in (("stamp", "20261119_phase2_corpus_spans"), ("upgrade", "head")):
@@ -1632,7 +1633,8 @@ def test_plan_l_a_held_ledger_lock_never_delays_the_learner_beyond_the_append_bu
             transaction.rollback()
             holder.close()
         assert response.status_code == 200 and response.json()["decision"] == "answer"
-        assert elapsed_ms < settings.tutor_ledger_append_budget_ms + 500 + 1500  # the bounded append plus the chat itself
+        # The bounded append (the package's budget, TUTOR_LEDGER_APPEND_BUDGET_MS unset) plus the chat itself.
+        assert elapsed_ms < ledger.ledger_budget_ms(settings, get_config_package(settings)) + 500 + 1500
         assert LEDGER_METRICS.snapshot()["failed"]["legacy"] == 1
         assert records(response_id=response.json()["turn_id"]) == []
     # Both dialects: an IntegrityError is retried at most three times; any other database error is not retried.

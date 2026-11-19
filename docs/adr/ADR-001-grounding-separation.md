@@ -41,5 +41,5 @@ The text above is kept as history. This revision records how plan Phase 3 (tasks
 Learners receive only the D-19 contained answer, unchanged. Its evidence panel (development only by default) labels it "lexically screened" and never "grounded".
 
 **Residual risks.**
-- Plan Phase 3 M names "misleading wording within locked claims". Sentence splits at abbreviations (for example "e.g.") can cut a sentence short. Phase 4 adds the entailment and V1 checks.
+- Plan Phase 3 M names "misleading wording within locked claims". Under `sentences-v1`, splits at abbreviations (for example "e.g.") cut 49 of 2199 dev sentences short. `sentences-v2` keeps abbreviations, initials and numbers inside their sentence: 1 of 2177 still ends at an initial, a bibliography line (Phase 3 spec 18.5 C10). Locked claims can still mislead by what a whole sentence leaves out of context; Phase 4 adds the entailment and V1 checks.
 - The renderer's own wording (fixed templates) is a residual R-41 surface. It is pinned by the pedagogical prompt hash and covered by the subset check.

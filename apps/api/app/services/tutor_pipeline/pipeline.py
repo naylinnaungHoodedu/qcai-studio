@@ -29,7 +29,7 @@ from app.core.db import SessionLocal
 from app.core.structured_logging import FIELDS
 from app.services.claim_gate import check_subset
 from app.services.contained_answers import ABSTENTION
-from app.services.ledger import SCHEMA_REVISION, AppendedRecord, append_ledger_entry
+from app.services.ledger import SCHEMA_REVISION, AppendedRecord, append_ledger_entry, ledger_budget_ms
 from app.services.span_resolver import SpanResolver
 from app.services.tutor_pipeline import contracts
 from app.services.tutor_pipeline.bind import bind
@@ -238,7 +238,8 @@ class TwoPassPipeline:
         if record:
             LEDGER_METRICS.attempt(item.delivery)
             try:
-                appended = append_ledger_entry(entry, session_factory=self.session_factory, budget_ms=self.settings.tutor_ledger_append_budget_ms)
+                appended = append_ledger_entry(entry, session_factory=self.session_factory, budget_ms=ledger_budget_ms(self.settings, self.package),
+                                               attempts=params.ledger_append_attempts)
             except Exception as exc:  # noqa: BLE001 - counted by the shadow runner (plan L stop)
                 raise LedgerWriteFailed("the two-pass ledger record could not be appended") from exc
             LEDGER_METRICS.appended(item.delivery, duplicate=appended.duplicate)

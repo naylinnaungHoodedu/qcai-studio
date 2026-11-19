@@ -3,7 +3,7 @@ from collections.abc import Callable, Generator
 import logging
 
 from google.cloud.sql.connector import Connector, IPTypes
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, exc as sa_exc
 from sqlalchemy.engine import URL, Engine, make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -47,6 +47,49 @@ def treat_dead_sockets_as_disconnects(engine: Engine) -> None:
             return False
 
     engine.dialect.do_ping = do_ping  # type: ignore[method-assign]
+
+
+# PEP 249 classes by SQLSTATE class, as psycopg (the CI driver) raises them. pg8000 (the production driver) raises
+# IntegrityError only for 23505 and ProgrammingError for every other server error, so code that catches
+# IntegrityError, DataError or OperationalError behaved differently in production than in CI (DI-46).
+_SQLSTATE_CLASSES: dict[str, type[sa_exc.DBAPIError]] = {
+    "22": sa_exc.DataError,
+    "23": sa_exc.IntegrityError,
+    "08": sa_exc.OperationalError,
+    "40": sa_exc.OperationalError,
+    "53": sa_exc.OperationalError,
+    "54": sa_exc.OperationalError,
+    "55": sa_exc.OperationalError,
+    "57": sa_exc.OperationalError,
+    "58": sa_exc.OperationalError,
+}
+
+
+def pg8000_sqlstate(error: BaseException | None) -> str | None:
+    arguments = getattr(error, "args", ())
+    if arguments and isinstance(arguments[0], dict):
+        code = arguments[0].get("C")
+        return code if isinstance(code, str) else None
+    return None
+
+
+@event.listens_for(Engine, "handle_error", retval=True)
+def classify_pg8000_errors(context):
+    """Raise a pg8000 server error as the PEP 249 class its SQLSTATE names (psycopg's mapping), on every engine.
+
+    Only pg8000's catch-all classes are re-classified, and the driver error stays the wrapped .orig, so SQLSTATE
+    checks (main._sqlstate) and disconnect handling are unchanged."""
+    if context.dialect is None or context.dialect.driver != "pg8000" or context.is_disconnect:
+        return None
+    original = context.original_exception
+    wrapped = context.sqlalchemy_exception
+    target = _SQLSTATE_CLASSES.get((pg8000_sqlstate(original) or "")[:2])
+    if target is None or wrapped is None or isinstance(wrapped, target):
+        return None
+    if not isinstance(wrapped, (sa_exc.ProgrammingError, sa_exc.InternalError, sa_exc.DatabaseError)):
+        return None
+    replacement = target(context.statement, context.parameters, original, connection_invalidated=wrapped.connection_invalidated)
+    return replacement
 
 
 settings = get_settings()

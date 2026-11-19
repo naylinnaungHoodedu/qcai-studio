@@ -62,8 +62,13 @@ jobs:
 
   # Task 1.10 (R-52): the API suite and the schema checks against PostgreSQL 16, the Cloud SQL major version.
   # The service container is disposable; conftest uses TEST_DATABASE_URL and never an ambient DATABASE_URL.
+  # Both drivers (DI-46): psycopg, and pg8000, the driver production uses through the Cloud SQL connector.
   api-postgres:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        driver: [psycopg, pg8000]
     services:
       postgres:
         image: postgres:16
@@ -78,7 +83,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      TEST_DATABASE_URL: postgresql+psycopg://postgres@localhost:5432/qcai_test
+      TEST_DATABASE_URL: postgresql+${{ matrix.driver }}://postgres@localhost:5432/qcai_test
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

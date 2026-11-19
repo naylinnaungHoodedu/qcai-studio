@@ -23,7 +23,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 SPAN_ID = r"^span-[0-9a-f]{64}$"
 HEX64 = r"^[0-9a-f]{64}$"
 CLAIM_ID = r"^claim-[0-9a-f]{32}$"
-RESPONSE_ID = r"^(turn|shadow)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+# turn- a tutor turn (TutorTurn.id); shadow- a two-pass shadow run; qa- a /qa/ask delivery (no learner link is stored).
+RESPONSE_ID = r"^(turn|shadow|qa)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 
 # Phase 4 sets this True together with its V1 module (plan 13.6: nothing whose verification has not completed is
 # delivered). While it is False no code path builds a "delivered" ledger entry or returns two-pass text (AC-3-6).
@@ -55,7 +56,10 @@ MERGED = "merged"
 BUDGET_SKIPPED = "budget_exceeded"
 # The legacy contained path: a citation the Phase 2 pipeline produced but could not verify (a binding failure).
 LEGACY_UNRESOLVED = "unresolved_citation"
-DROP_REASONS = (*BINDING_FAILURES, MERGED, BUDGET_SKIPPED, LEGACY_UNRESOLVED)
+# The legacy contained path: a delivered quotation whose span's derived license class is not public. Its claim is
+# kept out of the ledger (no non-public text is ever recorded) and counted; any such count is an upstream breach.
+LEGACY_NOT_PUBLIC = "not_public"
+DROP_REASONS = (*BINDING_FAILURES, MERGED, BUDGET_SKIPPED, LEGACY_UNRESOLVED, LEGACY_NOT_PUBLIC)
 
 # Field names that would carry learner state. None may appear in a retrieval request or an evidential envelope
 # (AC-3-1); the contract tests add each one and expect a refusal.
@@ -433,6 +437,10 @@ class LedgerEntry(Contract):
         if self.delivery == "shadow":
             if not self.response_id.startswith("shadow-") or not (self.shadowed_response_id or "").startswith("turn-"):
                 problems.append("a shadow record has a shadow- id and names the turn it shadowed")
+        elif self.delivery == "legacy":
+            # A legacy delivery is a tutor turn (turn-) or a /qa/ask answer (qa-).
+            if not self.response_id.startswith(("turn-", "qa-")) or self.shadowed_response_id is not None:
+                problems.append("a legacy record has a turn- or qa- id and no shadowed_response_id")
         else:
             if not self.response_id.startswith("turn-") or self.shadowed_response_id is not None:
                 problems.append(f"a {self.delivery} record has a turn- id and no shadowed_response_id")

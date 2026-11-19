@@ -5,7 +5,7 @@ Every proposed claim is validated against the spans it cites, and dropped whole 
   outside_bundle a cited span is not in the evidence bundle
   unresolvable   the Phase 2 SpanResolver does not resolve it, or its content hash differs from the bundle's
   not_quotable   a cited span is not a quotable (public-plane, bound, approved) document span (D-19, D-31)
-  not_verbatim   the claim is not a whole sentences-v1 sentence of EVERY cited span (no entailment checker exists
+  not_verbatim   the claim is not a whole sentences-v2 sentence of EVERY cited span (no entailment checker exists
                  before Phase 4, so a truncated sentence that drops a qualification or a negation never binds), or
                  the cited spans hold the sentence in different characters
   duplicate      the same sentence was already bound on all of the spans it cites
@@ -35,7 +35,7 @@ from app.services.tutor_pipeline.contracts import (
     ledger_canonical,
     sha256_hex,
 )
-from app.services.tutor_pipeline.text import normalise, sentences_v1
+from app.services.tutor_pipeline.text import normalise, sentences
 
 if TYPE_CHECKING:  # pragma: no cover
     from app.services.content_assembler import CourseStore
@@ -81,14 +81,14 @@ def bind(
     sentence_cache: dict[str, dict[str, str]] = {}
 
     def sentences_of(span_id: str) -> dict[str, str]:
-        """The span's sentences-v1 sentences: normalised form -> the span's own (whitespace-collapsed) text."""
+        """The span's sentences-v2 sentences: normalised form -> the span's own (whitespace-collapsed) text."""
         if span_id not in sentence_cache:
             record = store.span_registry.get(span_id)
             text = record.text if record is not None else ""
-            sentences: dict[str, str] = {}
-            for sentence in sentences_v1(text, min_words=params.min_sentence_words, max_chars=params.max_sentence_chars):
-                sentences.setdefault(normalise(sentence), sentence)
-            sentence_cache[span_id] = sentences
+            found: dict[str, str] = {}
+            for sentence in sentences(text, min_words=params.min_sentence_words, max_chars=params.max_sentence_chars):
+                found.setdefault(normalise(sentence), sentence)
+            sentence_cache[span_id] = found
         return sentence_cache[span_id]
 
     for claim in plan.claims:

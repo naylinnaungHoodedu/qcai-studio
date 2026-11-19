@@ -416,6 +416,31 @@ class TutorTurn(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class TutorTurnIdempotency(Base):
+    # POST /tutor/turns Idempotency-Key records (plan 7.3 "mutations carry client keys"; DI-40; Phase 3 spec 7.13). A
+    # retried POST with the same key from the same caller returns response_body, the first turn's response, instead of
+    # creating a second turn. The key itself is never stored: key_sha256 is its sha256, unique per caller. Past the
+    # package's idempotency ttl_hours the key starts a new turn (the expired row is replaced). User-keyed, so erasure
+    # deletes these rows and guest retention deletes a guest's with the rest of its data; otherwise a row lives as
+    # long as the turn it answers for. The row is claimed (committed, turn_id null) before the turn runs, filled in the
+    # turn's own transaction, and released if the turn fails, so two concurrent requests with one key never create
+    # two turns.
+    __tablename__ = "tutor_turn_idempotency"
+    __table_args__ = (
+        UniqueConstraint("user_id", "key_sha256", name="uq_tutor_turn_idempotency_user_key"),
+        Index("ix_tutor_turn_idempotency_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(255))
+    key_sha256: Mapped[str] = mapped_column(String(64))
+    request_sha256: Mapped[str] = mapped_column(String(64))
+    # Null while the first request with this key is still running (a concurrent retry then gets 409).
+    turn_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    response_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class CorpusSpan(Base):
     # Span identity (plan Phase 2 task 2.2): append-only and text-free, so a stored citation keeps resolving after
     # its span leaves the current corpus (AC-2-3, and AC-12-6 later). Database triggers refuse UPDATE, DELETE and

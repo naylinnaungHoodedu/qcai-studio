@@ -5,8 +5,10 @@ Always registered, so the authorization matrix stays static, but 404 unless SPAN
 development, off elsewhere while the D-05 freeze holds). It returns span metadata, and the excerpt only for a
 servable span (current, public plane, a bound document the manifest approves), which D-31 makes none. Every
 miss is the same 404 with Cache-Control: no-store: a disabled route, a malformed or unknown id, a non-public
-plane, or, in a governed build, a document span of an item that is not approved. No credential is read. A span
-that resolves is public-plane, so its license_class is "public".
+plane, or, in a governed build, a document span of an item that is not approved. No credential is read.
+license_class is derived from the resolved span's plane and the manifest (CorpusRegistry.license_class), never
+labelled: a span whose class is not public is the same 404 (plan 7.3 "public license_class only"; 7.5 "defense in
+depth"), even if the resolver ever returned one.
 """
 
 from fastapi import APIRouter, Depends, Request
@@ -39,9 +41,12 @@ def _resolve_span(span_id: str, request: Request, response: Response, db: Sessio
     if not settings.span_resolver_route_enabled or not SPAN_ID_PATTERN.match(span_id):
         return _not_found()
     resolved = get_span_resolver().resolve(span_id, db)
-    if resolved is None or resolved.plane != "public":
+    if resolved is None:
         return _not_found()
     registry = get_corpus_registry(settings)
+    license_class = registry.license_class(plane=resolved.plane, item_id=resolved.item_id)
+    if license_class is None:
+        return _not_found()
     if settings.enforce_corpus_governance and resolved.kind == "document" and not registry.is_servable_item(resolved.item_id):
         return _not_found()
     response.headers["Cache-Control"] = SPAN_CACHE_CONTROL
@@ -62,7 +67,7 @@ def _resolve_span(span_id: str, request: Request, response: Response, db: Sessio
         corpus_version_first_seen=resolved.corpus_version_first_seen,
         corpus_version=get_course_store().corpus_version,
         excerpt=resolved.text if resolved.servable else None,
-        license_class="public",
+        license_class=license_class,
     )
 
 

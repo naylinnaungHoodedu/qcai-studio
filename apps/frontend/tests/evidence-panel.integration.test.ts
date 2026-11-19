@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { DECISION_TEXT, DEGRADED_TEXT, LABEL_TEXT, VERDICT_TEXT, evidencePanelView, spanHref } from "../src/lib/evidence-panel";
+import { routeRequiresGuestSession } from "../src/lib/guest-session";
 import type { EvidencePanelPayload } from "../src/lib/types";
 
 // Plan Phase 3 task 3.8: the evidence panel shows the decision, span links, degraded and "lexically screened" labels
@@ -50,6 +51,25 @@ test("span links point at the resolver route only when it is enabled", () => {
   assert.equal(plain.spans[0].label, "Routing brief — Depth");
 });
 
+test("a span link never mints a guest session, and only a well-formed span id is public (DI-44)", () => {
+  // The proxy strips its /api/backend prefix; the API reads no credential on either span route.
+  const proxied = spanHref(SPAN).replace(/^\/api\/backend/, "");
+  assert.equal(proxied, `/evidence/spans/${SPAN}`);
+  assert.equal(routeRequiresGuestSession(proxied), false);
+  assert.equal(routeRequiresGuestSession(`/spans/${SPAN}`), false);
+  for (const path of [
+    `/evidence/spans/${SPAN.toUpperCase()}`,
+    `/evidence/spans/span-${"a".repeat(63)}`,
+    `/evidence/spans/${SPAN}/extra`,
+    "/evidence/spans/span%2F..%2Fx",
+    `/ledger/responses/turn-${"0".repeat(8)}`,
+    "/tutor/turns",
+    "/qa/ask",
+  ]) {
+    assert.equal(routeRequiresGuestSession(path), true, path);
+  }
+});
+
 test("no panel text says grounded", () => {
   const texts = [
     ...Object.values(DECISION_TEXT),
@@ -79,4 +99,7 @@ test("the privacy page discloses the tutor response ledger", () => {
   // and what a shadow record adds (the resolver's source message ids).
   assert.match(disclosures, /which course passages the search matched for your question, with their match scores and positions/);
   assert.match(disclosures, /the ids of the tutor messages your question was taken from/);
+  // /qa/ask answers are ledgered too (DI-39), and their records hold no link to the learner.
+  assert.match(disclosures, /each answer to a question asked in a lesson's Q&A panel/);
+  assert.match(disclosures, /a Q&A answer's record is not linked to you at all/);
 });

@@ -100,7 +100,9 @@ Before the first digest-pinned rollout, the previous revisions are `qcai-api-000
 - `TWO_PASS_TUTOR` is `off`. In development it is `shadow`. `on` is refused by settings until the configuration package records the Phase 4 exit.
 - `LEDGER_ROUTE_ENABLED` and `EVIDENCE_PANEL_ENABLED` are false.
 - `TUTOR_LEDGER_ENABLED` is true: the ledger is not learner-visible.
-- `TUTOR_LEDGER_APPEND_BUDGET_MS` is 1500 and `TWO_PASS_SHADOW_BUDGET_MS` is 2000.
+- The ledger append budget is 1500 ms and the shadow budget 2000 ms: configuration package v2 `tutor_pipeline.budgets` (PD-11). `TUTOR_LEDGER_APPEND_BUDGET_MS` and `TWO_PASS_SHADOW_BUDGET_MS` are unset; each overrides its value only.
+- The ledger also records each `/qa/ask` answer (the response is unchanged), under a `qa-` id with no learner link.
+- `create_all` adds `tutor_turn_idempotency`, which stays empty while `POST /tutor/turns` answers 404.
 - `POST /tutor/turns` answers 404.
 
 **Before the release:**

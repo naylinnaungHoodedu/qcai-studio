@@ -6,7 +6,9 @@ Run: python scripts/verify_ledger.py [--database-url URL] [--report PATH] [--exp
 Read-only. It walks the whole hash chain (gaps, broken links, edited entries or columns, non-canonical entries,
 schema failures, a missing or mismatched head) and, with --expect-head, checks that the chain still reaches a head
 logged earlier off the database (a forged head over a truncated tail). --coverage-since reports tutor turns created
-since then that have no ledger record (plan I "ledger writes 100% of deliveries"; report only). --export writes
+since then that have no ledger record (plan I "ledger writes 100% of deliveries"; report only), and counts the
+/qa/ask records since then (a qa- record holds no link to its Q&A row, so Q&A coverage is the per-process
+legacy_by_surface.qa.coverage_rate SLI, not a join). --export writes
 every row as one JSON object per line to a path outside the repository: the step before an Alembic downgrade.
 The database URL comes from --database-url, else DATABASE_URL, and is never printed.
 Exit codes: 0 ok, 1 the chain is broken, 2 a usage or connection error.
@@ -57,7 +59,10 @@ def coverage(db, since: datetime) -> dict:
     recorded = select(ResponseLedgerRecord.response_id).where(ResponseLedgerRecord.response_id == TutorTurn.id).exists()
     turns = db.scalar(select(func.count()).select_from(TutorTurn).where(TutorTurn.created_at >= since)) or 0
     unrecorded = db.scalar(select(func.count()).select_from(TutorTurn).where(TutorTurn.created_at >= since, ~recorded)) or 0
-    return {"since": since.isoformat(), "turns_since": int(turns), "unrecorded": int(unrecorded)}
+    qa_records = db.scalar(
+        select(func.count()).select_from(ResponseLedgerRecord).where(ResponseLedgerRecord.created_at >= since, ResponseLedgerRecord.response_id.like("qa-%"))
+    ) or 0
+    return {"since": since.isoformat(), "turns_since": int(turns), "unrecorded": int(unrecorded), "qa_records_since": int(qa_records)}
 
 
 def export(db, path: Path) -> int:

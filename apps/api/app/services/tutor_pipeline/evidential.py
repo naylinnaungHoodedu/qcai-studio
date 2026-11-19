@@ -26,7 +26,7 @@ from app.services.tutor_pipeline.contracts import (
     ProposedClaim,
     RetrievalRequest,
 )
-from app.services.tutor_pipeline.text import SENTENCE_RULE, content_terms, sentences_v1, whitespace
+from app.services.tutor_pipeline.text import SENTENCE_RULE, content_terms, sentences, whitespace
 
 if TYPE_CHECKING:  # pragma: no cover
     from app.core.config_package import RetrievalParams
@@ -34,7 +34,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 EXTRACTIVE_ID = "extractive-d19-v1"
 EXTRACTIVE_RULE = (
-    "D-19 extractive mode: each claim is one verbatim sentence (sentences-v1) of an approved, public-plane document "
+    "D-19 extractive mode: each claim is one verbatim sentence (sentences-v2) of an approved, public-plane document "
     "span in the envelope that shares at least one content term with the question; at most {max_claims_per_span} "
     "per span and {max_claims} in all, in evidence order."
 )
@@ -109,8 +109,8 @@ class ExtractiveD19Generator:
         for span in envelope.evidence:
             if len(claims) >= self.params.max_claims:
                 break
-            sentences = sentences_v1(span.text, min_words=self.params.min_sentence_words, max_chars=self.params.max_sentence_chars)
-            matching = [sentence for sentence in sentences if content_terms(sentence, self.retrieval) & question_terms]
+            candidates = sentences(span.text, min_words=self.params.min_sentence_words, max_chars=self.params.max_sentence_chars)
+            matching = [sentence for sentence in candidates if content_terms(sentence, self.retrieval) & question_terms]
             for sentence in matching[: self.params.max_claims_per_span]:
                 if len(claims) >= self.params.max_claims:
                     break

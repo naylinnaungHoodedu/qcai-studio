@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
@@ -25,9 +27,12 @@ def deliver_tutor_turn(
     user: AuthUser,
     *,
     presentation_plan: str | None = None,
+    before_commit: Callable[[AssistantChatResponse], None] | None = None,
 ) -> AssistantChatResponse:
     """One tutor turn as /assistant/chat has always delivered it, then its Phase 3 follow-ups after the commit:
-    the legacy ledger record (bounded, fail-open) and, in shadow mode, the two-pass run as a background task."""
+    the legacy ledger record (bounded, fail-open) and, in shadow mode, the two-pass run as a background task.
+    before_commit (POST /tutor/turns with an Idempotency-Key) adds rows to the turn's own transaction, so a turn and
+    its idempotency record commit together or not at all."""
     orchestrator = get_tutor_orchestrator()
     extra = {"presentation_plan": presentation_plan} if presentation_plan is not None else {}
     assistant_response = orchestrator.chat(db, user, payload, **extra)
@@ -42,6 +47,8 @@ def deliver_tutor_turn(
     )
     # Idempotent: the tutor already registered the spans it cited (task 2.2).
     persist_cited_spans(db, assistant_response.citations, get_course_store())
+    if before_commit is not None:
+        before_commit(assistant_response)
     db.commit()
     run_turn_followups(assistant_response, orchestrator, background_tasks)
     response.headers["x-assistant-provider"] = assistant_response.provider

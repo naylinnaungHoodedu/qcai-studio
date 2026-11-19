@@ -57,7 +57,7 @@ How to use this spec:
 | M2 | **Extractive prototype**, for each eligible document span: whitespace-normalised sentences split on `(?<=[.!?])\s+`, at least 4 words, sharing at least 1 package-tokenizer content term with the question; at most 2 per span and 3 in all; no fallback sentence.<br>• Answers 166/174 (`bm25f-v1`) and 146/174 (`p1-floor`), equal to the legacy rate.<br>• 2.89 and 2.77 claims per answer.<br>• Claim length p50 221 / 281 chars, max 699; 0 of 2299 dev document sentences exceed 1000 chars.<br>• The off-topic and stopword fixture (124): 0 results in every configuration.<br>• Retrieval plus selection: p50 0.97 ms / p95 1.3 ms (`bm25f-v1`); 6.1 / 11.0 ms (`p1-floor`). | The D-19 generator never lowers the answer rate against the legacy path. A shadow run costs milliseconds. |
 | M3 | Top score within the margin (`near_miss`): 1 of 174 in-domain queries (`bm25f-v1`, dev). Under `p1-floor` the margin is 0, so there is never a near_miss. | `near_miss` is rare. It is recorded; it never abstains (section 4.3). |
 | M4 | **Index sizes.** Dev: 1071 spans (1030 document, 41 authored), 331 index entries, `corpus-c658893abb6440dd`. Governed empty: 41 spans and 41 entries, all authored. All-approved: the same corpus_version as dev. The API image holds no DOCX (deployment runbook), so in production only authored spans exist. | Positive-path tests run on dev or all-approved. Governed empty and the production image abstain everywhere. |
-| M5 | `TutorMessage.created_at` uses `server_default=func.now()`. SQLite stores whole seconds; a Python-set value keeps microseconds. PostgreSQL `now()` is the transaction start time. | Order within a thread is ambiguous within one second on SQLite. Section 7.11 sets message timestamps in Python (a recorded production-write change, 18). |
+| M5 | `TutorMessage.created_at` uses `server_default=func.now()`. SQLite stores whole seconds; a Python-set value keeps microseconds. PostgreSQL `now()` is the transaction start time. | Order within a thread is ambiguous within one second on SQLite, and within one transaction on PostgreSQL. Section 7.11 sets message timestamps in Python under a thread lock, never earlier than the thread's latest message (`next_message_time`, 18.5 C12): a production change to stored data that ships only with a D-05 release. |
 | M6 | `app/services/claim_gate.py` (the overlap `ClaimGate`, `evidence_digest`) is imported by no runtime module and no test. Only ADR-005 and the CS595 blueprint name it. | Safe to repurpose as the subset checker (plan E). |
 | M7 | Roles in code are `learner`, `instructor` and `admin` (`require_role`, STAFF). There is no `reviewer` role. Auth0 roles come from the token claim; demo roles come from `x-demo-role` in development. | Ledger readers are `("reviewer",)`, the plan text (section 9; PD-12, revised in 18.4). |
 | M8 | No frontend file renders "lexically screened"; the label exists only as the API `model`/`retrieval_mode` string `extractive-lexically-screened`. `tests/answer-wording.integration.test.ts` forbids `/grounded/i` on the answer surfaces. | The Phase 1 precondition (task 1.11 label) is met in the API string only: a recorded precondition deviation (15.10, DI-34). The new panel files join the wording list. |
@@ -161,7 +161,7 @@ Every resolution is a refinement. None reverses a fixed decision except where pl
 - Production shadow would process real learner questions. **Resolution:** shadow is off outside development; production enablement is deferred (DI-32). The replay and every test use public fixtures and public-plane spans only.
 
 **13. "/evidence/spans/{span_id} (public license_class only)" with no `license_class` in the code.**
-- **Resolution:** `license_class` is derived: a resolvable span is public-plane (the resolver refuses non-public planes and items the manifest moves to the private plane), so it is `"public"`. The field is added to `SpanResolution` and `EvidenceSpan`. The license gate is tested with a private-plane fixture (test 34), not by the type.
+- **Resolution:** `license_class` is derived, never labelled (revised in 18.5 C1): `CorpusRegistry.license_class` gives `"public"` only when the span record's own plane is public and the manifest does not put its item or file on another plane; a span whose class is not public is never emitted (left out of the bundle and the legacy record, counted; the span routes answer 404). The field is on `SpanResolution` and `EvidenceSpan`. The license gate is tested with a private-plane fixture (test 34) and with forced non-public records (18.5 C1), not by the type.
 
 **14. EvidenceBundle `conflicts[]` (7.4).** V1.7 is Phase 4. **Resolution:** an always-empty tuple, refused if non-empty in Phase 3.
 
@@ -207,7 +207,7 @@ Every resolution is a refinement. None reverses a fixed decision except where pl
 - **Resolution:** Phase 3 has no delivered two-pass path (R-a). The ledger-before-delivery order is Phase 4's, behind V1. The pipeline's refusal of `delivered` is tested (test 12).
 
 **32. D-19 "verbatim" vs comparison normalisation; and the binding rule.**
-- **Resolution:** claim text stored, locked, ledgered and rendered is the whitespace-normalised verbatim sentence of the span (`whitespace()`), never the generator's text: bind locks the span's own sentence that the normalised claim matched, and the subset check requires the rendered text to equal the locked text, whitespace runs aside. NFKC (`normalise()`) is used only to find the matching sentence (M22; 18.4). The Phase 3 binding rule `resolver-bundle-sentence-v1` requires the normalised claim to equal a whole `sentences-v1` sentence of every cited span, so no generator can bind a truncated sentence that drops a qualification or negation (R-16 class). Plan M's residual "misleading wording within locked claims" remains for sentence splits at abbreviations (20 of 2299 dev sentences end in "e.g.", "i.e." and similar).
+- **Resolution:** claim text stored, locked, ledgered and rendered is the whitespace-normalised verbatim sentence of the span (`whitespace()`), never the generator's text: bind locks the span's own sentence that the normalised claim matched, and the subset check requires the rendered text to equal the locked text, whitespace runs aside. NFKC (`normalise()`) is used only to find the matching sentence (M22; 18.4). The Phase 3 binding rule `resolver-bundle-sentence-v1` requires the normalised claim to equal a whole `sentences-v1` sentence of every cited span, so no generator can bind a truncated sentence that drops a qualification or negation (R-16 class). Plan M's residual "misleading wording within locked claims" for sentence splits at abbreviations is closed by `sentences-v2` (18.5 C10): 1 of 2177 dev sentences still ends at an initial (a bibliography line), against 49 of 2199 under `sentences-v1`.
 
 **33. Provider egress from the shadow (D-12, D-23, R-10).**
 - `RetrievalEngine._search` could call the OpenAI embeddings backend if semantic retrieval were ever aligned in the API process; the shadow would send the resolved text (possibly two learner turns) to a provider.
@@ -577,9 +577,11 @@ def normalise(text: str) -> str:            # comparisons only (bind, subset che
     return " ".join(unicodedata.normalize("NFKC", text).split())
 def whitespace(text: str) -> str:           # the verbatim surface that is stored, locked and rendered
     return " ".join(text.split())
-SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
-def sentences_v1(text: str, *, min_words: int, max_chars: int = 1000) -> list[str]:
-    return [s for s in SENTENCE_SPLIT.split(whitespace(text)) if len(s.split()) >= min_words and len(s) <= max_chars]
+SENTENCE_RULE = "sentences-v2"                # 18.5 C10; it replaced sentences-v1, which split after every ". "
+def split_sentences(text: str) -> list[str]:  # boundaries after . ! ?, never after an abbreviation, an initial or
+    ...                                       # before a lowercase word (text.py docstring)
+def sentences(text: str, *, min_words: int, max_chars: int) -> list[str]:   # both from the package
+    return [s for s in split_sentences(text) if len(s.split()) >= min_words and len(s) <= max_chars]
 def content_terms(text: str, params: RetrievalParams) -> frozenset[str]:
     return frozenset(lexical_index.tokenize(text, params))   # package tokenizer + stopwords-v1
 ```
@@ -1000,9 +1002,9 @@ With `structural=True` (tests and `config_package.py --check` only, M21): a comm
 | Setting (env) | Type / default | Freeze rationale |
 |---|---|---|
 | `TWO_PASS_TUTOR` | `Literal["off","shadow","on"] \| None = None`; `None` → `"shadow"` in development, `"off"` elsewhere | Plan G (L1255): "two_pass_tutor MUST run shadow-only until the Phase 4 exit; zero outputs reach learners". `on` is refused (below). `shadow` outside development records a `config.override` (`two_pass_tutor_shadow`). |
-| `TWO_PASS_SHADOW_BUDGET_MS` | `int = Field(2000, ge=100, le=30000)` | E1 "bounded budget". The shadow runs after the response body is sent; the budget bounds how long it holds a worker thread and the connection's next request (19). |
+| `TWO_PASS_SHADOW_BUDGET_MS` | `int \| None = Field(None, ge=100, le=30000)`; None = the package's `tutor_pipeline.budgets.shadow_ms` (2000; 18.5 C3) | E1 "bounded budget". The shadow runs after the response body is sent; the budget bounds how long it holds a worker thread and the connection's next request (19). |
 | `TUTOR_LEDGER_ENABLED` | `bool = True` | Not learner-visible. Kill switch for the new request-path write, like `SPAN_REGISTRY_WRITE_THROUGH`. Disabling it outside development is a `config.override` (`tutor_ledger_disabled`): it relaxes the audit control (R-22). |
-| `TUTOR_LEDGER_APPEND_BUDGET_MS` | `int = Field(1500, ge=100, le=5000)` | Bounds the synchronous legacy append (conflict 29); also the PostgreSQL `lock_timeout` of each attempt. |
+| `TUTOR_LEDGER_APPEND_BUDGET_MS` | `int \| None = Field(None, ge=100, le=5000)`; None = the package's `tutor_pipeline.budgets.ledger_append_ms` (1500; 18.5 C3) | Bounds the synchronous legacy append (conflict 29); also the PostgreSQL `lock_timeout` of each attempt. |
 | `LEDGER_ROUTE_ENABLED` | `bool \| None = None`: development true, elsewhere false | A new route under the freeze (conflict 4). Enabling it outside development is a `config.override` (`ledger_route_enabled`). |
 | `EVIDENCE_PANEL_ENABLED` | `bool \| None = None`: development true, elsewhere false | E5 and E9 (conflict 24). Enabling it outside development is a `config.override` (`evidence_panel_enabled`). |
 | `TUTOR_TURNS_RATE_LIMIT` | `"8/minute"` | Like `ASSISTANT_CHAT_RATE_LIMIT`. |
@@ -1306,6 +1308,9 @@ def downgrade():
 - **No code change.** Not user-keyed and no foreign keys, so `user_keyed_tables()` and `_covered_tables()` exclude the tables and erasure never touches them.
 - **Retention.** No rule in Phase 3: plan 12.8 leaves the retention period an OPEN owner decision (DI-45). The ledger holds no learner identifier; after erasure of `tutor_turns`/`tutor_messages` its turn and message ids are dangling. Residual: platform access logs of `GET /ledger/responses/{turn id}` and record timestamps could support re-linking outside the database; no application log carries a turn, thread or message id (0.1).
 - **Tests** (13.1): `test_ac_3_4_erasure_leaves_ledger_rows_unlinkable` and `test_the_ledger_is_outside_erasure_and_guarded_at_start_up`.
+- **Machine-readable retention state (18.5 C4).** Package v2 `owner_decisions.PLAN-12.8` = `{state: open, behaviour: retain}` and `tutor_pipeline.ledger.retention` = `retain`; the loader refuses anything else while no retention job exists. `test_c4_no_retention_or_erasure_job_deletes_a_ledger_row` runs `run_retention_cleanup` with a cutoff in 2100 over old ledger rows.
+- **Q&A records (18.5 C8)** carry a `qa-` id stored nowhere else: unlinkable from the start.
+- **`tutor_turn_idempotency` (18.5 C9)** is user-keyed: erasure deletes it and guest retention covers it like every user-keyed table.
 
 ---
 
@@ -1314,11 +1319,11 @@ def downgrade():
 | Path | Outside development (defaults) | Development |
 |---|---|---|
 | `POST /assistant/chat` | Body and keys identical to today (no `evidence` key; conflict 28), plus a legacy ledger record per turn (`TUTOR_LEDGER_ENABLED`, ≤ append budget). No shadow. | Legacy answer, `evidence` panel, legacy record, and the shadow pipeline as a background task (a shadow record). |
-| `POST /tutor/turns` | 404 `{"detail": "Not Found"}` after authentication (anonymous 401; an invalid body 422) | Like `/assistant/chat`, plus `delivery: "legacy"`. Honours `presentation_plan`. `extra="forbid"`. |
+| `POST /tutor/turns` | 404 `{"detail": "Not Found"}` after authentication (anonymous 401; an invalid body 422), whatever `Idempotency-Key` holds | Like `/assistant/chat`, plus `delivery: "legacy"`. Honours `presentation_plan`. `extra="forbid"`. An optional `Idempotency-Key` (18.5 C9): a retry returns the first turn (`Idempotent-Replayed: true`); another body with the key 422; a retry while the first runs 409. |
 | `GET /ledger/responses/{id}` | 404 | Owner: own legacy record (no chain fields), or `legacy_turn` no-verdict. Reviewer: any record with chain fields, logged. Shadow ids: 404 to everyone else, admin included. |
 | `GET /evidence/spans/{id}` | 404 (`SPAN_RESOLVER_ROUTE_ENABLED` false) | Identical to `/spans/{id}`, plus `license_class` |
 | `GET /assistant/threads/{id}` | Unchanged | Unchanged (shadow writes no message) |
-| `POST /qa/ask`, `GET /qa/history` | Unchanged; out of the tutor ledger's scope (DI-39). The plan I "100% of deliveries" SLI is reported for tutor deliveries. | Unchanged |
+| `POST /qa/ask`, `GET /qa/history` | Response bytes unchanged. Each `/qa/ask` delivery is ledgered like a tutor turn (18.5 C8; `TUTOR_LEDGER_ENABLED`, bounded, fail-open) under a `qa-` id with no learner link; the plan I SLI is reported per surface (`legacy_by_surface`). | The same |
 
 **Rate limits.** Learner-facing tests use a fresh `demo()` principal and a distinct `x-forwarded-for` per call (8/minute limits).
 
@@ -1510,7 +1515,7 @@ def downgrade():
       - run: python scripts/replay_tutor_plans.py --check docs/evaluation/phase3/three_plan_replay_v1.json
 ```
 
-- `api-postgres` is unchanged: it runs the new acceptance and unit tests on PostgreSQL 16 with psycopg. CI does not exercise pg8000 (production's driver); see 17 and DI-46.
+- `api-postgres` runs the API suite on PostgreSQL 16 as a matrix over both drivers, psycopg and pg8000 (production's driver), with `TEST_DATABASE_URL=postgresql+${{ matrix.driver }}://...` (18.5 C7; DI-46).
 - The frontend job is unchanged (the new test matches `tests/**/*.test.ts`). `release-artifacts` and `api-image-boundary-scan` are unchanged.
 
 ---
@@ -1573,6 +1578,8 @@ def downgrade():
 | DI-44 | Optional: add `/evidence/spans` and `/spans` to the frontend proxy's public route patterns, so span links never mint a guest session. | Eng | Deferred |
 | DI-45 | Ledger retention period (plan 12.8: "OPEN DECISION. Retention period (Product Owner; Principal Investigator consulted)"). Until decided the ledger is kept and the privacy page says so. | PO / PI | Open |
 | DI-46 | pg8000 (the production driver) is not exercised by CI; the ledger tests were run locally on pg8000 once. A CI job or matrix entry is deferred. | Eng | Deferred |
+
+**Revised in 18.5 (second review round).** PD-11 is reworded as engineering parameters with no plan value, and its budgets moved into the package. DI-39, DI-40 and DI-44 are closed in code. DI-45 is machine-readable in the package and stays open (an owner decision). DI-46 has its CI leg. The registers in `BEP-2-12/00_meta` hold the current text; the tables above are the spec-time version.
 
 ---
 
@@ -1749,3 +1756,120 @@ Ten confirmed review findings were fixed on the branch. Each fix has a test.
 - **Validators:** every CI validator passes, including `config_package.py --check` (v2 and v1, both unchanged), `authorization_matrix.py --check` (regenerated) and `replay_tutor_plans.py --check`.
 - **Frontend:** lint and typecheck are clean; `test:integration` gives 138 of 138.
 - **Not run:** `pip-audit` and `npm audit` (they need the network; no dependency changed).
+
+### 18.5 Hardening, second review round (2026-11-19)
+
+The second review round sent twelve items (C1-C12). Each is fixed with a test that fails if the defect comes back. Most tests are in `apps/api/tests/test_phase3_hardening.py`; the others are named below.
+
+**Production changes.** These ship only with a D-05 release, like the rest of Phase 3. None adds learner-facing capability:
+- the `/qa/ask` ledger record (C8);
+- the pg8000 error classes (C7);
+- the thread lock and the monotonic message times (C12);
+- the `tutor_turn_idempotency` table, which stays empty outside development while `POST /tutor/turns` answers 404 (C9).
+
+**C1. `license_class` is derived, and a non-public span is never emitted** (plan 7.4; plan 7.5 "The license_class gate is defense in depth"; plan H "Public-corpus spans only"). This supersedes the resolution of conflict 13.
+- `CorpusRegistry.license_class(plane=, item_id=, source_filename=)` returns `"public"` only when two things hold:
+  - the record's own plane is `public`;
+  - the manifest does not put the item, or its source file, on another plane.
+  Otherwise it returns None.
+- `retrieve.evidence_span_for` builds every `EvidenceSpan` from its span record through that function. The two-pass bundle and the legacy ledger record both use it, so neither writes the literal `"public"` any more.
+- A span whose class is None is left out of the bundle and counted (`slis.tutor_ledger.non_public_spans_excluded`, by surface). It is also logged as `tutor.evidence.non_public_excluded`.
+- If every result is excluded, the bundle abstains with `no_quotable_evidence`.
+- In the legacy record, a delivered claim that cites such a span is left out and counted under the new drop reason `not_public`, so no non-public text is ever recorded.
+- `GET /spans/{id}` and `GET /evidence/spans/{id}` derive the class themselves and answer the same 404 when it is not public, even if the resolver returned the span.
+- Tests: a forced private-plane record, and a manifest that moves the item private, are refused by `retrieve`, by both routes (with a resolver stubbed to leak the span) and by the legacy record.
+
+**C2. Every `config.override` key is tested.**
+- Under production settings, each of the 13 keys is checked one relaxation at a time. Each case sets one relaxation and expects exactly `{key: True}`:
+  - the 2 Phase 1 keys;
+  - the 7 Phase 2 keys (4 of them were untested: `semantic_retrieval_enabled`, `span_resolver_route_enabled`, `config_package_path_overridden`, `config_package_hash_unverified`);
+  - the 4 Phase 3 keys.
+- Another case sets all 13 relaxations together.
+- An AST scan of `_record_configuration_overrides` fails when a key has no case, so deleting or adding a line fails a test.
+- The path override is also checked through the real loader.
+
+**C3. The PD-11 values are configuration, not code constants** (R-46: "One hashed configuration package per ledger record").
+- Package v2 gains `tutor_pipeline.budgets` (`provisional: true`):
+  - `shadow_ms` 2000 and `ledger_append_ms` 1500;
+  - `ledger_append_attempts` 3 and `ledger_wait_grace_ms` 250;
+  - `ledger_append_workers` 4 and `ledger_append_max_in_flight` 16.
+  The last four were code constants. `tutor_pipeline` also gains `provisional: true`, and its authority now says the values are engineering parameters with no plan value, never plan defaults.
+- `TWO_PASS_SHADOW_BUDGET_MS` and `TUTOR_LEDGER_APPEND_BUDGET_MS` now default to None (the package value) and are overrides only. `sentences()` has no default `max_chars`.
+- The ledger needs package v2. Under v1 a legacy record fails closed and is counted (`LedgerUnavailable`); it never falls back to a code default.
+- Tests:
+  - a package with other budgets drives the budgets and the attempt count;
+  - the loader refuses budgets that are not marked provisional or are out of bounds;
+  - the old constants are gone.
+
+**C4. Ledger retention is an open decision, and the package says "retain"** (plan 12.8: "OPEN DECISION. Retention period (Product Owner; Principal Investigator consulted)").
+- `owner_decisions.PLAN-12.8` records `{state: open, behaviour: retain, ratified: false, record: DI-45}`, and `tutor_pipeline.ledger.retention` is `"retain"`.
+- The loader refuses any other state, behaviour or retention value, because no retention job exists.
+- Tests: old ledger rows survive `run_retention_cleanup` with a cutoff in 2100, and the chain still verifies. `retention.py` names no ledger table, and the ledger tables are outside erasure.
+
+**C5. `test_rate_limit[database]` waits for its instances robustly.**
+- The two uvicorn instances log to a file, and `/health` is polled until a bounded ceiling (`API_TEST_START_TIMEOUT_SECONDS`, 300 s by default; it was a fixed 90 s with output discarded).
+- A port lost between the probe and the bind is retried once on a new port.
+- A failure says why the instance did not start (its exit code, or the ceiling) and shows the last 40 lines of its output. No assertion changed.
+
+**C6. `test_demo_seed_is_idempotent_and_populates_public_activity` is isolated.**
+- It seeds an empty database of the session's dialect (`fresh_database_url`, with the full schema).
+- The routes it reads are served from that database: `get_db` is overridden, and so is the Arena service's `SessionLocal`.
+- So rows from earlier tests, or from earlier runs on a reused PostgreSQL database, can neither turn the first seed into an update nor push the seeded submission off the review queue's first page (8 items). Every assertion is unchanged.
+
+**C7. pg8000 in CI (DI-46).**
+- `api-postgres` is now a matrix over `psycopg` and `pg8000`, with `TEST_DATABASE_URL=postgresql+${{ matrix.driver }}://...`.
+- Before the change, the full API suite on pg8000 (scratch PostgreSQL 17) had 2 failures:
+  1. A check-constraint violation (SQLSTATE 23514) arrived as `ProgrammingError`. pg8000 maps only 23505 to `IntegrityError`, so application code that catches `IntegrityError`, `DataError` or `OperationalError` behaved differently in production than in CI.
+  2. The demo-seed time-zone test passed the libpq-only `options` connect argument.
+- Fixes:
+  1. `app.core.db.classify_pg8000_errors` is a `handle_error` hook on every engine. It re-raises a pg8000 server error as the PEP 249 class psycopg raises for the same SQLSTATE class: 22 `DataError`; 23 `IntegrityError`; 08, 40, 53, 54, 55, 57 and 58 `OperationalError`. The driver error stays `.orig`.
+  2. The time-zone test sends pg8000 a `TimeZone` startup parameter, uses `Asia/Kolkata` (no cluster's default), and asserts `SHOW TimeZone`.
+
+**C8. `/qa/ask` is ledgered (DI-39).**
+- The plan text does not exclude Q&A: task 3.8 is a ledger of responses, plan I says "Ledger writes 100% of deliveries", and F-1 says "100% carry span IDs, model ID, prompt hash and verdicts".
+- `QAEngine.ask` prepares a legacy record exactly as a tutor turn does: `legacy_delivery_for`, `TUTOR_LEDGER_ENABLED`, the same budget, the same fail-open path and the same chain. The route appends it after its commit.
+- The record has a `qa-<uuid4>` response id (`RESPONSE_ID` and `LedgerEntry` accept `qa-` for legacy records) that is stored nowhere else. It holds no question text, no user id and no learner link from the start, so only a reviewer reads it; the asker gets the missing-id 404.
+- Coverage is counted per surface (`slis.tutor_ledger.legacy_by_surface.{tutor,qa}`), and `verify_ledger.py --coverage-since` also reports `qa_records_since`.
+- The privacy row now names Q&A answers and says their records are not linked to the learner.
+- Tests: answers and abstentions are ledgered and the chain verifies. The response bytes and the named headers are identical with the ledger on, off or failing. Erasure removes the Q&A rows and leaves the unlinkable record, which a reviewer reads.
+
+**C9. `Idempotency-Key` on `POST /tutor/turns` (DI-40;** plan 7.3: "mutations carry client keys").
+- The header is optional. It is validated against the package's `tutor_pipeline.idempotency.key_pattern`, `^[A-Za-z0-9._:-]{8,128}$`; anything else is a 422. It is read after the flag, so a disabled route still answers 404.
+- A key is scoped to the caller. `tutor_turn_idempotency` stores only the key's sha256 and the sha256 of the request (message, thread, lesson, plan), unique per caller.
+- The outcomes:
+  - the same key and the same request return the first turn's response, with `Idempotent-Replayed: true`;
+  - a different request with the same key gets 422;
+  - a retry while the first request still runs gets 409;
+  - past `ttl_hours` (24) the key starts a new turn.
+- The row is claimed and committed before the turn runs, and filled in the turn's own transaction (`deliver_tutor_turn(before_commit=)`). It is released if the turn fails, so concurrent requests with one key create one turn.
+- The table is user-keyed: erasure deletes its rows, and guest retention covers it (`test_erasure_retention` walks every user-keyed table). Otherwise a row lives as long as the turn it answers for, like the other tutor tables.
+- The Phase 3 Alembic revision, which had not been applied anywhere, creates the table. The head is unchanged (`SCHEMA_REVISION`), and the reversibility test now covers the table.
+- Tests: a replay, a different caller, a changed body, malformed and oversized keys, the 404, the 409, a failed turn releasing its key, a concurrent race (real threads on PostgreSQL), expiry, and erasure.
+
+**C10. Sentence rule `sentences-v2`** (plan M residual "misleading wording within locked claims").
+- A period does not end a sentence after:
+  - a common abbreviation or title (e.g., i.e., vs., cf., approx., Dr., Prof. and others);
+  - "et al.";
+  - a reference abbreviation followed by a number or a bracket (Fig. 3, Eq. (2), Sec. 4);
+  - dotted initials;
+  - a single capital initial before a capitalised word or a bracket (J. Preskill; "Petruccione, F. (2021)").
+- Nor does it end one before a lowercase word. Decimal numbers and version strings were never split.
+- Over the 1030 dev document spans, `sentences-v1` gave 2199 sentences of 4+ words, 49 of which end in an abbreviation, a title or an initial. `sentences-v2` gives 2177, and 1 of them ends that way: a bibliography line ending "C. Y.-Y.". The sentences of 27 spans changed.
+- The rule id is in the evidential prompt hash, and `package_check` now fails when the package's `sentence_rule` or `binding_rule` differs from the code's.
+- The replay record was regenerated, because the package sha256 and the claim hashes changed. The answer counts are unchanged (0, 167 and 147 of 299), with 0 mismatches and a bound-claim ratio of 1.0.
+- Tests: 19 split cases (abbreviations, initials, numbers, versions and real boundaries); no dev-corpus sentence ends at an abbreviation (the old rule cut 49); and the rule-id check.
+
+**C11. Span links through the frontend proxy (DI-44).** The development evidence panel links to `/api/backend/evidence/spans/{id}`, and the proxy minted a guest session for it, which is not needed: the API reads no credential on the span routes. `PUBLIC_API_ROUTE_PATTERNS` now holds `/spans/span-<64 hex>` and `/evidence/spans/span-<64 hex>`. The API still keeps both routes off outside development. Test: `evidence-panel.integration.test.ts`, where malformed ids and other routes still require a session.
+
+**C12. Message times** (a production change to stored data; M5).
+- `tutor_orchestrator.next_message_time` sets a turn's first message time. It is timezone-aware UTC: now, but never earlier than the thread's latest message plus 1 µs. The reply follows its question by 1 µs, and the turn row takes the question's time.
+- The thread row is locked first (`SELECT ... FOR UPDATE` on PostgreSQL; SQLite serialises writers). The turn's `UPDATE` of `updated_at` already held that lock until the commit; it is now taken a few statements earlier. So concurrent turns of one thread take their times in commit order, and instances with skewed clocks cannot reorder a thread.
+- Before Phase 3, PostgreSQL gave a turn's question and reply the same `now()`, the transaction start, so their order in the thread view depended on random ids.
+- Readers of `created_at`:
+  - the thread view and the resolver order by `(created_at, id)`;
+  - R1.2 `stored_before_containment` compares against a fixed cut-over;
+  - erasure deletes by user key;
+  - guest retention deletes rows older than 365 days;
+  - no export or analytics path reads the tutor tables.
+  None changes behaviour beyond the stricter order. The thread's own `created_at` stays `server_default=now()`.
+- Tests: with a stalled and then backwards clock, three turns stay strictly ordered, and the thread view returns them in that order. With 6 concurrent turns of one thread on PostgreSQL (all asking for the same instant), the 12 messages are strictly ordered in question-reply pairs, timestamptz values are UTC, and the turn times equal their questions' times.

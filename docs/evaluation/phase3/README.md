@@ -36,7 +36,7 @@ Any change to the configuration package (its sha256 is in the report) needs a fr
   - `governed_empty` / `p1-floor`: the shipped D-31 build, where nothing is approved, so it abstains on all 298 items;
   - `all_public_approved` / `bm25f-v1`: a temporary manifest approving every public-plane, bound item;
   - `all_public_approved` / `p1-floor`: the same manifest under the Phase 1 floor.
-- **Pipeline:** `thread-resolver-v1` on single turns; lexical retrieval, `top_k` 4; generator `extractive-d19-v1` (D-19, PD-08); binding `resolver-bundle-sentence-v1`; subset check `segment-exact-normalised-v1`; regeneration limit 2.
+- **Pipeline:** `thread-resolver-v1` on single turns; lexical retrieval, `top_k` 4; generator `extractive-d19-v1` (D-19, PD-08) over `sentences-v2` sentences; binding `resolver-bundle-sentence-v1`; subset check `segment-exact-normalised-v1`; regeneration limit 2.
 
 ## Results (committed record)
 
@@ -48,7 +48,7 @@ Any change to the configuration package (its sha256 is in the report) needs a fr
 
 - No off-topic or stopword-only item is answered (`answered_by_stratum`).
 - The answer counts equal the legacy contained path's over the same retrieval (spec M1, M2).
-- The 298 original items replay exactly as before the 2026-11-19 review fixes: each configuration's `items_digest` over them is unchanged.
+- The 298 original items replayed exactly as before the first 2026-11-19 review fixes (equal `items_digest`). The second review round (Phase 3 spec 18.5) changed the configuration package (budgets, idempotency, `PLAN-12.8`) and the sentence rule (`sentences-v2`, C10), so the package sha256, the claim hashes and every `items_digest` changed; the answer counts, the 0 mismatches and the bound-claim ratio of 1.0 did not. The record was rewritten from the clean commit that holds that code, which its `commit` names.
 - The two-pass counts are the ratio terms (`contracts.bound_claim_ratio_terms`): a claim merged onto an earlier claim's sentence counts as bound; a claim bind never saw (a shadow budget overrun) counts in neither term.
 - The answered items' three renderings are pairwise distinct (`rendered_text_distinct_among_answers`): the plans differ in presentation only.
 

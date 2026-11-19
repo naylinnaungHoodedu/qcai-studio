@@ -10,9 +10,16 @@ The chain-head row is locked with SELECT ... FOR UPDATE by every append (SQLite 
 stays linear under concurrency; database triggers refuse UPDATE, DELETE and TRUNCATE of records, refuse an insert
 that does not extend the chain, and let the head move forward only (app.core.schema_upgrades).
 
-What is recorded (spec R-a): every learner delivery is the legacy contained answer, recorded with
-delivery "legacy" and response_id = the TutorTurn id; every shadow run of the two-pass pipeline is recorded with
-delivery "shadow" and a shadow- id naming the turn it shadowed. "delivered" is Phase 4's.
+What is recorded (spec R-a): every learner delivery is a legacy contained answer, recorded with delivery "legacy":
+a tutor turn with response_id = the TutorTurn id, and a /qa/ask answer with a qa- id that is stored nowhere else
+(plan task 3.8 and F-1 cover every delivered response; the Q&A record is unlinkable from the start, so only a
+reviewer reads it). Every shadow run of the two-pass pipeline is recorded with delivery "shadow" and a shadow- id
+naming the turn it shadowed. "delivered" is Phase 4's.
+
+Budgets, attempts and the appender's size come from configuration package v2 (tutor_pipeline.budgets; PD-11), so
+every record's config_package_sha256 names them (R-46); TUTOR_LEDGER_APPEND_BUDGET_MS overrides the budget only.
+No retention applies: plan 12.8 is an open decision, the package says "retain" (owner_decisions.PLAN-12.8, DI-45),
+no job deletes a row and the triggers refuse DELETE.
 
 No user id and no learner text: the ledger stores corpus text (claims) and hashes only, never the resolved
 question or the rendered text. The link to a learner is tutor_turns, which erasure deletes; the rows then remain
@@ -41,7 +48,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
-from app.core.config_package import ConfigPackage, canonical_sha256, get_config_package
+from app.core.config_package import ConfigPackage, TutorPipelineParams, canonical_sha256, get_config_package
 from app.core.db import SessionLocal
 from app.core.structured_logging import FIELDS
 from app.db_models import ResponseLedgerHead, ResponseLedgerRecord
@@ -49,6 +56,7 @@ from app.services.contained_answers import ABSTENTION, EXTRACTIVE_MODE, MAX_QUOT
 from app.services.tutor_pipeline.bind import claim_id_for
 from app.services.tutor_pipeline.contracts import (
     ENTRY_SCHEMAS,
+    LEGACY_NOT_PUBLIC,
     LEGACY_UNRESOLVED,
     ClaimLedgerEntry,
     EvidenceSpan,
@@ -61,13 +69,13 @@ from app.services.tutor_pipeline.contracts import (
     sha256_hex,
 )
 from app.services.tutor_pipeline.metrics import LEDGER_METRICS
+from app.services.tutor_pipeline.retrieve import evidence_span_for
 
 LOGGER = logging.getLogger("qcai.tutor")
 CHAIN = "tutor-responses"
 GENESIS_HASH = "0" * 64
 # The Alembic revision this code expects (tested against the single head); stamped on every record (plan 13.5).
 SCHEMA_REVISION = "20261119_phase3_response_ledger"
-APPEND_ATTEMPTS = 3
 LEGACY_GENERATOR_ID = "contained-answers-v1"
 LEGACY_CONTAINMENT_RULE_HASH = canonical_sha256(
     {
@@ -87,6 +95,23 @@ class LedgerConflict(RuntimeError):
 
 class LedgerAppendError(RuntimeError):
     """The append did not succeed within its attempts or its budget."""
+
+
+class LedgerUnavailable(RuntimeError):
+    """The configuration package has no tutor_pipeline block (package v1), so it pins no ledger parameters."""
+
+
+def ledger_params(package: ConfigPackage) -> TutorPipelineParams:
+    if package.tutor_pipeline is None:
+        raise LedgerUnavailable("configuration package v1 pins no ledger schema or budgets; the ledger needs package v2")
+    return package.tutor_pipeline
+
+
+def ledger_budget_ms(settings: Settings, package: ConfigPackage) -> int:
+    """TUTOR_LEDGER_APPEND_BUDGET_MS when set, else the package's tutor_pipeline.budgets.ledger_append_ms (PD-11)."""
+    if settings.tutor_ledger_append_budget_ms is not None:
+        return int(settings.tutor_ledger_append_budget_ms)
+    return ledger_params(package).ledger_append_budget_ms
 
 
 @dataclass(frozen=True)
@@ -143,8 +168,10 @@ def append_ledger_entry(
     session_factory: Callable[[], Session] = SessionLocal,
     now: datetime | None = None,
     budget_ms: int,
+    attempts: int | None = None,
 ) -> AppendedRecord:
-    """Append one record in its own transaction, at most APPEND_ATTEMPTS times within budget_ms.
+    """Append one record in its own transaction, at most `attempts` times within budget_ms; attempts defaults to the
+    configuration package's tutor_pipeline.budgets.ledger_append_attempts (PD-11).
 
     Statements run in a fixed order (Core, so the unit of work never reorders them): head insert-if-missing, head
     SELECT ... FOR UPDATE, record INSERT, head UPDATE. Only an IntegrityError is retried; any other database error
@@ -158,7 +185,9 @@ def append_ledger_entry(
     created_at = _utc(now or datetime.now(UTC))
     deadline = time.monotonic() + max(1, int(budget_ms)) / 1000
     last_error: Exception | None = None
-    for attempt in range(APPEND_ATTEMPTS):
+    if attempts is None:
+        attempts = ledger_params(get_config_package(get_settings())).ledger_append_attempts
+    for attempt in range(max(1, int(attempts))):
         remaining_ms = int((deadline - time.monotonic()) * 1000)
         if attempt:
             if remaining_ms <= 0:
@@ -330,8 +359,9 @@ def verify_response_ledger(db: Session, *, expected_head: tuple[int, str] | None
 
 @dataclass(frozen=True)
 class LegacyDelivery:
-    """What the legacy contained path delivered for one tutor turn (spec 7.12). Built by the orchestrator; holds
-    corpus text and identifiers only, never the learner's question."""
+    """What a legacy contained answer delivered (spec 7.12): one tutor turn (surface "tutor") or one /qa/ask answer
+    (surface "qa"). Built by legacy_delivery_for; holds corpus text and identifiers only, never the learner's
+    question."""
 
     response_id: str
     decision: str
@@ -352,6 +382,82 @@ class LegacyDelivery:
     policy_version: str
     dropped_unresolved: int = 0
     manifest_sha256: str | None = None
+    # Delivered quotations whose span's derived license class is not public: kept out of the record and counted.
+    dropped_not_public: int = 0
+    surface: str = "tutor"
+
+
+def legacy_delivery_for(
+    *,
+    response_id: str,
+    contained: Any,
+    retrieval: Any,
+    store: Any,
+    registry: Any,
+    retrieval_mode: str,
+    provider: str,
+    model: str,
+    policy_version: str,
+    surface: str,
+) -> LegacyDelivery:
+    """The LegacyDelivery of a contained answer (contained_answers.ContainedAnswer) and the retrieval behind it.
+
+    Every EvidenceSpan is built from the span record by retrieve.evidence_span_for, so its license_class is derived
+    from the record's plane and the manifest, never labelled: a span that is not public is left out (fail closed),
+    and a delivered claim that cites one is left out of the record and counted (LEGACY_NOT_PUBLIC)."""
+    floor, margin, threshold_version = store.index.thresholds
+    metric_surface = "qa" if surface == "qa" else "legacy"
+    quoted: list[EvidenceSpan] = []
+    for citation in contained.citations:
+        record = store.span_registry.get(citation.span_id) if citation.span_id else None
+        span = None
+        if record is not None:
+            span = evidence_span_for(record, registry, score=None, near_floor=bool(citation.near_floor), surface=metric_surface)
+        if span is not None:
+            quoted.append(span)
+    public_ids = {span.span_id for span in quoted}
+    claims: list[tuple[str, tuple[str, ...]]] = []
+    not_public = 0
+    for claim in contained.claims:
+        cited = tuple(claim.cited_span_ids)
+        if cited and not set(cited) <= public_ids:
+            not_public += 1
+            continue
+        claims.append((claim.text, cited))
+    retrieved: tuple[EvidenceSpan, ...] | None = None
+    if retrieval is not None:
+        spans = []
+        for result in retrieval.results:
+            record = store.span_registry.get(result.span_id or result.chunk_id)
+            if record is None:
+                continue
+            span = evidence_span_for(record, registry, score=result.score, near_floor=bool(result.near_floor), surface=metric_surface)
+            if span is not None:
+                spans.append(span)
+        retrieved = tuple(spans)
+    return LegacyDelivery(
+        response_id=response_id,
+        decision=contained.decision,
+        reason=contained.reason,
+        claims=tuple(claims),
+        quoted=tuple(quoted),
+        retrieved=retrieved,
+        answer_sha256=sha256_hex(contained.answer),
+        retrieval_mode=retrieval_mode,
+        provider=provider,
+        model=model,
+        corpus_version=registry.corpus_version,
+        index_version=store.index_version,
+        gate=store.gate,
+        threshold_version=threshold_version,
+        floor=floor,
+        margin=margin,
+        policy_version=policy_version,
+        dropped_unresolved=contained.dropped_unresolved,
+        manifest_sha256=registry.manifest_sha256,
+        dropped_not_public=not_public,
+        surface="qa" if surface == "qa" else "tutor",
+    )
 
 
 def build_legacy_entry(delivery: LegacyDelivery, *, settings: Settings, package: ConfigPackage, manifest_sha256: str | None) -> LedgerEntry:
@@ -375,6 +481,11 @@ def build_legacy_entry(delivery: LegacyDelivery, *, settings: Settings, package:
     )
     retrieved = delivery.retrieved is not None
     abstained = delivery.decision != "answer"
+    dropped: dict[str, int] = {}
+    if delivery.dropped_unresolved:
+        dropped[LEGACY_UNRESOLVED] = int(delivery.dropped_unresolved)
+    if delivery.dropped_not_public:
+        dropped[LEGACY_NOT_PUBLIC] = int(delivery.dropped_not_public)
     return LedgerEntry(
         response_id=delivery.response_id,
         delivery="legacy",
@@ -415,22 +526,24 @@ def build_legacy_entry(delivery: LegacyDelivery, *, settings: Settings, package:
             renderer_id=None,
         ),
         counts=PipelineCounts(
-            proposed_claims=len(claims) + int(delivery.dropped_unresolved),
+            proposed_claims=len(claims) + sum(dropped.values()),
             bound_claims=len(claims),
-            dropped={LEGACY_UNRESOLVED: int(delivery.dropped_unresolved)} if delivery.dropped_unresolved else {},
+            dropped=dropped,
             render_attempts=0,
         ),
     )
 
 
-def record_ledger_failure(delivery: str, stage: str, exc: BaseException) -> None:
+def record_ledger_failure(delivery: str, stage: str, exc: BaseException, *, surface: str | None = None) -> None:
     """Count and log a lost ledger record (plan L: a ledger write failure is a stop condition)."""
     if isinstance(exc, LedgerConflict):
         LEDGER_METRICS.conflict()
         _log(logging.ERROR, "Tutor ledger conflict", "tutor.ledger.conflict", delivery=delivery)
-    LEDGER_METRICS.failed(delivery)
+    LEDGER_METRICS.failed(delivery, surface=surface)
+    # Tutor deliveries keep their original log fields; a /qa/ask record says where it came from.
+    extra = {"surface": surface} if surface == "qa" else {}
     _log(logging.ERROR, "Tutor ledger record could not be appended", "tutor.ledger.append_failed", delivery=delivery, stage=stage,
-         error=type(exc).__name__)
+         error=type(exc).__name__, **extra)
 
 
 class _LegacyAppender:
@@ -438,20 +551,30 @@ class _LegacyAppender:
 
     append_ledger_entry bounds lock waits and statements on PostgreSQL, but not the checkout of a pooled connection
     (the pool's own timeout, 30 s by default) or a new Cloud SQL connection. The request therefore waits for the
-    append at most its budget plus LEGACY_WAIT_GRACE_MS; an append still running then finishes in the background and
-    is counted when it ends (appended, or failed). At most LEGACY_APPEND_MAX_IN_FLIGHT appends run or wait at once;
-    past that an append is refused at once and counted as failed, so a stuck database never piles up threads.
+    append at most its budget plus the package's ledger_wait_grace_ms; an append still running then finishes in the
+    background and is counted when it ends (appended, or failed). At most ledger_append_max_in_flight appends run or
+    wait at once; past that an append is refused at once and counted as failed, so a stuck database never piles up
+    threads. The pool is sized by its constructor, or from the package on first use.
     """
 
-    def __init__(self, workers: int, max_in_flight: int) -> None:
-        self._workers = workers
-        self._slots = threading.BoundedSemaphore(max_in_flight)
+    def __init__(self, workers: int | None = None, max_in_flight: int | None = None) -> None:
         self._lock = threading.Lock()
+        self._workers = workers
+        self._slots = threading.BoundedSemaphore(max_in_flight) if max_in_flight is not None else None
         self._executor: ThreadPoolExecutor | None = None
         self._pending: set[Future] = set()
 
-    def submit(self, task: Callable[[], Any]) -> Future | None:
-        if not self._slots.acquire(blocking=False):
+    def _configure(self, workers: int, max_in_flight: int) -> threading.BoundedSemaphore:
+        with self._lock:
+            if self._slots is None:
+                self._slots = threading.BoundedSemaphore(max_in_flight)
+            if self._workers is None:
+                self._workers = workers
+            return self._slots
+
+    def submit(self, task: Callable[[], Any], *, workers: int, max_in_flight: int) -> Future | None:
+        slots = self._configure(workers, max_in_flight)
+        if not slots.acquire(blocking=False):
             return None
         try:
             with self._lock:
@@ -461,7 +584,7 @@ class _LegacyAppender:
                 future = self._executor.submit(contextvars.copy_context().run, task)
                 self._pending.add(future)
         except BaseException:
-            self._slots.release()
+            slots.release()
             raise
         future.add_done_callback(self._finished)
         return future
@@ -469,7 +592,9 @@ class _LegacyAppender:
     def _finished(self, future: Future) -> None:
         with self._lock:
             self._pending.discard(future)
-        self._slots.release()
+            slots = self._slots
+        if slots is not None:
+            slots.release()
 
     def pending(self) -> int:
         with self._lock:
@@ -483,10 +608,7 @@ class _LegacyAppender:
         return not not_done
 
 
-LEGACY_WAIT_GRACE_MS = 250
-LEGACY_APPEND_WORKERS = 4
-LEGACY_APPEND_MAX_IN_FLIGHT = 16
-LEGACY_APPENDS = _LegacyAppender(LEGACY_APPEND_WORKERS, LEGACY_APPEND_MAX_IN_FLIGHT)
+LEGACY_APPENDS = _LegacyAppender()
 
 
 def record_legacy_delivery(
@@ -497,42 +619,44 @@ def record_legacy_delivery(
 ) -> AppendedRecord | None:
     """Record a legacy delivery; never raises and never changes the learner's response (fail open, counted).
 
-    The learner waits at most TUTOR_LEDGER_APPEND_BUDGET_MS + LEGACY_WAIT_GRACE_MS for the record, whatever the
+    The learner waits at most the append budget plus the package's ledger_wait_grace_ms for the record, whatever the
     database does (spec conflict 29). None means the record was not confirmed in that time: it failed and was counted,
     or it is still being appended in the background and is counted when that ends.
     """
+    surface = delivery.surface
     try:
         settings = settings or get_settings()
         package = get_config_package(settings)
+        params = ledger_params(package)
         entry = build_legacy_entry(delivery, settings=settings, package=package, manifest_sha256=delivery.manifest_sha256)
-        budget_ms = settings.tutor_ledger_append_budget_ms
+        budget_ms = ledger_budget_ms(settings, package)
     except Exception as exc:  # noqa: BLE001 - a ledger fault must not change the learner's response
-        record_ledger_failure("legacy", "append", exc)
+        record_ledger_failure("legacy", "append", exc, surface=surface)
         return None
 
     def append() -> AppendedRecord | None:
         try:
-            appended = append_ledger_entry(entry, session_factory=session_factory, budget_ms=budget_ms)
+            appended = append_ledger_entry(entry, session_factory=session_factory, budget_ms=budget_ms, attempts=params.ledger_append_attempts)
         except Exception as exc:  # noqa: BLE001 - counted here, in the worker, whether or not the request still waits
-            record_ledger_failure("legacy", "append", exc)
+            record_ledger_failure("legacy", "append", exc, surface=surface)
             return None
-        LEDGER_METRICS.appended("legacy", duplicate=appended.duplicate)
+        LEDGER_METRICS.appended("legacy", duplicate=appended.duplicate, surface=surface)
         return appended
 
     try:
-        future = LEGACY_APPENDS.submit(append)
+        future = LEGACY_APPENDS.submit(append, workers=params.ledger_append_workers, max_in_flight=params.ledger_append_max_in_flight)
     except Exception as exc:  # noqa: BLE001 - e.g. no thread could be started
-        record_ledger_failure("legacy", "append", exc)
+        record_ledger_failure("legacy", "append", exc, surface=surface)
         return None
     if future is None:
-        record_ledger_failure("legacy", "append", LedgerAppendError("too many ledger appends are already in flight"))
+        record_ledger_failure("legacy", "append", LedgerAppendError("too many ledger appends are already in flight"), surface=surface)
         return None
     try:
-        return future.result(timeout=(budget_ms + LEGACY_WAIT_GRACE_MS) / 1000)
+        return future.result(timeout=(budget_ms + params.ledger_wait_grace_ms) / 1000)
     except FutureTimeout:
         _log(logging.WARNING, "Tutor ledger append is still running; the response was not held for it", "tutor.ledger.append_deferred",
-             delivery="legacy", budget_ms=budget_ms)
+             delivery="legacy", budget_ms=budget_ms, **({"surface": surface} if surface == "qa" else {}))
         return None
     except Exception as exc:  # noqa: BLE001 - append() never raises; this is a defence only
-        record_ledger_failure("legacy", "append", exc)
+        record_ledger_failure("legacy", "append", exc, surface=surface)
         return None

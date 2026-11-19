@@ -13,7 +13,7 @@ import logging
 from uuid import uuid4
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config_package import get_config_package
@@ -31,19 +31,47 @@ from app.schemas import (
     TutorThreadRead,
 )
 from app.services.answer_history import WITHDRAWN_ANSWER, stored_before_containment
-from app.services.contained_answers import ContainedAnswer, contain_answer, span_is_quotable
+from app.services.contained_answers import ContainedAnswer, contain_answer
 from app.services.evidence_panel import build_evidence_panel
-from app.services.ledger import LegacyDelivery, record_ledger_failure
+from app.services.ledger import LegacyDelivery, legacy_delivery_for, record_ledger_failure
 from app.services.retrieval_metrics import record_citations
 from app.services.span_store import persist_cited_spans
 from app.services.teaching_assistant import TeachingAssistantService
 from app.services.tutor_followups import TurnFollowups
-from app.services.tutor_pipeline.contracts import EvidenceSpan, PresentationPlan, sha256_hex
+from app.services.tutor_pipeline.contracts import PresentationPlan
 from app.services.tutor_pipeline.metrics import LEDGER_METRICS, TWO_PASS_METRICS
 from app.services.tutor_pipeline.shadow import ShadowJob, effective_mode
 from app.services.tutor_pipeline.shadow import run_shadow as run_shadow_job
 
 TUTOR_LOGGER = logging.getLogger("qcai.tutor")
+# The reply follows the learner's message by this much, and each turn follows the thread's latest message by it.
+MESSAGE_TICK = timedelta(microseconds=1)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _as_utc(value: datetime) -> datetime:
+    # SQLite returns these timestamps without a zone (stored as UTC); PostgreSQL returns them with one.
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def next_message_time(db: Session, thread_id: str) -> datetime:
+    """The time of a new turn's first message: now (timezone-aware UTC), but never before the thread's latest message
+    plus MESSAGE_TICK, so a thread's messages keep a strict order whatever the clocks of the instances that wrote them.
+
+    The thread row is locked first (SELECT ... FOR UPDATE on PostgreSQL, held until the turn commits; SQLite
+    serialises writers), so two concurrent turns of one thread take their times one after the other: the second
+    reads the first's committed messages. The thread row was already locked from the turn's UPDATE of updated_at to
+    its commit; this takes the same lock a few statements earlier. Phase 3 spec M5 and 18.5 (a production change
+    to stored data that ships only with a D-05 release)."""
+    db.execute(select(TutorThread.id).where(TutorThread.id == thread_id).with_for_update())
+    latest = db.scalar(select(func.max(TutorMessage.created_at)).where(TutorMessage.thread_id == thread_id))
+    now = _utc_now()
+    if latest is not None and now < _as_utc(latest) + MESSAGE_TICK:
+        now = _as_utc(latest) + MESSAGE_TICK
+    return now
 
 
 def _thread_title(message: str) -> str:
@@ -127,8 +155,9 @@ class TutorOrchestrator:
         turn_id = f"turn-{uuid4()}"
         user_message_id = f"message-{uuid4()}"
         # Times are set here, not by the database, so the learner's turns of a thread have a strict order even
-        # within one second on SQLite (Phase 3 spec M5); the reply follows the question by one microsecond.
-        now = datetime.now(timezone.utc)
+        # within one second on SQLite and within one transaction on PostgreSQL (Phase 3 spec M5): the reply follows
+        # the question by one microsecond, and a turn follows the thread's latest message (next_message_time).
+        now = next_message_time(db, thread.id)
         db.add(TutorMessage(id=user_message_id, thread_id=thread.id, role="user", content=payload.message, created_at=now))
         db.add(
             TutorMessage(
@@ -136,7 +165,7 @@ class TutorOrchestrator:
                 thread_id=thread.id,
                 role="assistant",
                 content=contained.answer,
-                created_at=now + timedelta(microseconds=1),
+                created_at=now + MESSAGE_TICK,
             )
         )
         db.add(
@@ -198,67 +227,18 @@ class TutorOrchestrator:
 
     def _legacy_delivery(self, turn_id: str, candidate: AssistantChatResponse, contained: ContainedAnswer, registry: CorpusRegistry) -> LegacyDelivery:
         store = self._store()
-        floor, margin, threshold_version = store.index.thresholds
-        quoted = tuple(
-            EvidenceSpan(
-                span_id=citation.span_id,
-                item_id=citation.item_id,
-                item_version=citation.item_version,
-                kind="document",
-                char_start=citation.start,
-                char_end=citation.end,
-                content_hash=citation.content_hash,
-                score=None,
-                near_floor=bool(citation.near_floor),
-                license_class="public",
-                quotable=True,
-            )
-            for citation in contained.citations
-        )
         retrieval = getattr(candidate, "_retrieval", None)
-        retrieved: tuple[EvidenceSpan, ...] | None = None
-        if retrieval is not None and isinstance(getattr(retrieval, "results", None), list):
-            spans = []
-            for result in retrieval.results:
-                record = store.span_registry.get(result.span_id or result.chunk_id)
-                if record is None:
-                    continue
-                spans.append(
-                    EvidenceSpan(
-                        span_id=record.span_id,
-                        item_id=record.item_id,
-                        item_version=record.item_version,
-                        kind=record.item_kind,
-                        char_start=record.start,
-                        char_end=record.end,
-                        content_hash=record.content_hash,
-                        score=result.score,
-                        near_floor=bool(result.near_floor),
-                        license_class="public",
-                        quotable=span_is_quotable(record, registry),
-                    )
-                )
-            retrieved = tuple(spans)
-        return LegacyDelivery(
+        return legacy_delivery_for(
             response_id=turn_id,
-            decision=contained.decision,
-            reason=contained.reason,
-            claims=tuple((claim.text, tuple(claim.cited_span_ids)) for claim in contained.claims),
-            quoted=quoted,
-            retrieved=retrieved,
-            answer_sha256=sha256_hex(contained.answer),
+            contained=contained,
+            retrieval=retrieval if retrieval is not None and isinstance(getattr(retrieval, "results", None), list) else None,
+            store=store,
+            registry=registry,
             retrieval_mode=candidate.retrieval_mode,
             provider=candidate.provider,
             model=candidate.model,
-            corpus_version=registry.corpus_version,
-            index_version=store.index_version,
-            gate=store.gate,
-            threshold_version=threshold_version,
-            floor=floor,
-            margin=margin,
             policy_version=self.settings.grounding_policy_version,
-            dropped_unresolved=contained.dropped_unresolved,
-            manifest_sha256=registry.manifest_sha256,
+            surface="legacy",
         )
 
     def _shadow_followup(

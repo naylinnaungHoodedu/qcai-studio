@@ -19,6 +19,8 @@ import threading
 from app.services.tutor_pipeline.contracts import PipelineCounts, bound_claim_ratio_terms
 
 DELIVERIES = ("legacy", "shadow")
+# Where a legacy delivery came from: a tutor turn, or a /qa/ask answer (both are delivered responses, plan I).
+LEGACY_SURFACES = ("tutor", "qa")
 SHADOW_FAILURE_STEPS = ("resolve", "pipeline", "ledger")
 
 
@@ -32,21 +34,29 @@ class LedgerMetrics:
             self._attempted: Counter[str] = Counter()
             self._appended: Counter[str] = Counter()
             self._failed: Counter[str] = Counter()
+            self._surfaces: dict[str, Counter[str]] = {name: Counter() for name in LEGACY_SURFACES}
             self._duplicates = 0
             self._conflicts = 0
 
-    def attempt(self, delivery: str) -> None:
+    def _surface(self, delivery: str, surface: str | None, event: str) -> None:
+        if delivery == "legacy":
+            self._surfaces[surface if surface in LEGACY_SURFACES else "tutor"][event] += 1
+
+    def attempt(self, delivery: str, *, surface: str | None = None) -> None:
         with self._lock:
             self._attempted[delivery] += 1
+            self._surface(delivery, surface, "attempted")
 
-    def appended(self, delivery: str, *, duplicate: bool) -> None:
+    def appended(self, delivery: str, *, duplicate: bool, surface: str | None = None) -> None:
         with self._lock:
             self._appended[delivery] += 1
             self._duplicates += int(duplicate)
+            self._surface(delivery, surface, "appended")
 
-    def failed(self, delivery: str) -> None:
+    def failed(self, delivery: str, *, surface: str | None = None) -> None:
         with self._lock:
             self._failed[delivery] += 1
+            self._surface(delivery, surface, "failed")
 
     def conflict(self) -> None:
         with self._lock:
@@ -56,6 +66,7 @@ class LedgerMetrics:
         with self._lock:
             attempted, appended, failed = dict(self._attempted), dict(self._appended), dict(self._failed)
             duplicates, conflicts = self._duplicates, self._conflicts
+            surfaces = {name: dict(counts) for name, counts in self._surfaces.items()}
         legacy_attempted = attempted.get("legacy", 0)
         return {
             "attempted": {name: attempted.get(name, 0) for name in DELIVERIES},
@@ -64,6 +75,15 @@ class LedgerMetrics:
             "failed": {name: failed.get(name, 0) for name in DELIVERIES},
             "conflicts": conflicts,
             "legacy_coverage_rate": round(appended.get("legacy", 0) / legacy_attempted, 6) if legacy_attempted else None,
+            "legacy_by_surface": {
+                name: {
+                    "attempted": counts.get("attempted", 0),
+                    "appended": counts.get("appended", 0),
+                    "failed": counts.get("failed", 0),
+                    "coverage_rate": round(counts.get("appended", 0) / counts["attempted"], 6) if counts.get("attempted") else None,
+                }
+                for name, counts in surfaces.items()
+            },
             "write_stop": bool(sum(failed.values()) + conflicts),
         }
 
@@ -127,9 +147,35 @@ class TwoPassMetrics:
         return snapshot
 
 
+LICENSE_SURFACES = ("two_pass", "legacy", "qa")
+
+
+class LicenseMetrics:
+    """Spans the license_class gate excluded because their derived class is not public (plan 7.5 "defense in
+    depth"). Any non-zero count means an upstream guard failed: a non-public span reached the index or a quotation."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.reset()
+
+    def reset(self) -> None:
+        with getattr(self, "_lock", threading.Lock()):
+            self._excluded: Counter[str] = Counter()
+
+    def excluded(self, surface: str) -> None:
+        with self._lock:
+            self._excluded[surface] += 1
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            return {name: self._excluded.get(name, 0) for name in LICENSE_SURFACES}
+
+
 LEDGER_METRICS = LedgerMetrics()
 TWO_PASS_METRICS = TwoPassMetrics()
+LICENSE_METRICS = LicenseMetrics()
 
 
 def snapshot(baseline: float | None) -> dict:
-    return {"tutor_ledger": LEDGER_METRICS.snapshot(), "two_pass_shadow": TWO_PASS_METRICS.snapshot(baseline)}
+    ledger = {**LEDGER_METRICS.snapshot(), "non_public_spans_excluded": LICENSE_METRICS.snapshot()}
+    return {"tutor_ledger": ledger, "two_pass_shadow": TWO_PASS_METRICS.snapshot(baseline)}

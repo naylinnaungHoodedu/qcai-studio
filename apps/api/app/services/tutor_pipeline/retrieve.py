@@ -5,18 +5,55 @@ from the configuration package, never the client. Retrieval is lexical only (Ret
 SEMANTIC_RETRIEVAL_ENABLED says, so the shadow never sends learner text to a provider (spec conflict 33). The
 sufficiency decision is the active Phase 2 gate's: abstain exactly when the gate returns nothing; near_miss when
 the gate marks the top result near_floor (within the margin above the floor), which proceeds and is recorded.
+
+license_class is derived for every span from its record's plane and the manifest (CorpusRegistry.license_class),
+never written as a label: a span that is not public-plane is never emitted (plan H "public-corpus spans only";
+plan 7.5 "the license_class gate is defense in depth"). It is dropped from the bundle, counted and logged, so the
+gate holds even if an upstream guard (the span builder, the index) ever let such a span through.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from app.core.corpus_governance import CorpusRegistry
+from app.core.structured_logging import FIELDS
 from app.services.contained_answers import span_is_quotable
 from app.services.tutor_pipeline.contracts import EvidenceBundle, EvidenceSpan, ResolvedQuestion, RetrievalRequest, Sufficiency
+from app.services.tutor_pipeline.metrics import LICENSE_METRICS
 
 if TYPE_CHECKING:  # pragma: no cover
     from app.services.retrieval_engine import RetrievalEngine
+    from app.services.spans import SpanRecord
+
+LOGGER = logging.getLogger("qcai.tutor")
+
+
+def evidence_span_for(record: "SpanRecord", registry: CorpusRegistry, *, score: float | None, near_floor: bool, surface: str) -> EvidenceSpan | None:
+    """The EvidenceSpan of a span record, or None when its derived license class is not public (fail closed). Used by
+    the two-pass bundle and by the legacy ledger record, so neither ever labels a span public that is not."""
+    license_class = registry.license_class(plane=getattr(record, "plane", None), item_id=record.item_id, source_filename=record.source_filename)
+    if license_class is None:
+        LICENSE_METRICS.excluded(surface)
+        LOGGER.warning(
+            "A span that is not public-plane was excluded from the evidence",
+            extra={FIELDS: {"event": "tutor.evidence.non_public_excluded", "surface": surface}},
+        )
+        return None
+    return EvidenceSpan(
+        span_id=record.span_id,
+        item_id=record.item_id,
+        item_version=record.item_version,
+        kind=record.item_kind,
+        char_start=record.start,
+        char_end=record.end,
+        content_hash=record.content_hash,
+        score=score,
+        near_floor=near_floor,
+        license_class=license_class,
+        quotable=span_is_quotable(record, registry),
+    )
 
 
 def build_request(resolved: ResolvedQuestion, *, lesson_slug: str | None, corpus_version: str) -> RetrievalRequest:
@@ -42,26 +79,16 @@ def retrieve(engine: "RetrievalEngine", request: RetrievalRequest, *, top_k: int
         record = store.span_registry.get(result.span_id)
         if record is None:  # pragma: no cover - every index entry is a span record
             continue
-        spans.append(
-            EvidenceSpan(
-                span_id=record.span_id,
-                item_id=record.item_id,
-                item_version=record.item_version,
-                kind=record.item_kind,
-                char_start=record.start,
-                char_end=record.end,
-                content_hash=record.content_hash,
-                score=result.score,
-                near_floor=bool(result.near_floor),
-                license_class="public",
-                quotable=span_is_quotable(record, registry),
-            )
-        )
+        span = evidence_span_for(record, registry, score=result.score, near_floor=bool(result.near_floor), surface="two_pass")
+        if span is not None:
+            spans.append(span)
     if not spans:
+        # Every result excluded by the license gate: nothing quotable is left, so the bundle abstains.
+        reason = "no_quotable_evidence" if response.results else response.reason
         sufficiency = Sufficiency(score=None, gate=response.gate, threshold_version=threshold_version, floor=response.floor,
-                                  margin=response.margin, decision="abstain", reason=response.reason)
+                                  margin=response.margin, decision="abstain", reason=reason)
     else:
-        top = response.results[0]
+        top = next(result for result in response.results if result.span_id == spans[0].span_id)
         sufficiency = Sufficiency(score=top.score, gate=response.gate, threshold_version=threshold_version, floor=response.floor,
                                   margin=response.margin, decision="near_miss" if top.near_floor else "answer", reason="evidence")
     return EvidenceBundle(

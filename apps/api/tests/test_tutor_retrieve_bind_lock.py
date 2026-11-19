@@ -34,7 +34,7 @@ from app.services.tutor_pipeline.contracts import (
 from app.services.tutor_pipeline.lock import lock
 from app.services.tutor_pipeline.render import pedagogical_prompt_hash
 from app.services.tutor_pipeline.retrieve import build_request, retrieve
-from app.services.tutor_pipeline.text import normalise, sentences_v1, whitespace
+from app.services.tutor_pipeline.text import normalise, sentences, whitespace
 
 DATA = Path(__file__).parent / "data"
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -45,7 +45,7 @@ RESOLVER = ResolverRef(model_id="thread-resolver-v1", prompt_hash=PARAMS.resolve
 
 
 def _sentences(record) -> list[str]:
-    return sentences_v1(record.text, min_words=PARAMS.min_sentence_words, max_chars=PARAMS.max_sentence_chars)
+    return sentences(record.text, min_words=PARAMS.min_sentence_words, max_chars=PARAMS.max_sentence_chars)
 
 
 def _span(record, *, score: float | None = 5.0, quotable: bool = True) -> EvidenceSpan:

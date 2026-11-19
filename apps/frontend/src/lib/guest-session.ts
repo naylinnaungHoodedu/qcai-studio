@@ -29,6 +29,11 @@ const PUBLIC_API_ROUTE_PATTERNS = [
   /^\/analytics\/public-web-vitals$/,
   /^\/analytics\/public-web-vitals\/summary$/,
   /^\/support\/requests$/,
+  // Span links of the development evidence panel (plan 7.3 GET /evidence/spans/{span_id} and the Phase 2 /spans
+  // route): the API reads no credential there and keeps both off outside development (SPAN_RESOLVER_ROUTE_ENABLED),
+  // so a span link never mints a guest session (DI-44). Only a well-formed span id matches.
+  /^\/spans\/span-[0-9a-f]{64}$/,
+  /^\/evidence\/spans\/span-[0-9a-f]{64}$/,
 ];
 
 export type GuestSession = {

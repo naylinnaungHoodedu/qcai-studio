@@ -338,8 +338,9 @@
   "tutor_pipeline": {
     "version": "two-pass-v1",
     "status": "provisional",
+    "provisional": true,
     "phase": "3",
-    "authority": "plan Phase 3 tasks 3.1-3.8; values without plan text are provisional defaults (PD-11)",
+    "authority": "plan Phase 3 tasks 3.1-3.8; every value without plan text is an engineering parameter with no plan value (PD-11, as PD-04 and PD-05), provisional, never a plan default",
     "schemas": {
       "ResolvedQuestion": {
         "version": "resolved-question-v1",
@@ -379,7 +380,7 @@
       "LedgerEntry": {
         "version": "ledger-entry-v1",
         "path": "schemas/ledger-entry.v1.schema.json",
-        "sha256": "c3c1e806dfed6e798cbd2d4a00b531d91343c6987ea420dcaa812f5a7af5a09e"
+        "sha256": "917ae6ce3b313993bb00f80cafc07848bfb7037d3eb82304ff76878a36a6808f"
       }
     },
     "resolver": {
@@ -413,12 +414,12 @@
       "generators_allowed": [
         "extractive-d19-v1"
       ],
-      "prompt_hash": "ee9d021dad4c2330681c1c1fc5bcf2ffc9c6fe71e913f04df3d154e1158b0318",
+      "prompt_hash": "c90998d423d7e7c027ebe60ce2762e299afd896285022a4472077b2a3d2c9bd8",
       "max_claims": 3,
       "max_claims_per_span": 2,
       "min_sentence_words": 4,
       "max_sentence_chars": 1000,
-      "sentence_rule": "sentences-v1",
+      "sentence_rule": "sentences-v2",
       "binding_rule": "resolver-bundle-sentence-v1"
     },
     "pedagogical": {
@@ -443,11 +444,29 @@
         "legacy",
         "shadow",
         "delivered"
-      ]
+      ],
+      "retention": "retain"
     },
     "stop": {
       "phase2_bound_claim_ratio": 1.0,
       "authority": "plan Phase 3 L; measured, spec M1"
+    },
+    "budgets": {
+      "provisional": true,
+      "authority": "PD-11: engineering parameters with no plan value (E1 'bounded budget'; spec conflict 29), not plan defaults; TWO_PASS_SHADOW_BUDGET_MS and TUTOR_LEDGER_APPEND_BUDGET_MS override the first two only",
+      "shadow_ms": 2000,
+      "ledger_append_ms": 1500,
+      "ledger_append_attempts": 3,
+      "ledger_wait_grace_ms": 250,
+      "ledger_append_workers": 4,
+      "ledger_append_max_in_flight": 16
+    },
+    "idempotency": {
+      "provisional": true,
+      "authority": "plan 7.3 'mutations carry client keys' (DI-40); the values are engineering parameters with no plan value (PD-11)",
+      "header": "Idempotency-Key",
+      "key_pattern": "^[A-Za-z0-9._:-]{8,128}$",
+      "ttl_hours": 24
     },
     "unused_provenance_fields": [
       "v1_3_checker_model_id",
@@ -529,6 +548,14 @@
       "path": "no provider generator is wired; hold H6 (P3 interim path) stays unresolved; the D-19 extractive generator is the interim path",
       "ratified": false,
       "record": "PD-09"
+    },
+    "PLAN-12.8": {
+      "state": "open",
+      "text": "OPEN DECISION. Retention period (Product Owner; Principal Investigator consulted)",
+      "path": "unresolved: the response ledger is retained; no job deletes ledger rows (the append-only triggers refuse DELETE)",
+      "behaviour": "retain",
+      "ratified": false,
+      "record": "DI-45"
     }
   },
   "boundary": {

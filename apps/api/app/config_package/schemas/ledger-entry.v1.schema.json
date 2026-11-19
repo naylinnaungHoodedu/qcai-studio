@@ -24,7 +24,7 @@
           "$ref": "#/$defs/Provenance"
         },
         "response_id": {
-          "pattern": "^(turn|shadow)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "pattern": "^(turn|shadow|qa)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
           "title": "Response Id",
           "type": "string"
         },
@@ -648,7 +648,7 @@
       ]
     },
     "response_id": {
-      "pattern": "^(turn|shadow)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "pattern": "^(turn|shadow|qa)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
       "title": "Response Id",
       "type": "string"
     },

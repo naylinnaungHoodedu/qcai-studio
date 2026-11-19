@@ -146,15 +146,17 @@ class Settings(BaseSettings):
     # None = "shadow" in development, "off" elsewhere. "on" is refused while the configuration package says
     # flag_policy.phase4_exit_passed is false (AC-3-6); "shadow" outside development logs a config.override event.
     two_pass_tutor: Literal["off", "shadow", "on"] | None = None
-    # How long a shadow run may hold its worker after the response is sent (E1 "bounded budget").
-    two_pass_shadow_budget_ms: int = Field(default=2000, ge=100, le=30000)
+    # How long a shadow run may hold its worker after the response is sent (E1 "bounded budget"). None = the
+    # configuration package's tutor_pipeline.budgets.shadow_ms (2000; PD-11); set only to override it.
+    two_pass_shadow_budget_ms: int | None = Field(default=None, ge=100, le=30000)
     # Kill switch for the response-ledger write of every tutor delivery (not learner-visible; plan 3.8, R-22).
     # Disabling it outside development relaxes an audit control and logs a config.override event.
     tutor_ledger_enabled: bool = True
     # Total deadline of the synchronous legacy ledger append (spec conflict 29); also each PostgreSQL attempt's
-    # lock_timeout and statement_timeout. The learner waits at most this plus 250 ms (ledger.LEGACY_WAIT_GRACE_MS),
-    # pool checkout included; an append still running then finishes in the background and is counted.
-    tutor_ledger_append_budget_ms: int = Field(default=1500, ge=100, le=5000)
+    # lock_timeout and statement_timeout. The learner waits at most this plus the package's ledger_wait_grace_ms
+    # (250), pool checkout included; an append still running then finishes in the background and is counted.
+    # None = the configuration package's tutor_pipeline.budgets.ledger_append_ms (1500; PD-11); set only to override.
+    tutor_ledger_append_budget_ms: int | None = Field(default=None, ge=100, le=5000)
     # GET /ledger/responses/{response_id}: None = on in development, off elsewhere (a new route under the freeze).
     ledger_route_enabled: bool | None = None
     # The evidence panel field on tutor responses (task 3.8): None = on in development, off elsewhere (E9).

@@ -36,6 +36,8 @@ from app.core.source_assets import source_asset_id, source_asset_kind
 SUPPORTED_SCHEMAS = ("1.0", "2.0")
 ITEM_KINDS = ("document", "video", "authored")
 PLANES = ("public", "private")
+# The only license class a span may carry in Phase 3 (CorpusRegistry.license_class derives it; nothing labels it).
+PUBLIC_LICENSE_CLASS = "public"
 AUTHORED_ITEM_ID = "authored-curriculum"
 
 
@@ -325,6 +327,18 @@ class CorpusRegistry:
     def is_private_plane(self, filename: str) -> bool:
         item = self.item_for_filename(filename)
         return item is not None and item.plane != "public"
+
+    def license_class(self, *, plane: object, item_id: str, source_filename: str | None = None) -> str | None:
+        """The license class of a span, derived, never labelled (plan 7.4 license_class; 7.5 "defense in depth";
+        Phase 3 H "public-corpus spans only"): "public" only when the span's own plane is public AND the manifest
+        does not put its item (by span item id, or by its source file) on another plane. None otherwise, and a
+        caller never emits a span whose class is None (fail closed). There is no other class in Phase 3: the
+        private licensed corpus has no API path (task 2.8)."""
+        if plane != "public" or self.is_private_item(item_id):
+            return None
+        if source_filename and self.is_private_plane(source_filename):
+            return None
+        return PUBLIC_LICENSE_CLASS
 
     def is_bound(self, filename: str) -> bool:
         package = self.package

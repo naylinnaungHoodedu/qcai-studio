@@ -206,6 +206,8 @@ class QAResponse(BaseModel):
     retrieval_mode: str
     decision: Literal["answer", "abstain"] = "answer"
     grounded: bool = False
+    # Never serialised: the delivery's ledger record (plan task 3.8), appended by the route after the commit.
+    _ledger: Any = PrivateAttr(default=None)
 
 
 class QAHistoryItem(BaseModel):

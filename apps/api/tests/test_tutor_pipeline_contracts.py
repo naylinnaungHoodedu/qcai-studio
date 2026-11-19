@@ -188,7 +188,8 @@ def test_counts_reconcile_and_the_bound_claim_ratio_terms_leave_skipped_claims_o
                                               (2, 1, {"rebound": 1}, "unknown drop reasons"), (1, 1, {"unbound": 0}, "positive count")):
         with pytest.raises(ValidationError, match=message):
             counts(proposed, bound, dropped)
-    assert set(contracts.DROP_REASONS) == {*contracts.BINDING_FAILURES, "merged", "budget_exceeded", "unresolved_citation"}
+    # not_public (2026-11-19 hardening): a delivered legacy quotation whose span's derived license class is not public.
+    assert set(contracts.DROP_REASONS) == {*contracts.BINDING_FAILURES, "merged", "budget_exceeded", "unresolved_citation", "not_public"}
     with pytest.raises(ValidationError, match="counts.bound_claims"):
         LedgerEntry(**_entry(counts=counts(2, 2, {})))  # two counted, one recorded
 

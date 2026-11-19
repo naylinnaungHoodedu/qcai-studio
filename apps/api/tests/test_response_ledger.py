@@ -26,6 +26,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import sessionmaker
 
+from app.core.config_package import get_config_package
 from app.core.config import Settings
 from app.core.db import Base
 from app.core.schema_upgrades import run_schema_upgrades
@@ -140,7 +141,8 @@ def test_an_integrity_error_retries_onto_the_head_and_other_errors_fail_at_once(
     always = _Flaky(factory, 99, IntegrityError("INSERT", {}, Exception("duplicate seq")))
     with pytest.raises(LedgerAppendError):
         append_ledger_entry(make_entry(), session_factory=always, budget_ms=5000)
-    assert always.attempts == ledger.APPEND_ATTEMPTS == 3
+    # The attempt count is the package's tutor_pipeline.budgets.ledger_append_attempts (PD-11; was a code constant).
+    assert always.attempts == get_config_package(Settings()).tutor_pipeline.ledger_append_attempts == 3
     locked = _Flaky(factory, 99, OperationalError("UPDATE", {}, Exception("lock timeout")))
     with pytest.raises(OperationalError):
         append_ledger_entry(make_entry(), session_factory=locked, budget_ms=5000)
@@ -234,7 +236,8 @@ def test_the_learner_never_waits_past_the_budget_for_a_stuck_pool_and_the_late_o
     with caplog.at_level(logging.WARNING, logger="qcai.tutor"):
         assert record_legacy_delivery(_legacy(), settings=settings, session_factory=stuck_pool) is None
     waited_ms = (time.monotonic() - started) * 1000
-    assert waited_ms < 200 + ledger.LEGACY_WAIT_GRACE_MS + 500, waited_ms
+    # The grace is the package's tutor_pipeline.budgets.ledger_wait_grace_ms (PD-11; was a code constant).
+    assert waited_ms < 200 + get_config_package(Settings()).tutor_pipeline.ledger_wait_grace_ms + 500, waited_ms
     deferred = [r for r in caplog.records if getattr(r, "json_fields", {}).get("event") == "tutor.ledger.append_deferred"]
     assert [r.json_fields for r in deferred] == [{"event": "tutor.ledger.append_deferred", "delivery": "legacy", "budget_ms": 200}]
     assert LEDGER_METRICS.snapshot()["failed"]["legacy"] == before  # not yet known

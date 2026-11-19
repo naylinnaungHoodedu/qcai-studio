@@ -70,6 +70,15 @@ def effective_mode(settings: Settings, package: ConfigPackage) -> Literal["off",
     return "shadow"
 
 
+def shadow_budget_ms(settings: Settings, package: ConfigPackage) -> int:
+    """TWO_PASS_SHADOW_BUDGET_MS when set, else the package's tutor_pipeline.budgets.shadow_ms (PD-11)."""
+    if settings.two_pass_shadow_budget_ms is not None:
+        return int(settings.two_pass_shadow_budget_ms)
+    if package.tutor_pipeline is None:
+        raise ValueError("configuration package v1 has no tutor_pipeline block, so no shadow budget")
+    return package.tutor_pipeline.shadow_budget_ms
+
+
 def run_shadow(
     job: ShadowJob,
     *,
@@ -99,7 +108,7 @@ def run_shadow(
                 delivery="shadow",
                 shadowed_response_id=job.shadowed_response_id,
             ),
-            budget_ms=settings.two_pass_shadow_budget_ms,
+            budget_ms=shadow_budget_ms(settings, pipeline.package),
         )
     except LedgerWriteFailed as exc:
         TWO_PASS_METRICS.failed("ledger")

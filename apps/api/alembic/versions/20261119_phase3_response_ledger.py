@@ -1,5 +1,7 @@
 """Phase 3 tutor response ledger: the append-only, hash-chained response_ledger and its chain head (plan Phase 3
-task 3.8, G; R-22).
+task 3.8, G; R-22), and tutor_turn_idempotency, the Idempotency-Key records of POST /tutor/turns (plan 7.3
+"mutations carry client keys"; DI-40). This revision had not been applied anywhere when the second table was added
+(Phase 3 is unmerged), so the head stays 20261119_phase3_response_ledger (ledger.SCHEMA_REVISION).
 
 Additive and reversible (expand step, plan 13.3). The append-only and chain triggers are re-created on every API
 start by app.core.schema_upgrades, so the downgrade drops them with the tables. Append-only evidence is never
@@ -62,6 +64,18 @@ def upgrade() -> None:
         sa.Column("record_hash", sa.String(length=64), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
     )
+    op.create_table(
+        "tutor_turn_idempotency",
+        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
+        sa.Column("user_id", sa.String(length=255), nullable=False),
+        sa.Column("key_sha256", sa.String(length=64), nullable=False),
+        sa.Column("request_sha256", sa.String(length=64), nullable=False),
+        sa.Column("turn_id", sa.String(length=64), nullable=True),
+        sa.Column("response_body", sa.Text(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.UniqueConstraint("user_id", "key_sha256", name="uq_tutor_turn_idempotency_user_key"),
+    )
+    op.create_index("ix_tutor_turn_idempotency_created_at", "tutor_turn_idempotency", ["created_at"])
 
 
 def downgrade() -> None:
@@ -77,6 +91,8 @@ def downgrade() -> None:
             op.execute(f"DROP TRIGGER IF EXISTS {trigger} ON {table}")
         for function in POSTGRES_FUNCTIONS:
             op.execute(f"DROP FUNCTION IF EXISTS {function}()")
+    op.drop_index("ix_tutor_turn_idempotency_created_at", table_name="tutor_turn_idempotency")
+    op.drop_table("tutor_turn_idempotency")
     op.drop_index("ix_response_ledger_created_at", table_name="response_ledger")
     op.drop_index("ix_response_ledger_shadowed_response_id", table_name="response_ledger")
     op.drop_table("response_ledger_head")

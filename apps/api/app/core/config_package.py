@@ -23,6 +23,7 @@ import hashlib
 import json
 import logging
 from pathlib import Path
+import re
 import threading
 from typing import Any
 
@@ -54,6 +55,10 @@ REQUIRED_PRESENTATION_PLANS = ("concise", "stepwise", "socratic")
 RETRIEVAL_REQUEST_FIELDS = ("text", "lesson_slug", "corpus_version")
 UNUSED_PROVENANCE_FIELDS = ("v1_3_checker_model_id", "panel_weights_version", "routing_table_version", "tool_contract_version")
 LEDGER_DELIVERIES = ("legacy", "shadow", "delivered")
+# Plan 12.8: "OPEN DECISION. Retention period (Product Owner; Principal Investigator consulted)". While it is open the
+# only behaviour the package may name is "retain": no job deletes ledger rows (DI-45; the append-only triggers refuse
+# DELETE anyway). owner_decisions.PLAN-12.8 records the decision's state.
+LEDGER_RETENTION_WHILE_OPEN = "retain"
 _HEX64_CHARS = frozenset("0123456789abcdef")
 
 
@@ -146,6 +151,20 @@ class TutorPipelineParams:
     deliveries: tuple[str, ...]
     phase2_bound_claim_ratio: float
     unused_provenance_fields: tuple[str, ...]
+    # tutor_pipeline.budgets (PD-11: engineering parameters with no plan value). TWO_PASS_SHADOW_BUDGET_MS and
+    # TUTOR_LEDGER_APPEND_BUDGET_MS override the first two when set; nothing else does.
+    shadow_budget_ms: int
+    ledger_append_budget_ms: int
+    ledger_append_attempts: int
+    ledger_wait_grace_ms: int
+    ledger_append_workers: int
+    ledger_append_max_in_flight: int
+    # tutor_pipeline.ledger.retention: "retain" while plan 12.8 is open (owner_decisions.PLAN-12.8).
+    ledger_retention: str
+    # tutor_pipeline.idempotency: the POST /tutor/turns Idempotency-Key (plan 7.3 "mutations carry client keys").
+    idempotency_header: str
+    idempotency_key_pattern: str
+    idempotency_ttl_hours: int
 
     @property
     def schemas_sha256(self) -> str:
@@ -295,6 +314,20 @@ def _parse_tutor_pipeline(raw: Mapping[str, Any]) -> TutorPipelineParams:
     pedagogical = _mapping(tutor, "pedagogical")
     ledger = _mapping(tutor, "ledger")
     stop = _mapping(tutor, "stop")
+    budgets = _mapping(tutor, "budgets")
+    _require(budgets.get("provisional") is True, "tutor_pipeline.budgets must be marked provisional: true (PD-11)")
+    workers = _integer_in(budgets, "ledger_append_workers", 1, 16)
+    idempotency = _mapping(tutor, "idempotency")
+    _require(idempotency.get("provisional") is True, "tutor_pipeline.idempotency must be marked provisional: true (PD-11)")
+    key_pattern = _text(idempotency, "key_pattern")
+    try:
+        compiled_key = re.compile(key_pattern)
+    except re.error as exc:
+        raise ConfigPackageError(f"Configuration package: tutor_pipeline.idempotency.key_pattern does not compile: {exc}") from exc
+    _require(
+        key_pattern.startswith("^") and key_pattern.endswith("$") and not compiled_key.fullmatch("a" * 257) and not compiled_key.fullmatch(""),
+        "tutor_pipeline.idempotency.key_pattern must be anchored and bounded (no empty key, nothing over 256 characters)",
+    )
 
     cues = _strings(resolver, "continuation_cues")
     _require(all(cue == cue.lower() for cue in cues), "tutor_pipeline.resolver.continuation_cues must be lowercase")
@@ -326,6 +359,7 @@ def _parse_tutor_pipeline(raw: Mapping[str, Any]) -> TutorPipelineParams:
     _require(ratio > 0, "tutor_pipeline.stop.phase2_bound_claim_ratio must be in (0, 1]")
     unused = tuple(tutor.get("unused_provenance_fields") or ())
     _require(unused == UNUSED_PROVENANCE_FIELDS, "tutor_pipeline.unused_provenance_fields must name the four Phase 4-5 provenance fields")
+    retention = _text(ledger, "retention")
     return TutorPipelineParams(
         version=_text(tutor, "version"),
         status=_text(tutor, "status"),
@@ -361,6 +395,16 @@ def _parse_tutor_pipeline(raw: Mapping[str, Any]) -> TutorPipelineParams:
         deliveries=deliveries,
         phase2_bound_claim_ratio=ratio,
         unused_provenance_fields=unused,
+        shadow_budget_ms=_integer_in(budgets, "shadow_ms", 100, 30000),
+        ledger_append_budget_ms=_integer_in(budgets, "ledger_append_ms", 100, 5000),
+        ledger_append_attempts=_integer_in(budgets, "ledger_append_attempts", 1, 5),
+        ledger_wait_grace_ms=_integer_in(budgets, "ledger_wait_grace_ms", 0, 1000),
+        ledger_append_workers=workers,
+        ledger_append_max_in_flight=_integer_in(budgets, "ledger_append_max_in_flight", workers, 256),
+        ledger_retention=retention,
+        idempotency_header=_text(idempotency, "header"),
+        idempotency_key_pattern=key_pattern,
+        idempotency_ttl_hours=_integer_in(idempotency, "ttl_hours", 1, 168),
     )
 
 
@@ -511,6 +555,15 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
                 "owner_decisions.D-12 is open, so only the extractive-d19-v1 generator may be allowed (hold H6)",
             )
         _require(isinstance(decisions.get("D-19"), dict), "owner_decisions.D-19 must be an object in package v2")
+        retention = decisions.get("PLAN-12.8")
+        _require(isinstance(retention, dict), "owner_decisions.PLAN-12.8 (the ledger retention period) must be an object in package v2")
+        # A decided period needs a retention job that prunes the chain, which does not exist (DI-45): until then the
+        # package can only say the decision is open and the ledger is retained.
+        _require(retention.get("state") == "open", "owner_decisions.PLAN-12.8.state must be 'open': no ledger retention job exists (DI-45)")
+        _require(
+            tutor_pipeline.ledger_retention == LEDGER_RETENTION_WHILE_OPEN and retention.get("behaviour") == LEDGER_RETENTION_WHILE_OPEN,
+            "owner_decisions.PLAN-12.8 is open, so the ledger is retained: tutor_pipeline.ledger.retention and its behaviour must be 'retain'",
+        )
 
     return ConfigPackage(
         package_version=package_version,
