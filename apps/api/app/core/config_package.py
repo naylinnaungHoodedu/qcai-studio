@@ -167,6 +167,9 @@ class TutorPipelineParams:
     idempotency_header: str
     idempotency_key_pattern: str
     idempotency_ttl_hours: int
+    # An in-progress claim (no response yet) older than this is abandoned: its request died without releasing it
+    # (spec 18.7 E7). Well above a request's worst case: twice Cloud Run's default 300 s request timeout.
+    idempotency_lease_seconds: int
 
     @property
     def schemas_sha256(self) -> str:
@@ -330,6 +333,9 @@ def _parse_tutor_pipeline(raw: Mapping[str, Any]) -> TutorPipelineParams:
         key_pattern.startswith("^") and key_pattern.endswith("$") and not compiled_key.fullmatch("a" * 257) and not compiled_key.fullmatch(""),
         "tutor_pipeline.idempotency.key_pattern must be anchored and bounded (no empty key, nothing over 256 characters)",
     )
+    ttl_hours = _integer_in(idempotency, "ttl_hours", 1, 168)
+    lease_seconds = _integer_in(idempotency, "in_progress_lease_seconds", 60, 3600)
+    _require(lease_seconds < ttl_hours * 3600, "tutor_pipeline.idempotency.in_progress_lease_seconds must be shorter than ttl_hours")
 
     cues = _strings(resolver, "continuation_cues")
     _require(all(cue == cue.lower() for cue in cues), "tutor_pipeline.resolver.continuation_cues must be lowercase")
@@ -406,7 +412,8 @@ def _parse_tutor_pipeline(raw: Mapping[str, Any]) -> TutorPipelineParams:
         ledger_retention=retention,
         idempotency_header=_text(idempotency, "header"),
         idempotency_key_pattern=key_pattern,
-        idempotency_ttl_hours=_integer_in(idempotency, "ttl_hours", 1, 168),
+        idempotency_ttl_hours=ttl_hours,
+        idempotency_lease_seconds=lease_seconds,
     )
 
 

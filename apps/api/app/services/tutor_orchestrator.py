@@ -33,13 +33,13 @@ from app.schemas import (
 from app.services.answer_history import WITHDRAWN_ANSWER, stored_before_containment
 from app.services.contained_answers import ContainedAnswer, contain_answer
 from app.services.evidence_panel import build_evidence_panel
-from app.services.ledger import LegacyDelivery, legacy_delivery_for, record_ledger_failure
+from app.services.ledger import LegacyDelivery, LegacyPreparationFailed, legacy_delivery_for
 from app.services.retrieval_metrics import record_citations
 from app.services.span_store import persist_cited_spans
 from app.services.teaching_assistant import TeachingAssistantService
 from app.services.tutor_followups import TurnFollowups
 from app.services.tutor_pipeline.contracts import PresentationPlan
-from app.services.tutor_pipeline.metrics import LEDGER_METRICS, TWO_PASS_METRICS
+from app.services.tutor_pipeline.metrics import TWO_PASS_METRICS
 from app.services.tutor_pipeline.shadow import ShadowJob, effective_mode
 from app.services.tutor_pipeline.shadow import run_shadow as run_shadow_job
 
@@ -215,15 +215,18 @@ class TutorOrchestrator:
 
     # --- Phase 3 follow-ups: prepared here, run by the route after the commit (tutor_followups) ---
 
-    def _legacy_followup(self, turn_id: str, candidate: AssistantChatResponse, contained: ContainedAnswer, registry: CorpusRegistry) -> LegacyDelivery | None:
+    def _legacy_followup(
+        self, turn_id: str, candidate: AssistantChatResponse, contained: ContainedAnswer, registry: CorpusRegistry
+    ) -> LegacyDelivery | LegacyPreparationFailed | None:
+        """The turn's legacy record, prepared before the commit. Nothing is counted here: the route's
+        run_turn_followups counts the attempt (and a preparation failure) only once the turn has committed, so a turn
+        that rolls back never lowers the ledger coverage SLI (spec 18.7 E5)."""
         if not self.settings.tutor_ledger_enabled:
             return None
-        LEDGER_METRICS.attempt("legacy")
         try:
             return self._legacy_delivery(turn_id, candidate, contained, registry)
-        except Exception as exc:  # noqa: BLE001 - a lost record is counted (plan L stop), the answer is unchanged
-            record_ledger_failure("legacy", "prepare", exc)
-            return None
+        except Exception as exc:  # noqa: BLE001 - a lost record is counted after the commit (plan L stop); the answer is unchanged
+            return LegacyPreparationFailed(error=exc, surface="tutor")
 
     def _legacy_delivery(self, turn_id: str, candidate: AssistantChatResponse, contained: ContainedAnswer, registry: CorpusRegistry) -> LegacyDelivery:
         store = self._store()

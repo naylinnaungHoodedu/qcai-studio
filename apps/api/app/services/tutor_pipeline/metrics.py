@@ -4,15 +4,23 @@ Counts only: no question, claim or rendered text, no identity. Each event is als
 qcai.tutor logger, so log-based metrics can aggregate across instances once they are set up (a cloud write,
 documented in infra/cloudrun/observability.md, not created here).
 
-/ready is public, so it carries only the shadow fields that say nothing about any single run (AC-3-6: zero of the
-shadow's outputs reach a learner; spec 18.6 D9): runs scheduled, completed and failed, the Phase 2 baseline and the
-stop flag (TwoPassMetrics.public_snapshot). On a quiet instance a learner could otherwise read /ready before and
-after a turn and learn the shadow's decision, abstention reason and claim counts for it. The decisions, the
-abstention reasons, the claim counts and the ratio are in each run's tutor.two_pass.shadow log line, which the
-log-based SLIs aggregate, and in TwoPassMetrics.snapshot (in process; tests and operators).
+/ready is public, so it carries nothing that changes with a shadow run's outcome (AC-3-6: zero of the shadow's
+outputs reach a learner; spec 18.6 D9, 18.7 E15). On a quiet instance a learner who reads /ready before and after
+a turn would otherwise learn that turn's shadow decision, reason and claim counts (D9), and also whether it
+completed or failed and at which step, whether its ledger append succeeded, whether its bundle excluded a
+non-public span, and whether it tripped the bound-claim stop (E15). The public blocks are therefore:
+  two_pass_shadow: runs scheduled (a turn schedules one whatever its outcome) and the Phase 2 baseline
+                   (TwoPassMetrics.public_snapshot);
+  tutor_ledger:    legacy deliveries only, whose record is not a shadow output, and the legacy and Q&A
+                   license-gate counts (LedgerMetrics.public_snapshot, LicenseMetrics.public_snapshot).
+Everything else (completed, failed by step, decisions, reasons, claim counts, the ratio and its stop, the shadow's
+ledger and license counts) is in each run's log lines (tutor.two_pass.shadow, tutor.two_pass.shadow_failed,
+tutor.ledger.append_failed), which the log-based SLIs and alerts aggregate across instances, and in the in-process
+snapshots (tests and operators).
 
-Plan L stop conditions: write_stop is true once any ledger write failed or conflicted; bound_claim_ratio_stop is
-true once the two-pass bound-claim ratio is below the Phase 2 baseline pinned in the package. A null ratio (no
+Plan L stop conditions: write_stop is true once any ledger write failed or conflicted (in process; the public
+block's write_stop counts legacy writes only); bound_claim_ratio_stop is true once the two-pass bound-claim ratio
+is below the Phase 2 baseline pinned in the package (in process only). A null ratio (no
 claims proposed) is never a stop. A run's proposed and bound claims are counted as
 contracts.bound_claim_ratio_terms gives them: claims bind never saw (the budget ran out after the generator
 returned) are in neither term, and claims merged onto an earlier claim's sentence are in both.
@@ -29,7 +37,8 @@ DELIVERIES = ("legacy", "shadow")
 # Where a legacy delivery came from: a tutor turn, or a /qa/ask answer (both are delivered responses, plan I).
 LEGACY_SURFACES = ("tutor", "qa")
 SHADOW_FAILURE_STEPS = ("resolve", "pipeline", "ledger")
-PUBLIC_SHADOW_FIELDS = ("scheduled", "completed", "failed", "phase2_bound_claim_ratio_baseline", "bound_claim_ratio_stop")
+# The shadow fields public /ready may carry: none changes with a run's outcome (spec 18.7 E15).
+PUBLIC_SHADOW_FIELDS = ("scheduled", "phase2_bound_claim_ratio_baseline")
 
 
 class LedgerMetrics:
@@ -43,8 +52,8 @@ class LedgerMetrics:
             self._appended: Counter[str] = Counter()
             self._failed: Counter[str] = Counter()
             self._surfaces: dict[str, Counter[str]] = {name: Counter() for name in LEGACY_SURFACES}
-            self._duplicates = 0
-            self._conflicts = 0
+            self._duplicates: Counter[str] = Counter()
+            self._conflicts: Counter[str] = Counter()
 
     def _surface(self, delivery: str, surface: str | None, event: str) -> None:
         if delivery == "legacy":
@@ -58,7 +67,7 @@ class LedgerMetrics:
     def appended(self, delivery: str, *, duplicate: bool, surface: str | None = None) -> None:
         with self._lock:
             self._appended[delivery] += 1
-            self._duplicates += int(duplicate)
+            self._duplicates[delivery] += int(duplicate)
             self._surface(delivery, surface, "appended")
 
     def failed(self, delivery: str, *, surface: str | None = None) -> None:
@@ -66,22 +75,24 @@ class LedgerMetrics:
             self._failed[delivery] += 1
             self._surface(delivery, surface, "failed")
 
-    def conflict(self) -> None:
+    def conflict(self, delivery: str = "legacy") -> None:
         with self._lock:
-            self._conflicts += 1
+            self._conflicts[delivery] += 1
 
     def snapshot(self) -> dict:
         with self._lock:
             attempted, appended, failed = dict(self._attempted), dict(self._appended), dict(self._failed)
-            duplicates, conflicts = self._duplicates, self._conflicts
+            duplicates, conflicts = dict(self._duplicates), dict(self._conflicts)
             surfaces = {name: dict(counts) for name, counts in self._surfaces.items()}
         legacy_attempted = attempted.get("legacy", 0)
         return {
             "attempted": {name: attempted.get(name, 0) for name in DELIVERIES},
             "appended": {name: appended.get(name, 0) for name in DELIVERIES},
-            "duplicates": duplicates,
+            "duplicates": sum(duplicates.values()),
             "failed": {name: failed.get(name, 0) for name in DELIVERIES},
-            "conflicts": conflicts,
+            "conflicts": sum(conflicts.values()),
+            "legacy_duplicates": duplicates.get("legacy", 0),
+            "legacy_conflicts": conflicts.get("legacy", 0),
             "legacy_coverage_rate": round(appended.get("legacy", 0) / legacy_attempted, 6) if legacy_attempted else None,
             "legacy_by_surface": {
                 name: {
@@ -92,7 +103,21 @@ class LedgerMetrics:
                 }
                 for name, counts in surfaces.items()
             },
-            "write_stop": bool(sum(failed.values()) + conflicts),
+            "write_stop": bool(sum(failed.values()) + sum(conflicts.values())),
+        }
+
+    def public_snapshot(self) -> dict:
+        """The legacy part, for public /ready (spec 18.7 E15): a shadow record is a shadow output (AC-3-6)."""
+        detail = self.snapshot()
+        return {
+            "attempted": {"legacy": detail["attempted"]["legacy"]},
+            "appended": {"legacy": detail["appended"]["legacy"]},
+            "duplicates": detail["legacy_duplicates"],
+            "failed": {"legacy": detail["failed"]["legacy"]},
+            "conflicts": detail["legacy_conflicts"],
+            "legacy_coverage_rate": detail["legacy_coverage_rate"],
+            "legacy_by_surface": detail["legacy_by_surface"],
+            "write_stop": bool(detail["failed"]["legacy"] + detail["legacy_conflicts"]),
         }
 
 
@@ -155,12 +180,14 @@ class TwoPassMetrics:
         return snapshot
 
     def public_snapshot(self, baseline: float | None) -> dict:
-        """The fields public /ready may carry (no decision, reason, claim count or ratio of any run)."""
+        """The fields public /ready may carry: none changes with a run's outcome (spec 18.6 D9, 18.7 E15)."""
         detail = self.snapshot(baseline)
         return {key: detail[key] for key in PUBLIC_SHADOW_FIELDS}
 
 
 LICENSE_SURFACES = ("two_pass", "legacy", "qa")
+# The license-gate surfaces public /ready reports: a two_pass exclusion happens inside a shadow run (spec 18.7 E15).
+PUBLIC_LICENSE_SURFACES = ("legacy", "qa")
 
 
 class LicenseMetrics:
@@ -183,6 +210,10 @@ class LicenseMetrics:
         with self._lock:
             return {name: self._excluded.get(name, 0) for name in LICENSE_SURFACES}
 
+    def public_snapshot(self) -> dict:
+        detail = self.snapshot()
+        return {name: detail[name] for name in PUBLIC_LICENSE_SURFACES}
+
 
 LEDGER_METRICS = LedgerMetrics()
 TWO_PASS_METRICS = TwoPassMetrics()
@@ -190,5 +221,12 @@ LICENSE_METRICS = LicenseMetrics()
 
 
 def snapshot(baseline: float | None) -> dict:
-    ledger = {**LEDGER_METRICS.snapshot(), "non_public_spans_excluded": LICENSE_METRICS.snapshot()}
+    """The public /ready SLI blocks (spec 11.2; 18.7 E15)."""
+    ledger = {**LEDGER_METRICS.public_snapshot(), "non_public_spans_excluded": LICENSE_METRICS.public_snapshot()}
     return {"tutor_ledger": ledger, "two_pass_shadow": TWO_PASS_METRICS.public_snapshot(baseline)}
+
+
+def detail_snapshot(baseline: float | None) -> dict:
+    """Every counter, in process (tests and operators); never served on a public route."""
+    ledger = {**LEDGER_METRICS.snapshot(), "non_public_spans_excluded": LICENSE_METRICS.snapshot()}
+    return {"tutor_ledger": ledger, "two_pass_shadow": TWO_PASS_METRICS.snapshot(baseline)}

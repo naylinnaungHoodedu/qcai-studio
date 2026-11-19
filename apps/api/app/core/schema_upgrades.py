@@ -33,6 +33,11 @@ def run_schema_upgrades(engine: Engine) -> None:
         if "corpus_spans" in tables:
             _guard_corpus_spans(connection)
         if {"response_ledger", "response_ledger_head"} <= tables:
+            head_columns = {column["name"] for column in inspector.get_columns("response_ledger_head")}
+            if "started_at" not in head_columns:
+                # A head table made before the ledger start marker existed (an unreleased Phase 3 build; spec 18.7 E6).
+                column_type = "TIMESTAMP WITH TIME ZONE" if connection.dialect.name == "postgresql" else "DATETIME"
+                connection.exec_driver_sql(f"ALTER TABLE response_ledger_head ADD COLUMN started_at {column_type}")
             _guard_response_ledger(connection)
 
 
@@ -135,8 +140,9 @@ RESPONSE_LEDGER_POSTGRES_FUNCTIONS = (
 def _guard_response_ledger(connection: Connection) -> None:
     # The tutor response ledger is append-only and hash-chained (plan task 3.8, R-22): a record is never updated,
     # deleted or truncated; an insert must extend the chain (seq = last + 1, prev_hash = the last record_hash); the
-    # head row moves forward one committed record at a time and is never deleted or truncated. Re-created on every
-    # start, like the other guards. No '%' in these statements (psycopg and pg8000 parameter markers).
+    # head row moves forward one committed record at a time, keeps its started_at (spec 18.7 E6) and is never deleted
+    # or truncated. Re-created on every start, like the other guards. No '%' in these statements (psycopg and pg8000
+    # parameter markers).
     if connection.dialect.name == "postgresql":
         connection.exec_driver_sql(
             "CREATE OR REPLACE FUNCTION response_ledger_append_only() RETURNS trigger LANGUAGE plpgsql AS $$\n"
@@ -164,7 +170,7 @@ def _guard_response_ledger(connection: Connection) -> None:
             "    IF TG_OP <> 'UPDATE' THEN\n"
             "        RAISE EXCEPTION USING MESSAGE = 'response_ledger_head moves forward only: ' || TG_OP || ' refused';\n"
             "    END IF;\n"
-            "    IF NEW.chain = OLD.chain AND NEW.seq = OLD.seq + 1\n"
+            "    IF NEW.chain = OLD.chain AND NEW.seq = OLD.seq + 1 AND NEW.started_at IS NOT DISTINCT FROM OLD.started_at\n"
             "       AND EXISTS (SELECT 1 FROM response_ledger WHERE seq = NEW.seq AND record_hash = NEW.record_hash) THEN\n"
             "        RETURN NEW;\n"
             "    END IF;\n"
@@ -199,7 +205,7 @@ def _guard_response_ledger(connection: Connection) -> None:
             f"OR NEW.prev_hash != COALESCE((SELECT record_hash FROM response_ledger ORDER BY seq DESC LIMIT 1), '{GENESIS}') "
             "BEGIN SELECT RAISE(ABORT, 'response_ledger appends must extend the chain'); END",
             "CREATE TRIGGER response_ledger_head_forward_only BEFORE UPDATE ON response_ledger_head "
-            "WHEN NEW.seq != OLD.seq + 1 OR NEW.chain != OLD.chain "
+            "WHEN NEW.seq != OLD.seq + 1 OR NEW.chain != OLD.chain OR NEW.started_at IS NOT OLD.started_at "
             "OR NOT EXISTS (SELECT 1 FROM response_ledger WHERE seq = NEW.seq AND record_hash = NEW.record_hash) "
             "BEGIN SELECT RAISE(ABORT, 'response_ledger_head moves forward only: UPDATE refused'); END",
             "CREATE TRIGGER response_ledger_head_no_delete BEFORE DELETE ON response_ledger_head "

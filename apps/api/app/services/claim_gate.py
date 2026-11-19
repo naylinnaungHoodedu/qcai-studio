@@ -1,4 +1,4 @@
-"""Subset checker, rule segment-exact-whitespace-v2 (plan Phase 3 E: "claim_gate becomes the subset checker";
+"""Subset checker, rule segment-exact-whitespace-v3 (plan Phase 3 E: "claim_gate becomes the subset checker";
 task 3.7; Phase 3 spec 4.9). Phase 4 V1.4 subsumes it.
 
 The overlap ClaimGate and evidence_digest are gone (plan 3.4: "overlap rebinding removed", R-13): nothing binds a
@@ -14,10 +14,17 @@ regenerates (at most twice), then abstains.
 A rendering also fails when it shows no locked claim at all (no_claim_rendered: an "answer" of connectives only),
 or when a claim it shows carries none of its own locked spans on its line (claim_uncited: a factual sentence a
 learner could not trace). A renderer may still leave some locked claims out (missing_claims is reported, not
-failed); the ledger records which claims and spans the passing rendering showed (spec 18.6 D4).
+failed); the ledger records which claims and spans the passing rendering showed (spec 18.6 D4), taken from the
+segments it displayed (displayed_span_ids), never from the renderer's own list.
+
+That list must say what was displayed (citation_list_mismatch, spec 18.7 E1): rendered.citations must be exactly
+the displayed citation spans, each once, in the order they first appear. A rendering that declares a span it never
+shows, lists one twice or out of order fails, so no record can name a citation the learner did not see and marker
+numbers never skip ([2] with no [1]).
 
 Rule ids: v1 ("segment-exact-normalised-v1") compared NFKC-folded text; it was replaced before any release by
-whitespace-only matching, and v2 adds the two checks above, so the id names one behaviour.
+whitespace-only matching; v2 added the two checks above and v3 the citation-list check, so each id names one
+behaviour. Neither earlier id was ever written outside development.
 """
 
 from __future__ import annotations
@@ -28,7 +35,7 @@ from app.services.tutor_pipeline.contracts import LockedClaimSet, RenderedRespon
 from app.services.tutor_pipeline.render import TEMPLATES, layout_text
 from app.services.tutor_pipeline.text import whitespace
 
-SUBSET_CHECK_RULE = "segment-exact-whitespace-v2"
+SUBSET_CHECK_RULE = "segment-exact-whitespace-v3"
 PROBLEM_CODES = (
     "empty",
     "text_not_segments",
@@ -39,6 +46,7 @@ PROBLEM_CODES = (
     "citation_marker_mismatch",
     "no_claim_rendered",
     "claim_uncited",
+    "citation_list_mismatch",
 )
 
 
@@ -49,6 +57,11 @@ def _formatted(template: tuple[str, str] | None, params: tuple[int, ...]) -> str
         return template[1].format(*params)
     except (IndexError, KeyError, ValueError):
         return None
+
+
+def displayed_span_ids(rendered: RenderedResponse) -> tuple[str | None, ...]:
+    """The spans a rendering's citation segments display, each once, in the order they first appear."""
+    return tuple(dict.fromkeys(segment.span_id for segment in rendered.segments if segment.kind == "citation"))
 
 
 @dataclass(frozen=True)
@@ -126,6 +139,9 @@ def check_subset(rendered: RenderedResponse, locked: LockedClaimSet, *, template
             problems.append("citation_marker_mismatch")
     if set(rendered.citations) - locked_spans:
         problems.append("citation_outside_locked_set")
+    if tuple(rendered.citations) != displayed_span_ids(rendered):
+        # A declared span that no segment shows, a duplicate, or another order (spec 18.7 E1).
+        problems.append("citation_list_mismatch")
     if not rendered_claims:
         problems.append("no_claim_rendered")
     for line, claims_on_line in line_claims.items():

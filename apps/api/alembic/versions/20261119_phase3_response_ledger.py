@@ -6,9 +6,15 @@ task 3.8, G; R-22), and tutor_turn_idempotency, the Idempotency-Key records of P
 Additive and reversible (expand step, plan 13.3). The append-only and chain triggers are re-created on every API
 start by app.core.schema_upgrades, so the downgrade drops them with the tables. Append-only evidence is never
 dropped by accident: the downgrade refuses while response_ledger holds rows, unless run as
-    alembic -x allow_ledger_drop=true downgrade -1
-after `python scripts/verify_ledger.py --export <path outside the repository>`. The chain still cannot build an
-empty database (test_alembic_head_builds_the_orm_schema stays a strict xfail until the production baseline lands).
+    alembic -x allow_ledger_drop=true downgrade 20261119_phase2_corpus_spans
+(an absolute target, never -1: a database built by create_all may carry no stamp, or a Phase 2 one, and -1 would
+then fail or reverse the Phase 2 revision instead; check `alembic current` first) after
+`python -m app.workers.response_ledger --export <path outside the application tree>`, the in-image worker that
+connects as the API does (infra/cloudrun/deployment.md, Phase 3). Dropping the tables ends the R-22 record in the
+database; `python -m app.workers.response_ledger --restore <that path>` re-inserts it once the revision is applied
+again (spec 18.7 E9, E10, E12). The chain still cannot build an empty database (test_alembic_head_builds_the_orm_schema
+stays a strict xfail until the production baseline lands). The chain head's started_at (spec 18.7 E6) was added
+before this revision was applied anywhere.
 
 Revision ID: 20261119_phase3_response_ledger
 Revises: 20261119_phase2_corpus_spans
@@ -63,6 +69,7 @@ def upgrade() -> None:
         sa.Column("seq", sa.Integer(), nullable=False),
         sa.Column("record_hash", sa.String(length=64), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
     )
     op.create_table(
         "tutor_turn_idempotency",
@@ -83,8 +90,9 @@ def downgrade() -> None:
     rows = op.get_bind().execute(sa.text("SELECT COUNT(*) FROM response_ledger")).scalar() or 0
     if rows and not allow:
         raise RuntimeError(
-            f"response_ledger holds {rows} rows (append-only evidence, R-22); export first with scripts/verify_ledger.py "
-            "--export, then: alembic -x allow_ledger_drop=true downgrade -1"
+            f"response_ledger holds {rows} rows (append-only evidence, R-22); export first with "
+            "python -m app.workers.response_ledger --export <path outside the application tree>, then: "
+            "alembic -x allow_ledger_drop=true downgrade 20261119_phase2_corpus_spans"
         )
     if op.get_bind().dialect.name == "postgresql":
         for trigger, table in POSTGRES_TRIGGERS:

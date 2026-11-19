@@ -3,10 +3,13 @@
 Always (start-up, tests, CI): each pinned schema file exists and its canonical sha256 equals its pin; the three
 prompt hashes the code computes equal the pinned values; the generator registry equals WIRED_GENERATORS.
 
-structural=True (tests and scripts/config_package.py --check only): each committed schema has the structure of
-its pydantic model (property names, required set and additionalProperties false at every object, through $defs).
-pydantic is not pinned in requirements.txt (spec M21), so the structural comparison never gates production
-start-up; the sha256 pins do.
+structural=True (tests and scripts/config_package.py --check only): each committed schema has the structure and
+the constraints of its pydantic model: property names, the required set, additionalProperties false at every
+object (through $defs), and every leaf keyword that constrains a value (type, enum, const, pattern, lengths, bounds,
+item counts, defaults; LEAF_KEYWORDS). The sha256 pins cover only the committed files, so this comparison is what
+catches a model changed without --write-schemas: a Literal widened, a pattern or a bound changed (spec 18.7 E2).
+Only title and description are left out, as annotations. requirements.txt gives pydantic a floor and a major-version
+cap, not a pin (spec M21, 18.6 D11), so the comparison still never gates production start-up; the sha256 pins do.
 """
 
 from __future__ import annotations
@@ -22,19 +25,35 @@ def schema_path(package: ConfigPackage, relative: str) -> Path:
     return (package.path.parent / relative).resolve()
 
 
+# The JSON Schema keywords that constrain a value, compared as they are (spec 18.7 E2). title and description are
+# annotations, which pydantic derives from names and docstrings, so they are left out.
+LEAF_KEYWORDS = (
+    "type", "enum", "const", "pattern", "format",
+    "minLength", "maxLength", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+    "minItems", "maxItems", "uniqueItems", "minProperties", "maxProperties", "default",
+)
+
+
+def _leaves(schema: dict[str, Any]) -> dict[str, Any]:
+    return {key: schema[key] for key in LEAF_KEYWORDS if key in schema}
+
+
 def _structure(schema: Any, defs: dict[str, Any], seen: frozenset[str] = frozenset()) -> Any:
-    """A comparable skeleton: properties, required, additionalProperties and $ref targets, recursively."""
+    """A comparable skeleton: properties, required, additionalProperties, $ref targets and the leaf constraints
+    (LEAF_KEYWORDS), recursively."""
     if isinstance(schema, dict):
         if "$ref" in schema:
             name = str(schema["$ref"]).rsplit("/", 1)[-1]
+            reference: dict[str, Any] = {"$ref": name, **_leaves(schema)}
             if name in seen:
-                return {"$ref": name}
-            return {"$ref": name, "target": _structure(defs.get(name, {}), defs, seen | {name})}
-        skeleton: dict[str, Any] = {}
+                return reference
+            return {**reference, "target": _structure(defs.get(name, {}), defs, seen | {name})}
+        skeleton: dict[str, Any] = _leaves(schema)
         if schema.get("type") == "object" or "properties" in schema:
             skeleton["properties"] = {key: _structure(value, defs, seen) for key, value in sorted((schema.get("properties") or {}).items())}
             skeleton["required"] = sorted(schema.get("required") or [])
-            skeleton["additionalProperties"] = schema.get("additionalProperties", True)
+            extra = schema.get("additionalProperties", True)
+            skeleton["additionalProperties"] = _structure(extra, defs, seen) if isinstance(extra, dict) else extra
         for key in ("items", "prefixItems", "anyOf", "allOf", "oneOf"):
             if key in schema:
                 value = schema[key]
@@ -71,7 +90,7 @@ def structural_problems(name: str, committed: dict[str, Any]) -> list[str]:
     generated = model_schema(name)
     problems = []
     if _structure(committed, committed.get("$defs", {})) != _structure(generated, generated.get("$defs", {})):
-        problems.append(f"schema {name}: the committed file's structure differs from the {name} model")
+        problems.append(f"schema {name}: the committed file's structure differs from the {name} model (a property, the required set or a constraint)")
     open_objects = _closed_everywhere(committed)
     if open_objects:
         problems.append(f"schema {name}: objects without additionalProperties false at {', '.join(open_objects[:3])}")

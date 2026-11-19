@@ -433,7 +433,7 @@
       "default_plan": "concise",
       "max_regenerations": 2,
       "max_regenerations_authority": "plan 3.7: at most two",
-      "subset_check": "segment-exact-whitespace-v2"
+      "subset_check": "segment-exact-whitespace-v3"
     },
     "ledger": {
       "chain": "tutor-responses",
@@ -466,7 +466,8 @@
       "authority": "plan 7.3 'mutations carry client keys' (DI-40); the values are engineering parameters with no plan value (PD-11)",
       "header": "Idempotency-Key",
       "key_pattern": "^[A-Za-z0-9._:-]{8,128}$",
-      "ttl_hours": 24
+      "ttl_hours": 24,
+      "in_progress_lease_seconds": 600
     },
     "unused_provenance_fields": [
       "v1_3_checker_model_id",

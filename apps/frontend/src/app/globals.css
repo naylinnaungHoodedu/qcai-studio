@@ -3006,6 +3006,13 @@ button:disabled,
   color: var(--warm);
 }
 
+/* The global focus ring (a translucent teal) is about 1.5:1 on the dark chat bubble; the accent is about 8:1, above
+   the 3:1 a focus indicator needs (WCAG 1.4.11; Phase 3 spec 18.7 E17). */
+.assistant-evidence-spans a:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .assistant-compose {
   display: grid;
   gap: 10px;
@@ -3624,6 +3631,23 @@ button:disabled,
 :root[data-theme="light"] .footer-link,
 :root[data-theme="light"] .footer-link-list a {
   color: #0b6e8c;
+}
+
+/* The floating assistant chat keeps its dark styling in the light theme, so it
+   keeps the dark tokens too: otherwise its muted text, links and focus rings take
+   the light theme's darker values on a dark bubble (about 1.9:1 and 3.9:1; Phase 3
+   spec 18.7 E17). The values are the dark :root tokens above. */
+:root[data-theme="light"] .assistant-panel {
+  --ink: #f2f7ff;
+  --muted: #95acd1;
+  --line: rgba(88, 137, 255, 0.24);
+  --accent: #1bd4ff;
+  --accent-deep: #7a6cff;
+  --accent-soft: rgba(27, 212, 255, 0.16);
+  --warm: #82e7ff;
+  --text: var(--ink);
+  --text-muted: var(--muted);
+  --border: var(--line);
 }
 
 /* Light theme, extended to the interactive studios (builder / arena /

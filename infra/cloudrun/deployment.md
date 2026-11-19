@@ -109,11 +109,11 @@ Before the first digest-pinned rollout, the previous revisions are `qcai-api-000
 - `python scripts/config_package.py --check`, for v2 (the default) and for v1 (`--path apps/api/app/config_package/v1.json`).
 - `python scripts/replay_tutor_plans.py --check docs/evaluation/phase3/three_plan_replay_v1.json`. Exit 3 is the plan L bound-claim stop.
 - Take an on-demand backup.
-- **Check CPU allocation after the response.** The legacy ledger append is on by default outside development, and an append that outlasts its budget plus the 250 ms grace finishes after the response has gone (`tutor.ledger.append_deferred`). With request-based CPU allocation such work can be throttled. Read the service's CPU allocation setting (a cloud read, DI-48) and record it in the release evidence. On PostgreSQL each attempt sets `idle_in_transaction_session_timeout` to its remaining budget, so a throttled append that holds the head row's lock is ended by the server and frees the lock. If CPU is request-based, count `tutor.ledger.append_deferred` after the deploy; any sustained rate is a reason to stop (below).
-- Optionally, run the Alembic pre-deploy job (`alembic upgrade head`) from a workstation that has the migration scripts; the image does not ship them.
+- **Check CPU allocation after the response.** The legacy ledger append is on by default outside development, and an append that outlasts its budget plus the 250 ms grace finishes after the response has gone (`tutor.ledger.append_deferred`). With request-based CPU allocation such work can be throttled. Read the service's CPU allocation setting (a cloud read, DI-48) and record it in the release evidence. On PostgreSQL each attempt sets `idle_in_transaction_session_timeout` to its remaining budget, so a throttled append that holds the head row's lock is ended by the server and frees the lock. If CPU is request-based, watch `tutor.ledger.append_deferred` after the deploy: each one is investigated, and a deferred append that never ends shows as ledger coverage below 100%, a stop (below).
+- Optionally, run the Alembic pre-deploy job (`alembic upgrade head`) from a workstation that has the migration scripts; the image does not ship them. It connects as the API does: with `CLOUD_SQL_CONNECTION_NAME` set, `alembic/env.py` uses the API's Cloud SQL connector (`app.core.db.engine`), so set `CLOUD_SQL_CONNECTION_NAME` and `DATABASE_URL` (user and database; the password from Secret Manager) for the shell only, with the operator's own Cloud SQL Client credentials. A plain `DATABASE_URL` without the connector has no host to reach.
 
 **Deploy** by digest, as in sections 1-3.
-- `create_all` adds `response_ledger` and `response_ledger_head`, and the schema upgrades add their append-only and chain triggers. No ledger row is written at start-up.
+- `create_all` adds `response_ledger` and `response_ledger_head`, and the schema upgrades add their append-only and chain triggers. No ledger record is written at start-up. While `TUTOR_LEDGER_ENABLED` is true, start-up creates the chain head once if none exists (seq 0, the genesis hash) with its `started_at`: from then on every delivery is expected to have a record, so on the ledger route a later turn without one reads `recorded: false, legacy_turn: false`, a missing record, and only an earlier turn reads as a legacy turn (spec 18.7 E6).
 - `/ready` must report:
   - `config_package_version` 2.0.0 (with `config_package_sha256`);
   - `two_pass_tutor` off and `phase4_exit_passed` false;
@@ -126,7 +126,8 @@ Before the first digest-pinned rollout, the previous revisions are `qcai-api-000
 - `--expect-head SEQ:HASH` checks the chain against any logged head.
 - `python -m app.workers.response_ledger --coverage-since <time>` also logs the tutor turns since then without a ledger record, and the `qa-` records since then (counts only).
 - Appends keep committing while the job runs. The job walks the chain up to the head it read first and counts later records as `appended_during_check`, so live traffic never reads as a broken chain.
-- `scripts/verify_ledger.py` (same options, `--database-url`) is for development, CI and local copies; it does not use the Cloud SQL connector.
+- `--restore <path>` re-inserts an `--export` file into an empty ledger, in one transaction, recomputing every hash, and then verifies the chain (rollback, below).
+- `scripts/verify_ledger.py` (the same read-only options, `--database-url`) is for development, CI and local copies; it does not use the Cloud SQL connector and has no restore.
 
 **Enabling shadow in production** (`TWO_PASS_TUTOR=shadow`) is a separate D-05 decision (DI-32).
 - Expect a `config.override` event (`two_pass_tutor_shadow`).
@@ -134,10 +135,12 @@ Before the first digest-pinned rollout, the previous revisions are `qcai-api-000
 - Shadow processes real learner questions, so plan Phase 3 H applies.
 
 **Stop conditions** (plan Phase 3 L):
-- any `tutor.ledger.append_failed` or `tutor.ledger.conflict` (`slis.tutor_ledger.write_stop` true);
-- `slis.two_pass_shadow.bound_claim_ratio_stop` true, or the log-based ratio (`ratio_bound` over `ratio_proposed`, observability.md) below 1.0;
-- `response_ledger` job problems (`status` broken);
-- a sustained rate of `tutor.ledger.append_deferred` (ledger latency on the request path).
+- any `tutor.ledger.append_failed` or `tutor.ledger.conflict`, legacy or shadow (the "Ledger write failures" alert; public `slis.tutor_ledger.write_stop` turns true for a legacy one only, since a shadow record is a shadow output, spec 18.7 E15);
+- ledger coverage below 100% (the log-based ratio of `tutor.ledger.appended` to `tutor.ledger.attempted`, observability.md): a lost record, including a deferred append that never ended;
+- the log-based shadow bound-claim ratio (`ratio_bound` over `ratio_proposed`, observability.md) below 1.0 (public `/ready` no longer carries a stop flag; spec 18.7 E15);
+- `response_ledger` job problems (`status` broken).
+
+Each `tutor.ledger.append_deferred` (ledger latency on the request path) is investigated; it is a stop when it ends in `tutor.ledger.append_failed` or never ends (coverage).
 
 On a stop:
 - For the shadow, set `TWO_PASS_TUTOR=off`.
@@ -145,7 +148,12 @@ On a stop:
 
 Legacy deliveries continue either way, because every ledger write fails open.
 
-**Roll back** by digest, as in "Rollback" above. The ledger stays: it is append-only. The Alembic downgrade refuses while the ledger holds rows:
-1. Export first: `python -m app.workers.response_ledger --export <path>`, run from an operator workstation with the API's requirements installed and `apps/api` as the working directory, connecting as the API does: `CLOUD_SQL_CONNECTION_NAME` and `DATABASE_URL` (user and database; the password from Secret Manager, never typed into a file) set for the shell only, and the operator's own Cloud SQL Client credentials (Application Default Credentials). The worker refuses a path inside the application tree. In the image (a job), the container's disk is discarded when the job ends, so the export is a workstation step.
-2. **Handling the export.** It holds every record: corpus text, turn ids and, on shadow rows, the ids of the learner messages the question was taken from. While those turns exist this is pseudonymous learner data. Keep it only on an encrypted disk of the operator workstation (or a store the Platform Owner names), never in the repository, a ticket, chat, CI or a shared drive. Delete it once the upgrade is re-applied and `python -m app.workers.response_ledger --expect-head SEQ:HASH` reaches the export's last head; if the downgrade is kept, its retention is the open plan 12.8 decision (DI-45), so record where it is held in the release evidence until the PO and PI decide.
-3. Then run `alembic -x allow_ledger_drop=true downgrade -1`.
+**Roll back** by digest, as in "Rollback" above. **A digest rollback needs no downgrade:** the ledger tables stay, the earlier image does not read them, and the R-22 record stays whole (it is append-only). The Alembic downgrade is a separate step that is optional and rarely right: it drops the R-22 record from the database, so it needs its own owner decision (the PO, beside the D-05 approval of the rollback), recorded in the release evidence. Only then, from an operator workstation with the API's requirements installed and `apps/api` as the working directory, connecting as the API does: `CLOUD_SQL_CONNECTION_NAME` and `DATABASE_URL` (user and database; the password from Secret Manager, never typed into a file) set for the shell only, and the operator's own Cloud SQL Client credentials (Application Default Credentials). The worker and `alembic/env.py` both use the API's Cloud SQL connector then.
+1. **Export:** `python -m app.workers.response_ledger --export <path>`. The worker refuses a path inside the application tree. In the image (a job), the container's disk is discarded when the job ends, so the export is a workstation step. Note the export's last head (`seq:record_hash` of its last line; the job line logs it as `head_row`).
+2. **Handling the export.** It holds every record: corpus text, turn ids and, on shadow rows, the ids of the learner messages the question was taken from. While those turns exist this is pseudonymous learner data. Keep it only on an encrypted disk of the operator workstation (or a store the Platform Owner names), never in the repository, a ticket, chat, CI or a shared drive. Once the tables are dropped it is the only copy of the record. Delete it once `python -m app.workers.response_ledger --restore <path> --expect-head SEQ:HASH` (the export's last head) has re-inserted it after the upgrade is re-applied and exited 0 (step 5). If the downgrade is kept, its retention is the open plan 12.8 decision (DI-45): record where it is held in the release evidence until the PO and PI decide.
+3. **Check the stamp:** `alembic current`.
+   - `20261119_phase3_response_ledger (head)`: go on.
+   - Nothing, or `20261119_phase2_corpus_spans`: the tables came from `create_all` (the pre-deploy job is optional, spec M13). Run `alembic stamp 20261119_phase3_response_ledger`, then `alembic check`, which must print "No new upgrade operations detected". If it reports anything, put the stamp back (`alembic stamp 20261119_phase2_corpus_spans`, or `alembic stamp base` when `alembic current` printed nothing) and stop.
+   - Anything else: stop.
+4. **Downgrade** to the absolute target, never `-1` (on an unstamped database `-1` fails, and on a Phase 2 stamp it reverses the Phase 2 revision, dropping `corpus_spans` and keeping the ledger): `alembic -x allow_ledger_drop=true downgrade 20261119_phase2_corpus_spans`. It drops `response_ledger`, `response_ledger_head` and `tutor_turn_idempotency` only.
+5. **Re-applying.** After `alembic upgrade head` (or a start-up's `create_all`), run `python -m app.workers.response_ledger --restore <path> --expect-head SEQ:HASH` before the revision takes traffic (deploy it with no traffic, restore, then shift traffic). The restored chain is the exported one byte for byte, so every head logged before the drop still verifies. `--restore` refuses a ledger that already holds a record: if deliveries were recorded first, the exported records form a **retired chain**, kept in the export, the heads logged before the drop (`tutor.ledger.appended` lines, job lines) belong to it and no longer verify against the database, and the release evidence records both facts.

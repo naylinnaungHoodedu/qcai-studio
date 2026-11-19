@@ -2,9 +2,13 @@ import type { EvidencePanelPayload } from "@/lib/types";
 
 // Fixed, conservative copy for the evidence panel (plan Phase 3 task 3.8). Contained answers are quotations matched
 // on words, never verified for meaning, so nothing here may describe them as verified or as an explanation.
+// An abstention says only what the lexical gate found: no approved passage matched closely enough. It never says the
+// sources do not cover the topic, which nothing checks (a floor miss, or no approved asset at all under D-31;
+// Phase 3 spec 18.7 E16); the learner-facing abstention text says the same ("I can't answer this from the approved
+// course sources").
 export const DECISION_TEXT: Record<EvidencePanelPayload["decision"], string> = {
   answer: "Quoted word for word from approved course sources",
-  abstain: "No answer: the approved course sources do not cover this",
+  abstain: "No answer: no approved course passage matched this question closely enough",
 };
 
 export const LABEL_TEXT: Record<EvidencePanelPayload["labels"][number], string> = {

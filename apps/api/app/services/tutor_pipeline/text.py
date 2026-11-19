@@ -1,8 +1,10 @@
 """Text helpers of the two-channel tutor (Phase 3 spec 4.1; conflict 32).
 
 whitespace() is the verbatim surface that is stored, locked, ledgered and rendered: the span's own characters with
-whitespace runs collapsed, never NFKC-folded (D-19 "verbatim"). normalise() adds NFKC and is used only to compare
-(binding and the subset check), so a superscript or a ligature never changes what a learner would read.
+whitespace runs collapsed, never NFKC-folded (D-19 "verbatim"). normalise() adds NFKC and is used only in bind.py: to
+find a proposed claim's sentence in a span (the claim then locks the span's own characters, so a superscript or a
+ligature never changes what a learner would read), and inside claim ids (claim_id_for, which legacy records use too). The subset check (claim_gate) compares whitespace() forms only and
+never folds (spec conflict 32; corrected in spec 18.7 E8, which found this docstring still naming the subset check).
 
 sentences() is rule sentences-v2 (it replaced sentences-v1, which split after every ". " and so cut quotations at
 "e.g.", "et al.", "Fig. 3" or "Dr."; plan Phase 3 M residual "misleading wording within locked claims"). A boundary is

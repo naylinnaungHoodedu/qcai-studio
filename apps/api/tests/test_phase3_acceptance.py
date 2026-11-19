@@ -1189,17 +1189,22 @@ def test_plan_l_a_shadow_or_ledger_failure_never_changes_the_learner_response_an
     assert ledger_canonical(without_ids(response.json())) == ledger_canonical(without_ids(reference.json()))
     events = [getattr(record, "json_fields", {}) for record in caplog.records]
     slis = client.get("/ready").json()["slis"]
-    # Public /ready carries only the shadow fields that describe no single run (review round 3, spec 18.6 D9); the
-    # per-run detail is the in-process snapshot (and each run's tutor.two_pass.shadow log line).
-    assert set(slis["two_pass_shadow"]) == {"scheduled", "completed", "failed", "phase2_bound_claim_ratio_baseline", "bound_claim_ratio_stop"}
-    shadow_slis, ledger_slis = TWO_PASS_METRICS.snapshot(PARAMS.phase2_bound_claim_ratio), slis["tutor_ledger"]
+    # Public /ready carries no shadow field that changes with a run's outcome (review rounds 3 and 4, spec 18.6 D9 and
+    # 18.7 E15) and only the legacy ledger counts; the per-run detail is the in-process snapshots (and each run's log
+    # lines). The failures below are read there; the public blocks are compared with their public snapshots.
+    assert set(slis["two_pass_shadow"]) == {"scheduled", "phase2_bound_claim_ratio_baseline"}
+    shadow_slis, ledger_slis = TWO_PASS_METRICS.snapshot(PARAMS.phase2_bound_claim_ratio), LEDGER_METRICS.snapshot()
     assert {key: shadow_slis[key] for key in slis["two_pass_shadow"]} == slis["two_pass_shadow"]
+    public_ledger = slis["tutor_ledger"]
+    assert {key: value for key, value in public_ledger.items() if key != "non_public_spans_excluded"} == LEDGER_METRICS.public_snapshot()
     if failure == "pipeline":
         assert shadow_slis["failed"]["pipeline"] == 1
         assert {"event": "tutor.two_pass.shadow_failed", "step": "pipeline", "error": "RuntimeError"} in events
     elif failure == "shadow_append":
         assert shadow_slis["failed"]["ledger"] == 1 and ledger_slis["failed"]["shadow"] == 1 and ledger_slis["write_stop"] is True
         assert any(event.get("event") == "tutor.ledger.append_failed" and event.get("delivery") == "shadow" for event in events)
+        # The stop is logged (and alerted on), but a learner reading public /ready cannot see their shadow's append fail.
+        assert public_ledger["write_stop"] is False and set(public_ledger["failed"]) == {"legacy"}
     elif failure == "budget":
         assert shadow_slis["budget_exceeded"] == 1 and shadow_slis["abstention_by_reason"] == {"budget_exceeded": 1}
         assert any(event.get("event") == "tutor.two_pass.budget_exceeded" for event in events)
@@ -1210,8 +1215,8 @@ def test_plan_l_a_shadow_or_ledger_failure_never_changes_the_learner_response_an
         assert counts["proposed_claims"] == counts["bound_claims"] + sum(counts["dropped"].values())
         assert shadow_slis["bound_claim_ratio_stop"] is False and shadow_slis["bound_claims"] == shadow_slis["proposed_claims"]
     else:
-        assert ledger_slis["failed"]["legacy"] == 1 and ledger_slis["write_stop"] is True
-        assert ledger_slis["legacy_coverage_rate"] == 0.0
+        assert ledger_slis["failed"]["legacy"] == 1 and ledger_slis["write_stop"] is True and public_ledger["write_stop"] is True
+        assert ledger_slis["legacy_coverage_rate"] == 0.0 == public_ledger["legacy_coverage_rate"]
         stage = "prepare" if failure == "prepare" else "append"
         assert {"event": "tutor.ledger.append_failed", "delivery": "legacy", "stage": stage, "error": "RuntimeError"} in events
         assert records(response_id=response.json()["turn_id"]) == []
@@ -1240,7 +1245,9 @@ def test_plan_l_the_bound_claim_ratio_is_reported_and_a_drop_below_phase_2_is_a_
     assert (empty["bound_claim_ratio"], empty["bound_claim_ratio_stop"]) == (None, False)  # a null ratio is never a stop
     chat(demo("planl-ratio"), "Why does routing depth matter?")
     public = client.get("/ready").json()["slis"]["two_pass_shadow"]
-    assert (public["bound_claim_ratio_stop"], public["phase2_bound_claim_ratio_baseline"]) == (False, 1.0) and "bound_claim_ratio" not in public
+    # Review round 4 (spec 18.7 E15): the stop flag left public /ready with the other per-run outcomes; the stop is
+    # read from the in-process snapshot here and from the log-based ratio in production (observability.md).
+    assert public["phase2_bound_claim_ratio_baseline"] == 1.0 and not {"bound_claim_ratio", "bound_claim_ratio_stop"} & set(public)
     healthy = TWO_PASS_METRICS.snapshot(PARAMS.phase2_bound_claim_ratio)
     assert (healthy["bound_claim_ratio"], healthy["bound_claim_ratio_stop"], healthy["phase2_bound_claim_ratio_baseline"]) == (1.0, False, 1.0)
     settings = Settings()
@@ -1442,9 +1449,11 @@ def test_plan_g_legacy_turns_read_as_no_verdict():
         thread = TutorThread(id=f"thread-{uuid4()}", user_id=headers["x-demo-user"], title="pre-ledger")
         db.add(thread)
         db.flush()
+        # Created before the ledger began recording (review round 4, spec 18.7 E6: a later turn without a record is a
+        # missing record, not a legacy turn; test_phase3_review4.py covers that case).
         db.add(TutorTurn(id=turn_id, thread_id=thread.id, user_id=headers["x-demo-user"], resolved_query="q", retrieval_mode="lexical", provider="none",
                          model="m", decision="abstain", decision_reason="no_approved_span", citations=[], claims=[], corpus_version="c",
-                         policy_version="cs595-v1"))
+                         policy_version="cs595-v1", created_at=datetime(2026, 1, 1, tzinfo=UTC)))
         db.commit()
         before = (db.scalar(select(func.count()).select_from(ResponseLedgerRecord)), db.scalar(select(func.count()).select_from(TutorTurn)))
     response = client.get(f"/ledger/responses/{turn_id}", headers=headers)

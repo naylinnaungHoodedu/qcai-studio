@@ -15,11 +15,10 @@ from app.core.config import Settings
 from app.core.corpus_governance import get_corpus_registry
 from app.schemas import QAResponse
 from app.services.contained_answers import EXTRACTIVE_MODE, contain_answer
-from app.services.ledger import legacy_delivery_for, record_ledger_failure
+from app.services.ledger import LegacyPreparationFailed, legacy_delivery_for
 from app.services.provenance import native_citation
 from app.services.retrieval_engine import RetrievalEngine
 from app.services.retrieval_metrics import record_citations
-from app.services.tutor_pipeline.metrics import LEDGER_METRICS
 
 QA_PROVIDER = "none"
 
@@ -48,7 +47,7 @@ class QAEngine:
             grounded=contained.grounded,
         )
         if self.settings.tutor_ledger_enabled:
-            LEDGER_METRICS.attempt("legacy", surface="qa")
+            # Counted as attempted by the route once the answer has committed (spec 18.7 E5), never here.
             try:
                 response._ledger = legacy_delivery_for(
                     response_id=f"qa-{uuid4()}",
@@ -62,6 +61,6 @@ class QAEngine:
                     policy_version=self.settings.grounding_policy_version,
                     surface="qa",
                 )
-            except Exception as exc:  # noqa: BLE001 - a lost record is counted (plan L stop); the answer is unchanged
-                record_ledger_failure("legacy", "prepare", exc, surface="qa")
+            except Exception as exc:  # noqa: BLE001 - a lost record is counted after the commit (plan L stop); the answer is unchanged
+                response._ledger = LegacyPreparationFailed(error=exc, surface="qa")
         return response

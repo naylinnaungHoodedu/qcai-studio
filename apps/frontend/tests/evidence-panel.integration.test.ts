@@ -37,7 +37,9 @@ test("each code maps to its fixed, conservative text", () => {
   ]);
   assert.equal(view.verdict, "Not yet verified");
   const abstained = evidencePanelView(payload({ decision: "abstain", labels: [], spans: [] }));
-  assert.equal(abstained.decision, "No answer: the approved course sources do not cover this");
+  // Spec 18.7 E16: an abstention reports a lexical miss, never a coverage fact nothing checked.
+  assert.equal(abstained.decision, "No answer: no approved course passage matched this question closely enough");
+  assert.doesNotMatch(abstained.decision, /do not cover|does not cover|not covered/i);
   assert.deepEqual(abstained.labels, []);
   assert.deepEqual(abstained.spans, []);
 });
@@ -137,4 +139,57 @@ test("the privacy page discloses the tutor response ledger", () => {
   assert.match(disclosures, /Deleting your account deletes your tutor turns and your Q&A history/);
   assert.match(disclosures, /for a guest, automatic retention cleanup does the same for history older than one year/);
   assert.doesNotMatch(disclosures, /tutor history/);
+});
+
+// Phase 3 spec 18.7 E17: the panel's links, labels and focus ring keep their contrast on the dark chat bubble, in
+// the dark theme and in the opt-in light theme (where the chat stays dark by design).
+function hexChannels(hex: string): [number, number, number] {
+  const value = hex.replace("#", "");
+  return [0, 2, 4].map((at) => parseInt(value.slice(at, at + 2), 16)) as [number, number, number];
+}
+
+function luminance([r, g, b]: [number, number, number]): number {
+  const linear = (channel: number) => {
+    const c = channel / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+}
+
+function contrast(a: [number, number, number], b: [number, number, number]): number {
+  const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (high + 0.05) / (low + 0.05);
+}
+
+function over(top: [number, number, number], alpha: number, under: [number, number, number]): [number, number, number] {
+  return top.map((channel, index) => Math.round(channel * alpha + under[index] * (1 - alpha))) as [number, number, number];
+}
+
+function token(block: string, name: string): string {
+  const match = block.match(new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})`));
+  assert.ok(match, `--${name} in the block`);
+  return match[1];
+}
+
+test("the panel's links, labels and focus ring keep their contrast on the chat bubble in both themes", () => {
+  const css = read("app/globals.css");
+  // The bubble: rgba(42, 48, 61, 0.84) over the transcript surface (about rgb(5, 9, 21)).
+  assert.match(css, /\.assistant-bubble \{[^}]*background: rgba\(42, 48, 61, 0\.84\)/);
+  const bubble = over([42, 48, 61], 0.84, [5, 9, 21]);
+  const focus = css.match(/\.assistant-evidence-spans a:focus-visible \{([^}]*)\}/);
+  assert.ok(focus, "a focus rule for the panel's links");
+  assert.match(focus[1], /outline: 3px solid var\(--accent\)/);
+  // The global ring the rule replaces: rgba(15, 118, 110, 0.42), about 1.5:1 on the bubble.
+  assert.ok(contrast(over([15, 118, 110], 0.42, bubble), bubble) < 3);
+  const darkRoot = css.match(/^:root \{([^}]*)\}/m);
+  const lightChat = css.match(/:root\[data-theme="light"\] \.assistant-panel \{([^}]*)\}/);
+  assert.ok(darkRoot && lightChat, "the dark tokens, and the chat's tokens in the light theme");
+  for (const block of [darkRoot[1], lightChat[1]]) {
+    const accent = hexChannels(token(block, "accent"));
+    const muted = hexChannels(token(block, "muted"));
+    assert.ok(contrast(accent, bubble) >= 4.5, "passage links (0.82rem text) and the focus ring");
+    assert.ok(contrast(muted, bubble) >= 4.5, "labels, degraded notes and the verdict");
+  }
+  assert.equal(token(lightChat[1], "accent"), token(darkRoot[1], "accent"));
+  assert.equal(token(lightChat[1], "muted"), token(darkRoot[1], "muted"));
 });

@@ -12,7 +12,7 @@ from app.db_models import QAInteraction
 from app.core.corpus_governance import get_corpus_registry
 from app.schemas import QAHistoryItem, QARequest, QAResponse
 from app.services.answer_history import WITHDRAWN_ANSWER, stored_before_containment
-from app.services.ledger import LegacyDelivery, record_legacy_delivery
+from app.services.ledger import LegacyDelivery, LegacyPreparationFailed, record_legacy_delivery
 from app.services.provenance import is_withheld_unapproved, label_stored_citation
 from app.services.retrieval_metrics import record_citations
 from app.services.span_store import persist_cited_spans
@@ -48,9 +48,10 @@ def ask_question(
     persist_cited_spans(db, response.citations, get_course_store())
     db.commit()
     # Plan task 3.8 / F-1: the delivery's ledger record, after the commit and before the answer leaves; bounded and
-    # fail-open (ledger.record_legacy_delivery never raises and never changes the response).
+    # fail-open (ledger.record_legacy_delivery never raises and never changes the response). The attempt is counted
+    # there, so an answer whose commit fails is never an attempt (spec 18.7 E5).
     delivery = getattr(response, "_ledger", None)
-    if isinstance(delivery, LegacyDelivery):
+    if isinstance(delivery, (LegacyDelivery, LegacyPreparationFailed)):
         record_legacy_delivery(delivery)
     return response
 

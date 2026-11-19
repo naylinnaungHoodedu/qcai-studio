@@ -27,7 +27,7 @@ from app.core.config import Settings
 from app.core.config_package import get_config_package
 from app.core.db import SessionLocal
 from app.core.structured_logging import FIELDS
-from app.services.claim_gate import check_subset
+from app.services.claim_gate import check_subset, displayed_span_ids
 from app.services.contained_answers import ABSTENTION
 from app.services.ledger import SCHEMA_REVISION, AppendedRecord, append_ledger_entry, budget_stamp, ledger_budget_ms
 from app.services.span_resolver import SpanResolver
@@ -104,6 +104,12 @@ class PipelineResult:
 def rendered_claim_ids(rendered: RenderedResponse) -> tuple[str, ...]:
     """The claim ids a rendering shows, in render order, each once."""
     return tuple(dict.fromkeys(segment.claim_id for segment in rendered.segments if segment.kind == "claim" and segment.claim_id))
+
+
+def rendered_span_ids(rendered: RenderedResponse) -> tuple[str, ...]:
+    """The span ids a rendering's citation segments display, in display order, each once (spec 18.7 E1). The subset
+    check already requires rendered.citations to equal this list; the record is built from the segments anyway."""
+    return tuple(span_id for span_id in displayed_span_ids(rendered) if span_id)
 
 
 def render_checked(
@@ -308,9 +314,10 @@ class TwoPassPipeline:
                     renderer_id=self.renderer.renderer_id,
                     attempts=attempts,
                     subset_check="passed" if rendered is not None else "failed",
-                    # What the passing rendering showed (spec 18.6 D4): never the locked claims it left out.
+                    # What the passing rendering showed (spec 18.6 D4): never the locked claims it left out, and
+                    # the spans its citation segments display, not the renderer's own list (spec 18.7 E1).
                     rendered_claim_ids=rendered_claim_ids(rendered) if rendered is not None else (),
-                    rendered_span_ids=tuple(rendered.citations) if rendered is not None else (),
+                    rendered_span_ids=rendered_span_ids(rendered) if rendered is not None else (),
                 )
                 if attempts
                 else None

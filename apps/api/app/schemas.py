@@ -384,6 +384,8 @@ class LedgerResponseRead(BaseModel):
     # Plan Phase 3 G: "legacy turns marked no-verdict"; no V1-V3 verdict exists before Phase 4.
     verdict: Literal["no-verdict"] = "no-verdict"
     recorded: bool
+    # With recorded false: true for a turn created before the ledger began recording, false for a later turn whose
+    # record is missing (a lost record, a plan L stop; spec 18.7 E6).
     legacy_turn: bool
     record: LedgerRecordRead | None = None
 

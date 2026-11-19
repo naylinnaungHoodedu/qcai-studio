@@ -66,7 +66,8 @@ def create_tutor_turn(
     request_digest = turn_idempotency.request_sha256(
         message=clean_message, thread_id=payload.thread_id, lesson_slug=payload.lesson_slug, presentation_plan=payload.presentation_plan
     )
-    existing = turn_idempotency.find(db, user.user_id, key_digest, now=now, ttl_hours=params.idempotency_ttl_hours)
+    existing = turn_idempotency.find(db, user.user_id, key_digest, now=now, ttl_hours=params.idempotency_ttl_hours,
+                                     lease_seconds=params.idempotency_lease_seconds)
     if existing is not None:
         return turn_idempotency.answer_for(existing, request_digest)
     claim = TutorTurnIdempotency(user_id=user.user_id, key_sha256=key_digest, request_sha256=request_digest, created_at=now)
@@ -76,7 +77,8 @@ def create_tutor_turn(
     except IntegrityError:
         # Another request with this key claimed it first.
         db.rollback()
-        winner = turn_idempotency.find(db, user.user_id, key_digest, now=now, ttl_hours=params.idempotency_ttl_hours)
+        winner = turn_idempotency.find(db, user.user_id, key_digest, now=now, ttl_hours=params.idempotency_ttl_hours,
+                                       lease_seconds=params.idempotency_lease_seconds)
         if winner is None:  # pragma: no cover - the winner expired or was released in between
             return JSONResponse(status_code=409, content={"detail": "A request with this Idempotency-Key is still being processed."},
                                 headers={"Cache-Control": "no-store"})
@@ -97,7 +99,7 @@ def create_tutor_turn(
         try:
             db.delete(claim)
             db.commit()
-        except Exception:  # noqa: BLE001 - never mask the turn's own error; the claim then expires after ttl_hours
+        except Exception:  # noqa: BLE001 - never mask the turn's own error; the claim is then abandoned and its lease ends
             db.rollback()
         raise
     return TutorTurnResponse(**delivered.model_dump(), delivery="legacy")

@@ -7,7 +7,12 @@ sha256 is stored, with the sha256 of the request (message, thread, lesson scope,
   - same caller, same key, same request, first turn done   -> its response, header Idempotent-Replayed: true
   - same caller, same key, same request, first still running -> 409
   - same caller, same key, a different request              -> 422
-A key is remembered for ttl_hours; after that the same key starts a new turn and its expired row is replaced. Rows are
+A key is remembered for ttl_hours; after that the same key starts a new turn and its expired row is replaced. A claim
+still in progress (no response yet) is held for in_progress_lease_seconds only (600 s, PD-11; spec 18.7 E7): the
+route releases a failed turn's claim itself, but a process that dies mid-turn (a scale-in, an OOM, a crash) or a
+release that fails leaves the claim behind, and without a lease every retry would get 409 for the whole TTL. The
+lease is twice Cloud Run's default request timeout, so a claim older than it belongs to a request that can no longer
+finish; were it still running, its commit would find the claim gone and fail, so one key never yields two turns. Rows are
 user-keyed (erasure deletes them; guest retention deletes a guest's with its other data) and otherwise live as long
 as the turn they answer for, as the other tutor tables do. The row is claimed
 and committed before the turn runs, filled in the turn's own transaction and released if the turn fails, so two
@@ -57,12 +62,18 @@ def request_sha256(*, message: str, thread_id: str | None, lesson_slug: str | No
     return canonical_sha256({"message": message, "thread_id": thread_id, "lesson_slug": lesson_slug, "presentation_plan": presentation_plan})
 
 
-def find(db: Session, user_id: str, key_digest: str, *, now: datetime, ttl_hours: int) -> TutorTurnIdempotency | None:
-    """The caller's live record of this key; an expired one is deleted (flushed) so the key can be used again."""
+def find(db: Session, user_id: str, key_digest: str, *, now: datetime, ttl_hours: int, lease_seconds: int) -> TutorTurnIdempotency | None:
+    """The caller's live record of this key. An expired one (older than ttl_hours), or an abandoned claim (no response
+    and older than lease_seconds), is deleted (flushed) so the key can be used again."""
     row = db.scalars(
         select(TutorTurnIdempotency).where(TutorTurnIdempotency.user_id == user_id, TutorTurnIdempotency.key_sha256 == key_digest)
     ).first()
-    if row is not None and _utc(row.created_at) < now - timedelta(hours=ttl_hours):
+    if row is None:
+        return None
+    created = _utc(row.created_at)
+    expired = created < now - timedelta(hours=ttl_hours)
+    abandoned = row.response_body is None and created < now - timedelta(seconds=lease_seconds)
+    if expired or abandoned:
         db.delete(row)
         db.flush()
         return None

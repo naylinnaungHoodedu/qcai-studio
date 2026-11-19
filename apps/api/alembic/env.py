@@ -72,11 +72,17 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    if settings.cloud_sql_connection_name and settings.database_url.startswith(("postgresql", "postgres")):
+        # Production: connect as the API does, through the Cloud SQL Python connector (CLOUD_SQL_CONNECTION_NAME
+        # and a DATABASE_URL with the user and database only); a plain URL has no host to reach there
+        # (infra/cloudrun/deployment.md, Phase 3; spec 18.7 E10).
+        from app.core.db import engine as connectable
+    else:
+        connectable = engine_from_config(
+            config.get_section(config.config_ini_section, {}),
+            prefix="sqlalchemy.",
+            poolclass=pool.NullPool,
+        )
 
     with connectable.connect() as connection:
         context.configure(

@@ -105,6 +105,10 @@ class LedgerAppendError(RuntimeError):
     """The append did not succeed within its attempts or its budget."""
 
 
+class LedgerRestoreRefused(RuntimeError):
+    """restore_ledger refused its input or the database it was given; nothing was written."""
+
+
 class LedgerUnavailable(RuntimeError):
     """The configuration package has no tutor_pipeline block (package v1), so it pins no ledger parameters."""
 
@@ -184,6 +188,15 @@ def _log(level: int, message: str, event: str, **fields: Any) -> None:
     LOGGER.log(level, message, extra={FIELDS: {"event": event, **fields}})
 
 
+def _surface_field(surface: str | None) -> dict[str, str]:
+    """A /qa/ask line says where it came from (surface "qa"); tutor lines keep their original fields."""
+    return {"surface": "qa"} if surface == "qa" else {}
+
+
+def _entry_surface(entry: LedgerEntry) -> str | None:
+    return "qa" if entry.response_id.startswith("qa-") else None
+
+
 def append_ledger_entry(
     entry: LedgerEntry,
     *,
@@ -239,12 +252,12 @@ def append_ledger_entry(
                     appended = AppendedRecord(seq=existing.seq, record_hash=existing.record_hash, duplicate=True)
                     db.rollback()
                     _log(logging.INFO, "Tutor ledger record already present", "tutor.ledger.appended", delivery=entry.delivery,
-                         seq=appended.seq, record_hash=appended.record_hash, duplicate=True)
+                         seq=appended.seq, record_hash=appended.record_hash, duplicate=True, **_surface_field(_entry_surface(entry)))
                     return appended
                 module = postgresql if dialect == "postgresql" else sqlite
                 db.execute(
                     module.insert(ResponseLedgerHead)
-                    .values(chain=CHAIN, seq=0, record_hash=GENESIS_HASH, updated_at=created_at)
+                    .values(chain=CHAIN, seq=0, record_hash=GENESIS_HASH, updated_at=created_at, started_at=created_at)
                     .on_conflict_do_nothing(index_elements=["chain"])
                 )
                 head = db.execute(
@@ -283,7 +296,7 @@ def append_ledger_entry(
                 db.rollback()
                 raise
         _log(logging.INFO, "Tutor ledger record appended", "tutor.ledger.appended", delivery=entry.delivery, seq=seq,
-             record_hash=record_hash, duplicate=False)
+             record_hash=record_hash, duplicate=False, **_surface_field(_entry_surface(entry)))
         return AppendedRecord(seq=seq, record_hash=record_hash, duplicate=False)
     raise LedgerAppendError("the ledger record could not be appended within its attempts and budget") from last_error
 
@@ -301,6 +314,38 @@ def parse_head(value: str | None) -> tuple[int, str] | None:
 def chain_head(db: Session) -> tuple[int, str] | None:
     head = db.execute(select(ResponseLedgerHead.seq, ResponseLedgerHead.record_hash).where(ResponseLedgerHead.chain == CHAIN)).first()
     return (int(head.seq), head.record_hash) if head else None
+
+
+def _insert_head_if_missing(db: Session, *, at: datetime) -> None:
+    module = postgresql if db.get_bind().dialect.name == "postgresql" else sqlite
+    db.execute(
+        module.insert(ResponseLedgerHead)
+        .values(chain=CHAIN, seq=0, record_hash=GENESIS_HASH, updated_at=at, started_at=at)
+        .on_conflict_do_nothing(index_elements=["chain"])
+    )
+
+
+def mark_ledger_started(session_factory: Callable[[], Session] = SessionLocal, *, now: datetime | None = None) -> None:
+    """At start-up, while TUTOR_LEDGER_ENABLED: create the chain head (seq 0, the genesis hash) with its started_at if
+    no head exists yet (spec 18.7 E6). From then on every delivery is expected to have a record, so a turn whose
+    record was lost reads as a missing record, never as a pre-ledger turn, even when the very first append fails.
+    Insert-or-nothing, so concurrent instances agree; it fails open (the ledger never stops start-up)."""
+    try:
+        with session_factory() as db:
+            _insert_head_if_missing(db, at=_utc(now or datetime.now(UTC)))
+            db.commit()
+    except Exception as exc:  # noqa: BLE001 - the marker is bookkeeping; the first append inserts the head too
+        _log(logging.WARNING, "Tutor ledger start marker could not be written", "tutor.ledger.start_marker_failed", error=type(exc).__name__)
+
+
+def ledger_started_at(db: Session) -> datetime | None:
+    """When the ledger began recording (spec 18.7 E6): the earlier of the head's started_at (start-up, or the first
+    append) and the first record's created_at (a restored chain keeps its own times). None before either exists, or
+    on a head written before started_at existed and no record."""
+    started = db.scalar(select(ResponseLedgerHead.started_at).where(ResponseLedgerHead.chain == CHAIN))
+    first = db.scalar(select(func.min(ResponseLedgerRecord.created_at)))
+    times = [_utc(value) for value in (started, first) if value is not None]
+    return min(times) if times else None
 
 
 def _columns_agree(row: ResponseLedgerRecord, parsed: dict[str, Any]) -> bool:
@@ -440,6 +485,81 @@ def export_ledger(db: Session, path: Path) -> int:
     return count
 
 
+def _restore_problem(line_number: int, row: dict[str, Any], previous: tuple[int, str]) -> str | None:
+    """Why an exported line cannot extend the chain being restored, or None (spec 18.7 E12)."""
+    try:
+        seq, created_at = int(row["seq"]), datetime.fromisoformat(str(row["created_at"]))
+        entry_text, prev_hash, entry_digest = str(row["entry"]), str(row["prev_hash"]), str(row["entry_sha256"])
+    except (KeyError, TypeError, ValueError):
+        return f"line {line_number} is not an exported ledger record"
+    if (seq, prev_hash) != (previous[0] + 1, previous[1]):
+        return f"line {line_number} (seq {seq}) does not extend the chain at seq {previous[0]}"
+    raw = entry_text.encode("utf-8")
+    if sha256_hex(raw) != entry_digest:
+        return f"seq {seq} entry does not match its entry_sha256"
+    if record_hash_for(seq=seq, created_at=created_at, prev_hash=prev_hash, entry_sha256=entry_digest) != row.get("record_hash"):
+        return f"seq {seq} does not match its record_hash"
+    model = ENTRY_SCHEMAS.get(str(row.get("entry_schema")))
+    try:
+        parsed = json.loads(entry_text)
+        if model is None or not isinstance(parsed, dict) or ledger_canonical(parsed) != raw:
+            return f"seq {seq} entry is not a canonical {row.get('entry_schema')} entry"
+        model.model_validate(parsed)
+    except (TypeError, ValueError, ValidationError):
+        return f"seq {seq} entry fails {row.get('entry_schema')}"
+    columns = ("response_id", "delivery", "decision", "shadowed_response_id", "claim_set_hash")
+    if any(parsed.get(name) != row.get(name) for name in columns):
+        return f"seq {seq} columns disagree with its entry"
+    return None
+
+
+def restore_ledger(db: Session, path: Path) -> tuple[int, tuple[int, str] | None]:
+    """Re-insert an export_ledger file into an empty ledger (spec 18.7 E12): the step that undoes an Alembic
+    downgrade's drop, so the R-22 record survives a rollback. Returns (rows restored, the restored head).
+
+    Each line must extend the chain from the genesis hash with its exported seq, created_at, prev_hash and hashes,
+    which are recomputed, and its entry must validate; the head then moves forward one record at a time, as the
+    append-only triggers require. One transaction: a refused line, or a ledger that already holds a record, leaves
+    the database as it was. The result is the exported chain byte for byte, so a head logged before the downgrade
+    still verifies with --expect-head."""
+    if db.scalar(select(func.count()).select_from(ResponseLedgerRecord)):
+        raise LedgerRestoreRefused("the ledger already holds records; a restore needs an empty ledger")
+    if chain_head(db) not in (None, (0, GENESIS_HASH)):
+        raise LedgerRestoreRefused("the chain head is not at the genesis; a restore needs an empty ledger")
+    previous: tuple[int, str] = (0, GENESIS_HASH)
+    count = 0
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    row = None
+                problem = _restore_problem(line_number, row, previous) if isinstance(row, dict) else f"line {line_number} is not JSON"
+                if problem:
+                    raise LedgerRestoreRefused(problem)
+                created_at = _utc(datetime.fromisoformat(row["created_at"]))
+                if count == 0:
+                    _insert_head_if_missing(db, at=created_at)
+                db.execute(insert(ResponseLedgerRecord).values(
+                    seq=row["seq"], response_id=row["response_id"], delivery=row["delivery"], decision=row["decision"],
+                    shadowed_response_id=row.get("shadowed_response_id"), claim_set_hash=row.get("claim_set_hash"),
+                    entry_schema=row["entry_schema"], entry=row["entry"], entry_sha256=row["entry_sha256"],
+                    prev_hash=row["prev_hash"], record_hash=row["record_hash"], created_at=created_at,
+                ))
+                db.execute(update(ResponseLedgerHead).where(ResponseLedgerHead.chain == CHAIN)
+                           .values(seq=row["seq"], record_hash=row["record_hash"], updated_at=created_at))
+                previous = (int(row["seq"]), row["record_hash"])
+                count += 1
+        db.commit()
+    except BaseException:
+        db.rollback()
+        raise
+    return count, (previous if count else None)
+
+
 # ------------------------------------------------------------------------------------------- legacy deliveries
 
 
@@ -470,6 +590,16 @@ class LegacyDelivery:
     manifest_sha256: str | None = None
     # Delivered quotations whose span's derived license class is not public: kept out of the record and counted.
     dropped_not_public: int = 0
+    surface: str = "tutor"
+
+
+@dataclass(frozen=True)
+class LegacyPreparationFailed:
+    """A delivery whose ledger record could not be built (spec 18.7 E5). The error is counted and logged only by
+    record_legacy_delivery, after the delivery committed: a request that rolls back delivered nothing, so it is
+    neither an attempt nor a lost record."""
+
+    error: BaseException
     surface: str = "tutor"
 
 
@@ -624,7 +754,7 @@ def build_legacy_entry(delivery: LegacyDelivery, *, settings: Settings, package:
 def record_ledger_failure(delivery: str, stage: str, exc: BaseException, *, surface: str | None = None) -> None:
     """Count and log a lost ledger record (plan L: a ledger write failure is a stop condition)."""
     if isinstance(exc, LedgerConflict):
-        LEDGER_METRICS.conflict()
+        LEDGER_METRICS.conflict(delivery)
         _log(logging.ERROR, "Tutor ledger conflict", "tutor.ledger.conflict", delivery=delivery)
     LEDGER_METRICS.failed(delivery, surface=surface)
     # Tutor deliveries keep their original log fields; a /qa/ask record says where it came from.
@@ -699,18 +829,28 @@ LEGACY_APPENDS = _LegacyAppender()
 
 
 def record_legacy_delivery(
-    delivery: LegacyDelivery,
+    delivery: LegacyDelivery | LegacyPreparationFailed,
     *,
     settings: Settings | None = None,
     session_factory: Callable[[], Session] = SessionLocal,
 ) -> AppendedRecord | None:
     """Record a legacy delivery; never raises and never changes the learner's response (fail open, counted).
 
+    Call it only once the delivery's own transaction has committed: this is where the delivery counts as attempted
+    (LEDGER_METRICS, and a tutor.ledger.attempted line, the cross-instance denominator of ledger coverage), so a
+    request that rolls back is never an attempt and never lowers legacy_coverage_rate (spec 18.7 E5). A
+    LegacyPreparationFailed is an attempt that failed at the prepare stage.
+
     The learner waits at most the append budget plus the package's ledger_wait_grace_ms for the record, whatever the
     database does (spec conflict 29). None means the record was not confirmed in that time: it failed and was counted,
     or it is still being appended in the background and is counted when that ends.
     """
     surface = delivery.surface
+    LEDGER_METRICS.attempt("legacy", surface=surface)
+    _log(logging.INFO, "Tutor ledger record attempted", "tutor.ledger.attempted", delivery="legacy", **_surface_field(surface))
+    if isinstance(delivery, LegacyPreparationFailed):
+        record_ledger_failure("legacy", "prepare", delivery.error, surface=surface)
+        return None
     try:
         settings = settings or get_settings()
         package = get_config_package(settings)

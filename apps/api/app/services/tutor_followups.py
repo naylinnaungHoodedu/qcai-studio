@@ -3,7 +3,8 @@
 1. The legacy ledger record, synchronously, so the record exists before the answer leaves (plan I "ledger writes
    100% of deliveries"). The route waits at most the append budget plus the wait grace (configuration package v2
    tutor_pipeline.budgets: 1500 + 250 ms; TUTOR_LEDGER_APPEND_BUDGET_MS overrides the budget), whatever the database does
-   (pool checkout included); the append fails open and is counted (ledger.record_legacy_delivery).
+   (pool checkout included); the append fails open and is counted (ledger.record_legacy_delivery). The delivery counts
+   as attempted here, after the commit, never while it is prepared, so a turn that rolls back is no attempt (18.7 E5).
 2. The two-pass shadow, as a background task that runs after the response body is sent; it never raises.
 Both read identifiers prepared by the orchestrator, never request text.
 """
@@ -13,14 +14,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.services.ledger import LegacyDelivery, record_legacy_delivery
+from app.services.ledger import LegacyDelivery, LegacyPreparationFailed, record_legacy_delivery
 from app.services.tutor_pipeline.metrics import TWO_PASS_METRICS
 from app.services.tutor_pipeline.shadow import ShadowJob
 
 
 @dataclass(frozen=True)
 class TurnFollowups:
-    legacy: LegacyDelivery | None
+    legacy: LegacyDelivery | LegacyPreparationFailed | None
     shadow: ShadowJob | None
 
 

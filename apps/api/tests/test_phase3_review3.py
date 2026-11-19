@@ -434,10 +434,13 @@ def test_d9_public_ready_shows_no_per_run_shadow_output(clean_metrics):
     assert response.status_code == 200
     after = client.get("/ready").json()["slis"]["two_pass_shadow"]
     assert set(before) == set(after) == set(PUBLIC_SHADOW_FIELDS)
-    for hidden in ("decisions", "abstention_by_reason", "proposed_claims", "bound_claims", "bound_claim_ratio", "render_regenerations", "budget_exceeded"):
+    # Review round 4 (spec 18.7 E15) also took out completed, failed and the stop flag, which still told a learner
+    # whether their own turn's run completed, where it failed and whether it tripped the stop.
+    for hidden in ("decisions", "abstention_by_reason", "proposed_claims", "bound_claims", "bound_claim_ratio", "render_regenerations", "budget_exceeded",
+                   "completed", "failed", "bound_claim_ratio_stop"):
         assert hidden not in after
     # The detail still exists in process (and in each run's log line) for operators and tests.
-    assert TWO_PASS_METRICS.snapshot(PARAMS.phase2_bound_claim_ratio)["completed"] == after["completed"]
+    assert TWO_PASS_METRICS.snapshot(PARAMS.phase2_bound_claim_ratio)["scheduled"] == after["scheduled"]
 
 
 # =========================================================================================================== D10
@@ -539,6 +542,9 @@ def test_d13_the_runbook_runs_production_ledger_steps_through_the_worker():
     assert "python -m app.workers.response_ledger --coverage-since" in runbook
     assert "TUTOR_LEDGER_ENABLED=false" in runbook and "CPU" in runbook
     assert "scripts/verify_ledger.py --export" not in runbook
+    # Review round 4 (spec 18.7 E9): the text an operator sees when the downgrade refuses names the worker too.
+    migration = (API_ROOT / "alembic" / "versions" / "20261119_phase3_response_ledger.py").read_text(encoding="utf-8")
+    assert "scripts/verify_ledger.py --export" not in migration and "python -m app.workers.response_ledger --export" in migration
 
 
 def test_d13_a_postgres_append_that_stalls_holding_the_head_lock_is_ended_by_the_server(fresh_database_url):

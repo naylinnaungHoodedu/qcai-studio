@@ -512,3 +512,7 @@ class ResponseLedgerHead(Base):
     seq: Mapped[int] = mapped_column(Integer)
     record_hash: Mapped[str] = mapped_column(String(64))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # When the ledger began recording (start-up while TUTOR_LEDGER_ENABLED, or the first append), never changed by
+    # the trigger's rules: a turn created before it is a pre-ledger turn, one after it without a record is a missing
+    # record (spec 18.7 E6). Null only on a head written before the column existed (a development database).
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

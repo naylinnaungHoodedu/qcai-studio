@@ -13,8 +13,14 @@ CLOUD_SQL_CONNECTION_NAME is set), so the runbook's production checks need no wo
   --export PATH             also writes every record as one JSON object per line to PATH, which must lie outside
                             the application tree: the step before an Alembic downgrade. The file holds corpus text
                             and learner-linked ids; its handling rule is in infra/cloudrun/deployment.md.
-Exit codes: 0 ok, 1 broken or failed, 2 a usage error.
+  --restore PATH            first re-inserts an --export file into an empty ledger (after the downgrade was undone),
+                            recomputing every hash, in one transaction, then verifies the chain as usual: with
+                            --expect-head set to the export's last head, the restored chain must reach it
+                            (spec 18.7 E12). A ledger that already holds records, or a line that does not extend
+                            the chain, is refused and nothing is written.
+Exit codes: 0 ok, 1 broken, failed or a refused restore, 2 a usage error.
 Run as: python -m app.workers.response_ledger [--expect-head SEQ:HASH] [--coverage-since ISO8601] [--export PATH]
+        [--restore PATH]
 """
 
 import argparse
@@ -25,7 +31,7 @@ import time
 
 from app.core.db import SessionLocal
 from app.core.structured_logging import FIELDS
-from app.services.ledger import export_ledger, ledger_coverage, parse_head, verify_response_ledger
+from app.services.ledger import LedgerRestoreRefused, export_ledger, ledger_coverage, parse_head, restore_ledger, verify_response_ledger
 from app.workers.common import LOGGER
 
 # The application tree: the repository in a checkout, /app in the image. An export never lands inside it.
@@ -57,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--expect-head", default=None, help="a head logged earlier, SEQ:HASH, that the chain must still reach")
     parser.add_argument("--coverage-since", default=None, help="also count tutor turns since this time without a ledger record")
     parser.add_argument("--export", type=Path, default=None, help="also write every record as JSON lines to this path (outside the application tree)")
+    parser.add_argument("--restore", type=Path, default=None, help="first re-insert an --export file into an empty ledger")
     args = parser.parse_args(argv)
     started = time.monotonic()
     try:
@@ -69,7 +76,22 @@ def main(argv: list[str] | None = None) -> int:
         LOGGER.error("Response ledger export refused", extra={FIELDS: {"job": "response_ledger", "status": "usage",
                                                                       "error": "--export must write outside the application tree"}})
         return 2
+    if args.export is not None and args.restore is not None:
+        LOGGER.error("Response ledger check refused its arguments", extra={FIELDS: {"job": "response_ledger", "status": "usage",
+                                                                                   "error": "--export and --restore are separate steps"}})
+        return 2
     extra: dict = {}
+    try:
+        if args.restore is not None:
+            with SessionLocal() as db:
+                rows, head = restore_ledger(db, args.restore)
+            extra["restored"] = {"rows": rows, "head": f"{head[0]}:{head[1]}" if head else None}
+    except LedgerRestoreRefused as exc:
+        LOGGER.error("Response ledger restore refused", extra={FIELDS: {"job": "response_ledger", "status": "restore_refused", "error": str(exc)}})
+        return 1
+    except Exception:
+        LOGGER.exception("Response ledger restore failed", extra={FIELDS: {"job": "response_ledger", "status": "failed"}})
+        return 1
     try:
         with SessionLocal() as db:
             check = verify_response_ledger(db, expected_head=expected)

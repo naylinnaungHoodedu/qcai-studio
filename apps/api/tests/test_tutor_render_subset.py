@@ -107,6 +107,8 @@ def test_every_problem_code_is_raised():
         # Review round 3 (spec 18.6 D4): an "answer" of connectives only, and a claim shown with none of its spans.
         "no_claim_rendered": _with(base, [segments[0]], citations=()),
         "claim_uncited": _with(base, [segment for segment in segments if segment.kind != "citation"], citations=()),
+        # Review round 4 (spec 18.7 E1): the citation list names a locked span that no segment displays.
+        "citation_list_mismatch": _with(base, [segment for segment in segments if segment.line != 2]),
     }
     for code, rendered in cases.items():
         result = check_subset(rendered, LOCKED)
@@ -204,6 +206,34 @@ def test_a_rendering_that_folds_the_locked_text_is_an_unmapped_factual_sentence(
 
 def test_the_overlap_gate_and_evidence_digest_are_gone():
     assert not hasattr(claim_gate, "ClaimGate") and not hasattr(claim_gate, "evidence_digest")
-    # Renamed in review round 3: whitespace-only matching (never NFKC) plus the no-claim and uncited-claim checks.
-    assert claim_gate.SUBSET_CHECK_RULE == "segment-exact-whitespace-v2"
+    # Renamed in review round 3: whitespace-only matching (never NFKC) plus the no-claim and uncited-claim checks;
+    # renamed again in round 4 (spec 18.7 E1) for the citation-list check, so one id names one behaviour.
+    assert claim_gate.SUBSET_CHECK_RULE == "segment-exact-whitespace-v3"
     assert TEMPLATES["citation"] == ("citation", "[{0}]")
+
+
+
+def test_the_citation_list_must_be_exactly_what_the_segments_display():
+    """Spec 18.7 E1: a renderer may leave a claim out, but its citation list may not keep that claim's span."""
+    base = _render("concise")
+    segments = list(base.segments)
+    assert base.citations == claim_gate.displayed_span_ids(base) == (SPAN_B, SPAN_A, SPAN_C)
+    # The reviewer's case: the last claim line and its markers are left out, the list is not rebuilt.
+    kept = [segment for segment in segments if segment.line != 2]
+    stale = _with(base, kept)
+    result = check_subset(stale, LOCKED)
+    assert not result.passed and result.problems == ("citation_list_mismatch",)
+    assert check_subset(_with(base, kept, citations=(SPAN_B,)), LOCKED).passed  # rebuilt: a partial answer passes
+    # The unshown span listed first: markers numbered by list position would skip [1].
+    cite_b = next(segment for segment in segments if segment.kind == "citation" and segment.span_id == SPAN_B)
+    renumbered = [segment.model_copy(update={"text": "[2]", "params": (2,)}) if segment is cite_b else segment for segment in kept]
+    skipped = _with(base, renumbered, citations=(SPAN_C, SPAN_B))
+    assert "citation_list_mismatch" in check_subset(skipped, LOCKED).problems
+    # A span listed twice, and the right spans in another order.
+    assert "citation_list_mismatch" in check_subset(_with(base, segments, citations=(*base.citations, SPAN_B)), LOCKED).problems
+    reordered = _with(base, segments, citations=(SPAN_A, SPAN_B, SPAN_C))
+    assert "citation_list_mismatch" in check_subset(reordered, LOCKED).problems
+    # Every plan's own rendering lists exactly what it displays.
+    for plan_id in PLANS_LAYOUT:
+        rendered = _render(plan_id)
+        assert rendered.citations == claim_gate.displayed_span_ids(rendered) and check_subset(rendered, LOCKED).passed

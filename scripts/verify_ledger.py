@@ -10,7 +10,8 @@ commit while it runs are counted (appended_during_check), never reported as a br
 tutor turns created since then that have no ledger record (plan I "ledger writes 100% of deliveries"; report only),
 and counts the /qa/ask records since then (a qa- record holds no id of its Q&A row, so Q&A coverage is the
 per-process legacy_by_surface.qa.coverage_rate SLI, not a join). --export writes every row as one JSON object per
-line to a path outside the repository: the step before an Alembic downgrade.
+line to a path outside the repository: the step before an Alembic downgrade. The restore that undoes the
+downgrade's drop is the worker's --restore (spec 18.7 E12); this script stays read-only.
 
 The database URL comes from --database-url, else DATABASE_URL, and is never printed. This script builds a plain
 engine from that URL (development, CI, a local copy). Against production, use the in-image worker

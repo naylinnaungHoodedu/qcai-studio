@@ -28,6 +28,8 @@ FAULT_MODES = (
     # Review round 3 (spec 18.6 D4): a rendering that drops every claim (connectives only), or every citation.
     "drop_all_claims",
     "drop_citations",
+    # Review round 4 (spec 18.7 E1): the citation list declares a locked span that no segment displays.
+    "undisplayed_citation",
 )
 INVENTED = "Quantum annealers always outperform every classical solver on routing problems."
 
@@ -137,6 +139,16 @@ def inject(rendered: RenderedResponse, mode: str, *, outside_sentence: str, outs
         renumber = {line: index for index, line in enumerate(sorted({segment.line for segment in kept}))}
         kept = [segment.model_copy(update={"line": renumber[segment.line]}) for segment in kept]
         return _relayout(rendered, kept, ())
+    if mode == "undisplayed_citation":
+        # Leave the last claim line (with its markers) out but keep the renderer's citation list, as a renderer that
+        # forgets to rebuild it would; when that list still matches what is shown, list a shown span twice.
+        last_claim_line = max(segment.line for segment in claims)
+        kept = [segment for segment in segments if segment.line != last_claim_line] if len({s.line for s in claims}) > 1 else segments
+        renumber = {line: index for index, line in enumerate(sorted({segment.line for segment in kept}))}
+        kept = [segment.model_copy(update={"line": renumber[segment.line]}) for segment in kept]
+        shown = tuple(dict.fromkeys(segment.span_id for segment in kept if segment.kind == "citation"))
+        citations = tuple(rendered.citations) if tuple(rendered.citations) != shown else (*rendered.citations, rendered.citations[0])
+        return _relayout(rendered, kept, citations)
     raise ValueError(mode)
 
 
