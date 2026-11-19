@@ -104,6 +104,9 @@ def test_every_problem_code_is_raised():
         "citation_not_on_claim": _with(base, [segment if segment is not cite_b else segment.model_copy(update={"line": 0}) for segment in segments]),
         "citation_marker_mismatch": _with(base, [segment if segment is not cite_b else segment.model_copy(update={"text": "[7]", "params": (7,)})
                                                  for segment in segments]),
+        # Review round 3 (spec 18.6 D4): an "answer" of connectives only, and a claim shown with none of its spans.
+        "no_claim_rendered": _with(base, [segments[0]], citations=()),
+        "claim_uncited": _with(base, [segment for segment in segments if segment.kind != "citation"], citations=()),
     }
     for code, rendered in cases.items():
         result = check_subset(rendered, LOCKED)
@@ -124,6 +127,15 @@ def test_every_problem_code_is_raised():
     partial = _with(base, [segment for segment in segments if segment.line != 2], citations=(SPAN_B,))
     result = check_subset(partial, LOCKED)
     assert result.passed and result.missing_claims == 1
+    # A claim needs at least one of its own spans on its line, not every one: claim a cites A and C, and A alone passes.
+    cite_c = next(segment for segment in segments if segment.kind == "citation" and segment.span_id == SPAN_C)
+    one_of_two = _with(base, [segment for segment in segments if segment is not cite_c], citations=(SPAN_B, SPAN_A))
+    assert check_subset(one_of_two, LOCKED).passed
+    # One claim shown without its citation fails, while the other claim keeps its own.
+    claim_b_line = claim0.line
+    moved = _with(base, [segment for segment in segments if not (segment.kind == "citation" and segment.line == claim_b_line)], citations=(SPAN_A, SPAN_C))
+    problems = check_subset(moved, LOCKED).problems
+    assert "claim_uncited" in problems
 
 
 def test_matching_is_exact_after_normalisation_only():
@@ -192,5 +204,6 @@ def test_a_rendering_that_folds_the_locked_text_is_an_unmapped_factual_sentence(
 
 def test_the_overlap_gate_and_evidence_digest_are_gone():
     assert not hasattr(claim_gate, "ClaimGate") and not hasattr(claim_gate, "evidence_digest")
-    assert claim_gate.SUBSET_CHECK_RULE == "segment-exact-normalised-v1"
+    # Renamed in review round 3: whitespace-only matching (never NFKC) plus the no-claim and uncited-claim checks.
+    assert claim_gate.SUBSET_CHECK_RULE == "segment-exact-whitespace-v2"
     assert TEMPLATES["citation"] == ("citation", "[{0}]")

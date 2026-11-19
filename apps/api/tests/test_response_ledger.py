@@ -174,7 +174,8 @@ def test_statements_run_in_the_fixed_order_and_postgres_sets_a_lock_timeout(isol
         assert head_select.endswith("FOR UPDATE")
         # Review 2026-11-19: statements are bounded too, and both timeouts precede the first read of the attempt.
         first_read = next(i for i, s in enumerate(seen) if s.startswith("SELECT response_ledger.seq"))
-        for name in ("lock_timeout", "statement_timeout"):
+        # Review round 3 (D13): idle time inside the transaction is bounded too, so a stalled append frees the head lock.
+        for name in ("lock_timeout", "statement_timeout", "idle_in_transaction_session_timeout"):
             timeout = next(s for s in seen if s.startswith(f"SET LOCAL {name}"))
             assert seen.index(timeout) < min(first_read, order[0])
             milliseconds = int(timeout.split("'")[1].removesuffix("ms"))
@@ -244,8 +245,9 @@ def test_the_learner_never_waits_past_the_budget_for_a_stuck_pool_and_the_late_o
     released.set()
     assert ledger.LEGACY_APPENDS.drain(10)
     assert LEDGER_METRICS.snapshot()["failed"]["legacy"] == before + 1  # counted when it ended
-    # A normal append is still synchronous: the record exists when the call returns.
-    appended = record_legacy_delivery(_legacy(), settings=settings, session_factory=factory)
+    # A normal append is still synchronous: the record exists when the call returns. A generous budget, so the
+    # first append on a fresh database under a loaded machine is not cut off by the 200 ms one (review round 3, D15).
+    appended = record_legacy_delivery(_legacy(), settings=Settings(tutor_ledger_append_budget_ms=5000), session_factory=factory)
     assert appended is not None and _check(factory).count == 1
 
 
@@ -270,7 +272,10 @@ def test_appends_in_flight_are_capped_and_an_append_past_the_cap_fails_at_once(i
     assert failure.json_fields["error"] == "LedgerAppendError"
     released.set()
     assert ledger.LEGACY_APPENDS.drain(10) and ledger.LEGACY_APPENDS.pending() == 0
-    assert record_legacy_delivery(_legacy(), settings=settings, session_factory=factory) is not None  # the slot is free again
+    # The slot is free again. Review round 3 (D15): this step waited for a real first append within the 100 ms budget
+    # plus the 250 ms grace, which a loaded machine missed (None, "deferred"); it now has a generous budget, so it
+    # tests the freed slot, not the wall clock.
+    assert record_legacy_delivery(_legacy(), settings=Settings(tutor_ledger_append_budget_ms=5000), session_factory=factory) is not None
     assert LEDGER_METRICS.snapshot()["failed"]["legacy"] == before + 2
 
 

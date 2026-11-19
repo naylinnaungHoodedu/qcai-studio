@@ -1,8 +1,15 @@
 """Per-process SLIs of the response ledger and the two-pass shadow (plan Phase 3 I; Phase 3 spec 11.3).
 
-Counts only: no question, claim or rendered text, no identity. /ready reports a snapshot; each event is also one
-structured log line on the qcai.tutor logger, so log-based metrics can aggregate across instances once they are
-set up (a cloud write, documented in infra/cloudrun/observability.md, not created here).
+Counts only: no question, claim or rendered text, no identity. Each event is also one structured log line on the
+qcai.tutor logger, so log-based metrics can aggregate across instances once they are set up (a cloud write,
+documented in infra/cloudrun/observability.md, not created here).
+
+/ready is public, so it carries only the shadow fields that say nothing about any single run (AC-3-6: zero of the
+shadow's outputs reach a learner; spec 18.6 D9): runs scheduled, completed and failed, the Phase 2 baseline and the
+stop flag (TwoPassMetrics.public_snapshot). On a quiet instance a learner could otherwise read /ready before and
+after a turn and learn the shadow's decision, abstention reason and claim counts for it. The decisions, the
+abstention reasons, the claim counts and the ratio are in each run's tutor.two_pass.shadow log line, which the
+log-based SLIs aggregate, and in TwoPassMetrics.snapshot (in process; tests and operators).
 
 Plan L stop conditions: write_stop is true once any ledger write failed or conflicted; bound_claim_ratio_stop is
 true once the two-pass bound-claim ratio is below the Phase 2 baseline pinned in the package. A null ratio (no
@@ -22,6 +29,7 @@ DELIVERIES = ("legacy", "shadow")
 # Where a legacy delivery came from: a tutor turn, or a /qa/ask answer (both are delivered responses, plan I).
 LEGACY_SURFACES = ("tutor", "qa")
 SHADOW_FAILURE_STEPS = ("resolve", "pipeline", "ledger")
+PUBLIC_SHADOW_FIELDS = ("scheduled", "completed", "failed", "phase2_bound_claim_ratio_baseline", "bound_claim_ratio_stop")
 
 
 class LedgerMetrics:
@@ -146,6 +154,11 @@ class TwoPassMetrics:
         snapshot["bound_claim_ratio_stop"] = bool(ratio is not None and baseline is not None and ratio < baseline)
         return snapshot
 
+    def public_snapshot(self, baseline: float | None) -> dict:
+        """The fields public /ready may carry (no decision, reason, claim count or ratio of any run)."""
+        detail = self.snapshot(baseline)
+        return {key: detail[key] for key in PUBLIC_SHADOW_FIELDS}
+
 
 LICENSE_SURFACES = ("two_pass", "legacy", "qa")
 
@@ -178,4 +191,4 @@ LICENSE_METRICS = LicenseMetrics()
 
 def snapshot(baseline: float | None) -> dict:
     ledger = {**LEDGER_METRICS.snapshot(), "non_public_spans_excluded": LICENSE_METRICS.snapshot()}
-    return {"tutor_ledger": ledger, "two_pass_shadow": TWO_PASS_METRICS.snapshot(baseline)}
+    return {"tutor_ledger": ledger, "two_pass_shadow": TWO_PASS_METRICS.public_snapshot(baseline)}

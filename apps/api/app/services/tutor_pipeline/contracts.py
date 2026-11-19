@@ -23,7 +23,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 SPAN_ID = r"^span-[0-9a-f]{64}$"
 HEX64 = r"^[0-9a-f]{64}$"
 CLAIM_ID = r"^claim-[0-9a-f]{32}$"
-# turn- a tutor turn (TutorTurn.id); shadow- a two-pass shadow run; qa- a /qa/ask delivery (no learner link is stored).
+# turn- a tutor turn (TutorTurn.id); shadow- a two-pass shadow run; qa- a /qa/ask delivery (a random id that names no
+# learner; the record matches the asker's Q&A row by its answer hash while that row exists, spec 18.6 D10).
 RESPONSE_ID = r"^(turn|shadow|qa)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 
 # Phase 4 sets this True together with its V1 module (plan 13.6: nothing whose verification has not completed is
@@ -365,6 +366,25 @@ class PresentationRecord(Contract):
     renderer_id: str
     attempts: int = Field(ge=1, le=3)
     subset_check: Literal["passed", "failed"]
+    # What the passing rendering showed, in render order: the locked claims it rendered and the spans it cited
+    # (both empty when no rendering passed). The locked set is LedgerEntry.claims; a renderer may leave a claim out
+    # (spec 4.9), so the record never implies that a claim or a citation it did not render was shown.
+    rendered_claim_ids: tuple[str, ...] = ()
+    rendered_span_ids: tuple[str, ...] = ()
+
+
+BUDGET_OVERRIDES = ("shadow_ms", "ledger_append_ms")
+
+
+class BudgetStamp(Contract):
+    """The budgets in force for this record (PD-11). They are package values unless TWO_PASS_SHADOW_BUDGET_MS or
+    TUTOR_LEDGER_APPEND_BUDGET_MS overrode them, so config_package_sha256 alone does not name them when
+    `overridden` is not empty (R-46). shadow_ms is null where no shadow budget applies (a legacy record, an
+    unbounded replay run)."""
+
+    shadow_ms: int | None = Field(ge=1)
+    ledger_append_ms: int = Field(ge=1)
+    overridden: tuple[Literal["shadow_ms", "ledger_append_ms"], ...] = ()
 
 
 class VersionStamps(Contract):
@@ -379,6 +399,7 @@ class VersionStamps(Contract):
     resolver_id: str | None
     generator_id: str | None
     renderer_id: str | None
+    budgets: BudgetStamp
 
 
 class PipelineCounts(Contract):
@@ -460,6 +481,15 @@ class LedgerEntry(Contract):
                 problems.append(f"{claim.claim_id} names another response or another provenance")
         if self.counts.bound_claims != len(self.claims):
             problems.append("counts.bound_claims is the number of recorded claims")
+        if self.presentation is not None:
+            locked_ids = {claim.claim_id for claim in self.claims}
+            shown = self.presentation.rendered_claim_ids
+            if not set(shown) <= locked_ids or len(shown) != len(set(shown)):
+                problems.append("presentation.rendered_claim_ids names a claim that is not a recorded claim, or one twice")
+            if not set(self.presentation.rendered_span_ids) <= set(self.span_ids):
+                problems.append("presentation.rendered_span_ids names a span that is not a recorded span")
+            if self.decision == "answer" and (self.presentation.subset_check != "passed" or not shown or not self.presentation.rendered_span_ids):
+                problems.append("an answer's passing rendering shows at least one claim and one citation")
         if problems:
             raise ValueError("; ".join(problems))
         return self

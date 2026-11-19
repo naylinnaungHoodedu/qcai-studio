@@ -1189,7 +1189,11 @@ def test_plan_l_a_shadow_or_ledger_failure_never_changes_the_learner_response_an
     assert ledger_canonical(without_ids(response.json())) == ledger_canonical(without_ids(reference.json()))
     events = [getattr(record, "json_fields", {}) for record in caplog.records]
     slis = client.get("/ready").json()["slis"]
-    shadow_slis, ledger_slis = slis["two_pass_shadow"], slis["tutor_ledger"]
+    # Public /ready carries only the shadow fields that describe no single run (review round 3, spec 18.6 D9); the
+    # per-run detail is the in-process snapshot (and each run's tutor.two_pass.shadow log line).
+    assert set(slis["two_pass_shadow"]) == {"scheduled", "completed", "failed", "phase2_bound_claim_ratio_baseline", "bound_claim_ratio_stop"}
+    shadow_slis, ledger_slis = TWO_PASS_METRICS.snapshot(PARAMS.phase2_bound_claim_ratio), slis["tutor_ledger"]
+    assert {key: shadow_slis[key] for key in slis["two_pass_shadow"]} == slis["two_pass_shadow"]
     if failure == "pipeline":
         assert shadow_slis["failed"]["pipeline"] == 1
         assert {"event": "tutor.two_pass.shadow_failed", "step": "pipeline", "error": "RuntimeError"} in events
@@ -1235,7 +1239,9 @@ def test_plan_l_the_bound_claim_ratio_is_reported_and_a_drop_below_phase_2_is_a_
     empty = TwoPassMetrics().snapshot(1.0)
     assert (empty["bound_claim_ratio"], empty["bound_claim_ratio_stop"]) == (None, False)  # a null ratio is never a stop
     chat(demo("planl-ratio"), "Why does routing depth matter?")
-    healthy = client.get("/ready").json()["slis"]["two_pass_shadow"]
+    public = client.get("/ready").json()["slis"]["two_pass_shadow"]
+    assert (public["bound_claim_ratio_stop"], public["phase2_bound_claim_ratio_baseline"]) == (False, 1.0) and "bound_claim_ratio" not in public
+    healthy = TWO_PASS_METRICS.snapshot(PARAMS.phase2_bound_claim_ratio)
     assert (healthy["bound_claim_ratio"], healthy["bound_claim_ratio_stop"], healthy["phase2_bound_claim_ratio_baseline"]) == (1.0, False, 1.0)
     settings = Settings()
     TWO_PASS_METRICS.reset()

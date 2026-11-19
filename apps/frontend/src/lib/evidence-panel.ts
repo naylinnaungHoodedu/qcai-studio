@@ -41,7 +41,7 @@ export function evidencePanelView(payload: EvidencePanelPayload): EvidencePanelV
     verdict: VERDICT_TEXT[payload.verdict],
     spans: payload.spans.map((span, index) => ({
       key: `${index}-${span.span_id}`,
-      label: span.label,
+      label: `Passage ${index + 1}: ${span.label}`,
       href: span.resolvable ? spanHref(span.span_id) : null,
     })),
   };

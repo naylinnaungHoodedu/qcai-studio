@@ -1,5 +1,46 @@
 {
   "$defs": {
+    "BudgetStamp": {
+      "additionalProperties": false,
+      "description": "The budgets in force for this record (PD-11). They are package values unless TWO_PASS_SHADOW_BUDGET_MS or\nTUTOR_LEDGER_APPEND_BUDGET_MS overrode them, so config_package_sha256 alone does not name them when\n`overridden` is not empty (R-46). shadow_ms is null where no shadow budget applies (a legacy record, an\nunbounded replay run).",
+      "properties": {
+        "ledger_append_ms": {
+          "minimum": 1,
+          "title": "Ledger Append Ms",
+          "type": "integer"
+        },
+        "overridden": {
+          "default": [],
+          "items": {
+            "enum": [
+              "shadow_ms",
+              "ledger_append_ms"
+            ],
+            "type": "string"
+          },
+          "title": "Overridden",
+          "type": "array"
+        },
+        "shadow_ms": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Shadow Ms"
+        }
+      },
+      "required": [
+        "shadow_ms",
+        "ledger_append_ms"
+      ],
+      "title": "BudgetStamp",
+      "type": "object"
+    },
     "ClaimLedgerEntry": {
       "additionalProperties": false,
       "description": "Plan 7.4 ClaimLedgerEntry. text is corpus text (a verbatim span sentence or a delivered quotation).",
@@ -178,6 +219,22 @@
         "plan_id": {
           "title": "Plan Id",
           "type": "string"
+        },
+        "rendered_claim_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Rendered Claim Ids",
+          "type": "array"
+        },
+        "rendered_span_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Rendered Span Ids",
+          "type": "array"
         },
         "renderer_id": {
           "title": "Renderer Id",
@@ -458,6 +515,9 @@
     "VersionStamps": {
       "additionalProperties": false,
       "properties": {
+        "budgets": {
+          "$ref": "#/$defs/BudgetStamp"
+        },
         "code_sha": {
           "title": "Code Sha",
           "type": "string"
@@ -542,7 +602,8 @@
         "policy_version",
         "resolver_id",
         "generator_id",
-        "renderer_id"
+        "renderer_id",
+        "budgets"
       ],
       "title": "VersionStamps",
       "type": "object"

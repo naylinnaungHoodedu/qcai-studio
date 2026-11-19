@@ -149,6 +149,8 @@ class Settings(BaseSettings):
     # How long a shadow run may hold its worker after the response is sent (E1 "bounded budget"). None = the
     # configuration package's tutor_pipeline.budgets.shadow_ms (2000; PD-11); set only to override it.
     two_pass_shadow_budget_ms: int | None = Field(default=None, ge=100, le=30000)
+    # (Either budget override, when set outside development, logs a config.override event and is stamped on every
+    # ledger record it applies to: versions.budgets.)
     # Kill switch for the response-ledger write of every tutor delivery (not learner-visible; plan 3.8, R-22).
     # Disabling it outside development relaxes an audit control and logs a config.override event.
     tutor_ledger_enabled: bool = True
@@ -161,6 +163,8 @@ class Settings(BaseSettings):
     ledger_route_enabled: bool | None = None
     # The evidence panel field on tutor responses (task 3.8): None = on in development, off elsewhere (E9).
     evidence_panel_enabled: bool | None = None
+    # Rate limits of the two new Phase 3 routes: engineering parameters with no plan value, provisional (PD-11; they
+    # copy the existing assistant_chat_rate_limit and spans_rate_limit), ratified with the rest of PD-11 (DI-37).
     tutor_turns_rate_limit: str = "8/minute"
     ledger_rate_limit: str = "30/minute"
 

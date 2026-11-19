@@ -26,6 +26,7 @@ from app.services.tutor_pipeline.contracts import (
     RetrievalRecord,
     Sufficiency,
     VersionStamps,
+    BudgetStamp,
     ledger_canonical,
     lock_hash,
     verify_locked,
@@ -142,7 +143,7 @@ def _entry(**overrides) -> dict:
         provenance=provenance,
         versions=VersionStamps(pipeline_version="legacy-contained-v1", code_sha="x", schema_revision_expected="r", config_package_version="2.0.0",
                                config_package_sha256=H, manifest_sha256=None, span_scheme="span-v2", policy_version="p", resolver_id=None,
-                               generator_id=None, renderer_id=None),
+                               generator_id=None, renderer_id=None, budgets=BudgetStamp(shadow_ms=None, ledger_append_ms=1500)),
         counts=PipelineCounts(proposed_claims=1, bound_claims=1, dropped={}, render_attempts=0),
     )
     base.update(overrides)

@@ -98,9 +98,9 @@ The mirrored lines carry no learner identifier, digest, address or email. The pr
 **Not set up yet.** Creating log-based metrics and alerts is a cloud write (Platform Owner approval each time).
 
 Plan Phase 3 I: "Ledger writes 100% of deliveries; bound-claim ratio; abstention by reason; /ready reports versions".
-- `/ready` reports the versions in force: `config_package_version`, `two_pass_tutor` (the effective mode) and `two_pass_tutor_setting`, `phase4_exit_passed`, the `tutor_pipeline` ids and prompt hashes, and `ledger.status` (`ok` or `unavailable`). `/ready` is public, so it never shows the head's sequence number, the all-time count of tutor responses: that is in the `response_ledger` job line and in each `tutor.ledger.appended` line.
+- `/ready` reports the versions in force: `config_package_version`, `two_pass_tutor` (the effective mode) and `two_pass_tutor_setting`, `phase4_exit_passed`, the `tutor_pipeline` ids, prompt hashes, `subset_check` rule and `budgets` in force (`shadow_ms`, `ledger_append_ms`, and `overridden`, the budgets an environment override changed), and `ledger.status` (`ok` or `unavailable`). `/ready` is public, so it never shows the head's sequence number, the all-time count of tutor responses: that is in the `response_ledger` job line and in each `tutor.ledger.appended` line.
 - `/ready` `slis.tutor_ledger` holds `attempted`, `appended` and `failed` (legacy and shadow), `duplicates`, `conflicts`, `legacy_coverage_rate` (appended over attempted legacy deliveries), `legacy_by_surface` (the same counts and rate for tutor turns and for `/qa/ask` answers, which are ledgered too), `non_public_spans_excluded` (spans the license_class gate kept out, by surface; any non-zero count means an upstream guard failed) and `write_stop`.
-- `/ready` `slis.two_pass_shadow` holds `scheduled`, `completed`, `failed` (resolve, pipeline, ledger), `decisions`, `abstention_by_reason`, `proposed_claims`, `bound_claims`, `bound_claim_ratio` (beside `phase2_bound_claim_ratio_baseline` 1.0), `bound_claim_ratio_stop`, `render_regenerations` and `budget_exceeded`.
+- `/ready` `slis.two_pass_shadow` holds only what describes no single run: `scheduled`, `completed`, `failed` (resolve, pipeline, ledger), `phase2_bound_claim_ratio_baseline` (1.0) and `bound_claim_ratio_stop`. `/ready` is public, and on a quiet instance a learner could otherwise compare it before and after a turn and read the shadow's decision, reason and claim counts for that turn (AC-3-6: zero of its outputs reach a learner). The decisions, abstention reasons, claim counts and the ratio are in each run's `tutor.two_pass.shadow` line (below), which the log-based SLIs aggregate.
 - These are per-instance counters; the log lines below aggregate across instances.
 
 All Phase 3 events log on the `qcai.tutor` logger. They carry counts, hashes and enumerations only: no question, claim or rendered text, and no response, turn, thread or message id.
@@ -112,20 +112,20 @@ All Phase 3 events log on the `qcai.tutor` logger. They carry counts, hashes and
 | `tutor.ledger.append_deferred` | `delivery`, `budget_ms`; `surface: qa` on a `/qa/ask` record (the learner was not held past the budget plus the package's `ledger_wait_grace_ms`, 250 ms; the append's outcome is logged when it ends) | WARNING |
 | `tutor.evidence.non_public_excluded` | `surface` (`two_pass`, `legacy` or `qa`): a span whose derived license class is not public was left out | WARNING; alert on any match (an upstream guard failed) |
 | `tutor.ledger.conflict` | `delivery` | ERROR |
-| `tutor.two_pass.shadow` | `decision`, `reason`, `proposed`, `bound`, `dropped`, `attempts`, `plan_id`, `gate`, `latency_ms`, `seq` | INFO |
+| `tutor.two_pass.shadow` | `decision`, `reason`, `proposed` and `bound` (the record's raw counts: `bound` is the locked claims, so merged and budget-skipped claims are in `dropped`), `ratio_proposed` and `ratio_bound` (the plan L ratio terms, as `/ready` counts them: a budget-skipped claim is in neither, a merged claim in both), `dropped`, `attempts`, `plan_id`, `gate`, `latency_ms`, `seq` | INFO |
 | `tutor.two_pass.shadow_failed` | `step`, `error` | ERROR |
 | `tutor.two_pass.budget_exceeded` | `step`, `elapsed_ms`, `budget_ms` | WARNING |
 | `tutor.two_pass.on_downgraded` | none | WARNING, once per process |
 | `tutor.two_pass.unavailable` | `reason` | WARNING |
 | Security event `ledger.reviewer_read` | `route`, `delivery` (actor role; subject digest) | success |
-| Job `response_ledger` (`qcai.worker`) | `status`, `records`, `first_seq`, `last_seq`, `head_hash`, `head_row`, `problems`, `duration_ms` | INFO, or ERROR when broken |
+| Job `response_ledger` (`qcai.worker`) | `status`, `records`, `first_seq`, `last_seq`, `head_hash`, `head_row`, `appended_during_check` (appends that committed while it ran; never a problem), `problems`, `duration_ms`; `coverage` and `exported` when asked | INFO, or ERROR when broken |
 
 | SLI | Filter (after the API resource clause) | Kind |
 |---|---|---|
 | Ledger coverage (100%) | `jsonPayload.event="tutor.ledger.append_failed"` | Alert on any match (plan L stop) |
 | Ledger conflicts (0) | `jsonPayload.event="tutor.ledger.conflict"` | Alert on any match |
-| Shadow bound-claim ratio | `jsonPayload.event="tutor.two_pass.shadow"`, sum of `jsonPayload.bound` over sum of `jsonPayload.proposed` | Counter metrics (two); stop below 1.0 |
+| Shadow bound-claim ratio | `jsonPayload.event="tutor.two_pass.shadow"`, sum of `jsonPayload.ratio_bound` over sum of `jsonPayload.ratio_proposed` (never the raw `bound` and `proposed`, which read a merge or a budget overrun as a binding failure) | Counter metrics (two); stop below 1.0 |
 | Shadow abstention by reason | `jsonPayload.event="tutor.two_pass.shadow"`, label `jsonPayload.reason` | Counter metric |
 | Shadow failures | `jsonPayload.event="tutor.two_pass.shadow_failed"` | Alert on any match |
 | Chain integrity | `jsonPayload.job="response_ledger" AND jsonPayload.status!="ok"` | Alert on any match |
-| Phase 3 overrides | `jsonPayload.event_type="config.override"`. The details name `two_pass_tutor_shadow`, `tutor_ledger_disabled`, `ledger_route_enabled` or `evidence_panel_enabled`. | Alert on any match |
+| Phase 3 overrides | `jsonPayload.event_type="config.override"`. The details name `two_pass_tutor_shadow`, `tutor_ledger_disabled`, `ledger_route_enabled`, `evidence_panel_enabled`, `shadow_budget_overridden` or `ledger_append_budget_overridden`. | Alert on any match |

@@ -123,6 +123,7 @@ def run_shadow(
         return
     entry = result.entry
     TWO_PASS_METRICS.completed(decision=result.decision, reason=result.abstention_reason, counts=entry.counts, attempts=result.render_attempts)
+    ratio_proposed, ratio_bound = contracts.bound_claim_ratio_terms(entry.counts)
     LOGGER.info(
         "Two-pass shadow run",
         extra={
@@ -130,8 +131,13 @@ def run_shadow(
                 "event": "tutor.two_pass.shadow",
                 "decision": result.decision,
                 "reason": result.abstention_reason,
+                # The record's raw counts (bound = locked claims; merged and budget-skipped claims are in dropped).
                 "proposed": entry.counts.proposed_claims,
                 "bound": entry.counts.bound_claims,
+                # The plan L bound-claim ratio terms, exactly as /ready and the replay count them
+                # (contracts.bound_claim_ratio_terms): the cross-instance SLI sums these, never the raw counts.
+                "ratio_proposed": ratio_proposed,
+                "ratio_bound": ratio_bound,
                 "dropped": dict(entry.counts.dropped),
                 "attempts": result.render_attempts,
                 "plan_id": job.presentation.plan_id,

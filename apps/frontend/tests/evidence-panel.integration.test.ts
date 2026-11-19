@@ -48,7 +48,36 @@ test("span links point at the resolver route only when it is enabled", () => {
   assert.equal(spanHref("span/../x"), "/api/backend/evidence/spans/span%2F..%2Fx");
   const plain = evidencePanelView(payload({ spans: [{ span_id: SPAN, label: "Routing brief — Depth", resolvable: false }] }));
   assert.equal(plain.spans[0].href, null);
-  assert.equal(plain.spans[0].label, "Routing brief — Depth");
+  // The API's label is kept; the panel adds the passage's position (review round 3, spec 18.6 D14).
+  assert.equal(plain.spans[0].label, "Passage 1: Routing brief — Depth");
+});
+
+test("two passages of one section get distinct link text, and links look like links (WCAG 2.4.4)", () => {
+  const other = `span-${"b".repeat(64)}`;
+  const view = evidencePanelView(
+    payload({
+      spans: [
+        { span_id: SPAN, label: "Routing brief — Depth", resolvable: true },
+        { span_id: other, label: "Routing brief — Depth", resolvable: true },
+      ],
+    }),
+  );
+  assert.deepEqual(
+    view.spans.map((span) => span.label),
+    ["Passage 1: Routing brief — Depth", "Passage 2: Routing brief — Depth"],
+  );
+  assert.notEqual(view.spans[0].href, view.spans[1].href);
+  const css = read("app/globals.css");
+  const rule = css.match(/\.assistant-evidence-spans a \{([^}]*)\}/);
+  assert.ok(rule, "a link rule for the panel's passages");
+  assert.match(rule[1], /text-decoration: underline/);
+  assert.match(rule[1], /color: var\(--accent\)/);
+});
+
+test("each panel is a group, not a region landmark repeated once per answer", () => {
+  const panel = read("components/evidence-panel.tsx");
+  assert.match(panel, /role="group" aria-label="Evidence for this answer"/);
+  assert.doesNotMatch(panel, /<section/);
 });
 
 test("a span link never mints a guest session, and only a well-formed span id is public (DI-44)", () => {
@@ -99,7 +128,13 @@ test("the privacy page discloses the tutor response ledger", () => {
   // and what a shadow record adds (the resolver's source message ids).
   assert.match(disclosures, /which course passages the search matched for your question, with their match scores and positions/);
   assert.match(disclosures, /the ids of the tutor messages your question was taken from/);
-  // /qa/ask answers are ledgered too (DI-39), and their records hold no link to the learner.
+  // /qa/ask answers are ledgered too (DI-39). Their records hold no id that names the learner, but they can be matched
+  // to the learner's Q&A history while it is kept (the same answer, moments apart): review round 3, spec 18.6 D10.
   assert.match(disclosures, /each answer to a question asked in a lesson's Q&A panel/);
-  assert.match(disclosures, /a Q&A answer's record is not linked to you at all/);
+  assert.match(disclosures, /A Q&A answer's record has no id that names you, but while your Q&A history is kept it can be matched to it/);
+  assert.doesNotMatch(disclosures, /not linked to you at all|never were/);
+  // Only the deletion paths that exist: account deletion, and guest retention cleanup (no "tutor history" deletion).
+  assert.match(disclosures, /Deleting your account deletes your tutor turns and your Q&A history/);
+  assert.match(disclosures, /for a guest, automatic retention cleanup does the same for history older than one year/);
+  assert.doesNotMatch(disclosures, /tutor history/);
 });

@@ -141,8 +141,9 @@ def test_package_v2_keeps_every_phase_2_value_of_v1():
     assert lineage == V1_RAW["abstention"]
     for name, decision in V1_RAW["owner_decisions"].items():
         assert RAW["owner_decisions"][name] == decision, name
-    # PLAN-12.8 (2026-11-19 hardening): the ledger retention period, an open decision (DI-45).
-    assert set(RAW["owner_decisions"]) == set(V1_RAW["owner_decisions"]) | {"D-19", "D-12", "PLAN-12.8"}
+    # PLAN-12.8 (2026-11-19 hardening): the ledger retention period, an open decision (DI-45). PLAN-3.3 (review
+    # round 3): the reading of task 3.3 "atomic claims" under D-19, unratified (DI-47).
+    assert set(RAW["owner_decisions"]) == set(V1_RAW["owner_decisions"]) | {"D-19", "D-12", "PLAN-12.8", "PLAN-3.3"}
     # The index and corpus versions do not move with the package version.
     assert v2.retrieval_sha256 == v1.retrieval_sha256
     assert RAW["supersedes"] == {"package_version": "1.0.0", "sha256": v1.sha256, "readable_until": RAW["supersedes"]["readable_until"]}

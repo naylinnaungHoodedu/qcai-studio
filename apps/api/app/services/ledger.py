@@ -11,20 +11,26 @@ stays linear under concurrency; database triggers refuse UPDATE, DELETE and TRUN
 that does not extend the chain, and let the head move forward only (app.core.schema_upgrades).
 
 What is recorded (spec R-a): every learner delivery is a legacy contained answer, recorded with delivery "legacy":
-a tutor turn with response_id = the TutorTurn id, and a /qa/ask answer with a qa- id that is stored nowhere else
-(plan task 3.8 and F-1 cover every delivered response; the Q&A record is unlinkable from the start, so only a
-reviewer reads it). Every shadow run of the two-pass pipeline is recorded with delivery "shadow" and a shadow- id
-naming the turn it shadowed. "delivered" is Phase 4's.
+a tutor turn with response_id = the TutorTurn id, and a /qa/ask answer with a random qa- id that is stored nowhere
+else (plan task 3.8 and F-1 cover every delivered response). A qa- id names no learner, so the asker cannot be
+shown the record and only a reviewer reads it. It is not unlinkable while the asker's Q&A history is kept: the
+qa_interactions row holds the same answer (rendered_text_sha256 is its sha256), the same cited spans and a time a
+few milliseconds earlier, so anyone who can read both tables can match the two (spec 18.6 D10). Erasure, or guest
+retention, deletes that row, and the record can then no longer be tied to anyone. Every shadow run of the two-pass
+pipeline is recorded with delivery "shadow" and a shadow- id naming the turn it shadowed. "delivered" is Phase 4's.
 
-Budgets, attempts and the appender's size come from configuration package v2 (tutor_pipeline.budgets; PD-11), so
-every record's config_package_sha256 names them (R-46); TUTOR_LEDGER_APPEND_BUDGET_MS overrides the budget only.
+Budgets, attempts and the appender's size come from configuration package v2 (tutor_pipeline.budgets; PD-11).
+TUTOR_LEDGER_APPEND_BUDGET_MS and TWO_PASS_SHADOW_BUDGET_MS override the two budgets only; every record stamps
+the budgets in force and which of them differ from the package (versions.budgets), so a record names its budgets
+whether or not they were overridden (R-46), and an override outside development logs a config.override event.
 No retention applies: plan 12.8 is an open decision, the package says "retain" (owner_decisions.PLAN-12.8, DI-45),
 no job deletes a row and the triggers refuse DELETE.
 
 No user id and no learner text: the ledger stores corpus text (claims) and hashes only, never the resolved
-question or the rendered text. The link to a learner is tutor_turns, which erasure deletes; the rows then remain
-but cannot be tied to anyone. Every append logs its seq and record_hash (an off-DB copy of the chain, conflict 6);
-`python -m app.workers.response_ledger` verifies the chain and logs the head.
+question or the rendered text. The link to a learner is tutor_turns (and, for a qa- record, the matching
+qa_interactions row), which erasure deletes; the rows then remain but cannot be tied to anyone. Every append logs
+its seq and record_hash (an off-DB copy of the chain, conflict 6); `python -m app.workers.response_ledger`
+verifies the chain and logs the head.
 """
 
 from __future__ import annotations
@@ -36,13 +42,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
 import logging
+from pathlib import Path
 import random
 import threading
 import time
 from typing import Any
 
 from pydantic import ValidationError
-from sqlalchemy import insert, select, text, update
+from sqlalchemy import func, insert, select, text, update
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
@@ -51,13 +58,14 @@ from app.core.config import Settings, get_settings
 from app.core.config_package import ConfigPackage, TutorPipelineParams, canonical_sha256, get_config_package
 from app.core.db import SessionLocal
 from app.core.structured_logging import FIELDS
-from app.db_models import ResponseLedgerHead, ResponseLedgerRecord
+from app.db_models import ResponseLedgerHead, ResponseLedgerRecord, TutorTurn
 from app.services.contained_answers import ABSTENTION, EXTRACTIVE_MODE, MAX_QUOTED_SPANS, QUOTATION_LEAD
 from app.services.tutor_pipeline.bind import claim_id_for
 from app.services.tutor_pipeline.contracts import (
     ENTRY_SCHEMAS,
     LEGACY_NOT_PUBLIC,
     LEGACY_UNRESOLVED,
+    BudgetStamp,
     ClaimLedgerEntry,
     EvidenceSpan,
     LedgerEntry,
@@ -114,6 +122,18 @@ def ledger_budget_ms(settings: Settings, package: ConfigPackage) -> int:
     return ledger_params(package).ledger_append_budget_ms
 
 
+def budget_stamp(settings: Settings, package: ConfigPackage, *, shadow_ms: int | None) -> BudgetStamp:
+    """The budgets in force for one record, and which of them differ from the package's (R-46; spec 18.6 D5)."""
+    params = ledger_params(package)
+    append_ms = ledger_budget_ms(settings, package)
+    overridden = tuple(
+        name
+        for name, value, packaged in (("shadow_ms", shadow_ms, params.shadow_budget_ms), ("ledger_append_ms", append_ms, params.ledger_append_budget_ms))
+        if value is not None and int(value) != int(packaged)
+    )
+    return BudgetStamp(shadow_ms=shadow_ms, ledger_append_ms=append_ms, overridden=overridden)
+
+
 @dataclass(frozen=True)
 class AppendedRecord:
     seq: int
@@ -129,6 +149,8 @@ class LedgerCheck:
     head_hash: str | None
     head_row: tuple[int, str] | None
     problems: tuple[str, ...]
+    # Records past the head the check started from: appends that committed while it ran (not walked).
+    appended_during_check: int = 0
 
     @property
     def ok(self) -> bool:
@@ -176,8 +198,12 @@ def append_ledger_entry(
     Statements run in a fixed order (Core, so the unit of work never reorders them): head insert-if-missing, head
     SELECT ... FOR UPDATE, record INSERT, head UPDATE. Only an IntegrityError is retried; any other database error
     (a lock timeout, a statement timeout, a busy database, a trigger refusal) is raised at once, so the caller fails
-    open quickly. On PostgreSQL every attempt first sets lock_timeout and statement_timeout to the remaining budget.
-    Neither bounds the wait for a pooled connection: record_legacy_delivery bounds the learner's wait as a whole.
+    open quickly. On PostgreSQL every attempt first sets lock_timeout, statement_timeout and
+    idle_in_transaction_session_timeout to the remaining budget. The last bounds the time the attempt holds the head
+    row's lock between statements: if the process stalls after SELECT ... FOR UPDATE (a CPU-throttled instance once
+    the response has gone, spec 18.6 D13), the server ends the session and releases the lock, so the other instances'
+    appends are not held up. None of the three bounds the wait for a pooled connection: record_legacy_delivery
+    bounds the learner's wait as a whole.
     """
     payload = entry_bytes(entry)
     entry_text = payload.decode("utf-8")
@@ -197,10 +223,11 @@ def append_ledger_entry(
             try:
                 dialect = db.get_bind().dialect.name
                 if dialect == "postgresql":
-                    # Integers only (no bind parameters in SET): both end the attempt once the budget is spent.
+                    # Integers only (no bind parameters in SET): each ends the attempt once the budget is spent.
                     timeout_ms = max(1, int((deadline - time.monotonic()) * 1000))
                     db.execute(text(f"SET LOCAL lock_timeout = '{timeout_ms}ms'"))
                     db.execute(text(f"SET LOCAL statement_timeout = '{timeout_ms}ms'"))
+                    db.execute(text(f"SET LOCAL idle_in_transaction_session_timeout = '{timeout_ms}ms'"))
                 existing = db.execute(
                     select(ResponseLedgerRecord.seq, ResponseLedgerRecord.record_hash, ResponseLedgerRecord.entry_sha256).where(
                         ResponseLedgerRecord.response_id == entry.response_id
@@ -288,13 +315,26 @@ def _columns_agree(row: ResponseLedgerRecord, parsed: dict[str, Any]) -> bool:
 
 
 def verify_response_ledger(db: Session, *, expected_head: tuple[int, str] | None = None) -> LedgerCheck:
-    """Walk the chain in seq order. No retention applies, so the first row must be seq 1 (spec 4.12)."""
+    """Walk the chain in seq order. No retention applies, so the first row must be seq 1 (spec 4.12).
+
+    The check holds one consistent view of the chain on any isolation level (spec 18.6 D8). It reads the head first
+    and walks the records up to it only. An append inserts its record and moves the head in one transaction, so
+    every record up to the head it read is committed, and a record past it is an append that committed while the
+    check ran: it is counted (appended_during_check), not reported. A record past the head is a problem only when a
+    head read after it still does not cover it (a record inserted without moving the head). Under READ COMMITTED,
+    PostgreSQL's default, each statement takes its own snapshot; walking every record and then reading the head
+    reported a sound chain as broken whenever an append committed in between.
+    """
     problems: list[str] = []
     count = 0
     first_seq: int | None = None
     previous: tuple[int, str] | None = None
     reached_expected = expected_head is None
-    rows = db.execute(select(ResponseLedgerRecord).order_by(ResponseLedgerRecord.seq).execution_options(yield_per=500)).scalars()
+    head = chain_head(db)
+    limit = head[0] if head is not None else 0
+    rows = db.execute(
+        select(ResponseLedgerRecord).where(ResponseLedgerRecord.seq <= limit).order_by(ResponseLedgerRecord.seq).execution_options(yield_per=500)
+    ).scalars()
     for row in rows:
         count += 1
         if previous is None:
@@ -333,15 +373,25 @@ def verify_response_ledger(db: Session, *, expected_head: tuple[int, str] | None
         if expected_head is not None and (row.seq, row.record_hash) == tuple(expected_head):
             reached_expected = True
         previous = (row.seq, row.record_hash)
-    head = chain_head(db)
     last = previous
     if last is not None:
-        if head is None:
-            problems.append("the chain head is missing")
-        elif head != last:
-            problems.append(f"the chain head (seq {head[0]}) does not match the last record (seq {last[0]})")
+        if head != last:
+            problems.append(f"the chain head (seq {limit}) does not match the last record (seq {last[0]})")
     elif head is not None and head[0] != 0:
         problems.append(f"the chain head (seq {head[0]}) does not match the last record (seq 0)")
+    # Records past the head read first: appends that committed during the walk, unless no later head covers them.
+    beyond = db.execute(
+        select(func.count(), func.max(ResponseLedgerRecord.seq)).select_from(ResponseLedgerRecord).where(ResponseLedgerRecord.seq > limit)
+    ).one()
+    appended_during = 0
+    if beyond[0]:
+        later = chain_head(db)
+        if later is None:
+            problems.append("the chain head is missing")
+        elif later[0] < int(beyond[1]):
+            problems.append(f"seq {int(beyond[1])} lies past the chain head (seq {later[0]})")
+        else:
+            appended_during = int(beyond[0])
     if not reached_expected and expected_head is not None:
         problems.append(f"the chain no longer reaches the logged head seq {expected_head[0]}")
     return LedgerCheck(
@@ -351,7 +401,43 @@ def verify_response_ledger(db: Session, *, expected_head: tuple[int, str] | None
         head_hash=last[1] if last else None,
         head_row=head,
         problems=tuple(problems[:_MAX_REPORTED_PROBLEMS]),
+        appended_during_check=appended_during,
     )
+
+
+# ------------------------------------------------------------------------------- operator tools (worker, script)
+
+
+def ledger_coverage(db: Session, since: datetime) -> dict[str, Any]:
+    """Tutor turns created since `since` with no ledger record (plan I "ledger writes 100% of deliveries"; report
+    only), and the /qa/ask records since then. A qa- record holds no id of its Q&A row, so Q&A coverage is the
+    per-process legacy_by_surface.qa.coverage_rate SLI, not a join."""
+    since = _utc(since)
+    recorded = select(ResponseLedgerRecord.response_id).where(ResponseLedgerRecord.response_id == TutorTurn.id).exists()
+    turns = db.scalar(select(func.count()).select_from(TutorTurn).where(TutorTurn.created_at >= since)) or 0
+    unrecorded = db.scalar(select(func.count()).select_from(TutorTurn).where(TutorTurn.created_at >= since, ~recorded)) or 0
+    qa_records = db.scalar(
+        select(func.count()).select_from(ResponseLedgerRecord).where(ResponseLedgerRecord.created_at >= since, ResponseLedgerRecord.response_id.like("qa-%"))
+    ) or 0
+    return {"since": since.isoformat(), "turns_since": int(turns), "unrecorded": int(unrecorded), "qa_records_since": int(qa_records)}
+
+
+def export_ledger(db: Session, path: Path) -> int:
+    """Every record as one JSON object per line (the step before an Alembic downgrade); returns the row count.
+
+    The file holds corpus text, turn ids and, on shadow rows, the resolver's source message ids: pseudonymous data
+    linked to learners while their turns exist. Its handling rule is in infra/cloudrun/deployment.md (Phase 3)."""
+    count = 0
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        for row in db.execute(select(ResponseLedgerRecord).order_by(ResponseLedgerRecord.seq).execution_options(yield_per=500)).scalars():
+            handle.write(json.dumps({
+                "seq": row.seq, "response_id": row.response_id, "delivery": row.delivery, "decision": row.decision,
+                "shadowed_response_id": row.shadowed_response_id, "claim_set_hash": row.claim_set_hash,
+                "entry_schema": row.entry_schema, "entry": row.entry, "entry_sha256": row.entry_sha256,
+                "prev_hash": row.prev_hash, "record_hash": row.record_hash, "created_at": _utc(row.created_at).isoformat(),
+            }, ensure_ascii=False, sort_keys=True) + "\n")
+            count += 1
+    return count
 
 
 # ------------------------------------------------------------------------------------------- legacy deliveries
@@ -524,6 +610,7 @@ def build_legacy_entry(delivery: LegacyDelivery, *, settings: Settings, package:
             resolver_id=None,
             generator_id=LEGACY_GENERATOR_ID,
             renderer_id=None,
+            budgets=budget_stamp(settings, package, shadow_ms=None),
         ),
         counts=PipelineCounts(
             proposed_claims=len(claims) + sum(dropped.values()),

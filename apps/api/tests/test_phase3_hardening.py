@@ -259,6 +259,9 @@ SETTING_RELAXATIONS = {
     "tutor_ledger_disabled": {"tutor_ledger_enabled": False},
     "ledger_route_enabled": {"ledger_route_enabled": True},
     "evidence_panel_enabled": {"evidence_panel_enabled": True},
+    # Review round 3 (spec 18.6 D5): an environment override of a PD-11 budget.
+    "shadow_budget_overridden": {"two_pass_shadow_budget_ms": 1000},
+    "ledger_append_budget_overridden": {"tutor_ledger_append_budget_ms": 1000},
 }
 PACKAGE_RELAXATIONS = {"config_package_path_overridden": {"is_default_path": False}, "config_package_hash_unverified": {"hash_verified": False}}
 

@@ -380,7 +380,7 @@
       "LedgerEntry": {
         "version": "ledger-entry-v1",
         "path": "schemas/ledger-entry.v1.schema.json",
-        "sha256": "917ae6ce3b313993bb00f80cafc07848bfb7037d3eb82304ff76878a36a6808f"
+        "sha256": "cc84fa000eb74fa2531cf493e3a0865415089e89e9a67e621b750b602a1a6ebc"
       }
     },
     "resolver": {
@@ -433,7 +433,7 @@
       "default_plan": "concise",
       "max_regenerations": 2,
       "max_regenerations_authority": "plan 3.7: at most two",
-      "subset_check": "segment-exact-normalised-v1"
+      "subset_check": "segment-exact-whitespace-v2"
     },
     "ledger": {
       "chain": "tutor-responses",
@@ -453,7 +453,7 @@
     },
     "budgets": {
       "provisional": true,
-      "authority": "PD-11: engineering parameters with no plan value (E1 'bounded budget'; spec conflict 29), not plan defaults; TWO_PASS_SHADOW_BUDGET_MS and TUTOR_LEDGER_APPEND_BUDGET_MS override the first two only",
+      "authority": "PD-11: engineering parameters with no plan value (E1 'bounded budget'; spec conflict 29), not plan defaults; TWO_PASS_SHADOW_BUDGET_MS and TUTOR_LEDGER_APPEND_BUDGET_MS override the first two only, and every ledger record stamps the budgets in force and which of them were overridden (versions.budgets); an override outside development logs a config.override event",
       "shadow_ms": 2000,
       "ledger_append_ms": 1500,
       "ledger_append_attempts": 3,
@@ -476,6 +476,8 @@
     ]
   },
   "flag_policy": {
+    "provisional": true,
+    "authority": "PD-10: the Phase 3 switches outside development (plan Phase 3 G; AC-3-6; 13.6); the values are plan MUST text or a fact (phase4_exit_passed), recorded provisional with PD-10 and ratified with it (DI-37)",
     "two_pass_tutor": {
       "values": [
         "off",
@@ -543,6 +545,18 @@
       ],
       "record": "PD-08"
     },
+    "PLAN-3.3": {
+      "status": "provisional",
+      "ratified": false,
+      "authority": "P1-D-18 (engineering reading under D-19); acceptance needs the Principal Investigator or the Research Lead (DI-47)",
+      "deviations": [
+        {
+          "plan": "3.3: \"Claim plan: atomic claims bound to span ids from a structured envelope; unbound dropped [Risk R-11].\"",
+          "applied": "under D-19 extractive mode the claim unit is one verbatim whole sentence of every cited span (sentences-v2, at most max_sentence_chars), not a decomposed atomic claim: a sub-sentence cut can drop a qualification or a negation (spec conflict 32), so binding refuses it (not_verbatim). A compound sentence is one claim with one future verdict. Atomic decomposition needs a generator that writes claims (Phase 5, D-12) and per-claim V1.3 entailment (Phase 4)"
+        }
+      ],
+      "record": "Phase 3 spec conflict 34; DI-47"
+    },
     "D-12": {
       "state": "open",
       "path": "no provider generator is wired; hold H6 (P3 interim path) stays unresolved; the D-19 extractive generator is the interim path",
@@ -551,11 +565,14 @@
     },
     "PLAN-12.8": {
       "state": "open",
-      "text": "OPEN DECISION. Retention period (Product Owner; Principal Investigator consulted)",
+      "text": "OPEN DECISION. Retention period (Product Owner; Principal Investigator consulted); proposed default release life plus 24 months.",
       "path": "unresolved: the response ledger is retained; no job deletes ledger rows (the append-only triggers refuse DELETE)",
       "behaviour": "retain",
       "ratified": false,
-      "record": "DI-45"
+      "record": "DI-45",
+      "proposed_default": "release life plus 24 months",
+      "proposed_default_applied": false,
+      "why_not_applied": "a 12.8 'proposed default' is not one of the default forms the provisional-defaults register lets engineering apply (an 18.3 RECOMMENDATION, an 'until decided' rule, a stop-condition path); the period stays open for the PO and PI. It changes nothing today: no release life has ended, so retaining every record is what the proposed default would also do, and a pruning job is needed only once a decided period ends (DI-45)"
     }
   },
   "boundary": {

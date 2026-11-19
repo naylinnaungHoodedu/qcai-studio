@@ -29,7 +29,7 @@ from app.core.db import SessionLocal
 from app.core.structured_logging import FIELDS
 from app.services.claim_gate import check_subset
 from app.services.contained_answers import ABSTENTION
-from app.services.ledger import SCHEMA_REVISION, AppendedRecord, append_ledger_entry, ledger_budget_ms
+from app.services.ledger import SCHEMA_REVISION, AppendedRecord, append_ledger_entry, budget_stamp, ledger_budget_ms
 from app.services.span_resolver import SpanResolver
 from app.services.tutor_pipeline import contracts
 from app.services.tutor_pipeline.bind import bind
@@ -99,6 +99,11 @@ class PipelineResult:
     entry: LedgerEntry
     appended: AppendedRecord | None
     # No learner-facing text: the rendered response is internal and never returned to a learner in Phase 3.
+
+
+def rendered_claim_ids(rendered: RenderedResponse) -> tuple[str, ...]:
+    """The claim ids a rendering shows, in render order, each once."""
+    return tuple(dict.fromkeys(segment.claim_id for segment in rendered.segments if segment.kind == "claim" and segment.claim_id))
 
 
 def render_checked(
@@ -233,7 +238,7 @@ class TwoPassPipeline:
                 over=lambda: self._over(started, budget_ms, "render"),
             )
         decision: Literal["answer", "abstain"] = "answer" if rendered is not None and reason is None else "abstain"
-        entry = self._entry(item, decision, reason, bundle, locked, rendered, attempts, proposed, dropped)
+        entry = self._entry(item, decision, reason, bundle, locked, rendered, attempts, proposed, dropped, budget_ms)
         appended: AppendedRecord | None = None
         if record:
             LEDGER_METRICS.attempt(item.delivery)
@@ -258,7 +263,7 @@ class TwoPassPipeline:
             appended=appended,
         )
 
-    def _entry(self, item, decision, reason, bundle, locked, rendered, attempts, proposed, dropped) -> LedgerEntry:
+    def _entry(self, item, decision, reason, bundle, locked, rendered, attempts, proposed, dropped, budget_ms) -> LedgerEntry:
         params = self.params
         package = self.package
         provenance = Provenance(
@@ -303,6 +308,9 @@ class TwoPassPipeline:
                     renderer_id=self.renderer.renderer_id,
                     attempts=attempts,
                     subset_check="passed" if rendered is not None else "failed",
+                    # What the passing rendering showed (spec 18.6 D4): never the locked claims it left out.
+                    rendered_claim_ids=rendered_claim_ids(rendered) if rendered is not None else (),
+                    rendered_span_ids=tuple(rendered.citations) if rendered is not None else (),
                 )
                 if attempts
                 else None
@@ -321,6 +329,7 @@ class TwoPassPipeline:
                 resolver_id=item.resolved.resolver.model_id,
                 generator_id=self.generator.ref.generator_id,
                 renderer_id=self.renderer.renderer_id,
+                budgets=budget_stamp(self.settings, package, shadow_ms=budget_ms),
             ),
             counts=PipelineCounts(
                 proposed_claims=proposed,

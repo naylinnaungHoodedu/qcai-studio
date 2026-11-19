@@ -1,8 +1,8 @@
 {
  "report": "qcai-three-plan-replay",
  "format_version": 1,
- "created_at": "2026-11-19T14:34:10+00:00",
- "commit": "f9743552fba3150258897f94602d1ac82780b186",
+ "created_at": "2026-11-19T15:58:17+00:00",
+ "commit": "028cd408a9005f4f40e932d404c5b871a5ae6ba3-dirty",
  "evidence_class": "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 evidence (plan Phase 3 H)",
  "public_corpus_only": true,
  "excluded_sources": [
@@ -22,13 +22,13 @@
  },
  "config_package": {
   "version": "2.0.0",
-  "sha256": "2220e47d10999b2df2ea6a2a10f6e80f9d6e0ea00baaf8c2c5c492440f5f9f5b"
+  "sha256": "8514a2d42eb21fd843fefb47dcffe31821063548ded8df4aa8276077b4a89360"
  },
  "tutor_pipeline": {
   "resolver": "thread-resolver-v1",
   "generator": "extractive-d19-v1",
   "renderer": "template-renderer-v1",
-  "subset_check": "segment-exact-normalised-v1",
+  "subset_check": "segment-exact-whitespace-v2",
   "binding_rule": "resolver-bundle-sentence-v1",
   "prompt_hashes": {
    "resolver": "c7409f113bf7f5358ff16e981092d5d0fc4c3c407cd9731b869061fd26c7ad22",
@@ -80,7 +80,7 @@
     "bound_claim_ratio": null
    },
    "stop": false,
-   "items_digest": "1a71e17deddc823e5b1ffa61a8cea0eb8df1a15a02751ad343721fea0c833182"
+   "items_digest": "14952942552cb9c9a7cb16c16413380d2316a4da103c84775ecbdf314c61fbf6"
   },
   {
    "name": "all_public_approved",
@@ -119,7 +119,7 @@
     "bound_claim_ratio": 1.0
    },
    "stop": false,
-   "items_digest": "ffcf48cfaac1be02f2f33378b8806b3989c58a24a673d5396727642019a1442b"
+   "items_digest": "d7bfcebde198055fe344bb744e35a65e510bb2b12d58c0963c80459ff2972c09"
   },
   {
    "name": "all_public_approved",
@@ -157,7 +157,7 @@
     "bound_claim_ratio": 1.0
    },
    "stop": false,
-   "items_digest": "c727f1668dff435b936e97f0bed099e3e5dcbea9a5d81e37957a444eb82402e6"
+   "items_digest": "eb8f048f6d563f8dbb670ce7d3937df91aea4be92299d090a03fe98f8cc3398b"
   }
  ],
  "result": "pass"

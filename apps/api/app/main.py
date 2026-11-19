@@ -262,6 +262,10 @@ def _record_configuration_overrides() -> None:
             ("tutor_ledger_disabled", not settings.tutor_ledger_enabled),
             ("ledger_route_enabled", settings.ledger_route_enabled),
             ("evidence_panel_enabled", settings.evidence_panel_enabled),
+            # The PD-11 budgets are package values; an environment override changes outcomes (budget abstentions,
+            # deferred appends) under the same package hash, so it is alerted on and stamped on every record (D5).
+            ("shadow_budget_overridden", settings.two_pass_shadow_budget_ms is not None),
+            ("ledger_append_budget_overridden", settings.tutor_ledger_append_budget_ms is not None),
         )
         if active
     }
@@ -490,8 +494,18 @@ def _tutor_pipeline_fields(package) -> dict | None:
             "evidential": params.evidential_prompt_hash,
             "pedagogical": params.pedagogical_prompt_hash,
         },
+        "subset_check": params.subset_check,
+        # The budgets in force (PD-11) and which of them an environment override changed (R-46; spec 18.6 D5).
+        "budgets": _budget_fields(package),
         "available": tutor_shadow.PIPELINE_UNAVAILABLE_REASON is None,
     }
+
+
+def _budget_fields(package) -> dict:
+    from app.services.ledger import budget_stamp
+
+    stamp = budget_stamp(settings, package, shadow_ms=tutor_shadow.shadow_budget_ms(settings, package))
+    return {"shadow_ms": stamp.shadow_ms, "ledger_append_ms": stamp.ledger_append_ms, "overridden": list(stamp.overridden)}
 
 
 def _slis() -> dict:

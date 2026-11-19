@@ -106,13 +106,19 @@ def check_tutor_pipeline_package(package: ConfigPackage, *, structural: bool) ->
     for name, (computed, pinned) in expected.items():
         if computed != pinned:
             problems.append(f"the {name} prompt hash in the package ({pinned[:12]}) differs from the code's ({computed[:12]})")
+    from app.services.claim_gate import SUBSET_CHECK_RULE
     from app.services.tutor_pipeline.bind import BINDING_RULE
     from app.services.tutor_pipeline.text import SENTENCE_RULE
 
     # The rule ids the package names must be the code's (a rule changed under its old id is a silent change).
-    for name, (code_value, pinned) in {"sentence_rule": (SENTENCE_RULE, params.sentence_rule), "binding_rule": (BINDING_RULE, params.binding_rule)}.items():
+    rules = {
+        "evidential.sentence_rule": (SENTENCE_RULE, params.sentence_rule),
+        "evidential.binding_rule": (BINDING_RULE, params.binding_rule),
+        "pedagogical.subset_check": (SUBSET_CHECK_RULE, params.subset_check),
+    }
+    for name, (code_value, pinned) in rules.items():
         if code_value != pinned:
-            problems.append(f"tutor_pipeline.evidential.{name} in the package ({pinned}) differs from the code's ({code_value})")
+            problems.append(f"tutor_pipeline.{name} in the package ({pinned}) differs from the code's ({code_value})")
     if set(GENERATORS) != set(WIRED_GENERATORS):
         problems.append("the generator registry differs from WIRED_GENERATORS")
     return problems

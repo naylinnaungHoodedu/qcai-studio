@@ -100,8 +100,8 @@ Before the first digest-pinned rollout, the previous revisions are `qcai-api-000
 - `TWO_PASS_TUTOR` is `off`. In development it is `shadow`. `on` is refused by settings until the configuration package records the Phase 4 exit.
 - `LEDGER_ROUTE_ENABLED` and `EVIDENCE_PANEL_ENABLED` are false.
 - `TUTOR_LEDGER_ENABLED` is true: the ledger is not learner-visible.
-- The ledger append budget is 1500 ms and the shadow budget 2000 ms: configuration package v2 `tutor_pipeline.budgets` (PD-11). `TUTOR_LEDGER_APPEND_BUDGET_MS` and `TWO_PASS_SHADOW_BUDGET_MS` are unset; each overrides its value only.
-- The ledger also records each `/qa/ask` answer (the response is unchanged), under a `qa-` id with no learner link.
+- The ledger append budget is 1500 ms and the shadow budget 2000 ms: configuration package v2 `tutor_pipeline.budgets` (PD-11). `TUTOR_LEDGER_APPEND_BUDGET_MS` and `TWO_PASS_SHADOW_BUDGET_MS` are unset; each overrides its value only. Setting either logs a `config.override` event (`ledger_append_budget_overridden`, `shadow_budget_overridden`), `/ready` shows the budgets in force (`tutor_pipeline.budgets`), and every ledger record stamps them (`versions.budgets`).
+- The ledger also records each `/qa/ask` answer (the response is unchanged), under a random `qa-` id that names no learner. While the asker's Q&A history exists, the record can be matched to it (the same answer, moments apart), so treat it as pseudonymous learner data.
 - `create_all` adds `tutor_turn_idempotency`, which stays empty while `POST /tutor/turns` answers 404.
 - `POST /tutor/turns` answers 404.
 
@@ -109,6 +109,7 @@ Before the first digest-pinned rollout, the previous revisions are `qcai-api-000
 - `python scripts/config_package.py --check`, for v2 (the default) and for v1 (`--path apps/api/app/config_package/v1.json`).
 - `python scripts/replay_tutor_plans.py --check docs/evaluation/phase3/three_plan_replay_v1.json`. Exit 3 is the plan L bound-claim stop.
 - Take an on-demand backup.
+- **Check CPU allocation after the response.** The legacy ledger append is on by default outside development, and an append that outlasts its budget plus the 250 ms grace finishes after the response has gone (`tutor.ledger.append_deferred`). With request-based CPU allocation such work can be throttled. Read the service's CPU allocation setting (a cloud read, DI-48) and record it in the release evidence. On PostgreSQL each attempt sets `idle_in_transaction_session_timeout` to its remaining budget, so a throttled append that holds the head row's lock is ended by the server and frees the lock. If CPU is request-based, count `tutor.ledger.append_deferred` after the deploy; any sustained rate is a reason to stop (below).
 - Optionally, run the Alembic pre-deploy job (`alembic upgrade head`) from a workstation that has the migration scripts; the image does not ship them.
 
 **Deploy** by digest, as in sections 1-3.
@@ -120,10 +121,12 @@ Before the first digest-pinned rollout, the previous revisions are `qcai-api-000
   - `ledger.status` ok (the head is readable; public `/ready` never shows its sequence number).
 - A pipeline-package problem (a schema pin or a prompt hash) does not stop start-up while `TWO_PASS_TUTOR` is off. It shows as `tutor_pipeline.available` false, which needs a fix before any shadow enablement.
 
-**Verify** the chain with `python -m app.workers.response_ledger [--expect-head SEQ:HASH]`, a job on the API image. Its daily schedule is DI-33.
+**Verify** the chain with `python -m app.workers.response_ledger [--expect-head SEQ:HASH]`, a job on the API image. It connects as the API does (the Cloud SQL Python connector, `CLOUD_SQL_CONNECTION_NAME`), so it needs no workstation copy of `scripts/`. Its daily schedule is DI-33.
 - Every `tutor.ledger.appended` log line carries `seq` and `record_hash`: the platform log is the off-database copy of the chain.
-- `scripts/verify_ledger.py --expect-head SEQ:HASH` checks the chain against any logged head.
-- `--coverage-since <time>` reports tutor turns without a ledger record.
+- `--expect-head SEQ:HASH` checks the chain against any logged head.
+- `python -m app.workers.response_ledger --coverage-since <time>` also logs the tutor turns since then without a ledger record, and the `qa-` records since then (counts only).
+- Appends keep committing while the job runs. The job walks the chain up to the head it read first and counts later records as `appended_during_check`, so live traffic never reads as a broken chain.
+- `scripts/verify_ledger.py` (same options, `--database-url`) is for development, CI and local copies; it does not use the Cloud SQL connector.
 
 **Enabling shadow in production** (`TWO_PASS_TUTOR=shadow`) is a separate D-05 decision (DI-32).
 - Expect a `config.override` event (`two_pass_tutor_shadow`).
@@ -132,11 +135,17 @@ Before the first digest-pinned rollout, the previous revisions are `qcai-api-000
 
 **Stop conditions** (plan Phase 3 L):
 - any `tutor.ledger.append_failed` or `tutor.ledger.conflict` (`slis.tutor_ledger.write_stop` true);
-- `slis.two_pass_shadow.bound_claim_ratio_stop` true;
-- `verify_response_ledger` problems.
+- `slis.two_pass_shadow.bound_claim_ratio_stop` true, or the log-based ratio (`ratio_bound` over `ratio_proposed`, observability.md) below 1.0;
+- `response_ledger` job problems (`status` broken);
+- a sustained rate of `tutor.ledger.append_deferred` (ledger latency on the request path).
 
-On a stop, set `TWO_PASS_TUTOR=off` (for the shadow) or investigate the database (for legacy appends). Legacy deliveries continue either way, because every ledger write fails open.
+On a stop:
+- For the shadow, set `TWO_PASS_TUTOR=off`.
+- For legacy appends, investigate the database. If appends are failing, deferred or slowing the request path, set `TUTOR_LEDGER_ENABLED=false`: it is the kill switch for every request-path ledger write. It relaxes an audit control, so it logs a `config.override` event (`tutor_ledger_disabled`) and needs the same D-05 approval as any switch; the turns not recorded meanwhile show in `--coverage-since`.
+
+Legacy deliveries continue either way, because every ledger write fails open.
 
 **Roll back** by digest, as in "Rollback" above. The ledger stays: it is append-only. The Alembic downgrade refuses while the ledger holds rows:
-1. Export first with `python scripts/verify_ledger.py --export <path outside the repository>`.
-2. Then run `alembic -x allow_ledger_drop=true downgrade -1`.
+1. Export first: `python -m app.workers.response_ledger --export <path>`, run from an operator workstation with the API's requirements installed and `apps/api` as the working directory, connecting as the API does: `CLOUD_SQL_CONNECTION_NAME` and `DATABASE_URL` (user and database; the password from Secret Manager, never typed into a file) set for the shell only, and the operator's own Cloud SQL Client credentials (Application Default Credentials). The worker refuses a path inside the application tree. In the image (a job), the container's disk is discarded when the job ends, so the export is a workstation step.
+2. **Handling the export.** It holds every record: corpus text, turn ids and, on shadow rows, the ids of the learner messages the question was taken from. While those turns exist this is pseudonymous learner data. Keep it only on an encrypted disk of the operator workstation (or a store the Platform Owner names), never in the repository, a ticket, chat, CI or a shared drive. Delete it once the upgrade is re-applied and `python -m app.workers.response_ledger --expect-head SEQ:HASH` reaches the export's last head; if the downgrade is kept, its retention is the open plan 12.8 decision (DI-45), so record where it is held in the release evidence until the PO and PI decide.
+3. Then run `alembic -x allow_ledger_drop=true downgrade -1`.

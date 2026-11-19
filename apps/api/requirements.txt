@@ -5,6 +5,9 @@ alembic==1.17.2
 python-docx==1.2.0
 sqlalchemy==2.0.44
 pydantic-settings==2.14.2
+# A floor, not a pin (spec M21 keeps resolution open): Field(exclude_if) keeps "evidence" out of production chat
+# bodies (spec conflict 28), and 2.12.4 is the first release whose JSON schema treats such fields correctly.
+pydantic>=2.12.4,<3
 httpx==0.28.1
 PyJWT==2.15.1
 pytest==9.0.3

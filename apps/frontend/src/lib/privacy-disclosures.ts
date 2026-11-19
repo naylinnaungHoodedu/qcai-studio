@@ -53,10 +53,10 @@ export const RETENTION_SCHEDULE = [
   {
     dataClass: "Tutor response ledger",
     personalData:
-      "For each tutor answer, and each answer to a question asked in a lesson's Q&A panel: which course passages the search matched for your question, with their match scores and positions in the source; which approved passages were quoted, and the quotations; the decision and version stamps. Where the tutor also runs its internal two-step answer check (never shown to you), that record also holds the ids of the tutor messages your question was taken from. A tutor answer's record is linked to your tutor turn by a random id; a Q&A answer's record is not linked to you at all. No name, email, account id or question text.",
+      "For each tutor answer, and each answer to a question asked in a lesson's Q&A panel: which course passages the search matched for your question, with their match scores and positions in the source; which approved passages were quoted, and the quotations; the decision and version stamps. Where the tutor also runs its internal two-step answer check (never shown to you), that record also holds the ids of the tutor messages your question was taken from. A tutor answer's record is linked to your tutor turn by a random id. A Q&A answer's record has no id that names you, but while your Q&A history is kept it can be matched to it, because both hold the same quoted answer, saved moments apart. No name, email, account id or question text.",
     retention: "Kept as an audit record; the retention period is an open owner decision.",
     trigger:
-      "Deleting your account or tutor history removes the link to your tutor answers, so their records can no longer be tied to you; Q&A records never were. Records cannot be edited or deleted.",
+      "Deleting your account deletes your tutor turns and your Q&A history, so these records can no longer be tied to you; for a guest, automatic retention cleanup does the same for history older than one year. Records cannot be edited or deleted.",
   },
 ] as const;
 

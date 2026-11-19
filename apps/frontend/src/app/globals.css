@@ -2995,6 +2995,17 @@ button:disabled,
   padding-left: 18px;
 }
 
+/* A passage link looks like a link (the global a rule inherits colour and drops the underline). */
+.assistant-evidence-spans a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.assistant-evidence-spans a:hover {
+  color: var(--warm);
+}
+
 .assistant-compose {
   display: grid;
   gap: 10px;

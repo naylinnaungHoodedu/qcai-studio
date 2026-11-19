@@ -8,6 +8,20 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+class _ExcludeIfProbe(BaseModel):
+    value: int | None = Field(default=None, exclude_if=lambda value: value is None)
+
+
+# Spec conflict 28: production chat bodies keep today's keys because Field(exclude_if) omits a None evidence panel.
+# pydantic added exclude_if in 2.12 (field-level JSON-schema handling fixed in 2.12.4), and requirements.txt sets
+# that floor. An older pydantic takes the keyword as deprecated extra schema data and keeps the key, so production
+# bodies would gain "evidence": null; refuse to start instead of changing the response bytes (spec 18.6 D11).
+if "value" in _ExcludeIfProbe().model_dump() or "value" in _ExcludeIfProbe().model_dump(mode="json"):
+    raise RuntimeError(
+        "pydantic >= 2.12.4 is required: Field(exclude_if) must omit a None evidence panel from chat responses (spec conflict 28)"
+    )
+
+
 class SourceAsset(BaseModel):
     id: str
     title: str

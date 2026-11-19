@@ -36,7 +36,7 @@ Any change to the configuration package (its sha256 is in the report) needs a fr
   - `governed_empty` / `p1-floor`: the shipped D-31 build, where nothing is approved, so it abstains on all 298 items;
   - `all_public_approved` / `bm25f-v1`: a temporary manifest approving every public-plane, bound item;
   - `all_public_approved` / `p1-floor`: the same manifest under the Phase 1 floor.
-- **Pipeline:** `thread-resolver-v1` on single turns; lexical retrieval, `top_k` 4; generator `extractive-d19-v1` (D-19, PD-08) over `sentences-v2` sentences; binding `resolver-bundle-sentence-v1`; subset check `segment-exact-normalised-v1`; regeneration limit 2.
+- **Pipeline:** `thread-resolver-v1` on single turns; lexical retrieval, `top_k` 4; generator `extractive-d19-v1` (D-19, PD-08) over `sentences-v2` sentences; binding `resolver-bundle-sentence-v1`; subset check `segment-exact-whitespace-v2` (renamed in Phase 3 spec 18.6 D4; it also fails a rendering with no claim or an uncited claim); regeneration limit 2.
 
 ## Results (committed record)
 

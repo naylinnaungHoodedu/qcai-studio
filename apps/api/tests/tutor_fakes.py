@@ -25,6 +25,9 @@ FAULT_MODES = (
     "duplicate",
     "text_mismatch",
     "non_contiguous",
+    # Review round 3 (spec 18.6 D4): a rendering that drops every claim (connectives only), or every citation.
+    "drop_all_claims",
+    "drop_citations",
 )
 INVENTED = "Quantum annealers always outperform every classical solver on routing problems."
 
@@ -127,6 +130,13 @@ def inject(rendered: RenderedResponse, mode: str, *, outside_sentence: str, outs
     if mode == "non_contiguous":
         segments = [segment.model_copy(update={"line": segment.line + 1}) for segment in segments]
         return _relayout(rendered, segments)
+    if mode in ("drop_all_claims", "drop_citations"):
+        # Well-formed otherwise: lines renumbered to stay contiguous, markers and the citation list consistent.
+        dropped = ("claim", "citation") if mode == "drop_all_claims" else ("citation",)
+        kept = [segment for segment in segments if segment.kind not in dropped]
+        renumber = {line: index for index, line in enumerate(sorted({segment.line for segment in kept}))}
+        kept = [segment.model_copy(update={"line": renumber[segment.line]}) for segment in kept]
+        return _relayout(rendered, kept, ())
     raise ValueError(mode)
 
 
@@ -161,7 +171,7 @@ def make_entry(response_id: str | None = None, *, delivery: str = "legacy", shad
 
     from app.services.tutor_pipeline.bind import claim_id_for
     from app.services.tutor_pipeline.contracts import (
-        ClaimLedgerEntry, LedgerEntry, PipelineCounts, Provenance, RetrievalRecord, VersionStamps, sha256_hex,
+        BudgetStamp, ClaimLedgerEntry, LedgerEntry, PipelineCounts, Provenance, RetrievalRecord, VersionStamps, sha256_hex,
     )
 
     prefix = "shadow" if delivery == "shadow" else "turn"
@@ -191,6 +201,7 @@ def make_entry(response_id: str | None = None, *, delivery: str = "legacy", shad
         provenance=provenance,
         versions=VersionStamps(pipeline_version="legacy-contained-v1", code_sha="test", schema_revision_expected="20261119_phase3_response_ledger",
                                config_package_version="2.0.0", config_package_sha256="b" * 64, manifest_sha256=None, span_scheme="span-v2",
-                               policy_version="cs595-v1", resolver_id=None, generator_id="contained-answers-v1", renderer_id=None),
+                               policy_version="cs595-v1", resolver_id=None, generator_id="contained-answers-v1", renderer_id=None,
+                               budgets=BudgetStamp(shadow_ms=None, ledger_append_ms=1500)),
         counts=PipelineCounts(proposed_claims=len(claims), bound_claims=len(claims), dropped={}, render_attempts=0),
     )

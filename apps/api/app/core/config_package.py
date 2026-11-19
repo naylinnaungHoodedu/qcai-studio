@@ -55,9 +55,11 @@ REQUIRED_PRESENTATION_PLANS = ("concise", "stepwise", "socratic")
 RETRIEVAL_REQUEST_FIELDS = ("text", "lesson_slug", "corpus_version")
 UNUSED_PROVENANCE_FIELDS = ("v1_3_checker_model_id", "panel_weights_version", "routing_table_version", "tool_contract_version")
 LEDGER_DELIVERIES = ("legacy", "shadow", "delivered")
-# Plan 12.8: "OPEN DECISION. Retention period (Product Owner; Principal Investigator consulted)". While it is open the
-# only behaviour the package may name is "retain": no job deletes ledger rows (DI-45; the append-only triggers refuse
-# DELETE anyway). owner_decisions.PLAN-12.8 records the decision's state.
+# Plan 12.8: "OPEN DECISION. Retention period (Product Owner; Principal Investigator consulted); proposed default
+# release life plus 24 months." While it is open the only behaviour the package may name is "retain": no job deletes
+# ledger rows (DI-45; the append-only triggers refuse DELETE anyway). owner_decisions.PLAN-12.8 records the
+# decision's state, the proposed default and why it is not applied (it is not a default form engineering applies,
+# and no release life has ended, so it would retain every record too).
 LEDGER_RETENTION_WHILE_OPEN = "retain"
 _HEX64_CHARS = frozenset("0123456789abcdef")
 
@@ -410,6 +412,8 @@ def _parse_tutor_pipeline(raw: Mapping[str, Any]) -> TutorPipelineParams:
 
 def _parse_flag_policy(raw: Mapping[str, Any]) -> FlagPolicy:
     policy = _mapping(raw, "flag_policy")
+    # PD-10 names flag_policy as where its value lives; like every provisional block it says so (DI-37).
+    _require(policy.get("provisional") is True, "flag_policy must be marked provisional: true (PD-10)")
     two_pass = _mapping(policy, "two_pass_tutor")
     _require(two_pass.get("values") == ["off", "shadow", "on"], "flag_policy.two_pass_tutor.values must be [off, shadow, on]")
     _require(two_pass.get("default_elsewhere") == "off", "flag_policy.two_pass_tutor.default_elsewhere must be 'off' (freeze, D-05)")

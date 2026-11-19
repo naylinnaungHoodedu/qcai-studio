@@ -1,4 +1,4 @@
-"""Subset checker, rule segment-exact-normalised-v1 (plan Phase 3 E: "claim_gate becomes the subset checker";
+"""Subset checker, rule segment-exact-whitespace-v2 (plan Phase 3 E: "claim_gate becomes the subset checker";
 task 3.7; Phase 3 spec 4.9). Phase 4 V1.4 subsumes it.
 
 The overlap ClaimGate and evidence_digest are gone (plan 3.4: "overlap rebinding removed", R-13): nothing binds a
@@ -10,6 +10,14 @@ an unmapped factual sentence. Claims are looked up by id, not by text, so two lo
 can both be rendered. Questions and connectives are typed by the renderer, never detected heuristically; a
 non-factual segment whose text is not its template's text counts as an unmapped factual sentence. The caller
 regenerates (at most twice), then abstains.
+
+A rendering also fails when it shows no locked claim at all (no_claim_rendered: an "answer" of connectives only),
+or when a claim it shows carries none of its own locked spans on its line (claim_uncited: a factual sentence a
+learner could not trace). A renderer may still leave some locked claims out (missing_claims is reported, not
+failed); the ledger records which claims and spans the passing rendering showed (spec 18.6 D4).
+
+Rule ids: v1 ("segment-exact-normalised-v1") compared NFKC-folded text; it was replaced before any release by
+whitespace-only matching, and v2 adds the two checks above, so the id names one behaviour.
 """
 
 from __future__ import annotations
@@ -20,7 +28,7 @@ from app.services.tutor_pipeline.contracts import LockedClaimSet, RenderedRespon
 from app.services.tutor_pipeline.render import TEMPLATES, layout_text
 from app.services.tutor_pipeline.text import whitespace
 
-SUBSET_CHECK_RULE = "segment-exact-normalised-v1"
+SUBSET_CHECK_RULE = "segment-exact-whitespace-v2"
 PROBLEM_CODES = (
     "empty",
     "text_not_segments",
@@ -29,6 +37,8 @@ PROBLEM_CODES = (
     "citation_outside_locked_set",
     "citation_not_on_claim",
     "citation_marker_mismatch",
+    "no_claim_rendered",
+    "claim_uncited",
 )
 
 
@@ -72,6 +82,7 @@ def check_subset(rendered: RenderedResponse, locked: LockedClaimSet, *, template
     citation_order = list(rendered.citations)
     rendered_claims: set[str] = set()
     line_claims: dict[int, list] = {}
+    line_citations: dict[int, set[str]] = {}
     factual = mapped = 0
     for segment in segments:
         if segment.kind == "claim":
@@ -99,6 +110,7 @@ def check_subset(rendered: RenderedResponse, locked: LockedClaimSet, *, template
         if span_id is None or span_id not in locked_spans:
             problems.append("citation_outside_locked_set")
             continue
+        line_citations.setdefault(segment.line, set()).add(span_id)
         claims_on_line = line_claims.get(segment.line, [])
         if not claims_on_line or not any(span_id in claim.span_ids for claim in claims_on_line):
             problems.append("citation_not_on_claim")
@@ -114,6 +126,12 @@ def check_subset(rendered: RenderedResponse, locked: LockedClaimSet, *, template
             problems.append("citation_marker_mismatch")
     if set(rendered.citations) - locked_spans:
         problems.append("citation_outside_locked_set")
+    if not rendered_claims:
+        problems.append("no_claim_rendered")
+    for line, claims_on_line in line_claims.items():
+        cited = line_citations.get(line, set())
+        if any(not cited & set(claim.span_ids) for claim in claims_on_line):
+            problems.append("claim_uncited")
     unique = tuple(dict.fromkeys(problems))
     missing = sum(1 for claim in locked.claims if claim.claim_id not in rendered_claims)
     return SubsetCheckResult(passed=not unique, problems=unique, factual_segments=factual, mapped=mapped, missing_claims=missing)

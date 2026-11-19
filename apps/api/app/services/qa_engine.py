@@ -2,8 +2,11 @@
 
 Phase 3 (plan task 3.8, F-1 "100% carry span IDs, model ID, prompt hash and verdicts" of delivered responses): each
 answer also prepares its legacy ledger record, exactly as a tutor turn does (TUTOR_LEDGER_ENABLED; spec 7.12). The
-record has a qa- response id that is stored nowhere else, so it holds no learner link, no question and no identity;
-the route appends it after the commit, bounded and fail-open. The learner's response is unchanged.
+record has a random qa- response id that is stored nowhere else, and it holds no question, user id or account id;
+the route appends it after the commit, bounded and fail-open. The learner's response is unchanged. The record can
+still be matched to the asker's qa_interactions row while that row exists (the same answer, whose sha256 is the
+record's rendered_text_sha256, the same cited spans, a close time), so it is pseudonymous, not unlinkable, until
+erasure or guest retention deletes the row (spec 18.6 D10).
 """
 
 from uuid import uuid4

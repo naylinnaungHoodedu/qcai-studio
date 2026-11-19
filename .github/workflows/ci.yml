@@ -63,7 +63,10 @@ jobs:
   # Task 1.10 (R-52): the API suite and the schema checks against PostgreSQL 16, the Cloud SQL major version.
   # The service container is disposable; conftest uses TEST_DATABASE_URL and never an ambient DATABASE_URL.
   # Both drivers (DI-46): psycopg, and pg8000, the driver production uses through the Cloud SQL connector.
-  api-postgres:
+  # The legs report as "api-postgres (psycopg)" and "api-postgres (pg8000)"; the job named api-postgres below is the
+  # required status check on main (P1-D-12) and passes only when both legs pass.
+  api-postgres-driver:
+    name: api-postgres (${{ matrix.driver }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -93,6 +96,15 @@ jobs:
       - run: python -m pip install -r apps/api/requirements.txt
       - run: psql -h localhost -U postgres -d qcai_test -c "SELECT version();" -c "SHOW TimeZone;"
       - run: python -m pytest -q -rxX -m "not release_artifacts" apps/api/tests
+
+  # The required check "api-postgres" (P1-D-12): before the driver matrix it was the single PostgreSQL job, and a
+  # matrix renames its checks, so this job keeps the name and fails unless every driver leg succeeded.
+  api-postgres:
+    if: always()
+    needs: [api-postgres-driver]
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.api-postgres-driver.result }}" = "success"
 
   frontend:
     runs-on: ubuntu-latest
