@@ -1,8 +1,8 @@
 {
  "report": "qcai-three-plan-replay",
  "format_version": 1,
- "created_at": "2026-11-19T12:54:03+00:00",
- "commit": "6f28049a0787d0226d1eed7ce74f0bbd71e50ba8-dirty",
+ "created_at": "2026-11-19T13:13:34+00:00",
+ "commit": "dade4d3f98f703d47f901e77a4ec3e28155cc763",
  "evidence_class": "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 evidence (plan Phase 3 H)",
  "public_corpus_only": true,
  "excluded_sources": [
