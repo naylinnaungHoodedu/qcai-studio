@@ -1,8 +1,8 @@
 {
  "report": "qcai-three-plan-replay",
  "format_version": 1,
- "created_at": "2026-11-19T13:13:34+00:00",
- "commit": "dade4d3f98f703d47f901e77a4ec3e28155cc763",
+ "created_at": "2026-11-19T14:34:10+00:00",
+ "commit": "f9743552fba3150258897f94602d1ac82780b186",
  "evidence_class": "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 evidence (plan Phase 3 H)",
  "public_corpus_only": true,
  "excluded_sources": [
@@ -22,7 +22,7 @@
  },
  "config_package": {
   "version": "2.0.0",
-  "sha256": "ae0daa55c7469e64d895ce4462a04c9084ea8b434f5a1258b066acf7657713d4"
+  "sha256": "2220e47d10999b2df2ea6a2a10f6e80f9d6e0ea00baaf8c2c5c492440f5f9f5b"
  },
  "tutor_pipeline": {
   "resolver": "thread-resolver-v1",
@@ -32,7 +32,7 @@
   "binding_rule": "resolver-bundle-sentence-v1",
   "prompt_hashes": {
    "resolver": "c7409f113bf7f5358ff16e981092d5d0fc4c3c407cd9731b869061fd26c7ad22",
-   "evidential": "ee9d021dad4c2330681c1c1fc5bcf2ffc9c6fe71e913f04df3d154e1158b0318",
+   "evidential": "c90998d423d7e7c027ebe60ce2762e299afd896285022a4472077b2a3d2c9bd8",
    "pedagogical": "452fbef12b51d5c1d2aa615ac845a1ab518f31d949e990bdf52ec948fefc613b"
   },
   "phase2_bound_claim_ratio_baseline": 1.0
@@ -80,7 +80,7 @@
     "bound_claim_ratio": null
    },
    "stop": false,
-   "items_digest": "dc07b9866a38f11f9e5d8a7a6f86fb4cc098e5f5e90d082b655298e8ee64c1a5"
+   "items_digest": "1a71e17deddc823e5b1ffa61a8cea0eb8df1a15a02751ad343721fea0c833182"
   },
   {
    "name": "all_public_approved",
@@ -119,7 +119,7 @@
     "bound_claim_ratio": 1.0
    },
    "stop": false,
-   "items_digest": "9d5c239870aef687851b02d8a23fea5347b3f3bd35e8c1f21960ed44be93c995"
+   "items_digest": "ffcf48cfaac1be02f2f33378b8806b3989c58a24a673d5396727642019a1442b"
   },
   {
    "name": "all_public_approved",
@@ -157,7 +157,7 @@
     "bound_claim_ratio": 1.0
    },
    "stop": false,
-   "items_digest": "801221613cba89d8243bd472d83c3e2d0561469cfe7abce8e0bac9929afbb4d3"
+   "items_digest": "c727f1668dff435b936e97f0bed099e3e5dcbea9a5d81e37957a444eb82402e6"
   }
  ],
  "result": "pass"
