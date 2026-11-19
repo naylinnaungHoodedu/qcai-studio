@@ -26,7 +26,6 @@ from app.core.log_redaction import install_log_redaction
 from app.core.request_protection import protect_guest_mutation_request
 from app.core.schema_upgrades import run_schema_upgrades
 from app.core.structured_logging import FIELDS, configure_logging
-from app.services.ledger import mark_ledger_started
 from app.services.retention import run_retention_cleanup
 from app.services.retrieval_metrics import snapshot as retrieval_slis
 from app.services.security_log import record_security_event, record_security_event_async, route_template
@@ -200,10 +199,10 @@ def _initialize_database() -> None:
     for attempt in range(max_attempts):
         try:
             Base.metadata.create_all(bind=engine)
+            # No ledger start marker (spec 18.8 F10): a revision deployed with no traffic starts while the earlier
+            # image still serves every learner. Each tutor turn records whether it expects a ledger record instead
+            # (TutorTurn.ledger_record_expected; spec 18.8 F12), and the first append creates the chain head.
             run_schema_upgrades(engine)
-            if settings.tutor_ledger_enabled:
-                # The ledger's start (spec 18.7 E6): the chain head, once, if none exists; fails open.
-                mark_ledger_started(SessionLocal)
             with SessionLocal() as db:
                 run_retention_cleanup(db)
             return

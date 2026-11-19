@@ -124,6 +124,8 @@ export type QAResponse = {
     provisional?: boolean;
   }>;
   retrieval_mode: string;
+  // Phase 3 (task 3.8; E-46 names the Q&A citation cards): sent only when EVIDENCE_PANEL_ENABLED (development).
+  evidence?: EvidencePanelPayload | null;
 };
 
 export type QAHistoryItem = {

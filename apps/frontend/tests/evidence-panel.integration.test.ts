@@ -182,8 +182,9 @@ test("the panel's links, labels and focus ring keep their contrast on the chat b
   // The global ring the rule replaces: rgba(15, 118, 110, 0.42), about 1.5:1 on the bubble.
   assert.ok(contrast(over([15, 118, 110], 0.42, bubble), bubble) < 3);
   const darkRoot = css.match(/^:root \{([^}]*)\}/m);
-  const lightChat = css.match(/:root\[data-theme="light"\] \.assistant-panel \{([^}]*)\}/);
-  assert.ok(darkRoot && lightChat, "the dark tokens, and the chat's tokens in the light theme");
+  // Spec 18.8 F9: the dark tokens apply to the chat's evidence panel only, not to the whole chat.
+  const lightChat = css.match(/:root\[data-theme="light"\] \.assistant-panel \.assistant-evidence-panel \{([^}]*)\}/);
+  assert.ok(darkRoot && lightChat, "the dark tokens, and the chat panel's evidence tokens in the light theme");
   for (const block of [darkRoot[1], lightChat[1]]) {
     const accent = hexChannels(token(block, "accent"));
     const muted = hexChannels(token(block, "muted"));
@@ -192,4 +193,66 @@ test("the panel's links, labels and focus ring keep their contrast on the chat b
   }
   assert.equal(token(lightChat[1], "accent"), token(darkRoot[1], "accent"));
   assert.equal(token(lightChat[1], "muted"), token(darkRoot[1], "muted"));
+});
+
+// Phase 3 spec 18.8 F9: E17's token override covered the whole chat, so in the opt-in light theme the compose field,
+// which keeps its white background, took --ink #f2f7ff (1.08:1). The override is now scoped to the evidence panel,
+// and the compose field keeps the light theme's own ink, as on main (17.3:1).
+function blocks(css: string): Array<{ selector: string; body: string }> {
+  return [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({ selector: match[1].trim(), body: match[2] }));
+}
+
+test("the compose field keeps readable text in both themes", () => {
+  const css = read("app/globals.css");
+  const all = blocks(css);
+  // No light-theme rule redefines --ink for anything that contains the compose field.
+  for (const block of all.filter((item) => /--ink:/.test(item.body) && item.selector.includes('data-theme="light"'))) {
+    for (const selector of block.selector.split(",").map((part) => part.trim())) {
+      assert.ok(
+        selector === ':root[data-theme="light"]' || selector.endsWith(".assistant-evidence-panel"),
+        `a light-theme --ink override reaches beyond the evidence panel: ${selector}`,
+      );
+    }
+  }
+  const lightRoot = css.match(/:root\[data-theme="light"\] \{([^}]*)\}/);
+  assert.ok(lightRoot, "the light-theme tokens");
+  const lightInk = hexChannels(token(lightRoot[1], "ink"));
+  const lightField = all.find((item) => item.selector.split(",").map((part) => part.trim()).includes(':root[data-theme="light"] textarea'));
+  assert.ok(lightField, "the light-theme textarea rule");
+  assert.match(lightField.body, /color: var\(--ink\)/);
+  assert.match(lightField.body, /background: #ffffff/);
+  assert.ok(contrast(lightInk, [255, 255, 255]) >= 4.5, "light theme: the compose text on its white field");
+  // Dark theme: the global textarea colour on the compose box (rgba(8, 12, 25, 0.96) over the compose surface).
+  const field = all.find((item) => item.selector === "textarea");
+  assert.ok(field, "the global textarea rule");
+  const ink = field.body.match(/color: (#[0-9a-fA-F]{6})/);
+  assert.ok(ink, "a textarea colour");
+  assert.match(css, /\.assistant-compose-input \{[^}]*background: rgba\(8, 12, 25, 0\.96\)/);
+  const box = over([8, 12, 25], 0.96, [5, 9, 20]);
+  assert.ok(contrast(hexChannels(ink[1]), box) >= 4.5, "dark theme: the compose text on its box");
+  // The compose field's own rule sets no colour that could undo either.
+  const compose = all.find((item) => item.selector === ".assistant-compose textarea");
+  assert.ok(compose && !/(^|[^-])color:/.test(compose.body), "the compose rule leaves the colour to the theme");
+});
+
+test("the Q&A panel renders the evidence panel only when the API sent one, readable in both themes", () => {
+  const panel = read("components/qa-panel.tsx");
+  assert.match(panel, /response\.evidence \? <EvidencePanel evidence=\{response\.evidence\} \/> : null/);
+  const qaType = read("lib/types.ts").match(/export type QAResponse = \{([\s\S]*?)\r?\n\};/);
+  assert.ok(qaType && /evidence\?: EvidencePanelPayload \| null;/.test(qaType[1]), "QAResponse carries the optional panel");
+  const css = read("app/globals.css");
+  const lightRoot = css.match(/:root\[data-theme="light"\] \{([^}]*)\}/);
+  const darkRoot = css.match(/^:root \{([^}]*)\}/m);
+  assert.ok(lightRoot && darkRoot);
+  // Light theme: the lesson panel is white to #eef3fb; its passage links use --warm (the accent is about 3.7:1).
+  assert.match(css, /:root\[data-theme="light"\] \.qa-response \.assistant-evidence-spans a \{\s*color: var\(--warm\);/);
+  for (const surface of [[255, 255, 255], [238, 243, 251]] as Array<[number, number, number]>) {
+    assert.ok(contrast(hexChannels(token(lightRoot[1], "warm")), surface) >= 4.5, "light theme: Q&A passage links");
+    assert.ok(contrast(hexChannels(token(lightRoot[1], "muted")), surface) >= 4.5, "light theme: Q&A panel labels");
+    assert.ok(contrast(hexChannels(token(lightRoot[1], "accent")), surface) >= 3, "light theme: the focus ring");
+  }
+  // Dark theme: the lesson panel's surface, rgba(8, 17, 35, 0.78) over the canvas #050915.
+  const surface = over([8, 17, 35], 0.78, [5, 9, 21]);
+  assert.ok(contrast(hexChannels(token(darkRoot[1], "accent")), surface) >= 4.5, "dark theme: Q&A passage links");
+  assert.ok(contrast(hexChannels(token(darkRoot[1], "muted")), surface) >= 4.5, "dark theme: Q&A panel labels");
 });

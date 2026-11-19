@@ -516,9 +516,10 @@ def test_d13_the_in_image_worker_runs_coverage_and_export(fresh_database_url, tm
             db.flush()
             turns = [f"turn-{uuid4()}" for _ in range(2)]
             for turn_id in turns:
+                # Made by a Phase 3 image with the ledger on (spec 18.8 F12): each expects a record.
                 db.add(TutorTurn(id=turn_id, thread_id=thread.id, user_id=thread.user_id, resolved_query="q", retrieval_mode="lexical", provider="none",
                                  model="m", decision="abstain", decision_reason="no_approved_span", citations=[], claims=[], corpus_version="c",
-                                 policy_version="p", created_at=datetime.now(UTC)))
+                                 policy_version="p", created_at=datetime.now(UTC), ledger_record_expected=True))
             db.commit()
         append_ledger_entry(make_entry(turns[0]), session_factory=factory, budget_ms=5000)
         export_path = tmp_path / "ledger-export.jsonl"

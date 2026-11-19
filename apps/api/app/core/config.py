@@ -143,8 +143,10 @@ class Settings(BaseSettings):
     # Phase 3 (provenance-first two-channel tutor; docs/architecture/phase3-implementation-spec.md section 6). Every
     # learner-visible change keeps today's behaviour outside development while the D-05 freeze holds.
     # Plan Phase 3 G: "two_pass_tutor MUST run shadow-only until the Phase 4 exit; zero outputs reach learners".
-    # None = "shadow" in development, "off" elsewhere. "on" is refused while the configuration package says
-    # flag_policy.phase4_exit_passed is false (AC-3-6); "shadow" outside development logs a config.override event.
+    # None = "shadow" in development, "off" elsewhere (TWO_PASS_DEFAULT_DEVELOPMENT, TWO_PASS_DEFAULT_ELSEWHERE, which
+    # the configuration package's flag_policy must name: the loader refuses a package that says otherwise, spec 18.8
+    # F4). "on" is refused while the package says flag_policy.phase4_exit_passed is false (AC-3-6); "shadow" outside
+    # development logs a config.override event.
     two_pass_tutor: Literal["off", "shadow", "on"] | None = None
     # How long a shadow run may hold its worker after the response is sent (E1 "bounded budget"). None = the
     # configuration package's tutor_pipeline.budgets.shadow_ms (2000; PD-11); set only to override it.
@@ -203,7 +205,7 @@ class Settings(BaseSettings):
             self.span_resolver_route_enabled = self.environment.lower() == "development"
         development = self.environment.lower() == "development"
         if self.two_pass_tutor is None:
-            self.two_pass_tutor = "shadow" if development else "off"
+            self.two_pass_tutor = TWO_PASS_DEFAULT_DEVELOPMENT if development else TWO_PASS_DEFAULT_ELSEWHERE
         if self.ledger_route_enabled is None:
             self.ledger_route_enabled = development
         if self.evidence_panel_enabled is None:
@@ -295,6 +297,13 @@ class Settings(BaseSettings):
                     resolved_paths.append(candidate)
                     break
         return resolved_paths
+
+
+# The two_pass_tutor defaults (PD-10). Configuration package v2 records them as flag_policy.two_pass_tutor.
+# default_development and default_elsewhere, and parse_config_package refuses a package whose values differ, so the
+# package can never say one default while the code applies another (spec 18.8 F4).
+TWO_PASS_DEFAULT_DEVELOPMENT = "shadow"
+TWO_PASS_DEFAULT_ELSEWHERE = "off"
 
 
 @lru_cache

@@ -70,7 +70,7 @@ def create_tutor_turn(
                                      lease_seconds=params.idempotency_lease_seconds)
     if existing is not None:
         return turn_idempotency.answer_for(existing, request_digest)
-    claim = TutorTurnIdempotency(user_id=user.user_id, key_sha256=key_digest, request_sha256=request_digest, created_at=now)
+    claim = turn_idempotency.new_claim(user_id=user.user_id, key_digest=key_digest, request_digest=request_digest, now=now)
     db.add(claim)
     try:
         db.commit()
@@ -84,10 +84,15 @@ def create_tutor_turn(
                                 headers={"Cache-Control": "no-store"})
         return turn_idempotency.answer_for(winner, request_digest)
 
+    # The claim's identity, read once: the turn's transaction must not reload it (spec 18.8 F13).
+    held = TutorTurnIdempotency(id=claim.id, claim_token=claim.claim_token)
+    db.expunge(claim)
+
     def remember(assistant_response: AssistantChatResponse) -> None:
         body = TutorTurnResponse(**assistant_response.model_dump(), delivery="legacy")
-        claim.turn_id = body.turn_id
-        claim.response_body = ledger_canonical(body.model_dump(mode="json")).decode("utf-8")
+        # Conditional on this request's claim token: a request that outlived its lease gets 409 and its turn rolls
+        # back, so a retry that took the key over keeps the only turn (turn_idempotency.fill).
+        turn_idempotency.fill(db, held, turn_id=body.turn_id, response_body=ledger_canonical(body.model_dump(mode="json")).decode("utf-8"))
 
     try:
         delivered = deliver_tutor_turn(
@@ -97,7 +102,7 @@ def create_tutor_turn(
         # The turn did not commit: release the claim, so a retry with this key runs the turn again.
         db.rollback()
         try:
-            db.delete(claim)
+            turn_idempotency.release(db, held)
             db.commit()
         except Exception:  # noqa: BLE001 - never mask the turn's own error; the claim is then abandoned and its lease ends
             db.rollback()

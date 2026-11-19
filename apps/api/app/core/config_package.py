@@ -27,7 +27,7 @@ import re
 import threading
 from typing import Any
 
-from app.core.config import Settings
+from app.core.config import TWO_PASS_DEFAULT_DEVELOPMENT, TWO_PASS_DEFAULT_ELSEWHERE, Settings
 from app.core.structured_logging import FIELDS
 
 LOGGER = logging.getLogger("qcai.config_package")
@@ -138,6 +138,8 @@ class TutorPipelineParams:
     max_claims_per_span: int
     min_sentence_words: int
     max_sentence_chars: int
+    # The content terms a sentence must share with the question to become a claim (spec 18.8 F5; PD-11).
+    min_question_overlap_terms: int
     sentence_rule: str
     binding_rule: str
     renderer_id: str
@@ -351,6 +353,7 @@ def _parse_tutor_pipeline(raw: Mapping[str, Any]) -> TutorPipelineParams:
     max_claims_per_span = _integer_in(evidential, "max_claims_per_span", 1, max_claims)
     min_sentence_words = _integer_in(evidential, "min_sentence_words", 1, 50)
     max_sentence_chars = _integer_in(evidential, "max_sentence_chars", 50, 100000)
+    min_question_overlap_terms = _integer_in(evidential, "min_question_overlap_terms", 1, 20)
 
     plans = _strings(pedagogical, "presentation_plans")
     _require(set(REQUIRED_PRESENTATION_PLANS) <= set(plans), "tutor_pipeline.pedagogical.presentation_plans must include concise, stepwise and socratic")
@@ -388,6 +391,7 @@ def _parse_tutor_pipeline(raw: Mapping[str, Any]) -> TutorPipelineParams:
         max_claims_per_span=max_claims_per_span,
         min_sentence_words=min_sentence_words,
         max_sentence_chars=max_sentence_chars,
+        min_question_overlap_terms=min_question_overlap_terms,
         sentence_rule=_text(evidential, "sentence_rule"),
         binding_rule=_text(evidential, "binding_rule"),
         renderer_id=_text(pedagogical, "renderer"),
@@ -424,6 +428,12 @@ def _parse_flag_policy(raw: Mapping[str, Any]) -> FlagPolicy:
     two_pass = _mapping(policy, "two_pass_tutor")
     _require(two_pass.get("values") == ["off", "shadow", "on"], "flag_policy.two_pass_tutor.values must be [off, shadow, on]")
     _require(two_pass.get("default_elsewhere") == "off", "flag_policy.two_pass_tutor.default_elsewhere must be 'off' (freeze, D-05)")
+    # The package records the defaults Settings applies; it may not name others (spec 18.8 F4).
+    _require(two_pass.get("default_elsewhere") == TWO_PASS_DEFAULT_ELSEWHERE,
+             f"flag_policy.two_pass_tutor.default_elsewhere must be the code's default ({TWO_PASS_DEFAULT_ELSEWHERE!r})")
+    _require(two_pass.get("default_development") == TWO_PASS_DEFAULT_DEVELOPMENT,
+             f"flag_policy.two_pass_tutor.default_development must be the code's default ({TWO_PASS_DEFAULT_DEVELOPMENT!r}; "
+             "Settings applies it, so a package value that differs would describe a default nothing applies)")
     _require(two_pass.get("on_requires") == "phase4_exit_passed", "flag_policy.two_pass_tutor.on_requires must be 'phase4_exit_passed'")
     passed = policy.get("phase4_exit_passed")
     _require(isinstance(passed, bool), "flag_policy.phase4_exit_passed must be a boolean")

@@ -1,6 +1,8 @@
 """The /qa/ask engine: lexical or hybrid retrieval, then D-19 containment (AC-1-14).
 
-Phase 3 (plan task 3.8, F-1 "100% carry span IDs, model ID, prompt hash and verdicts" of delivered responses): each
+Phase 3 (plan task 3.8): with EVIDENCE_PANEL_ENABLED (development by default) the answer carries the evidence panel,
+as a tutor answer does (E-46 names the Q&A citation cards; spec 18.8 F3); outside development the body is unchanged.
+Plan task 3.8, F-1 ("100% carry span IDs, model ID, prompt hash and verdicts" of delivered responses): each
 answer also prepares its legacy ledger record, exactly as a tutor turn does (TUTOR_LEDGER_ENABLED; spec 7.12). The
 record has a random qa- response id that is stored nowhere else, and it holds no question, user id or account id;
 the route appends it after the commit, bounded and fail-open. The learner's response is unchanged. The record can
@@ -15,7 +17,8 @@ from app.core.config import Settings
 from app.core.corpus_governance import get_corpus_registry
 from app.schemas import QAResponse
 from app.services.contained_answers import EXTRACTIVE_MODE, contain_answer
-from app.services.ledger import LegacyPreparationFailed, legacy_delivery_for
+from app.services.evidence_panel import build_evidence_panel
+from app.services.ledger import legacy_delivery_for, preparation_failed
 from app.services.provenance import native_citation
 from app.services.retrieval_engine import RetrievalEngine
 from app.services.retrieval_metrics import record_citations
@@ -46,6 +49,11 @@ class QAEngine:
             decision=contained.decision,
             grounded=contained.grounded,
         )
+        if self.settings.evidence_panel_enabled:
+            # Task 3.8 on the Q&A panel too (E-46 names its citation cards; spec 18.8 F3): labels for what is delivered.
+            response.evidence = build_evidence_panel(
+                decision=contained.decision, citations=contained.citations, retrieval_mode=retrieval_mode, settings=self.settings
+            )
         if self.settings.tutor_ledger_enabled:
             # Counted as attempted by the route once the answer has committed (spec 18.7 E5), never here.
             try:
@@ -62,5 +70,5 @@ class QAEngine:
                     surface="qa",
                 )
             except Exception as exc:  # noqa: BLE001 - a lost record is counted after the commit (plan L stop); the answer is unchanged
-                response._ledger = LegacyPreparationFailed(error=exc, surface="qa")
+                response._ledger = preparation_failed(exc, contained=contained, retrieval=retrieval, surface="qa")
         return response

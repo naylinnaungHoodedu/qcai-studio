@@ -220,6 +220,10 @@ class QAResponse(BaseModel):
     retrieval_mode: str
     decision: Literal["answer", "abstain"] = "answer"
     grounded: bool = False
+    # Phase 3 (task 3.8, E-46 "Citation cards omit provenance", the Q&A panel; spec 18.8 F3): the evidence panel,
+    # present only when EVIDENCE_PANEL_ENABLED (development by default). When absent the key is omitted, so production
+    # bodies keep today's keys and values, as on the tutor chat (spec conflict 28).
+    evidence: "EvidencePanel | None" = Field(default=None, exclude_if=lambda value: value is None)
     # Never serialised: the delivery's ledger record (plan task 3.8), appended by the route after the commit.
     _ledger: Any = PrivateAttr(default=None)
 
@@ -294,7 +298,7 @@ class EvidenceSpanLink(BaseModel):
 
 
 class EvidencePanel(BaseModel):
-    """The evidence panel of a tutor answer (plan task 3.8): labels only, for the contained answer the learner
+    """The evidence panel of a tutor or Q&A answer (plan task 3.8): labels only, for the contained answer the learner
     already receives. Never "grounded"; never anything from the two-pass shadow."""
 
     panel_schema: Literal["evidence-panel-v1"] = "evidence-panel-v1"
@@ -303,6 +307,10 @@ class EvidencePanel(BaseModel):
     degraded: list[Literal["extractive_only", "retrieval_fallback", "citations_provisional"]] = Field(default_factory=list)
     spans: list[EvidenceSpanLink] = Field(default_factory=list)
     verdict: Literal["no-verdict"] = "no-verdict"
+
+
+# QAResponse names EvidencePanel before it is defined.
+QAResponse.model_rebuild()
 
 
 class AssistantChatResponse(BaseModel):
@@ -384,9 +392,12 @@ class LedgerResponseRead(BaseModel):
     # Plan Phase 3 G: "legacy turns marked no-verdict"; no V1-V3 verdict exists before Phase 4.
     verdict: Literal["no-verdict"] = "no-verdict"
     recorded: bool
-    # With recorded false: true for a turn created before the ledger began recording, false for a later turn whose
-    # record is missing (a lost record, a plan L stop; spec 18.7 E6).
+    # With recorded false: true for a turn an image that keeps no ledger created (before Phase 3, or during a rollback
+    # window), false for a turn a Phase 3 image created (spec 18.7 E6, 18.8 F10 and F12). unrecorded_reason says which:
+    # earlier_image (legacy_turn true), ledger_disabled (made while TUTOR_LEDGER_ENABLED was off) or missing (it
+    # expected a record and has none: a lost record, a plan L stop). Null when recorded.
     legacy_turn: bool
+    unrecorded_reason: Literal["earlier_image", "ledger_disabled", "missing"] | None = None
     record: LedgerRecordRead | None = None
 
 

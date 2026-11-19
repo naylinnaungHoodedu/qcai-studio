@@ -28,6 +28,21 @@ if TYPE_CHECKING:  # pragma: no cover
     from app.services.spans import SpanRecord
 
 LOGGER = logging.getLogger("qcai.tutor")
+# The near-miss rule this module applies; configuration package v2 names it (tutor_pipeline.retrieval.near_miss_rule)
+# and package_check requires the two to agree, so the rule cannot change under its old id (spec 18.8 F4).
+NEAR_MISS_RULE = "gate-near-floor-flag-of-top-result-v1"
+
+
+def sufficiency_of(response, *, threshold_version: str) -> Sufficiency:
+    """The sufficiency decision of a Phase 2 retrieval response (a RetrievalResponse), by NEAR_MISS_RULE: abstain
+    exactly when the gate returned nothing, with the gate's reason; near_miss when the top result is near_floor;
+    answer otherwise. The legacy ledger record uses it for the retrieval behind a contained answer (spec 18.8 F1)."""
+    if response.results:
+        top = response.results[0]
+        return Sufficiency(score=top.score, gate=response.gate, threshold_version=threshold_version, floor=response.floor,
+                           margin=response.margin, decision="near_miss" if top.near_floor else "answer", reason="evidence")
+    return Sufficiency(score=None, gate=response.gate, threshold_version=threshold_version, floor=response.floor,
+                       margin=response.margin, decision="abstain", reason=response.reason)
 
 
 def evidence_span_for(record: "SpanRecord", registry: CorpusRegistry, *, score: float | None, near_floor: bool, surface: str) -> EvidenceSpan | None:

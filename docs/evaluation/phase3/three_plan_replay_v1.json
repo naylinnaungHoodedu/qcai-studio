@@ -1,8 +1,8 @@
 {
  "report": "qcai-three-plan-replay",
  "format_version": 1,
- "created_at": "2026-11-19T18:02:11+00:00",
- "commit": "65f56d1d7e0e0f4a82d172531323428be1cf7408",
+ "created_at": "2026-11-19T20:40:35+00:00",
+ "commit": "928abd4fe4bc86c7d9125e534e11d20c616000c0-dirty",
  "evidence_class": "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 evidence (plan Phase 3 H)",
  "public_corpus_only": true,
  "excluded_sources": [
@@ -22,7 +22,7 @@
  },
  "config_package": {
   "version": "2.0.0",
-  "sha256": "57fa50fee7d66e68cdb261e828709d9c0ee8b545922af6e67b72774d72f31144"
+  "sha256": "e7116589639119330256672a2e05e23aebbedcf32e121e2d9a8e1f856479866b"
  },
  "tutor_pipeline": {
   "resolver": "thread-resolver-v1",
@@ -32,7 +32,7 @@
   "binding_rule": "resolver-bundle-sentence-v1",
   "prompt_hashes": {
    "resolver": "c7409f113bf7f5358ff16e981092d5d0fc4c3c407cd9731b869061fd26c7ad22",
-   "evidential": "c90998d423d7e7c027ebe60ce2762e299afd896285022a4472077b2a3d2c9bd8",
+   "evidential": "5b8a34d3da037ce1d4efe324b6727e104f167f361fbe1920173afef9d4d43842",
    "pedagogical": "452fbef12b51d5c1d2aa615ac845a1ab518f31d949e990bdf52ec948fefc613b"
   },
   "phase2_bound_claim_ratio_baseline": 1.0
@@ -80,7 +80,7 @@
     "bound_claim_ratio": null
    },
    "stop": false,
-   "items_digest": "27561069fe0419725282bd60ae9de26d6f02e2a3e6f72833440a80a7e454e079"
+   "items_digest": "233adeb978f8c8752bf78db3a0b9117b5a5c15dc9ffdf9887ae5cc6415b1515b"
   },
   {
    "name": "all_public_approved",
@@ -119,7 +119,7 @@
     "bound_claim_ratio": 1.0
    },
    "stop": false,
-   "items_digest": "3ffd5711464261e65e9ac4f0bd29fee58f019a22e94db8139f5894f016d85c40"
+   "items_digest": "8a198f3c2fbbb37538a42b95a8afcab9d5201845a340b3fee25a268477e65915"
   },
   {
    "name": "all_public_approved",
@@ -157,8 +157,52 @@
     "bound_claim_ratio": 1.0
    },
    "stop": false,
-   "items_digest": "d5a21123a25ca56ebed5a039b0dfd0dd63a424e1e78ee0fe21155b252943c3cd"
+   "items_digest": "353b6d02e11795aa5ad22cca6a22ac53d64b8f2f9d5f9756eb6b83b379f02d12"
   }
  ],
- "result": "pass"
+ "result": "pass",
+ "inputs": {
+  "rule": "imported-repository-modules-sha256-lf-v1",
+  "files": {
+   "apps/api/app/__init__.py": "a45661633011b095a62071507cf3309e100424dd64d34feabf2cc6d084696348",
+   "apps/api/app/core/config.py": "15badd7b6689ba035a3d4eb6fa995abd0a8d01b08a0346a80da8e26dd7d6545c",
+   "apps/api/app/core/config_package.py": "001876e48e8f65f1a02a9344f3077fbbc6163b9599d150531eaebfa78e147cdd",
+   "apps/api/app/core/corpus_governance.py": "39153061b8d613ca0298a5210b4d9abeb4da2298608b1b471c0cf659a7f9a4fd",
+   "apps/api/app/core/data_planes.py": "195f35a4a4a01cabeb32d48a0d81c1beb0ca714e943d7c154abe3e96a35a5976",
+   "apps/api/app/core/db.py": "618e636a4e8578d1d6cdd2bfa019562e33bcce66c6fa5fa0bdd657bcaa0109c5",
+   "apps/api/app/core/log_redaction.py": "e0aa0b3d5247fd4d267d7f4816b92b2b9cf9a034035b9e4a16472da6608e75e8",
+   "apps/api/app/core/manifest_v2.py": "993892df5fb5e97fa34d5e8bd645eabca4d2960b7cf8959383064d2de10087a3",
+   "apps/api/app/core/source_assets.py": "1889e9d025697c0d928b6e068325c0569adc7b8a802394a6dd3750f451e39ce5",
+   "apps/api/app/core/structured_logging.py": "854ef58ab42efdb665dc20cff8595e296241ccd63c5322eb77bcb7830b691ea1",
+   "apps/api/app/db_models.py": "b45bfeda7a3ef58163dba11a3833e759842a9738b2cf977e6ee374490e7aafd3",
+   "apps/api/app/schemas.py": "1761b66b14909b835fd16b9dec76591f0051078e5ae6ed2f0f0b95dd3b0b68dc",
+   "apps/api/app/services/claim_gate.py": "f49811bd1c1b1b2960387b783cce56b8a4c0c588e923b27bcbd946c8f14b926b",
+   "apps/api/app/services/contained_answers.py": "b32a28b65f294fb7de09229679ca2503666de9c45e8179f1f4f52c0302c96e99",
+   "apps/api/app/services/content_assembler.py": "8e2047b04b6682fce7392276abeb497db75676975cfdf844edd724d8045ab2c6",
+   "apps/api/app/services/docx_parser.py": "c0b549050d0381f0bf14a26052fa66d082e9d470ca284b35e9529ed872274bd1",
+   "apps/api/app/services/ledger.py": "e48452bb9022edd39e604739df85dd32eff6ec9846cc77a6b41c78f5d17c7f14",
+   "apps/api/app/services/lexical_index.py": "4096e27839a1179ad9611493b151fc54a1f767673ed0cde8eef454c69080f4ed",
+   "apps/api/app/services/provenance.py": "cbea0a9970dac7fe17b653e1308d26b99846e92d0c9e04b5b15be4c3a96e5857",
+   "apps/api/app/services/retrieval_engine.py": "11b8357b574f9567ee544fb98f6a0cc849600f5c2fb6f8052b009e4ff1173452",
+   "apps/api/app/services/retrieval_metrics.py": "58428daac4565b8df6b77bf424442a21ee647a64f19701649cb6751042be603d",
+   "apps/api/app/services/retrieval_p1.py": "a15a1431407ba90d04ba7a2c089fee9f3f4d66d6c1a9030a7680cb6194c7cb37",
+   "apps/api/app/services/span_resolver.py": "681d34b15b471ee685a38023676782847184304078373d21dd40de451b8e4442",
+   "apps/api/app/services/spans.py": "c470878066ef33a5a92c907476f5f7e303b5bc00df4b65adea6a85ace261647e",
+   "apps/api/app/services/text_utils.py": "dd37e0c66bb965d3183b46b727ae523f059737eee577614f83da58eae55153af",
+   "apps/api/app/services/transcripts.py": "1a55f3f5b7e0ce0b9f74999691b50fa3ebb9aeb63bc1051f2bc16b334bd8f053",
+   "apps/api/app/services/tutor_pipeline/__init__.py": "bd5834bd1aff386c87af74f04165403a38ed4edaebe388ef3fc82906f5d43fb3",
+   "apps/api/app/services/tutor_pipeline/bind.py": "a42b8f77cdc63266b4d8e56f724271aa64f3e652ce4c8737ea498eff97e80f79",
+   "apps/api/app/services/tutor_pipeline/contracts.py": "bae5bcae0b6e43e1c6e6b44cc4d3bbe78a985c4ecc3a46ed455b0fe90445b5c1",
+   "apps/api/app/services/tutor_pipeline/evidential.py": "7ba137589fe95c0b6836eda4e62b11ac24dd976cf28cbb8fd80e449a526336ee",
+   "apps/api/app/services/tutor_pipeline/lock.py": "5ef8ec27e85486ed85e463ade637e76f90c9c1c24b6532dcdaf139862798f430",
+   "apps/api/app/services/tutor_pipeline/metrics.py": "30b50d5547e2785b6c8635322062f368023c587a0b71de69cff507942d40ec57",
+   "apps/api/app/services/tutor_pipeline/pipeline.py": "3e42822298142c74b59c01e38b791e4a4d04456ea5d5b9071dcd32bf46d017dc",
+   "apps/api/app/services/tutor_pipeline/render.py": "76715cf2a0dc456323a952f10751fcff8d6eae82aaf5d317c01e8282b3e8b919",
+   "apps/api/app/services/tutor_pipeline/resolve.py": "60cad8ad9ad51c5eddf20e93f24aa2ebac6555f349f2a7c38aed17a3d2e5cc39",
+   "apps/api/app/services/tutor_pipeline/retrieve.py": "aafcd03079caf2e71a410055e69753378e374c21b0c5e97955b186ea74880551",
+   "apps/api/app/services/tutor_pipeline/text.py": "5c6110c9deddefc74c7466ea71ca7d0b5df784ea4cef64b7204b116d1b735bc3",
+   "scripts/replay_tutor_plans.py": "eafe108f4b2fcbb2e1a9fc3b0f4928e6b0d65025a026532ea787d28ebae2d7d6"
+  },
+  "sha256": "e8e376729366b65d59623bb1fea92b0d95efe5aade31b17750a4f7561e70a32f"
+ }
 }

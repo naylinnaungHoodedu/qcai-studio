@@ -16,10 +16,14 @@ the package's tutor_pipeline.stop.phase2_bound_claim_ratio is the plan L stop.
 This is an engineering replay on public-corpus fixtures. It is NOT E3 or LQ-1 evidence (plan Phase 3 H). Anything
 under lqs/ is refused; no private-plane item, learner record, tutor turn or rating is read; nothing is written to a
 database. The report holds hashes and counts only, never query, claim or span text.
-Its commit is HEAD when the working tree is clean, else HEAD + "-dirty"; --write refuses a dirty tree (exit 4)
-unless --allow-dirty is given, so a committed record names the commit that holds the code it replayed.
+The record names the code it replayed by content (spec 18.8 F2): `inputs` lists every repository module the replay
+imported (apps/api/app and scripts/) with the sha256 of its text (line endings normalised to LF), and their digest.
+The committed-record test recomputes those hashes from the checkout, and --check compares the whole block with a
+fresh run, so a record and its code can be committed together and the check survives a squash merge, a shallow
+clone and a rebase alike. `commit` is informational: the HEAD the record was written on, + "-dirty" when the working
+tree differed from it. --write refuses a dirty tree (exit 4) unless --allow-dirty is given.
 Exit codes: --write 0 pass, 1 mismatch, 3 stop, 4 dirty tree refused; --check 1 if the record differs from a fresh
-run (created_at and commit aside), else as --write.
+run (created_at and commit aside, inputs included), else as --write.
 """
 
 from __future__ import annotations
@@ -70,6 +74,10 @@ EVIDENCE_CLASS = "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 e
 EXIT_MISMATCH = 1
 EXIT_DIRTY = 4
 EXIT_STOP = 3
+# How `inputs` names the replayed code (spec 18.8 F2).
+INPUTS_RULE = "imported-repository-modules-sha256-lf-v1"
+INPUT_PREFIXES = ("apps/api/app/", "scripts/")
+SELF = "scripts/replay_tutor_plans.py"
 
 
 def _refuse_lqs(path: Path) -> None:
@@ -112,6 +120,50 @@ def _fixture_block(path: Path, items: int) -> dict:
 
 def _settings(config: str, gate: str, manifest: Path) -> Settings:
     return Settings(environment="production", enforce_corpus_governance=True, corpus_manifest_path=str(manifest), retrieval_gate=gate)
+
+
+def text_sha256(path: Path) -> str:
+    """sha256 of a text file with CRLF read as LF, so a Windows checkout (core.autocrlf) and a Linux one agree."""
+    return hashlib.sha256(Path(path).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
+def replay_inputs() -> dict:
+    """The code the replay ran, by content: every module under apps/api/app or scripts/ that this process imported,
+    with its text_sha256, and the digest of that map. Run standalone (--write, --check), the set is the replay's
+    own; inside a test process it also holds what other tests imported."""
+    root = REPO_ROOT.resolve()
+    files: dict[str, str] = {}
+    for module in list(sys.modules.values()):
+        location = getattr(module, "__file__", None)
+        if not location or not str(location).endswith(".py"):
+            continue
+        path = Path(location).resolve()
+        if not path.is_relative_to(root):
+            continue
+        relative = path.relative_to(root).as_posix()
+        if relative.startswith(INPUT_PREFIXES):
+            files[relative] = text_sha256(path)
+    files[SELF] = text_sha256(Path(__file__).resolve())
+    ordered = dict(sorted(files.items()))
+    return {"rule": INPUTS_RULE, "files": ordered, "sha256": canonical_sha256(ordered)}
+
+
+def input_problems(inputs: dict, root: Path = REPO_ROOT) -> list[str]:
+    """Why a record's inputs do not name the checked-out code: a listed file that is missing or whose text differs,
+    a digest that does not match its map, or an unknown rule. Empty when the record replayed exactly this code."""
+    problems: list[str] = []
+    if inputs.get("rule") != INPUTS_RULE:
+        problems.append(f"unknown inputs rule {inputs.get('rule')!r}")
+    files = inputs.get("files") or {}
+    if canonical_sha256(dict(sorted(files.items()))) != inputs.get("sha256"):
+        problems.append("the inputs digest does not match its file map")
+    for relative, digest in sorted(files.items()):
+        path = Path(root) / relative
+        if not path.is_file():
+            problems.append(f"{relative} is listed but missing")
+        elif text_sha256(path) != digest:
+            problems.append(f"{relative} differs from the code the record replayed")
+    return problems
 
 
 def _ratio(bound: int, proposed: int) -> float | None:
@@ -261,6 +313,8 @@ def compute(
         "plans": list(PLANS),
         "configurations": results,
         "result": "mismatch" if mismatch else "stop" if stop else "pass",
+        # Last, once every lazily imported module of the run is loaded (spec 18.8 F2).
+        "inputs": replay_inputs(),
     }
 
 
@@ -272,8 +326,8 @@ def _git(*args: str) -> subprocess.CompletedProcess:
 
 
 def _commit() -> str:
-    """The commit whose code produced the record: HEAD, with "-dirty" when the working tree differs from it (tracked
-    changes or untracked files), so a record never names a commit that does not hold the code it replayed."""
+    """The HEAD the record was written on, with "-dirty" when the working tree differs from it (tracked changes or
+    untracked files). Informational since spec 18.8 F2: `inputs` names the code the record replayed."""
     try:
         head = _git("rev-parse", "HEAD").stdout.strip()
         if not head:
@@ -325,6 +379,9 @@ def main(argv: list[str] | None = None) -> int:
         if _strip_volatile(committed) != _strip_volatile(fresh):
             differing = sorted(key for key in set(committed) | set(fresh) if key not in {"created_at", "commit"} and committed.get(key) != fresh.get(key))
             print(f"replay check failed: the record differs from a fresh run in: {', '.join(differing)}", file=sys.stderr)
+            if "inputs" in differing:
+                print("  the replayed code changed since the record was written: rerun --write and commit the record with the code",
+                      file=sys.stderr)
             return 1
         print(f"replay record is current: result {fresh['result']}")
     for configuration in fresh["configurations"]:

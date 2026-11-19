@@ -33,7 +33,7 @@ from app.schemas import (
 from app.services.answer_history import WITHDRAWN_ANSWER, stored_before_containment
 from app.services.contained_answers import ContainedAnswer, contain_answer
 from app.services.evidence_panel import build_evidence_panel
-from app.services.ledger import LegacyDelivery, LegacyPreparationFailed, legacy_delivery_for
+from app.services.ledger import LegacyDelivery, LegacyPreparationFailed, legacy_delivery_for, preparation_failed
 from app.services.retrieval_metrics import record_citations
 from app.services.span_store import persist_cited_spans
 from app.services.teaching_assistant import TeachingAssistantService
@@ -184,6 +184,9 @@ class TutorOrchestrator:
                 corpus_version=registry.corpus_version,
                 policy_version=self.settings.grounding_policy_version,
                 created_at=now,
+                # Whether this turn's delivery is ledgered (spec 18.8 F12): an image that keeps no ledger leaves it
+                # null, so a turn it served is never read as a lost record.
+                ledger_record_expected=bool(self.settings.tutor_ledger_enabled),
             )
         )
         thread.updated_at = now
@@ -226,7 +229,7 @@ class TutorOrchestrator:
         try:
             return self._legacy_delivery(turn_id, candidate, contained, registry)
         except Exception as exc:  # noqa: BLE001 - a lost record is counted after the commit (plan L stop); the answer is unchanged
-            return LegacyPreparationFailed(error=exc, surface="tutor")
+            return preparation_failed(exc, contained=contained, retrieval=getattr(candidate, "_retrieval", None), surface="tutor")
 
     def _legacy_delivery(self, turn_id: str, candidate: AssistantChatResponse, contained: ContainedAnswer, registry: CorpusRegistry) -> LegacyDelivery:
         store = self._store()

@@ -1,5 +1,6 @@
-"""The evidence panel of a tutor answer (plan task 3.8: "evidence panel shows decision, span links, degraded and
-"lexically screened" labels" [E-46]; Phase 3 spec 4.13).
+"""The evidence panel of a tutor or Q&A answer (plan task 3.8: "evidence panel shows decision, span links, degraded
+and "lexically screened" labels" [E-46]; Phase 3 spec 4.13; the Q&A panel since spec 18.8 F3, E-46 being the Q&A
+citation cards).
 
 Labels only, and only for the contained answer the learner already receives: the decision, the spans quoted
 (links to GET /evidence/spans/{span_id} only when that route is enabled), the "lexically screened" label (task

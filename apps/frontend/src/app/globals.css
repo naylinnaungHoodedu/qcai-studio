@@ -3633,11 +3633,14 @@ button:disabled,
   color: #0b6e8c;
 }
 
-/* The floating assistant chat keeps its dark styling in the light theme, so it
-   keeps the dark tokens too: otherwise its muted text, links and focus rings take
-   the light theme's darker values on a dark bubble (about 1.9:1 and 3.9:1; Phase 3
-   spec 18.7 E17). The values are the dark :root tokens above. */
-:root[data-theme="light"] .assistant-panel {
+/* The floating assistant chat keeps its dark styling in the light theme, so the
+   evidence panel inside it keeps the dark tokens: otherwise its muted text, links
+   and focus rings take the light theme's darker values on a dark bubble (about
+   1.9:1 and 3.9:1; Phase 3 spec 18.7 E17). Scoped to the development-only panel,
+   not the whole chat (spec 18.8 F9): on the whole chat the light-theme compose
+   field, which keeps its white background, took --ink #f2f7ff (1.08:1), and the
+   rest of the chat changed in production. The values are the dark :root tokens. */
+:root[data-theme="light"] .assistant-panel .assistant-evidence-panel {
   --ink: #f2f7ff;
   --muted: #95acd1;
   --line: rgba(88, 137, 255, 0.24);
@@ -3648,6 +3651,17 @@ button:disabled,
   --text: var(--ink);
   --text-muted: var(--muted);
   --border: var(--line);
+}
+
+/* The Q&A panel's evidence panel sits on the light lesson panel in the light
+   theme: its passage links take the light theme's darker link colour (--warm,
+   about 5.8:1 on white; --accent is about 3.7:1), spec 18.8 F3. */
+:root[data-theme="light"] .qa-response .assistant-evidence-spans a {
+  color: var(--warm);
+}
+
+:root[data-theme="light"] .qa-response .assistant-evidence-spans a:hover {
+  color: var(--ink);
 }
 
 /* Light theme, extended to the interactive studios (builder / arena /

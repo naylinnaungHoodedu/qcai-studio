@@ -1,7 +1,10 @@
 """Consistency of configuration package v2 with the tutor pipeline code (Phase 3 spec 5.4; conflict 30).
 
 Always (start-up, tests, CI): each pinned schema file exists and its canonical sha256 equals its pin; the three
-prompt hashes the code computes equal the pinned values; the generator registry equals WIRED_GENERATORS.
+prompt hashes the code computes equal the pinned values; every rule id and name the package records (sentence,
+binding and subset rules, the near-miss rule, the ledger's chain, entry schema, record-hash rule and genesis) equals
+the code's (spec 18.8 F4); the generator registry equals WIRED_GENERATORS. The two_pass_tutor defaults in
+flag_policy are compared with the code by the loader itself (config_package._parse_flag_policy).
 
 structural=True (tests and scripts/config_package.py --check only): each committed schema has the structure and
 the constraints of its pydantic model: property names, the required set, additionalProperties false at every
@@ -126,14 +129,23 @@ def check_tutor_pipeline_package(package: ConfigPackage, *, structural: bool) ->
         if computed != pinned:
             problems.append(f"the {name} prompt hash in the package ({pinned[:12]}) differs from the code's ({computed[:12]})")
     from app.services.claim_gate import SUBSET_CHECK_RULE
+    from app.services.ledger import CHAIN, GENESIS_HASH, RECORD_HASH_RULE
     from app.services.tutor_pipeline.bind import BINDING_RULE
+    from app.services.tutor_pipeline.contracts import LedgerEntry
+    from app.services.tutor_pipeline.retrieve import NEAR_MISS_RULE
     from app.services.tutor_pipeline.text import SENTENCE_RULE
 
-    # The rule ids the package names must be the code's (a rule changed under its old id is a silent change).
+    # The rule ids and names the package records must be the code's (a rule changed under its old id is a silent
+    # change; spec 18.8 F4 added the ledger's chain, entry schema, record-hash rule and genesis, and the near-miss rule).
     rules = {
         "evidential.sentence_rule": (SENTENCE_RULE, params.sentence_rule),
         "evidential.binding_rule": (BINDING_RULE, params.binding_rule),
         "pedagogical.subset_check": (SUBSET_CHECK_RULE, params.subset_check),
+        "retrieval.near_miss_rule": (NEAR_MISS_RULE, params.near_miss_rule),
+        "ledger.chain": (CHAIN, params.ledger_chain),
+        "ledger.entry_schema": (LedgerEntry.model_fields["entry_schema"].default, params.ledger_entry_schema),
+        "ledger.record_hash_rule": (RECORD_HASH_RULE, params.record_hash_rule),
+        "ledger.genesis": (GENESIS_HASH, params.genesis),
     }
     for name, (code_value, pinned) in rules.items():
         if code_value != pinned:

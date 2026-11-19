@@ -19,6 +19,16 @@ few milliseconds earlier, so anyone who can read both tables can match the two (
 retention, deletes that row, and the record can then no longer be tied to anyone. Every shadow run of the two-pass
 pipeline is recorded with delivery "shadow" and a shadow- id naming the turn it shadowed. "delivered" is Phase 4's.
 
+A legacy record's abstention_reason says why the delivery abstained (plan I "abstention by reason"; spec 18.8 F1):
+the retrieval gate's own reason when the gate returned nothing (no_query_terms, no_match, insufficient_coverage,
+below_floor), and no_approved_span only when the gate matched passages none of which could be quoted (not approved
+under D-31, or not verified). Its retrieval.sufficiency is the gate's decision (retrieve.sufficiency_of). The
+learner's response and the turn's decision_reason are unchanged.
+
+Each delivery's attempt logs one tutor.ledger.attempted line with its decision, its abstention reason and an
+attempt id, and ends in exactly one terminal line with the same attempt id once its append ends:
+tutor.ledger.appended (delivery legacy) or tutor.ledger.append_failed (spec 18.8 F11).
+
 Budgets, attempts and the appender's size come from configuration package v2 (tutor_pipeline.budgets; PD-11).
 TUTOR_LEDGER_APPEND_BUDGET_MS and TWO_PASS_SHADOW_BUDGET_MS override the two budgets only; every record stamps
 the budgets in force and which of them differ from the package (versions.budgets), so a record names its budgets
@@ -47,6 +57,7 @@ import random
 import threading
 import time
 from typing import Any
+from uuid import uuid4
 
 from pydantic import ValidationError
 from sqlalchemy import func, insert, select, text, update
@@ -63,6 +74,8 @@ from app.services.contained_answers import ABSTENTION, EXTRACTIVE_MODE, MAX_QUOT
 from app.services.tutor_pipeline.bind import claim_id_for
 from app.services.tutor_pipeline.contracts import (
     ENTRY_SCHEMAS,
+    GATE_ABSTENTION_REASONS,
+    LEGACY_ABSTENTION_REASON,
     LEGACY_NOT_PUBLIC,
     LEGACY_UNRESOLVED,
     BudgetStamp,
@@ -72,16 +85,23 @@ from app.services.tutor_pipeline.contracts import (
     PipelineCounts,
     Provenance,
     RetrievalRecord,
+    Sufficiency,
     VersionStamps,
     ledger_canonical,
     sha256_hex,
 )
 from app.services.tutor_pipeline.metrics import LEDGER_METRICS
-from app.services.tutor_pipeline.retrieve import evidence_span_for
+from app.services.tutor_pipeline.retrieve import evidence_span_for, sufficiency_of
 
 LOGGER = logging.getLogger("qcai.tutor")
 CHAIN = "tutor-responses"
 GENESIS_HASH = "0" * 64
+# The record-hash rule record_hash_for implements; configuration package v2 names it (tutor_pipeline.ledger.
+# record_hash_rule) and package_check requires the two to agree (spec 18.8 F4).
+RECORD_HASH_RULE = "sha256(canonical{chain,seq,created_at,prev_hash,entry_sha256})-v1"
+# PostgreSQL's deadlock and serialization failures: the attempt's transaction was rolled back whole, so it is
+# retried within the remaining budget like an IntegrityError (spec 18.8 F8).
+RETRYABLE_SQLSTATES = frozenset({"40P01", "40001"})
 # The Alembic revision this code expects (tested against the single head); stamped on every record (plan 13.5).
 SCHEMA_REVISION = "20261119_phase3_response_ledger"
 LEGACY_GENERATOR_ID = "contained-answers-v1"
@@ -188,6 +208,18 @@ def _log(level: int, message: str, event: str, **fields: Any) -> None:
     LOGGER.log(level, message, extra={FIELDS: {"event": event, **fields}})
 
 
+def sqlstate(exc: BaseException) -> str | None:
+    """The SQLSTATE of a database error from psycopg (.sqlstate) or pg8000 (args[0]["C"]), else None."""
+    original = getattr(exc, "orig", exc)
+    code = getattr(original, "sqlstate", None) or getattr(original, "pgcode", None)
+    if code:
+        return str(code)
+    for argument in getattr(original, "args", ()) or ():
+        if isinstance(argument, dict) and argument.get("C"):
+            return str(argument["C"])
+    return None
+
+
 def _surface_field(surface: str | None) -> dict[str, str]:
     """A /qa/ask line says where it came from (surface "qa"); tutor lines keep their original fields."""
     return {"surface": "qa"} if surface == "qa" else {}
@@ -204,20 +236,25 @@ def append_ledger_entry(
     now: datetime | None = None,
     budget_ms: int,
     attempts: int | None = None,
+    log_fields: dict[str, Any] | None = None,
 ) -> AppendedRecord:
     """Append one record in its own transaction, at most `attempts` times within budget_ms; attempts defaults to the
     configuration package's tutor_pipeline.budgets.ledger_append_attempts (PD-11).
 
     Statements run in a fixed order (Core, so the unit of work never reorders them): head insert-if-missing, head
-    SELECT ... FOR UPDATE, record INSERT, head UPDATE. Only an IntegrityError is retried; any other database error
-    (a lock timeout, a statement timeout, a busy database, a trigger refusal) is raised at once, so the caller fails
-    open quickly. On PostgreSQL every attempt first sets lock_timeout, statement_timeout and
+    SELECT ... FOR UPDATE, record INSERT, head UPDATE. Start-up's trigger guard locks the two tables in the same
+    order, head first, and skips its DDL when the guards are current (app.core.schema_upgrades; spec 18.8 F8). An
+    IntegrityError, a deadlock (40P01) or a serialization failure (40001) is retried within the budget: each rolled
+    the whole attempt back. Any other database error (a lock timeout, a statement timeout, a busy database, a trigger
+    refusal) is raised at once, so the caller fails open quickly. log_fields (the legacy attempt id) are added to
+    the appended line. On PostgreSQL every attempt first sets lock_timeout, statement_timeout and
     idle_in_transaction_session_timeout to the remaining budget. The last bounds the time the attempt holds the head
     row's lock between statements: if the process stalls after SELECT ... FOR UPDATE (a CPU-throttled instance once
     the response has gone, spec 18.6 D13), the server ends the session and releases the lock, so the other instances'
     appends are not held up. None of the three bounds the wait for a pooled connection: record_legacy_delivery
     bounds the learner's wait as a whole.
     """
+    extra_fields = dict(log_fields or {})
     payload = entry_bytes(entry)
     entry_text = payload.decode("utf-8")
     entry_digest = sha256_hex(payload)
@@ -252,7 +289,8 @@ def append_ledger_entry(
                     appended = AppendedRecord(seq=existing.seq, record_hash=existing.record_hash, duplicate=True)
                     db.rollback()
                     _log(logging.INFO, "Tutor ledger record already present", "tutor.ledger.appended", delivery=entry.delivery,
-                         seq=appended.seq, record_hash=appended.record_hash, duplicate=True, **_surface_field(_entry_surface(entry)))
+                         seq=appended.seq, record_hash=appended.record_hash, duplicate=True, **_surface_field(_entry_surface(entry)),
+                         **extra_fields)
                     return appended
                 module = postgresql if dialect == "postgresql" else sqlite
                 db.execute(
@@ -292,11 +330,18 @@ def append_ledger_entry(
                 db.rollback()
                 last_error = exc
                 continue
-            except (LedgerConflict, DBAPIError):
+            except DBAPIError as exc:
+                db.rollback()
+                if sqlstate(exc) in RETRYABLE_SQLSTATES:
+                    # A deadlock victim or a serialization failure: nothing of this attempt was kept, so try again.
+                    last_error = exc
+                    continue
+                raise
+            except LedgerConflict:
                 db.rollback()
                 raise
         _log(logging.INFO, "Tutor ledger record appended", "tutor.ledger.appended", delivery=entry.delivery, seq=seq,
-             record_hash=record_hash, duplicate=False, **_surface_field(_entry_surface(entry)))
+             record_hash=record_hash, duplicate=False, **_surface_field(_entry_surface(entry)), **extra_fields)
         return AppendedRecord(seq=seq, record_hash=record_hash, duplicate=False)
     raise LedgerAppendError("the ledger record could not be appended within its attempts and budget") from last_error
 
@@ -325,23 +370,15 @@ def _insert_head_if_missing(db: Session, *, at: datetime) -> None:
     )
 
 
-def mark_ledger_started(session_factory: Callable[[], Session] = SessionLocal, *, now: datetime | None = None) -> None:
-    """At start-up, while TUTOR_LEDGER_ENABLED: create the chain head (seq 0, the genesis hash) with its started_at if
-    no head exists yet (spec 18.7 E6). From then on every delivery is expected to have a record, so a turn whose
-    record was lost reads as a missing record, never as a pre-ledger turn, even when the very first append fails.
-    Insert-or-nothing, so concurrent instances agree; it fails open (the ledger never stops start-up)."""
-    try:
-        with session_factory() as db:
-            _insert_head_if_missing(db, at=_utc(now or datetime.now(UTC)))
-            db.commit()
-    except Exception as exc:  # noqa: BLE001 - the marker is bookkeeping; the first append inserts the head too
-        _log(logging.WARNING, "Tutor ledger start marker could not be written", "tutor.ledger.start_marker_failed", error=type(exc).__name__)
-
-
 def ledger_started_at(db: Session) -> datetime | None:
-    """When the ledger began recording (spec 18.7 E6): the earlier of the head's started_at (start-up, or the first
-    append) and the first record's created_at (a restored chain keeps its own times). None before either exists, or
-    on a head written before started_at existed and no record."""
+    """When the chain began (informational): the earlier of the head's started_at, which the first append writes,
+    and the first record's created_at (a restored chain keeps its own times). None before either exists.
+
+    It does not say which turns should have a record, and start-up no longer writes it (spec 18.8 F10): a revision
+    deployed with no traffic starts while the earlier image still serves every learner, so a start time is not when
+    the ledger began recording deliveries. Each turn says so itself instead: TutorTurn.ledger_record_expected is true
+    when a Phase 3 image created it with TUTOR_LEDGER_ENABLED on, false under the kill switch, and null when an image
+    that keeps no ledger created it (before Phase 3, or during a rollback window; spec 18.8 F12)."""
     started = db.scalar(select(ResponseLedgerHead.started_at).where(ResponseLedgerHead.chain == CHAIN))
     first = db.scalar(select(func.min(ResponseLedgerRecord.created_at)))
     times = [_utc(value) for value in (started, first) if value is not None]
@@ -455,16 +492,29 @@ def verify_response_ledger(db: Session, *, expected_head: tuple[int, str] | None
 
 def ledger_coverage(db: Session, since: datetime) -> dict[str, Any]:
     """Tutor turns created since `since` with no ledger record (plan I "ledger writes 100% of deliveries"; report
-    only), and the /qa/ask records since then. A qa- record holds no id of its Q&A row, so Q&A coverage is the
-    per-process legacy_by_surface.qa.coverage_rate SLI, not a join."""
+    only), split by what each turn expected (TutorTurn.ledger_record_expected; spec 18.8 F12):
+      unrecorded                  it expected a record and has none: a lost record, a plan L stop;
+      not_expected_earlier_image  an image that keeps no ledger created it (before Phase 3, or a rollback window);
+      ledger_disabled             it was created while TUTOR_LEDGER_ENABLED was off (the kill switch);
+    and the /qa/ask records since then. A qa- record holds no id of its Q&A row, so Q&A coverage is the per-process
+    legacy_by_surface.qa.coverage_rate SLI and the tutor.ledger.* outcome lines, not a join."""
     since = _utc(since)
     recorded = select(ResponseLedgerRecord.response_id).where(ResponseLedgerRecord.response_id == TutorTurn.id).exists()
-    turns = db.scalar(select(func.count()).select_from(TutorTurn).where(TutorTurn.created_at >= since)) or 0
-    unrecorded = db.scalar(select(func.count()).select_from(TutorTurn).where(TutorTurn.created_at >= since, ~recorded)) or 0
+
+    def count(*conditions) -> int:
+        return int(db.scalar(select(func.count()).select_from(TutorTurn).where(TutorTurn.created_at >= since, *conditions)) or 0)
+
     qa_records = db.scalar(
         select(func.count()).select_from(ResponseLedgerRecord).where(ResponseLedgerRecord.created_at >= since, ResponseLedgerRecord.response_id.like("qa-%"))
     ) or 0
-    return {"since": since.isoformat(), "turns_since": int(turns), "unrecorded": int(unrecorded), "qa_records_since": int(qa_records)}
+    return {
+        "since": since.isoformat(),
+        "turns_since": count(),
+        "unrecorded": count(TutorTurn.ledger_record_expected.is_(True), ~recorded),
+        "not_expected_earlier_image": count(TutorTurn.ledger_record_expected.is_(None), ~recorded),
+        "ledger_disabled": count(TutorTurn.ledger_record_expected.is_(False), ~recorded),
+        "qa_records_since": int(qa_records),
+    }
 
 
 def export_ledger(db: Session, path: Path) -> int:
@@ -591,6 +641,8 @@ class LegacyDelivery:
     # Delivered quotations whose span's derived license class is not public: kept out of the record and counted.
     dropped_not_public: int = 0
     surface: str = "tutor"
+    # The retrieval gate's decision behind the delivery (None when no retrieval side channel was available).
+    sufficiency: Sufficiency | None = None
 
 
 @dataclass(frozen=True)
@@ -601,6 +653,31 @@ class LegacyPreparationFailed:
 
     error: BaseException
     surface: str = "tutor"
+    # What was delivered, for the delivered-decision SLI (plan I "abstention by reason"), when the caller knows it.
+    decision: str | None = None
+    reason: str | None = None
+
+
+def delivered_abstention_reason(contained: Any, retrieval: Any) -> str | None:
+    """Why a legacy delivery abstained (plan I "abstention by reason"; spec 18.8 F1), or None for an answer: the
+    retrieval gate's own reason when it returned nothing, else no_approved_span (the gate matched passages but none
+    could be quoted: not approved under D-31, or failed verification)."""
+    if contained.decision == "answer":
+        return None
+    results = getattr(retrieval, "results", None)
+    reason = getattr(retrieval, "reason", None)
+    if isinstance(results, list) and not results and reason in GATE_ABSTENTION_REASONS:
+        return str(reason)
+    return LEGACY_ABSTENTION_REASON
+
+
+def preparation_failed(error: BaseException, *, contained: Any, retrieval: Any, surface: str) -> LegacyPreparationFailed:
+    """A LegacyPreparationFailed that still says what was delivered (its decision and abstention reason)."""
+    try:
+        decision, reason = str(contained.decision), delivered_abstention_reason(contained, retrieval)
+    except Exception:  # noqa: BLE001 - the failure is what is counted; the decision is extra
+        decision, reason = None, None
+    return LegacyPreparationFailed(error=error, surface="qa" if surface == "qa" else "tutor", decision=decision, reason=reason)
 
 
 def legacy_delivery_for(
@@ -641,7 +718,9 @@ def legacy_delivery_for(
             continue
         claims.append((claim.text, cited))
     retrieved: tuple[EvidenceSpan, ...] | None = None
+    sufficiency: Sufficiency | None = None
     if retrieval is not None:
+        sufficiency = sufficiency_of(retrieval, threshold_version=threshold_version)
         spans = []
         for result in retrieval.results:
             record = store.span_registry.get(result.span_id or result.chunk_id)
@@ -654,7 +733,7 @@ def legacy_delivery_for(
     return LegacyDelivery(
         response_id=response_id,
         decision=contained.decision,
-        reason=contained.reason,
+        reason=delivered_abstention_reason(contained, retrieval) or contained.reason,
         claims=tuple(claims),
         quoted=tuple(quoted),
         retrieved=retrieved,
@@ -673,6 +752,7 @@ def legacy_delivery_for(
         manifest_sha256=registry.manifest_sha256,
         dropped_not_public=not_public,
         surface="qa" if surface == "qa" else "tutor",
+        sufficiency=sufficiency,
     )
 
 
@@ -719,7 +799,7 @@ def build_legacy_entry(delivery: LegacyDelivery, *, settings: Settings, package:
             margin=delivery.margin,
             mode=delivery.retrieval_mode,
             evidence_scope="retrieved" if retrieved else "delivered_citations",
-            sufficiency=None,
+            sufficiency=delivery.sufficiency if retrieved else None,
             evidence=tuple(delivery.retrieved if retrieved else delivery.quoted),
         ),
         claim_set_hash=None,
@@ -751,14 +831,17 @@ def build_legacy_entry(delivery: LegacyDelivery, *, settings: Settings, package:
     )
 
 
-def record_ledger_failure(delivery: str, stage: str, exc: BaseException, *, surface: str | None = None) -> None:
-    """Count and log a lost ledger record (plan L: a ledger write failure is a stop condition)."""
+def record_ledger_failure(delivery: str, stage: str, exc: BaseException, *, surface: str | None = None, attempt: str | None = None) -> None:
+    """Count and log a lost ledger record (plan L: a ledger write failure is a stop condition). A legacy failure line
+    carries the attempt id of its tutor.ledger.attempted line: it is that attempt's terminal line (spec 18.8 F11)."""
     if isinstance(exc, LedgerConflict):
         LEDGER_METRICS.conflict(delivery)
         _log(logging.ERROR, "Tutor ledger conflict", "tutor.ledger.conflict", delivery=delivery)
     LEDGER_METRICS.failed(delivery, surface=surface)
     # Tutor deliveries keep their original log fields; a /qa/ask record says where it came from.
     extra = {"surface": surface} if surface == "qa" else {}
+    if attempt is not None:
+        extra["attempt"] = attempt
     _log(logging.ERROR, "Tutor ledger record could not be appended", "tutor.ledger.append_failed", delivery=delivery, stage=stage,
          error=type(exc).__name__, **extra)
 
@@ -841,15 +924,30 @@ def record_legacy_delivery(
     request that rolls back is never an attempt and never lowers legacy_coverage_rate (spec 18.7 E5). A
     LegacyPreparationFailed is an attempt that failed at the prepare stage.
 
+    The attempt also counts what was delivered, by decision and abstention reason (LEDGER_METRICS.delivered, and the
+    decision and abstention_reason fields of the attempted line; plan I "abstention by reason", spec 18.8 F1),
+    whatever the append then does. The attempted line carries an attempt id, and exactly one terminal line with the
+    same id ends the attempt when its append ends: tutor.ledger.appended or tutor.ledger.append_failed (spec 18.8
+    F11). An append_deferred line is not terminal: the request stopped waiting, and the terminal line follows.
+
     The learner waits at most the append budget plus the package's ledger_wait_grace_ms for the record, whatever the
     database does (spec conflict 29). None means the record was not confirmed in that time: it failed and was counted,
     or it is still being appended in the background and is counted when that ends.
     """
     surface = delivery.surface
-    LEDGER_METRICS.attempt("legacy", surface=surface)
-    _log(logging.INFO, "Tutor ledger record attempted", "tutor.ledger.attempted", delivery="legacy", **_surface_field(surface))
+    attempt = uuid4().hex
+    decision = delivery.decision
     if isinstance(delivery, LegacyPreparationFailed):
-        record_ledger_failure("legacy", "prepare", delivery.error, surface=surface)
+        reason = delivery.reason
+    else:
+        reason = delivery.reason if delivery.decision != "answer" else None
+    LEDGER_METRICS.attempt("legacy", surface=surface)
+    if decision is not None:
+        LEDGER_METRICS.delivered(decision, reason, surface=surface)
+    _log(logging.INFO, "Tutor ledger record attempted", "tutor.ledger.attempted", delivery="legacy", **_surface_field(surface),
+         decision=decision, abstention_reason=reason, attempt=attempt)
+    if isinstance(delivery, LegacyPreparationFailed):
+        record_ledger_failure("legacy", "prepare", delivery.error, surface=surface, attempt=attempt)
         return None
     try:
         settings = settings or get_settings()
@@ -858,14 +956,15 @@ def record_legacy_delivery(
         entry = build_legacy_entry(delivery, settings=settings, package=package, manifest_sha256=delivery.manifest_sha256)
         budget_ms = ledger_budget_ms(settings, package)
     except Exception as exc:  # noqa: BLE001 - a ledger fault must not change the learner's response
-        record_ledger_failure("legacy", "append", exc, surface=surface)
+        record_ledger_failure("legacy", "append", exc, surface=surface, attempt=attempt)
         return None
 
     def append() -> AppendedRecord | None:
         try:
-            appended = append_ledger_entry(entry, session_factory=session_factory, budget_ms=budget_ms, attempts=params.ledger_append_attempts)
+            appended = append_ledger_entry(entry, session_factory=session_factory, budget_ms=budget_ms, attempts=params.ledger_append_attempts,
+                                           log_fields={"attempt": attempt})
         except Exception as exc:  # noqa: BLE001 - counted here, in the worker, whether or not the request still waits
-            record_ledger_failure("legacy", "append", exc, surface=surface)
+            record_ledger_failure("legacy", "append", exc, surface=surface, attempt=attempt)
             return None
         LEDGER_METRICS.appended("legacy", duplicate=appended.duplicate, surface=surface)
         return appended
@@ -873,17 +972,18 @@ def record_legacy_delivery(
     try:
         future = LEGACY_APPENDS.submit(append, workers=params.ledger_append_workers, max_in_flight=params.ledger_append_max_in_flight)
     except Exception as exc:  # noqa: BLE001 - e.g. no thread could be started
-        record_ledger_failure("legacy", "append", exc, surface=surface)
+        record_ledger_failure("legacy", "append", exc, surface=surface, attempt=attempt)
         return None
     if future is None:
-        record_ledger_failure("legacy", "append", LedgerAppendError("too many ledger appends are already in flight"), surface=surface)
+        record_ledger_failure("legacy", "append", LedgerAppendError("too many ledger appends are already in flight"), surface=surface,
+                              attempt=attempt)
         return None
     try:
         return future.result(timeout=(budget_ms + params.ledger_wait_grace_ms) / 1000)
     except FutureTimeout:
         _log(logging.WARNING, "Tutor ledger append is still running; the response was not held for it", "tutor.ledger.append_deferred",
-             delivery="legacy", budget_ms=budget_ms, **({"surface": surface} if surface == "qa" else {}))
+             delivery="legacy", budget_ms=budget_ms, attempt=attempt, **({"surface": surface} if surface == "qa" else {}))
         return None
     except Exception as exc:  # noqa: BLE001 - append() never raises; this is a defence only
-        record_ledger_failure("legacy", "append", exc, surface=surface)
+        record_ledger_failure("legacy", "append", exc, surface=surface, attempt=attempt)
         return None

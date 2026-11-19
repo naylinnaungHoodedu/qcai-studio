@@ -7,7 +7,8 @@ is re-validated with extra="forbid"; a malformed plan abstains (claim_plan_inval
 D-12 (the provider) is open, so no provider generator exists (hold H6, PD-09): ClaimGenerator is the interface a
 Phase 5 gateway generator implements, and get_generator refuses any id outside WIRED_GENERATORS. The only wired
 generator is extractive-d19-v1 (D-19 RECOMMENDATION, PD-08): each claim is one verbatim sentence of a quotable span
-that shares a content term with the question. Under D-31 no span is quotable, so the governed build abstains.
+that shares at least tutor_pipeline.evidential.min_question_overlap_terms content terms (1; PD-11, spec 18.8 F5) with
+the question. Under D-31 no span is quotable, so the governed build abstains.
 """
 
 from __future__ import annotations
@@ -35,8 +36,8 @@ if TYPE_CHECKING:  # pragma: no cover
 EXTRACTIVE_ID = "extractive-d19-v1"
 EXTRACTIVE_RULE = (
     "D-19 extractive mode: each claim is one verbatim sentence (sentences-v2) of an approved, public-plane document "
-    "span in the envelope that shares at least one content term with the question; at most {max_claims_per_span} "
-    "per span and {max_claims} in all, in evidence order."
+    "span in the envelope that shares at least {min_question_overlap_terms} content terms with the question; at most "
+    "{max_claims_per_span} per span and {max_claims} in all, in evidence order."
 )
 
 
@@ -54,6 +55,7 @@ def evidential_prompt_hash(params: TutorPipelineParams) -> str:
             "max_claims_per_span": params.max_claims_per_span,
             "min_sentence_words": params.min_sentence_words,
             "max_sentence_chars": params.max_sentence_chars,
+            "min_question_overlap_terms": params.min_question_overlap_terms,
         }
     )
 
@@ -110,7 +112,8 @@ class ExtractiveD19Generator:
             if len(claims) >= self.params.max_claims:
                 break
             candidates = sentences(span.text, min_words=self.params.min_sentence_words, max_chars=self.params.max_sentence_chars)
-            matching = [sentence for sentence in candidates if content_terms(sentence, self.retrieval) & question_terms]
+            overlap = self.params.min_question_overlap_terms
+            matching = [sentence for sentence in candidates if len(content_terms(sentence, self.retrieval) & question_terms) >= overlap]
             for sentence in matching[: self.params.max_claims_per_span]:
                 if len(claims) >= self.params.max_claims:
                     break

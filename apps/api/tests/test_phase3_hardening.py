@@ -68,6 +68,7 @@ from app.services.retrieval_engine import RetrievalEngine
 from app.services.store import get_course_store, get_retrieval_engine, get_span_resolver
 from app.services.teaching_assistant import TeachingAssistantService
 from app.services.tutor_orchestrator import TutorOrchestrator
+from app.services.tutor_pipeline import contracts
 from app.services.tutor_pipeline import shadow as shadow_module
 from app.services.tutor_pipeline.contracts import RetrievalRequest, sha256_hex
 from app.services.tutor_pipeline.metrics import LEDGER_METRICS, LICENSE_METRICS
@@ -514,7 +515,13 @@ def test_c8_every_qa_answer_and_abstention_is_ledgered_and_the_chain_verifies(cl
     cited = {citation["span_id"] for citation in answered.json()["citations"]}
     assert answer_entry["span_ids"] and set(answer_entry["span_ids"]) <= cited
     assert answer_entry["retrieval"]["evidence_scope"] == "retrieved" and answer_entry["versions"]["generator_id"] == "contained-answers-v1"
-    assert (abstain_entry["decision"], abstain_entry["abstention_reason"], abstain_entry["claims"]) == ("abstain", "no_approved_span", [])
+    assert (abstain_entry["decision"], abstain_entry["claims"]) == ("abstain", [])
+    # Spec 18.8 F1: the record keeps the gate's own reason for an off-topic question (the gate returned nothing),
+    # with the gate's sufficiency decision; no_approved_span is for retrieved passages none of which could be quoted.
+    sufficiency = abstain_entry["retrieval"]["sufficiency"]
+    assert sufficiency["decision"] == "abstain" and abstain_entry["abstention_reason"] == sufficiency["reason"]
+    assert abstain_entry["abstention_reason"] in contracts.GATE_ABSTENTION_REASONS
+    assert answer_entry["retrieval"]["sufficiency"]["decision"] in {"answer", "near_miss"}
     with SessionLocal() as db:
         assert verify_response_ledger(db).ok
     qa = LEDGER_METRICS.snapshot()["legacy_by_surface"]["qa"]

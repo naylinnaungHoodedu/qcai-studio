@@ -44,8 +44,12 @@ ABSTENTION_REASONS = (
     "subset_check_failed",
     "budget_exceeded",
 )
-# The legacy contained path's own abstention reason (contained_answers.contain_answer).
+# The legacy contained path's own abstention reason (contained_answers.contain_answer). Since Phase 3 spec 18.8 F1 a
+# legacy ledger record keeps it only for a gate that matched passages none of which could be quoted (not approved
+# under D-31, or not verified); when the gate itself returned nothing, the record carries the gate's reason.
 LEGACY_ABSTENTION_REASON = "no_approved_span"
+# The Phase 2 retrieval gate's own abstention reasons (lexical_index.Reason without "evidence").
+GATE_ABSTENTION_REASONS = ("no_query_terms", "no_match", "insufficient_coverage", "below_floor")
 
 # Why a proposed claim is not a locked claim of its own (PipelineCounts.dropped). Every proposed claim is either
 # locked or counted under exactly one reason, so proposed_claims == bound_claims + sum(dropped).

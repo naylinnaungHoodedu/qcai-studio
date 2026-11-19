@@ -11,12 +11,15 @@ completed or failed and at which step, whether its ledger append succeeded, whet
 non-public span, and whether it tripped the bound-claim stop (E15). The public blocks are therefore:
   two_pass_shadow: runs scheduled (a turn schedules one whatever its outcome) and the Phase 2 baseline
                    (TwoPassMetrics.public_snapshot);
-  tutor_ledger:    legacy deliveries only, whose record is not a shadow output, and the legacy and Q&A
-                   license-gate counts (LedgerMetrics.public_snapshot, LicenseMetrics.public_snapshot).
+  tutor_ledger:    legacy deliveries only, whose record is not a shadow output: their ledger counts, what was
+                   delivered by decision and abstention reason (delivered; plan I "abstention by reason", spec
+                   18.8 F1; the learner already received that decision), and the legacy and Q&A license-gate
+                   counts (LedgerMetrics.public_snapshot, LicenseMetrics.public_snapshot).
 Everything else (completed, failed by step, decisions, reasons, claim counts, the ratio and its stop, the shadow's
 ledger and license counts) is in each run's log lines (tutor.two_pass.shadow, tutor.two_pass.shadow_failed,
 tutor.ledger.append_failed), which the log-based SLIs and alerts aggregate across instances, and in the in-process
-snapshots (tests and operators).
+snapshots, which only tests read: no route serves them, so on Cloud Run the log lines are the operator's view
+(spec 18.8 F16).
 
 Plan L stop conditions: write_stop is true once any ledger write failed or conflicted (in process; the public
 block's write_stop counts legacy writes only); bound_claim_ratio_stop is true once the two-pass bound-claim ratio
@@ -54,6 +57,9 @@ class LedgerMetrics:
             self._surfaces: dict[str, Counter[str]] = {name: Counter() for name in LEGACY_SURFACES}
             self._duplicates: Counter[str] = Counter()
             self._conflicts: Counter[str] = Counter()
+            # What each surface delivered (plan I "abstention by reason"), counted at the attempt.
+            self._decisions: dict[str, Counter[str]] = {name: Counter() for name in LEGACY_SURFACES}
+            self._reasons: dict[str, Counter[str]] = {name: Counter() for name in LEGACY_SURFACES}
 
     def _surface(self, delivery: str, surface: str | None, event: str) -> None:
         if delivery == "legacy":
@@ -63,6 +69,14 @@ class LedgerMetrics:
         with self._lock:
             self._attempted[delivery] += 1
             self._surface(delivery, surface, "attempted")
+
+    def delivered(self, decision: str, reason: str | None, *, surface: str | None = None) -> None:
+        """One legacy delivery's decision and, for an abstention, its reason (spec 18.8 F1)."""
+        name = surface if surface in LEGACY_SURFACES else "tutor"
+        with self._lock:
+            self._decisions[name][decision] += 1
+            if decision != "answer" and reason:
+                self._reasons[name][reason] += 1
 
     def appended(self, delivery: str, *, duplicate: bool, surface: str | None = None) -> None:
         with self._lock:
@@ -84,6 +98,8 @@ class LedgerMetrics:
             attempted, appended, failed = dict(self._attempted), dict(self._appended), dict(self._failed)
             duplicates, conflicts = dict(self._duplicates), dict(self._conflicts)
             surfaces = {name: dict(counts) for name, counts in self._surfaces.items()}
+            decisions = {name: dict(counts) for name, counts in self._decisions.items()}
+            reasons = {name: dict(sorted(counts.items())) for name, counts in self._reasons.items()}
         legacy_attempted = attempted.get("legacy", 0)
         return {
             "attempted": {name: attempted.get(name, 0) for name in DELIVERIES},
@@ -103,6 +119,7 @@ class LedgerMetrics:
                 }
                 for name, counts in surfaces.items()
             },
+            "delivered": _delivered_block(decisions, reasons),
             "write_stop": bool(sum(failed.values()) + sum(conflicts.values())),
         }
 
@@ -117,8 +134,32 @@ class LedgerMetrics:
             "conflicts": detail["legacy_conflicts"],
             "legacy_coverage_rate": detail["legacy_coverage_rate"],
             "legacy_by_surface": detail["legacy_by_surface"],
+            "delivered": detail["delivered"],
             "write_stop": bool(detail["failed"]["legacy"] + detail["legacy_conflicts"]),
         }
+
+
+def _delivered_block(decisions: dict[str, dict[str, int]], reasons: dict[str, dict[str, int]]) -> dict:
+    """Legacy deliveries by decision and abstention reason, per surface and in all (spec 18.8 F1)."""
+    by_surface = {}
+    for name in LEGACY_SURFACES:
+        answered, abstained = decisions[name].get("answer", 0), decisions[name].get("abstain", 0)
+        by_surface[name] = {
+            "decisions": {"answer": answered, "abstain": abstained},
+            "abstention_rate": round(abstained / (answered + abstained), 6) if answered + abstained else None,
+            "abstention_by_reason": reasons[name],
+        }
+    total_reasons: Counter[str] = Counter()
+    for name in LEGACY_SURFACES:
+        total_reasons.update(reasons[name])
+    answered = sum(block["decisions"]["answer"] for block in by_surface.values())
+    abstained = sum(block["decisions"]["abstain"] for block in by_surface.values())
+    return {
+        "decisions": {"answer": answered, "abstain": abstained},
+        "abstention_rate": round(abstained / (answered + abstained), 6) if answered + abstained else None,
+        "abstention_by_reason": dict(sorted(total_reasons.items())),
+        "by_surface": by_surface,
+    }
 
 
 class TwoPassMetrics:
@@ -227,6 +268,6 @@ def snapshot(baseline: float | None) -> dict:
 
 
 def detail_snapshot(baseline: float | None) -> dict:
-    """Every counter, in process (tests and operators); never served on a public route."""
+    """Every counter, in process; never served on any route, so only tests read it (spec 18.8 F16)."""
     ledger = {**LEDGER_METRICS.snapshot(), "non_public_spans_excluded": LICENSE_METRICS.snapshot()}
     return {"tutor_ledger": ledger, "two_pass_shadow": TWO_PASS_METRICS.snapshot(baseline)}

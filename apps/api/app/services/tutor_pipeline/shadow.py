@@ -134,8 +134,9 @@ def run_shadow(
                 # The record's raw counts (bound = locked claims; merged and budget-skipped claims are in dropped).
                 "proposed": entry.counts.proposed_claims,
                 "bound": entry.counts.bound_claims,
-                # The plan L bound-claim ratio terms, exactly as /ready and the replay count them
-                # (contracts.bound_claim_ratio_terms): the cross-instance SLI sums these, never the raw counts.
+                # The plan L bound-claim ratio terms, exactly as TwoPassMetrics and the replay count them
+                # (contracts.bound_claim_ratio_terms): the cross-instance SLI sums these, never the raw counts. Public
+                # /ready carries no ratio (spec 18.7 E15).
                 "ratio_proposed": ratio_proposed,
                 "ratio_bound": ratio_bound,
                 "dropped": dict(entry.counts.dropped),

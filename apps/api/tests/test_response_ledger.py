@@ -14,6 +14,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import threading
@@ -218,7 +219,10 @@ def test_record_legacy_delivery_fails_open_and_is_counted(isolated, monkeypatch,
     after = LEDGER_METRICS.snapshot()
     assert after["failed"]["legacy"] == before["failed"]["legacy"] + 1 and after["write_stop"] is True
     (failure,) = [r for r in caplog.records if getattr(r, "json_fields", {}).get("event") == "tutor.ledger.append_failed"]
-    assert failure.json_fields == {"event": "tutor.ledger.append_failed", "delivery": "legacy", "stage": "append", "error": "OperationalError"}
+    # Spec 18.8 F11: the failure line also carries its attempt's id (the terminal line of that attempt); nothing else.
+    fields = dict(failure.json_fields)
+    assert re.fullmatch(r"[0-9a-f]{32}", fields.pop("attempt"))
+    assert fields == {"event": "tutor.ledger.append_failed", "delivery": "legacy", "stage": "append", "error": "OperationalError"}
 
 
 def test_the_learner_never_waits_past_the_budget_for_a_stuck_pool_and_the_late_outcome_is_counted(isolated, caplog):
@@ -239,8 +243,10 @@ def test_the_learner_never_waits_past_the_budget_for_a_stuck_pool_and_the_late_o
     waited_ms = (time.monotonic() - started) * 1000
     # The grace is the package's tutor_pipeline.budgets.ledger_wait_grace_ms (PD-11; was a code constant).
     assert waited_ms < 200 + get_config_package(Settings()).tutor_pipeline.ledger_wait_grace_ms + 500, waited_ms
-    deferred = [r for r in caplog.records if getattr(r, "json_fields", {}).get("event") == "tutor.ledger.append_deferred"]
-    assert [r.json_fields for r in deferred] == [{"event": "tutor.ledger.append_deferred", "delivery": "legacy", "budget_ms": 200}]
+    deferred = [dict(r.json_fields) for r in caplog.records if getattr(r, "json_fields", {}).get("event") == "tutor.ledger.append_deferred"]
+    # Spec 18.8 F11: the deferred line names its attempt, whose terminal line follows when the append ends.
+    assert len(deferred) == 1 and re.fullmatch(r"[0-9a-f]{32}", deferred[0].pop("attempt"))
+    assert deferred == [{"event": "tutor.ledger.append_deferred", "delivery": "legacy", "budget_ms": 200}]
     assert LEDGER_METRICS.snapshot()["failed"]["legacy"] == before  # not yet known
     released.set()
     assert ledger.LEGACY_APPENDS.drain(10)
@@ -324,9 +330,10 @@ def test_the_verify_script_reports_coverage_and_refuses_an_export_inside_the_rep
         db.flush()
         turns = [f"turn-{uuid4()}" for _ in range(3)]
         for turn_id in turns:
+            # Made by a Phase 3 image with the ledger on: each expects a record (spec 18.8 F12).
             db.add(TutorTurn(id=turn_id, thread_id=thread.id, user_id=thread.user_id, resolved_query="q", retrieval_mode="lexical", provider="none",
                              model="m", decision="abstain", decision_reason="no_approved_span", citations=[], claims=[], corpus_version="c",
-                             policy_version="p", created_at=datetime.now(UTC)))
+                             policy_version="p", created_at=datetime.now(UTC), ledger_record_expected=True))
         db.commit()
     for turn_id in turns[:2]:
         record_legacy_delivery(_legacy(turn_id), settings=Settings(), session_factory=factory)

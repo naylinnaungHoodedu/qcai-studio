@@ -414,6 +414,10 @@ class TutorTurn(Base):
     corpus_version: Mapped[str] = mapped_column(String(255))
     policy_version: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Phase 3 (spec 18.8 F12): true when the image that created the turn ledgers its delivery (TUTOR_LEDGER_ENABLED
+    # on), false under the kill switch, null when an image that keeps no ledger created it (before Phase 3, or during
+    # a rollback window). A turn without a ledger record is a lost record only when this is true.
+    ledger_record_expected: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 
 class TutorTurnIdempotency(Base):
@@ -424,11 +428,14 @@ class TutorTurnIdempotency(Base):
     # deletes these rows and guest retention deletes a guest's with the rest of its data; otherwise a row lives as
     # long as the turn it answers for. The row is claimed (committed, turn_id null) before the turn runs, filled in the
     # turn's own transaction, and released if the turn fails, so two concurrent requests with one key never create
-    # two turns.
+    # two turns. Every fill and release is conditional on the claim's random claim_token (and the fill on the row
+    # still having no response), so a request that outlived its lease cannot fill or release another request's claim,
+    # even where SQLite reuses a deleted row's id (spec 18.8 F13); AUTOINCREMENT stops that reuse as well.
     __tablename__ = "tutor_turn_idempotency"
     __table_args__ = (
         UniqueConstraint("user_id", "key_sha256", name="uq_tutor_turn_idempotency_user_key"),
         Index("ix_tutor_turn_idempotency_created_at", "created_at"),
+        {"sqlite_autoincrement": True},
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -439,6 +446,8 @@ class TutorTurnIdempotency(Base):
     turn_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     response_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Random per claim (uuid4 hex). Null only on rows an unreleased Phase 3 build made before it existed.
+    claim_token: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 class CorpusSpan(Base):

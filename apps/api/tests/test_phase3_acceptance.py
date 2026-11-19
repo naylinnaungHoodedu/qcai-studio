@@ -426,16 +426,46 @@ def test_ac_3_2_the_replay_finds_no_mismatch_and_is_labelled_not_e3_or_lq1(tmp_p
         module.fixture_items(lqs)
     committed = json.loads((REPO_ROOT / "docs" / "evaluation" / "phase3" / "three_plan_replay_v1.json").read_text(encoding="utf-8"))
     assert committed["result"] == "pass" and committed["config_package"]["sha256"] == PACKAGE.sha256
-    # Review round 4 (spec 18.7 E3): the committed record names a clean commit (a -dirty record is a working copy, and
-    # names no commit that holds the code it replayed) and, where the history is present, a commit of this branch.
-    assert re.fullmatch(r"[0-9a-f]{40}", committed["commit"]), committed["commit"]
-    try:
-        ancestry = subprocess.run(["git", "merge-base", "--is-ancestor", committed["commit"], "HEAD"], cwd=REPO_ROOT,
-                                  capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.SubprocessError):
-        ancestry = None
-    if ancestry is not None and ancestry.returncode in (0, 1):  # 128: a shallow clone (CI) without that commit
-        assert ancestry.returncode == 0, f"the record names {committed['commit']}, which is not an ancestor of HEAD"
+    # Spec 18.8 F2 (replacing the 18.7 E3 ancestry check, which failed on main after the project's squash merges and
+    # never ran in CI's shallow clone): the record names the code it replayed by content. Every module it lists has
+    # exactly the checked-out text, in any clone, on the branch or after a squash merge, so the record can never
+    # describe code other than what is checked out; --check (CI) compares the whole inputs block with a fresh run.
+    assert module.input_problems(committed["inputs"]) == []
+    listed = committed["inputs"]["files"]
+    # The two-pass pipeline's own modules (shadow.py schedules runs and package_check.py checks the package; the replay
+    # needs neither).
+    pipeline_modules = {f"apps/api/app/services/tutor_pipeline/{name}.py" for name in
+                        ("bind", "contracts", "evidential", "lock", "pipeline", "render", "resolve", "retrieve", "text")}
+    core = {module.SELF, "apps/api/app/services/contained_answers.py", "apps/api/app/services/retrieval_engine.py",
+            "apps/api/app/core/config_package.py", "apps/api/app/services/claim_gate.py"} | pipeline_modules
+    assert core <= set(listed), sorted(core - set(listed))
+    # This run imported at least what the record lists (it may import more: other tests share the process), with the
+    # same text.
+    assert {path: report["inputs"]["files"].get(path) for path in listed} == listed
+    # commit is informational: the HEAD the record was written on, + "-dirty" when written from a working tree.
+    assert re.fullmatch(r"[0-9a-f]{40}(-dirty)?", committed["commit"]), committed["commit"]
+
+
+def test_ac_3_2_the_replay_record_names_its_code_by_content_and_survives_a_squash_merge(tmp_path):
+    # Spec 18.8 F2: the check needs no git history. A copy of the listed files in another tree (a squash-merged
+    # main, a shallow clone) passes; a changed, missing or unlisted-digest file fails.
+    module = load_script("replay_tutor_plans")
+    committed = json.loads((REPO_ROOT / "docs" / "evaluation" / "phase3" / "three_plan_replay_v1.json").read_text(encoding="utf-8"))
+    inputs = committed["inputs"]
+    assert inputs["rule"] == module.INPUTS_RULE == "imported-repository-modules-sha256-lf-v1"
+    for relative in inputs["files"]:
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # Another checkout may hold LF where this one holds CRLF (core.autocrlf): the digest reads both alike.
+        target.write_bytes((REPO_ROOT / relative).read_bytes().replace(b"\r\n", b"\n"))
+    assert module.input_problems(inputs, root=tmp_path) == []
+    first = sorted(inputs["files"])[0]
+    (tmp_path / first).write_bytes((tmp_path / first).read_bytes() + b"# changed\n")
+    assert module.input_problems(inputs, root=tmp_path) == [f"{first} differs from the code the record replayed"]
+    (tmp_path / first).unlink()
+    assert module.input_problems(inputs, root=tmp_path) == [f"{first} is listed but missing"]
+    assert "the inputs digest does not match its file map" in module.input_problems({**inputs, "sha256": "0" * 64})
+    assert "unknown inputs rule 'x'" in module.input_problems({**inputs, "rule": "x"})
 
 
 def test_ac_3_2_the_replay_record_names_its_commit_and_refuses_to_write_from_a_dirty_tree(monkeypatch, tmp_path):
@@ -1196,7 +1226,8 @@ def test_plan_l_a_shadow_or_ledger_failure_never_changes_the_learner_response_an
         response = chat(demo("planl"), "Why does routing depth matter?")
     assert response.status_code == 200
     assert ledger_canonical(without_ids(response.json())) == ledger_canonical(without_ids(reference.json()))
-    events = [getattr(record, "json_fields", {}) for record in caplog.records]
+    # A legacy failure line also names its attempt (spec 18.8 F11); the fields compared below are the same as before.
+    events = [{key: value for key, value in getattr(record, "json_fields", {}).items() if key != "attempt"} for record in caplog.records]
     slis = client.get("/ready").json()["slis"]
     # Public /ready carries no shadow field that changes with a run's outcome (review rounds 3 and 4, spec 18.6 D9 and
     # 18.7 E15) and only the legacy ledger counts; the per-run detail is the in-process snapshots (and each run's log
@@ -1432,6 +1463,9 @@ def test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_emp
     ledger_tables = {"response_ledger", "response_ledger_head", "tutor_turn_idempotency"}
     try:
         Base.metadata.create_all(engine, tables=[table for table in Base.metadata.sorted_tables if table.name not in ledger_tables])
+        # A Phase 2 database: tutor_turns has no ledger_record_expected yet (the revision adds it; spec 18.8 F12).
+        with engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE tutor_turns DROP COLUMN ledger_record_expected")
         for args in (("stamp", "20261119_phase2_corpus_spans"), ("upgrade", "head")):
             completed = _alembic(fresh_database_url, *args)
             assert completed.returncode == 0, completed.stderr[-2000:]
@@ -1447,6 +1481,7 @@ def test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_emp
         allowed = _alembic(fresh_database_url, "-x", "allow_ledger_drop=true", "downgrade", "-1")
         assert allowed.returncode == 0, allowed.stderr[-2000:]
         assert not ledger_tables & set(sa_inspect(engine).get_table_names())
+        assert "ledger_record_expected" not in {column["name"] for column in sa_inspect(engine).get_columns("tutor_turns")}
     finally:
         engine.dispose()
 
@@ -1458,8 +1493,9 @@ def test_plan_g_legacy_turns_read_as_no_verdict():
         thread = TutorThread(id=f"thread-{uuid4()}", user_id=headers["x-demo-user"], title="pre-ledger")
         db.add(thread)
         db.flush()
-        # Created before the ledger began recording (review round 4, spec 18.7 E6: a later turn without a record is a
-        # missing record, not a legacy turn; test_phase3_review4.py covers that case).
+        # Created by an image that keeps no ledger: ledger_record_expected stays null (spec 18.8 F12; review round 4,
+        # 18.7 E6: a turn that expected a record and has none is a missing record, not a legacy turn, which
+        # test_phase3_review4.py covers).
         db.add(TutorTurn(id=turn_id, thread_id=thread.id, user_id=headers["x-demo-user"], resolved_query="q", retrieval_mode="lexical", provider="none",
                          model="m", decision="abstain", decision_reason="no_approved_span", citations=[], claims=[], corpus_version="c",
                          policy_version="cs595-v1", created_at=datetime(2026, 1, 1, tzinfo=UTC)))
@@ -1467,7 +1503,8 @@ def test_plan_g_legacy_turns_read_as_no_verdict():
         before = (db.scalar(select(func.count()).select_from(ResponseLedgerRecord)), db.scalar(select(func.count()).select_from(TutorTurn)))
     response = client.get(f"/ledger/responses/{turn_id}", headers=headers)
     assert response.status_code == 200
-    assert response.json() == {"response_id": turn_id, "verdict": "no-verdict", "recorded": False, "legacy_turn": True, "record": None}
+    assert response.json() == {"response_id": turn_id, "verdict": "no-verdict", "recorded": False, "legacy_turn": True,
+                               "unrecorded_reason": "earlier_image", "record": None}
     with SessionLocal() as db:
         assert (db.scalar(select(func.count()).select_from(ResponseLedgerRecord)), db.scalar(select(func.count()).select_from(TutorTurn))) == before
 

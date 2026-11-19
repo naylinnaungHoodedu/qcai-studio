@@ -414,11 +414,12 @@
       "generators_allowed": [
         "extractive-d19-v1"
       ],
-      "prompt_hash": "c90998d423d7e7c027ebe60ce2762e299afd896285022a4472077b2a3d2c9bd8",
+      "prompt_hash": "5b8a34d3da037ce1d4efe324b6727e104f167f361fbe1920173afef9d4d43842",
       "max_claims": 3,
       "max_claims_per_span": 2,
       "min_sentence_words": 4,
       "max_sentence_chars": 1000,
+      "min_question_overlap_terms": 1,
       "sentence_rule": "sentences-v2",
       "binding_rule": "resolver-bundle-sentence-v1"
     },
@@ -560,7 +561,7 @@
     },
     "D-12": {
       "state": "open",
-      "path": "no provider generator is wired; hold H6 (P3 interim path) stays unresolved; the D-19 extractive generator is the interim path",
+      "path": "hold H6 blocks the provider interim path (D-12, a single pinned provider; plan 9.4 H6 'P3 interim path') and stays held; no provider generator is wired, and Phase 3 runs D-19 extractive mode instead, which sends no provider payload",
       "ratified": false,
       "record": "PD-09"
     },

@@ -8,8 +8,10 @@ A broken chain or a failure exits with status 1. Scheduling it daily is a cloud 
 It runs in the API image and connects as the API does (the Cloud SQL Python connector when
 CLOUD_SQL_CONNECTION_NAME is set), so the runbook's production checks need no workstation copy of scripts/
 (spec 18.6 D12):
-  --coverage-since ISO8601  also logs tutor turns since then that have no ledger record, and the qa- records since
-                            then (counts only; plan I "ledger writes 100% of deliveries").
+  --coverage-since ISO8601  also logs tutor turns since then that have no ledger record, split by what each turn
+                            expected (unrecorded: a lost record; not_expected_earlier_image; ledger_disabled; spec
+                            18.8 F12), and the qa- records since then (counts only; plan I "ledger writes 100% of
+                            deliveries").
   --export PATH             also writes every record as one JSON object per line to PATH, which must lie outside
                             the application tree: the step before an Alembic downgrade. The file holds corpus text
                             and learner-linked ids; its handling rule is in infra/cloudrun/deployment.md.

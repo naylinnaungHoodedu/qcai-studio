@@ -6,7 +6,8 @@ E2  the schema guard compares the leaf constraints too (type, enum, const, patte
 E3  the replay README and the spec say where the bound-claim ratio is reported, and count 299 items.
 E4  F-2 (zero learner-state fields in evidential-pass prompts) is recorded with how it was taken.
 E5  a request that rolls back is never a ledger attempt, so it never lowers the coverage SLI.
-E6  a turn without a record after the ledger began recording reads as a missing record, not a legacy turn.
+E6  a turn without a record after the ledger began recording reads as a missing record, not a legacy turn (since
+    spec 18.8 F10/F12 the turn's own ledger_record_expected says so; start-up writes no marker).
 E7  an Idempotency-Key whose request died mid-turn is released after a short lease, not the 24-hour TTL.
 E8  the text helpers' docstring says the subset check never folds.
 E9  the migration's refusal and docstring name the in-image worker and an absolute downgrade target.
@@ -60,7 +61,6 @@ from app.services.ledger import (
     append_ledger_entry,
     export_ledger,
     ledger_started_at,
-    mark_ledger_started,
     record_hash_for,
     restore_ledger,
     verify_response_ledger,
@@ -344,62 +344,63 @@ def test_e6_a_lost_record_after_the_ledger_started_is_not_reported_as_a_legacy_t
     assert response.status_code == 200 and LEDGER_METRICS.snapshot()["write_stop"] is True
     turn_id = response.json()["turn_id"]
     assert records(response_id=turn_id) == []
-    expected = {"response_id": turn_id, "verdict": "no-verdict", "recorded": False, "legacy_turn": False, "record": None}
+    # Spec 18.8 F12: the turn itself says it expected a record, so the read names the loss.
+    expected = {"response_id": turn_id, "verdict": "no-verdict", "recorded": False, "legacy_turn": False, "unrecorded_reason": "missing",
+                "record": None}
     assert _owner_and_reviewer_reads(turn_id, headers) == [expected, expected]
 
 
 def test_e6_a_turn_from_before_the_ledger_started_is_still_a_legacy_turn():
+    # Spec 18.8 F12: a turn an image that keeps no ledger created (before Phase 3, or in a rollback window) leaves
+    # ledger_record_expected null, whenever it was created: such a turn is a legacy turn, never a lost record.
     headers = demo("e6-legacy")
     turn_id = f"turn-{uuid4()}"
     with SessionLocal() as db:
-        started = ledger_started_at(db)
-        assert started is not None  # start-up marked it (conftest runs _initialize_database)
         thread = TutorThread(id=f"thread-{uuid4()}", user_id=headers["x-demo-user"], title="pre-ledger")
         db.add(thread)
         db.flush()
         db.add(TutorTurn(id=turn_id, thread_id=thread.id, user_id=headers["x-demo-user"], resolved_query="q", retrieval_mode="lexical", provider="none",
                          model="m", decision="abstain", decision_reason="no_approved_span", citations=[], claims=[], corpus_version="c",
-                         policy_version="cs595-v1", created_at=started - timedelta(seconds=1)))
+                         policy_version="cs595-v1", created_at=datetime.now(UTC)))
         db.commit()
-    expected = {"response_id": turn_id, "verdict": "no-verdict", "recorded": False, "legacy_turn": True, "record": None}
+    expected = {"response_id": turn_id, "verdict": "no-verdict", "recorded": False, "legacy_turn": True, "unrecorded_reason": "earlier_image",
+                "record": None}
     assert _owner_and_reviewer_reads(turn_id, headers) == [expected, expected]
 
 
-def test_e6_the_start_marker_is_written_once_kept_and_earlier_records_count(fresh_database_url):
+def test_e6_the_first_append_writes_the_start_and_the_head_keeps_it(fresh_database_url):
+    # Spec 18.8 F10: start-up writes no marker any more; the first append creates the head with its started_at, and
+    # the head may never move it.
     factory, engine = fresh_sessions(fresh_database_url)
     try:
         with factory() as db:
-            assert ledger_started_at(db) is None
+            assert ledger_started_at(db) is None and db.get(ResponseLedgerHead, ledger.CHAIN) is None
         start = datetime(2026, 6, 1, tzinfo=UTC)
-        mark_ledger_started(factory, now=start)
-        mark_ledger_started(factory, now=start + timedelta(days=1))  # idempotent: the first start stays
+        first = append_ledger_entry(make_entry(), session_factory=factory, budget_ms=5000, now=start)
         with factory() as db:
             head = db.get(ResponseLedgerHead, ledger.CHAIN)
-            assert (head.seq, head.record_hash) == (0, GENESIS_HASH) and ledger_started_at(db) == start
-            assert verify_response_ledger(db).ok  # a head at the genesis with no record is a sound, empty chain
-        first = append_ledger_entry(make_entry(), session_factory=factory, budget_ms=5000, now=start + timedelta(hours=1))
+            assert (head.seq, head.record_hash) == (1, first.record_hash) and ledger_started_at(db) == start
+            assert ledger._utc(head.started_at) == start and verify_response_ledger(db).ok
+        append_ledger_entry(make_entry(), session_factory=factory, budget_ms=5000, now=start + timedelta(hours=1))
         with factory() as db:
-            assert ledger_started_at(db) == start and db.get(ResponseLedgerHead, ledger.CHAIN).started_at is not None
+            assert ledger_started_at(db) == start
         # The head may not move its start, even on a valid forward step.
         second = make_entry()
         entry = ledger.entry_bytes(second).decode("utf-8")
         digest = sha256_hex(entry.encode("utf-8"))
+        with factory() as db:
+            last = ledger.chain_head(db)
         at = start + timedelta(hours=2)
-        record_hash = record_hash_for(seq=2, created_at=at, prev_hash=first.record_hash, entry_sha256=digest)
+        record_hash = record_hash_for(seq=last[0] + 1, created_at=at, prev_hash=last[1], entry_sha256=digest)
         with pytest.raises(Exception, match="moves forward only"):
             with factory() as db:
                 db.execute(ledger.insert(ResponseLedgerRecord).values(
-                    seq=2, response_id=second.response_id, delivery=second.delivery, decision=second.decision, shadowed_response_id=None,
-                    claim_set_hash=None, entry_schema=second.entry_schema, entry=entry, entry_sha256=digest, prev_hash=first.record_hash,
+                    seq=last[0] + 1, response_id=second.response_id, delivery=second.delivery, decision=second.decision, shadowed_response_id=None,
+                    claim_set_hash=None, entry_schema=second.entry_schema, entry=entry, entry_sha256=digest, prev_hash=last[1],
                     record_hash=record_hash, created_at=at))
                 db.execute(ledger.update(ResponseLedgerHead).where(ResponseLedgerHead.chain == ledger.CHAIN)
-                           .values(seq=2, record_hash=record_hash, updated_at=at, started_at=at))
+                           .values(seq=last[0] + 1, record_hash=record_hash, updated_at=at, started_at=at))
                 db.commit()
-        # A marker that cannot be written never stops start-up.
-        def broken():
-            raise OperationalError("INSERT", {}, Exception("read-only (test)"))
-
-        mark_ledger_started(broken)
     finally:
         engine.dispose()
 
@@ -421,18 +422,26 @@ def test_e6_a_head_table_from_an_earlier_build_gains_started_at(fresh_database_u
         engine.dispose()
 
 
-def test_e6_start_up_marks_the_ledger_only_while_it_is_enabled(monkeypatch):
+def test_e6_start_up_writes_no_ledger_marker_whatever_the_setting(monkeypatch, fresh_database_url):
+    # Spec 18.8 F10: a revision deployed with no traffic starts while the earlier image still serves every learner, so
+    # start-up must not mark the ledger as recording; the first append does, and each turn says what it expects.
     from app import main as main_module
 
-    calls = []
-    monkeypatch.setattr(main_module, "mark_ledger_started", lambda factory: calls.append(factory))
-    # Only the ledger step is under test: the corpus checks and the retention run are left out.
-    monkeypatch.setattr(main_module, "_check_corpus_before_any_table", lambda: None)
-    monkeypatch.setattr(main_module, "run_retention_cleanup", lambda db: None)
-    for enabled in (True, False):
-        monkeypatch.setattr(main_module, "settings", Settings(tutor_ledger_enabled=enabled))
-        main_module._initialize_database()
-    assert calls == [main_module.SessionLocal]
+    factory, engine = fresh_sessions(fresh_database_url)
+    try:
+        monkeypatch.setattr(main_module, "engine", engine)
+        monkeypatch.setattr(main_module, "SessionLocal", factory)
+        # Only the schema and ledger steps are under test: the corpus checks and the retention run are left out.
+        monkeypatch.setattr(main_module, "_check_corpus_before_any_table", lambda: None)
+        monkeypatch.setattr(main_module, "run_retention_cleanup", lambda db: None)
+        for enabled in (True, False):
+            monkeypatch.setattr(main_module, "settings", Settings(tutor_ledger_enabled=enabled))
+            main_module._initialize_database()
+            with factory() as db:
+                assert db.get(ResponseLedgerHead, ledger.CHAIN) is None and ledger_started_at(db) is None
+        assert not hasattr(ledger, "mark_ledger_started") and not hasattr(main_module, "mark_ledger_started")
+    finally:
+        engine.dispose()
 
 
 # ============================================================================================================ E7
@@ -624,7 +633,6 @@ def test_e12_an_exported_ledger_restores_byte_for_byte_and_its_logged_head_still
             assert export_ledger(db, export) == 3
             before = [(row.seq, row.entry, row.entry_sha256, row.prev_hash, row.record_hash) for row in db.scalars(select(ResponseLedgerRecord).order_by(ResponseLedgerRecord.seq))]
         _drop_and_recreate_the_ledger(engine)  # what the allow_ledger_drop downgrade and a re-applied upgrade leave
-        mark_ledger_started(factory)  # the re-applied deploy's start-up runs before the restore
         with factory() as db:
             assert restore_ledger(db, export) == (3, (3, last.record_hash))
         with factory() as db:
@@ -632,7 +640,7 @@ def test_e12_an_exported_ledger_restores_byte_for_byte_and_its_logged_head_still
             assert after == before
             check = verify_response_ledger(db, expected_head=(3, last.record_hash))
             assert check.ok and check.head_row == (3, last.record_hash)
-            # The restored chain keeps its own start: its first record is older than the re-applied marker.
+            # The restored chain keeps its own start: its first record's time.
             assert ledger_started_at(db) == min(ledger._utc(row.created_at) for row in db.scalars(select(ResponseLedgerRecord)))
             with pytest.raises(LedgerRestoreRefused, match="already holds records"):
                 restore_ledger(db, export)
@@ -700,12 +708,19 @@ def test_e13_every_committed_delivery_logs_an_attempt_and_qa_lines_say_their_sur
     with caplog.at_level(logging.INFO, logger="qcai.tutor"):
         assert client.post("/assistant/chat", headers=fresh(headers), json={"message": IN_DOMAIN}).status_code == 200
         tutor_attempts, tutor_appends = _events(caplog, "tutor.ledger.attempted"), [e for e in _events(caplog, "tutor.ledger.appended") if e["delivery"] == "legacy"]
-        assert tutor_attempts == [{"event": "tutor.ledger.attempted", "delivery": "legacy"}] and len(tutor_appends) == 1
+        # Spec 18.8 F1 and F11: the attempted line also says what was delivered and names its attempt, and the
+        # attempt's terminal line carries the same id.
+        assert len(tutor_attempts) == 1 and len(tutor_appends) == 1
+        attempt = dict(tutor_attempts[0])
+        assert attempt.pop("attempt") == tutor_appends[0]["attempt"]
+        assert attempt.pop("decision") in {"answer", "abstain"} and set(attempt) == {"event", "delivery", "abstention_reason"}
+        assert (attempt["event"], attempt["delivery"]) == ("tutor.ledger.attempted", "legacy")
         assert "surface" not in tutor_appends[0]
         caplog.clear()
         assert client.post("/qa/ask", headers=fresh(headers), json={"question": IN_DOMAIN}).status_code == 200
-        assert _events(caplog, "tutor.ledger.attempted") == [{"event": "tutor.ledger.attempted", "delivery": "legacy", "surface": "qa"}]
+        (qa_attempt,) = _events(caplog, "tutor.ledger.attempted")
         (qa_append,) = _events(caplog, "tutor.ledger.appended")
+        assert (qa_attempt["delivery"], qa_attempt["surface"], qa_attempt["attempt"]) == ("legacy", "qa", qa_append["attempt"])
         assert qa_append["surface"] == "qa" and qa_append["delivery"] == "legacy"
 
 

@@ -13,8 +13,11 @@ then fail or reverse the Phase 2 revision instead; check `alembic current` first
 connects as the API does (infra/cloudrun/deployment.md, Phase 3). Dropping the tables ends the R-22 record in the
 database; `python -m app.workers.response_ledger --restore <that path>` re-inserts it once the revision is applied
 again (spec 18.7 E9, E10, E12). The chain still cannot build an empty database (test_alembic_head_builds_the_orm_schema
-stays a strict xfail until the production baseline lands). The chain head's started_at (spec 18.7 E6) was added
-before this revision was applied anywhere.
+stays a strict xfail until the production baseline lands). The chain head's started_at (spec 18.7 E6), and
+tutor_turns.ledger_record_expected and tutor_turn_idempotency.claim_token (spec 18.8 F12, F13), were added before
+this revision was applied anywhere; app.core.schema_upgrades adds the two columns to tables that already exist.
+The downgrade drops ledger_record_expected too: turns made before it then read as made by an image that keeps no
+ledger, so run `--coverage-since` before the downgrade and keep its counts with the release evidence.
 
 Revision ID: 20261119_phase3_response_ledger
 Revises: 20261119_phase2_corpus_spans
@@ -71,6 +74,8 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
     )
+    # A turn says whether it expects a ledger record (spec 18.8 F12): null on every turn made before this revision.
+    op.add_column("tutor_turns", sa.Column("ledger_record_expected", sa.Boolean(), nullable=True))
     op.create_table(
         "tutor_turn_idempotency",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
@@ -80,7 +85,9 @@ def upgrade() -> None:
         sa.Column("turn_id", sa.String(length=64), nullable=True),
         sa.Column("response_body", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("claim_token", sa.String(length=32), nullable=True),
         sa.UniqueConstraint("user_id", "key_sha256", name="uq_tutor_turn_idempotency_user_key"),
+        sqlite_autoincrement=True,
     )
     op.create_index("ix_tutor_turn_idempotency_created_at", "tutor_turn_idempotency", ["created_at"])
 
@@ -101,6 +108,8 @@ def downgrade() -> None:
             op.execute(f"DROP FUNCTION IF EXISTS {function}()")
     op.drop_index("ix_tutor_turn_idempotency_created_at", table_name="tutor_turn_idempotency")
     op.drop_table("tutor_turn_idempotency")
+    with op.batch_alter_table("tutor_turns") as batch:
+        batch.drop_column("ledger_record_expected")
     op.drop_index("ix_response_ledger_created_at", table_name="response_ledger")
     op.drop_index("ix_response_ledger_shadowed_response_id", table_name="response_ledger")
     op.drop_table("response_ledger_head")

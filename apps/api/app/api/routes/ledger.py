@@ -4,10 +4,12 @@ spec 9, conflicts 5 and 27).
 Always registered, so the authorization matrix stays static, but 404 unless LEDGER_ROUTE_ENABLED (on in
 development, off elsewhere while the D-05 freeze holds). The turn's owner reads its own legacy record without the
 chain position fields. A turn with no record reads as recorded false, verdict "no-verdict" (plan G; nothing is
-written), and legacy_turn says why: true only for a turn created before the ledger began recording
-(ledger.ledger_started_at), false for a later turn whose record is missing (an append that failed, was refused or
-deferred and then failed, or a turn made while TUTOR_LEDGER_ENABLED was off), so a lost record is never shown as a
-pre-ledger turn (plan L, "a ledger write fails"; spec 18.7 E6). The reviewer role (LEDGER_READER_ROLES; plan 7.3
+written), and the turn's own ledger_record_expected says why (spec 18.8 F10, F12): legacy_turn true and
+unrecorded_reason "earlier_image" for a turn an image that keeps no ledger created (before Phase 3, or one served
+during a rollback window or before traffic moved to a Phase 3 revision); unrecorded_reason "ledger_disabled" for a
+turn made while TUTOR_LEDGER_ENABLED was off; "missing" for a turn that expected a record and has none (an append
+that failed, was refused, or was deferred and then failed), so a lost record is never shown as a pre-ledger turn
+(plan L, "a ledger write fails"; spec 18.7 E6). The reviewer role (LEDGER_READER_ROLES; plan 7.3
 "owner or reviewer", nothing wider) reads any record, shadow records included, with the chain fields; each such
 read is a security event (plan 7.6). Any other role, admin included, is an owner reader only. A learner never sees
 a shadow record (AC-3-6): every miss is the same 404 with Cache-Control: no-store.
@@ -30,7 +32,7 @@ from app.core.db import get_db
 from app.core.rate_limit import limiter
 from app.db_models import ResponseLedgerRecord, TutorTurn
 from app.schemas import LedgerClaimRead, LedgerRecordRead, LedgerResponseRead
-from app.services.ledger import _utc, ledger_started_at
+from app.services.ledger import _utc
 from app.services.security_log import record_security_event, route_template
 from app.services.tutor_pipeline.contracts import RESPONSE_ID
 
@@ -43,12 +45,11 @@ def _not_found() -> JSONResponse:
     return JSONResponse(status_code=404, content=NOT_FOUND, headers={"Cache-Control": "no-store"})
 
 
-def _unrecorded(db: Session, response_id: str, turn: TutorTurn) -> LedgerResponseRead:
-    """A turn with no ledger record: a pre-ledger turn, or a record that is missing (spec 18.7 E6)."""
-    started = ledger_started_at(db)
-    created = _utc(turn.created_at) if turn.created_at is not None else None
-    legacy = started is None or (created is not None and created < started)
-    return LedgerResponseRead(response_id=response_id, recorded=False, legacy_turn=legacy)
+def _unrecorded(response_id: str, turn: TutorTurn) -> LedgerResponseRead:
+    """A turn with no ledger record, by what the turn itself expected (spec 18.8 F12)."""
+    expected = turn.ledger_record_expected
+    reason = "earlier_image" if expected is None else "missing" if expected else "ledger_disabled"
+    return LedgerResponseRead(response_id=response_id, recorded=False, legacy_turn=expected is None, unrecorded_reason=reason)
 
 
 def _record(row: ResponseLedgerRecord, *, reviewer: bool) -> LedgerRecordRead:
@@ -93,7 +94,7 @@ def read_ledger_response(
         if row is not None:
             result = LedgerResponseRead(response_id=response_id, recorded=True, legacy_turn=False, record=_record(row, reviewer=True))
         elif response_id.startswith("turn-") and (turn := db.get(TutorTurn, response_id)) is not None:
-            result = _unrecorded(db, response_id, turn)
+            result = _unrecorded(response_id, turn)
         record_security_event(
             "ledger.reviewer_read",
             "success",
@@ -109,7 +110,7 @@ def read_ledger_response(
             if row is not None and row.delivery != "shadow":
                 result = LedgerResponseRead(response_id=response_id, recorded=True, legacy_turn=False, record=_record(row, reviewer=False))
             elif row is None:
-                result = _unrecorded(db, response_id, turn)
+                result = _unrecorded(response_id, turn)
     if result is None:
         return _not_found()
     response.headers["Cache-Control"] = "no-store"

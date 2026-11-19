@@ -3,6 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
+import { EvidencePanel } from "@/components/evidence-panel";
 import { askQuestion, fetchQAHistory, postAnalyticsEvent } from "@/lib/api";
 import { QAHistoryItem, QAResponse } from "@/lib/types";
 
@@ -117,6 +118,8 @@ export function QAPanel({
               </article>
             ))}
           </div>
+          {/* Phase 3 (task 3.8, E-46): the evidence panel, only when the API sent one (development by default). */}
+          {response.evidence ? <EvidencePanel evidence={response.evidence} /> : null}
         </div>
       ) : null}
       {showHistory ? (
