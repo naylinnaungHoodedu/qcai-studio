@@ -1,0 +1,138 @@
+{
+ "report": "qcai-three-plan-replay",
+ "format_version": 1,
+ "created_at": "2026-11-19T11:13:56+00:00",
+ "commit": "72f1b5e8ab493218b4855da19d75e5ed59d33170",
+ "evidence_class": "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 evidence (plan Phase 3 H)",
+ "public_corpus_only": true,
+ "excluded_sources": [
+  "private plane",
+  "lqs/ (ULQS)",
+  "learner records, tutor turns, ratings"
+ ],
+ "fixture": {
+  "path": "apps/api/tests/data/score_floor_queries.json",
+  "sha256": "321f37372144a7c8088799af13c2b5a46c5db759dc322e05b46867bd98c53a57",
+  "items": 298
+ },
+ "config_package": {
+  "version": "2.0.0",
+  "sha256": "ae0daa55c7469e64d895ce4462a04c9084ea8b434f5a1258b066acf7657713d4"
+ },
+ "tutor_pipeline": {
+  "resolver": "thread-resolver-v1",
+  "generator": "extractive-d19-v1",
+  "renderer": "template-renderer-v1",
+  "subset_check": "segment-exact-normalised-v1",
+  "binding_rule": "resolver-bundle-sentence-v1",
+  "prompt_hashes": {
+   "resolver": "c7409f113bf7f5358ff16e981092d5d0fc4c3c407cd9731b869061fd26c7ad22",
+   "evidential": "ee9d021dad4c2330681c1c1fc5bcf2ffc9c6fe71e913f04df3d154e1158b0318",
+   "pedagogical": "452fbef12b51d5c1d2aa615ac845a1ab518f31d949e990bdf52ec948fefc613b"
+  },
+  "phase2_bound_claim_ratio_baseline": 1.0
+ },
+ "plans": [
+  "concise",
+  "stepwise",
+  "socratic"
+ ],
+ "configurations": [
+  {
+   "name": "governed_empty",
+   "gate": "p1-floor",
+   "threshold_version": "score-floor-p1-v1",
+   "corpus_version": "corpus-a02930b08f2e9251",
+   "index_version": "index-13cddd96619c7afa",
+   "items": 298,
+   "answered": 0,
+   "abstained": 298,
+   "abstention_by_reason": {
+    "below_floor": 138,
+    "no_match": 12,
+    "no_quotable_evidence": 148
+   },
+   "claim_set_hash_equal": 298,
+   "span_set_equal": 298,
+   "rendered_text_distinct_among_answers": 0,
+   "mismatches": [],
+   "two_pass": {
+    "proposed_claims": 0,
+    "bound_claims": 0,
+    "bound_claim_ratio": null
+   },
+   "phase2_legacy": {
+    "answered": 0,
+    "claims": 0,
+    "bound": 0,
+    "bound_claim_ratio": null
+   },
+   "stop": false,
+   "items_digest": "8eb2cbff73c809fdf217721a176d5a4387ada84c97a43f495d1e4ca31fccc8fb"
+  },
+  {
+   "name": "all_public_approved",
+   "gate": "bm25f-v1",
+   "threshold_version": "abstention-p2-v1",
+   "corpus_version": "corpus-c658893abb6440dd",
+   "index_version": "index-473cb92221ea2165",
+   "items": 298,
+   "answered": 166,
+   "abstained": 132,
+   "abstention_by_reason": {
+    "insufficient_coverage": 56,
+    "no_match": 56,
+    "no_query_terms": 20
+   },
+   "claim_set_hash_equal": 298,
+   "span_set_equal": 298,
+   "rendered_text_distinct_among_answers": 166,
+   "mismatches": [],
+   "two_pass": {
+    "proposed_claims": 479,
+    "bound_claims": 479,
+    "bound_claim_ratio": 1.0
+   },
+   "phase2_legacy": {
+    "answered": 166,
+    "claims": 473,
+    "bound": 473,
+    "bound_claim_ratio": 1.0
+   },
+   "stop": false,
+   "items_digest": "f4651419255c948bdda9e919a1143ba4a3fd04b68b914aed95486f4751d2e325"
+  },
+  {
+   "name": "all_public_approved",
+   "gate": "p1-floor",
+   "threshold_version": "score-floor-p1-v1",
+   "corpus_version": "corpus-c658893abb6440dd",
+   "index_version": "index-afc81543f34c17f8",
+   "items": 298,
+   "answered": 146,
+   "abstained": 152,
+   "abstention_by_reason": {
+    "below_floor": 145,
+    "no_match": 7
+   },
+   "claim_set_hash_equal": 298,
+   "span_set_equal": 298,
+   "rendered_text_distinct_among_answers": 146,
+   "mismatches": [],
+   "two_pass": {
+    "proposed_claims": 405,
+    "bound_claims": 405,
+    "bound_claim_ratio": 1.0
+   },
+   "phase2_legacy": {
+    "answered": 146,
+    "claims": 396,
+    "bound": 396,
+    "bound_claim_ratio": 1.0
+   },
+   "stop": false,
+   "items_digest": "e0eb1cd51aa3c04e292546da624376d278dd659f55ee098c021bc47bb9c56ca7"
+  }
+ ],
+ "result": "pass"
+}

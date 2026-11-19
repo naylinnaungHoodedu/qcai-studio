@@ -55,10 +55,13 @@ that each policy matches the route's real dependencies, and that this file is cu
 | POST | `/qa/ask` | `principal` | `caller` | Rate-limited. |
 | GET | `/qa/history` | `principal` | `caller` |  |
 | GET | `/spans/{span_id}` | `public` | `none` | Rate-limited span metadata; 404 unless SPAN_RESOLVER_ROUTE_ENABLED; no excerpt under D-31. |
+| GET | `/evidence/spans/{span_id}` | `public` | `none` | Alias of /spans/{span_id} (plan 7.3): the same SPAN_RESOLVER_ROUTE_ENABLED flag, rate limit and D-31 rules; public license_class only. |
 | POST | `/assistant/chat` | `principal` | `owner` | A thread_id in the body must be the caller's thread. |
 | GET | `/assistant/threads` | `principal` | `caller` |  |
 | POST | `/assistant/threads` | `principal` | `caller` |  |
 | GET | `/assistant/threads/{thread_id}` | `principal` | `owner` |  |
+| POST | `/tutor/turns` | `principal` | `owner` | Two-pass tutor endpoint (plan 7.3). 404 outside development unless TWO_PASS_TUTOR is on, which settings refuse before the Phase 4 exit; returns the legacy contained answer and runs the two-pass pipeline in shadow. A thread_id in the body must be the caller's thread. Rate-limited. |
+| GET | `/ledger/responses/{response_id}` | `principal` | `owner` | 404 unless LEDGER_ROUTE_ENABLED. The turn's owner reads its legacy record (a pre-ledger turn reads as no-verdict); roles reviewer and admin read any record, shadow records included, and each such read is a security event. A learner never sees a shadow record (AC-3-6). |
 | POST | `/analytics/events` | `principal` | `caller` |  |
 | POST | `/analytics/public-web-vitals` | `public` | `none` | Anonymous browser metrics; rate-limited. |
 | GET | `/analytics/public-web-vitals/summary` | `public` | `none` | Aggregates only. |

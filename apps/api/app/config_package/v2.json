@@ -1,0 +1,563 @@
+{
+  "package": "qcai-configuration-package",
+  "package_version": "2.0.0",
+  "schema_version": 2,
+  "phase": "3",
+  "status": "provisional",
+  "created": "2026-11-19",
+  "supersedes": {
+    "package_version": "1.0.0",
+    "sha256": "060c59f2ac94dcd20b16f9e7bd3e21128b952b067135ac29a91821b02bc04403",
+    "readable_until": "the release after the Phase 3 merge"
+  },
+  "span_identity": {
+    "scheme": "span-v2",
+    "id_inputs": [
+      "scheme",
+      "item_id",
+      "start",
+      "end",
+      "content_hash"
+    ],
+    "item_id_rule": "source_asset_id(filename, kind) | authored-curriculum",
+    "canonical_text": "sections-v1",
+    "section_separator": "\n\n\n",
+    "heading_separator": "\n\n",
+    "offset_unit": "unicode-code-point",
+    "splitter": {
+      "library": "langchain-text-splitters",
+      "version": "1.1.2",
+      "class": "RecursiveCharacterTextSplitter",
+      "chunk_size": 700,
+      "chunk_overlap": 120
+    },
+    "parser": {
+      "library": "python-docx",
+      "version": "1.2.0",
+      "function": "parse_docx_sections"
+    }
+  },
+  "corpus_version": {
+    "scheme": "corpus-version-v3",
+    "inputs": [
+      "item_id",
+      "version",
+      "sha256",
+      "span_scheme"
+    ],
+    "members": "built items (plan 11.1): public-plane, bound items the build admits; a governed build admits the authored item and the approved items, development every public-plane, bound item. Partial approval changes the version; a licence-field edit does not. The manifest records the governed value.",
+    "authority": "plan 11.1 (\"corpus_version MUST hash the sorted (item_id, item_version, sha256) of built items plus the span-scheme version\")"
+  },
+  "gates": {
+    "p1-floor": {
+      "version": "score-floor-p1-v1",
+      "floor": 6,
+      "authority": "P1-D-04",
+      "stopwords": "retrieval_p1.QUERY_STOPWORDS (178 words, frozen)",
+      "scope": "containment for the D-31 configuration; see Phase 2 spec conflict 29",
+      "recall_stop": "spec conflict 29, enforced: outside development, governed start-up and validate_corpus --check-recall-stop refuse a build that indexes document spans under this gate (plan Phase 2 L stop) unless ALLOW_P1_FLOOR_WITH_DOCUMENTS, which logs a config.override event"
+    },
+    "bm25f-v1": {
+      "see": "retrieval, abstention"
+    }
+  },
+  "retrieval": {
+    "algorithm": "bm25f-simple-v1",
+    "k1": 1.5,
+    "b": 0.75,
+    "title_weight": 2.0,
+    "idf": "ln(1+(N-df+0.5)/(df+0.5))",
+    "tokenizer": {
+      "version": "nfkc-casefold-alnum-v1",
+      "min_token_length": 2,
+      "stemmer": "none"
+    },
+    "stopwords": {
+      "version": "stopwords-v1",
+      "sha256": "9b7e17e2c00929d94c72251cca3252f9b6df54e4e905b2cfb1485c9eeba83688",
+      "words": [
+        "about",
+        "above",
+        "after",
+        "again",
+        "all",
+        "also",
+        "always",
+        "am",
+        "an",
+        "and",
+        "any",
+        "anyone",
+        "anything",
+        "are",
+        "aren",
+        "as",
+        "at",
+        "be",
+        "because",
+        "been",
+        "before",
+        "being",
+        "below",
+        "between",
+        "both",
+        "but",
+        "by",
+        "can",
+        "can't",
+        "could",
+        "define",
+        "definition",
+        "describe",
+        "did",
+        "didn",
+        "do",
+        "does",
+        "doesn",
+        "doesn't",
+        "doing",
+        "don",
+        "don't",
+        "done",
+        "down",
+        "during",
+        "each",
+        "even",
+        "ever",
+        "everything",
+        "explain",
+        "few",
+        "for",
+        "from",
+        "further",
+        "get",
+        "gets",
+        "give",
+        "go",
+        "got",
+        "had",
+        "has",
+        "have",
+        "he",
+        "hello",
+        "her",
+        "here",
+        "hers",
+        "hey",
+        "him",
+        "his",
+        "how",
+        "if",
+        "in",
+        "into",
+        "is",
+        "isn",
+        "isn't",
+        "it",
+        "its",
+        "itself",
+        "just",
+        "kind",
+        "know",
+        "let",
+        "lets",
+        "like",
+        "made",
+        "make",
+        "makes",
+        "many",
+        "may",
+        "me",
+        "mean",
+        "means",
+        "meant",
+        "might",
+        "more",
+        "most",
+        "much",
+        "must",
+        "my",
+        "myself",
+        "need",
+        "never",
+        "no",
+        "nor",
+        "not",
+        "nothing",
+        "now",
+        "of",
+        "off",
+        "often",
+        "oh",
+        "ok",
+        "okay",
+        "on",
+        "once",
+        "one",
+        "ones",
+        "only",
+        "onto",
+        "or",
+        "other",
+        "our",
+        "ours",
+        "ourselves",
+        "out",
+        "over",
+        "own",
+        "per",
+        "please",
+        "really",
+        "said",
+        "same",
+        "say",
+        "shall",
+        "she",
+        "should",
+        "so",
+        "some",
+        "someone",
+        "something",
+        "still",
+        "such",
+        "tell",
+        "term",
+        "terms",
+        "than",
+        "thank",
+        "thanks",
+        "that",
+        "the",
+        "their",
+        "theirs",
+        "them",
+        "themselves",
+        "then",
+        "there",
+        "these",
+        "they",
+        "thing",
+        "things",
+        "think",
+        "this",
+        "those",
+        "through",
+        "to",
+        "too",
+        "under",
+        "until",
+        "up",
+        "upon",
+        "us",
+        "use",
+        "used",
+        "uses",
+        "using",
+        "very",
+        "via",
+        "want",
+        "was",
+        "way",
+        "ways",
+        "we",
+        "well",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "while",
+        "who",
+        "whom",
+        "whose",
+        "why",
+        "will",
+        "with",
+        "without",
+        "won",
+        "word",
+        "words",
+        "work",
+        "works",
+        "would",
+        "yes",
+        "yet",
+        "you",
+        "your",
+        "yours",
+        "yourself"
+      ]
+    },
+    "coverage_rule": "coverage-v1",
+    "tie_break": "span_id ascending",
+    "module_boost": false,
+    "chapter_summaries_indexed": false
+  },
+  "semantic": {
+    "enabled_by_default": false,
+    "vector_id_scheme": "span-v2",
+    "require_namespace_count_equals_span_count": true,
+    "apply_active_gate_to_every_result": true
+  },
+  "abstention": {
+    "version": "abstention-p2-v1",
+    "floor": 2.35,
+    "margin": 2.4,
+    "provisional": true,
+    "provisional_until": "Phase 4",
+    "not_final_before": "E1 freeze",
+    "calibration_record": "docs/evaluation/phase2/calibration_record_v1.json",
+    "calibration_record_sha256": "ab8aca0d58c9ea201773fcf11972d45a6fb57a29d64b91921bf40a72e755d7e9",
+    "calibrated_with_package_version": "1.0.0"
+  },
+  "near_duplicate": {
+    "version": "near-dup-v1",
+    "provisional": true,
+    "document_shingle_words": 5,
+    "document_jaccard_threshold": 0.5,
+    "document_containment_threshold": 0.8,
+    "video_duration_tolerance_s": 0.5,
+    "video_size_ratio_tolerance": 0.01,
+    "chapter_shingle_words": 5,
+    "chapter_jaccard_threshold": 0.5
+  },
+  "legacy_citations": {
+    "decision": "D-30",
+    "status": "provisional",
+    "ratified": false,
+    "match_rule": "unique normalised-excerpt hash (D3); titles, containment and v1 content_hash are diagnostics",
+    "max_unresolved_share_native": 0.0,
+    "max_unresolved_share_legacy": null,
+    "legacy_share_statistic": "point",
+    "legacy_share_statistic_note": "used only when max_unresolved_share_legacy is a number: 'point' compares the observed share (the plan's \"unresolved citations exceed the threshold\"), 'wilson95_upper' its Wilson 95% upper bound; D-30 ratifies both",
+    "stop_on_exact_match_regression": true,
+    "stop_on_non_canonical_row_in_apply": true,
+    "unresolved_label": "unverified historical reference",
+    "dual_read_releases": 2
+  },
+  "tutor_pipeline": {
+    "version": "two-pass-v1",
+    "status": "provisional",
+    "phase": "3",
+    "authority": "plan Phase 3 tasks 3.1-3.8; values without plan text are provisional defaults (PD-11)",
+    "schemas": {
+      "ResolvedQuestion": {
+        "version": "resolved-question-v1",
+        "path": "schemas/resolved-question.v1.schema.json",
+        "sha256": "418b57092b72e5d15594d6575c053462cba9eba39de55ae5199ffa6d5917234c"
+      },
+      "RetrievalRequest": {
+        "version": "retrieval-request-v1",
+        "path": "schemas/retrieval-request.v1.schema.json",
+        "sha256": "2c53d4186caa1c77870b506d19c637a01e3691ca075f3026a62826b4b34c6b7e"
+      },
+      "EvidenceBundle": {
+        "version": "evidence-bundle-v1",
+        "path": "schemas/evidence-bundle.v1.schema.json",
+        "sha256": "4ed6eb773cbd01fd78dca5c09a83da83935311715f80eee7d71ba7759b5542e0"
+      },
+      "EvidentialEnvelope": {
+        "version": "evidential-envelope-v1",
+        "path": "schemas/evidential-envelope.v1.schema.json",
+        "sha256": "df47a128da24328b29c812feb9146822fc7aa035749d179250552d1ca611a67e"
+      },
+      "ClaimPlan": {
+        "version": "claim-plan-v1",
+        "path": "schemas/claim-plan.v1.schema.json",
+        "sha256": "1b65d4dcacc09c99ba7f0512da46ada47a8044f38ff3d34fe79fdc1c9dae0e08"
+      },
+      "LockedClaimSet": {
+        "version": "locked-claim-set-v1",
+        "path": "schemas/locked-claim-set.v1.schema.json",
+        "sha256": "73682a185c3a58cb8ed7717a984fffda777a85b9c283b882820f950c48c5e1b2"
+      },
+      "PresentationPlan": {
+        "version": "presentation-plan-v1",
+        "path": "schemas/presentation-plan.v1.schema.json",
+        "sha256": "14888767260012baf6520117851f47c43036ce5b3725e105482fa95049f7948c"
+      },
+      "LedgerEntry": {
+        "version": "ledger-entry-v1",
+        "path": "schemas/ledger-entry.v1.schema.json",
+        "sha256": "c3c1e806dfed6e798cbd2d4a00b531d91343c6987ea420dcaa812f5a7af5a09e"
+      }
+    },
+    "resolver": {
+      "id": "thread-resolver-v1",
+      "prompt_hash": "c7409f113bf7f5358ff16e981092d5d0fc4c3c407cd9731b869061fd26c7ad22",
+      "min_content_terms": 2,
+      "continuation_cues": [
+        "and ",
+        "also ",
+        "but ",
+        "so ",
+        "then ",
+        "what about ",
+        "how about "
+      ],
+      "max_lookback": 4,
+      "inputs": "the learner's own user messages of the same thread (plan 3.1)"
+    },
+    "retrieval": {
+      "request_fields": [
+        "text",
+        "lesson_slug",
+        "corpus_version"
+      ],
+      "top_k": 4,
+      "mode": "lexical",
+      "near_miss_rule": "gate-near-floor-flag-of-top-result-v1"
+    },
+    "evidential": {
+      "generator_default": "extractive-d19-v1",
+      "generators_allowed": [
+        "extractive-d19-v1"
+      ],
+      "prompt_hash": "ee9d021dad4c2330681c1c1fc5bcf2ffc9c6fe71e913f04df3d154e1158b0318",
+      "max_claims": 3,
+      "max_claims_per_span": 2,
+      "min_sentence_words": 4,
+      "max_sentence_chars": 1000,
+      "sentence_rule": "sentences-v1",
+      "binding_rule": "resolver-bundle-sentence-v1"
+    },
+    "pedagogical": {
+      "renderer": "template-renderer-v1",
+      "prompt_hash": "452fbef12b51d5c1d2aa615ac845a1ab518f31d949e990bdf52ec948fefc613b",
+      "presentation_plans": [
+        "concise",
+        "stepwise",
+        "socratic"
+      ],
+      "default_plan": "concise",
+      "max_regenerations": 2,
+      "max_regenerations_authority": "plan 3.7: at most two",
+      "subset_check": "segment-exact-normalised-v1"
+    },
+    "ledger": {
+      "chain": "tutor-responses",
+      "entry_schema": "ledger-entry-v1",
+      "record_hash_rule": "sha256(canonical{chain,seq,created_at,prev_hash,entry_sha256})-v1",
+      "genesis": "0000000000000000000000000000000000000000000000000000000000000000",
+      "deliveries": [
+        "legacy",
+        "shadow",
+        "delivered"
+      ]
+    },
+    "stop": {
+      "phase2_bound_claim_ratio": 1.0,
+      "authority": "plan Phase 3 L; measured, spec M1"
+    },
+    "unused_provenance_fields": [
+      "v1_3_checker_model_id",
+      "panel_weights_version",
+      "routing_table_version",
+      "tool_contract_version"
+    ]
+  },
+  "flag_policy": {
+    "two_pass_tutor": {
+      "values": [
+        "off",
+        "shadow",
+        "on"
+      ],
+      "default_development": "shadow",
+      "default_elsewhere": "off",
+      "on_requires": "phase4_exit_passed",
+      "authority": "plan Phase 3 G; AC-3-6; 13.6"
+    },
+    "phase4_exit_passed": false,
+    "phase4_exit_evidence": null
+  },
+  "owner_decisions": {
+    "D-17": {
+      "option": "a",
+      "text": "interim, migrate by Phase 11",
+      "status": "provisional",
+      "authority": "P1-D-18 (owner delegation, 2026-11-19)",
+      "ratified": false,
+      "record": "docs/adr/ADR-002-retrieval-architecture.md (Revision 2026-11-19)"
+    },
+    "D-30": {
+      "status": "provisional",
+      "authority": "P1-D-18",
+      "ratified": false,
+      "rule": "pre-Phase-2 citations that cannot be resolved are labelled legacy_unresolved and never presented as resolved; the migration report shows their share; citations created by the Phase 2 pipeline must resolve 100%"
+    },
+    "Q-10": {
+      "state": "unresolved",
+      "path": "2025 asset only (plan Action 25 stop condition)",
+      "unbound_items": [
+        {
+          "item_id": "quantum-computing-and-artificial-intelligence-2026",
+          "asset_filename": "Quantum Computing and Artificial Intelligence 2026.mp4"
+        }
+      ]
+    },
+    "PLAN-11.3": {
+      "status": "provisional",
+      "ratified": false,
+      "authority": "P1-D-18 (engineering default); ratification needs the Principal Investigator or the Research Lead",
+      "deviations": [
+        {
+          "plan": "11.3: \"a stemmed, stopword-filtered BM25-style index\"",
+          "applied": "retrieval.tokenizer.stemmer = none (an S-stemmer raised out-of-scope leakage, all-approved maximum 8.2); spec conflict 5"
+        },
+        {
+          "plan": "11.3: \"a sufficiency gate (floor plus runner-up margin) before any generator call\"",
+          "applied": "the margin labels near_floor results (floor <= score < floor + margin, D6 and V1.5) and drops none; no runner-up test (spec conflict 4; Phase 4, DI-28)"
+        }
+      ],
+      "record": "docs/adr/ADR-002-retrieval-architecture.md (Revision 2026-11-19)"
+    },
+    "D-19": {
+      "option": "RECOMMENDATION (no-provider extractive mode)",
+      "text": "no-provider extractive mode quoting spans only from manifest-approved public-plane assets, never the private licensed evaluation corpus or ULQS; no approved span, abstain",
+      "status": "provisional",
+      "authority": "P1-D-18 (owner delegation, 2026-11-19)",
+      "ratified": false,
+      "applied_to": [
+        "legacy contained answers (task 1.11)",
+        "two-pass evidential generator extractive-d19-v1"
+      ],
+      "record": "PD-08"
+    },
+    "D-12": {
+      "state": "open",
+      "path": "no provider generator is wired; hold H6 (P3 interim path) stays unresolved; the D-19 extractive generator is the interim path",
+      "ratified": false,
+      "record": "PD-09"
+    }
+  },
+  "boundary": {
+    "version": "boundary-v1",
+    "private_plane_globs": [
+      "corpus/private/**",
+      "lqs/private/**",
+      "lqs/ratings/*.private.jsonl",
+      "docs/thesis/ethics/private/**",
+      "evaluation/reports/*.private.json",
+      "**/*.private.json",
+      "**/*.private.jsonl"
+    ],
+    "public_exceptions": [
+      "corpus/private/README.md"
+    ],
+    "licensed_volume_globs": [
+      "**/*.pdf"
+    ],
+    "secret_like_name_globs": [
+      ".env",
+      ".env.*",
+      "**/.env",
+      "**/.env.*",
+      "**/*.env",
+      "**/*.env.yaml",
+      "**/*.env.local"
+    ],
+    "passage_shingle_words": 12,
+    "passage_min_hits_per_file": 1
+  }
+}

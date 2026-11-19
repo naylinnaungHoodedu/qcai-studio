@@ -1,14 +1,18 @@
-"""Configuration package v1 (plan Phase 2 P: "configuration package v1 published"; Phase 2 spec 2.5 and 4.2).
+"""Configuration package (plan Phase 2 P: "configuration package v1 published"; Phase 3 P: "schemas in
+configuration package v2"; Phase 2 spec 2.5 and 4.2; Phase 3 spec section 5).
 
-A versioned JSON file shipped in the API image (apps/api/app/config_package/v1.json) that freezes every Phase 2
+A versioned JSON file shipped in the API image (apps/api/app/config_package/v2.json) that freezes every Phase 2
 value: the span-identity scheme, the BM25 parameters and stopword list, the provisional abstention floor and
 margin, the near-duplicate thresholds, the D-30 legacy-citation rule, the provisional owner decisions (D-17, D-30,
-Q-10) and the boundary policy. Next to it, v1.json.sha256 holds the sha256 of its canonical JSON, so a CRLF
-checkout hashes the same.
+Q-10) and the boundary policy. Version 2 (Phase 3) copies every v1 block and adds the two-channel tutor: the
+sha256 pins of the eight contract schemas (app/config_package/schemas/), the resolver, generator and renderer ids
+and prompt hashes, the regeneration limit, the presentation plans, the bound-claim stop baseline and the
+two_pass_tutor flag policy (phase4_exit_passed). Next to each file, <name>.json.sha256 holds the sha256 of its
+canonical JSON, so a CRLF checkout hashes the same. v1.json stays readable for one release (DI-42).
 
 Start-up loads and validates it before any database work. A structural error always stops start-up; a hash
 mismatch stops a governed build and is a logged warning in development. The loader never opens the calibration
-record, which is not in the image.
+record, which is not in the image, nor the schema files (tutor_pipeline.package_check verifies those).
 """
 
 from __future__ import annotations
@@ -26,11 +30,31 @@ from app.core.config import Settings
 from app.core.structured_logging import FIELDS
 
 LOGGER = logging.getLogger("qcai.config_package")
-DEFAULT_PACKAGE_PATH = Path(__file__).resolve().parents[1] / "config_package" / "v1.json"
+PACKAGE_DIRECTORY = Path(__file__).resolve().parents[1] / "config_package"
+DEFAULT_PACKAGE_PATH = PACKAGE_DIRECTORY / "v2.json"
+# Readable for one release after the Phase 3 merge (DI-42); CI checks it with config_package.py --check --path.
+V1_PACKAGE_PATH = PACKAGE_DIRECTORY / "v1.json"
 PACKAGE_NAME = "qcai-configuration-package"
 SPAN_SCHEME = "span-v2"
 P1_FLOOR_VERSION = "score-floor-p1-v1"
 P1_FLOOR = 6
+# D-12 open: no provider generator is wired (hold H6, PD-09); the D-19 extractive generator is the interim path.
+WIRED_GENERATORS = frozenset({"extractive-d19-v1"})
+TUTOR_SCHEMA_NAMES = (
+    "ResolvedQuestion",
+    "RetrievalRequest",
+    "EvidenceBundle",
+    "EvidentialEnvelope",
+    "ClaimPlan",
+    "LockedClaimSet",
+    "PresentationPlan",
+    "LedgerEntry",
+)
+REQUIRED_PRESENTATION_PLANS = ("concise", "stepwise", "socratic")
+RETRIEVAL_REQUEST_FIELDS = ("text", "lesson_slug", "corpus_version")
+UNUSED_PROVENANCE_FIELDS = ("v1_3_checker_model_id", "panel_weights_version", "routing_table_version", "tool_contract_version")
+LEDGER_DELIVERIES = ("legacy", "shadow", "delivered")
+_HEX64_CHARS = frozenset("0123456789abcdef")
 
 
 class ConfigPackageError(RuntimeError):
@@ -73,6 +97,66 @@ class AbstentionParams:
     provisional_until: str
     calibration_record: str
     calibration_record_sha256: str
+    # Package v2: the package version the committed calibration record was computed with (spec 5.3, M10).
+    calibrated_with_package_version: str | None = None
+
+
+@dataclass(frozen=True)
+class SchemaPin:
+    version: str
+    path: str
+    sha256: str
+
+
+@dataclass(frozen=True)
+class TutorPipelineParams:
+    """Package v2 tutor_pipeline (Phase 3 spec 5.1); every value is provisional (PD-11) unless the plan gives it."""
+
+    version: str
+    status: str
+    schemas: Mapping[str, SchemaPin]
+    resolver_id: str
+    resolver_prompt_hash: str
+    min_content_terms: int
+    continuation_cues: tuple[str, ...]
+    max_lookback: int
+    request_fields: tuple[str, ...]
+    top_k: int
+    retrieval_mode: str
+    near_miss_rule: str
+    generator_default: str
+    generators_allowed: tuple[str, ...]
+    evidential_prompt_hash: str
+    max_claims: int
+    max_claims_per_span: int
+    min_sentence_words: int
+    max_sentence_chars: int
+    sentence_rule: str
+    binding_rule: str
+    renderer_id: str
+    pedagogical_prompt_hash: str
+    presentation_plans: tuple[str, ...]
+    default_plan: str
+    max_regenerations: int
+    subset_check: str
+    ledger_chain: str
+    ledger_entry_schema: str
+    record_hash_rule: str
+    genesis: str
+    deliveries: tuple[str, ...]
+    phase2_bound_claim_ratio: float
+    unused_provenance_fields: tuple[str, ...]
+
+    @property
+    def schemas_sha256(self) -> str:
+        """One digest of the sorted schema pins, for /ready."""
+        return canonical_sha256({name: [pin.version, pin.path, pin.sha256] for name, pin in sorted(self.schemas.items())})
+
+
+@dataclass(frozen=True)
+class FlagPolicy:
+    phase4_exit_passed: bool
+    phase4_exit_evidence: str | None
 
 
 @dataclass(frozen=True)
@@ -117,6 +201,11 @@ class ConfigPackage:
     owner_decisions: Mapping[str, Any]
     q10_unbound_filenames: frozenset[str]
     q10_unbound_item_ids: frozenset[str]
+    # Package v2 (Phase 3). A v1 package has schema_version 1, no tutor_pipeline and phase4_exit_passed false.
+    schema_version: int = 1
+    tutor_pipeline: TutorPipelineParams | None = None
+    flag_policy: FlagPolicy = FlagPolicy(False, None)
+    supersedes: Mapping[str, Any] | None = None
 
 
 def _require(condition: bool, message: str) -> None:
@@ -166,10 +255,136 @@ def recorded_sha256(path: Path) -> str | None:
     return sidecar.read_text(encoding="utf-8").strip() or None
 
 
+def _hex64(raw: Mapping[str, Any], key: str) -> str:
+    value = raw.get(key)
+    _require(isinstance(value, str) and len(value) == 64 and set(value) <= _HEX64_CHARS, f"'{key}' must be 64 lowercase hex characters")
+    return value
+
+
+def _integer_in(raw: Mapping[str, Any], key: str, minimum: int, maximum: int) -> int:
+    value = raw.get(key)
+    _require(
+        isinstance(value, int) and not isinstance(value, bool) and minimum <= value <= maximum,
+        f"'{key}' must be an integer in [{minimum}, {maximum}]",
+    )
+    return int(value)
+
+
+def _schema_path(value: Any, name: str) -> str:
+    _require(isinstance(value, str) and bool(value), f"tutor_pipeline.schemas.{name}.path must be a non-empty string")
+    pure = Path(value)
+    parts = value.replace("\\", "/").split("/")
+    _require(
+        not pure.is_absolute() and not value.startswith(("/", "\\")) and ":" not in value and ".." not in parts and parts[0] == "schemas",
+        f"tutor_pipeline.schemas.{name}.path must be a relative path under schemas/",
+    )
+    return value
+
+
+def _parse_tutor_pipeline(raw: Mapping[str, Any]) -> TutorPipelineParams:
+    tutor = _mapping(raw, "tutor_pipeline")
+    schemas_raw = _mapping(tutor, "schemas")
+    _require(set(schemas_raw) == set(TUTOR_SCHEMA_NAMES), f"tutor_pipeline.schemas must name exactly {', '.join(TUTOR_SCHEMA_NAMES)}")
+    schemas: dict[str, SchemaPin] = {}
+    for name in TUTOR_SCHEMA_NAMES:
+        pin = _mapping(schemas_raw, name)
+        schemas[name] = SchemaPin(version=_text(pin, "version"), path=_schema_path(pin.get("path"), name), sha256=_hex64(pin, "sha256"))
+    resolver = _mapping(tutor, "resolver")
+    retrieval = _mapping(tutor, "retrieval")
+    evidential = _mapping(tutor, "evidential")
+    pedagogical = _mapping(tutor, "pedagogical")
+    ledger = _mapping(tutor, "ledger")
+    stop = _mapping(tutor, "stop")
+
+    cues = _strings(resolver, "continuation_cues")
+    _require(all(cue == cue.lower() for cue in cues), "tutor_pipeline.resolver.continuation_cues must be lowercase")
+    request_fields = tuple(retrieval.get("request_fields") or ())
+    _require(request_fields == RETRIEVAL_REQUEST_FIELDS, "tutor_pipeline.retrieval.request_fields must be [text, lesson_slug, corpus_version] (plan 3.2)")
+    _require(retrieval.get("mode") == "lexical", "tutor_pipeline.retrieval.mode must be 'lexical' in Phase 3 (spec conflict 33)")
+
+    allowed = _strings(evidential, "generators_allowed")
+    default_generator = _text(evidential, "generator_default")
+    _require(set(allowed) <= WIRED_GENERATORS, "tutor_pipeline.evidential.generators_allowed names a generator that is not wired (D-12 open, hold H6)")
+    _require(default_generator in allowed, "tutor_pipeline.evidential.generator_default must be one of generators_allowed")
+    max_claims = _integer_in(evidential, "max_claims", 1, 10)
+    max_claims_per_span = _integer_in(evidential, "max_claims_per_span", 1, max_claims)
+    min_sentence_words = _integer_in(evidential, "min_sentence_words", 1, 50)
+    max_sentence_chars = _integer_in(evidential, "max_sentence_chars", 50, 100000)
+
+    plans = _strings(pedagogical, "presentation_plans")
+    _require(set(REQUIRED_PRESENTATION_PLANS) <= set(plans), "tutor_pipeline.pedagogical.presentation_plans must include concise, stepwise and socratic")
+    default_plan = _text(pedagogical, "default_plan")
+    _require(default_plan in plans, "tutor_pipeline.pedagogical.default_plan must be one of presentation_plans")
+    # Plan 3.7: "render regeneration (at most two)".
+    max_regenerations = _integer_in(pedagogical, "max_regenerations", 0, 2)
+
+    deliveries = _strings(ledger, "deliveries")
+    _require(set(deliveries) == set(LEDGER_DELIVERIES), "tutor_pipeline.ledger.deliveries must be legacy, shadow and delivered")
+    genesis = _hex64(ledger, "genesis")
+    _require(genesis == "0" * 64, "tutor_pipeline.ledger.genesis must be 64 zeros")
+    ratio = _number(stop, "phase2_bound_claim_ratio", maximum=1.0)
+    _require(ratio > 0, "tutor_pipeline.stop.phase2_bound_claim_ratio must be in (0, 1]")
+    unused = tuple(tutor.get("unused_provenance_fields") or ())
+    _require(unused == UNUSED_PROVENANCE_FIELDS, "tutor_pipeline.unused_provenance_fields must name the four Phase 4-5 provenance fields")
+    return TutorPipelineParams(
+        version=_text(tutor, "version"),
+        status=_text(tutor, "status"),
+        schemas=schemas,
+        resolver_id=_text(resolver, "id"),
+        resolver_prompt_hash=_hex64(resolver, "prompt_hash"),
+        min_content_terms=_integer_in(resolver, "min_content_terms", 1, 20),
+        continuation_cues=cues,
+        max_lookback=_integer_in(resolver, "max_lookback", 1, 20),
+        request_fields=request_fields,
+        top_k=_integer_in(retrieval, "top_k", 1, 12),
+        retrieval_mode="lexical",
+        near_miss_rule=_text(retrieval, "near_miss_rule"),
+        generator_default=default_generator,
+        generators_allowed=allowed,
+        evidential_prompt_hash=_hex64(evidential, "prompt_hash"),
+        max_claims=max_claims,
+        max_claims_per_span=max_claims_per_span,
+        min_sentence_words=min_sentence_words,
+        max_sentence_chars=max_sentence_chars,
+        sentence_rule=_text(evidential, "sentence_rule"),
+        binding_rule=_text(evidential, "binding_rule"),
+        renderer_id=_text(pedagogical, "renderer"),
+        pedagogical_prompt_hash=_hex64(pedagogical, "prompt_hash"),
+        presentation_plans=plans,
+        default_plan=default_plan,
+        max_regenerations=max_regenerations,
+        subset_check=_text(pedagogical, "subset_check"),
+        ledger_chain=_text(ledger, "chain"),
+        ledger_entry_schema=_text(ledger, "entry_schema"),
+        record_hash_rule=_text(ledger, "record_hash_rule"),
+        genesis=genesis,
+        deliveries=deliveries,
+        phase2_bound_claim_ratio=ratio,
+        unused_provenance_fields=unused,
+    )
+
+
+def _parse_flag_policy(raw: Mapping[str, Any]) -> FlagPolicy:
+    policy = _mapping(raw, "flag_policy")
+    two_pass = _mapping(policy, "two_pass_tutor")
+    _require(two_pass.get("values") == ["off", "shadow", "on"], "flag_policy.two_pass_tutor.values must be [off, shadow, on]")
+    _require(two_pass.get("default_elsewhere") == "off", "flag_policy.two_pass_tutor.default_elsewhere must be 'off' (freeze, D-05)")
+    _require(two_pass.get("on_requires") == "phase4_exit_passed", "flag_policy.two_pass_tutor.on_requires must be 'phase4_exit_passed'")
+    passed = policy.get("phase4_exit_passed")
+    _require(isinstance(passed, bool), "flag_policy.phase4_exit_passed must be a boolean")
+    evidence = policy.get("phase4_exit_evidence")
+    if passed:
+        _require(isinstance(evidence, str) and bool(evidence.strip()), "flag_policy.phase4_exit_passed true needs a phase4_exit_evidence string")
+    else:
+        _require(evidence is None or isinstance(evidence, str), "flag_policy.phase4_exit_evidence must be null or a string")
+    return FlagPolicy(phase4_exit_passed=passed, phase4_exit_evidence=evidence)
+
+
 def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bool) -> ConfigPackage:
     _require(isinstance(raw, dict), "the file must hold a JSON object")
     _require(raw.get("package") == PACKAGE_NAME, f"'package' must be '{PACKAGE_NAME}'")
-    _require(raw.get("schema_version") == 1, "'schema_version' must be 1")
+    schema_version = raw.get("schema_version")
+    _require(schema_version in (1, 2) and not isinstance(schema_version, bool), "'schema_version' must be 1 or 2")
     package_version = _text(raw, "package_version")
 
     identity = _mapping(raw, "span_identity")
@@ -216,6 +431,11 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
 
     abstention_raw = _mapping(raw, "abstention")
     _require(isinstance(abstention_raw.get("provisional"), bool), "abstention.provisional must be a boolean")
+    calibrated_with = abstention_raw.get("calibrated_with_package_version")
+    _require(
+        calibrated_with is None or (isinstance(calibrated_with, str) and bool(calibrated_with.strip())),
+        "abstention.calibrated_with_package_version must be null or a non-empty string",
+    )
     abstention = AbstentionParams(
         version=_text(abstention_raw, "version"),
         floor=_number(abstention_raw, "floor", minimum=0.0),
@@ -224,6 +444,7 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
         provisional_until=_text(abstention_raw, "provisional_until"),
         calibration_record=_text(abstention_raw, "calibration_record"),
         calibration_record_sha256=_text(abstention_raw, "calibration_record_sha256"),
+        calibrated_with_package_version=calibrated_with,
     )
 
     near_raw = _mapping(raw, "near_duplicate")
@@ -273,6 +494,24 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
         _text(entry, "item_id")
         _text(entry, "asset_filename")
 
+    tutor_pipeline: TutorPipelineParams | None = None
+    flag_policy = FlagPolicy(False, None)
+    supersedes: Mapping[str, Any] | None = None
+    if schema_version == 2:
+        supersedes = _mapping(raw, "supersedes")
+        _text(supersedes, "package_version")
+        _hex64(supersedes, "sha256")
+        tutor_pipeline = _parse_tutor_pipeline(raw)
+        flag_policy = _parse_flag_policy(raw)
+        d12 = decisions.get("D-12")
+        _require(isinstance(d12, dict), "owner_decisions.D-12 must be an object in package v2")
+        if d12.get("state") == "open":
+            _require(
+                list(tutor_pipeline.generators_allowed) == ["extractive-d19-v1"],
+                "owner_decisions.D-12 is open, so only the extractive-d19-v1 generator may be allowed (hold H6)",
+            )
+        _require(isinstance(decisions.get("D-19"), dict), "owner_decisions.D-19 must be an object in package v2")
+
     return ConfigPackage(
         package_version=package_version,
         sha256=sha256,
@@ -293,6 +532,10 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
         owner_decisions=decisions,
         q10_unbound_filenames=frozenset(entry["asset_filename"] for entry in unbound),
         q10_unbound_item_ids=frozenset(entry["item_id"] for entry in unbound),
+        schema_version=int(schema_version),
+        tutor_pipeline=tutor_pipeline,
+        flag_policy=flag_policy,
+        supersedes=supersedes,
     )
 
 

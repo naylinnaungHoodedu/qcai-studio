@@ -1,0 +1,28 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "plan_id": {
+      "enum": [
+        "concise",
+        "stepwise",
+        "socratic"
+      ],
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "source": {
+      "enum": [
+        "request",
+        "default"
+      ],
+      "title": "Source",
+      "type": "string"
+    }
+  },
+  "required": [
+    "plan_id",
+    "source"
+  ],
+  "title": "PresentationPlan",
+  "type": "object"
+}

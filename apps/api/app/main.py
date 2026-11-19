@@ -15,8 +15,8 @@ from slowapi.extension import _rate_limit_exceeded_handler
 from sqlalchemy import text
 from sqlalchemy.exc import DataError, DBAPIError, OperationalError
 
-from app.api.routes import admin, analytics, arena, assets, assistant, auth, builder, content, insights, learner_record, projects, qa, search, spans, support
-from app.core.config_package import get_config_package
+from app.api.routes import admin, analytics, arena, assets, assistant, auth, builder, content, insights, learner_record, ledger, projects, qa, search, spans, support, tutor
+from app.core.config_package import ConfigPackageError, get_config_package
 from app.core.corpus_governance import CorpusGovernanceError, DriftReport, get_corpus_registry, p1_floor_recall_stop
 from app.core.config import get_settings
 from app.core.db import Base, SessionLocal, engine
@@ -30,6 +30,8 @@ from app.services.retention import run_retention_cleanup
 from app.services.retrieval_metrics import snapshot as retrieval_slis
 from app.services.security_log import record_security_event, record_security_event_async, route_template
 from app.services.store import get_course_store, get_retrieval_engine
+from app.services.tutor_pipeline import shadow as tutor_shadow
+from app.services.tutor_pipeline.metrics import snapshot as tutor_slis
 
 
 settings = get_settings()
@@ -45,6 +47,7 @@ install_log_redaction(
 )
 configure_logging()
 LOGGER = logging.getLogger("qcai.api")
+TUTOR_LOGGER = logging.getLogger("qcai.tutor")
 
 def _build_content_security_policy(app_settings = settings, nonce: str | None = None) -> str:
     is_production = app_settings.environment.lower() != "development"
@@ -137,8 +140,9 @@ STARTUP_DRIFT: DriftReport | None = None
 def _check_corpus_before_any_table() -> None:
     """Configuration package, manifest and drift: all fail closed before any database work (Phase 2 spec 6.1)."""
     global STARTUP_DRIFT
-    # The configuration package v1: a structural error always stops start-up, a hash mismatch in a governed build.
-    get_config_package(settings)
+    # The configuration package: a structural error always stops start-up, a hash mismatch in a governed build.
+    package = get_config_package(settings)
+    _check_tutor_pipeline_package(package)
     # The served catalogue is the manifest (Decision P1-D-07, D-31): an empty one starts and serves no asset.
     registry = get_corpus_registry(settings)
     registry.assert_ready_to_serve()
@@ -160,6 +164,30 @@ def _check_corpus_before_any_table() -> None:
                 f"recall stop (Phase 2 spec conflict 29): {details}; switch RETRIEVAL_GATE under D-05 or recalibrate first"
             )
         LOGGER.warning("Recall stop overridden", extra={FIELDS: {"event": "retrieval.recall_stop_overridden", "items": len(stopped)}})
+
+
+def _check_tutor_pipeline_package(package) -> None:
+    """Package v2's schema pins and prompt hashes against the code (Phase 3 spec 5.4, conflict 30).
+
+    A problem stops a governed build only when the pipeline is requested (TWO_PASS_TUTOR not off); otherwise the
+    pipeline is reported unavailable (/ready tutor_pipeline.available false) and its effective mode stays off."""
+    if package.tutor_pipeline is None:
+        tutor_shadow.PIPELINE_UNAVAILABLE_REASON = None
+        return
+    from app.services.tutor_pipeline.package_check import check_tutor_pipeline_package
+
+    problems = check_tutor_pipeline_package(package, structural=False)
+    if not problems:
+        tutor_shadow.PIPELINE_UNAVAILABLE_REASON = None
+        return
+    reason = "; ".join(problems)[:500]
+    if settings.enforce_corpus_governance and settings.two_pass_tutor != "off":
+        raise ConfigPackageError(f"tutor pipeline: {reason}")
+    tutor_shadow.PIPELINE_UNAVAILABLE_REASON = reason
+    TUTOR_LOGGER.warning(
+        "The two-pass tutor pipeline is unavailable; it stays off",
+        extra={FIELDS: {"event": "tutor.two_pass.unavailable", "reason": reason}},
+    )
 
 
 def _initialize_database() -> None:
@@ -228,6 +256,12 @@ def _record_configuration_overrides() -> None:
             ("citation_provisional_lift_enabled", settings.citation_provisional_lift_enabled),
             ("config_package_path_overridden", not package.is_default_path),
             ("config_package_hash_unverified", not package.hash_verified),
+            # Phase 3: the two-pass shadow outside development (DI-32), a relaxed audit control (the ledger), and the
+            # new learner-visible switches; each needs a D-05 approval outside development.
+            ("two_pass_tutor_shadow", settings.two_pass_tutor == "shadow"),
+            ("tutor_ledger_disabled", not settings.tutor_ledger_enabled),
+            ("ledger_route_enabled", settings.ledger_route_enabled),
+            ("evidence_panel_enabled", settings.evidence_panel_enabled),
         )
         if active
     }
@@ -263,7 +297,10 @@ ROUTERS = (
     search.router,
     qa.router,
     spans.router,
+    spans.evidence_router,
     assistant.router,
+    tutor.router,
+    ledger.router,
     analytics.router,
     admin.router,
     arena.router,
@@ -423,11 +460,43 @@ def _build_fields() -> dict:
         # Effective state: on only when the setting is on and this process aligned span-id vectors (task 2.5).
         "semantic_enabled": bool(get_retrieval_engine().semantic_enabled),
         "semantic_setting": bool(settings.semantic_retrieval_enabled),
+        # Phase 3 (plan I: "/ready reports versions"): the two-pass mode in force, the pipeline's ids and hashes,
+        # and the switches. two_pass_tutor is the effective mode, never "on" before the Phase 4 exit (AC-3-6).
+        "two_pass_tutor": tutor_shadow.effective_mode(settings, package),
+        "two_pass_tutor_setting": settings.two_pass_tutor,
+        "phase4_exit_passed": bool(package.flag_policy.phase4_exit_passed),
+        "tutor_pipeline": _tutor_pipeline_fields(package),
+        "tutor_ledger_enabled": bool(settings.tutor_ledger_enabled),
+        "ledger_route_enabled": bool(settings.ledger_route_enabled),
+        "evidence_panel_enabled": bool(settings.evidence_panel_enabled),
+        "tutor_turns_route_enabled": bool(settings.tutor_turns_route_enabled),
+    }
+
+
+def _tutor_pipeline_fields(package) -> dict | None:
+    params = package.tutor_pipeline
+    if params is None:
+        return None
+    return {
+        "version": params.version,
+        "resolver": params.resolver_id,
+        "generator": params.generator_default,
+        "renderer": params.renderer_id,
+        "presentation_plans": list(params.presentation_plans),
+        "max_regenerations": params.max_regenerations,
+        "schemas_sha256": params.schemas_sha256,
+        "prompt_hashes": {
+            "resolver": params.resolver_prompt_hash,
+            "evidential": params.evidential_prompt_hash,
+            "pedagogical": params.pedagogical_prompt_hash,
+        },
+        "available": tutor_shadow.PIPELINE_UNAVAILABLE_REASON is None,
     }
 
 
 def _slis() -> dict:
     drift = STARTUP_DRIFT
+    params = get_config_package(settings).tutor_pipeline
     return {
         **retrieval_slis(),
         "manifest_drift": {
@@ -436,7 +505,22 @@ def _slis() -> dict:
             "absent": drift.absent if drift else 0,
             "drifted": drift.drift_count if drift else 0,
         },
+        # Plan Phase 3 I: "Ledger writes 100% of deliveries; bound-claim ratio; abstention by reason".
+        **tutor_slis(params.phase2_bound_claim_ratio if params else None),
     }
+
+
+def _ledger_head() -> dict:
+    """The response ledger's head: a read that never changes readiness, since the ledger fails open."""
+    from app.services.ledger import CHAIN, chain_head
+
+    try:
+        with SessionLocal() as db:
+            head = chain_head(db)
+        return {"chain": CHAIN, "head_seq": head[0] if head else 0}
+    except Exception:
+        LOGGER.warning("Readiness ledger head read failed", exc_info=True)
+        return {"chain": CHAIN, "head_seq": None, "status": "unavailable"}
 
 
 @app.get("/ready")
@@ -457,5 +541,6 @@ def readiness_check():
         "lessons": len(store.lessons),
         "source_assets": len(store.overview.source_assets) if store.overview else 0,
         **_build_fields(),
+        "ledger": _ledger_head(),
         "slis": _slis(),
     }

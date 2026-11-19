@@ -447,3 +447,43 @@ class CorpusSpan(Base):
     corpus_version_first_seen: Mapped[str] = mapped_column(String(64))
     registered_by: Mapped[str] = mapped_column(String(32))
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ResponseLedgerRecord(Base):
+    # Append-only, hash-chained provenance record of every tutor response (plan task 3.8, 7.5; R-22). No user id and
+    # no learner text: the learner link is tutor_turns (user-keyed, erasable), so after erasure a row stays but is
+    # unlinkable. No foreign key to any tutor table, so erasure never reaches it. Triggers refuse UPDATE, DELETE and
+    # TRUNCATE (schema_upgrades); an insert must extend the chain. See app.services.ledger.
+    __tablename__ = "response_ledger"
+    __table_args__ = (
+        UniqueConstraint("response_id", name="uq_response_ledger_response_id"),
+        CheckConstraint("delivery IN ('shadow', 'delivered', 'legacy')", name="ck_response_ledger_delivery"),
+        CheckConstraint("decision IN ('answer', 'abstain')", name="ck_response_ledger_decision"),
+        Index("ix_response_ledger_shadowed_response_id", "shadowed_response_id"),
+        Index("ix_response_ledger_created_at", "created_at"),
+    )
+
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    response_id: Mapped[str] = mapped_column(String(64))
+    delivery: Mapped[str] = mapped_column(String(16))
+    decision: Mapped[str] = mapped_column(String(16))
+    shadowed_response_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    claim_set_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    entry_schema: Mapped[str] = mapped_column(String(32))
+    # The canonical JSON of the LedgerEntry: exactly the bytes entry_sha256 hashes (TEXT, so no driver re-encodes it).
+    entry: Mapped[str] = mapped_column(Text)
+    entry_sha256: Mapped[str] = mapped_column(String(64))
+    prev_hash: Mapped[str] = mapped_column(String(64))
+    record_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ResponseLedgerHead(Base):
+    # The chain head, locked with SELECT ... FOR UPDATE by every append so the chain stays linear, and compared with
+    # the last record so a truncated tail is detected. A trigger lets it move forward only, one record at a time.
+    __tablename__ = "response_ledger_head"
+
+    chain: Mapped[str] = mapped_column(String(32), primary_key=True)
+    seq: Mapped[int] = mapped_column(Integer)
+    record_hash: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

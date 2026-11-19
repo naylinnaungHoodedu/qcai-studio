@@ -222,6 +222,27 @@ class RetrievalEngine:
         )
         return response
 
+    def evidence(self, query: str, lesson_slug: str | None = None, top_k: int = 8) -> RetrievalResponse:
+        """Lexical evidence for the two-pass tutor (Phase 3 spec 7.5, conflict 33).
+
+        The lexical branch of _search, whatever SEMANTIC_RETRIEVAL_ENABLED says: it never calls the semantic
+        backend, so no resolved question reaches an embeddings provider (D-12, R-10). It records no Phase 2
+        retrieval SLI, so shadow runs never double-count learner-facing decisions.
+        """
+        decision = self.store.evaluate(query, lesson_slug=lesson_slug, top_k=max(top_k * 2, top_k))
+        results = [self.store.to_search_result(scored, lesson_slug) for scored in decision.results][:top_k]
+        return RetrievalResponse(
+            results=results,
+            mode="lexical",
+            abstained=not results,
+            reason=decision.reason if not results else "evidence",
+            gate=decision.gate,
+            index_version=self.store.index_version,
+            floor=decision.floor,
+            margin=decision.margin,
+            near_floor=sum(1 for result in results if result.near_floor),
+        )
+
     def _search(self, query: str, lesson_slug: str | None, top_k: int) -> RetrievalResponse:
         decision = self.store.evaluate(query, lesson_slug=lesson_slug, top_k=max(top_k * 2, top_k))
         lexical = [self.store.to_search_result(scored, lesson_slug) for scored in decision.results]

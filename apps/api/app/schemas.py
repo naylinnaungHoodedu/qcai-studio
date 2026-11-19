@@ -2,7 +2,7 @@ from datetime import datetime
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_serializer
 
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -71,6 +71,8 @@ class SpanResolution(BaseModel):
     corpus_version_first_seen: str | None = None
     corpus_version: str
     excerpt: str | None = None
+    # Phase 3 (plan 7.3 "public license_class only"): a resolvable span is public-plane, so its class is public.
+    license_class: Literal["public"] = "public"
 
 
 class VideoChapter(BaseModel):
@@ -268,6 +270,25 @@ class AssistantChatRequest(BaseModel):
         return value[-ASSISTANT_HISTORY_MAX_MESSAGES:]
 
 
+class EvidenceSpanLink(BaseModel):
+    span_id: str
+    label: str
+    # True when GET /evidence/spans/{span_id} is enabled (SPAN_RESOLVER_ROUTE_ENABLED); otherwise a plain label.
+    resolvable: bool
+
+
+class EvidencePanel(BaseModel):
+    """The evidence panel of a tutor answer (plan task 3.8): labels only, for the contained answer the learner
+    already receives. Never "grounded"; never anything from the two-pass shadow."""
+
+    panel_schema: Literal["evidence-panel-v1"] = "evidence-panel-v1"
+    decision: Literal["answer", "abstain"]
+    labels: list[Literal["lexically_screened"]] = Field(default_factory=list)
+    degraded: list[Literal["extractive_only", "retrieval_fallback", "citations_provisional"]] = Field(default_factory=list)
+    spans: list[EvidenceSpanLink] = Field(default_factory=list)
+    verdict: Literal["no-verdict"] = "no-verdict"
+
+
 class AssistantChatResponse(BaseModel):
     answer: str
     citations: list[Citation]
@@ -280,6 +301,81 @@ class AssistantChatResponse(BaseModel):
     decision: Literal["answer", "abstain", "clarify"] = "answer"
     decision_reason: str | None = None
     claims: list["GroundedClaim"] = Field(default_factory=list)
+    # Phase 3 (task 3.8): present only when EVIDENCE_PANEL_ENABLED (development by default). When absent the key is
+    # omitted, so production bodies keep today's keys and values (spec conflict 28).
+    evidence: EvidencePanel | None = None
+    # Never serialised: the turn's ledger and shadow follow-ups, and the retrieval behind a contained answer.
+    _followups: Any = PrivateAttr(default=None)
+    _retrieval: Any = PrivateAttr(default=None)
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_evidence(self, handler) -> dict[str, Any]:
+        data = handler(self)
+        if isinstance(data, dict) and self.evidence is None:
+            data.pop("evidence", None)
+        return data
+
+
+class TutorTurnRequest(BaseModel):
+    """POST /tutor/turns (plan 7.3). No learner-state field is accepted (AC-3-1 at the API boundary)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    message: str = Field(min_length=1, max_length=2000)
+    thread_id: str | None = Field(default=None, min_length=8, max_length=64)
+    lesson_slug: str | None = Field(default=None, max_length=255)
+    # A presentation hint for the two-pass renderer only; it never reaches retrieval or the evidential pass.
+    presentation_plan: Literal["concise", "stepwise", "socratic"] | None = None
+
+    @field_validator("message")
+    @classmethod
+    def validate_message(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Message cannot be empty.")
+        return normalized
+
+
+class TutorTurnResponse(AssistantChatResponse):
+    # Phase 3 delivers the legacy contained answer only; Phase 4 adds "delivered" behind V1 (AC-3-6).
+    delivery: Literal["legacy"] = "legacy"
+
+
+class LedgerClaimRead(BaseModel):
+    claim_id: str
+    text: str
+    span_ids: list[str]
+
+
+class LedgerRecordRead(BaseModel):
+    response_id: str
+    delivery: str
+    decision: str
+    abstention_reason: str | None = None
+    created_at: datetime
+    claim_set_hash: str | None = None
+    span_ids: list[str] = Field(default_factory=list)
+    claims: list[LedgerClaimRead] = Field(default_factory=list)
+    retrieval: dict[str, Any] = Field(default_factory=dict)
+    presentation: dict[str, Any] | None = None
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    versions: dict[str, Any] = Field(default_factory=dict)
+    resolved_question: dict[str, Any] | None = None
+    # Reviewers only (None for owners, so a learner never learns chain position or traffic volume).
+    seq: int | None = None
+    prev_hash: str | None = None
+    record_hash: str | None = None
+    entry_sha256: str | None = None
+    shadowed_response_id: str | None = None
+
+
+class LedgerResponseRead(BaseModel):
+    response_id: str
+    # Plan Phase 3 G: "legacy turns marked no-verdict"; no V1-V3 verdict exists before Phase 4.
+    verdict: Literal["no-verdict"] = "no-verdict"
+    recorded: bool
+    legacy_turn: bool
+    record: LedgerRecordRead | None = None
 
 
 class GroundedClaim(BaseModel):

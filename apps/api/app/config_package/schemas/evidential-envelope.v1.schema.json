@@ -1,0 +1,106 @@
+{
+  "$defs": {
+    "EnvelopeSpan": {
+      "additionalProperties": false,
+      "properties": {
+        "span_id": {
+          "pattern": "^span-[0-9a-f]{64}$",
+          "title": "Span Id",
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "span_id",
+        "text"
+      ],
+      "title": "EnvelopeSpan",
+      "type": "object"
+    },
+    "EvidentialInstructions": {
+      "additionalProperties": false,
+      "properties": {
+        "max_claims": {
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Max Claims",
+          "type": "integer"
+        },
+        "max_claims_per_span": {
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Max Claims Per Span",
+          "type": "integer"
+        },
+        "min_sentence_words": {
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Min Sentence Words",
+          "type": "integer"
+        },
+        "prompt_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Prompt Hash",
+          "type": "string"
+        },
+        "rule_id": {
+          "title": "Rule Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_id",
+        "prompt_hash",
+        "max_claims",
+        "max_claims_per_span",
+        "min_sentence_words"
+      ],
+      "title": "EvidentialInstructions",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The evidential prompt (F-2): span text only in typed fields, never inside instructions (R-11).",
+  "properties": {
+    "corpus_version": {
+      "title": "Corpus Version",
+      "type": "string"
+    },
+    "envelope_schema": {
+      "const": "evidential-envelope-v1",
+      "default": "evidential-envelope-v1",
+      "title": "Envelope Schema",
+      "type": "string"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/EnvelopeSpan"
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "title": "Evidence",
+      "type": "array"
+    },
+    "instructions": {
+      "$ref": "#/$defs/EvidentialInstructions"
+    },
+    "question": {
+      "maxLength": 4001,
+      "minLength": 1,
+      "title": "Question",
+      "type": "string"
+    }
+  },
+  "required": [
+    "question",
+    "corpus_version",
+    "evidence",
+    "instructions"
+  ],
+  "title": "EvidentialEnvelope",
+  "type": "object"
+}

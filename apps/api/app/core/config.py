@@ -140,6 +140,26 @@ class Settings(BaseSettings):
     # size or LFS pointer; "full" also hashes video content.
     manifest_drift_check: Literal["off", "fast", "full"] = "fast"
     spans_rate_limit: str = "30/minute"
+    # Phase 3 (provenance-first two-channel tutor; docs/architecture/phase3-implementation-spec.md section 6). Every
+    # learner-visible change keeps today's behaviour outside development while the D-05 freeze holds.
+    # Plan Phase 3 G: "two_pass_tutor MUST run shadow-only until the Phase 4 exit; zero outputs reach learners".
+    # None = "shadow" in development, "off" elsewhere. "on" is refused while the configuration package says
+    # flag_policy.phase4_exit_passed is false (AC-3-6); "shadow" outside development logs a config.override event.
+    two_pass_tutor: Literal["off", "shadow", "on"] | None = None
+    # How long a shadow run may hold its worker after the response is sent (E1 "bounded budget").
+    two_pass_shadow_budget_ms: int = Field(default=2000, ge=100, le=30000)
+    # Kill switch for the response-ledger write of every tutor delivery (not learner-visible; plan 3.8, R-22).
+    # Disabling it outside development relaxes an audit control and logs a config.override event.
+    tutor_ledger_enabled: bool = True
+    # Total deadline of the synchronous legacy ledger append (spec conflict 29); also each PostgreSQL attempt's
+    # lock_timeout. The append fails open after it.
+    tutor_ledger_append_budget_ms: int = Field(default=1500, ge=100, le=5000)
+    # GET /ledger/responses/{response_id}: None = on in development, off elsewhere (a new route under the freeze).
+    ledger_route_enabled: bool | None = None
+    # The evidence panel field on tutor responses (task 3.8): None = on in development, off elsewhere (E9).
+    evidence_panel_enabled: bool | None = None
+    tutor_turns_rate_limit: str = "8/minute"
+    ledger_rate_limit: str = "30/minute"
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
@@ -174,6 +194,15 @@ class Settings(BaseSettings):
             self.retrieval_gate = "bm25f-v1" if self.environment.lower() == "development" else "p1-floor"
         if self.span_resolver_route_enabled is None:
             self.span_resolver_route_enabled = self.environment.lower() == "development"
+        development = self.environment.lower() == "development"
+        if self.two_pass_tutor is None:
+            self.two_pass_tutor = "shadow" if development else "off"
+        if self.ledger_route_enabled is None:
+            self.ledger_route_enabled = development
+        if self.evidence_panel_enabled is None:
+            self.evidence_panel_enabled = development
+        if self.two_pass_tutor == "on":
+            self._refuse_two_pass_on_before_phase_4_exit(development)
         if self.arena_enabled and self.environment.lower() != "development":
             raise ValueError("ARENA_ENABLED is not permitted outside development (Decision D-03).")
         if self.guest_token_secret is None and self.environment.lower() == "development":
@@ -184,6 +213,27 @@ class Settings(BaseSettings):
             raise ValueError("Wildcard ALLOWED_ORIGINS is not permitted outside development.")
         self.database_url = normalize_sqlite_database_url(self.database_url)
         return self
+
+    def _refuse_two_pass_on_before_phase_4_exit(self, development: bool) -> None:
+        # The package is read only when "on" is asked for, so no other construction of Settings depends on it.
+        from app.core.config_package import ConfigPackageError, get_config_package  # lazy: avoids an import cycle
+
+        try:
+            package = get_config_package(self)
+        except ConfigPackageError as exc:
+            raise ValueError(f"TWO_PASS_TUTOR=on needs a valid configuration package: {exc}") from exc
+        if not package.flag_policy.phase4_exit_passed:
+            raise ValueError(
+                "TWO_PASS_TUTOR=on is refused before the Phase 4 exit (configuration package flag_policy.phase4_exit_passed "
+                "is false; plan Phase 3 G, AC-3-6). Use off or shadow."
+            )
+        if not development and not (package.is_default_path and package.hash_verified):
+            raise ValueError("TWO_PASS_TUTOR=on outside development needs the shipped, hash-verified configuration package.")
+
+    @property
+    def tutor_turns_route_enabled(self) -> bool:
+        """POST /tutor/turns: development, or two_pass_tutor on (which settings refuse before the Phase 4 exit)."""
+        return self.environment.lower() == "development" or self.two_pass_tutor == "on"
 
     @property
     def project_root(self) -> Path:

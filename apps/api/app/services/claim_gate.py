@@ -1,106 +1,115 @@
-"""Conservative claim-to-span gate for the persistent grounded Tutor."""
+"""Subset checker, rule segment-exact-normalised-v1 (plan Phase 3 E: "claim_gate becomes the subset checker";
+task 3.7; Phase 3 spec 4.9). Phase 4 V1.4 subsumes it.
+
+The overlap ClaimGate and evidence_digest are gone (plan 3.4: "overlap rebinding removed", R-13): nothing binds a
+sentence to whichever citation shares its words. Instead every factual segment of a rendered response must equal a
+locked claim by exact normalised match, and every citation must be one of that claim's locked spans. Questions and
+connectives are typed by the renderer, never detected heuristically; a non-factual segment whose text is not its
+template's text counts as an unmapped factual sentence. The caller regenerates (at most twice), then abstains.
+"""
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
-from app.schemas import Citation, GroundedClaim
+from app.services.tutor_pipeline.contracts import LockedClaimSet, RenderedResponse, verify_locked
+from app.services.tutor_pipeline.render import TEMPLATES, layout_text
+from app.services.tutor_pipeline.text import normalise
+
+SUBSET_CHECK_RULE = "segment-exact-normalised-v1"
+PROBLEM_CODES = (
+    "empty",
+    "text_not_segments",
+    "unmapped_factual_sentence",
+    "duplicate_claim",
+    "citation_outside_locked_set",
+    "citation_not_on_claim",
+    "citation_marker_mismatch",
+)
 
 
-_SENTENCES = re.compile(r"(?<=[.!?])\s+")
-_WORDS = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{2,}")
-_STOPWORDS = {
-    "about", "after", "also", "and", "are", "because", "been", "being", "but", "can", "could", "does",
-    "from", "have", "into", "its", "not", "only", "or", "our", "that", "the", "their", "these", "this",
-    "those", "was", "were", "what", "when", "which", "with", "would", "your",
-}
+def _formatted(template: tuple[str, str] | None, params: tuple[int, ...]) -> str | None:
+    if template is None:
+        return None
+    try:
+        return template[1].format(*params)
+    except (IndexError, KeyError, ValueError):
+        return None
 
 
 @dataclass(frozen=True)
-class ClaimGateResult:
-    answer: str
-    decision: str
-    reason: str
-    claims: list[GroundedClaim]
-    grounded: bool
+class SubsetCheckResult:
+    passed: bool
+    problems: tuple[str, ...]
+    factual_segments: int
+    mapped: int
+    missing_claims: int
 
 
-def _terms(text: str) -> set[str]:
-    return {word.lower() for word in _WORDS.findall(text) if word.lower() not in _STOPWORDS}
+def check_subset(rendered: RenderedResponse, locked: LockedClaimSet, *, templates=TEMPLATES) -> SubsetCheckResult:
+    verify_locked(locked)
+    problems: list[str] = []
+    segments = list(rendered.segments)
+    if not segments:
+        return SubsetCheckResult(False, ("empty",), 0, 0, len(locked.claims))
 
+    lines = [segment.line for segment in segments]
+    expected_lines = list(range(max(lines) + 1)) if lines else []
+    if (
+        any("\n" in segment.text for segment in segments)
+        or lines != sorted(lines)
+        or sorted(set(lines)) != expected_lines
+        or layout_text(segments) != rendered.text
+    ):
+        problems.append("text_not_segments")
 
-def evidence_digest(citations: list[Citation]) -> str:
-    statements: list[str] = []
-    for index, citation in enumerate(citations[:3], start=1):
-        excerpt = " ".join(citation.excerpt.split())
-        if excerpt:
-            statements.append(f"Evidence [{index}]: {excerpt}")
-    return " ".join(statements)
-
-
-class ClaimGate:
-    """Fail closed when a factual sentence cannot be tied to a retrieved span.
-
-    This is deliberately lexical and conservative.  It is an enforcement gate, not a
-    substitute for the frozen human claim-rating protocol used by the evaluation harness.
-    """
-
-    def evaluate(self, answer: str, citations: list[Citation]) -> ClaimGateResult:
-        usable = [citation for citation in citations if citation.chunk_id and citation.excerpt.strip()]
-        if not usable:
-            return ClaimGateResult(
-                answer=(
-                    "I cannot provide a grounded answer because the approved corpus did not return sufficient evidence. "
-                    "Please narrow the question to a course topic or source."
-                ),
-                decision="abstain",
-                reason="no_retrieved_evidence",
-                claims=[],
-                grounded=False,
-            )
-
-        claims: list[GroundedClaim] = []
-        for sentence in (item.strip() for item in _SENTENCES.split(answer) if item.strip()):
-            sentence_terms = _terms(sentence)
-            if not sentence_terms:
+    by_text = {normalise(claim.text): claim for claim in locked.claims}
+    locked_spans = set(locked.span_ids)
+    citation_order = list(rendered.citations)
+    rendered_claims: set[str] = set()
+    line_claims: dict[int, list] = {}
+    factual = mapped = 0
+    for segment in segments:
+        if segment.kind == "claim":
+            factual += 1
+            claim = by_text.get(normalise(segment.text))
+            if claim is None or segment.claim_id != claim.claim_id:
+                problems.append("unmapped_factual_sentence")
                 continue
-            cited_span_ids = [
-                citation.span_id or citation.chunk_id
-                for citation in usable
-                if self._supports(sentence_terms, _terms(citation.excerpt))
-            ]
-            claims.append(
-                GroundedClaim(text=sentence, cited_span_ids=cited_span_ids, supported=bool(cited_span_ids))
-            )
-
-        if claims and all(claim.supported for claim in claims):
-            return ClaimGateResult(
-                answer=answer,
-                decision="answer",
-                reason="all_factual_claims_bound_to_retrieved_spans",
-                claims=claims,
-                grounded=True,
-            )
-
-        return ClaimGateResult(
-            answer=(
-                "I am abstaining from a generated answer because its factual claims could not be bound to the "
-                "retrieved evidence at the required claim level. "
-                "You can inspect the retrieved source excerpts below or ask a narrower question."
-            ),
-            decision="abstain",
-            reason="claim_span_binding_failed",
-            claims=claims,
-            grounded=False,
-        )
-
-    @staticmethod
-    def _supports(sentence_terms: set[str], span_terms: set[str]) -> bool:
-        if not sentence_terms or not span_terms:
-            return False
-        overlap = len(sentence_terms & span_terms)
-        # Short evidence summaries must substantially agree; longer generated claims
-        # need at least three substantive words and half their terms in one span.
-        required = max(1, min(3, (len(sentence_terms) + 1) // 2))
-        return overlap >= required
+            mapped += 1
+            if claim.claim_id in rendered_claims:
+                problems.append("duplicate_claim")
+            rendered_claims.add(claim.claim_id)
+            line_claims.setdefault(segment.line, []).append(claim)
+        elif segment.kind in ("connective", "question"):
+            template = templates.get(segment.template_id or "")
+            expected = _formatted(template, segment.params)
+            if template is None or template[0] != segment.kind or expected is None or segment.text != expected:
+                # Untyped text in a non-factual slot is treated as factual, and it maps to no locked claim.
+                factual += 1
+                problems.append("unmapped_factual_sentence")
+    for segment in segments:
+        if segment.kind != "citation":
+            continue
+        span_id = segment.span_id
+        if span_id is None or span_id not in locked_spans:
+            problems.append("citation_outside_locked_set")
+            continue
+        claims_on_line = line_claims.get(segment.line, [])
+        if not claims_on_line or not any(span_id in claim.span_ids for claim in claims_on_line):
+            problems.append("citation_not_on_claim")
+        template = templates.get(segment.template_id or "")
+        number = citation_order.index(span_id) + 1 if span_id in citation_order else None
+        if (
+            template is None
+            or template[0] != "citation"
+            or number is None
+            or segment.params != (number,)
+            or segment.text != _formatted(template, (number,))
+        ):
+            problems.append("citation_marker_mismatch")
+    if set(rendered.citations) - locked_spans:
+        problems.append("citation_outside_locked_set")
+    unique = tuple(dict.fromkeys(problems))
+    missing = sum(1 for claim in locked.claims if claim.claim_id not in rendered_claims)
+    return SubsetCheckResult(passed=not unique, problems=unique, factual_segments=factual, mapped=mapped, missing_claims=missing)

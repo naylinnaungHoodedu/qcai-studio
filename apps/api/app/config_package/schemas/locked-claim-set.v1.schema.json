@@ -1,0 +1,204 @@
+{
+  "$defs": {
+    "ConfigStamp": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "sha256"
+      ],
+      "title": "ConfigStamp",
+      "type": "object"
+    },
+    "GeneratorRef": {
+      "additionalProperties": false,
+      "properties": {
+        "generator_id": {
+          "title": "Generator Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "extractive",
+            "generative"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "model_id": {
+          "title": "Model Id",
+          "type": "string"
+        },
+        "prompt_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Prompt Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "generator_id",
+        "model_id",
+        "kind",
+        "prompt_hash"
+      ],
+      "title": "GeneratorRef",
+      "type": "object"
+    },
+    "LockedClaim": {
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {
+          "pattern": "^claim-[0-9a-f]{32}$",
+          "title": "Claim Id",
+          "type": "string"
+        },
+        "source_order": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "title": "Source Order",
+          "type": "array"
+        },
+        "span_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Span Ids",
+          "type": "array"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claim_id",
+        "text",
+        "span_ids",
+        "source_order"
+      ],
+      "title": "LockedClaim",
+      "type": "object"
+    },
+    "ResolverRef": {
+      "additionalProperties": false,
+      "properties": {
+        "model_id": {
+          "title": "Model Id",
+          "type": "string"
+        },
+        "prompt_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Prompt Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model_id",
+        "prompt_hash"
+      ],
+      "title": "ResolverRef",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Task 3.5: immutable, hashed, stamped. The lock precedes rendering, so no stamp is plan-specific (AC-3-2).",
+  "properties": {
+    "claim_set_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Claim Set Hash",
+      "type": "string"
+    },
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/LockedClaim"
+      },
+      "title": "Claims",
+      "type": "array"
+    },
+    "config_package": {
+      "$ref": "#/$defs/ConfigStamp"
+    },
+    "corpus_version": {
+      "title": "Corpus Version",
+      "type": "string"
+    },
+    "evidential_prompt_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Evidential Prompt Hash"
+    },
+    "generator": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GeneratorRef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "index_version": {
+      "title": "Index Version",
+      "type": "string"
+    },
+    "lock_schema": {
+      "const": "locked-claim-set-v1",
+      "default": "locked-claim-set-v1",
+      "title": "Lock Schema",
+      "type": "string"
+    },
+    "pedagogical_prompt_hash": {
+      "title": "Pedagogical Prompt Hash",
+      "type": "string"
+    },
+    "resolver": {
+      "$ref": "#/$defs/ResolverRef"
+    },
+    "span_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Span Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "claims",
+    "span_ids",
+    "corpus_version",
+    "index_version",
+    "generator",
+    "evidential_prompt_hash",
+    "pedagogical_prompt_hash",
+    "resolver",
+    "config_package",
+    "claim_set_hash"
+  ],
+  "title": "LockedClaimSet",
+  "type": "object"
+}

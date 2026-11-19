@@ -23,13 +23,14 @@ import json
 import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, status
 
 from app.core.config import Settings
-from app.core.config_package import ConfigPackage, get_config_package
+from app.core.config_package import ConfigPackage, canonical_sha256, get_config_package
 from app.core.source_assets import source_asset_id, source_asset_kind
 
 SUPPORTED_SCHEMAS = ("1.0", "2.0")
@@ -278,6 +279,15 @@ class CorpusRegistry:
     @property
     def package(self) -> ConfigPackage:
         return get_config_package(self.settings)
+
+    @cached_property
+    def manifest_sha256(self) -> str | None:
+        """The sha256 of the manifest's canonical JSON (a CRLF checkout hashes the same), or None without one.
+
+        Stamped on every tutor ledger record (Phase 3 spec 7.6; plan 13.5 "corpus manifest hash")."""
+        if self.manifest_path is None:
+            return None
+        return canonical_sha256(json.loads(self.manifest_path.read_text(encoding="utf-8")))
 
     def _item_bound(self, item: CorpusItem) -> bool:
         package = self.package

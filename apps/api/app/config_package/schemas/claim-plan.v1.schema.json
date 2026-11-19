@@ -1,0 +1,89 @@
+{
+  "$defs": {
+    "GeneratorRef": {
+      "additionalProperties": false,
+      "properties": {
+        "generator_id": {
+          "title": "Generator Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "extractive",
+            "generative"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "model_id": {
+          "title": "Model Id",
+          "type": "string"
+        },
+        "prompt_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Prompt Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "generator_id",
+        "model_id",
+        "kind",
+        "prompt_hash"
+      ],
+      "title": "GeneratorRef",
+      "type": "object"
+    },
+    "ProposedClaim": {
+      "additionalProperties": false,
+      "properties": {
+        "span_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Span Ids",
+          "type": "array"
+        },
+        "text": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "ProposedClaim",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/ProposedClaim"
+      },
+      "maxItems": 20,
+      "title": "Claims",
+      "type": "array"
+    },
+    "generator": {
+      "$ref": "#/$defs/GeneratorRef"
+    },
+    "plan_schema": {
+      "const": "claim-plan-v1",
+      "default": "claim-plan-v1",
+      "title": "Plan Schema",
+      "type": "string"
+    }
+  },
+  "required": [
+    "generator",
+    "claims"
+  ],
+  "title": "ClaimPlan",
+  "type": "object"
+}

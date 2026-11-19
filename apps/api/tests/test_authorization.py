@@ -13,7 +13,7 @@ from app.core import authorization as authz
 from app.core.config import DEVELOPMENT_GUEST_TOKEN_SECRET, Settings, get_settings
 from app.core.db import SessionLocal
 from app.core.guest_tokens import GUEST_TOKEN_COOKIE, guest_csrf_for, issue_guest_token
-from app.db_models import ProjectSubmission, QuizAttempt, SecurityEvent, TutorMessage
+from app.db_models import ProjectSubmission, QuizAttempt, ResponseLedgerRecord, SecurityEvent, TutorMessage
 from app.main import ROUTERS, app
 from app.services.store import get_course_store
 
@@ -139,6 +139,8 @@ def _concrete(path: str) -> str:
         "submission_id": "1",
         "asset_id": "none",
         "filename": "none.pdf",
+        "response_id": "turn-00000000-0000-0000-0000-000000000000",
+        "span_id": "span-" + "0" * 64,
     }
     for name, value in values.items():
         path = path.replace("{" + name + "}", value)
@@ -205,6 +207,8 @@ def test_a_role_denial_is_a_security_event():
 OWNERSHIP_TESTED = {
     ("GET", "/assistant/threads/{thread_id}"),
     ("POST", "/assistant/chat"),
+    ("POST", "/tutor/turns"),
+    ("GET", "/ledger/responses/{response_id}"),
     ("DELETE", "/projects/submissions/{submission_id}"),
     ("POST", "/projects/reviews"),
 }
@@ -239,6 +243,44 @@ def test_another_learners_thread_cannot_be_read_or_continued():
         after = db.scalar(select(func.count()).select_from(TutorMessage).where(TutorMessage.thread_id == thread_id))
     assert after == before
     assert TestClient(app).get(f"/assistant/threads/{thread_id}", headers=owner).status_code == 200
+
+
+def test_another_learners_thread_cannot_be_continued_through_tutor_turns():
+    # Phase 3 (plan 7.3): POST /tutor/turns names a thread like /assistant/chat does; only its owner may continue it.
+    owner, intruder = _demo("learner"), _demo("learner")
+    thread_id = _thread_for(owner)
+    with SessionLocal() as db:
+        before = db.scalar(select(func.count()).select_from(TutorMessage).where(TutorMessage.thread_id == thread_id))
+
+    turn = TestClient(app).post("/tutor/turns", json={"message": "What is routing depth?", "thread_id": thread_id}, headers={**intruder, **_source()})
+
+    assert (turn.status_code, turn.json()) == (404, {"detail": "Tutor thread not found."})
+    with SessionLocal() as db:
+        after = db.scalar(select(func.count()).select_from(TutorMessage).where(TutorMessage.thread_id == thread_id))
+    assert after == before
+    own = TestClient(app).post("/tutor/turns", json={"message": "What is routing depth?", "thread_id": thread_id}, headers={**owner, **_source()})
+    assert own.status_code == 200 and own.json()["thread_id"] == thread_id
+
+
+def test_another_learners_ledger_record_reads_as_missing():
+    # Phase 3 (plan 7.3 "owner or reviewer"): an intruder gets exactly the missing-id 404; the owner reads the record,
+    # and never a shadow record (AC-3-6).
+    owner, intruder = _demo("learner"), _demo("learner")
+    chat = TestClient(app).post("/assistant/chat", json={"message": "Why does routing depth matter?"}, headers={**owner, **_source()})
+    assert chat.status_code == 200
+    turn_id = chat.json()["turn_id"]
+
+    own = TestClient(app).get(f"/ledger/responses/{turn_id}", headers=owner)
+    theirs = TestClient(app).get(f"/ledger/responses/{turn_id}", headers=intruder)
+    missing = TestClient(app).get(f"/ledger/responses/turn-{uuid4()}", headers=intruder)
+
+    assert own.status_code == 200 and own.json()["recorded"] is True and own.json()["record"]["seq"] is None
+    assert (theirs.status_code, theirs.json()) == (missing.status_code, missing.json()) == (404, {"detail": "Response not found."})
+    with SessionLocal() as db:
+        shadow_id = db.scalar(select(ResponseLedgerRecord.response_id).where(ResponseLedgerRecord.shadowed_response_id == turn_id))
+    assert shadow_id is not None and shadow_id.startswith("shadow-")
+    shadow = TestClient(app).get(f"/ledger/responses/{shadow_id}", headers=owner)
+    assert (shadow.status_code, shadow.json()) == (404, {"detail": "Response not found."})
 
 
 def _submission_for(headers: dict[str, str], title: str) -> int:
