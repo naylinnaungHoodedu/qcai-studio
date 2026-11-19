@@ -2027,24 +2027,37 @@ def test_search_endpoint_rate_limits_repeated_requests():
 
 def test_retrieval_engine_merges_semantic_and_lexical_results():
     # Task 2.5: the semantic backend runs only when enabled and aligned (its vector ids are span ids), and every
-    # semantic result is re-gated with the active gate before fusion, so fusion cannot bypass the floor.
+    # semantic result is re-gated with the active gate before fusion, so fusion cannot bypass the floor. The stub
+    # returns a span that passes the gate but ranks outside the lexical top 3, and one that does not pass the gate:
+    # fusion must bring the first into the results and drop the second.
+    query = "QUBO logistics"
     store = get_course_store()
     engine = RetrievalEngine(store, Settings(semantic_retrieval_enabled=True))
-    lexical_top = store.search("QUBO logistics", top_k=1)[0]
+    lexical_top3 = [result.chunk_id for result in store.search(query, top_k=3)]
+    passing = store.evaluate(query, top_k=50).results
+    assert len(passing) > 6  # some gate-passing spans rank outside the lexical candidates fusion sees (2 x top_k)
+    semantic_only = store.to_search_result(passing[-1], None)
     other = store.search("post-quantum cryptography", top_k=1)[0]
+    assert semantic_only.chunk_id not in lexical_top3
+    assert store.index.gate_entry(query, store.entry(other.chunk_id), None) is None  # below the gate for this query
 
     class StubSemanticBackend:
         enabled = True
         aligned = True
 
         def search(self, query: str, lesson_slug: str | None = None, top_k: int = 8):
-            return [lexical_top.model_copy(update={"score": 0.99}), other.model_copy(update={"score": 0.91})]
+            return [semantic_only.model_copy(update={"score": 0.99}), other.model_copy(update={"score": 0.91})]
 
     engine._semantic_backend = StubSemanticBackend()
-    response = engine.search("QUBO logistics", top_k=3)
+    response = engine.search(query, top_k=3)
 
     assert response.mode == "hybrid-pinecone"
-    assert 1 <= len(response.results) <= 3
-    assert response.results[0].chunk_id == lexical_top.chunk_id
+    assert len(response.results) == 3
+    fused = [result.chunk_id for result in response.results]
+    assert fused[0] == semantic_only.chunk_id  # semantic rank 1 outweighs lexical rank 1 (weights 1.35 against 1.0)
+    assert fused[1:] == lexical_top3[:2] and fused != lexical_top3
+    assert other.chunk_id not in fused
     for result in response.results:
-        assert store.index.gate_entry("QUBO logistics", store.entry(result.chunk_id), None) is not None
+        assert store.index.gate_entry(query, store.entry(result.chunk_id), None) is not None
+        gated = store.index.gate_entry(query, store.entry(result.chunk_id), None)
+        assert result.score == store.to_search_result(gated, None).score  # the gate's evidence score, never the vector's

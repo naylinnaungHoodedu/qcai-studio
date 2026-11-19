@@ -118,7 +118,15 @@ class LexicalIndex:
 
     @property
     def threshold_version(self) -> str:
-        return SCORE_FLOOR_VERSION if self.gate == "p1-floor" else self.abstention.version
+        return self.thresholds[2]
+
+    @property
+    def thresholds(self) -> tuple[float, float, str]:
+        """(floor, margin, threshold_version) of the active gate: P1-D-04's floor 6 for p1-floor, the package's
+        provisional calibrated floor and margin for bm25f-v1."""
+        if self.gate == "p1-floor":
+            return float(SCORE_FLOOR), 0.0, SCORE_FLOOR_VERSION
+        return self.abstention.floor, self.abstention.margin, self.abstention.version
 
     # --- bm25f-v1 ---
 
@@ -216,10 +224,7 @@ class LexicalIndex:
         return self._evaluate_bm25(query, lesson_slug, top_k)
 
     def _decision(self, reason: Reason, results: list[ScoredEntry], terms: tuple[str, ...]) -> RetrievalDecision:
-        if self.gate == "p1-floor":
-            floor, margin, version = float(SCORE_FLOOR), 0.0, SCORE_FLOOR_VERSION
-        else:
-            floor, margin, version = self.abstention.floor, self.abstention.margin, self.abstention.version
+        floor, margin, version = self.thresholds
         return RetrievalDecision(
             abstained=not results,
             reason=reason if not results else "evidence",

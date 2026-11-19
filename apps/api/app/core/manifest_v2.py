@@ -4,7 +4,9 @@ One item per source asset the application knows (config SOURCE_DOCUMENT_NAMES an
 root or update_data/) plus one "authored-curriculum" item for the lesson text in MODULE_BLUEPRINTS. Each item
 carries the sha256 of its content (for a Git LFS pointer, the pointer's oid, which is the content hash), its
 size, a content-derived version, its plane, whether it is bound to lessons, and the licence fields carried over
-from the existing manifest. corpus_version hashes content only; licence and approval fields never enter it.
+from the existing manifest. corpus_version (plan 11.1) hashes the sorted (item_id, item_version, sha256) of the
+built items plus the span scheme, so a content or membership change, partial approval included, yields a new
+version and a membership-neutral licence edit does not. The manifest records the governed value.
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ from app.core.source_assets import source_asset_id
 SCHEMA_VERSION = "2.0"
 GENERATOR = "manifest-gen-v1"
 MANIFEST_STATUS = "generated_pending_rights_review"
-CORPUS_VERSION_SCHEME = "corpus-version-v2"
+CORPUS_VERSION_SCHEME = "corpus-version-v3"
 LFS_POINTER_PREFIX = b"version https://git-lfs.github.com/spec/v1\n"
 LFS_POINTER_MAX_BYTES = 1024
 HASH_BLOCK = 1024 * 1024
@@ -163,11 +165,26 @@ def lfs_tracked(rel_path: str, root: Path) -> bool:
     return False
 
 
-def compute_corpus_version(items: list[dict[str, Any]], span_scheme: str = "span-v2") -> str:
-    """corpus_version-v2: content and membership only, over every item whatever its approval (spec 3.4)."""
-    rows = sorted([[item["id"], item["version"], item["sha256"], item["plane"], bool(item["bound"])] for item in items])
-    payload = {"scheme": CORPUS_VERSION_SCHEME, "span_scheme": span_scheme, "items": rows}
+def is_built_item(item: dict[str, Any], *, governed: bool = True) -> bool:
+    """Plan 11.1 "built items": a public-plane, bound item the build admits. A governed build admits the authored
+    item and the approved items (Decision D-31); development admits every public-plane, bound item."""
+    if item.get("plane") != "public" or not item.get("bound", True):
+        return False
+    return item.get("kind") == "authored" or item.get("public_service") is True or not governed
+
+
+def corpus_version_of(rows: list[list[str]], span_scheme: str) -> str:
+    """corpus-version-v3 over (item_id, item_version, sha256) rows of the built items (plan 11.1; spec 3.4)."""
+    payload = {"scheme": CORPUS_VERSION_SCHEME, "span_scheme": span_scheme, "items": sorted(rows)}
     return "corpus-" + hashlib.sha256(canonical_json(payload)).hexdigest()[:16]
+
+
+def compute_corpus_version(items: list[dict[str, Any]], span_scheme: str = "span-v2", *, governed: bool = True) -> str:
+    """The corpus_version of the items a build admits (governed by default, the value the manifest records).
+
+    Licence fields never enter it; approval does, because it changes membership ("including partial approval").
+    """
+    return corpus_version_of([[item["id"], item["version"], item["sha256"]] for item in items if is_built_item(item, governed=governed)], span_scheme)
 
 
 def _existing_licence(existing: dict[str, Any] | None, item_id: str, filenames: list[str], defaults: dict[str, Any]) -> dict[str, Any]:
@@ -310,6 +327,8 @@ def with_all_public_approved(manifest: dict[str, Any]) -> dict[str, Any]:
         if item.get("plane") == "public" and item.get("bound", True):
             item["public_service"] = True
     approved["manifest_status"] = "temporary_all_public_approved_never_commit"
+    # Approval changes the built membership, so the recorded corpus_version changes with it (plan 11.1).
+    approved["corpus_version"] = compute_corpus_version(approved.get("items", []), str(approved.get("span_scheme") or "span-v2"))
     return approved
 
 

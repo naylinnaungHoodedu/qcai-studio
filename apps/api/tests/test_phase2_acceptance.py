@@ -10,6 +10,16 @@ found by the resolver, equal content_hash); every migrated citation resolves; a 
 never returned as resolved: it is withheld (pre-containment rows, R1.2; in governed builds, citations of items the
 manifest does not approve) or labelled resolution="legacy_unresolved", provisional=true and "unverified historical
 reference".
+
+corpus_version (plan 11.1): the sorted (item_id, item_version, sha256) of the built items plus the span scheme, so
+partial approval yields a new version and a licence-field edit does not; the manifest records the governed value.
+
+AC-2-5 and the plan L stop: both gates are measured in both configurations. p1-floor over an index that holds
+document spans falls below the baseline (spec conflict 29); that case is a strict xfail, and the stop is enforced
+in code (start-up and validate_corpus --check-recall-stop refuse it), which the Plan L tests prove.
+
+AC-2-7: the path half is proven here and in CI; the licensed-passage half needs the private-plane fingerprints
+(D-14) and a built image and release, so a CI report says ac_2_7 "partial" and never "met".
 """
 
 from __future__ import annotations
@@ -48,7 +58,7 @@ from app.core.config_package import (
     get_config_package,
     load_config_package,
 )
-from app.core.corpus_governance import CorpusGovernanceError, CorpusRegistry, get_corpus_registry
+from app.core.corpus_governance import CorpusGovernanceError, CorpusRegistry, get_corpus_registry, p1_floor_recall_stop
 from app.core.data_planes import PrivatePlaneAccessError, assert_public_plane_path
 from app.core.db import Base, SessionLocal
 from app.core.guest_tokens import GUEST_TOKEN_COOKIE, guest_csrf_for, issue_guest_token
@@ -60,7 +70,7 @@ from app.db_models import CorpusSpan, Note, QAInteraction, QuizAttempt, TutorTur
 from app.main import app
 from app.schemas import Citation, LearnerRecordOperationInput
 from app.services import retrieval_metrics
-from app.services.citation_migration import migrate
+from app.services.citation_migration import EXIT_STOP, migrate
 from app.services.contained_answers import ABSTENTION, contain_answer
 from app.services.content_assembler import CourseStore
 from app.services.learner_record import apply_learner_record_operations
@@ -96,6 +106,7 @@ BASELINE = json.loads((DATA / "legacy_p1_baseline.json").read_text(encoding="utf
 OOS = AC["off_topic"] + AC["stopword_only"]
 IN_DOMAIN = AC["in_domain"]
 VIDEO_2026 = "Quantum Computing and Artificial Intelligence 2026.mp4"
+ROUTING_DOCUMENT = "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx"
 CLINICAL_LESSON = "clinical-and-kernel-qcai-systems"
 TRUSTED_ORIGIN = "http://localhost:3000"
 GATES = ("p1-floor", "bm25f-v1")
@@ -276,13 +287,47 @@ def test_ac_2_2_an_approval_edit_changes_membership_not_identity(tmp_path):
     empty = store_for("governed_empty")
     full = store_for("all_public_approved")
 
-    assert approved.corpus_version == empty.corpus_version  # approval is not content (spec 3.4)
-    assert approved.index_version != empty.index_version  # but it changes membership
+    # Plan 11.1: "any content or membership change, including partial approval, yields a new version".
+    assert approved.corpus_version != empty.corpus_version
+    assert approved.index_version != empty.index_version
     full_ids = {record.span_id for record in full.span_registry.records}
     assert {r.span_id for r in approved.span_registry.records if r.item_kind == "document"} <= full_ids
     assert {r.span_id for r in approved.span_registry.records if r.item_kind == "authored"} == {
         r.span_id for r in empty.span_registry.records
     }
+
+
+def test_ac_2_2_corpus_version_hashes_the_built_items_and_ignores_licence_fields(tmp_path):
+    # Plan 11.1: "corpus_version MUST hash the sorted (item_id, item_version, sha256) of built items plus the
+    # span-scheme version, so any content or membership change, including partial approval, yields a new version;
+    # membership-neutral licence edits do not."
+    manifest = json.loads(REPO_MANIFEST.read_text(encoding="utf-8"))
+    governed = CorpusRegistry(settings_for("governed_empty"))
+    assert governed.corpus_version == manifest["corpus_version"]  # the manifest records the governed value
+    assert [item.item_id for item in governed.built_items] == ["authored-curriculum"]  # D-31: nothing approved
+    development = get_corpus_registry(Settings())
+    assert len(development.built_items) == 24  # every public-plane, bound item: 25 less the unbound 2026 video
+    assert development.corpus_version != governed.corpus_version
+    approved = CorpusRegistry(settings_for("all_public_approved"))
+    assert approved.corpus_version == development.corpus_version  # the same built set gives the same version
+    assert store_for("governed_empty").corpus_version == governed.corpus_version
+
+    def relicense(payload):
+        for item in payload["items"]:
+            item["license"] = "CC-BY-4.0 (edited for the test)"
+
+    assert CorpusRegistry(settings_for("governed_empty", manifest=edited_manifest(tmp_path, relicense))).corpus_version == governed.corpus_version
+
+    def edit_unbuilt_content(payload):  # an unapproved document is not built in a governed build
+        for item in payload["items"]:
+            if ROUTING_DOCUMENT in item["asset_filenames"]:
+                item["sha256"] = "1" * 64
+                item["version"] = "sha256:" + "1" * 16
+
+    edited = edited_manifest(tmp_path, edit_unbuilt_content)
+    assert CorpusRegistry(settings_for("governed_empty", manifest=edited)).corpus_version == governed.corpus_version
+    edited_dev = CorpusRegistry(Settings(corpus_manifest_path=str(edited)))
+    assert edited_dev.corpus_version != development.corpus_version  # development builds it, so its version moves
 
 
 def test_ac_2_2_span_ids_do_not_depend_on_the_manifest_id_or_schema(tmp_path):
@@ -359,6 +404,12 @@ def test_ac_2_3_every_stored_citation_resolves():
             _assert_resolves(citation, db)
             # Write-through registered its text-free identity, so it resolves after the corpus changes too.
             assert db.scalars(select(CorpusSpan).where(CorpusSpan.span_id == citation.span_id)).first() is not None
+        # tutor_turns is the other stored citation column (the migration's TABLES): each of its citations resolves.
+        assert turns, "every /assistant/chat message stores a tutor turn"
+        turn_citations = [Citation.model_validate(raw) for turn in turns for raw in turn.citations]
+        assert turn_citations, "the routing questions are answered from document spans in development"
+        for citation in turn_citations:
+            _assert_resolves(citation, db)
         for turn in turns:
             cited = {raw["span_id"] for raw in turn.citations}
             assert all(set(claim["cited_span_ids"]) <= cited for claim in turn.claims)
@@ -530,17 +581,35 @@ def _slot_equal_recall(store: CourseStore, items: list[dict]) -> int:
     return hits
 
 
-@pytest.mark.parametrize("config", ["governed_empty", "all_public_approved"])
-def test_ac_2_5_in_domain_recall_at_5_is_not_below_the_pre_migration_baseline(config):
+P1_FLOOR_WITH_DOCUMENTS = pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Phase 2 spec conflict 29: p1-floor over an index with document spans falls below the pre-migration recall@5 "
+        "(118 against 129; learner questions 22 against 28) once chapter summaries are excluded (task 2.7). The plan L "
+        "stop is enforced in code: governed start-up and validate_corpus --check-recall-stop refuse this configuration."
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("config", "gate"),
+    [
+        ("governed_empty", "bm25f-v1"),
+        ("governed_empty", "p1-floor"),  # the shipped configuration (D-31, default gate outside development)
+        ("all_public_approved", "bm25f-v1"),
+        pytest.param("all_public_approved", "p1-floor", marks=P1_FLOOR_WITH_DOCUMENTS),
+    ],
+)
+def test_ac_2_5_in_domain_recall_at_5_is_not_below_the_pre_migration_baseline(config, gate):
     # Baseline: BEP-0 recorded no recall@5, so the pre-migration search runs in the same run (frozen module).
-    store = store_for(config, "bm25f-v1")
+    store = store_for(config, gate)
     chunks = legacy_chunks_for(config)
     lq = learner_questions()
     for name, items in (("fixture", IN_DOMAIN), ("learner_questions", lq)):
         new = recall_at_5(store, items)
         legacy = sum(bool(set(i["expected_lessons"]) & {r.lesson_slug for r in legacy_search(chunks, i["query"], top_k=5)}) for i in items)
         slot_equal = _slot_equal_recall(store, items)
-        note = f"{config} {name}: bm25f-v1 {new} (slot-equal {slot_equal}) vs legacy {legacy}" + (" [zero slack]" if new == legacy else "")
+        note = f"{config} {name}: {gate} {new} (slot-equal {slot_equal}) vs legacy {legacy}" + (" [zero slack]" if new == legacy else "")
         assert new >= legacy, note
 
 
@@ -631,27 +700,72 @@ def test_ac_2_6_an_lfs_pointer_oid_is_accepted_as_the_content_hash(pointer_root)
 # ======================================================================================================== AC-2-7
 
 
-def test_ac_2_7_no_route_index_or_resolver_reaches_the_private_plane(tmp_path):
+def test_ac_2_7_the_source_asset_route_refuses_a_file_on_the_private_plane(tmp_path, monkeypatch):
+    # The guard itself is driven: the same file is served from a public root and refused from corpus/private/.
+    import shutil
+    from urllib.parse import quote
+
+    from app.api.routes import assets as assets_route
+
     headers = {"x-demo-user": f"reader-{uuid4().hex[:8]}", "x-demo-role": "learner"}
     for path in ("/source-assets/..%2Fcorpus%2Fprivate%2FREADME.md", "/source-assets/by-id/..%2Fcorpus%2Fprivate%2FREADME.md"):
         assert client.get(path, headers=headers).status_code == 404
+    source = Settings()._resolve_source_assets([ROUTING_DOCUMENT])[0]
+    public_root, private_root = tmp_path / "public-root", tmp_path / "corpus" / "private"
+    for root in (public_root, private_root):
+        root.mkdir(parents=True)
+        shutil.copyfile(source, root / ROUTING_DOCUMENT)
+    guarded: list[Path] = []
+    real_guard = assets_route._public_plane
+    monkeypatch.setattr(assets_route, "_public_plane", lambda path, settings: guarded.append(path) or real_guard(path, settings))
+    urls = (f"/source-assets/{quote(ROUTING_DOCUMENT)}", f"/source-assets/by-id/{source_asset_id(ROUTING_DOCUMENT, 'document')}")
+    for root, expected in ((public_root, 200), (private_root, 404)):
+        monkeypatch.setattr(assets_route, "get_settings", lambda root=root: Settings(source_assets_root=str(root)))
+        for url in urls:
+            assert client.get(url, headers=headers).status_code == expected, (root, url)
+    assert len(guarded) == 4 and all(path.name == ROUTING_DOCUMENT for path in guarded)  # the guard decided each
 
-    document = "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx"
 
+def test_ac_2_7_no_index_resolver_or_span_route_reaches_a_private_plane_item(tmp_path, monkeypatch, fresh_database_url):
     def privatise(payload):
         for item in payload["items"]:
-            if document in item["asset_filenames"]:
+            if ROUTING_DOCUMENT in item["asset_filenames"]:
                 item["plane"] = "private"
                 item["public_service"] = True
 
     private = settings_for("governed_empty", manifest=edited_manifest(tmp_path, privatise))
     registry = CorpusRegistry(private)
-    assert not registry.is_public_asset(document) and not registry.is_indexable(document)
+    assert not registry.is_public_asset(ROUTING_DOCUMENT) and not registry.is_indexable(ROUTING_DOCUMENT)
+    assert registry.is_private_item(source_asset_id(ROUTING_DOCUMENT, "document"))
     store = CourseStore(private)
-    assert not any(entry.source_filename == document for entry in store.chunks)
-    assert source_asset_id(document, "document") not in store.span_registry.item_ids
-    assert SpanResolver(store).resolve("span-" + "0" * 64) is None
+    assert not any(entry.source_filename == ROUTING_DOCUMENT for entry in store.chunks)
+    assert source_asset_id(ROUTING_DOCUMENT, "document") not in store.span_registry.item_ids
 
+    dev = store_for("dev")
+    span = next(record for record in dev.span_registry.records if record.source_filename == ROUTING_DOCUMENT)
+    assert SpanResolver(dev).resolve(span.span_id) is not None  # control: the public build resolves this span
+    assert SpanResolver(store).resolve(span.span_id) is None
+    sessions, engine = fresh_sessions(fresh_database_url)
+    try:
+        with sessions() as db:
+            persist_spans(db, [span], corpus_version="corpus-test", registered_by="register-job")
+            db.commit()
+            assert SpanResolver(dev).resolve(span.span_id, db) is not None
+            # A row registered while the item was public stops resolving once the manifest moves it to the private plane.
+            assert SpanResolver(store).resolve(span.span_id, db) is None
+    finally:
+        engine.dispose()
+
+    monkeypatch.setattr(spans_route, "get_settings", lambda: Settings(span_resolver_route_enabled=True))
+    monkeypatch.setattr(spans_route, "get_span_resolver", lambda: SpanResolver(dev))
+    assert client.get(f"/spans/{span.span_id}", headers=anonymous()).status_code == 200  # control
+    monkeypatch.setattr(spans_route, "get_settings", lambda: private.model_copy(update={"span_resolver_route_enabled": True}))
+    monkeypatch.setattr(spans_route, "get_span_resolver", lambda: SpanResolver(store))
+    response = client.get(f"/spans/{span.span_id}", headers=anonymous())
+    assert (response.status_code, response.headers["cache-control"]) == (404, "no-store")
+
+
+def test_ac_2_7_private_plane_paths_fail_closed():
     root = Path("/")
     for path in ("corpus/private/x", "lqs/private/x", "volumes/book.pdf", "/app/corpus/private/x"):
         with pytest.raises(PrivatePlaneAccessError):
@@ -673,6 +787,9 @@ def test_ac_2_7_the_boundary_scans_find_zero_private_plane_paths(tmp_path):
     assert report["path_scan_result"] == "pass"
     assert report["passage_scan"] == {"status": "not_run", "reason": "no licensed-passage fingerprint file was supplied; passage scanning was not run"}
     assert report["passage_scan_result"] == "not_run"
+    # This run evidences the path half only: the report never calls AC-2-7 met (passage scan, image and release missing).
+    assert report["ac_2_7"]["status"] == "partial" and report["ac_2_7"]["path_scan"] == "pass"
+    assert len(report["ac_2_7"]["missing"]) == 3 and any("D-14" in reason for reason in report["ac_2_7"]["missing"])
     contexts = {scan["dockerfile"]: scan for scan in report["scans"] if scan["target"] == "docker-context"}
     assert contexts["apps/frontend/Dockerfile"]["ignore_file"] == "apps/frontend/.dockerignore"
     assert contexts["apps/api/Dockerfile"]["ignore_file"] == ".dockerignore"
@@ -746,6 +863,29 @@ def test_ac_2_8_a_near_duplicate_fixture_pair_fails_the_gate_and_the_configured_
     video_pairs = [pair for pair in near_duplicate_pairs(candidates_from_manifest(rebound, REPO_ROOT, unbound_package), params) if pair.kind == "video"]
     assert [(pair.a, pair.b) for pair in video_pairs] == [("quantum-computing-and-artificial-intelligence-2025", "quantum-computing-and-artificial-intelligence-2026")]
     assert any("mp4-mvhd-v1" in reason for reason in video_pairs[0].reasons)
+
+
+def test_ac_2_8_the_ci_gate_exits_1_on_a_bound_near_duplicate_pair_and_passes_the_configured_set(tmp_path, monkeypatch, capsys):
+    module = load_script("validate_corpus")
+    assert module.main(["--check-near-duplicates"]) == 0  # the configured set passes (the CI step)
+    capsys.readouterr()
+    package = json.loads(get_config_package(Settings()).path.read_text(encoding="utf-8"))
+    package["owner_decisions"]["Q-10"] = {**package["owner_decisions"]["Q-10"], "state": "resolved-for-this-test", "unbound_items": []}
+    package_path = tmp_path / "v1.json"
+    package_path.write_text(json.dumps(package), encoding="utf-8")
+    (tmp_path / "v1.json.sha256").write_text(canonical_sha256(package) + "\n", encoding="utf-8")
+
+    def rebind(payload):
+        for item in payload["items"]:
+            if VIDEO_2026 in item["asset_filenames"]:
+                item["bound"], item["unbound_reason"] = True, None
+
+    monkeypatch.setenv("CORPUS_MANIFEST_PATH", str(edited_manifest(tmp_path, rebind)))
+    monkeypatch.setenv("CONFIG_PACKAGE_PATH", str(package_path))
+    assert module.main(["--check-near-duplicates"]) == 1
+    err = capsys.readouterr().err
+    assert "quantum-computing-and-artificial-intelligence-2025 ~ quantum-computing-and-artificial-intelligence-2026" in err
+    assert "mp4-mvhd-v1" in err
 
 
 def test_ac_2_8_the_2026_video_stays_unbound_even_when_approved(tmp_path):
@@ -1088,7 +1228,8 @@ def test_plan_h_thresholds_are_provisional_until_phase_4(monkeypatch):
 # ======================================================================================================== Plan L
 
 
-def test_plan_l_the_migration_report_stops_on_an_unresolved_native_citation_or_an_exact_match_regression(fresh_database_url):
+def test_plan_l_the_migration_report_stops_on_an_unresolved_native_citation(fresh_database_url):
+    # The exact-match regression stop has its own test (test_plan_l_an_exact_match_regression_stops_the_migration).
     from app.services.spans import SpanRecord, SpanRegistry, content_hash, legacy_excerpt_keys, span_id_for
 
     def record(item_id: str, text_value: str, start: int) -> SpanRecord:
@@ -1124,6 +1265,164 @@ def test_plan_l_the_migration_report_stops_on_an_unresolved_native_citation_or_a
         assert any("does not resolve" in reason for reason in stopped["threshold"]["stop_reasons"])
     finally:
         engine.dispose()
+
+
+def _span_record(item_id: str, text_value: str, start: int, version: str = "0" * 16):
+    from app.services.spans import SpanRecord, content_hash, legacy_excerpt_keys, span_id_for
+
+    digest = content_hash(text_value)
+    return SpanRecord(span_id_for(item_id, start, start + len(text_value), digest), "span-v2", item_id, "sha256:" + version,
+                      "document", "public", 0, "Section", "Source", f"{item_id}.docx", start, start + len(text_value), digest,
+                      text_value, legacy_excerpt_keys(text_value))
+
+
+def test_plan_l_an_exact_match_regression_stops_the_migration(fresh_database_url):
+    from app.services.spans import SpanRegistry
+
+    text_value = "Routing adds SWAP gates and increases depth."
+    older = _span_record("doc-a", text_value, 0)  # registered before an edit shifted the item's offsets
+    current = _span_record("doc-a", text_value, 40, version="1" * 16)
+    sessions, engine = fresh_sessions(fresh_database_url)
+    try:
+        with sessions() as db:
+            db.add(QAInteraction(user_id=f"plan-l-{uuid4().hex[:8]}", question="q", answer="a", citations=[
+                {"chunk_id": "l:d:1", "source_title": "Source", "source_kind": "document", "section_title": "Section",
+                 "excerpt": text_value, "timestamp_label": None}]))
+            db.commit()
+        settings = Settings()
+        run = lambda: migrate(sessions, mode="dry-run", memory=SpanRegistry([current]), settings=settings,  # noqa: E731
+                              package=get_config_package(settings), corpus_version="corpus-test", tables=["qa_interactions"])
+        control = run()  # unique in the current build, nothing older registered: it migrates and the run passes
+        assert control["tables"]["qa_interactions"]["citations"]["migrated"] == 1 and control["threshold"]["result"] == "pass"
+        with sessions() as db:
+            persist_spans(db, [older], corpus_version="corpus-old", registered_by="register-job")
+            db.commit()
+        report = run()
+        counts = report["tables"]["qa_interactions"]["citations"]
+        # Unique in the current build, ambiguous only through the older registered span: D10's regression.
+        assert counts["by_reason"]["excerpt_ambiguous"] == 1 and report["totals"]["exact_match_regressions"] == 1
+        assert report["threshold"]["result"] == "stop"
+        assert any("exact-match" in reason for reason in report["threshold"]["stop_reasons"])
+
+
+        # A migrated citation whose span no longer resolves anywhere is the other regression (AC-2-3: migrated resolves).
+        with sessions() as db:
+            db.execute(text("DELETE FROM qa_interactions"))
+            db.add(QAInteraction(user_id=f"plan-l-{uuid4().hex[:8]}", question="q", answer="a", citations=[
+                {"chunk_id": "span-" + "7" * 64, "span_id": "span-" + "7" * 64, "content_hash": "6" * 64, "excerpt": text_value,
+                 "source_title": "Source", "source_kind": "document", "section_title": "Section", "timestamp_label": None,
+                 "citation_schema": 2, "resolution": "resolved", "migration_status": "migrated"}]))
+            db.commit()
+        stale = run()
+        assert stale["tables"]["qa_interactions"]["citations"]["already_migrated"] == 1
+        assert stale["totals"]["exact_match_regressions"] == 1 and stale["threshold"]["result"] == "stop"
+    finally:
+        engine.dispose()
+
+
+def _package_with_legacy_rule(**rule):
+    from dataclasses import replace
+
+    package = get_config_package(Settings())
+    return replace(package, legacy_citations={**package.legacy_citations, **rule})
+
+
+def test_plan_l_the_d30_legacy_threshold_is_enforced_from_the_configuration_package(fresh_database_url, tmp_path, monkeypatch):
+    from app.services.spans import SpanRegistry
+
+    memory = SpanRegistry([_span_record("doc-a", "Routing adds SWAP gates.", 0)])
+    sessions, engine = fresh_sessions(fresh_database_url)
+    try:
+        legacy = {"chunk_id": "l:d:1", "source_title": "Source", "source_kind": "document", "section_title": "Section", "timestamp_label": None}
+        with sessions() as db:  # one citation migrates, one stays legacy_unresolved: share 0.5
+            db.add(QAInteraction(user_id=f"plan-l-{uuid4().hex[:8]}", question="q", answer="a", citations=[
+                {**legacy, "excerpt": "Routing adds SWAP gates."}, {**legacy, "excerpt": "Nothing in the corpus says this."}]))
+            db.commit()
+        settings = Settings()
+
+        def run(package):
+            return migrate(sessions, mode="dry-run", memory=memory, settings=settings, package=package, corpus_version="corpus-test",
+                           tables=["qa_interactions"])
+
+        shipped = run(get_config_package(settings))  # D-30 open: null, reported and labelled, not gated
+        assert shipped["totals"]["unresolved_share"] == 0.5 and shipped["threshold"]["legacy_gated"] is False
+        assert shipped["threshold"]["result"] == "pass"
+        stopped = run(_package_with_legacy_rule(max_unresolved_share_legacy=0.2))
+        assert stopped["threshold"]["result"] == "stop" and stopped["threshold"]["legacy_share_observed"] == 0.5
+        assert any("exceeds the D-30 legacy threshold 0.2" in reason for reason in stopped["threshold"]["stop_reasons"])
+        assert run(_package_with_legacy_rule(max_unresolved_share_legacy=0.6))["threshold"]["result"] == "pass"
+        # The Wilson upper bound of 1 of 2 is about 0.91, so the same limit stops under that statistic.
+        upper = run(_package_with_legacy_rule(max_unresolved_share_legacy=0.6, legacy_share_statistic="wilson95_upper"))
+        assert upper["threshold"]["result"] == "stop" and upper["threshold"]["legacy_share_observed"] > 0.6
+
+        # The job's exit code follows the comparison: 3 is a stop (plan Phase 2 L).
+        from app.workers import migrate_citations as worker
+
+        monkeypatch.setattr(worker, "SessionLocal", sessions)
+        monkeypatch.setattr(worker, "build_identity_registry", lambda *_args, **_kwargs: (memory, None))
+        monkeypatch.setattr(worker, "get_config_package", lambda _settings: _package_with_legacy_rule(max_unresolved_share_legacy=0.2))
+        assert worker.main(["--dry-run", "--tables", "qa_interactions", "--report", str(tmp_path / "report.json")]) == EXIT_STOP
+        monkeypatch.setattr(worker, "get_config_package", lambda _settings: get_config_package(settings))
+        assert worker.main(["--dry-run", "--tables", "qa_interactions"]) == 0
+    finally:
+        engine.dispose()
+
+
+def _approved_document_settings(tmp_path: Path, **extra) -> Settings:
+    def approve(payload):
+        for item in payload["items"]:
+            if ROUTING_DOCUMENT in item["asset_filenames"]:
+                item["public_service"] = True
+
+    return Settings(environment="production", enforce_corpus_governance=True, manifest_drift_check="off",
+                    corpus_manifest_path=str(edited_manifest(tmp_path, approve)), **extra)
+
+
+def test_plan_l_the_p1_floor_recall_stop_refuses_governed_start_up_with_an_approved_document(tmp_path, monkeypatch):
+    from app import main as main_module
+
+    monkeypatch.setattr(main_module, "STARTUP_DRIFT", main_module.STARTUP_DRIFT)  # restored after the test
+    stopped = _approved_document_settings(tmp_path)
+    assert stopped.retrieval_gate == "p1-floor"  # the shipped default outside development
+    assert p1_floor_recall_stop(CorpusRegistry(stopped), stopped) == [source_asset_id(ROUTING_DOCUMENT, "document")]
+    monkeypatch.setattr(main_module, "settings", stopped)
+    with pytest.raises(CorpusGovernanceError, match="recall stop \\(Phase 2 spec conflict 29\\)"):
+        main_module._check_corpus_before_any_table()
+    # The D-05 switch to bm25f-v1 lifts it; the committed D-31 manifest never triggers it.
+    for allowed in (stopped.model_copy(update={"retrieval_gate": "bm25f-v1"}),
+                    settings_for("governed_empty").model_copy(update={"manifest_drift_check": "off"})):
+        monkeypatch.setattr(main_module, "settings", allowed)
+        main_module._check_corpus_before_any_table()
+    # The owner override starts, and outside development it is reported as a config.override event.
+    overridden = stopped.model_copy(update={"allow_p1_floor_with_documents": True})
+    monkeypatch.setattr(main_module, "settings", overridden)
+    main_module._check_corpus_before_any_table()
+    recorded = []
+    monkeypatch.setattr(main_module, "IS_PRODUCTION", True)
+    monkeypatch.setattr(main_module, "record_security_event", lambda *args, **kwargs: recorded.append((args, kwargs)))
+    main_module._record_configuration_overrides()
+    (args, kwargs), = recorded
+    assert args[0] == "config.override" and kwargs["details"]["p1_floor_recall_stop_overridden"] is True
+    # Development measures any gate freely (its default is bm25f-v1).
+    development = Settings(retrieval_gate="p1-floor")
+    assert p1_floor_recall_stop(get_corpus_registry(development), development) == []
+
+
+def test_plan_l_validate_corpus_refuses_an_approved_document_under_the_p1_floor_gate(tmp_path, monkeypatch, capsys):
+    module = load_script("validate_corpus")
+    for name in ("RETRIEVAL_GATE", "ALLOW_P1_FLOOR_WITH_DOCUMENTS"):
+        monkeypatch.delenv(name, raising=False)
+    assert module.main(["--check-recall-stop"]) == 0  # the committed manifest (the CI step)
+    assert "Recall stop (spec conflict 29) clear" in capsys.readouterr().out
+    monkeypatch.setenv("CORPUS_MANIFEST_PATH", _approved_document_settings(tmp_path).corpus_manifest_path)
+    assert module.main(["--check-recall-stop"]) == 1
+    assert "Recall stop (Phase 2 spec conflict 29)" in capsys.readouterr().err
+    monkeypatch.setenv("RETRIEVAL_GATE", "bm25f-v1")  # the D-05 switch lifts it
+    assert module.main(["--check-recall-stop"]) == 0
+    monkeypatch.delenv("RETRIEVAL_GATE")
+    monkeypatch.setenv("ALLOW_P1_FLOOR_WITH_DOCUMENTS", "true")  # the owner override passes, and says so
+    assert module.main(["--check-recall-stop"]) == 0
+    assert "recall stop overridden" in capsys.readouterr().err
 
 
 # ======================================================================================================== Tasks and D9
@@ -1168,11 +1467,37 @@ def test_d9_ready_reports_the_configuration_package_corpus_gate_and_slis():
     assert body["span_scheme"] == "span-v2" and body["index_version"] == get_course_store().index_version
     assert body["corpus_version"] == get_corpus_registry(Settings()).corpus_version
     assert (body["retrieval_gate"], body["duplicate_span_ids"], body["manifest_drift"]) == ("bm25f-v1", 0, 0)
+    # The thresholds in force are the active gate's (bm25f-v1 in development); the calibrated block is always there.
     assert (body["abstention_floor"], body["abstention_margin"], body["thresholds_provisional"]) == (package.abstention.floor, package.abstention.margin, True)
-    assert body["semantic_enabled"] is False
+    assert body["threshold_version"] == package.abstention.version
+    assert body["bm25f_v1_calibrated"] == {"version": package.abstention.version, "floor": package.abstention.floor,
+                                           "margin": package.abstention.margin, "provisional": True, "provisional_until": "Phase 4"}
+    assert (body["semantic_enabled"], body["semantic_setting"]) == (False, False)
     slis = body["slis"]
     assert set(slis) == {"citation_resolution", "abstention", "search_latency_ms", "manifest_drift"}
     assert slis["manifest_drift"]["drifted"] == 0 and slis["manifest_drift"]["checked"] >= 13
+
+
+def test_d9_ready_reports_the_p1_floor_threshold_in_force_and_the_effective_semantic_state(monkeypatch):
+    from app import main as main_module
+
+    package = get_config_package(Settings())
+    governed = store_for("governed_empty")  # p1-floor, the gate outside development
+    monkeypatch.setattr(main_module, "get_course_store", lambda: governed)
+    monkeypatch.setattr(main_module, "settings", settings_for("governed_empty"))
+    monkeypatch.setattr(main_module, "get_retrieval_engine", lambda: RetrievalEngine(governed, settings_for("governed_empty")))
+    fields = main_module._build_fields()
+    assert (fields["retrieval_gate"], fields["threshold_version"], fields["abstention_floor"], fields["abstention_margin"]) == (
+        "p1-floor", "score-floor-p1-v1", 6.0, 0.0)
+    assert (fields["thresholds_provisional"], fields["threshold_authority"]) == (False, "P1-D-04")
+    assert fields["bm25f_v1_calibrated"]["floor"] == package.abstention.floor  # reported, but not in force
+    # The setting alone never enables hybrid retrieval: this process has not aligned span-id vectors.
+    switched = Settings(semantic_retrieval_enabled=True, openai_api_key="test-openai-key", pinecone_api_key="test-pinecone-key",
+                        pinecone_index="test-index")
+    monkeypatch.setattr(main_module, "settings", switched)
+    monkeypatch.setattr(main_module, "get_retrieval_engine", lambda: RetrievalEngine(governed, switched))
+    fields = main_module._build_fields()
+    assert (fields["semantic_setting"], fields["semantic_enabled"]) == (True, False)
 
 
 def _startup(database_url: str, extra_env: dict[str, str]) -> subprocess.CompletedProcess:

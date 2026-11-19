@@ -250,6 +250,18 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
     legacy = _mapping(raw, "legacy_citations")
     _text(legacy, "unresolved_label")
     _require(legacy.get("max_unresolved_share_native") == 0.0, "legacy_citations.max_unresolved_share_native must be 0.0")
+    # D-30 (plan Phase 2 L): the legacy threshold is null while the decision is open, or a share the migration
+    # enforces (citation_migration._threshold); the loader never accepts a value the migration would not apply.
+    legacy_limit = legacy.get("max_unresolved_share_legacy")
+    _require(
+        legacy_limit is None
+        or (isinstance(legacy_limit, (int, float)) and not isinstance(legacy_limit, bool) and 0.0 <= float(legacy_limit) <= 1.0),
+        "legacy_citations.max_unresolved_share_legacy must be null or a number in [0, 1]",
+    )
+    _require(
+        legacy.get("legacy_share_statistic") in {"point", "wilson95_upper"},
+        "legacy_citations.legacy_share_statistic must be 'point' or 'wilson95_upper'",
+    )
     decisions = _mapping(raw, "owner_decisions")
     q10 = _mapping(decisions, "Q-10")
     unbound = q10.get("unbound_items", [])

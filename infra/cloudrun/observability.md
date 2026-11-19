@@ -54,6 +54,8 @@ Plan Phase 2 I lists five SLIs: "citation resolution rate (100%), duplicate ids 
 
 `/ready` reports, per instance:
 - `duplicate_span_ids`, `manifest_drift`, `retrieval_gate`, `index_version`;
+- the thresholds in force, which are the active gate's: `threshold_version`, `abstention_floor`, `abstention_margin`, `thresholds_provisional` and `threshold_authority` (P1-D-04 for `p1-floor`), plus the calibrated bm25f-v1 values under `bm25f_v1_calibrated`;
+- `semantic_enabled` (effective: on only when this process aligned span-id vectors) and `semantic_setting` (the setting);
 - `config_package_version` and `config_package_sha256`;
 - a `slis` block. It holds citation resolution counts and rate, abstention decisions and rate by reason, the search latency p50 and p95 over the last 1000 decisions, and the start-up drift report.
 
@@ -64,6 +66,8 @@ Plan Phase 2 I lists five SLIs: "citation resolution rate (100%), duplicate ids 
 | A stored citation that no longer resolves (`event: "citations.unresolved_on_read"`) | none | WARNING |
 | Manifest drift (`event: "corpus.drift"`) | `item_id` or `drifted`, `details` | WARNING in development; start-up fails in a governed build |
 | Semantic index misaligned (`event: "semantic.misaligned"`) | `expected`, `found` | WARNING |
+| Semantic setting on but this process not aligned, at start-up (`event: "semantic.inactive"`) | none | WARNING |
+| Recall stop overridden, at start-up (`event: "retrieval.recall_stop_overridden"`) | `items` | WARNING |
 | Configuration package hash mismatch in development (`event: "config_package.hash_mismatch"`) | `path`, `sha256` | WARNING |
 | Span registration and citation migration jobs (`qcai.worker`) | `job` (`register_spans` or `migrate_citations`), `status`, counts, `duration_ms` | INFO, or ERROR on failure |
 
@@ -73,7 +77,7 @@ Plan Phase 2 I lists five SLIs: "citation resolution rate (100%), duplicate ids 
 | Search p95 | `jsonPayload.event="retrieval.decision"`, value `jsonPayload.latency_ms` | Distribution metric |
 | Citation resolution rate (100%) | `jsonPayload.event="citations.unresolved_on_read"` | Alert on any match |
 | Duplicate ids (0), manifest drift (0) | `jsonPayload.event="startup" AND (jsonPayload.duplicate_span_ids>0 OR jsonPayload.manifest_drift>0)` | Alert on any match |
-| Phase 2 overrides | `jsonPayload.event_type="config.override"`. The details name `retrieval_gate_bm25`, `semantic_retrieval_enabled`, `span_resolver_route_enabled`, `citation_provisional_lift_enabled`, `config_package_path_overridden` or `config_package_hash_unverified`. | Alert on any match |
+| Phase 2 overrides | `jsonPayload.event_type="config.override"`. The details name `retrieval_gate_bm25`, `p1_floor_recall_stop_overridden`, `semantic_retrieval_enabled`, `span_resolver_route_enabled`, `citation_provisional_lift_enabled`, `config_package_path_overridden` or `config_package_hash_unverified`. | Alert on any match |
 
 ## Creating them (Platform Owner approval each time)
 A counter metric, for example:

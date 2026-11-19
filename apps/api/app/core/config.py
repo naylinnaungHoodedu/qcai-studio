@@ -122,7 +122,12 @@ class Settings(BaseSettings):
     # gate with the provisional calibrated floor and margin. None = bm25f-v1 in development, p1-floor elsewhere;
     # switching production is a D-05 remediation release (R-15) and logs a config.override event.
     retrieval_gate: Literal["p1-floor", "bm25f-v1"] | None = None
-    # Task 2.5: the semantic backend stays off, whatever keys are set, until its vector ids are span ids.
+    # Phase 2 spec conflict 29 (plan Phase 2 L stop): outside development, a build that indexes document spans under
+    # the p1-floor gate loses in-domain recall@5, so start-up and validate_corpus --check-recall-stop refuse it.
+    # Setting this lets it start anyway (an owner decision); it logs a config.override event.
+    allow_p1_floor_with_documents: bool = False
+    # Task 2.5: the semantic backend stays off, whatever keys are set, until its vector ids are span ids. It runs
+    # only in a process that has aligned the index (sync_semantic_index); /ready reports the effective state.
     semantic_retrieval_enabled: bool = False
     # GET /spans/{span_id}: None = on in development, off elsewhere (it is a new public route under the freeze).
     span_resolver_route_enabled: bool | None = None

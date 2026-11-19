@@ -91,3 +91,137 @@ def test_release_zip_namelists_and_the_not_run_wording(tmp_path):
     assert report["passage_scan"] == {"status": "not_run", "reason": scanner.NOT_RUN_REASON}
     assert "passed" not in scanner.NOT_RUN_REASON and report["passage_scan_result"] == "not_run"
     assert report["path_scan_result"] == "fail"
+
+
+def _tar_bytes(files: dict[str, bytes]) -> bytes:
+    import io
+    import tarfile
+
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as archive:
+        for name, data in files.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+    return buffer.getvalue()
+
+
+def _docker_save(path: Path, layers: list[dict[str, bytes]]) -> Path:
+    """A minimal `docker save` archive: manifest.json naming each layer tar, each layer a filesystem tar."""
+    import json
+    import tarfile
+    import io
+
+    files = {f"blobs/sha256/{index:064x}": _tar_bytes(layer) for index, layer in enumerate(layers)}
+    manifest = json.dumps([{"Config": "config.json", "RepoTags": ["qcai-api:test"], "Layers": list(files)}]).encode()
+    with tarfile.open(path, "w") as archive:
+        for name, data in {"manifest.json": manifest, "config.json": b"{}", **files}.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+    return path
+
+
+def _args(**extra) -> SimpleNamespace:
+    base = dict(root=str(REPO_ROOT), repo=False, working_tree=False, docker_context=[], image_tar=[], release_zip=[], fingerprints=None)
+    return SimpleNamespace(**{**base, **extra})
+
+
+def test_a_built_image_is_scanned_layer_by_layer_including_files_a_later_layer_deletes(tmp_path):
+    # Task 2.8 "licensed-passage scans of images and releases": the image itself, not only its build context.
+    image = _docker_save(tmp_path / "image.tar", [
+        {"app/app/main.py": b"x", "app/corpus/private/volume.txt": b"private", "app/.env": b"NAME=value"},
+        {"app/docs/book.pdf": b"%PDF-1.4", "app/corpus/private/.wh.volume.txt": b""},  # deleted later, still shipped
+    ])
+    report = scanner.run(_args(image_tar=[str(image)]))
+    (scan,) = report["scans"]
+    assert (scan["target"], scan["format"], scan["layers"]) == ("image", "docker-save", 2)
+    assert scan["private_plane_paths"] == ["app/corpus/private/volume.txt"]
+    assert scan["licensed_volume_paths"] == ["app/docs/book.pdf"] and scan["secret_like_paths"] == ["app/.env"]
+    assert report["path_scan_result"] == "fail" and report["ac_2_7"]["status"] == "fail"
+
+    flat = tmp_path / "export.tar"
+    flat.write_bytes(_tar_bytes({"app/app/main.py": b"x", "usr/lib/python3/site.py": b"y"}))
+    clean = scanner.run(_args(image_tar=[str(flat)]))
+    assert clean["scans"][0]["format"] == "filesystem-tar" and clean["path_scan_result"] == "pass"
+
+
+def test_the_ac_2_7_block_is_met_only_with_both_halves_over_an_image_and_a_release(tmp_path):
+    passage = " ".join(f"licensedword{index}" for index in range(30))
+    salt = bytes(range(32))
+    fingerprints = tmp_path / "fingerprints.json"
+    import json
+
+    fingerprints.write_text(json.dumps({
+        "format": scanner.FINGERPRINT_FORMAT, "fingerprint_set_id": "synthetic", "hash": "hmac-sha256-trunc32",
+        "salt_hex": salt.hex(), "shingle_words": 12, "fingerprints": sorted(scanner.fingerprint_shingles(passage, salt, 12))}), encoding="utf-8")
+    image = tmp_path / "image.tar"
+    image.write_bytes(_tar_bytes({"app/app/main.py": b"print('clean')"}))
+    bundle = tmp_path / "bundle.zip"
+    with zipfile.ZipFile(bundle, "w") as archive:
+        archive.writestr("README.md", "A clean readme.")
+
+    partial = scanner.run(_args(release_zip=[str(bundle)]))
+    assert partial["ac_2_7"]["status"] == "partial" and partial["passage_scan_result"] == "not_run"
+    assert any("D-14" in reason for reason in partial["ac_2_7"]["missing"])
+    assert any("--image-tar" in reason for reason in partial["ac_2_7"]["missing"])
+    met = scanner.run(_args(image_tar=[str(image)], release_zip=[str(bundle)], fingerprints=str(fingerprints)))
+    assert (met["ac_2_7"]["status"], met["ac_2_7"]["missing"]) == ("met", [])
+    assert met["ac_2_7"]["targets"] == {"image": 1, "release-zip": 1}
+
+    planted = tmp_path / "planted.tar"
+    planted.write_bytes(_tar_bytes({"app/docs/notes.md": f"Intro. {passage} Outro.".encode()}))
+    caught = scanner.run(_args(image_tar=[str(planted)], release_zip=[str(bundle)], fingerprints=str(fingerprints)))
+    assert caught["passage_scan_result"] == "fail" and caught["ac_2_7"]["status"] == "fail"
+    assert [hit["path"] for hit in caught["passage_scan"]["files_with_hits"]] == ["planted.tar:app/docs/notes.md"]
+    assert "licensedword" not in json.dumps(caught)
+
+
+def test_require_flags_turn_a_missing_half_into_a_failure(tmp_path, capsys):
+    bundle = tmp_path / "bundle.zip"
+    with zipfile.ZipFile(bundle, "w") as archive:
+        archive.writestr("README.md", "A clean readme.")
+    assert scanner.main(["--release-zip", str(bundle)]) == 0  # nothing found; the report says not_run and partial
+    assert scanner.main(["--release-zip", str(bundle), "--require-passage-scan"]) == 1
+    assert scanner.main(["--release-zip", str(bundle), "--require-ac-2-7"]) == 1
+    assert "AC-2-7 is partial" in capsys.readouterr().err
+
+
+def _packager():
+    spec_ = importlib.util.spec_from_file_location("phase2_package_release", REPO_ROOT / "tools" / "package_release.py")
+    module = importlib.util.module_from_spec(spec_)
+    spec_.loader.exec_module(module)
+    return module
+
+
+def test_the_release_packager_never_packages_secret_like_private_or_licensed_paths(tmp_path, monkeypatch):
+    packager = _packager()
+    boundary = packager._boundary()
+    for rel in ("apps/frontend/.env.local", "infra/cloudrun/api-production.env.yaml", "apps/frontend/.env.example", ".env",
+                "corpus/private/volume.txt", "evaluation/reports/run.private.json", "docs/book.pdf"):
+        assert packager._excluded(Path(rel), boundary), rel
+    for rel in ("apps/api/app/main.py", "infra/cloudrun/api-production.env.example.yaml", "corpus/private/README.md", "docs/README.md"):
+        assert not packager._excluded(Path(rel), boundary), rel
+
+    tree = tmp_path / "repo"
+    for rel in ("apps/api/app/main.py", "apps/frontend/.env.local", "infra/cloudrun/web.env.yaml", "infra/cloudrun/deployment.md"):
+        (tree / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tree / rel).write_text("x", encoding="utf-8")
+    monkeypatch.setattr(packager, "REPO_ROOT", tree)
+    packaged = sorted(path.relative_to(tree).as_posix() for root in ("apps", "infra") for path in packager._iter_files(tree / root))
+    assert packaged == ["apps/api/app/main.py", "infra/cloudrun/deployment.md"]
+
+
+def test_the_release_packager_removes_bundles_that_fail_the_boundary_scan(tmp_path):
+    packager = _packager()
+    bad = tmp_path / "bad.zip"
+    with zipfile.ZipFile(bad, "w") as archive:
+        archive.writestr("apps/frontend/.env.local", "NAME=value")
+    with pytest.raises(RuntimeError, match="failed the boundary scan"):
+        packager._scan_bundles([bad], tmp_path / "scan.json")
+    assert not bad.exists()
+    good = tmp_path / "good.zip"
+    with zipfile.ZipFile(good, "w") as archive:
+        archive.writestr("README.md", "clean")
+    packager._scan_bundles([good], tmp_path / "scan.json")
+    assert good.exists()

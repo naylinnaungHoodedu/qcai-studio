@@ -65,6 +65,12 @@ def test_a_crlf_sidecar_reads_the_same_hash(tmp_path):
         lambda p: p["retrieval"]["stopwords"]["words"].append("aaa"),
         lambda p: p["retrieval"]["tokenizer"].update(stemmer="s-stemmer"),
         lambda p: p["owner_decisions"]["Q-10"].update(unbound_items=[]),
+        # D-30: a legacy threshold the migration would not apply is refused, never silently accepted.
+        lambda p: p["legacy_citations"].update(max_unresolved_share_legacy=1.5),
+        lambda p: p["legacy_citations"].update(max_unresolved_share_legacy="0.2"),
+        lambda p: p["legacy_citations"].update(max_unresolved_share_legacy=True),
+        lambda p: p["legacy_citations"].update(legacy_share_statistic="median"),
+        lambda p: p["legacy_citations"].pop("legacy_share_statistic"),
     ],
 )
 def test_structural_errors_always_stop_the_load(tmp_path, edit):
@@ -95,3 +101,12 @@ def test_a_relative_package_path_resolves_against_the_working_directory(tmp_path
     monkeypatch.chdir(tmp_path)
     assert resolve_package_path(Settings(config_package_path="pkg/v1.json")) == (tmp_path / "pkg" / "v1.json").resolve()
     assert resolve_package_path(Settings()) == DEFAULT_PACKAGE_PATH
+
+
+def test_a_numeric_d30_legacy_threshold_loads_and_is_what_the_migration_reads(tmp_path):
+    payload = json.loads(json.dumps(RAW))
+    assert payload["legacy_citations"]["max_unresolved_share_legacy"] is None  # D-30 open
+    assert payload["legacy_citations"]["legacy_share_statistic"] == "point"
+    payload["legacy_citations"]["max_unresolved_share_legacy"] = 0.2
+    package = load_config_package(_write(tmp_path, payload), governed=True)
+    assert package.legacy_citations["max_unresolved_share_legacy"] == 0.2

@@ -6,10 +6,10 @@
   "commit": "synthetic-sample",
   "database_dialect": "sqlite",
   "span_scheme": "span-v2",
-  "corpus_version": "corpus-f1fc2c12e7d9d01a",
+  "corpus_version": "corpus-c658893abb6440dd",
   "config_package": {
     "version": "1.0.0",
-    "sha256": "7926dd7825821faa92d8d55acae0722d61faa32811616a86ec745e5311904cc0"
+    "sha256": "060c59f2ac94dcd20b16f9e7bd3e21128b952b067135ac29a91821b02bc04403"
   },
   "span_sources": {
     "memory_spans": 1071,
@@ -123,7 +123,11 @@
     "decision": "D-30",
     "status": "provisional",
     "max_unresolved_share_native": 0.0,
+    "native_unresolved_share": 0.0,
     "max_unresolved_share_legacy": null,
+    "legacy_share_statistic": "point",
+    "legacy_share_observed": 0.235294,
+    "legacy_gated": false,
     "result": "pass",
     "stop_reasons": []
   },

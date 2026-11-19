@@ -1,9 +1,11 @@
 """The read-only span resolver (plan Phase 2 task 2.4: "span to item, version, offsets"; spec 4.16).
 
 It resolves a span id from the current build first, then from the append-only corpus_spans table, so a stored
-citation keeps resolving after its span leaves the current corpus. It never resolves a non-public plane and
-takes no learner input (invariant 1). A span is servable (its text may be returned) only when it is current,
-public-plane, of a bound document whose item the manifest approves; under D-31 none is.
+citation keeps resolving after its span leaves the current corpus. It never resolves a non-public plane: the
+row's plane, or the item's plane in the current manifest, so a span registered while its item was public stops
+resolving once the manifest moves the item to the private plane (task 2.8). It takes no learner input
+(invariant 1). A span is servable (its text may be returned) only when it is current, public-plane, of a bound
+document whose item the manifest approves; under D-31 none is.
 """
 
 from __future__ import annotations
@@ -83,7 +85,7 @@ class SpanResolver:
         rows = self._rows(span_id, db)
         record = self.store.span_registry.get(span_id)
         if record is not None:
-            if record.plane != "public":  # pragma: no cover - SpanRecord.plane is always public
+            if record.plane != "public" or self.registry.is_private_item(record.item_id):
                 return None
             first_seen = rows[0].corpus_version_first_seen if rows else self.store.corpus_version
             return ResolvedSpan(
@@ -103,7 +105,7 @@ class SpanResolver:
                 servable=self._servable(record.item_id, record.item_kind, record.plane, True, record.source_filename),
                 text=record.text,
             )
-        public_rows = [row for row in rows if row.plane == "public"]
+        public_rows = [row for row in rows if row.plane == "public" and not self.registry.is_private_item(row.item_id)]
         if not public_rows:
             return None
         latest, earliest = public_rows[-1], public_rows[0]

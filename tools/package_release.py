@@ -127,9 +127,34 @@ def _assert_videos_are_hydrated() -> None:
             raise RuntimeError(f"{relative_path} is still a Git LFS pointer, not a hydrated MP4 payload.")
 
 
+def _boundary():
+    """The boundary policy of configuration package v1, the one scripts/scan_boundary.py applies (task 2.8)."""
+    api_root = REPO_ROOT / "apps" / "api"
+    if str(api_root) not in sys.path:
+        sys.path.insert(0, str(api_root))
+    from app.core.config import Settings
+    from app.core.config_package import get_config_package
+
+    return get_config_package(Settings()).boundary
+
+
+def _excluded(relative_path: Path, boundary) -> bool:
+    """Never packaged: a private-plane path, a licensed volume or a secret-like name (never opened). The same
+    policy as the boundary scan, so a workstation that holds local env files cannot package them (task 2.8)."""
+    from app.core.data_planes import is_licensed_volume_path, is_private_plane_path, is_secret_like_name
+
+    rel = relative_path.as_posix()
+    return (
+        is_secret_like_name(rel, boundary)
+        or is_private_plane_path(rel, REPO_ROOT, boundary)
+        or is_licensed_volume_path(rel, REPO_ROOT, boundary)
+    )
+
+
 def _iter_files(root: Path) -> list[Path]:
     if root.is_file():
         return [root]
+    boundary = _boundary()
     files: list[Path] = []
     for path in root.rglob("*"):
         if not path.is_file():
@@ -145,8 +170,24 @@ def _iter_files(root: Path) -> list[Path]:
             continue
         if path.name.endswith(".private.json") or path.name.endswith(".private.jsonl"):
             continue
+        if _excluded(relative_path, boundary):
+            continue
         files.append(path)
     return files
+
+
+def _scan_bundles(bundles: list[Path], report: Path) -> None:
+    """Boundary-scan the built bundles (task 2.8: scans of releases); any finding removes them and stops."""
+    completed = subprocess.run(
+        [sys.executable, "scripts/scan_boundary.py", *[arg for bundle in bundles for arg in ("--release-zip", str(bundle))],
+         "--report", str(report)],
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    if completed.returncode != 0:
+        for bundle in bundles:
+            bundle.unlink(missing_ok=True)
+        raise RuntimeError(f"The release bundles failed the boundary scan; see {report}. They were removed.")
 
 
 def _collect_core_repo_files() -> list[Path]:
@@ -222,6 +263,7 @@ def main() -> None:
 
     _write_zip(part1_zip, part1_files)
     _write_zip(part2_zip, part2_files)
+    _scan_bundles([part1_zip, part2_zip], DIST_DIR / "boundary-scan.json")
     release_notes.write_text(_build_release_notes(part1_zip.name, part2_zip.name), encoding="utf-8")
 
     checksum_targets = [part1_zip, part2_zip, release_notes]

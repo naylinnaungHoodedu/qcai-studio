@@ -5,8 +5,11 @@ The question sets in data/score_floor_queries.json are the public fixtures measu
 Phase 2: the P1 floor is the "p1-floor" gate, the default outside development, applied to the span index; the
 development default is "bm25f-v1". The module-level tests run in development (bm25f-v1); the governed siblings
 run the same assertions on the governed D-31 store with p1-floor, so AC-1-11 stays evidenced for what ships.
+The Action 27 recall guard runs on the live code for both gates; p1-floor over an index with document spans fails
+it (spec conflict 29), which is a strict xfail here and a stop enforced at start-up and in validate_corpus.
 """
 
+from dataclasses import replace
 import json
 from pathlib import Path
 from uuid import uuid4
@@ -19,8 +22,10 @@ from app.core.config import Settings
 from app.core.config_package import canonical_sha256, get_config_package
 from app.core.corpus_governance import get_corpus_registry
 from app.main import _initialize_database, app
+from app.services import lexical_index
 from app.services.contained_answers import ABSTENTION
 from app.services.content_assembler import SCORE_FLOOR, SCORE_FLOOR_VERSION, CourseStore, IndexedChunk, _floor_score
+from app.services.lexical_index import LexicalIndex
 from app.services.qa_engine import QAEngine
 from app.services.retrieval_engine import RetrievalEngine
 from app.services.retrieval_legacy_p1 import build_legacy_chunks, legacy_search
@@ -147,12 +152,43 @@ def _legacy_recall_at_5(chunks, score_floor: int) -> int:
     )
 
 
-def test_floor_does_not_lower_in_domain_recall():
-    # Action 27 stop condition "recall drops", measured against the ungated search in the same run, on the
-    # algorithm Phase 1 approved (floor 6 against floor 0, every asset served as development serves them).
-    # Phase 2 runs that algorithm from the frozen pre-migration module: patching content_assembler.SCORE_FLOOR no
-    # longer reaches the development store (bm25f-v1), so the old patch would have passed without testing anything.
-    # What ships outside development, p1-floor over the span index, is covered by test_phase2_acceptance (AC-2-5).
+def _live_recall_at_5(store: CourseStore) -> int:
+    return sum(
+        bool(set(item["expected_lessons"]) & {slug for r in store.search(item["query"], top_k=5) for slug in (r.lesson_slugs or [r.lesson_slug])})
+        for item in QUERIES["in_domain"]
+    )
+
+
+P1_FLOOR_RECALL_DROP = pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Phase 2 spec conflict 29: with document spans indexed and chapter summaries excluded (task 2.7), the P1 floor "
+        "lowers recall@5 against the same index unfloored (118 against 130). The stop is enforced in code: outside "
+        "development, start-up and validate_corpus --check-recall-stop refuse document spans under p1-floor."
+    ),
+)
+
+
+@pytest.mark.parametrize("gate", ["bm25f-v1", pytest.param("p1-floor", marks=P1_FLOOR_RECALL_DROP)])
+def test_floor_does_not_lower_in_domain_recall(gate, monkeypatch):
+    # Action 27 stop condition "recall drops", measured on the live code against the ungated search in the same run,
+    # with every asset served as development serves them (the configuration Phase 1 measured): each gate's floor
+    # against the same gate at floor 0.
+    store = CourseStore(Settings(retrieval_gate=gate))
+    gated = _live_recall_at_5(store)
+    if gate == "p1-floor":
+        monkeypatch.setattr(lexical_index, "SCORE_FLOOR", 0)  # the name LexicalIndex.p1_score_entry reads
+    else:
+        store.index = LexicalIndex(store.chunks, store.package.retrieval, replace(store.package.abstention, floor=0.0), gate=gate)
+    ungated = _live_recall_at_5(store)
+
+    assert len(QUERIES["in_domain"]) == 174
+    assert gated >= ungated, f"{gate}: gated {gated} against ungated {ungated}"
+
+
+def test_the_approved_floor_did_not_lower_recall_on_the_pre_migration_search():
+    # Baseline fidelity, not the live guard: the algorithm Phase 1 approved, run from the frozen pre-migration module
+    # (a257dd11) with every asset served, floor 6 against floor 0, as BEP-1 measured it.
     settings = Settings()
     registry = get_corpus_registry(settings)
     chunks = build_legacy_chunks(settings, registry.served(settings.source_documents), registry.served(settings.source_videos))

@@ -72,20 +72,38 @@ def test_manifest_2_0_validation_fails_closed(tmp_path, edit, message):
 
 def test_a_recorded_corpus_version_that_does_not_match_the_items_fails(tmp_path):
     payload = copy.deepcopy(MANIFEST)
-    item(payload, DOCUMENT)["plane"] = "private"  # a content-and-membership field, so corpus_version must change
+    item(payload, DOCUMENT)["public_service"] = True  # approval changes the built membership, so corpus_version must change
     with pytest.raises(CorpusGovernanceError, match="does not match its items"):
         CorpusRegistry(write(tmp_path, payload, recompute=False))
 
 
-def test_corpus_version_is_content_only():
+def test_corpus_version_hashes_built_items_so_approval_counts_and_licence_edits_do_not():
+    # Plan 11.1: "corpus_version MUST hash the sorted (item_id, item_version, sha256) of built items plus the
+    # span-scheme version, so any content or membership change, including partial approval, yields a new version;
+    # membership-neutral licence edits do not."
     licence = copy.deepcopy(MANIFEST)
     for entry in licence["items"]:
-        entry["license"] = "edited"
-        entry["public_service"] = True
+        entry["source"], entry["license"], entry["permitted_use"] = "edited", "edited", "edited"
     assert compute_corpus_version(licence["items"]) == MANIFEST["corpus_version"]
+    approved = copy.deepcopy(MANIFEST)
+    item(approved, DOCUMENT)["public_service"] = True  # partial approval
+    assert compute_corpus_version(approved["items"]) != MANIFEST["corpus_version"]
+    # Content: a built item's change moves it; an unapproved document is not built in a governed build.
+    authored = copy.deepcopy(MANIFEST)
+    next(entry for entry in authored["items"] if entry["kind"] == "authored")["sha256"] = "1" * 64
+    assert compute_corpus_version(authored["items"]) != MANIFEST["corpus_version"]
     content = copy.deepcopy(MANIFEST)
     item(content, DOCUMENT)["version"] = "sha256:" + "1" * 16
-    assert compute_corpus_version(content["items"]) != MANIFEST["corpus_version"]
+    assert compute_corpus_version(content["items"]) == MANIFEST["corpus_version"]
+    assert compute_corpus_version(content["items"], governed=False) != compute_corpus_version(MANIFEST["items"], governed=False)
+    approved_content = copy.deepcopy(approved)
+    item(approved_content, DOCUMENT)["version"] = "sha256:" + "1" * 16
+    assert compute_corpus_version(approved_content["items"]) != compute_corpus_version(approved["items"])
+    # Private-plane and unbound items are never built, approved or not.
+    hidden = copy.deepcopy(MANIFEST)
+    item(hidden, DOCUMENT).update(plane="private", public_service=True)
+    item(hidden, VIDEO_2026)["public_service"] = True
+    assert compute_corpus_version(hidden["items"]) == MANIFEST["corpus_version"]
 
 
 def test_approved_items_exclude_private_and_unbound_items(tmp_path):

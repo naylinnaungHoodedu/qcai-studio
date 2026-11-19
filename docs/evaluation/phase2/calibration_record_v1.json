@@ -1,11 +1,11 @@
 {
  "record": "qcai-abstention-calibration",
  "format_version": 1,
- "created_at": "2026-11-19T06:55:44Z",
- "commit": "a257dd112e0b570b5ea371785886ef48740f3b0a",
+ "created_at": "2026-11-19T08:42:02Z",
+ "commit": "5af6978d6672a9f032749820e9b86031ca97e3ca",
  "config_package_version": "1.0.0",
  "retrieval_sha256": "1782e1b3c1c509857979bf84117b7c61614523737636234908ddb97d437baa7e",
- "corpus_version": "corpus-f1fc2c12e7d9d01a",
+ "corpus_version": "corpus-a02930b08f2e9251",
  "span_scheme": "span-v2",
  "public_corpus_only": true,
  "excluded_sources": [
@@ -62,7 +62,8 @@
   {
    "name": "governed_as_configured",
    "description": "committed manifest, D-31: zero approved; authored spans only",
-   "index_version": "index-bad22341f4ebbc90",
+   "corpus_version": "corpus-a02930b08f2e9251",
+   "index_version": "index-3ccbff1a05c33eba",
    "entries": 41,
    "legacy": {
     "algorithm": "score-floor-p1-v1",
@@ -75,7 +76,7 @@
     "learner_questions_recall_at_5": 36
    },
    "p1_floor_on_span_index": {
-    "index_version": "index-64948e30370e042c",
+    "index_version": "index-13cddd96619c7afa",
     "recall_at_5_all": 131,
     "learner_questions_recall_at_5": 36,
     "equals_legacy_per_query": true,
@@ -3705,7 +3706,8 @@
   {
    "name": "all_public_approved",
    "description": "every public-plane bound item approved (temporary manifest, never committed)",
-   "index_version": "index-fbd049a974e6975c",
+   "corpus_version": "corpus-c658893abb6440dd",
+   "index_version": "index-473cb92221ea2165",
    "entries": 331,
    "legacy": {
     "algorithm": "score-floor-p1-v1",
@@ -3718,7 +3720,7 @@
     "learner_questions_recall_at_5": 28
    },
    "p1_floor_on_span_index": {
-    "index_version": "index-036cf2ac9780c040",
+    "index_version": "index-afc81543f34c17f8",
     "recall_at_5_all": 118,
     "learner_questions_recall_at_5": 22,
     "equals_legacy_per_query": false,

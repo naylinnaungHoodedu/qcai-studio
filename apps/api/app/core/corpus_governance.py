@@ -29,7 +29,7 @@ from typing import Any
 from fastapi import HTTPException, status
 
 from app.core.config import Settings
-from app.core.config_package import ConfigPackage, canonical_json, get_config_package
+from app.core.config_package import ConfigPackage, get_config_package
 from app.core.source_assets import source_asset_id, source_asset_kind
 
 SUPPORTED_SCHEMAS = ("1.0", "2.0")
@@ -83,11 +83,15 @@ def _hex64(value: object) -> bool:
     return isinstance(value, str) and len(value) == 64 and all(ch in "0123456789abcdef" for ch in value)
 
 
-def compute_corpus_version_v2(items: Iterable[CorpusItem], span_scheme: str = "span-v2") -> str:
-    """Content and membership only, over every item whatever its approval (Phase 2 spec 3.4)."""
-    rows = sorted([[item.item_id, item.version, item.sha256, item.plane, bool(item.bound)] for item in items])
-    payload = {"scheme": "corpus-version-v2", "span_scheme": span_scheme, "items": rows}
-    return "corpus-" + hashlib.sha256(canonical_json(payload)).hexdigest()[:16]
+def compute_corpus_version_v2(built_items: Iterable[CorpusItem], span_scheme: str = "span-v2") -> str:
+    """corpus_version of a manifest 2.0 build: (item_id, item_version, sha256) of the built items (plan 11.1).
+
+    The caller passes the built items (CorpusRegistry.built_items), so partial approval changes the version and a
+    licence edit does not. The formula is app.core.manifest_v2.corpus_version_of, which the generator also uses.
+    """
+    from app.core.manifest_v2 import corpus_version_of
+
+    return corpus_version_of([[item.item_id, item.version, item.sha256] for item in built_items], span_scheme)
 
 
 def _candidate_manifest_paths(settings: Settings) -> list[Path]:
@@ -236,19 +240,38 @@ class CorpusRegistry:
             raise CorpusGovernanceError("Corpus manifest 2.0 must hold exactly one authored item.")
         self.span_scheme = str(payload.get("span_scheme") or "span-v2")
         self.recorded_corpus_version = payload.get("corpus_version")
-        computed = compute_corpus_version_v2(parsed, self.span_scheme)
+        # The manifest records the governed value: the authored item plus the approved items (plan 11.1).
+        computed = compute_corpus_version_v2(self._built(parsed, governed=True), self.span_scheme)
         if self.recorded_corpus_version != computed:
             raise CorpusGovernanceError(
                 f"Corpus manifest corpus_version {self.recorded_corpus_version} does not match its items ({computed})."
             )
         return tuple(parsed)
 
+    def _built(self, items: Iterable[CorpusItem], *, governed: bool) -> list[CorpusItem]:
+        """Plan 11.1 "built items": public-plane, bound items the build admits. A governed build admits the authored
+        item and the approved items (D-31); development admits every public-plane, bound item."""
+        return [
+            item
+            for item in items
+            if item.plane == "public" and self._item_bound(item) and (item.kind == "authored" or item.public_service or not governed)
+        ]
+
+    @property
+    def built_items(self) -> tuple[CorpusItem, ...]:
+        return tuple(self._built(self.items, governed=bool(self.settings.enforce_corpus_governance)))
+
     @property
     def corpus_version(self) -> str:
+        """The corpus this deployment builds (plan 11.1): content and membership, partial approval included.
+
+        A governed build reports the value the manifest records; development, which builds every public-plane,
+        bound item, reports its own (different) value. Licence fields never change it.
+        """
         if self.manifest_path is None:
             return "development-unreviewed"
         if self.schema_version == "2.0":
-            return compute_corpus_version_v2(self.items, self.span_scheme)
+            return compute_corpus_version_v2(self.built_items, self.span_scheme)
         manifest_hash = hashlib.sha256(self.manifest_path.read_bytes()).hexdigest()[:16]
         return f"manifest:{manifest_hash}"
 
@@ -281,6 +304,13 @@ class CorpusRegistry:
     def span_item_id(filename: str) -> str:
         # Always the canonical asset id, never a free-form 1.0 manifest id ([R9]).
         return source_asset_id(filename, source_asset_kind(filename))
+
+    def is_private_item(self, item_id: str) -> bool:
+        """True when the manifest puts this span item id on a non-public plane (task 2.8: no API path to it)."""
+        return any(
+            item.plane != "public" and (item.item_id == item_id or any(self.span_item_id(name) == item_id for name in item.asset_filenames))
+            for item in self.items
+        )
 
     def is_private_plane(self, filename: str) -> bool:
         item = self.item_for_filename(filename)
@@ -383,6 +413,22 @@ class CorpusRegistry:
 
 def get_corpus_registry(settings: Settings) -> CorpusRegistry:
     return CorpusRegistry(settings)
+
+
+def p1_floor_recall_stop(registry: CorpusRegistry, settings: Settings) -> list[str]:
+    """Phase 2 spec conflict 29, enforced in code (plan Phase 2 L: "stop if ... recall@5 falls below baseline").
+
+    Over the span index, which no longer holds video chapter summaries (task 2.7), the approved P1 floor lowers
+    in-domain recall@5 as soon as document spans are indexed: against the same index unfloored (the Action 27
+    "recall drops" stop) and, with every public item approved, below the pre-migration baseline (118 against 129).
+    Returns the document items whose indexing triggers the stop under the p1-floor gate outside development, or
+    an empty list when it does not apply. Under D-31 no document is approved, so it is empty today.
+    """
+    if settings.retrieval_gate != "p1-floor" or settings.environment.lower() == "development":
+        return []
+    if settings.enforce_corpus_governance:
+        return sorted(item.item_id for item in registry.approved_items if item.kind == "document")
+    return sorted({registry.span_item_id(path.name) for path in settings.source_documents if registry.is_indexable(path.name)})
 
 
 REGISTER_REVIEW_FIELDS = ("library_confirmation", "reviewed_by", "reviewed_at")

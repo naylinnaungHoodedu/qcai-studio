@@ -174,11 +174,13 @@ Each item gives the conflict and the resolution this spec implements. Every reso
 
 1. **corpus_version inputs.**
    - Plan 11.1: "corpus_version MUST hash the sorted (item_id, item_version, sha256) of built items plus the span-scheme version, so any content or membership change, including partial approval, yields a new version; membership-neutral licence edits do not."
-   - D1: hash the sorted (id, version, plane, bound) tuples; licence and approval fields never enter it.
-   - **Resolution:**
-     - `corpus_version` follows D1, plus `sha256` and the span scheme, still content-only, over **all** manifest items.
-     - A new `index_version` (3.4) captures membership: the built set, the entries, the retrieval configuration and the active gate. It changes on partial approval.
-     - Citations store `corpus_version`. `/ready` and the logs report both values.
+   - D1 (a workflow design note, not an owner decision): hash the sorted (id, version, plane, bound) tuples; licence and approval fields never enter it.
+   - **Resolution (revised 2026-11-19, review fix round):** the plan's MUST governs; D1 has no authority over it.
+     - `corpus_version` hashes the sorted (item_id, item_version, sha256) of the **built items** plus the span scheme (`corpus-version-v3`, 3.4). Built items are the public-plane, bound items the build admits: in a governed build the authored item and the approved items, in development every public-plane, bound item.
+     - Partial approval therefore yields a new version, and a licence-field edit does not. Span ids never hash it, so AC-2-2 is unaffected.
+     - The manifest records the governed value; a development build reports its own.
+     - `index_version` (3.4) still adds the entries, the retrieval configuration and the active gate.
+     - Citations and tutor turns store `corpus_version`, which now identifies the approved subset that produced them (the replay key Phase 3.2 and 3.5 consume). `/ready` and the logs report both values.
 2. **span_id inputs.**
    - Plan 11.2: "span record = {item_id, item_version, section_ordinal, char_start, char_end, content_hash of full span}; span_id hashes it without corpus_version".
    - D2: hash (scheme, item_id, start, end, content_hash).
@@ -198,9 +200,11 @@ Each item gives the conflict and the resolution this spec implements. Every reso
    - Plan 11.3: "a sufficiency gate (floor plus runner-up margin)".
    - D6 and plan V1.5: "within margin X4 mark".
    - **Resolution:** a result with `floor ≤ score < floor + margin` gets `near_floor = true`. There is no runner-up test (Phase 4).
+   - **Status:** a provisional deviation from plan text. It needs Principal Investigator or Research Lead ratification (configuration package `owner_decisions.PLAN-11.3`; BEP-2-12 PD-07).
 5. **Stemming.**
    - Plan 11.3: "a stemmed, stopword-filtered BM25-style index".
    - **Resolution:** `stemmer: "none"` in package v1. An S-stemmer raised out-of-scope leakage (all-approved maximum 8.2). The package field exists for Phase 4.
+   - **Status:** a provisional deviation from plan text. It needs Principal Investigator or Research Lead ratification (configuration package `owner_decisions.PLAN-11.3`; BEP-2-12 PD-07).
 6. **Calibration strata and held-out folds [R2, R3].**
    - Plan 11.3: "Calibrate on public-corpus strata (single-source, multi-source, near-miss, out-of-scope, stopword-only) with held-out folds, keeping in-domain answer rate within 5 points of Phase 0".
    - **Resolution:**
@@ -241,18 +245,21 @@ Each item gives the conflict and the resolution this spec implements. Every reso
     - Manifest 1.0 stays readable for one release (D1).
     - Citation v0/v1 shapes are dual-read for two releases (plan 11.2). The package records `legacy_citations.dual_read_releases: 2`.
 14. **D-30 threshold [R5].**
+    - Every limit is read from configuration package v1 (`legacy_citations`), never hard-coded, so ratifying D-30 is a configuration change.
     - The stop fires on any of:
-      - a native unresolved citation (> 0);
-      - an exact-match regression (> 0), where an exact-match regression is a citation whose normalised-excerpt hash matched exactly one span but which ended unresolved, or any rewrite from resolved to unresolved;
+      - a native unresolved share above `max_unresolved_share_native` (0.0, so any native unresolved citation);
+      - when `max_unresolved_share_legacy` is a number, a legacy unresolved share above it, measured by `legacy_share_statistic` (`point`, the plan's "unresolved citations exceed the ... threshold", or `wilson95_upper`); the loader accepts only null or a number in [0, 1];
+      - an exact-match regression (> 0): a citation whose normalised-excerpt hash is unique in the current build but which still ends unresolved (an older registered span with the same text makes it ambiguous), or an already migrated citation whose span no longer resolves;
       - a row that fails the canonical-JSON precondition (> 0, in `--apply` only) [R6].
-    - The share of legacy citations left unresolved is reported with a Wilson interval and is not gated (provisional).
+    - While D-30 is open the legacy limit is null: the share is reported with a Wilson interval, labelled and not gated (provisional).
 15. **AC-2-5 baseline [R29].**
     - The plan's baseline is "the pre-migration commit in the same CI run". CI checks out with `fetch-depth: 1`, so `a257dd11` is not available in the run.
     - **Resolution:** the baseline is a frozen verbatim copy of the `a257dd11` search, run in the same test and calibration run. A snapshot recorded from the unmodified code proves its fidelity (test 15).
 16. **AC-2-7 passage scans.**
     - These need salted fingerprints from the private plane (D-14 is open).
-    - Public CI proves the path scans only, and its report says `passage_scan.status: "not_run"`.
-    - The release-zip scan cannot run in CI while packaging refuses unapproved assets [R23].
+    - Public CI proves the path scans only, and its report says `passage_scan.status: "not_run"` and `ac_2_7.status: "partial"`. AC-2-7 is therefore **partially met (path half only)** and may not be cited as passed.
+    - A build-context scan is a proxy for the image. `--image-tar` scans a built image (`docker save` or `docker export`); `--require-ac-2-7` makes the exit-gate run fail unless both halves ran and passed over an image and a release.
+    - The packager excludes private-plane, licensed and secret-like paths and scans its own bundles; the tag-only release job also runs `--release-zip`. Packaging still refuses unapproved assets [R23], so no release bundle can be built today.
 17. **Tutor follow-up rewrite.**
     - `TutorOrchestrator._resolve_query` prefixes the previous user turn of the same thread. That is the learner's own turns, not learner state.
     - For AC-2-9, "one query" means the resolved query, and the tests use fresh threads. Phase 3.1 replaces this heuristic.
@@ -284,8 +291,9 @@ Each item gives the conflict and the resolution this spec implements. Every reso
     - The span `item_id` is always `source_asset_id(filename, kind)`, or `authored-curriculum`. It never comes from a free-form 1.0 manifest id.
     - Manifest 2.0 validation requires `id == source_asset_id(asset_filenames[0], kind)`.
 29. **NEW: `p1-floor` with approved assets [R21].**
-    - Applied to an all-approved index, `p1-floor` recall is 119, against a pre-migration 129, because chapter summaries are now excluded.
-    - Approving any document while `p1-floor` is the default is a recorded stop condition. It requires the D-05 switch decision or recalibration (runbook, register).
+    - Applied to an all-approved index, `p1-floor` recall is 118, against a pre-migration 129, because chapter summaries are now excluded. With any document indexed, the floor also lowers recall against the same index unfloored (all assets 118 against 130), the Action 27 "recall drops" stop.
+    - Approving any document while `p1-floor` is the gate outside development is a stop condition, **enforced in code**: governed start-up and `validate_corpus.py --check-recall-stop` refuse it. It requires the D-05 switch decision or recalibration. `ALLOW_P1_FLOOR_WITH_DOCUMENTS` (default false) is the owner override; outside development it logs a `config.override` event.
+    - Tests: AC-2-5 and the Phase 1 recall guard run both gates on the live code; the `p1-floor` case with documents is a strict xfail that cites this conflict.
 
 ---
 
@@ -840,8 +848,9 @@ A mismatch raises `SpanBuildError`, because a new scheme version would be needed
 
 ### 3.4 corpus_version and index_version
 **`corpus_version`**
-- Formula: `"corpus-" + sha256(canonical_json({"scheme": "corpus-version-v2", "span_scheme": "span-v2", "items": sorted([[i.id, i.version, i.sha256, i.plane, i.bound] for i in all_items])}))[:16]`.
-- It is computed over all items, whatever their approval.
+- Formula: `"corpus-" + sha256(canonical_json({"scheme": "corpus-version-v3", "span_scheme": "span-v2", "items": sorted([[i.id, i.version, i.sha256] for i in built_items])}))[:16]` (plan 11.1).
+- Built items: public-plane, bound items the build admits. A governed build admits the authored item and the approved items; development admits every public-plane, bound item. The manifest records the governed value.
+- Partial approval changes it; a licence-field edit does not.
 - A 1.0 manifest keeps the legacy formula `"manifest:" + sha256(file bytes)[:16]`.
 - With no manifest it is `"development-unreviewed"`.
 
@@ -1569,7 +1578,10 @@ qcai_dev.db
 ```json
 {"config_package_version": "1.0.0", "config_package_sha256": "…", "span_scheme": "span-v2",
  "index_version": "index-…", "retrieval_gate": "p1-floor", "duplicate_span_ids": 0, "manifest_drift": 0,
- "abstention_floor": 2.35, "abstention_margin": 2.40, "thresholds_provisional": true, "semantic_enabled": false,
+ "threshold_version": "score-floor-p1-v1", "abstention_floor": 6.0, "abstention_margin": 0.0,
+ "thresholds_provisional": false, "threshold_authority": "P1-D-04",
+ "bm25f_v1_calibrated": {"version": "abstention-p2-v1", "floor": 2.35, "margin": 2.40, "provisional": true, "provisional_until": "Phase 4"},
+ "semantic_enabled": false, "semantic_setting": false,
  "slis": {"citation_resolution": {"delivered": 0, "resolved": 0, "dropped_unresolved": 0, "withheld_unapproved": 0, "rate": null},
           "abstention": {"decisions": 0, "abstained": 0, "rate": null, "by_reason": {}},
           "search_latency_ms": {"window": 0, "p50": null, "p95": null},
@@ -1585,6 +1597,8 @@ qcai_dev.db
 | `citations.unresolved_on_read` | — | WARNING |
 | `corpus.drift` | — | WARNING (development), start-up error (governed) |
 | `semantic.misaligned` | — | WARNING |
+| `semantic.inactive` | — (start-up: the setting is on but this process has not aligned span-id vectors) | WARNING |
+| `retrieval.recall_stop_overridden` | `items` | WARNING |
 | Job lines | — | INFO, or ERROR on failure |
 
 The SLIs follow plan Phase 2 I: citation resolution rate 100%; duplicate span ids 0; abstention rate; search p95; manifest drift 0.
@@ -1597,7 +1611,8 @@ The SLIs follow plan Phase 2 I: citation resolution rate 100%; duplicate span id
 |---|---|---|
 | `CONFIG_PACKAGE_PATH` | Packaged `v1.json` | For tests. A non-default path outside development raises a `config.override` event [R19]. |
 | `RETRIEVAL_GATE` | `None`: `bm25f-v1` in development, `p1-floor` elsewhere | Freeze (conflict 26). `p1-floor` is the approved containment. The switch is a D-05 remediation release (R-15) and logs a `config.override` event. |
-| `SEMANTIC_RETRIEVAL_ENABLED` | `false` | Task 2.5. Off whatever keys are set. |
+| `SEMANTIC_RETRIEVAL_ENABLED` | `false` | Task 2.5. Off whatever keys are set. Effective only in a process that aligned span-id vectors; `/ready` `semantic_enabled` is the effective state and `semantic_setting` the setting. |
+| `ALLOW_P1_FLOOR_WITH_DOCUMENTS` | `false` | Conflict 29 stop (plan Phase 2 L). Outside development, start-up and `validate_corpus.py --check-recall-stop` refuse document spans under `p1-floor` unless this owner override is set; it logs a `config.override` event. |
 | `SPAN_RESOLVER_ROUTE_ENABLED` | `None`: true in development, false elsewhere | Freeze and D-31 (conflict 8). |
 | `CITATION_PROVISIONAL_LIFT_ENABLED` | `false` | Freeze. Enabling it outside development logs a `config.override` event and needs AC-2-3 evidence plus D-05 approval (conflict 7, [R14]). |
 | `SPAN_REGISTRY_WRITE_THROUGH` | `true` | Not learner-visible. A kill switch for a new request-path write. |
@@ -1808,14 +1823,15 @@ Each keeps its intent, and its commit message states the reason.
    - The imports are unchanged: `content_assembler` re-exports the P1 names, which remain the shipped gate outside development.
    - `test_floor_is_the_approved_value` keeps `(6, "score-floor-p1-v1")`. It adds that the package's p1 block equals these values, and that the BM25 floor and margin equal the calibration record (record sha).
    - `test_floor_score_counts_whole_non_stopword_words_and_ignores_the_module_boost` is unchanged.
-   - `test_floor_does_not_lower_in_domain_recall` keeps the Phase 1 assertion on the algorithm Phase 1 approved: `legacy_search` (floor 6) against `legacy_search(score_floor=0)` over `build_legacy_chunks(dev)`, so 129 ≥ 124 with `len == 174`.
-     - It no longer monkeypatches `content_assembler.SCORE_FLOOR`. Once the development gate is `bm25f-v1`, that patch would leave `store.search` unaffected, and the test would pass without testing anything.
-     - The P1 floor applied to the span index with all assets does not keep this property (119 against 134, 0.2b). Test 18 covers what ships.
+   - `test_floor_does_not_lower_in_domain_recall` (revised in the review fix round) keeps the Phase 1 assertion on the **live code**: each gate's floor against the same gate unfloored, every asset served as development serves them, `len == 174`.
+     - `bm25f-v1`: the store's index rebuilt with floor 0 (142 against 142). `p1-floor`: `lexical_index.SCORE_FLOOR` patched to 0, the name the gate reads. Patching `content_assembler.SCORE_FLOOR` would reach nothing.
+     - The P1 floor applied to the span index with documents does not keep this property (118 against 130), so that case is a strict xfail citing conflict 29, whose stop is enforced in code.
+     - The earlier frozen-module version (`legacy_search` floor 6 against 0, 129 ≥ 124) is kept as a separate baseline-fidelity test, `test_the_approved_floor_did_not_lower_recall_on_the_pre_migration_search`; it is not the guard.
    - `test_one_shared_word_does_not_return_a_passage`, `test_off_topic_and_stopword_only_questions_return_no_result` and `test_capital_of_france_…` are unchanged. They run in development, so under `bm25f-v1`. **New sibling tests** run the same assertions on a `governed_empty` `p1-floor` store, so AC-1-11 stays evidenced for what ships.
 2. **`test_api.py::test_search_uses_clean_video_source_titles`** becomes `test_search_returns_no_chapter_summaries_and_clean_source_titles` (task 2.7).
 3. **`test_api.py::test_retrieval_engine_merges_semantic_and_lexical_results`**
    - `Settings(semantic_retrieval_enabled=True)`, a stub with `enabled = aligned = True`, and span-id results.
-   - The mode is hybrid, `results[0]` equals the lexical top, every result passes the gate, and `1 <= len <= 3`.
+   - The mode is hybrid and `len == 3`. The stub returns a gate-passing span ranked outside the lexical candidates and a span below the gate: the first leads the fused list, the second is dropped, every result passes the gate and keeps the gate's score (revised in the review fix round; the first revision's `1 <= len <= 3` no longer required fusion).
 4. **`test_api.py::test_contained_answer_abstains_without_an_approved_document_span`**: the positive case uses `native_citation(...)` of a real span. The forged citation now abstains even ungoverned (strictly stronger).
 5. **`test_cs595_increment.py::test_persistent_tutor_stores_resolved_follow_up_and_claim_provenance`**: the stub returns a native citation from a real span (choose a query that returns a document span in development), and claims cite that span id.
 6. **`test_api.py::test_qa_returns_citations`**: the comment is updated, and `resolution`, `item_id`, `start` and `end` are added (strengthened).
@@ -1956,10 +1972,10 @@ cd D:\QC_AI_Studio\Codex_Webapp_QC_AI_Studio
 - **The D-05 remediation release switching production to `bm25f-v1` (R-15 closure).** The owner weighs the plan's answer-rate requirement (bm25 95.4% against P1 83.9%, proxy 100%) against the near_miss and oos_lexical regressions (0.2b). The production re-probe follows that release.
 
 **Evidence public CI cannot produce**
-- The AC-2-7 licensed-passage scans need private-plane fingerprints (D-14).
+- **AC-2-7 is partially met (path half only).** The licensed-passage scans need private-plane fingerprints (D-14), and the exit-gate run must also scan a built image (`--image-tar`) and a release (`--release-zip`) with `--require-ac-2-7`. D-14 is the precondition of this Phase 2 exit item.
 - DOCX files in the repository may legitimately share 12-grams with the licensed volumes (F-10 overlap ≤ 1.0%). The owner must decide the per-file hit policy before the first run.
 - The decoded-audio media fingerprint (E-70, ffmpeg) and the F-7 closure.
-- The release-zip scan step in CI, while packaging refuses unapproved assets [R23].
+- A release-zip scan with evidence: the tag-only job now runs it after packaging, but packaging refuses unapproved assets [R23], so no bundle exists to scan.
 - A cited green CI run for the Phase 2 exit, which needs a push.
 
 **Production runs, each needing Platform Owner approval**
@@ -1968,12 +1984,12 @@ cd D:\QC_AI_Studio\Codex_Webapp_QC_AI_Studio
 
 **Plan gaps carried into Phase 4**
 - ULQS calibration and confirmation splits with a contamination check.
-- The runner-up margin reading of 11.3.
+- The runner-up margin reading of 11.3, and stemming (conflicts 4 and 5): provisional deviations awaiting PI or Research Lead ratification.
 - Re-deriving coverage-v1 and the framing stopwords on data not used for design.
 - The zero-slack learner-question constraint (all-approved configuration).
 
-**Conditions to watch**
-- Approving any document while `p1-floor` is the default needs the switch decision or recalibration (conflict 29).
+**Conditions enforced in code**
+- Approving any document while `p1-floor` is the gate outside development stops start-up and `validate_corpus.py --check-recall-stop` (conflict 29) until the D-05 switch decision or a recalibration; `ALLOW_P1_FLOOR_WITH_DOCUMENTS` is the logged owner override.
 
 **Out of Phase 2 scope**
 - Exact heading match per lesson (11.4) and the conflict metadata fields.
@@ -2000,7 +2016,7 @@ The committed code and data are authoritative. Each item below is a refinement w
 2. **Legacy baseline for the all-approved configuration.** It serves all 24 assets, the 2026 video included, as the pre-migration code did (it had no Q-10 binding). The snapshot was recorded that way, and the calibration script uses the same rule.
 3. **`IndexEntry` lives in `lexical_index.py`** and is re-exported through `content_assembler`'s imports, to avoid an import cycle. `ScoredEntry` gained an optional `lesson_slug` (the p1-floor boost lesson).
 4. **`RetrievalEngine.search` gained a keyword-only `surface` argument** (default `"search"`) for the decision log and SLIs. It is not learner input, and the AC-2-9 signature allowlist includes it.
-5. **`/ready` reports the package's bm25f-v1 thresholds** (`abstention_floor`, `abstention_margin`, `thresholds_provisional`), as in the spec's example. `retrieval_gate` says which gate applies.
+5. **`/ready` reported the package's bm25f-v1 thresholds** whatever the gate. Superseded by item 20: it now reports the thresholds in force (the active gate's) and the calibrated bm25f-v1 values under `bm25f_v1_calibrated` (6.2).
 6. **`citations.delivered` is logged by `retrieval_metrics.record_citations`**, which also feeds the `/ready` SLIs: once per Q&A, assistant and tutor response, and once per `/qa/history` read that withheld a citation.
 7. **`persist_spans` counts inserted rows with `RETURNING`**, because psycopg reports rowcount -1 for the multi-row `ON CONFLICT DO NOTHING` insert.
 8. **Matched spans are registered in the same transaction as the migrated rows** (per 500-row batch), so a crash cannot leave migrated citations whose spans are unregistered.
@@ -2012,3 +2028,12 @@ The committed code and data are authoritative. Each item below is a refinement w
 14. **`.gitattributes` pins LF** for `corpus/public/manifest.json` and this file.
 15. **The local v1.0.0 release zip (part 1) fails the boundary scan by name:** five secret-like names, not opened. It is recorded in `docs/evaluation/phase2/boundary_scan_2026-11-19.json` and is the existing Action 10/29 item. The CI-equivalent scans pass.
 16. **`scripts/make_passage_fingerprints.py` was deferred** (D-14), as the spec allowed [R26].
+
+**Review fix round (2026-11-19).** Each item answers a confirmed review finding.
+
+17. **corpus_version follows plan 11.1** (conflict 1 revised, 3.4): built items only, scheme `corpus-version-v3`. The committed manifest records `corpus-a02930b08f2e9251` (the authored item; D-31 approves nothing). The calibration record v1 was regenerated with the same selection, sweeps and confirmation; only its corpus and index versions changed, and each configuration now records its own `corpus_version`.
+18. **The conflict 29 stop is enforced in code** (start-up, `validate_corpus.py --check-recall-stop`, override `ALLOW_P1_FLOOR_WITH_DOCUMENTS`). The AC-2-5 test runs both gates in both configurations; the Phase 1 recall guard (`test_floor_does_not_lower_in_domain_recall`) runs on the live code for both gates again, with `p1-floor` as a strict xfail. The frozen-module check is kept as a separate baseline-fidelity test.
+19. **D-30 limits come from the package** (conflict 14 revised): the legacy threshold is enforced when it is a number (`legacy_share_statistic` `point`), and the loader refuses anything but null or a number in [0, 1]. The exact-match regression stop can now fire (current-build-unique key that ends unresolved; already migrated citations are re-verified).
+20. **`/ready` reports the thresholds in force** (the active gate's `threshold_version`, floor, margin, provisional flag and authority) and the calibrated bm25f-v1 values under `bm25f_v1_calibrated`; `semantic_enabled` is the effective state and `semantic_setting` the setting.
+21. **The resolver refuses an item the current manifest puts on the private plane**, including a span registered while it was public. The AC-2-7 tests now drive the `/source-assets` guard and the resolver and span route with a real document span.
+22. **Boundary scans:** `--image-tar` (a built image), `--require-passage-scan`, `--require-ac-2-7` and the report's `ac_2_7` block (conflict 16 revised). The packager excludes private-plane, licensed and secret-like paths and scans its bundles; the release job runs `--release-zip`.

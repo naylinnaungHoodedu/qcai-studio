@@ -61,7 +61,7 @@ In production, every mode except `--dry-run` is a database write. Each one needs
 
 **`threshold`:**
 - the `decision` (D-30) and its `status` (provisional);
-- the native and legacy limits from configuration package v1;
+- the native and legacy limits from configuration package v1 (`max_unresolved_share_native`, `max_unresolved_share_legacy`), the `native_unresolved_share`, the `legacy_share_statistic` and the `legacy_share_observed` it compares, and `legacy_gated`;
 - `result` (`pass` or `stop`) and `stop_reasons`.
 
 ## Match rule (D3)
@@ -72,12 +72,13 @@ A v0 or v1 citation migrates only when the sha256 of its whitespace-normalised e
 Zero matches give `excerpt_no_match`, several give `excerpt_ambiguous`, and a video citation gives `chapter_summary_excluded` (task 2.7).
 
 ## D-30 comparison (provisional; P1-D-18)
-The run stops in any of these cases:
-- `native_unresolved > 0`, because citations created by the Phase 2 pipeline must resolve 100%;
-- `exact_match_regressions > 0`;
+Every limit is read from configuration package v1 (`legacy_citations`); none is hard-coded, so ratifying D-30 is a configuration change and a PR. The run stops (exit 3) in any of these cases:
+- the native unresolved share exceeds `max_unresolved_share_native` (0.0), because citations created by the Phase 2 pipeline must resolve 100%;
+- `max_unresolved_share_legacy` is a number and the legacy unresolved share exceeds it (plan Phase 2 L: "stop if unresolved citations exceed the OPEN DECISION threshold"). `legacy_share_statistic` names the measure: `point` (the observed share, the default) or `wilson95_upper` (its Wilson 95% upper bound). The package loader accepts only null or a number in [0, 1];
+- `exact_match_regressions > 0`. A regression is a citation whose excerpt hash is unique in the current build but which still ends unresolved (an older registered span with the same text makes it ambiguous), or an already migrated citation whose span no longer resolves (every run re-verifies them);
 - in `--apply`, `rows_skipped_non_canonical > 0`.
 
-The legacy unresolved share is reported with its Wilson 95% interval. It is not gated, because the D-30 legacy threshold is open (`max_unresolved_share_legacy: null`).
+While D-30 is open the legacy limit is null: the legacy unresolved share is reported with its Wilson 95% interval and labelled, but not gated.
 
 Every `legacy_unresolved` citation:
 - is labelled "unverified historical reference";

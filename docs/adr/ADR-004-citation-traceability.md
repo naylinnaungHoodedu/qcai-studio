@@ -35,8 +35,9 @@ Status: accepted for Phase 2 engineering. It implements plan tasks 2.2-2.4 and P
   - Start-up never writes span rows.
 
 ### `corpus_version` and `index_version`
-- **`corpus_version`** (corpus-version-v2) hashes the sorted `(item_id, version, sha256, plane, bound)` of every manifest item, plus the span scheme. It is content and membership only.
-- **`index_version`** also captures what is served: the entries, their lessons, the retrieval configuration and the active gate. It changes on partial approval (plan 11.1). Citations store `corpus_version`, and `/ready` reports both values.
+- **`corpus_version`** (corpus-version-v3) hashes the sorted `(item_id, item_version, sha256)` of the **built items** plus the span scheme, as plan 11.1 requires: "corpus_version MUST hash the sorted (item_id, item_version, sha256) of built items plus the span-scheme version, so any content or membership change, including partial approval, yields a new version; membership-neutral licence edits do not." Built items are the public-plane, bound items the build admits: in a governed build the authored item and the approved items (D-31), in development every public-plane, bound item. The manifest records the governed value.
+- **`index_version`** adds the entries, their lessons, the retrieval configuration and the active gate. Citations and tutor turns store `corpus_version`, so a stored citation names the approved subset that produced it (the replay key Phase 3 consumes); `/ready` reports both values.
+- An earlier revision of this ADR hashed every manifest item whatever its approval (corpus-version-v2, following workflow note D1). The review of 2026-11-19 found that against the plan's MUST, and it was changed before Phase 2 exit; no stored citation carries a v2 value outside development.
 
 ### Resolver
 - `SpanResolver` and `GET /spans/{span_id}` (task 2.4) are read-only.

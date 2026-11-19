@@ -1,6 +1,8 @@
 """Validate the public corpus manifest.
 
 Run: python scripts/validate_corpus.py --check-public-assets   (AC-1-5; task 1.8: every approved item is reviewed)
+     python scripts/validate_corpus.py --check-recall-stop     (plan Phase 2 L, spec conflict 29: no approved document
+                                                                 under the p1-floor gate outside development)
      python scripts/validate_corpus.py --check-hashes          (AC-2-6: every manifest hash matches disk)
      python scripts/validate_corpus.py --check-near-duplicates (AC-2-8; task 2.9: no two bound items are near-duplicates)
 
@@ -24,7 +26,13 @@ for path in (REPO_ROOT, API_ROOT):
 
 from app.core.config import SOURCE_DOCUMENT_NAMES, SOURCE_VIDEO_NAMES, Settings  # noqa: E402
 from app.core.config_package import get_config_package  # noqa: E402
-from app.core.corpus_governance import CorpusGovernanceError, CorpusRegistry, load_license_register, review_problems  # noqa: E402
+from app.core.corpus_governance import (  # noqa: E402
+    CorpusGovernanceError,
+    CorpusRegistry,
+    load_license_register,
+    p1_floor_recall_stop,
+    review_problems,
+)
 
 DEFAULT_REGISTER = REPO_ROOT / "corpus" / "license-register.csv"
 
@@ -106,6 +114,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--check-hashes", action="store_true", help="every manifest hash matches disk (AC-2-6)")
     parser.add_argument("--check-near-duplicates", action="store_true", help="the fingerprint gate (AC-2-8, task 2.9)")
+    parser.add_argument(
+        "--check-recall-stop",
+        action="store_true",
+        help="plan Phase 2 L stop (spec conflict 29): no approved document under the p1-floor gate outside development",
+    )
     parser.add_argument("--video-hash", choices=("full", "size"), default="full")
     parser.add_argument("--root", type=Path, default=REPO_ROOT, help="where the assets are (the root, then update_data/)")
     parser.add_argument("--register", type=Path, default=DEFAULT_REGISTER, help="the license register CSV")
@@ -142,6 +155,22 @@ def main(argv: list[str] | None = None) -> int:
         if problems:
             failed = True
             print("Near-duplicate bound items (task 2.9):\n" + "\n".join(f"- {problem}" for problem in problems), file=sys.stderr)
+    if args.check_recall_stop:
+        # Approving a document while the gate outside development is p1-floor lowers recall@5 (spec conflict 29).
+        # The gate is the one these settings resolve (RETRIEVAL_GATE, else the production default p1-floor); the
+        # owner override is reported, never silent. Governed start-up applies the same rule.
+        stopped = p1_floor_recall_stop(registry, settings)
+        if stopped and not settings.allow_p1_floor_with_documents:
+            failed = True
+            print(
+                f"Recall stop (Phase 2 spec conflict 29): {len(stopped)} approved document item(s) under the p1-floor gate, "
+                f"for example {stopped[0]}; switch RETRIEVAL_GATE under D-05 or recalibrate first",
+                file=sys.stderr,
+            )
+        elif stopped:
+            print(f"warning: recall stop overridden (ALLOW_P1_FLOOR_WITH_DOCUMENTS) for {len(stopped)} document item(s)", file=sys.stderr)
+        else:
+            print(f"Recall stop (spec conflict 29) clear: gate {settings.retrieval_gate}, no approved document under p1-floor")
     print(f"Validated corpus manifest at {registry.manifest_path}")
     return 1 if failed else 0
 

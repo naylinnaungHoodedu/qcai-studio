@@ -3,7 +3,10 @@
 A stored v0 (2026-04-05 build) or v1 (CS595, Phase 1) citation migrates only where the hash of its
 whitespace-normalised excerpt matches exactly one span (task 2.3: "Citations migrated where the excerpt hash is
 unique, the rest counted as legacy_unresolved"). Title equality, excerpt containment and the v1 content_hash are
-diagnostics that never change the outcome (spec conflict 3, [R5]). A migrated citation keeps the full original
+diagnostics that never change the outcome (spec conflict 3, [R5]). An exact-match regression (D10) is a citation
+whose excerpt hash is unique in the current build but which still ends unresolved (an older registered span with
+the same text makes it ambiguous), or an already migrated citation whose span no longer resolves; either stops the
+run. The D-30 limits are read from the configuration package (legacy_citations), never hard-coded. A migrated citation keeps the full original
 under legacy_original (plus legacy_chunk_id and legacy_span_id), so --downgrade restores it; a row is rewritten
 only when its stored text is exactly what SQLAlchemy's JSON type writes (json.dumps), so the restored
 CAST(col AS TEXT) is byte-for-byte the original on SQLite and PostgreSQL json ([R6]). Every write is a
@@ -15,7 +18,7 @@ The report holds counts only: no learner id, row id or excerpt.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import json
 from typing import Any
@@ -59,17 +62,21 @@ class MatchIndex:
     texts_available: bool
     memory: SpanRegistry | None
     database_rows: int
+    # The distinct span ids per key in the current build alone: unique here but not overall is a regression (D10).
+    current_by_key: Mapping[str, frozenset[str]] = field(default_factory=dict)
 
 
 def build_match_index(db: Session, memory: SpanRegistry | None) -> MatchIndex:
     by_key: dict[str, list[SpanRef]] = {}
     by_span_id: dict[str, SpanRef] = {}
+    current_by_key: dict[str, set[str]] = {}
     for record in memory.records if memory is not None else ():
         for kind, key in zip(("lexical", "semantic"), record.legacy_keys):
             ref = SpanRef(record.span_id, record.item_id, record.item_version, record.start, record.end, record.content_hash,
                           sha256_text(record.source_title), sha256_text(record.section_title), "memory", kind)
             by_key.setdefault(key, []).append(ref)
             by_span_id.setdefault(record.span_id, ref)
+            current_by_key.setdefault(key, set()).add(record.span_id)
     rows = db.scalars(select(CorpusSpan).order_by(CorpusSpan.id.asc())).all()
     for row in rows:
         if row.plane != "public":
@@ -79,7 +86,14 @@ def build_match_index(db: Session, memory: SpanRegistry | None) -> MatchIndex:
                           row.source_title_hash, row.section_title_hash, "database", kind)
             by_key.setdefault(key, []).append(ref)
             by_span_id.setdefault(row.span_id, ref)
-    return MatchIndex({key: tuple(refs) for key, refs in by_key.items()}, by_span_id, memory is not None, memory, len(rows))
+    return MatchIndex(
+        {key: tuple(refs) for key, refs in by_key.items()},
+        by_span_id,
+        memory is not None,
+        memory,
+        len(rows),
+        {key: frozenset(ids) for key, ids in current_by_key.items()},
+    )
 
 
 def is_canonical_json_text(raw: str) -> bool:
@@ -111,11 +125,16 @@ def _ws(value: str) -> str:
 
 def classify_citation(raw: Any, index: MatchIndex, *, corpus_version: str, settings: Settings) -> tuple[Any, str, dict]:
     """(new value, outcome, diagnostics). Outcomes: native_v2, native_unresolved, already_migrated,
-    already_unresolved, migrated, or legacy_unresolved:<reason>."""
+    migrated_unresolvable, already_unresolved, migrated, or legacy_unresolved:<reason>. diagnostics
+    "exact_match_regression" marks a citation unique in the current build that still ends unresolved (D10)."""
     diagnostics: dict[str, Any] = {}
     if isinstance(raw, dict) and raw.get("citation_schema") == CITATION_SCHEMA:
         status = raw.get("migration_status")
         if status == "migrated":
+            # Re-verified on every run: a migrated citation must keep resolving (AC-2-3), or the run stops (D10).
+            ref = index.by_span_id.get(raw.get("span_id") or raw.get("chunk_id") or "")
+            if ref is None or ref.content_hash != raw.get("content_hash"):
+                return raw, "migrated_unresolvable", diagnostics
             return raw, "already_migrated", diagnostics
         if status == "legacy_unresolved" or raw.get("resolution") != "resolved":
             return raw, "already_unresolved", diagnostics
@@ -138,6 +157,10 @@ def classify_citation(raw: Any, index: MatchIndex, *, corpus_version: str, setti
         diagnostics["match_basis"] = refs[0].basis
     if len(candidates) != 1:
         reason = "excerpt_no_match" if not candidates else "excerpt_ambiguous"
+        if len(index.current_by_key.get(key, ())) == 1:
+            # Unique in the current build, ambiguous only because corpus_spans holds an older span with the same
+            # text (an edit that shifted offsets): D10's "previously exact-match citation into unresolved".
+            diagnostics["exact_match_regression"] = True
         return _unresolved(raw, reason), f"legacy_unresolved:{reason}", diagnostics
     ref = next(ref for ref in refs if ref.span_id == candidates[0])
     # Diagnostics only (spec 3.8 step 6): they never change the outcome.
@@ -271,12 +294,16 @@ def _process_row(raws: dict[str, str | None], mode: str, index: MatchIndex, tabl
             reason = outcome.split(":", 1)[1]
             stats["legacy_unresolved"] += 1
             stats["by_reason"][reason] += 1
-            if diagnostics.get("candidates") == 1:  # pragma: no cover - a unique match always migrates
+            if diagnostics.get("exact_match_regression"):
                 stats["exact_match_regressions"] += 1
             if isinstance(value, dict):
                 for old in (value.get("span_id"), value.get("chunk_id")):
                     if isinstance(old, str) and old:
                         unresolved_ids.add(old)
+        elif outcome == "migrated_unresolvable":
+            # Counted as migrated (it is not rewritten) and as a regression: it no longer resolves.
+            stats["already_migrated"] += 1
+            stats["exact_match_regressions"] += 1
         elif outcome == "already_unresolved":
             stats["legacy_unresolved"] += 1
             reason = value.get("unresolved_reason") if isinstance(value, dict) else None
@@ -431,21 +458,57 @@ def _totals(report: dict) -> dict:
     }
 
 
+def _share_limit(rule: Mapping[str, Any], key: str) -> float | None:
+    value = rule.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= float(value) <= 1.0:
+        raise ValueError(f"legacy_citations.{key} must be null or a number in [0, 1]")
+    return float(value)
+
+
 def _threshold(report: dict, package: ConfigPackage, mode: str) -> dict:
+    """The D-30 comparison (plan Phase 2 L: "stop if unresolved citations exceed the OPEN DECISION threshold").
+
+    Every limit comes from the configuration package (legacy_citations), so ratifying D-30 is a configuration change:
+    - native: the share of Phase 2 citations that do not resolve may not exceed max_unresolved_share_native (0.0);
+    - legacy: when max_unresolved_share_legacy is a number, the unresolved share of legacy citations may not exceed
+      it, measured by legacy_share_statistic ("point": the observed share; "wilson95_upper": its Wilson 95% upper
+      bound); null leaves the share reported and labelled but not gated (D-30 open).
+    """
     rule = package.legacy_citations
     totals = report["totals"]
     stop_reasons = []
-    if totals["native_unresolved"] > 0:
-        stop_reasons.append("a citation created by the Phase 2 pipeline does not resolve (D-30: native threshold 0)")
+    native_limit = _share_limit(rule, "max_unresolved_share_native")
+    native_limit = 0.0 if native_limit is None else native_limit
+    native_share = totals["native_unresolved"] / totals["native_citations"] if totals["native_citations"] else 0.0
+    if totals["native_unresolved"] > 0 and native_share > native_limit:
+        stop_reasons.append(
+            f"a citation created by the Phase 2 pipeline does not resolve (D-30: native share {native_share:.6f} "
+            f"exceeds {native_limit})"
+        )
+    legacy_limit = _share_limit(rule, "max_unresolved_share_legacy")
+    statistic = rule.get("legacy_share_statistic", "point")
+    if statistic not in {"point", "wilson95_upper"}:
+        raise ValueError("legacy_citations.legacy_share_statistic must be 'point' or 'wilson95_upper'")
+    observed = None
+    if totals["legacy_citations"]:
+        observed = totals["unresolved_share"] if statistic == "point" else totals["unresolved_share_wilson95"][1]
+    if legacy_limit is not None and observed is not None and observed > legacy_limit:
+        stop_reasons.append(f"legacy unresolved share {observed} ({statistic}) exceeds the D-30 legacy threshold {legacy_limit}")
     if rule.get("stop_on_exact_match_regression", True) and totals["exact_match_regressions"] > 0:
-        stop_reasons.append("a previously exact-match citation would become unresolved (D-30)")
+        stop_reasons.append("a previously exact-match citation would become or has become unresolved (D-30, D10)")
     if mode == "apply" and rule.get("stop_on_non_canonical_row_in_apply", True) and totals["rows_skipped_non_canonical"] > 0:
         stop_reasons.append("rows whose stored JSON is not canonical were skipped, so the run is not fully reversible")
     return {
         "decision": rule.get("decision", "D-30"),
         "status": rule.get("status", "provisional"),
-        "max_unresolved_share_native": rule.get("max_unresolved_share_native", 0.0),
-        "max_unresolved_share_legacy": rule.get("max_unresolved_share_legacy"),
+        "max_unresolved_share_native": native_limit,
+        "native_unresolved_share": round(native_share, 6),
+        "max_unresolved_share_legacy": legacy_limit,
+        "legacy_share_statistic": statistic,
+        "legacy_share_observed": observed,
+        "legacy_gated": legacy_limit is not None,
         "result": "stop" if stop_reasons else "pass",
         "stop_reasons": stop_reasons,
     }

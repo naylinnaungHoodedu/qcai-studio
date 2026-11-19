@@ -241,6 +241,7 @@ def compute(workdir: Path) -> dict:
         record_configurations.append({
             "name": config.name,
             "description": config.description,
+            "corpus_version": config.corpus_version,
             "index_version": config.index_version,
             "entries": config.entries,
             "legacy": {"algorithm": LEGACY_ALGORITHM, "recall_at_5": legacy, "learner_questions_recall_at_5": legacy_lq},

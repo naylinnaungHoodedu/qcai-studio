@@ -45,6 +45,11 @@ Status: accepted for Phase 2 engineering; the thresholds are **provisional until
    - It covers two configurations: the governed build as configured, and every public-plane item approved.
    - AC-2-5's baseline is the frozen pre-migration search, run in the same run (conflict 15).
 
+### Provisional deviations from plan 11.3 (need Principal Investigator or Research Lead ratification)
+These are engineering defaults applied under P1-D-18; they depart from the plan's text, so an engineering decision alone does not settle them. They are recorded in configuration package v1 (`owner_decisions.PLAN-11.3`, `ratified: false`).
+- **No stemming.** Plan 11.3 asks for "a stemmed, stopword-filtered BM25-style index". Package v1 sets `stemmer: "none"`: an S-stemmer raised out-of-scope leakage (all-approved maximum 8.2) (spec conflict 5).
+- **The margin labels; it does not test a runner-up.** Plan 11.3 asks for "a sufficiency gate (floor plus runner-up margin) before any generator call". The margin marks `near_floor` results (floor ≤ score < floor + margin, D6 and plan V1.5) and drops none; there is no runner-up comparison (spec conflict 4; Phase 4, DI-28).
+
 ### D-17: the long-term public corpus model (hold H5, "ADR revision")
 - **Provisional choice:** option (a), "interim, migrate by Phase 11", the plan's 18.3 recommendation. It was applied under P1-D-18 (owner delegation, 2026-11-19) and is **provisional, pending ratification**.
 - **Interim model:** a manifest-governed public plane (`corpus/public/manifest.json`, schema 2.0, generated from disk). Assets stay in the repository and Git LFS until the Phase 11 media move.
@@ -53,7 +58,7 @@ Status: accepted for Phase 2 engineering; the thresholds are **provisional until
 ### Consequences
 - Search scores change scale under `bm25f-v1` (development only by default). Under `p1-floor` they are unchanged.
 - `chunk_id` becomes the span id, a new string format with the same field.
-- **Conflict 29:** approving any document while `p1-floor` is the default loses recall, because chapter summaries are excluded (all-approved recall 118 against 129 before migration). That approval is a recorded stop condition. It needs the D-05 gate switch, or recalibration.
+- **Conflict 29:** approving any document while `p1-floor` is the default loses recall, because chapter summaries are excluded (all-approved recall 118 against 129 before migration; all assets 118 against 130 unfloored). That approval is a stop condition (plan Phase 2 L), **enforced in code**: outside development, start-up and `validate_corpus.py --check-recall-stop` refuse document spans under `p1-floor` unless the owner override `ALLOW_P1_FLOOR_WITH_DOCUMENTS` is set, which logs a `config.override` event. It needs the D-05 gate switch, or recalibration.
 - **Residual risks:**
   - The learner-question constraint has zero slack in both configurations.
   - `coverage-v1` and the framing stopwords were designed with the whole repository fixture in view.
