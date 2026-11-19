@@ -18,9 +18,41 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -r apps/api/requirements.txt pip-audit
       - run: python -m pytest -q -m "not release_artifacts" apps/api/tests evaluation/tests
-      - run: python scripts/validate_corpus.py --check-public-assets
+      # --check-recall-stop: plan Phase 2 L, spec conflict 29 (no approved document under the p1-floor gate).
+      - run: python scripts/validate_corpus.py --check-public-assets --check-recall-stop
       - run: python scripts/validate_lqs.py --allow-draft
+      # Phase 2 (corpus, span identity, retrieval integrity). The checkout has no LFS content, so video hashes are
+      # checked through their LFS pointer oids, which are the content sha256 (AC-2-6).
+      - run: python scripts/config_package.py --check
+      - run: python scripts/generate_manifest.py --check
+      - run: python scripts/validate_corpus.py --check-hashes --check-near-duplicates
+      - run: python scripts/calibrate_abstention.py --check docs/evaluation/phase2/calibration_record_v1.json
+      # AC-2-7 path scans of the tree and of each image's build context (a proxy for the image). No licensed-passage
+      # fingerprints reach CI (D-14) and no image or release is built here, so the report's ac_2_7 block says
+      # "partial": this run does not evidence AC-2-7 in full. The exit-gate run adds --image-tar, --release-zip,
+      # --fingerprints and --require-ac-2-7 (infra/cloudrun/deployment.md).
+      - run: python scripts/scan_boundary.py --repo --docker-context apps/api/Dockerfile:. --docker-context apps/frontend/Dockerfile:apps/frontend --report boundary-scan.json
+      - if: always()
+        run: cat boundary-scan.json || true
       - run: pip-audit -r apps/api/requirements.txt
+
+  # Task 2.8 / AC-2-7, path half over a BUILT image (not only its build context): build the API image exactly as
+  # Cloud Build does (apps/api/Dockerfile, repository root as context), then scan every layer of `docker save`.
+  # Nothing is pushed or deployed. The passage half still needs the private-plane fingerprints (D-14).
+  api-image-boundary-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r apps/api/requirements.txt
+      - run: docker build -f apps/api/Dockerfile --build-arg GIT_SHA=${{ github.sha }} -t qcai-api-scan:ci .
+      - run: docker save qcai-api-scan:ci -o api-image.tar
+      - run: python scripts/scan_boundary.py --image-tar api-image.tar --report image-boundary-scan.json
+      - if: always()
+        run: cat image-boundary-scan.json || true
 
   # Task 1.10 (R-52): the API suite and the schema checks against PostgreSQL 16, the Cloud SQL major version.
   # The service container is disposable; conftest uses TEST_DATABASE_URL and never an ambient DATABASE_URL.
@@ -85,5 +117,10 @@ jobs:
           python-version: "3.13"
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -r apps/api/requirements.txt
+      # The packager excludes private-plane, licensed and secret-like paths and scans its own bundles; this step
+      # records the release scan as CI evidence (task 2.8: "licensed-passage scans of images and releases").
       - run: python tools/package_release.py
+      - run: python scripts/scan_boundary.py --release-zip dist/release/qcai-studio-v1.0.0-part1-app-docs-media.zip --release-zip dist/release/qcai-studio-v1.0.0-part2-hydrated-media.zip --report release-boundary-scan.json
+      - if: always()
+        run: cat release-boundary-scan.json || true
       - run: python -m pytest -q -m release_artifacts apps/api/tests/test_deployment_artifacts.py

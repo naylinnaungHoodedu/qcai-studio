@@ -14,6 +14,8 @@ from app.db_models import TutorTurn
 from app.main import app
 from app.schemas import AssistantChatRequest, AssistantChatResponse, Citation, LearnerRecordOperationInput
 from app.services.learner_record import apply_learner_record_operations, read_learner_record
+from app.services.provenance import native_citation
+from app.services.store import get_course_store
 from app.services.tutor_orchestrator import TutorOrchestrator
 
 
@@ -76,20 +78,16 @@ def test_learner_record_rejects_payload_mutation_for_an_existing_operation_id():
 
 
 def test_persistent_tutor_stores_resolved_follow_up_and_claim_provenance():
+    # Phase 2: the stub cites a real document span the way the pipeline does, so the claim cites its span id.
+    store = get_course_store()
+    hit = next(result for result in store.search("Why does routing depth matter?", top_k=8) if result.source_kind == "document")
+    cited = native_citation(hit, corpus_version=store.corpus_version, settings=Settings())
+
     class StubAssistant:
         def chat(self, _message: str, **_kwargs):
             return AssistantChatResponse(
                 answer="unused local provider answer",
-                citations=[
-                    Citation(
-                        chunk_id="routing-span-v1",
-                        source_title="Routing source",
-                        source_kind="document",
-                        section_title="Routing overhead",
-                        excerpt="Routing overhead grows when constrained hardware connectivity forces additional swap operations.",
-                        source_filename="routing.docx",
-                    )
-                ],
+                citations=[cited],
                 retrieval_mode="lexical",
                 provider="local-grounded-fallback",
                 model="test-model",
@@ -111,11 +109,12 @@ def test_persistent_tutor_stores_resolved_follow_up_and_claim_provenance():
         assert first.decision == "answer"
         assert first.grounded is False
         assert "unused local provider answer" not in first.answer
-        assert "Routing overhead grows when constrained hardware connectivity" in first.answer
-        assert first.claims and first.claims[0].cited_span_ids == ["routing-span-v1"]
+        assert " ".join(cited.excerpt.split()) in first.answer
+        assert first.claims and first.claims[0].cited_span_ids == [cited.span_id]
         persisted = db.scalars(select(TutorTurn).where(TutorTurn.id == second.turn_id)).one()
         assert "Previous question: Why does routing overhead matter?" in persisted.resolved_query
         assert persisted.policy_version == "cs595-v1"
+        assert persisted.citations and persisted.citations[0]["span_id"] == cited.span_id
 
 
 def test_tutor_delivers_no_generated_text_and_passes_no_learner_state():

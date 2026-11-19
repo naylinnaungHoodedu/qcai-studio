@@ -1,15 +1,29 @@
+"""Retrieval over the Phase 2 span index (plan Phase 2 task 2.5; Phase 2 spec 4.14).
+
+Lexical retrieval is the evidence path: CourseStore.evaluate with the active gate (p1-floor or bm25f-v1). The
+semantic (Pinecone) backend is OFF unless SEMANTIC_RETRIEVAL_ENABLED, whatever keys are set, and even then only
+once it is aligned: its vector ids are span ids and the namespace holds exactly one vector per index entry.
+Every semantic result is re-gated with the active gate before fusion, so hybrid fusion can never bypass the
+abstention floor (the latent hybrid bypass found on 2026-11-17). Nothing here takes a learner input.
+"""
+
 from __future__ import annotations
 
-import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
+import logging
+import time
 from typing import Any
 
 from langchain_openai import OpenAIEmbeddings
 
 from app.core.config import Settings
+from app.core.structured_logging import FIELDS
 from app.schemas import SearchResult
 from app.services.content_assembler import CourseStore
+from app.services.lexical_index import ScoredEntry
+from app.services.retrieval_metrics import record_decision
+from app.services.spans import SPAN_SCHEME
 
 try:
     from pinecone import Pinecone
@@ -21,13 +35,23 @@ else:  # pragma: no cover - exercised through mocked backends in tests.
 
 
 LOGGER = logging.getLogger(__name__)
+DECISION_LOGGER = logging.getLogger("qcai.retrieval")
 RRF_K = 60
+SEMANTIC_WEIGHT = 1.35
+LEXICAL_WEIGHT = 1.0
 
 
 @dataclass
 class RetrievalResponse:
     results: list[SearchResult]
     mode: str
+    abstained: bool = False
+    reason: str = "evidence"
+    gate: str = "p1-floor"
+    index_version: str = ""
+    floor: float = 0.0
+    margin: float = 0.0
+    near_floor: int = field(default=0)
 
 
 class PineconeSemanticBackend:
@@ -36,11 +60,14 @@ class PineconeSemanticBackend:
         self.settings = settings
         self.namespace = settings.pinecone_namespace
         self._sync_checked = False
+        # True only after sync_semantic_index saw one span-id vector per index entry ([R18]).
+        self.aligned = False
 
     @property
     def enabled(self) -> bool:
         return bool(
-            Pinecone
+            self.settings.semantic_retrieval_enabled
+            and Pinecone
             and self.settings.openai_api_key
             and self.settings.openai_embedding_model
             and self.settings.pinecone_api_key
@@ -64,28 +91,33 @@ class PineconeSemanticBackend:
     def _index(self):
         return self._client.Index(self.settings.pinecone_index)
 
-    def ensure_index_synced(self, refresh: bool = False) -> None:
+    def ensure_index_synced(self, refresh: bool = False) -> bool:
+        """Upsert span-id vectors when needed; returns whether the namespace count equals the entry count."""
         if not self.enabled:
-            return
+            self.aligned = False
+            return False
         if self._sync_checked and not refresh:
-            return
-
+            return self.aligned
+        expected = len(self.store.chunks)
         namespace_vector_count = self._namespace_vector_count()
-        if not refresh and namespace_vector_count == len(self.store.chunks) and namespace_vector_count > 0:
-            self._sync_checked = True
-            return
-
-        if refresh:
-            self._index.delete(delete_all=True, namespace=self.namespace)
-
-        payloads = self._build_vector_payloads()
-        batch_size = max(1, self.settings.pinecone_upsert_batch_size)
-        for start in range(0, len(payloads), batch_size):
-            self._index.upsert(vectors=payloads[start : start + batch_size], namespace=self.namespace)
+        if refresh or namespace_vector_count != expected:
+            if namespace_vector_count:
+                self._index.delete(delete_all=True, namespace=self.namespace)
+            payloads = self._build_vector_payloads()
+            batch_size = max(1, self.settings.pinecone_upsert_batch_size)
+            for start in range(0, len(payloads), batch_size):
+                self._index.upsert(vectors=payloads[start : start + batch_size], namespace=self.namespace)
+            namespace_vector_count = self._namespace_vector_count()
+        self.aligned = expected > 0 and namespace_vector_count == expected
+        if not self.aligned:
+            LOGGER.warning(
+                "Semantic index is not aligned with the span index; retrieval stays lexical",
+                extra={FIELDS: {"event": "semantic.misaligned", "expected": expected, "found": namespace_vector_count}},
+            )
         self._sync_checked = True
+        return self.aligned
 
     def search(self, query: str, lesson_slug: str | None = None, top_k: int = 8) -> list[SearchResult]:
-        self.ensure_index_synced()
         query_vector = self._embeddings.embed_query(query)
         kwargs: dict[str, Any] = {
             "vector": query_vector,
@@ -94,36 +126,29 @@ class PineconeSemanticBackend:
             "namespace": self.namespace,
         }
         if lesson_slug:
-            kwargs["filter"] = {"lesson_slug": {"$eq": lesson_slug}}
-
+            kwargs["filter"] = {"lesson_slugs": {"$in": [lesson_slug]}}
         raw_response = self._index.query(**kwargs)
         return self._matches_to_results(raw_response)
 
     def _build_vector_payloads(self) -> list[dict[str, Any]]:
         if not self.store.chunks:
             return []
-
-        embeddings = self._embeddings.embed_documents([chunk.excerpt for chunk in self.store.chunks])
-        payloads: list[dict[str, Any]] = []
-        for chunk, vector in zip(self.store.chunks, embeddings, strict=True):
-            payloads.append(
-                {
-                    "id": chunk.chunk_id,
-                    "values": vector,
-                    "metadata": {
-                        "chunk_id": chunk.chunk_id,
-                        "title": chunk.title,
-                        "source_kind": chunk.source_kind,
-                        "source_title": chunk.source_title,
-                        "excerpt": chunk.excerpt,
-                        "lesson_slug": chunk.lesson_slug,
-                        "score_boost": chunk.score_boost,
-                        "timestamp_label": chunk.timestamp_label,
-                        "source_filename": chunk.source_filename or "",
-                    },
-                }
-            )
-        return payloads
+        embeddings = self._embeddings.embed_documents([entry.excerpt for entry in self.store.chunks])
+        # Ids are span ids; metadata carries identity only, no excerpt or title text.
+        return [
+            {
+                "id": entry.span_id,
+                "values": vector,
+                "metadata": {
+                    "span_id": entry.span_id,
+                    "span_scheme": SPAN_SCHEME,
+                    "item_id": entry.item_id,
+                    "item_version": entry.item_version,
+                    "lesson_slugs": list(entry.lesson_slugs),
+                },
+            }
+            for entry, vector in zip(self.store.chunks, embeddings, strict=True)
+        ]
 
     def _namespace_vector_count(self) -> int:
         stats = self._index.describe_index_stats()
@@ -139,23 +164,16 @@ class PineconeSemanticBackend:
         raw_matches = raw_response.get("matches") if isinstance(raw_response, dict) else getattr(raw_response, "matches", [])
         results: list[SearchResult] = []
         for match in raw_matches or []:
-            metadata = match.get("metadata") if isinstance(match, dict) else getattr(match, "metadata", {}) or {}
+            metadata = (match.get("metadata") if isinstance(match, dict) else getattr(match, "metadata", {})) or {}
+            span_id = match.get("id") if isinstance(match, dict) else getattr(match, "id", None)
+            if metadata.get("span_scheme") != SPAN_SCHEME:
+                continue
+            entry = self.store.entry(span_id or "")
+            if entry is None:
+                continue
             raw_score = match.get("score") if isinstance(match, dict) else getattr(match, "score", 0.0)
-            chunk_id = match.get("id") if isinstance(match, dict) else getattr(match, "id", metadata.get("chunk_id"))
-            score_boost = float(metadata.get("score_boost", 0.0) or 0.0)
-            results.append(
-                SearchResult(
-                    chunk_id=chunk_id or metadata.get("chunk_id", "semantic-result"),
-                    title=metadata.get("title", "Retrieved context"),
-                    source_kind=metadata.get("source_kind", "document"),
-                    source_title=metadata.get("source_title", metadata.get("title", "Retrieved context")),
-                    excerpt=metadata.get("excerpt", ""),
-                    lesson_slug=metadata.get("lesson_slug"),
-                    score=round(float(raw_score or 0.0) + score_boost, 6),
-                    timestamp_label=metadata.get("timestamp_label"),
-                    source_filename=metadata.get("source_filename") or None,
-                )
-            )
+            # Built from the in-memory entry only; the score is replaced by the gate's evidence score on fusion.
+            results.append(self.store.to_search_result(ScoredEntry(entry, float(raw_score or 0.0), 0, False), None))
         return results
 
 
@@ -167,31 +185,85 @@ class RetrievalEngine:
 
     @property
     def semantic_enabled(self) -> bool:
-        return self._semantic_backend.enabled
+        backend = self._semantic_backend
+        return bool(self.settings.semantic_retrieval_enabled and backend.enabled and getattr(backend, "aligned", False))
 
     def sync_semantic_index(self, refresh: bool = False) -> bool:
-        if not self.semantic_enabled:
+        """The one place that computes alignment ([R18]); True when hybrid retrieval may run."""
+        backend = self._semantic_backend
+        if not (self.settings.semantic_retrieval_enabled and backend.enabled):
             return False
-        self._semantic_backend.ensure_index_synced(refresh=refresh)
-        return True
+        backend.ensure_index_synced(refresh=refresh)
+        return self.semantic_enabled
 
-    def search(self, query: str, lesson_slug: str | None = None, top_k: int = 8) -> RetrievalResponse:
-        lexical_results = self.store.search(query, lesson_slug=lesson_slug, top_k=max(top_k * 2, top_k))
+    def search(self, query: str, lesson_slug: str | None = None, top_k: int = 8, *, surface: str = "search") -> RetrievalResponse:
+        started = time.perf_counter()
+        response = self._search(query, lesson_slug, top_k)
+        latency_ms = (time.perf_counter() - started) * 1000
+        record_decision(surface, response.mode, response.gate, response.abstained, response.reason, latency_ms)
+        DECISION_LOGGER.info(
+            "Retrieval decision",
+            extra={
+                FIELDS: {
+                    "event": "retrieval.decision",
+                    "surface": surface,
+                    "mode": response.mode,
+                    "gate": response.gate,
+                    "abstained": response.abstained,
+                    "reason": response.reason,
+                    "results": len(response.results),
+                    "near_floor": response.near_floor,
+                    "top_score": response.results[0].score if response.results else None,
+                    "latency_ms": round(latency_ms, 3),
+                    "index_version": response.index_version,
+                    "threshold_version": self.store.index.threshold_version,
+                }
+            },
+        )
+        return response
+
+    def _search(self, query: str, lesson_slug: str | None, top_k: int) -> RetrievalResponse:
+        decision = self.store.evaluate(query, lesson_slug=lesson_slug, top_k=max(top_k * 2, top_k))
+        lexical = [self.store.to_search_result(scored, lesson_slug) for scored in decision.results]
+        common = {"gate": decision.gate, "index_version": self.store.index_version, "floor": decision.floor, "margin": decision.margin}
+
+        def lexical_response(mode: str) -> RetrievalResponse:
+            results = lexical[:top_k]
+            return RetrievalResponse(
+                results=results,
+                mode=mode,
+                abstained=not results,
+                reason=decision.reason if not results else "evidence",
+                near_floor=sum(1 for result in results if result.near_floor),
+                **common,
+            )
+
         if not self.semantic_enabled:
-            return RetrievalResponse(results=lexical_results[:top_k], mode="lexical")
-
+            return lexical_response("lexical")
         try:
-            semantic_results = self._semantic_backend.search(query, lesson_slug=lesson_slug, top_k=max(top_k * 2, top_k))
+            semantic_raw = self._semantic_backend.search(query, lesson_slug=lesson_slug, top_k=max(top_k * 2, top_k))
         except Exception as exc:
             LOGGER.warning("Semantic retrieval failed; falling back to lexical search: %s", exc)
-            return RetrievalResponse(results=lexical_results[:top_k], mode="lexical-fallback")
-
-        if not semantic_results:
-            return RetrievalResponse(results=lexical_results[:top_k], mode="lexical-fallback")
-
+            return lexical_response("lexical-fallback")
+        semantic: list[SearchResult] = []
+        for result in semantic_raw:
+            entry = self.store.entry(result.chunk_id)
+            if entry is None:  # not a current span id: dropped
+                continue
+            gated = self.store.index.gate_entry(query, entry, lesson_slug)
+            if gated is None:  # the floor applies to every result, whatever the mode
+                continue
+            semantic.append(self.store.to_search_result(gated, lesson_slug))
+        if not semantic:
+            return lexical_response("lexical-fallback")
+        fused = self._reciprocal_rank_fusion(semantic, lexical, top_k=top_k)
         return RetrievalResponse(
-            results=self._reciprocal_rank_fusion(semantic_results, lexical_results, top_k=top_k),
+            results=fused,
             mode="hybrid-pinecone",
+            abstained=not fused,
+            reason="evidence" if fused else decision.reason,
+            near_floor=sum(1 for result in fused if result.near_floor),
+            **common,
         )
 
     def _reciprocal_rank_fusion(
@@ -202,18 +274,14 @@ class RetrievalEngine:
     ) -> list[SearchResult]:
         fused_scores: dict[str, float] = {}
         canonical_results: dict[str, SearchResult] = {}
-
-        for weight, results in ((1.35, semantic_results), (1.0, lexical_results)):
+        for weight, results in ((SEMANTIC_WEIGHT, semantic_results), (LEXICAL_WEIGHT, lexical_results)):
             for rank, result in enumerate(results, start=1):
                 fused_scores[result.chunk_id] = fused_scores.get(result.chunk_id, 0.0) + (weight / (RRF_K + rank))
                 canonical_results.setdefault(result.chunk_id, result)
-
         ranked = sorted(
             canonical_results.values(),
-            key=lambda result: (fused_scores.get(result.chunk_id, 0.0), result.score),
+            key=lambda result: (fused_scores.get(result.chunk_id, 0.0), result.score, result.chunk_id),
             reverse=True,
         )
-        return [
-            result.model_copy(update={"score": round(fused_scores[result.chunk_id], 6)})
-            for result in ranked[:top_k]
-        ]
+        # The score stays the active gate's evidence score; fusion only orders.
+        return ranked[:top_k]

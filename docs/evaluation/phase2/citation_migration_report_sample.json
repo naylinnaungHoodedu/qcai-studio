@@ -1,0 +1,135 @@
+{
+  "report": "qcai-citation-migration",
+  "format_version": 1,
+  "mode": "dry-run",
+  "generated_at": "2026-11-19T00:00:00Z",
+  "commit": "synthetic-sample",
+  "database_dialect": "sqlite",
+  "span_scheme": "span-v2",
+  "corpus_version": "corpus-c658893abb6440dd",
+  "config_package": {
+    "version": "1.0.0",
+    "sha256": "060c59f2ac94dcd20b16f9e7bd3e21128b952b067135ac29a91821b02bc04403"
+  },
+  "span_sources": {
+    "memory_spans": 1071,
+    "database_rows": 0,
+    "memory_items": [
+      "advanced_programming_and_software_development_for_hardware-constrained_learning_for_quantum_computing_and_artificial_intelligence-document",
+      "analyzing-quantum-computing-and-ai-paper-2025",
+      "authored-curriculum",
+      "hardware-constrained_learning_for_quantum_computing_and_artificial_intelligence_models",
+      "intermediate_quantum_programming_for_hardware-constrained_learning_for_quantum_computing_and_artificial_intelligence-document",
+      "introduction_to_hardware-constrained_learning_for_quantum_computing_and_artificial_intelligence-document",
+      "module2_routing-graph-shrinking-and-logistics-under-hardware-constraints-document",
+      "module3_quantum-vision-gnn-and-few-shot-hybrid-architectures-document",
+      "module4_expressive-bottlenecks-compression-language-and-explanation-document",
+      "module6_from-algorithmic-novelty-to-sustainable-hybrid-systems-document",
+      "quantum-computing-ai-research-synthesis-2026",
+      "quantum-computing-and-artificial-intelligence-industry-use-cases",
+      "quantum_finance_programming_and_optimization_for_hardware-constrained_learning_for_quantum_computing_and_artificial_intelligence-document"
+    ]
+  },
+  "tables": {
+    "qa_interactions": {
+      "rows_scanned": 5,
+      "rows_with_citations": 5,
+      "rows_changed": 5,
+      "rows_skipped_null": 0,
+      "rows_skipped_non_canonical": 0,
+      "rows_cas_conflict": 0,
+      "citations": {
+        "total": 15,
+        "native_v2": 0,
+        "native_unresolved": 0,
+        "already_migrated": 0,
+        "migrated": 11,
+        "legacy_unresolved": 4,
+        "by_reason": {
+          "excerpt_no_match": 1,
+          "excerpt_ambiguous": 0,
+          "chapter_summary_excluded": 3,
+          "missing_excerpt": 0,
+          "invalid_shape": 0
+        },
+        "diagnostics": {
+          "key_lexical": 11,
+          "key_semantic": 0,
+          "title_equal": 0,
+          "title_differs": 11,
+          "containment_also_in_other_span": 0,
+          "v1_content_hash_agrees": 0
+        },
+        "exact_match_regressions": 0,
+        "restored": 0
+      }
+    },
+    "tutor_turns": {
+      "rows_scanned": 1,
+      "rows_with_citations": 1,
+      "rows_changed": 1,
+      "rows_skipped_null": 0,
+      "rows_skipped_non_canonical": 0,
+      "rows_cas_conflict": 0,
+      "citations": {
+        "total": 2,
+        "native_v2": 0,
+        "native_unresolved": 0,
+        "already_migrated": 0,
+        "migrated": 2,
+        "legacy_unresolved": 0,
+        "by_reason": {
+          "excerpt_no_match": 0,
+          "excerpt_ambiguous": 0,
+          "chapter_summary_excluded": 0,
+          "missing_excerpt": 0,
+          "invalid_shape": 0
+        },
+        "diagnostics": {
+          "key_lexical": 2,
+          "key_semantic": 0,
+          "title_equal": 0,
+          "title_differs": 2,
+          "containment_also_in_other_span": 0,
+          "v1_content_hash_agrees": 0
+        },
+        "exact_match_regressions": 0,
+        "restored": 0
+      },
+      "claims": {
+        "total": 1,
+        "remapped": 1,
+        "bound_to_unresolved": 0,
+        "restored": 0
+      }
+    }
+  },
+  "totals": {
+    "legacy_citations": 17,
+    "migrated": 13,
+    "already_migrated": 0,
+    "legacy_unresolved": 4,
+    "unresolved_share": 0.235294,
+    "unresolved_share_wilson95": [
+      0.09555,
+      0.472618
+    ],
+    "native_citations": 0,
+    "native_unresolved": 0,
+    "exact_match_regressions": 0,
+    "rows_skipped_non_canonical": 0
+  },
+  "threshold": {
+    "decision": "D-30",
+    "status": "provisional",
+    "max_unresolved_share_native": 0.0,
+    "native_unresolved_share": 0.0,
+    "max_unresolved_share_legacy": null,
+    "legacy_share_statistic": "point",
+    "legacy_share_observed": 0.235294,
+    "legacy_gated": false,
+    "result": "pass",
+    "stop_reasons": []
+  },
+  "note": "SYNTHETIC: generated from made-up rows in a temporary SQLite database; no production or learner data."
+}

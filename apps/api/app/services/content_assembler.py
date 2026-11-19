@@ -1,12 +1,14 @@
-from dataclasses import dataclass, field
+import hashlib
+import logging
 from pathlib import Path
 from typing import Any
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-
 from app.core.config import Settings
-from app.core.corpus_governance import get_corpus_registry
+from app.core.config_package import canonical_sha256, get_config_package
+from app.core.corpus_governance import CorpusGovernanceError, CorpusRegistry, get_corpus_registry
+from app.core.data_planes import assert_public_plane_path
 from app.core.source_assets import source_asset_id
+from app.core.structured_logging import FIELDS
 from app.schemas import (
     CourseOverview,
     Flashcard,
@@ -19,8 +21,32 @@ from app.schemas import (
     SourceAsset,
 )
 from app.services.docx_parser import SectionRecord, parse_docx_sections
+from app.services.lexical_index import IndexEntry, LexicalIndex, RetrievalDecision, ScoredEntry
+# The Phase 1 score floor moved to retrieval_p1 (Phase 2); these names stay importable from here.
+from app.services.retrieval_p1 import (  # noqa: F401
+    QUERY_STOPWORDS,
+    SCORE_FLOOR,
+    SCORE_FLOOR_VERSION,
+    IndexedChunk,
+    _floor_score,
+    _tokenize,
+)
+from app.services.spans import (
+    AUTHORED_ITEM_ID,
+    CanonicalItem,
+    SpanRecord,
+    SpanRegistry,
+    authored_sha256,
+    build_spans,
+    canonical_authored,
+    canonical_document,
+    check_library_versions,
+    make_splitter,
+)
 from app.services.text_utils import lead_sentence, truncate_display_excerpt
 from app.services.transcripts import load_video_chapters
+
+LOGGER = logging.getLogger("qcai.content")
 
 
 DOCUMENT_TITLE_MAP = {
@@ -53,49 +79,6 @@ ASSET_TITLE_MAP = {
     "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4": "Advanced Quantum Software Development for Hardware-Constrained QC+AI",
     "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.mp4": "Quantum Finance Programming and Optimization for Hardware-Constrained QC+AI",
 }
-
-# Score floor (plan Action 27, R-15, AC-1-11), approved as P1-D-04; evidence in BEP-1/27_score_floor/PROPOSAL.md.
-# A passage is returned only when its floor score reaches SCORE_FLOOR. The floor score counts whole-word matches
-# of the question's non-stopword terms (3 per heading match, 2 per text match) plus the phrase bonus, and leaves
-# out the module boost, so one shared word (at most 5) never passes. Ranking still uses the full score.
-# Phase 2 (tasks 2.5-2.6) replaces this with a calibrated BM25 floor and margin.
-SCORE_FLOOR_VERSION = "score-floor-p1-v1"
-SCORE_FLOOR = 6
-QUERY_STOPWORDS = frozenset(
-    """
-    about above after again all also always and any anyone anything are aren because been before being below
-    between both but can can't could describe did didn does doesn doesn't doing don don't done down during each
-    even ever everything explain few for from further get gets give got had has have hello her here hers hey him
-    his how into isn isn't its itself just kind know let lets like made make makes many may mean means meant
-    might more most much must myself need never nor not nothing now off often okay once one ones only onto other
-    our ours ourselves out over own per please really said same say shall she should some someone something
-    still such tell than thank thanks that the their theirs them themselves then there these they thing things
-    think this those through too under until upon use used uses using very via want was way ways well were what
-    when where which while who whom whose why will with without won work works would yes yet you your yours
-    yourself
-    """.split()
-)
-
-
-@dataclass
-class IndexedChunk:
-    chunk_id: str
-    title: str
-    source_kind: str
-    source_title: str
-    excerpt: str
-    lesson_slug: str | None
-    score_boost: float
-    timestamp_label: str | None = None
-    # Set only for spans of a source document; video chapters and authored notes are not quotable spans.
-    source_filename: str | None = None
-    title_words: frozenset[str] = field(init=False, repr=False)
-    excerpt_words: frozenset[str] = field(init=False, repr=False)
-
-    def __post_init__(self) -> None:
-        self.title_words = frozenset(_tokenize(self.title))
-        self.excerpt_words = frozenset(_tokenize(self.excerpt))
-
 
 def _lesson_blueprint(
     slug: str,
@@ -922,30 +905,97 @@ MODULE_BLUEPRINTS: list[dict[str, Any]] = [
 
 
 class CourseStore:
+    """The course: lessons from MODULE_BLUEPRINTS plus the evidence index over span records (Phase 2).
+
+    Only approved, bound, public-plane assets feed lessons and the index (Decision P1-D-07, D-31; tasks 2.8, 2.9).
+    The index holds one entry per span bound to at least one lesson (AC-2-1), never a video chapter summary (task
+    2.7); chapters stay lesson presentation, labelled curated_chapter_summary.
+    """
+
     def __init__(self, settings: Settings):
         self.settings = settings
-        self._splitter = RecursiveCharacterTextSplitter(chunk_size=700, chunk_overlap=120)
+        self.package = get_config_package(settings)
+        self._splitter = make_splitter(self.package)
         self.overview: CourseOverview | None = None
         self.modules: dict[str, ModuleSummary] = {}
         self.lessons: dict[str, LessonDetail] = {}
-        self.chunks: list[IndexedChunk] = []
+        self.chunks: list[IndexEntry] = []
+        self.entry_by_span_id: dict[str, IndexEntry] = {}
+        self.items: dict[str, CanonicalItem] = {}
+        self.span_registry = SpanRegistry()
+        self.duplicate_span_ids = 0
+        self.gate: str = settings.retrieval_gate or "p1-floor"
+        self.corpus_version = ""
+        self.index_version = ""
         self.build()
 
+    def _document_version(self, registry: CorpusRegistry, path: Path) -> str:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        computed = f"sha256:{digest[:16]}"
+        item = registry.item_for_filename(path.name) if registry.schema_version == "2.0" else None
+        if item is None or not item.sha256:
+            return computed
+        if item.sha256 != digest:
+            if self.settings.enforce_corpus_governance:
+                raise CorpusGovernanceError(f"manifest drift: {path.name} differs from its manifest sha256 (regenerate the manifest)")
+            LOGGER.warning("Source document differs from the manifest", extra={FIELDS: {"event": "corpus.drift", "item_id": item.item_id}})
+            return computed
+        return item.version
+
     def build(self) -> None:
-        # Only approved assets feed the course (Decision P1-D-07, D-31): an unapproved document contributes no
-        # section, excerpt or search chunk, and an unapproved video no chapter, transcript or listing.
-        registry = get_corpus_registry(self.settings)
-        documents = registry.served(self.settings.source_documents)
-        videos = registry.served(self.settings.source_videos)
-        sections = self._load_sections(documents)
+        settings = self.settings
+        check_library_versions(self.package)
+        registry = get_corpus_registry(settings)
+        documents = registry.served(settings.source_documents)
+        videos = registry.served(settings.source_videos)
         doc_assets = [self._build_source_asset(path, "document") for path in documents]
         video_assets = [self._build_source_asset(path, "video") for path in videos]
         assets = doc_assets + video_assets
+        # An unbound item (Q-10) or a private-plane one never reaches a lesson, the index or a quotation, in any
+        # mode; development still lists and serves the 2026 file as before (spec conflict 20).
+        bound_names = {path.name for path in [*documents, *videos] if registry.is_indexable(path.name)}
+        bound_assets = [asset for asset in assets if asset.filename in bound_names]
+        bound_video_assets = [asset for asset in video_assets if asset.filename in bound_names]
+
+        items: dict[str, CanonicalItem] = {}
+        records: list[SpanRecord] = []
+        sections: list[SectionRecord] = []
+        for path in documents:
+            if path.name not in bound_names or not path.exists():
+                continue
+            assert_public_plane_path(path, settings.project_root, self.package.boundary)
+            item_id = registry.span_item_id(path.name)
+            version = self._document_version(registry, path)
+            document_sections = parse_docx_sections(path)
+            title = DOCUMENT_TITLE_MAP.get(path.name, path.stem)
+            for section in document_sections:
+                section.source_title = title
+            item = canonical_document(path, item_id=item_id, item_version=version, source_title=title, sections=document_sections)
+            items[item_id] = item
+            records.extend(build_spans(item, self._splitter))
+            sections.extend(document_sections)
+
+        authored_version = "sha256:" + authored_sha256(MODULE_BLUEPRINTS)[:16]
+        manifest_authored = registry.authored_item
+        if manifest_authored is not None and manifest_authored.version != authored_version:
+            if settings.enforce_corpus_governance:
+                raise CorpusGovernanceError("manifest drift: the authored curriculum differs from the manifest (regenerate it)")
+            LOGGER.warning("Authored curriculum differs from the manifest", extra={FIELDS: {"event": "corpus.drift", "item_id": AUTHORED_ITEM_ID}})
+        authored_sections: dict[str, int] = {}
+        if manifest_authored is None or manifest_authored.bound:
+            authored = canonical_authored(MODULE_BLUEPRINTS, item_version=authored_version)
+            items[authored.item_id] = authored
+            records.extend(build_spans(authored, self._splitter))
+            authored_sections = {section.lesson_slug: section.ordinal for section in authored.sections if section.lesson_slug}
+        span_registry = SpanRegistry(records)
+        if span_registry.duplicate_ids and settings.enforce_corpus_governance:
+            raise CorpusGovernanceError(f"{span_registry.duplicate_ids} duplicate span ids in a governed build")
 
         modules: list[ModuleSummary] = []
         lessons: dict[str, LessonDetail] = {}
-        chunks: list[IndexedChunk] = []
-
+        attachments: dict[str, list[tuple[str, int]]] = {}
+        first_position: dict[str, int] = {}
+        lesson_position = 0
         for module_index, blueprint in enumerate(MODULE_BLUEPRINTS, start=1):
             lesson_slugs: list[str] = []
             for lesson_blueprint in _module_lessons(blueprint):
@@ -956,8 +1006,8 @@ class CourseStore:
                     lesson_blueprint.get("document_file"),
                 )
                 lesson_sections = self._build_lesson_sections(matched_sections)
-                video_asset = next((asset for asset in video_assets if asset.filename == lesson_blueprint["video_file"]), None)
-                chapters = load_video_chapters(self.settings.transcripts_dir, video_asset.filename) if video_asset else []
+                video_asset = next((asset for asset in bound_video_assets if asset.filename == lesson_blueprint["video_file"]), None)
+                chapters = load_video_chapters(settings.transcripts_dir, video_asset.filename) if video_asset else []
 
                 lesson = LessonDetail(
                     slug=lesson_slug,
@@ -970,7 +1020,7 @@ class CourseStore:
                     learner_questions=lesson_blueprint["learner_questions"],
                     sections=lesson_sections,
                     source_assets=self._collect_source_assets(
-                        assets,
+                        bound_assets,
                         matched_sections,
                         lesson_blueprint["video_file"],
                         lesson_blueprint.get("document_file"),
@@ -982,7 +1032,18 @@ class CourseStore:
                 )
                 lessons[lesson_slug] = lesson
                 lesson_slugs.append(lesson_slug)
-                chunks.extend(self._build_chunks(module_index, lesson, matched_sections))
+
+                lesson_spans: list[SpanRecord] = []
+                for section in matched_sections:
+                    lesson_spans.extend(span_registry.for_section(registry.span_item_id(section.source_filename), section.ordinal))
+                if not lesson_spans and lesson_slug in authored_sections:
+                    lesson_spans = span_registry.for_section(AUTHORED_ITEM_ID, authored_sections[lesson_slug])
+                for record in lesson_spans:
+                    bound = attachments.setdefault(record.span_id, [])
+                    if all(slug != lesson_slug for slug, _ in bound):
+                        bound.append((lesson_slug, module_index))
+                    first_position.setdefault(record.span_id, lesson_position)
+                lesson_position += 1
 
             modules.append(
                 ModuleSummary(
@@ -995,6 +1056,9 @@ class CourseStore:
                 )
             )
 
+        entries = [self._entry(span_registry.get(span_id), bound) for span_id, bound in attachments.items()]
+        entries.sort(key=lambda entry: (first_position[entry.span_id], entry.item_id, entry.start))
+
         self.overview = CourseOverview(
             id="qcai-hardware-aware-course",
             title="Quantum Computing and AI: Hardware-Constrained Hybrid Learning",
@@ -1005,7 +1069,85 @@ class CourseStore:
         self.modules = {module.slug: module for module in modules}
         self._populate_related_lessons(lessons)
         self.lessons = lessons
-        self.chunks = chunks
+        self.items = items
+        self.span_registry = span_registry
+        self.duplicate_span_ids = span_registry.duplicate_ids + (len(entries) - len({entry.span_id for entry in entries}))
+        self.chunks = entries
+        self.entry_by_span_id = {entry.span_id: entry for entry in entries}
+        self.gate = settings.retrieval_gate or "p1-floor"
+        self.index = LexicalIndex(entries, self.package.retrieval, self.package.abstention, gate=self.gate)
+        self.corpus_version = registry.corpus_version
+        self.index_version = "index-" + canonical_sha256(
+            {
+                "corpus_version": self.corpus_version,
+                "gate": self.gate,
+                "retrieval_sha256": self.package.retrieval_sha256,
+                "entries": sorted([[entry.span_id, sorted(entry.lesson_slugs)] for entry in entries]),
+            }
+        )[:16]
+
+    @staticmethod
+    def _entry(record: SpanRecord, bound: list[tuple[str, int]]) -> IndexEntry:
+        authored = record.item_kind == "authored"
+        return IndexEntry(
+            span_id=record.span_id,
+            item_id=record.item_id,
+            item_version=record.item_version,
+            item_kind=record.item_kind,
+            section_ordinal=record.section_ordinal,
+            start=record.start,
+            end=record.end,
+            content_hash=record.content_hash,
+            title=record.section_title,
+            source_kind="lesson" if authored else "document",
+            source_title=record.source_title,
+            excerpt=record.text,
+            source_filename=None if authored else record.source_filename,
+            lesson_slugs=tuple(slug for slug, _ in bound),
+            module_indexes=tuple(index for _, index in bound),
+            title_words=frozenset(_tokenize(record.section_title)),
+            excerpt_words=frozenset(_tokenize(record.text)),
+        )
+
+    def evaluate(self, query: str, lesson_slug: str | None = None, top_k: int = 8) -> RetrievalDecision:
+        return self.index.evaluate(query, lesson_slug=lesson_slug, top_k=top_k)
+
+    def search(self, query: str, lesson_slug: str | None = None, top_k: int = 8) -> list[SearchResult]:
+        decision = self.evaluate(query, lesson_slug=lesson_slug, top_k=top_k)
+        if decision.abstained:
+            return []
+        return [self.to_search_result(scored, lesson_slug) for scored in decision.results]
+
+    def entry(self, span_id: str) -> IndexEntry | None:
+        return self.entry_by_span_id.get(span_id)
+
+    def to_search_result(self, scored: ScoredEntry, lesson_slug: str | None) -> SearchResult:
+        entry = scored.entry
+        if lesson_slug:
+            shown_lesson = lesson_slug
+        elif self.gate == "p1-floor" and scored.lesson_slug:
+            shown_lesson = scored.lesson_slug
+        else:
+            shown_lesson = entry.lesson_slugs[0]
+        return SearchResult(
+            chunk_id=entry.span_id,
+            title=entry.title,
+            source_kind=entry.source_kind,
+            source_title=entry.source_title,
+            excerpt=truncate_display_excerpt(entry.excerpt, 320),
+            lesson_slug=shown_lesson,
+            score=round(scored.score, 3 if self.gate == "p1-floor" else 4),
+            timestamp_label=None,
+            source_filename=entry.source_filename,
+            span_id=entry.span_id,
+            item_id=entry.item_id,
+            item_version=entry.item_version,
+            start=entry.start,
+            end=entry.end,
+            content_hash=entry.content_hash,
+            lesson_slugs=list(entry.lesson_slugs),
+            near_floor=scored.near_floor if self.gate == "bm25f-v1" else False,
+        )
 
     def _build_source_asset(self, path: Path, kind: str) -> SourceAsset:
         asset_id = source_asset_id(path.name, kind)
@@ -1153,103 +1295,6 @@ class CourseStore:
             for index, item in enumerate(quiz_items, start=1)
         ]
 
-    def _build_chunks(self, module_index: int, lesson: LessonDetail, sections: list[SectionRecord]) -> list[IndexedChunk]:
-        chunks: list[IndexedChunk] = []
-        for section in sections:
-            text_chunks = self._splitter.split_text(section.body)
-            for index, excerpt in enumerate(text_chunks, start=1):
-                chunks.append(
-                    IndexedChunk(
-                        chunk_id=f"{lesson.slug}:{section.source_id}:{index}",
-                        title=section.heading,
-                        source_kind="document",
-                        source_title=section.source_title,
-                        excerpt=excerpt,
-                        lesson_slug=lesson.slug,
-                        score_boost=float(module_index),
-                        source_filename=section.source_filename or None,
-                    )
-                )
-        if lesson.video_asset:
-            for chapter in lesson.chapters:
-                chunks.append(
-                    IndexedChunk(
-                        chunk_id=f"{lesson.slug}:{lesson.video_asset.id}:{chapter.id}",
-                        title=chapter.title,
-                        source_kind="video",
-                        source_title=lesson.video_asset.title,
-                        excerpt=chapter.summary,
-                        lesson_slug=lesson.slug,
-                        score_boost=float(module_index) + 0.2,
-                        timestamp_label=_format_timestamp(chapter.timestamp_start),
-                    )
-                )
-        if not chunks:
-            chunks.extend(self._build_authored_lesson_chunks(module_index, lesson))
-        return chunks
-
-    def _build_authored_lesson_chunks(self, module_index: int, lesson: LessonDetail) -> list[IndexedChunk]:
-        authored_parts = [
-            lesson.summary,
-            "\n".join(f"Key idea: {idea}" for idea in lesson.key_ideas),
-            "\n".join(f"Key note: {note}" for note in lesson.key_notes),
-            "\n".join(f"Formula or diagram prompt: {formula}" for formula in lesson.formulas),
-            "\n".join(f"Learner question: {question}" for question in lesson.learner_questions),
-        ]
-        authored_text = "\n\n".join(part for part in authored_parts if part)
-        if not authored_text:
-            return []
-        return [
-            IndexedChunk(
-                chunk_id=f"{lesson.slug}:lesson-authored:{index}",
-                title=lesson.title,
-                source_kind="lesson",
-                source_title=lesson.title,
-                excerpt=excerpt,
-                lesson_slug=lesson.slug,
-                score_boost=float(module_index) + 0.1,
-            )
-            for index, excerpt in enumerate(self._splitter.split_text(authored_text), start=1)
-        ]
-
-    def search(self, query: str, lesson_slug: str | None = None, top_k: int = 8) -> list[SearchResult]:
-        query_terms = {token for token in _tokenize(query) if token}
-        floor_terms = query_terms - QUERY_STOPWORDS
-        raw_query = query.strip().lower()
-        if not raw_query:
-            return []
-        results: list[SearchResult] = []
-        for chunk in self.chunks:
-            if lesson_slug and chunk.lesson_slug != lesson_slug:
-                continue
-            title_text = chunk.title.lower()
-            excerpt_text = chunk.excerpt.lower()
-            title_overlap = sum(1 for term in query_terms if term in title_text)
-            excerpt_overlap = sum(1 for term in query_terms if term in excerpt_text)
-            phrase_bonus = 0
-            if len(raw_query) >= 3:
-                phrase_bonus = 4 if raw_query in title_text else 2 if raw_query in excerpt_text else 0
-            if title_overlap == 0 and excerpt_overlap == 0 and phrase_bonus == 0:
-                continue
-            if _floor_score(floor_terms, chunk, phrase_bonus) < SCORE_FLOOR:
-                continue
-            score = title_overlap * 3 + excerpt_overlap * 2 + phrase_bonus + chunk.score_boost
-            results.append(
-                SearchResult(
-                    chunk_id=chunk.chunk_id,
-                    title=chunk.title,
-                    source_kind=chunk.source_kind,
-                    source_title=chunk.source_title,
-                    excerpt=truncate_display_excerpt(chunk.excerpt, 320),
-                    lesson_slug=chunk.lesson_slug,
-                    score=round(score, 3),
-                    timestamp_label=chunk.timestamp_label,
-                    source_filename=chunk.source_filename,
-                )
-            )
-        results.sort(key=lambda item: item.score, reverse=True)
-        return results[:top_k]
-
     def _populate_related_lessons(self, lessons: dict[str, LessonDetail]) -> None:
         lesson_topics = {slug: self._lesson_topics(lesson) for slug, lesson in lessons.items()}
         lesson_asset_ids = {slug: {asset.id for asset in lesson.source_assets} for slug, lesson in lessons.items()}
@@ -1295,17 +1340,6 @@ class CourseStore:
         if shared_assets:
             return "Draws on overlapping source material from the local QC+AI corpus."
         return "Connects through adjacent QC+AI systems concepts."
-
-
-def _tokenize(text: str) -> list[str]:
-    cleaned = "".join(ch.lower() if ch.isalnum() else " " for ch in text)
-    return [token for token in cleaned.split() if len(token) > 2]
-
-
-def _floor_score(floor_terms: set[str], chunk: IndexedChunk, phrase_bonus: int) -> int:
-    title_hits = sum(1 for term in floor_terms if term in chunk.title_words)
-    excerpt_hits = sum(1 for term in floor_terms if term in chunk.excerpt_words)
-    return title_hits * 3 + excerpt_hits * 2 + phrase_bonus
 
 
 def _format_timestamp(seconds: int) -> str:

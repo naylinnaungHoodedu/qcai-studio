@@ -23,6 +23,8 @@ from app.schemas import (
 )
 from app.services.answer_history import WITHDRAWN_ANSWER, stored_before_containment
 from app.services.contained_answers import contain_answer
+from app.services.retrieval_metrics import record_citations
+from app.services.span_store import persist_cited_spans
 from app.services.teaching_assistant import TeachingAssistantService
 
 
@@ -99,7 +101,10 @@ class TutorOrchestrator:
 
         # Decision D-19, enforced here whatever the assistant returned: only verbatim approved spans or
         # an abstention reach the learner, never candidate.answer itself.
-        contained = contain_answer(candidate.citations, get_corpus_registry(self.settings))
+        contained = contain_answer(
+            candidate.citations, get_corpus_registry(self.settings), self._span_registry(), settings=self.settings
+        )
+        record_citations("tutor", len(contained.citations), contained.dropped_unresolved, 0)
         turn_id = f"turn-{uuid4()}"
         db.add(TutorMessage(id=f"message-{uuid4()}", thread_id=thread.id, role="user", content=payload.message))
         db.add(TutorMessage(id=f"message-{uuid4()}", thread_id=thread.id, role="assistant", content=contained.answer))
@@ -121,6 +126,8 @@ class TutorOrchestrator:
             )
         )
         thread.updated_at = datetime.now(timezone.utc)
+        # Text-free identity of the spans this turn cited, so its citations keep resolving (task 2.2).
+        persist_cited_spans(db, contained.citations, self._store())
         db.flush()
         return AssistantChatResponse(
             answer=contained.answer,
@@ -135,6 +142,17 @@ class TutorOrchestrator:
             decision_reason=contained.reason,
             claims=contained.claims,
         )
+
+    def _store(self):
+        engine = getattr(self.assistant, "retrieval_engine", None)
+        if engine is not None and getattr(engine, "store", None) is not None:
+            return engine.store
+        from app.services.store import get_course_store
+
+        return get_course_store()
+
+    def _span_registry(self):
+        return self._store().span_registry
 
     def _resolve_query(
         self,

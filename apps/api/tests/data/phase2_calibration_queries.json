@@ -1,0 +1,2753 @@
+{
+  "about": "Public questions for the Phase 2 abstention calibration (task 2.6): the pre-registered BEP-1 score-floor fixture A (strata and cal/conf folds) and hold-out B. No licensed text, ULQS item or learner data. The four topic-free quiz stems (in_generic_stem) are left out, as in score_floor_queries.json.",
+  "sources": {
+    "BEP-1/27_score_floor/fixture.json": "87b7be2116b9c28fbb97ecfc48fdab8c4bd40a34c0111449c6f04dfc47e5b6fa",
+    "BEP-1/27_score_floor/holdout.json": "3f51a9e44a78068d618a8783af4a50e610a361479f929e08dae1c0ac1ae859db"
+  },
+  "fold_rule": "sha256(query) first hex digit even -> cal, odd -> conf (pre-registered, BEP-1); hold-out B items carry fold \"holdout\"",
+  "gated_strata": [
+    "oos_general",
+    "stop_only",
+    "holdout_oos",
+    "holdout_stop"
+  ],
+  "reported_strata": [
+    "oos_lexical",
+    "near_miss"
+  ],
+  "items": [
+    {
+      "id": "Q001",
+      "query": "What is the difference between QAI and AI4QC?",
+      "expected": [
+        "nisq-reality-overview"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q002",
+      "query": "Why do the sources repeatedly emphasize hybrid loops instead of end-to-end quantum models?",
+      "expected": [
+        "nisq-reality-overview"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q003",
+      "query": "What makes a QC+AI claim plausible in the NISQ era?",
+      "expected": [
+        "nisq-reality-overview"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q005",
+      "query": "What does AI4QC mean in the course corpus?",
+      "expected": [
+        "nisq-reality-overview"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q006",
+      "query": "What does QAI mean in the course corpus?",
+      "expected": [
+        "nisq-reality-overview"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q007",
+      "query": "Why is hybridization the dominant near-term pattern?",
+      "expected": [
+        "nisq-reality-overview"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q008",
+      "query": "Why does learning-based graph shrinking matter before any quantum solve?",
+      "expected": [
+        "ai4qc-routing-and-optimization"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q009",
+      "query": "What problem does SAC solve inside the augmented Lagrangian workflow?",
+      "expected": [
+        "ai4qc-routing-and-optimization"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q010",
+      "query": "Why can nested qubit routing still dominate runtime after the optimization model is compressed?",
+      "expected": [
+        "ai4qc-routing-and-optimization"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q011",
+      "query": "Explain why quantum logistics needs both problem reduction before execution and routing control during compilation.",
+      "expected": [
+        "ai4qc-routing-and-optimization"
+      ],
+      "stratum": "in_quiz",
+      "fold": "conf"
+    },
+    {
+      "id": "Q012",
+      "query": "Why use graph shrinking before quantum optimization in logistics?",
+      "expected": [
+        "ai4qc-routing-and-optimization"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "cal"
+    },
+    {
+      "id": "Q013",
+      "query": "What does the GNN policy learn in the graph-shrinking pipeline?",
+      "expected": [
+        "ai4qc-routing-and-optimization"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q014",
+      "query": "Why is SAC useful inside RL-Q-ALM?",
+      "expected": [
+        "ai4qc-routing-and-optimization"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q015",
+      "query": "Why does the authored Module 3 document keep returning to the quantum bottleneck instead of claiming end-to-end quantum perception?",
+      "expected": [
+        "hybrid-applications-healthcare-vision"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q016",
+      "query": "What do QViT, QC-GCN jet tagging, and conditioned quantum diffusion gain from extreme parameter efficiency or low-data performance?",
+      "expected": [
+        "hybrid-applications-healthcare-vision"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q017",
+      "query": "Why do orchestration latency, decoherence, and explainability constraints still limit how these hybrid vision and graph systems should be deployed?",
+      "expected": [
+        "hybrid-applications-healthcare-vision"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q018",
+      "query": "Which architectural pattern best matches the authored Module 3 vision, graph, and few-shot cases?",
+      "expected": [
+        "hybrid-applications-healthcare-vision"
+      ],
+      "stratum": "in_quiz",
+      "fold": "conf"
+    },
+    {
+      "id": "Q019",
+      "query": "What placement pattern dominates the authored Module 3 hybrid architectures?",
+      "expected": [
+        "hybrid-applications-healthcare-vision"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q020",
+      "query": "Why are the QViT and QC-GCN jet-tagging examples useful teaching cases?",
+      "expected": [
+        "hybrid-applications-healthcare-vision"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "cal"
+    },
+    {
+      "id": "Q021",
+      "query": "Why does the Module 3 few-shot diffusion material emphasize conditioning and orchestration together?",
+      "expected": [
+        "hybrid-applications-healthcare-vision"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q022",
+      "query": "What does a quantum kernel add in the aneurysm classification example?",
+      "expected": [
+        "clinical-and-kernel-qcai-systems"
+      ],
+      "stratum": "in_suggested",
+      "fold": "conf"
+    },
+    {
+      "id": "Q023",
+      "query": "Why should QC-DQN be taught carefully in a clinical context?",
+      "expected": [
+        "clinical-and-kernel-qcai-systems"
+      ],
+      "stratum": "in_suggested",
+      "fold": "conf"
+    },
+    {
+      "id": "Q024",
+      "query": "What makes these healthcare-flavored examples more operationally constrained than the perception examples?",
+      "expected": [
+        "clinical-and-kernel-qcai-systems"
+      ],
+      "stratum": "in_suggested",
+      "fold": "conf"
+    },
+    {
+      "id": "Q025",
+      "query": "Explain why QC-DQN and biomedical quantum-kernel methods should be evaluated as narrow hybrid architectures rather than end-to-end quantum replacements.",
+      "expected": [
+        "clinical-and-kernel-qcai-systems"
+      ],
+      "stratum": "in_quiz",
+      "fold": "cal"
+    },
+    {
+      "id": "Q026",
+      "query": "Why is QUEN interesting pedagogically?",
+      "expected": [
+        "clinical-and-kernel-qcai-systems"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "cal"
+    },
+    {
+      "id": "Q027",
+      "query": "Why should QC-DQN be taught carefully?",
+      "expected": [
+        "clinical-and-kernel-qcai-systems"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q028",
+      "query": "What makes healthcare QC+AI architectures operationally demanding?",
+      "expected": [
+        "clinical-and-kernel-qcai-systems"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q029",
+      "query": "Why does the authored Module 4 source define expressive bottlenecks as structural failures rather than simple under-parameterization?",
+      "expected": [
+        "representation-language-and-xai"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q030",
+      "query": "What do quINR and quantum contrastive word embeddings gain by changing the representational geometry instead of only scaling classical models?",
+      "expected": [
+        "representation-language-and-xai"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q031",
+      "query": "Why should quantum explainability methods still be taught with strong caveats about graph structure, attribution cost, and deployment assumptions?",
+      "expected": [
+        "representation-language-and-xai"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q032",
+      "query": "Explain how the authored Module 4 document connects expressive bottlenecks across compression, language, and explanation.",
+      "expected": [
+        "representation-language-and-xai"
+      ],
+      "stratum": "in_quiz",
+      "fold": "conf"
+    },
+    {
+      "id": "Q033",
+      "query": "What is an expressive bottleneck in the authored Module 4 source?",
+      "expected": [
+        "representation-language-and-xai"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "cal"
+    },
+    {
+      "id": "Q034",
+      "query": "Why is quantum contrastive word embedding not just a quantum Word2Vec clone?",
+      "expected": [
+        "representation-language-and-xai"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q035",
+      "query": "Why is the quantum explainability section taught cautiously?",
+      "expected": [
+        "representation-language-and-xai"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "cal"
+    },
+    {
+      "id": "Q036",
+      "query": "Which sectors in the document primarily depend on combinatorial optimization rather than quantum-native simulation?",
+      "expected": [
+        "industry-use-cases"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q037",
+      "query": "Why does cybersecurity have a more urgent migration profile than consumer recommendation or gaming use cases?",
+      "expected": [
+        "industry-use-cases"
+      ],
+      "stratum": "in_suggested",
+      "fold": "conf"
+    },
+    {
+      "id": "Q038",
+      "query": "How does the Industry 5.0 framing change the way the document justifies adoption?",
+      "expected": [
+        "industry-use-cases"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q040",
+      "query": "Which industry group in the document is most tightly tied to native molecular simulation?",
+      "expected": [
+        "industry-use-cases"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q041",
+      "query": "Why is post-quantum cryptography treated as urgent rather than speculative?",
+      "expected": [
+        "industry-use-cases"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q042",
+      "query": "Why are logistics and telecom use cases still hybrid even when the document is optimistic?",
+      "expected": [
+        "industry-use-cases"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q043",
+      "query": "Why does the authored Module 6 source treat VQAs, AI4QC, and industry sustainability as parts of one roadmap instead of separate topics?",
+      "expected": [
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q044",
+      "query": "How do logistics, renewable-grid, healthcare, and language-efficiency examples support the Industry 5.0 framing of sustainable hybrid systems?",
+      "expected": [
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q045",
+      "query": "Why are thermodynamic quantum agents and post-quantum migration taught together as future-direction topics rather than isolated research curiosities?",
+      "expected": [
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q046",
+      "query": "Explain how the authored Module 6 document turns QC+AI into a sustainable hybrid-systems roadmap.",
+      "expected": [
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_quiz",
+      "fold": "conf"
+    },
+    {
+      "id": "Q047",
+      "query": "What does Module 6 mean by moving beyond algorithmic novelty?",
+      "expected": [
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "cal"
+    },
+    {
+      "id": "Q048",
+      "query": "Why are graph shrinking and qubit routing part of a sustainability lesson?",
+      "expected": [
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "cal"
+    },
+    {
+      "id": "Q049",
+      "query": "Why are thermodynamic quantum agents and post-quantum migration part of the same roadmap?",
+      "expected": [
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q050",
+      "query": "Why does simulator-first reasoning break down on deployed NISQ hardware?",
+      "expected": [
+        "introduction-to-hardware-constrained-learning"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q051",
+      "query": "What makes noise and shot budgets architectural parameters instead of mere runtime annoyances?",
+      "expected": [
+        "introduction-to-hardware-constrained-learning"
+      ],
+      "stratum": "in_suggested",
+      "fold": "conf"
+    },
+    {
+      "id": "Q052",
+      "query": "How should a practitioner recognize when a QC+AI claim is outside the near-term Goldilocks regime?",
+      "expected": [
+        "introduction-to-hardware-constrained-learning"
+      ],
+      "stratum": "in_suggested",
+      "fold": "conf"
+    },
+    {
+      "id": "Q054",
+      "query": "What does hardware-constrained learning mean in this course?",
+      "expected": [
+        "introduction-to-hardware-constrained-learning"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "cal"
+    },
+    {
+      "id": "Q055",
+      "query": "Why are barren plateaus so damaging in the NISQ era?",
+      "expected": [
+        "introduction-to-hardware-constrained-learning"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q056",
+      "query": "Why is error mitigation not a free escape hatch?",
+      "expected": [
+        "introduction-to-hardware-constrained-learning"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "cal"
+    },
+    {
+      "id": "Q057",
+      "query": "Why can shallow circuits be too weak even when deep circuits are untrainable?",
+      "expected": [
+        "hardware-constrained-qcai-models"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q058",
+      "query": "What makes quantum kernel concentration such a serious failure mode?",
+      "expected": [
+        "hardware-constrained-qcai-models"
+      ],
+      "stratum": "in_suggested",
+      "fold": "conf"
+    },
+    {
+      "id": "Q059",
+      "query": "How do acceptance criteria change the way a practitioner chooses between model families?",
+      "expected": [
+        "hardware-constrained-qcai-models"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q060",
+      "query": "Explain why model-family selection in QC+AI must be driven by both trainability limits and measurable acceptance criteria.",
+      "expected": [
+        "hardware-constrained-qcai-models"
+      ],
+      "stratum": "in_quiz",
+      "fold": "cal"
+    },
+    {
+      "id": "Q061",
+      "query": "What is the reachability deficit?",
+      "expected": [
+        "hardware-constrained-qcai-models"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q062",
+      "query": "What happens when a quantum kernel concentrates exponentially?",
+      "expected": [
+        "hardware-constrained-qcai-models"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "cal"
+    },
+    {
+      "id": "Q063",
+      "query": "Why are acceptance criteria part of model design?",
+      "expected": [
+        "hardware-constrained-qcai-models"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q064",
+      "query": "Why is the parameter-shift rule more robust than finite differences on noisy hardware?",
+      "expected": [
+        "intermediate-quantum-programming-patterns"
+      ],
+      "stratum": "in_suggested",
+      "fold": "conf"
+    },
+    {
+      "id": "Q065",
+      "query": "How do measurement grouping and adaptive shot allocation change real execution budgets?",
+      "expected": [
+        "intermediate-quantum-programming-patterns"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q066",
+      "query": "What should a programmer log to distinguish model failure from hardware failure?",
+      "expected": [
+        "intermediate-quantum-programming-patterns"
+      ],
+      "stratum": "in_suggested",
+      "fold": "conf"
+    },
+    {
+      "id": "Q067",
+      "query": "Which pairing best reflects intermediate hardware-constrained programming practice?",
+      "expected": [
+        "intermediate-quantum-programming-patterns"
+      ],
+      "stratum": "in_quiz",
+      "fold": "conf"
+    },
+    {
+      "id": "Q068",
+      "query": "Why is finite-difference differentiation a poor default on NISQ hardware?",
+      "expected": [
+        "intermediate-quantum-programming-patterns"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q069",
+      "query": "What does qubit-wise commutativity measurement grouping accomplish?",
+      "expected": [
+        "intermediate-quantum-programming-patterns"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "cal"
+    },
+    {
+      "id": "Q070",
+      "query": "Why is benchmarking more than predictive accuracy in this programming layer?",
+      "expected": [
+        "intermediate-quantum-programming-patterns"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q071",
+      "query": "Why does MLIR matter in advanced quantum software development?",
+      "expected": [
+        "advanced-quantum-software-development"
+      ],
+      "stratum": "in_suggested",
+      "fold": "cal"
+    },
+    {
+      "id": "Q072",
+      "query": "What is gained by optimizing at the pulse level instead of staying at the logical-gate level?",
+      "expected": [
+        "advanced-quantum-software-development"
+      ],
+      "stratum": "in_suggested",
+      "fold": "conf"
+    },
+    {
+      "id": "Q073",
+      "query": "How do caching and reproducibility policies affect real hybrid-system reliability?",
+      "expected": [
+        "advanced-quantum-software-development"
+      ],
+      "stratum": "in_suggested",
+      "fold": "conf"
+    },
+    {
+      "id": "Q074",
+      "query": "Describe why advanced QC+AI software engineering must treat compilation, caching, and pulse-level execution as first-class design concerns.",
+      "expected": [
+        "advanced-quantum-software-development"
+      ],
+      "stratum": "in_quiz",
+      "fold": "cal"
+    },
+    {
+      "id": "Q075",
+      "query": "What does differentiable programming mean in this QC+AI context?",
+      "expected": [
+        "advanced-quantum-software-development"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q076",
+      "query": "Why are MLIR dialects useful for QC+AI software?",
+      "expected": [
+        "advanced-quantum-software-development"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "cal"
+    },
+    {
+      "id": "Q077",
+      "query": "Why is pulse-level control a major advanced-software topic?",
+      "expected": [
+        "advanced-quantum-software-development"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "cal"
+    },
+    {
+      "id": "Q078",
+      "query": "Why are hybrid optimization loops so dominant in near-term quantum finance?",
+      "expected": [
+        "quantum-finance-programming-and-optimization"
+      ],
+      "stratum": "in_suggested",
+      "fold": "conf"
+    },
+    {
+      "id": "Q079",
+      "query": "How do portfolio optimization and option pricing differ in their hardware fit?",
+      "expected": [
+        "quantum-finance-programming-and-optimization"
+      ],
+      "stratum": "in_suggested",
+      "fold": "conf"
+    },
+    {
+      "id": "Q080",
+      "query": "What does model-risk management add to a quantum-finance deployment decision?",
+      "expected": [
+        "quantum-finance-programming-and-optimization"
+      ],
+      "stratum": "in_suggested",
+      "fold": "conf"
+    },
+    {
+      "id": "Q082",
+      "query": "Why is quantum finance framed as hardware-first in this document?",
+      "expected": [
+        "quantum-finance-programming-and-optimization"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "conf"
+    },
+    {
+      "id": "Q083",
+      "query": "What makes quantum kernels attractive in some finance settings?",
+      "expected": [
+        "quantum-finance-programming-and-optimization"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "cal"
+    },
+    {
+      "id": "Q084",
+      "query": "Why is model-risk management central to quantum finance adoption?",
+      "expected": [
+        "quantum-finance-programming-and-optimization"
+      ],
+      "stratum": "in_flashcard",
+      "fold": "cal"
+    },
+    {
+      "id": "Q085",
+      "query": "NISQ era",
+      "expected": [
+        "nisq-reality-overview",
+        "introduction-to-hardware-constrained-learning",
+        "hybrid-applications-healthcare-vision",
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_short",
+      "fold": "conf"
+    },
+    {
+      "id": "Q086",
+      "query": "what is hybrid quantum-classical computing",
+      "expected": [
+        "nisq-reality-overview",
+        "thermodynamics-and-roadmap",
+        "hybrid-applications-healthcare-vision"
+      ],
+      "stratum": "in_short",
+      "fold": "conf"
+    },
+    {
+      "id": "Q087",
+      "query": "QAI vs AI4QC",
+      "expected": [
+        "nisq-reality-overview",
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q088",
+      "query": "graph shrinking",
+      "expected": [
+        "ai4qc-routing-and-optimization",
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q089",
+      "query": "qubit routing",
+      "expected": [
+        "ai4qc-routing-and-optimization",
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q090",
+      "query": "soft actor critic penalty tuning",
+      "expected": [
+        "ai4qc-routing-and-optimization"
+      ],
+      "stratum": "in_short",
+      "fold": "conf"
+    },
+    {
+      "id": "Q091",
+      "query": "quantum vision transformer",
+      "expected": [
+        "hybrid-applications-healthcare-vision"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q092",
+      "query": "quantum graph neural networks",
+      "expected": [
+        "hybrid-applications-healthcare-vision",
+        "representation-language-and-xai"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q093",
+      "query": "quantum diffusion models few-shot",
+      "expected": [
+        "hybrid-applications-healthcare-vision",
+        "representation-language-and-xai"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q094",
+      "query": "quantum kernel biomedical imaging",
+      "expected": [
+        "clinical-and-kernel-qcai-systems"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q095",
+      "query": "quantum reinforcement learning clinical control",
+      "expected": [
+        "clinical-and-kernel-qcai-systems"
+      ],
+      "stratum": "in_short",
+      "fold": "conf"
+    },
+    {
+      "id": "Q096",
+      "query": "aneurysm classification",
+      "expected": [
+        "clinical-and-kernel-qcai-systems"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q097",
+      "query": "expressive bottleneck",
+      "expected": [
+        "representation-language-and-xai"
+      ],
+      "stratum": "in_short",
+      "fold": "conf"
+    },
+    {
+      "id": "Q098",
+      "query": "quantum contrastive word embeddings",
+      "expected": [
+        "representation-language-and-xai",
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_short",
+      "fold": "conf"
+    },
+    {
+      "id": "Q099",
+      "query": "quantum implicit neural compression",
+      "expected": [
+        "representation-language-and-xai"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q100",
+      "query": "post-quantum cryptography",
+      "expected": [
+        "industry-use-cases",
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q101",
+      "query": "quantum computing in healthcare and drug discovery",
+      "expected": [
+        "industry-use-cases",
+        "thermodynamics-and-roadmap",
+        "clinical-and-kernel-qcai-systems",
+        "hybrid-applications-healthcare-vision"
+      ],
+      "stratum": "in_short",
+      "fold": "conf"
+    },
+    {
+      "id": "Q102",
+      "query": "weather forecasting and climate modeling",
+      "expected": [
+        "industry-use-cases"
+      ],
+      "stratum": "in_short",
+      "fold": "conf"
+    },
+    {
+      "id": "Q103",
+      "query": "energy efficiency of quantum agents",
+      "expected": [
+        "thermodynamics-and-roadmap",
+        "representation-language-and-xai"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q104",
+      "query": "QUBO subset selection for fine-tuning",
+      "expected": [
+        "thermodynamics-and-roadmap",
+        "representation-language-and-xai"
+      ],
+      "stratum": "in_short",
+      "fold": "conf"
+    },
+    {
+      "id": "Q105",
+      "query": "sustainable energy grids",
+      "expected": [
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q106",
+      "query": "barren plateaus",
+      "expected": [
+        "introduction-to-hardware-constrained-learning",
+        "hardware-constrained-qcai-models",
+        "intermediate-quantum-programming-patterns"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q107",
+      "query": "noise and shot budgets",
+      "expected": [
+        "introduction-to-hardware-constrained-learning",
+        "intermediate-quantum-programming-patterns",
+        "hardware-constrained-qcai-models"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q108",
+      "query": "simulator-first thinking",
+      "expected": [
+        "introduction-to-hardware-constrained-learning"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q109",
+      "query": "kernel concentration",
+      "expected": [
+        "hardware-constrained-qcai-models"
+      ],
+      "stratum": "in_short",
+      "fold": "conf"
+    },
+    {
+      "id": "Q110",
+      "query": "trainability of variational circuits",
+      "expected": [
+        "hardware-constrained-qcai-models",
+        "introduction-to-hardware-constrained-learning"
+      ],
+      "stratum": "in_short",
+      "fold": "conf"
+    },
+    {
+      "id": "Q111",
+      "query": "acceptance criteria for quantum machine learning models",
+      "expected": [
+        "hardware-constrained-qcai-models",
+        "intermediate-quantum-programming-patterns",
+        "advanced-quantum-software-development",
+        "quantum-finance-programming-and-optimization"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q112",
+      "query": "parameter-shift rule",
+      "expected": [
+        "intermediate-quantum-programming-patterns"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q113",
+      "query": "measurement grouping",
+      "expected": [
+        "intermediate-quantum-programming-patterns"
+      ],
+      "stratum": "in_short",
+      "fold": "conf"
+    },
+    {
+      "id": "Q114",
+      "query": "diagnostics and debugging playbook",
+      "expected": [
+        "intermediate-quantum-programming-patterns"
+      ],
+      "stratum": "in_short",
+      "fold": "conf"
+    },
+    {
+      "id": "Q115",
+      "query": "MLIR quantum compilation",
+      "expected": [
+        "advanced-quantum-software-development"
+      ],
+      "stratum": "in_short",
+      "fold": "conf"
+    },
+    {
+      "id": "Q116",
+      "query": "pulse-level control",
+      "expected": [
+        "advanced-quantum-software-development"
+      ],
+      "stratum": "in_short",
+      "fold": "conf"
+    },
+    {
+      "id": "Q117",
+      "query": "differentiable programming",
+      "expected": [
+        "advanced-quantum-software-development"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q118",
+      "query": "quantum portfolio optimization",
+      "expected": [
+        "quantum-finance-programming-and-optimization",
+        "industry-use-cases"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q119",
+      "query": "option pricing",
+      "expected": [
+        "quantum-finance-programming-and-optimization"
+      ],
+      "stratum": "in_short",
+      "fold": "cal"
+    },
+    {
+      "id": "Q120",
+      "query": "model risk management",
+      "expected": [
+        "quantum-finance-programming-and-optimization"
+      ],
+      "stratum": "in_short",
+      "fold": "conf"
+    },
+    {
+      "id": "Q121",
+      "query": "Why can't today's noisy quantum machines run complete AI models on their own?",
+      "expected": [
+        "nisq-reality-overview",
+        "introduction-to-hardware-constrained-learning",
+        "hybrid-applications-healthcare-vision"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "conf"
+    },
+    {
+      "id": "Q122",
+      "query": "How do classical computers and quantum processors split the work in current systems?",
+      "expected": [
+        "nisq-reality-overview",
+        "hybrid-applications-healthcare-vision",
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "conf"
+    },
+    {
+      "id": "Q123",
+      "query": "How can machine learning make a delivery-route problem small enough for a quantum computer?",
+      "expected": [
+        "ai4qc-routing-and-optimization",
+        "thermodynamics-and-roadmap",
+        "industry-use-cases"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "conf"
+    },
+    {
+      "id": "Q124",
+      "query": "Why does moving qubits around on the chip slow things down?",
+      "expected": [
+        "ai4qc-routing-and-optimization",
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "conf"
+    },
+    {
+      "id": "Q125",
+      "query": "Can quantum circuits help computers recognize images with very few training examples?",
+      "expected": [
+        "hybrid-applications-healthcare-vision"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "conf"
+    },
+    {
+      "id": "Q126",
+      "query": "How do quantum models handle data made of connected points and links?",
+      "expected": [
+        "hybrid-applications-healthcare-vision",
+        "representation-language-and-xai"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "conf"
+    },
+    {
+      "id": "Q127",
+      "query": "Is it safe to let a quantum learning agent control medical treatment decisions?",
+      "expected": [
+        "clinical-and-kernel-qcai-systems"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "cal"
+    },
+    {
+      "id": "Q128",
+      "query": "How might quantum methods help detect bulging blood vessels in brain scans?",
+      "expected": [
+        "clinical-and-kernel-qcai-systems"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "conf"
+    },
+    {
+      "id": "Q129",
+      "query": "Why do some neural networks fail to capture complex structure no matter how big they get?",
+      "expected": [
+        "representation-language-and-xai"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "conf"
+    },
+    {
+      "id": "Q130",
+      "query": "Can quantum methods make it cheaper to explain why a model made a prediction?",
+      "expected": [
+        "representation-language-and-xai",
+        "hybrid-applications-healthcare-vision",
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "cal"
+    },
+    {
+      "id": "Q131",
+      "query": "Which businesses could profit first from quantum computing?",
+      "expected": [
+        "industry-use-cases"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "conf"
+    },
+    {
+      "id": "Q132",
+      "query": "Will quantum computers break the encryption that protects bank accounts?",
+      "expected": [
+        "industry-use-cases",
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "conf"
+    },
+    {
+      "id": "Q133",
+      "query": "Could quantum computers use less electricity than classical ones for AI?",
+      "expected": [
+        "thermodynamics-and-roadmap",
+        "representation-language-and-xai"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "cal"
+    },
+    {
+      "id": "Q134",
+      "query": "What is the long-term plan for making quantum AI practical and green?",
+      "expected": [
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "conf"
+    },
+    {
+      "id": "Q135",
+      "query": "Why do results from a perfect simulator not hold up on real quantum chips?",
+      "expected": [
+        "introduction-to-hardware-constrained-learning",
+        "intermediate-quantum-programming-patterns"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "conf"
+    },
+    {
+      "id": "Q136",
+      "query": "Why does training a quantum model sometimes get stuck with flat gradients?",
+      "expected": [
+        "introduction-to-hardware-constrained-learning",
+        "hardware-constrained-qcai-models",
+        "intermediate-quantum-programming-patterns"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "cal"
+    },
+    {
+      "id": "Q137",
+      "query": "How do I decide which quantum machine learning model to choose for a project?",
+      "expected": [
+        "hardware-constrained-qcai-models"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "cal"
+    },
+    {
+      "id": "Q138",
+      "query": "Why do quantum similarity measures become useless as more qubits are added?",
+      "expected": [
+        "hardware-constrained-qcai-models"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "cal"
+    },
+    {
+      "id": "Q139",
+      "query": "How do you compute gradients of a quantum circuit when the hardware is noisy?",
+      "expected": [
+        "intermediate-quantum-programming-patterns",
+        "hardware-constrained-qcai-models"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "conf"
+    },
+    {
+      "id": "Q140",
+      "query": "How can I tell whether a bad result comes from my code or from the quantum device?",
+      "expected": [
+        "intermediate-quantum-programming-patterns"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "cal"
+    },
+    {
+      "id": "Q141",
+      "query": "What tools translate high-level quantum programs into instructions the hardware understands?",
+      "expected": [
+        "advanced-quantum-software-development"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "conf"
+    },
+    {
+      "id": "Q142",
+      "query": "Why would engineers program the microwave signals that drive qubits directly?",
+      "expected": [
+        "advanced-quantum-software-development"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "cal"
+    },
+    {
+      "id": "Q143",
+      "query": "Can a quantum computer help pick stocks for an investment portfolio?",
+      "expected": [
+        "quantum-finance-programming-and-optimization",
+        "industry-use-cases"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "conf"
+    },
+    {
+      "id": "Q144",
+      "query": "How do banks check that a quantum model is trustworthy before using it?",
+      "expected": [
+        "quantum-finance-programming-and-optimization"
+      ],
+      "stratum": "in_paraphrase",
+      "fold": "cal"
+    },
+    {
+      "id": "Q145",
+      "query": "How do quantum kernels differ between healthcare and finance applications?",
+      "expected": [
+        "clinical-and-kernel-qcai-systems",
+        "quantum-finance-programming-and-optimization",
+        "hardware-constrained-qcai-models"
+      ],
+      "stratum": "in_multi",
+      "fold": "cal"
+    },
+    {
+      "id": "Q146",
+      "query": "Where do graph neural networks appear in quantum optimization and explainability?",
+      "expected": [
+        "ai4qc-routing-and-optimization",
+        "hybrid-applications-healthcare-vision",
+        "representation-language-and-xai"
+      ],
+      "stratum": "in_multi",
+      "fold": "conf"
+    },
+    {
+      "id": "Q147",
+      "query": "What role does reinforcement learning play in quantum optimization and clinical control?",
+      "expected": [
+        "ai4qc-routing-and-optimization",
+        "clinical-and-kernel-qcai-systems"
+      ],
+      "stratum": "in_multi",
+      "fold": "conf"
+    },
+    {
+      "id": "Q148",
+      "query": "Why are near-term QC+AI systems hybrid rather than fully quantum?",
+      "expected": [
+        "nisq-reality-overview",
+        "hybrid-applications-healthcare-vision",
+        "thermodynamics-and-roadmap",
+        "introduction-to-hardware-constrained-learning"
+      ],
+      "stratum": "in_multi",
+      "fold": "cal"
+    },
+    {
+      "id": "Q149",
+      "query": "How does hardware noise affect both training and compilation?",
+      "expected": [
+        "introduction-to-hardware-constrained-learning",
+        "hardware-constrained-qcai-models",
+        "intermediate-quantum-programming-patterns",
+        "advanced-quantum-software-development"
+      ],
+      "stratum": "in_multi",
+      "fold": "cal"
+    },
+    {
+      "id": "Q150",
+      "query": "How are logistics and finance problems written as QUBO optimization?",
+      "expected": [
+        "ai4qc-routing-and-optimization",
+        "industry-use-cases",
+        "quantum-finance-programming-and-optimization",
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_multi",
+      "fold": "cal"
+    },
+    {
+      "id": "Q151",
+      "query": "What acceptance criteria and test strategy does the course recommend for QC+AI models?",
+      "expected": [
+        "hardware-constrained-qcai-models",
+        "intermediate-quantum-programming-patterns",
+        "advanced-quantum-software-development",
+        "quantum-finance-programming-and-optimization"
+      ],
+      "stratum": "in_multi",
+      "fold": "cal"
+    },
+    {
+      "id": "Q152",
+      "query": "How does the Industry 5.0 framing connect to sustainability?",
+      "expected": [
+        "industry-use-cases",
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_multi",
+      "fold": "cal"
+    },
+    {
+      "id": "Q153",
+      "query": "What are the main risks and mitigations when deploying quantum machine learning?",
+      "expected": [
+        "introduction-to-hardware-constrained-learning",
+        "hardware-constrained-qcai-models",
+        "quantum-finance-programming-and-optimization",
+        "intermediate-quantum-programming-patterns"
+      ],
+      "stratum": "in_multi",
+      "fold": "conf"
+    },
+    {
+      "id": "Q154",
+      "query": "How is QGShap used for explainability?",
+      "expected": [
+        "hybrid-applications-healthcare-vision",
+        "representation-language-and-xai",
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "in_multi",
+      "fold": "conf"
+    },
+    {
+      "id": "Q155",
+      "query": "What is the capital of France?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q156",
+      "query": "Who won the World Cup in 2018?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q157",
+      "query": "How do I bake sourdough bread?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q158",
+      "query": "What time is it in Tokyo?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q159",
+      "query": "Recommend a good movie for tonight",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q160",
+      "query": "How tall is Mount Everest?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q161",
+      "query": "What is the boiling point of water in Fahrenheit?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q162",
+      "query": "Translate good morning into Spanish",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q163",
+      "query": "How do I change a flat tire?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q164",
+      "query": "Who wrote Pride and Prejudice?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q165",
+      "query": "What is the best diet to lose weight?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q166",
+      "query": "How many legs does a spider have?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q167",
+      "query": "What is the population of Brazil?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q168",
+      "query": "How do I reset my email password?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q169",
+      "query": "Write me a poem about the ocean",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q170",
+      "query": "How does castling work in chess?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q171",
+      "query": "When did World War II end?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q172",
+      "query": "How do I grow tomatoes on a balcony?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q173",
+      "query": "Which planet is closest to the sun?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q174",
+      "query": "How do I tie a tie?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q175",
+      "query": "Best pizza toppings",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q176",
+      "query": "What is the plot of Hamlet?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q177",
+      "query": "How much does a used car cost?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q178",
+      "query": "Where is the nearest pharmacy?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q179",
+      "query": "What is photosynthesis?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q180",
+      "query": "Who is the president of the United States?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q181",
+      "query": "How do I learn to play guitar?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q182",
+      "query": "What do cats eat?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q183",
+      "query": "How far is the moon from Earth?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q184",
+      "query": "Explain the offside rule in soccer",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q185",
+      "query": "What is the square root of 144?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q186",
+      "query": "How do I make cold brew coffee?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q187",
+      "query": "Tell me a joke",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q188",
+      "query": "What is the tallest building in the world?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q189",
+      "query": "How do airplanes stay in the air?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q190",
+      "query": "What causes rainbows?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q191",
+      "query": "How do I write a cover letter?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q192",
+      "query": "Which language is spoken in Brazil?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q193",
+      "query": "What is the meaning of life?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q194",
+      "query": "How do I unclog a kitchen sink?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q195",
+      "query": "What year did the Titanic sink?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q196",
+      "query": "How many calories are in an apple?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q197",
+      "query": "What is the speed of sound?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q198",
+      "query": "Who painted the Mona Lisa?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q199",
+      "query": "How do I knit a scarf?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q200",
+      "query": "What are the symptoms of the flu?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q201",
+      "query": "Plan a weekend trip to Rome",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q202",
+      "query": "How do bees make honey?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q203",
+      "query": "What is the difference between a crocodile and an alligator?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q204",
+      "query": "How do I center a div in CSS?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q205",
+      "query": "What is the GDP of Japan?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q206",
+      "query": "Is it going to rain this weekend?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q207",
+      "query": "How do I train my dog to sit?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q208",
+      "query": "What is a good name for a goldfish?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q209",
+      "query": "How long should I boil an egg?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q210",
+      "query": "Who discovered penicillin?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q211",
+      "query": "What is the largest ocean?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q212",
+      "query": "Define the word serendipity",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "conf"
+    },
+    {
+      "id": "Q213",
+      "query": "How do magnets work?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q214",
+      "query": "What's a good birthday gift for my mom?",
+      "expected": [],
+      "stratum": "oos_general",
+      "fold": "cal"
+    },
+    {
+      "id": "Q215",
+      "query": "What will the weather be like tomorrow in Chicago?",
+      "expected": [],
+      "stratum": "oos_lexical",
+      "fold": "cal"
+    },
+    {
+      "id": "Q216",
+      "query": "What is Apple's stock price today?",
+      "expected": [],
+      "stratum": "oos_lexical",
+      "fold": "conf"
+    },
+    {
+      "id": "Q217",
+      "query": "How do I open a bank account?",
+      "expected": [],
+      "stratum": "oos_lexical",
+      "fold": "cal"
+    },
+    {
+      "id": "Q218",
+      "query": "How do I reset my home network router?",
+      "expected": [],
+      "stratum": "oos_lexical",
+      "fold": "conf"
+    },
+    {
+      "id": "Q219",
+      "query": "How do I pop corn kernels in a pan?",
+      "expected": [],
+      "stratum": "oos_lexical",
+      "fold": "conf"
+    },
+    {
+      "id": "Q220",
+      "query": "What health insurance plan should I buy?",
+      "expected": [],
+      "stratum": "oos_lexical",
+      "fold": "cal"
+    },
+    {
+      "id": "Q221",
+      "query": "Are there supply chain jobs near me?",
+      "expected": [],
+      "stratum": "oos_lexical",
+      "fold": "conf"
+    },
+    {
+      "id": "Q222",
+      "query": "How do I reduce noise from my neighbours?",
+      "expected": [],
+      "stratum": "oos_lexical",
+      "fold": "conf"
+    },
+    {
+      "id": "Q223",
+      "query": "What is the best graph paper for drawing?",
+      "expected": [],
+      "stratum": "oos_lexical",
+      "fold": "cal"
+    },
+    {
+      "id": "Q224",
+      "query": "How do I cure a headache?",
+      "expected": [],
+      "stratum": "oos_lexical",
+      "fold": "cal"
+    },
+    {
+      "id": "Q225",
+      "query": "Which mobile phone has the best battery?",
+      "expected": [],
+      "stratum": "oos_lexical",
+      "fold": "cal"
+    },
+    {
+      "id": "Q226",
+      "query": "How do I play the video game Minecraft?",
+      "expected": [],
+      "stratum": "oos_lexical",
+      "fold": "conf"
+    },
+    {
+      "id": "Q227",
+      "query": "What is the traffic like on the highway right now?",
+      "expected": [],
+      "stratum": "oos_lexical",
+      "fold": "conf"
+    },
+    {
+      "id": "Q228",
+      "query": "How do I file my taxes with finance software?",
+      "expected": [],
+      "stratum": "oos_lexical",
+      "fold": "conf"
+    },
+    {
+      "id": "Q229",
+      "query": "Where can I buy solar panels for my house?",
+      "expected": [],
+      "stratum": "oos_lexical",
+      "fold": "conf"
+    },
+    {
+      "id": "Q230",
+      "query": "How do I compress a video file for email?",
+      "expected": [],
+      "stratum": "oos_lexical",
+      "fold": "conf"
+    },
+    {
+      "id": "Q231",
+      "query": "How does Shor's algorithm factor large numbers?",
+      "expected": [],
+      "stratum": "near_miss",
+      "fold": "conf"
+    },
+    {
+      "id": "Q232",
+      "query": "What is quantum teleportation?",
+      "expected": [],
+      "stratum": "near_miss",
+      "fold": "cal"
+    },
+    {
+      "id": "Q233",
+      "query": "Explain quantum entanglement in simple terms",
+      "expected": [],
+      "stratum": "near_miss",
+      "fold": "conf"
+    },
+    {
+      "id": "Q234",
+      "query": "How does a large language model like GPT generate text?",
+      "expected": [],
+      "stratum": "near_miss",
+      "fold": "conf"
+    },
+    {
+      "id": "Q235",
+      "query": "What is the history of quantum mechanics?",
+      "expected": [],
+      "stratum": "near_miss",
+      "fold": "cal"
+    },
+    {
+      "id": "Q236",
+      "query": "How do superconducting qubits differ from trapped ions?",
+      "expected": [],
+      "stratum": "near_miss",
+      "fold": "cal"
+    },
+    {
+      "id": "Q237",
+      "query": "What is backpropagation?",
+      "expected": [],
+      "stratum": "near_miss",
+      "fold": "conf"
+    },
+    {
+      "id": "Q238",
+      "query": "Explain Grover's search algorithm",
+      "expected": [],
+      "stratum": "near_miss",
+      "fold": "conf"
+    },
+    {
+      "id": "Q239",
+      "query": "What is a convolutional neural network?",
+      "expected": [],
+      "stratum": "near_miss",
+      "fold": "conf"
+    },
+    {
+      "id": "Q240",
+      "query": "How does quantum key distribution work?",
+      "expected": [],
+      "stratum": "near_miss",
+      "fold": "conf"
+    },
+    {
+      "id": "Q241",
+      "query": "What is the Schrodinger equation?",
+      "expected": [],
+      "stratum": "near_miss",
+      "fold": "conf"
+    },
+    {
+      "id": "Q242",
+      "query": "How does dropout regularization work?",
+      "expected": [],
+      "stratum": "near_miss",
+      "fold": "cal"
+    },
+    {
+      "id": "Q243",
+      "query": "What is quantum supremacy?",
+      "expected": [],
+      "stratum": "near_miss",
+      "fold": "conf"
+    },
+    {
+      "id": "Q244",
+      "query": "Who was Richard Feynman?",
+      "expected": [],
+      "stratum": "near_miss",
+      "fold": "conf"
+    },
+    {
+      "id": "Q245",
+      "query": "What is a Bloch sphere?",
+      "expected": [],
+      "stratum": "near_miss",
+      "fold": "cal"
+    },
+    {
+      "id": "Q246",
+      "query": "what is the",
+      "expected": [],
+      "stratum": "stop_only",
+      "fold": "conf"
+    },
+    {
+      "id": "Q247",
+      "query": "how does it work",
+      "expected": [],
+      "stratum": "stop_only",
+      "fold": "cal"
+    },
+    {
+      "id": "Q248",
+      "query": "and then?",
+      "expected": [],
+      "stratum": "stop_only",
+      "fold": "conf"
+    },
+    {
+      "id": "Q249",
+      "query": "why is that",
+      "expected": [],
+      "stratum": "stop_only",
+      "fold": "cal"
+    },
+    {
+      "id": "Q250",
+      "query": "tell me more",
+      "expected": [],
+      "stratum": "stop_only",
+      "fold": "conf"
+    },
+    {
+      "id": "Q251",
+      "query": "can you explain this",
+      "expected": [],
+      "stratum": "stop_only",
+      "fold": "conf"
+    },
+    {
+      "id": "Q252",
+      "query": "what about the other one",
+      "expected": [],
+      "stratum": "stop_only",
+      "fold": "cal"
+    },
+    {
+      "id": "Q253",
+      "query": "is this true",
+      "expected": [],
+      "stratum": "stop_only",
+      "fold": "conf"
+    },
+    {
+      "id": "Q254",
+      "query": "what do you mean",
+      "expected": [],
+      "stratum": "stop_only",
+      "fold": "conf"
+    },
+    {
+      "id": "Q255",
+      "query": "ok",
+      "expected": [],
+      "stratum": "stop_only",
+      "fold": "cal"
+    },
+    {
+      "id": "Q256",
+      "query": "yes",
+      "expected": [],
+      "stratum": "stop_only",
+      "fold": "cal"
+    },
+    {
+      "id": "Q257",
+      "query": "thanks",
+      "expected": [],
+      "stratum": "stop_only",
+      "fold": "cal"
+    },
+    {
+      "id": "Q258",
+      "query": "hello",
+      "expected": [],
+      "stratum": "stop_only",
+      "fold": "cal"
+    },
+    {
+      "id": "Q259",
+      "query": "help",
+      "expected": [],
+      "stratum": "stop_only",
+      "fold": "conf"
+    },
+    {
+      "id": "Q260",
+      "query": "what",
+      "expected": [],
+      "stratum": "stop_only",
+      "fold": "conf"
+    },
+    {
+      "id": "Q261",
+      "query": "who are you",
+      "expected": [],
+      "stratum": "stop_only",
+      "fold": "conf"
+    },
+    {
+      "id": "B001",
+      "query": "What does NISQ stand for and why does it matter?",
+      "expected": [
+        "nisq-reality-overview",
+        "introduction-to-hardware-constrained-learning"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B002",
+      "query": "Why are hybrid loops preferred in the NISQ era?",
+      "expected": [
+        "nisq-reality-overview",
+        "thermodynamics-and-roadmap",
+        "hybrid-applications-healthcare-vision"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B003",
+      "query": "How does a graph neural network decide which nodes to merge before optimization?",
+      "expected": [
+        "ai4qc-routing-and-optimization"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B004",
+      "query": "What is nested Monte Carlo search used for in qubit routing?",
+      "expected": [
+        "ai4qc-routing-and-optimization"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B005",
+      "query": "How do quantum vision transformers reduce attention cost?",
+      "expected": [
+        "hybrid-applications-healthcare-vision"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B006",
+      "query": "Why are quantum diffusion models useful for few-shot learning?",
+      "expected": [
+        "hybrid-applications-healthcare-vision"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B007",
+      "query": "How is a quantum kernel used to classify medical images?",
+      "expected": [
+        "clinical-and-kernel-qcai-systems"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B008",
+      "query": "What are the risks of quantum reinforcement learning in clinical settings?",
+      "expected": [
+        "clinical-and-kernel-qcai-systems"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B009",
+      "query": "What is quantum implicit neural compression?",
+      "expected": [
+        "representation-language-and-xai"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B010",
+      "query": "How does QGShap compute exact feature attributions?",
+      "expected": [
+        "hybrid-applications-healthcare-vision",
+        "representation-language-and-xai",
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B011",
+      "query": "How could quantum computing change pharmaceutical research?",
+      "expected": [
+        "industry-use-cases",
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B012",
+      "query": "Why is post-quantum migration urgent for cybersecurity?",
+      "expected": [
+        "industry-use-cases",
+        "thermodynamics-and-roadmap"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B013",
+      "query": "How can QUBO help choose data for fine-tuning language models?",
+      "expected": [
+        "thermodynamics-and-roadmap",
+        "representation-language-and-xai"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B014",
+      "query": "Why do quantum agents have an energetic advantage?",
+      "expected": [
+        "thermodynamics-and-roadmap",
+        "representation-language-and-xai"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B015",
+      "query": "What are the main hardware constraints that shape quantum learning?",
+      "expected": [
+        "introduction-to-hardware-constrained-learning",
+        "intermediate-quantum-programming-patterns",
+        "hardware-constrained-qcai-models"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B016",
+      "query": "What failure modes should I diagnose in hardware-constrained learning?",
+      "expected": [
+        "introduction-to-hardware-constrained-learning",
+        "intermediate-quantum-programming-patterns"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B017",
+      "query": "What is the trade-off between circuit depth and trainability?",
+      "expected": [
+        "hardware-constrained-qcai-models",
+        "introduction-to-hardware-constrained-learning"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B018",
+      "query": "Which test strategy does the course recommend for QC+AI models?",
+      "expected": [
+        "hardware-constrained-qcai-models",
+        "intermediate-quantum-programming-patterns",
+        "advanced-quantum-software-development",
+        "quantum-finance-programming-and-optimization"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B019",
+      "query": "How does adaptive shot allocation reduce execution cost?",
+      "expected": [
+        "intermediate-quantum-programming-patterns"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B020",
+      "query": "What patterns help debug variational circuits on real devices?",
+      "expected": [
+        "intermediate-quantum-programming-patterns"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B021",
+      "query": "How does caching improve reproducibility in hybrid quantum software?",
+      "expected": [
+        "advanced-quantum-software-development"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B022",
+      "query": "What is the role of MLIR dialects in quantum compilers?",
+      "expected": [
+        "advanced-quantum-software-development"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B023",
+      "query": "How is amplitude estimation used for option pricing?",
+      "expected": [
+        "quantum-finance-programming-and-optimization"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B024",
+      "query": "Why does quantum finance need model-risk management?",
+      "expected": [
+        "quantum-finance-programming-and-optimization"
+      ],
+      "stratum": "holdout_in",
+      "fold": "holdout"
+    },
+    {
+      "id": "B025",
+      "query": "How do I fix a leaking faucet?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B026",
+      "query": "What is the best way to learn French?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B027",
+      "query": "Who invented the telephone?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B028",
+      "query": "How many players are on a basketball team?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B029",
+      "query": "What should I cook for dinner tonight?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B030",
+      "query": "How do I get rid of ants in the kitchen?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B031",
+      "query": "What is the longest river in Africa?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B032",
+      "query": "Can you recommend a fantasy novel?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B033",
+      "query": "How do I improve my credit score?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B034",
+      "query": "When is the next solar eclipse?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B035",
+      "query": "How do I make a paper airplane?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B036",
+      "query": "What is the chemical symbol for gold?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B037",
+      "query": "Why is the sky blue?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B038",
+      "query": "How do I stop snoring?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B039",
+      "query": "What are good exercises for back pain?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B040",
+      "query": "How old is the universe?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B041",
+      "query": "Who was Napoleon?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B042",
+      "query": "How do I write a wedding speech?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B043",
+      "query": "What is the best time to visit Japan?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B044",
+      "query": "How do I clean a cast iron pan?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B045",
+      "query": "What does a dentist do?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B046",
+      "query": "How do I start running?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B047",
+      "query": "What is inflation?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B048",
+      "query": "How do I care for a cactus?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B049",
+      "query": "What is the national animal of Scotland?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B050",
+      "query": "How do I play poker?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B051",
+      "query": "What is the freezing point of water?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B052",
+      "query": "How do I make friends in a new city?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B053",
+      "query": "Who sang Bohemian Rhapsody?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B054",
+      "query": "How do I fold a fitted sheet?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B055",
+      "query": "What are the planets in the solar system?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B056",
+      "query": "How can I sleep better?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B057",
+      "query": "What is a haiku?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B058",
+      "query": "How do I wash a wool sweater?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B059",
+      "query": "What is the currency of Mexico?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B060",
+      "query": "How many bones are in the human body?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B061",
+      "query": "Where do penguins live?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B062",
+      "query": "How do I study for a history exam?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B063",
+      "query": "What is the recipe for pancakes?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B064",
+      "query": "How do I set up a fish tank?",
+      "expected": [],
+      "stratum": "holdout_oos",
+      "fold": "holdout"
+    },
+    {
+      "id": "B065",
+      "query": "go on",
+      "expected": [],
+      "stratum": "holdout_stop",
+      "fold": "holdout"
+    },
+    {
+      "id": "B066",
+      "query": "and?",
+      "expected": [],
+      "stratum": "holdout_stop",
+      "fold": "holdout"
+    },
+    {
+      "id": "B067",
+      "query": "what else",
+      "expected": [],
+      "stratum": "holdout_stop",
+      "fold": "holdout"
+    },
+    {
+      "id": "B068",
+      "query": "say more",
+      "expected": [],
+      "stratum": "holdout_stop",
+      "fold": "holdout"
+    },
+    {
+      "id": "B069",
+      "query": "why not",
+      "expected": [],
+      "stratum": "holdout_stop",
+      "fold": "holdout"
+    },
+    {
+      "id": "B070",
+      "query": "really?",
+      "expected": [],
+      "stratum": "holdout_stop",
+      "fold": "holdout"
+    },
+    {
+      "id": "B071",
+      "query": "can you help me",
+      "expected": [],
+      "stratum": "holdout_stop",
+      "fold": "holdout"
+    },
+    {
+      "id": "B072",
+      "query": "is that so",
+      "expected": [],
+      "stratum": "holdout_stop",
+      "fold": "holdout"
+    }
+  ]
+}

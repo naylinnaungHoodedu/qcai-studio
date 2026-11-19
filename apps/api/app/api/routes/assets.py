@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import AuthUser, get_current_user
 from app.core.corpus_governance import get_corpus_registry
 from app.core.config import Settings, get_settings
+from app.core.data_planes import PrivatePlaneAccessError, assert_public_plane_path
 from app.core.db import get_db
 from app.core.guest_tokens import GUEST_TOKEN_COOKIE
 from app.services.local_accounts import AUTH_SESSION_COOKIE_NAME
@@ -59,13 +60,23 @@ def _require_asset_access(
     return user
 
 
+def _public_plane(path: Path, settings: Settings) -> Path:
+    # No API path to the private plane (task 2.8): a resolved path under a private-plane glob, or a licensed
+    # volume, is the same 404 as a missing file, whatever the root resolves to.
+    try:
+        assert_public_plane_path(path, settings.project_root)
+    except PrivatePlaneAccessError:
+        raise HTTPException(status_code=404, detail="Source asset not found.") from None
+    return path
+
+
 def _resolve_asset_path(filename: str) -> Path:
     settings = get_settings()
     get_corpus_registry(settings).require_public_asset(filename)
     allowed_paths = settings.source_documents + settings.source_videos
     for path in allowed_paths:
         if path.name == filename and path.exists():
-            return path
+            return _public_plane(path, settings)
     raise HTTPException(status_code=404, detail="Source asset not found.")
 
 
@@ -75,7 +86,7 @@ def _resolve_asset_path_by_id(asset_id: str) -> Path:
     for path in allowed_paths:
         if asset_id in source_asset_lookup_ids(path.name) and path.exists():
             get_corpus_registry(settings).require_public_asset(path.name)
-            return path
+            return _public_plane(path, settings)
     raise HTTPException(status_code=404, detail="Source asset not found.")
 
 

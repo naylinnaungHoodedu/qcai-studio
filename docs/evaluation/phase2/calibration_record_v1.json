@@ -1,0 +1,7552 @@
+{
+ "record": "qcai-abstention-calibration",
+ "format_version": 1,
+ "created_at": "2026-11-19T08:42:02Z",
+ "commit": "5af6978d6672a9f032749820e9b86031ca97e3ca",
+ "config_package_version": "1.0.0",
+ "retrieval_sha256": "1782e1b3c1c509857979bf84117b7c61614523737636234908ddb97d437baa7e",
+ "corpus_version": "corpus-a02930b08f2e9251",
+ "span_scheme": "span-v2",
+ "public_corpus_only": true,
+ "excluded_sources": [
+  "private plane",
+  "lqs/ (ULQS)",
+  "learner records, tutor turns, ratings"
+ ],
+ "datasets": {
+  "fixture": {
+   "path": "apps/api/tests/data/phase2_calibration_queries.json",
+   "sha256": "b0d1e4c24116ccb4911571803f0dd64ef0bf6704eaa5f065451c347a958c090a",
+   "sources": {
+    "BEP-1/27_score_floor/fixture.json": "87b7be2116b9c28fbb97ecfc48fdab8c4bd40a34c0111449c6f04dfc47e5b6fa",
+    "BEP-1/27_score_floor/holdout.json": "3f51a9e44a78068d618a8783af4a50e610a361479f929e08dae1c0ac1ae859db"
+   },
+   "fold_rule": "sha256(query) first hex digit even -> cal, odd -> conf (pre-registered, BEP-1); hold-out B items carry fold \"holdout\"",
+   "strata": {
+    "holdout_in": 24,
+    "holdout_oos": 40,
+    "holdout_stop": 8,
+    "in_flashcard": 36,
+    "in_multi": 10,
+    "in_paraphrase": 24,
+    "in_quiz": 8,
+    "in_short": 36,
+    "in_suggested": 36,
+    "near_miss": 15,
+    "oos_general": 60,
+    "oos_lexical": 16,
+    "stop_only": 16
+   }
+  },
+  "ac_fixture": {
+   "path": "apps/api/tests/data/score_floor_queries.json",
+   "sha256": "321f37372144a7c8088799af13c2b5a46c5db759dc322e05b46867bd98c53a57",
+   "note": "AC-2-4/AC-2-5 fixture (Phase 1); equals the union of the gated strata and hold-out B"
+  },
+  "learner_questions": {
+   "source": "MODULE_BLUEPRINTS learner_questions, label = own lesson",
+   "count": 36
+  }
+ },
+ "metric_definitions": {
+  "recall_at_5": "expected lesson in the union of lesson_slugs of the top 5 survivors (BEP-1 definition, generalised)",
+  "recall_at_5_slot_equal": "expected lesson among the first 5 (span, lesson) pairs, lessons expanded in blueprint order (informational)",
+  "answer_rate": "share of in-domain queries with >= 1 document span among the top 4 survivors (all-approved configuration)"
+ },
+ "grid": {
+  "start": 0.0,
+  "stop": 20.0,
+  "step": 0.05
+ },
+ "configurations": [
+  {
+   "name": "governed_as_configured",
+   "description": "committed manifest, D-31: zero approved; authored spans only",
+   "corpus_version": "corpus-a02930b08f2e9251",
+   "index_version": "index-3ccbff1a05c33eba",
+   "entries": 41,
+   "legacy": {
+    "algorithm": "score-floor-p1-v1",
+    "recall_at_5": {
+     "cal": 63,
+     "conf": 52,
+     "holdout": 16,
+     "all": 131
+    },
+    "learner_questions_recall_at_5": 36
+   },
+   "p1_floor_on_span_index": {
+    "index_version": "index-13cddd96619c7afa",
+    "recall_at_5_all": 131,
+    "learner_questions_recall_at_5": 36,
+    "equals_legacy_per_query": true,
+    "strata_with_results": {
+     "oos_general": 0,
+     "stop_only": 0,
+     "oos_lexical": 0,
+     "near_miss": 1
+    }
+   },
+   "sweep": [
+    {
+     "floor": 0.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 0.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 1.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 69
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 68
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 68
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 68
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 68
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 68
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 68
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 67
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 2.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 65
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 64
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 64
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 3.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 4.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 4.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 4.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 4.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 4.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 4.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 4.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 4.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 4.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 4.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 4.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 4.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 4.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 4.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 4.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 4.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": true
+    },
+    {
+     "floor": 4.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 4.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 60
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 4.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 59
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 4.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 59
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 59
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 59
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 59
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 59
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 59
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 59
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 58
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 58
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 58
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 58
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 58
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 57
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 57
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 56
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 56
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 56
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 56
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 56
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 55
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 5.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 55
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 55
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 54
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 54
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 53
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 51
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 50
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 50
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 49
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 49
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 47
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 47
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 46
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 46
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 45
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 45
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 44
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 44
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 43
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 42
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 6.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 42
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 42
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 7.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 8.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 8.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 40
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 8.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 40
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 8.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 40
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 8.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 40
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 8.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 40
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 8.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 40
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 8.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 40
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 8.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 40
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 8.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 40
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 8.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 38
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 8.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 37
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 8.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 37
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 8.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 36
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 8.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 36
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 8.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 36
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 8.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 35
+     },
+     "learner_questions_recall_at_5": 36,
+     "feasible": false
+    },
+    {
+     "floor": 8.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 34
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 8.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 34
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 8.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 34
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 34
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 34
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 34
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 34
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 34
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 34
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 34
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 34
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 34
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 34
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 34
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 34
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 34
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 33
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 33
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 33
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 33
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 33
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 33
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 9.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 33
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 33
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 33
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 33
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 33
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 33
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 33
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 33
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 32
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 32
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 32
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 32
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 32
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 32
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 32
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 32
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 32
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 32
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 32
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 32
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 10.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 31
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 31
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 31
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 31
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 30
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 30
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 30
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 30
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 30
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 30
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 30
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 29
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 29
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 29
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 29
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 29
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 29
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 11.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 27
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 27
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 27
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 27
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 27
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 27
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 12.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 27
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 27
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 27
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 27
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 27
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 26
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 26
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 26
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 26
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 26
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 26
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 26
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 26
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 13.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 14.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 15.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 15.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 15.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 15.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 15.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 15.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 15.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 15.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 15.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 15.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 15.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 15.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 15.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 15.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 15.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 15.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 15.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 35,
+     "feasible": false
+    },
+    {
+     "floor": 15.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 34,
+     "feasible": false
+    },
+    {
+     "floor": 15.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 24
+     },
+     "learner_questions_recall_at_5": 34,
+     "feasible": false
+    },
+    {
+     "floor": 15.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 23
+     },
+     "learner_questions_recall_at_5": 34,
+     "feasible": false
+    },
+    {
+     "floor": 16.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 23
+     },
+     "learner_questions_recall_at_5": 34,
+     "feasible": false
+    },
+    {
+     "floor": 16.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 23
+     },
+     "learner_questions_recall_at_5": 34,
+     "feasible": false
+    },
+    {
+     "floor": 16.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 23
+     },
+     "learner_questions_recall_at_5": 34,
+     "feasible": false
+    },
+    {
+     "floor": 16.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 23
+     },
+     "learner_questions_recall_at_5": 34,
+     "feasible": false
+    },
+    {
+     "floor": 16.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 23
+     },
+     "learner_questions_recall_at_5": 34,
+     "feasible": false
+    },
+    {
+     "floor": 16.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 23
+     },
+     "learner_questions_recall_at_5": 34,
+     "feasible": false
+    },
+    {
+     "floor": 16.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 33,
+     "feasible": false
+    },
+    {
+     "floor": 16.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 33,
+     "feasible": false
+    },
+    {
+     "floor": 16.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 33,
+     "feasible": false
+    },
+    {
+     "floor": 16.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 33,
+     "feasible": false
+    },
+    {
+     "floor": 16.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 33,
+     "feasible": false
+    },
+    {
+     "floor": 16.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 33,
+     "feasible": false
+    },
+    {
+     "floor": 16.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 33,
+     "feasible": false
+    },
+    {
+     "floor": 16.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 33,
+     "feasible": false
+    },
+    {
+     "floor": 16.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 33,
+     "feasible": false
+    },
+    {
+     "floor": 16.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 33,
+     "feasible": false
+    },
+    {
+     "floor": 16.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 33,
+     "feasible": false
+    },
+    {
+     "floor": 16.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 33,
+     "feasible": false
+    },
+    {
+     "floor": 16.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 33,
+     "feasible": false
+    },
+    {
+     "floor": 16.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 33,
+     "feasible": false
+    },
+    {
+     "floor": 17.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 32,
+     "feasible": false
+    },
+    {
+     "floor": 17.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 32,
+     "feasible": false
+    },
+    {
+     "floor": 17.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 32,
+     "feasible": false
+    },
+    {
+     "floor": 17.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 32,
+     "feasible": false
+    },
+    {
+     "floor": 17.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 32,
+     "feasible": false
+    },
+    {
+     "floor": 17.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 32,
+     "feasible": false
+    },
+    {
+     "floor": 17.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 31,
+     "feasible": false
+    },
+    {
+     "floor": 17.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 31,
+     "feasible": false
+    },
+    {
+     "floor": 17.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 31,
+     "feasible": false
+    },
+    {
+     "floor": 17.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 31,
+     "feasible": false
+    },
+    {
+     "floor": 17.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 31,
+     "feasible": false
+    },
+    {
+     "floor": 17.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 31,
+     "feasible": false
+    },
+    {
+     "floor": 17.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 31,
+     "feasible": false
+    },
+    {
+     "floor": 17.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 31,
+     "feasible": false
+    },
+    {
+     "floor": 17.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 31,
+     "feasible": false
+    },
+    {
+     "floor": 17.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 31,
+     "feasible": false
+    },
+    {
+     "floor": 17.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 31,
+     "feasible": false
+    },
+    {
+     "floor": 17.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 31,
+     "feasible": false
+    },
+    {
+     "floor": 17.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 31,
+     "feasible": false
+    },
+    {
+     "floor": 17.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 31,
+     "feasible": false
+    },
+    {
+     "floor": 18.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 31,
+     "feasible": false
+    },
+    {
+     "floor": 18.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 31,
+     "feasible": false
+    },
+    {
+     "floor": 18.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 30,
+     "feasible": false
+    },
+    {
+     "floor": 18.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 30,
+     "feasible": false
+    },
+    {
+     "floor": 18.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 30,
+     "feasible": false
+    },
+    {
+     "floor": 18.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 30,
+     "feasible": false
+    },
+    {
+     "floor": 18.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 30,
+     "feasible": false
+    },
+    {
+     "floor": 18.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 29,
+     "feasible": false
+    },
+    {
+     "floor": 18.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 29,
+     "feasible": false
+    },
+    {
+     "floor": 18.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 29,
+     "feasible": false
+    },
+    {
+     "floor": 18.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 29,
+     "feasible": false
+    },
+    {
+     "floor": 18.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 29,
+     "feasible": false
+    },
+    {
+     "floor": 18.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 29,
+     "feasible": false
+    },
+    {
+     "floor": 18.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 29,
+     "feasible": false
+    },
+    {
+     "floor": 18.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 20
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": false
+    },
+    {
+     "floor": 18.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 20
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": false
+    },
+    {
+     "floor": 18.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 20
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": false
+    },
+    {
+     "floor": 18.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 20
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": false
+    },
+    {
+     "floor": 18.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 20
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": false
+    },
+    {
+     "floor": 18.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 20
+     },
+     "learner_questions_recall_at_5": 27,
+     "feasible": false
+    },
+    {
+     "floor": 19.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 20
+     },
+     "learner_questions_recall_at_5": 27,
+     "feasible": false
+    },
+    {
+     "floor": 19.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 20
+     },
+     "learner_questions_recall_at_5": 27,
+     "feasible": false
+    },
+    {
+     "floor": 19.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 20
+     },
+     "learner_questions_recall_at_5": 27,
+     "feasible": false
+    },
+    {
+     "floor": 19.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 20
+     },
+     "learner_questions_recall_at_5": 27,
+     "feasible": false
+    },
+    {
+     "floor": 19.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 20
+     },
+     "learner_questions_recall_at_5": 27,
+     "feasible": false
+    },
+    {
+     "floor": 19.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 20
+     },
+     "learner_questions_recall_at_5": 27,
+     "feasible": false
+    },
+    {
+     "floor": 19.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 19.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 19.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 19.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 19.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 19.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 19.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 19.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 19.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 18
+     },
+     "learner_questions_recall_at_5": 25,
+     "feasible": false
+    },
+    {
+     "floor": 19.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 18
+     },
+     "learner_questions_recall_at_5": 25,
+     "feasible": false
+    },
+    {
+     "floor": 19.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 18
+     },
+     "learner_questions_recall_at_5": 25,
+     "feasible": false
+    },
+    {
+     "floor": 19.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 18
+     },
+     "learner_questions_recall_at_5": 25,
+     "feasible": false
+    },
+    {
+     "floor": 19.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 17
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 19.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 16
+     },
+     "learner_questions_recall_at_5": 23,
+     "feasible": false
+    },
+    {
+     "floor": 20.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 16
+     },
+     "learner_questions_recall_at_5": 23,
+     "feasible": false
+    }
+   ],
+   "feasible_window_cal": [
+    0.0,
+    4.75
+   ]
+  },
+  {
+   "name": "all_public_approved",
+   "description": "every public-plane bound item approved (temporary manifest, never committed)",
+   "corpus_version": "corpus-c658893abb6440dd",
+   "index_version": "index-473cb92221ea2165",
+   "entries": 331,
+   "legacy": {
+    "algorithm": "score-floor-p1-v1",
+    "recall_at_5": {
+     "cal": 56,
+     "conf": 54,
+     "holdout": 19,
+     "all": 129
+    },
+    "learner_questions_recall_at_5": 28
+   },
+   "p1_floor_on_span_index": {
+    "index_version": "index-afc81543f34c17f8",
+    "recall_at_5_all": 118,
+    "learner_questions_recall_at_5": 22,
+    "equals_legacy_per_query": false,
+    "strata_with_results": {
+     "oos_general": 0,
+     "stop_only": 0,
+     "oos_lexical": 2,
+     "near_miss": 7
+    }
+   },
+   "sweep": [
+    {
+     "floor": 0.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 0.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 1.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 2.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 63
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 3.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 4.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 62
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 61
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 61
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 61
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 5.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 61
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 6.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 60
+     },
+     "learner_questions_recall_at_5": 28,
+     "feasible": true
+    },
+    {
+     "floor": 6.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 60
+     },
+     "learner_questions_recall_at_5": 27,
+     "feasible": false
+    },
+    {
+     "floor": 6.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 60
+     },
+     "learner_questions_recall_at_5": 27,
+     "feasible": false
+    },
+    {
+     "floor": 6.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 60
+     },
+     "learner_questions_recall_at_5": 27,
+     "feasible": false
+    },
+    {
+     "floor": 6.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 60
+     },
+     "learner_questions_recall_at_5": 27,
+     "feasible": false
+    },
+    {
+     "floor": 6.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 60
+     },
+     "learner_questions_recall_at_5": 27,
+     "feasible": false
+    },
+    {
+     "floor": 6.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 60
+     },
+     "learner_questions_recall_at_5": 27,
+     "feasible": false
+    },
+    {
+     "floor": 6.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 60
+     },
+     "learner_questions_recall_at_5": 27,
+     "feasible": false
+    },
+    {
+     "floor": 6.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 60
+     },
+     "learner_questions_recall_at_5": 27,
+     "feasible": false
+    },
+    {
+     "floor": 6.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 59
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 6.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 59
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 6.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 59
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 6.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 58
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 6.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 58
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 6.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 57
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 6.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 55
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 6.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 55
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 6.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 55
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 6.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 55
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 6.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 54
+     },
+     "learner_questions_recall_at_5": 26,
+     "feasible": false
+    },
+    {
+     "floor": 7.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 53
+     },
+     "learner_questions_recall_at_5": 25,
+     "feasible": false
+    },
+    {
+     "floor": 7.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 53
+     },
+     "learner_questions_recall_at_5": 25,
+     "feasible": false
+    },
+    {
+     "floor": 7.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 53
+     },
+     "learner_questions_recall_at_5": 25,
+     "feasible": false
+    },
+    {
+     "floor": 7.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 53
+     },
+     "learner_questions_recall_at_5": 25,
+     "feasible": false
+    },
+    {
+     "floor": 7.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 52
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 7.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 52
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 7.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 52
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 7.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 52
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 7.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 52
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 7.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 52
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 7.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 52
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 7.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 51
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 7.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 51
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 7.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 51
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 7.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 51
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 7.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 49
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 7.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 49
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 7.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 48
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 7.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 48
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 7.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 47
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 8.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 47
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 8.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 47
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 8.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 47
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 8.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 47
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 8.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 47
+     },
+     "learner_questions_recall_at_5": 24,
+     "feasible": false
+    },
+    {
+     "floor": 8.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 46
+     },
+     "learner_questions_recall_at_5": 23,
+     "feasible": false
+    },
+    {
+     "floor": 8.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 46
+     },
+     "learner_questions_recall_at_5": 23,
+     "feasible": false
+    },
+    {
+     "floor": 8.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 46
+     },
+     "learner_questions_recall_at_5": 23,
+     "feasible": false
+    },
+    {
+     "floor": 8.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 46
+     },
+     "learner_questions_recall_at_5": 23,
+     "feasible": false
+    },
+    {
+     "floor": 8.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 46
+     },
+     "learner_questions_recall_at_5": 23,
+     "feasible": false
+    },
+    {
+     "floor": 8.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 46
+     },
+     "learner_questions_recall_at_5": 23,
+     "feasible": false
+    },
+    {
+     "floor": 8.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 46
+     },
+     "learner_questions_recall_at_5": 23,
+     "feasible": false
+    },
+    {
+     "floor": 8.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 45
+     },
+     "learner_questions_recall_at_5": 23,
+     "feasible": false
+    },
+    {
+     "floor": 8.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 44
+     },
+     "learner_questions_recall_at_5": 22,
+     "feasible": false
+    },
+    {
+     "floor": 8.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 44
+     },
+     "learner_questions_recall_at_5": 22,
+     "feasible": false
+    },
+    {
+     "floor": 8.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 44
+     },
+     "learner_questions_recall_at_5": 22,
+     "feasible": false
+    },
+    {
+     "floor": 8.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 44
+     },
+     "learner_questions_recall_at_5": 22,
+     "feasible": false
+    },
+    {
+     "floor": 8.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 44
+     },
+     "learner_questions_recall_at_5": 22,
+     "feasible": false
+    },
+    {
+     "floor": 8.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 44
+     },
+     "learner_questions_recall_at_5": 22,
+     "feasible": false
+    },
+    {
+     "floor": 8.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 21,
+     "feasible": false
+    },
+    {
+     "floor": 9.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 41
+     },
+     "learner_questions_recall_at_5": 20,
+     "feasible": false
+    },
+    {
+     "floor": 9.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 40
+     },
+     "learner_questions_recall_at_5": 19,
+     "feasible": false
+    },
+    {
+     "floor": 9.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 40
+     },
+     "learner_questions_recall_at_5": 19,
+     "feasible": false
+    },
+    {
+     "floor": 9.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 40
+     },
+     "learner_questions_recall_at_5": 19,
+     "feasible": false
+    },
+    {
+     "floor": 9.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 39
+     },
+     "learner_questions_recall_at_5": 19,
+     "feasible": false
+    },
+    {
+     "floor": 9.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 39
+     },
+     "learner_questions_recall_at_5": 19,
+     "feasible": false
+    },
+    {
+     "floor": 9.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 39
+     },
+     "learner_questions_recall_at_5": 19,
+     "feasible": false
+    },
+    {
+     "floor": 9.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 39
+     },
+     "learner_questions_recall_at_5": 19,
+     "feasible": false
+    },
+    {
+     "floor": 9.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 38
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 9.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 38
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 9.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 38
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 9.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 38
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 9.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 38
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 9.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 37
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 9.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 37
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 9.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 37
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 9.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 37
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 9.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 37
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 9.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 37
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 9.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 37
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 10.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 37
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 10.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 37
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 10.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 37
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 10.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 37
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 10.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 34
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 10.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 33
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 10.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 32
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 10.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 31
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 10.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 31
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 10.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 31
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 10.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 31
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 10.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 31
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 10.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 31
+     },
+     "learner_questions_recall_at_5": 18,
+     "feasible": false
+    },
+    {
+     "floor": 10.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 31
+     },
+     "learner_questions_recall_at_5": 17,
+     "feasible": false
+    },
+    {
+     "floor": 10.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 31
+     },
+     "learner_questions_recall_at_5": 16,
+     "feasible": false
+    },
+    {
+     "floor": 10.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 31
+     },
+     "learner_questions_recall_at_5": 16,
+     "feasible": false
+    },
+    {
+     "floor": 10.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 31
+     },
+     "learner_questions_recall_at_5": 16,
+     "feasible": false
+    },
+    {
+     "floor": 10.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 31
+     },
+     "learner_questions_recall_at_5": 16,
+     "feasible": false
+    },
+    {
+     "floor": 10.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 31
+     },
+     "learner_questions_recall_at_5": 16,
+     "feasible": false
+    },
+    {
+     "floor": 10.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 30
+     },
+     "learner_questions_recall_at_5": 16,
+     "feasible": false
+    },
+    {
+     "floor": 11.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 29
+     },
+     "learner_questions_recall_at_5": 16,
+     "feasible": false
+    },
+    {
+     "floor": 11.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 29
+     },
+     "learner_questions_recall_at_5": 16,
+     "feasible": false
+    },
+    {
+     "floor": 11.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 29
+     },
+     "learner_questions_recall_at_5": 16,
+     "feasible": false
+    },
+    {
+     "floor": 11.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 29
+     },
+     "learner_questions_recall_at_5": 16,
+     "feasible": false
+    },
+    {
+     "floor": 11.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 29
+     },
+     "learner_questions_recall_at_5": 16,
+     "feasible": false
+    },
+    {
+     "floor": 11.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 29
+     },
+     "learner_questions_recall_at_5": 16,
+     "feasible": false
+    },
+    {
+     "floor": 11.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 16,
+     "feasible": false
+    },
+    {
+     "floor": 11.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 28
+     },
+     "learner_questions_recall_at_5": 16,
+     "feasible": false
+    },
+    {
+     "floor": 11.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 27
+     },
+     "learner_questions_recall_at_5": 16,
+     "feasible": false
+    },
+    {
+     "floor": 11.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 26
+     },
+     "learner_questions_recall_at_5": 16,
+     "feasible": false
+    },
+    {
+     "floor": 11.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 26
+     },
+     "learner_questions_recall_at_5": 16,
+     "feasible": false
+    },
+    {
+     "floor": 11.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 26
+     },
+     "learner_questions_recall_at_5": 16,
+     "feasible": false
+    },
+    {
+     "floor": 11.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 11.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 11.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 11.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 11.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 25
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 11.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 24
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 11.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 24
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 11.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 24
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 24
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 24
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 24
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 24
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 24
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 24
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 24
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 24
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 24
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 24
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 24
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 24
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 15,
+     "feasible": false
+    },
+    {
+     "floor": 12.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 14,
+     "feasible": false
+    },
+    {
+     "floor": 12.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 14,
+     "feasible": false
+    },
+    {
+     "floor": 13.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 14,
+     "feasible": false
+    },
+    {
+     "floor": 13.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 14,
+     "feasible": false
+    },
+    {
+     "floor": 13.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 13,
+     "feasible": false
+    },
+    {
+     "floor": 13.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 13,
+     "feasible": false
+    },
+    {
+     "floor": 13.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 13,
+     "feasible": false
+    },
+    {
+     "floor": 13.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 13,
+     "feasible": false
+    },
+    {
+     "floor": 13.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 13,
+     "feasible": false
+    },
+    {
+     "floor": 13.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 13,
+     "feasible": false
+    },
+    {
+     "floor": 13.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 13,
+     "feasible": false
+    },
+    {
+     "floor": 13.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 13,
+     "feasible": false
+    },
+    {
+     "floor": 13.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 13,
+     "feasible": false
+    },
+    {
+     "floor": 13.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 13,
+     "feasible": false
+    },
+    {
+     "floor": 13.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 22
+     },
+     "learner_questions_recall_at_5": 13,
+     "feasible": false
+    },
+    {
+     "floor": 13.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 21
+     },
+     "learner_questions_recall_at_5": 13,
+     "feasible": false
+    },
+    {
+     "floor": 13.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 20
+     },
+     "learner_questions_recall_at_5": 12,
+     "feasible": false
+    },
+    {
+     "floor": 13.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 20
+     },
+     "learner_questions_recall_at_5": 12,
+     "feasible": false
+    },
+    {
+     "floor": 13.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 20
+     },
+     "learner_questions_recall_at_5": 12,
+     "feasible": false
+    },
+    {
+     "floor": 13.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 20
+     },
+     "learner_questions_recall_at_5": 12,
+     "feasible": false
+    },
+    {
+     "floor": 13.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 11,
+     "feasible": false
+    },
+    {
+     "floor": 13.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 11,
+     "feasible": false
+    },
+    {
+     "floor": 14.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 11,
+     "feasible": false
+    },
+    {
+     "floor": 14.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 11,
+     "feasible": false
+    },
+    {
+     "floor": 14.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 11,
+     "feasible": false
+    },
+    {
+     "floor": 14.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 11,
+     "feasible": false
+    },
+    {
+     "floor": 14.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 11,
+     "feasible": false
+    },
+    {
+     "floor": 14.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 11,
+     "feasible": false
+    },
+    {
+     "floor": 14.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 10,
+     "feasible": false
+    },
+    {
+     "floor": 14.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 14.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 14.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 14.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 14.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 14.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 14.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 14.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 14.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 14.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 14.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 14.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 14.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 19
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 18
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 18
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 18
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 18
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 18
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 17
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 17
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 17
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 16
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 16
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 16
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 16
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 16
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 15
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 15.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 13
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 16.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 13
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 16.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 13
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 16.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 13
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 16.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 13
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 16.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 13
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 16.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 13
+     },
+     "learner_questions_recall_at_5": 9,
+     "feasible": false
+    },
+    {
+     "floor": 16.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 12
+     },
+     "learner_questions_recall_at_5": 8,
+     "feasible": false
+    },
+    {
+     "floor": 16.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 11
+     },
+     "learner_questions_recall_at_5": 7,
+     "feasible": false
+    },
+    {
+     "floor": 16.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 11
+     },
+     "learner_questions_recall_at_5": 7,
+     "feasible": false
+    },
+    {
+     "floor": 16.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 11
+     },
+     "learner_questions_recall_at_5": 7,
+     "feasible": false
+    },
+    {
+     "floor": 16.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 10
+     },
+     "learner_questions_recall_at_5": 6,
+     "feasible": false
+    },
+    {
+     "floor": 16.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 10
+     },
+     "learner_questions_recall_at_5": 6,
+     "feasible": false
+    },
+    {
+     "floor": 16.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 10
+     },
+     "learner_questions_recall_at_5": 6,
+     "feasible": false
+    },
+    {
+     "floor": 16.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 9
+     },
+     "learner_questions_recall_at_5": 5,
+     "feasible": false
+    },
+    {
+     "floor": 16.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 9
+     },
+     "learner_questions_recall_at_5": 5,
+     "feasible": false
+    },
+    {
+     "floor": 16.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 9
+     },
+     "learner_questions_recall_at_5": 5,
+     "feasible": false
+    },
+    {
+     "floor": 16.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 9
+     },
+     "learner_questions_recall_at_5": 5,
+     "feasible": false
+    },
+    {
+     "floor": 16.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 9
+     },
+     "learner_questions_recall_at_5": 5,
+     "feasible": false
+    },
+    {
+     "floor": 16.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 9
+     },
+     "learner_questions_recall_at_5": 5,
+     "feasible": false
+    },
+    {
+     "floor": 16.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 9
+     },
+     "learner_questions_recall_at_5": 5,
+     "feasible": false
+    },
+    {
+     "floor": 17.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 9
+     },
+     "learner_questions_recall_at_5": 5,
+     "feasible": false
+    },
+    {
+     "floor": 17.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 8
+     },
+     "learner_questions_recall_at_5": 5,
+     "feasible": false
+    },
+    {
+     "floor": 17.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 8
+     },
+     "learner_questions_recall_at_5": 5,
+     "feasible": false
+    },
+    {
+     "floor": 17.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 8
+     },
+     "learner_questions_recall_at_5": 5,
+     "feasible": false
+    },
+    {
+     "floor": 17.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 8
+     },
+     "learner_questions_recall_at_5": 5,
+     "feasible": false
+    },
+    {
+     "floor": 17.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 8
+     },
+     "learner_questions_recall_at_5": 5,
+     "feasible": false
+    },
+    {
+     "floor": 17.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 8
+     },
+     "learner_questions_recall_at_5": 5,
+     "feasible": false
+    },
+    {
+     "floor": 17.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 4,
+     "feasible": false
+    },
+    {
+     "floor": 17.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 4,
+     "feasible": false
+    },
+    {
+     "floor": 17.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 4,
+     "feasible": false
+    },
+    {
+     "floor": 17.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 4,
+     "feasible": false
+    },
+    {
+     "floor": 17.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 4,
+     "feasible": false
+    },
+    {
+     "floor": 17.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 4,
+     "feasible": false
+    },
+    {
+     "floor": 17.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 4,
+     "feasible": false
+    },
+    {
+     "floor": 17.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 4,
+     "feasible": false
+    },
+    {
+     "floor": 17.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 4,
+     "feasible": false
+    },
+    {
+     "floor": 17.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 4,
+     "feasible": false
+    },
+    {
+     "floor": 17.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 4,
+     "feasible": false
+    },
+    {
+     "floor": 17.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 4,
+     "feasible": false
+    },
+    {
+     "floor": 17.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 4,
+     "feasible": false
+    },
+    {
+     "floor": 18.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 4,
+     "feasible": false
+    },
+    {
+     "floor": 18.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 4,
+     "feasible": false
+    },
+    {
+     "floor": 18.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 4,
+     "feasible": false
+    },
+    {
+     "floor": 18.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 4,
+     "feasible": false
+    },
+    {
+     "floor": 18.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 4,
+     "feasible": false
+    },
+    {
+     "floor": 18.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 3,
+     "feasible": false
+    },
+    {
+     "floor": 18.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 3,
+     "feasible": false
+    },
+    {
+     "floor": 18.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 3,
+     "feasible": false
+    },
+    {
+     "floor": 18.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 3,
+     "feasible": false
+    },
+    {
+     "floor": 18.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 3,
+     "feasible": false
+    },
+    {
+     "floor": 18.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 3,
+     "feasible": false
+    },
+    {
+     "floor": 18.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 7
+     },
+     "learner_questions_recall_at_5": 3,
+     "feasible": false
+    },
+    {
+     "floor": 18.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 6
+     },
+     "learner_questions_recall_at_5": 3,
+     "feasible": false
+    },
+    {
+     "floor": 18.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 6
+     },
+     "learner_questions_recall_at_5": 3,
+     "feasible": false
+    },
+    {
+     "floor": 18.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 6
+     },
+     "learner_questions_recall_at_5": 3,
+     "feasible": false
+    },
+    {
+     "floor": 18.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 6
+     },
+     "learner_questions_recall_at_5": 3,
+     "feasible": false
+    },
+    {
+     "floor": 18.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 6
+     },
+     "learner_questions_recall_at_5": 3,
+     "feasible": false
+    },
+    {
+     "floor": 18.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 6
+     },
+     "learner_questions_recall_at_5": 3,
+     "feasible": false
+    },
+    {
+     "floor": 18.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 18.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.05,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.1,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.15,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.2,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.25,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.3,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.35,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.4,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.45,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.5,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.55,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.6,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.65,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.7,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.75,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.8,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.85,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.9,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 19.95,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    },
+    {
+     "floor": 20.0,
+     "cal": {
+      "oos_with_results": 0,
+      "recall_at_5": 5
+     },
+     "learner_questions_recall_at_5": 2,
+     "feasible": false
+    }
+   ],
+   "feasible_window_cal": [
+    0.0,
+    6.0
+   ]
+  }
+ ],
+ "selection": {
+  "rule": "feasible on the cal fold (no oos_general/stop_only result; recall >= legacy) and on the learner questions; floor = midpoint of the intersection, rounded down to 0.05; margin = upper end - floor, rounded down to 0.05",
+  "intersected_window": [
+   0.0,
+   4.75
+  ],
+  "floor": 2.35,
+  "margin": 2.4
+ },
+ "confirmation": {
+  "conf_fold": {
+   "governed_as_configured": {
+    "recall_at_5": 61,
+    "legacy": 52,
+    "oos_with_results": 0
+   },
+   "all_public_approved": {
+    "recall_at_5": 58,
+    "legacy": 54,
+    "oos_with_results": 0
+   }
+  },
+  "holdout_b": {
+   "governed_as_configured": {
+    "recall_at_5": 22,
+    "legacy": 16,
+    "oos_with_results": 0
+   },
+   "all_public_approved": {
+    "recall_at_5": 21,
+    "legacy": 19,
+    "oos_with_results": 0
+   }
+  },
+  "ac_fixture": {
+   "ac_2_4_oos_with_results": {
+    "governed_as_configured": 0,
+    "all_public_approved": 0
+   },
+   "ac_2_5_recall": {
+    "governed_as_configured": 151,
+    "all_public_approved": 142
+   },
+   "ac_2_5_legacy": {
+    "governed_as_configured": 131,
+    "all_public_approved": 129
+   },
+   "ac_2_5_recall_slot_equal": {
+    "governed_as_configured": 151,
+    "all_public_approved": 140
+   },
+   "learner_questions_recall_at_5": {
+    "governed_as_configured": 36,
+    "all_public_approved": 28
+   },
+   "learner_questions_slot_equal": {
+    "governed_as_configured": 36,
+    "all_public_approved": 27
+   },
+   "learner_questions_legacy": {
+    "governed_as_configured": 36,
+    "all_public_approved": 28
+   }
+  },
+  "result": "pass"
+ },
+ "reported_strata_vs_p1": {
+  "near_miss": {
+   "queries": 15,
+   "bm25": {
+    "governed_as_configured": 2,
+    "all_public_approved": 10
+   },
+   "p1_floor_span_index": {
+    "governed_as_configured": 1,
+    "all_public_approved": 7
+   },
+   "legacy_p1": {
+    "governed_as_configured": 1,
+    "all_public_approved": 7
+   }
+  },
+  "oos_lexical": {
+   "queries": 16,
+   "bm25": {
+    "governed_as_configured": 0,
+    "all_public_approved": 3
+   },
+   "p1_floor_span_index": {
+    "governed_as_configured": 0,
+    "all_public_approved": 2
+   },
+   "legacy_p1": {
+    "governed_as_configured": 0,
+    "all_public_approved": 2
+   }
+  },
+  "in_multi_recall_at_5": {
+   "queries": 10,
+   "bm25": {
+    "governed_as_configured": 9,
+    "all_public_approved": 10
+   },
+   "legacy_p1": {
+    "governed_as_configured": 9,
+    "all_public_approved": 10
+   }
+  },
+  "in_domain_with_results": {
+   "queries": 174,
+   "bm25": {
+    "governed_as_configured": 159,
+    "all_public_approved": 166
+   },
+   "p1_floor_span_index": {
+    "governed_as_configured": 148,
+    "all_public_approved": 146
+   }
+  },
+  "regression_vs_p1": true
+ },
+ "stress_probes": {
+  "note": "informational; each off-topic AC-fixture question plus a course phrase",
+  "results": {
+   "noise model": {
+    "queries": 124,
+    "bm25": {
+     "governed_as_configured": 124,
+     "all_public_approved": 124
+    },
+    "bm25_at_window_top": {
+     "governed_as_configured": 4,
+     "all_public_approved": 124
+    },
+    "p1_floor_span_index": {
+     "governed_as_configured": 0,
+     "all_public_approved": 15
+    }
+   },
+   "for optimization": {
+    "queries": 124,
+    "bm25": {
+     "governed_as_configured": 6,
+     "all_public_approved": 42
+    },
+    "bm25_at_window_top": {
+     "governed_as_configured": 1,
+     "all_public_approved": 20
+    },
+    "p1_floor_span_index": {
+     "governed_as_configured": 0,
+     "all_public_approved": 1
+    }
+   }
+  }
+ },
+ "answer_rate": {
+  "phase0_proxy": {
+   "value": "174/174",
+   "rate": 1.0,
+   "source": "BEP-1/27_score_floor/PROPOSAL.md section 3 (b3d6808c, before the floor)"
+  },
+  "bm25": "166/174",
+  "p1_floor_span_index": "146/174",
+  "legacy_p1": "146/174",
+  "wilson95": {
+   "bm25": [
+    0.9119,
+    0.9765
+   ],
+   "p1_floor_span_index": [
+    0.7773,
+    0.8863
+   ]
+  },
+  "within_5_points": {
+   "bm25": true,
+   "p1_floor_span_index": false,
+   "legacy_p1": false
+  }
+ },
+ "fragility": [
+  "governed_as_configured learner_questions recall_at_5 36 = legacy 36 (zero slack)",
+  "all_public_approved learner_questions recall_at_5 28 = legacy 28 (zero slack)",
+  "all_public_approved learner_questions slot-equal recall_at_5 27 < legacy 28 (informational metric)"
+ ],
+ "provisional": true,
+ "provisional_until": "Phase 4",
+ "not_final_before": "E1 freeze (plan Phase 2 H)",
+ "shipping_gate": {
+  "outside_development": "p1-floor",
+  "switch_requires": "D-05 remediation approval (R-15)"
+ },
+ "limitations": [
+  "coverage-v1 and the framing stopwords (define, definition, term, terms, word, words) were designed after inspecting leaks on the whole repository fixture, including the conf fold and hold-out B; AC-2-4 on it is design-set evidence",
+  "near_miss and oos_lexical were not used in design; see reported_strata_vs_p1 for bm25f-v1 against the Phase 1 floor",
+  "learner questions appear verbatim in authored spans (circular for the governed configuration)",
+  "no ULQS calibration split yet (Phase 4)",
+  "the Phase 0 answer rate is a proxy measured at b3d6808c before the floor"
+ ],
+ "result": "pass"
+}

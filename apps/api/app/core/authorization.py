@@ -84,6 +84,7 @@ ROUTE_POLICIES: dict[tuple[str, str], RoutePolicy] = {
     ("GET", "/source-assets/{filename}"): _p(ASSET_READER, NONE, "Approved corpus assets only (manifest governance)."),
     ("HEAD", "/source-assets/{filename}"): _p(ASSET_READER, NONE, "Approved corpus assets only (manifest governance)."),
     ("GET", "/search"): _p(PUBLIC, NONE, "Rate-limited."),
+    ("GET", "/spans/{span_id}"): _p(PUBLIC, NONE, "Rate-limited span metadata; 404 unless SPAN_RESOLVER_ROUTE_ENABLED; no excerpt under D-31."),
     # Questions and tutor
     ("POST", "/qa/ask"): _p(PRINCIPAL, CALLER, "Rate-limited."),
     ("GET", "/qa/history"): _p(PRINCIPAL, CALLER),

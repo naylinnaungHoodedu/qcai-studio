@@ -19,6 +19,12 @@ def rebuild_content(_: AuthUser = Depends(require_role("instructor", "admin"))):
         "module_count": len(store.modules),
         "lesson_count": len(store.lessons),
         "chunk_count": len(store.chunks),
+        # AC-2-1: one index entry per span, so unique ids equal the chunk count and duplicates are 0.
+        "span_count": len(store.span_registry),
+        "unique_chunk_ids": len({entry.chunk_id for entry in store.chunks}),
+        "duplicate_span_ids": store.duplicate_span_ids,
+        "index_version": store.index_version,
+        "gate": store.gate,
     }
 
 

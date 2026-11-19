@@ -7,7 +7,8 @@ from app.core.db import get_db
 from app.core.rate_limit import limiter
 from app.db_models import QAInteraction
 from app.schemas import AssistantChatRequest, AssistantChatResponse, TutorThreadCreate, TutorThreadDetail, TutorThreadRead
-from app.services.store import get_tutor_orchestrator
+from app.services.span_store import persist_cited_spans
+from app.services.store import get_course_store, get_tutor_orchestrator
 from app.services.text_utils import sanitize_user_text
 
 
@@ -37,6 +38,8 @@ def chat_with_teaching_assistant(
             citations=[citation.model_dump() for citation in assistant_response.citations],
         )
     )
+    # Idempotent: the tutor already registered the spans it cited (task 2.2).
+    persist_cited_spans(db, assistant_response.citations, get_course_store())
     db.commit()
     response.headers["x-assistant-provider"] = assistant_response.provider
     response.headers["x-assistant-model"] = assistant_response.model

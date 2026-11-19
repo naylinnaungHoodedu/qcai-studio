@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -414,3 +414,36 @@ class TutorTurn(Base):
     corpus_version: Mapped[str] = mapped_column(String(255))
     policy_version: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CorpusSpan(Base):
+    # Span identity (plan Phase 2 task 2.2): append-only and text-free, so a stored citation keeps resolving after
+    # its span leaves the current corpus (AC-2-3, and AC-12-6 later). Database triggers refuse UPDATE, DELETE and
+    # TRUNCATE (schema_upgrades); rows are inserted if missing on (span_id, item_version). No learner data: no
+    # column names a person, so erasure and retention never touch it. Only public-plane spans can be stored.
+    __tablename__ = "corpus_spans"
+    __table_args__ = (
+        UniqueConstraint("span_id", "item_version", name="uq_corpus_spans_span_id_item_version"),
+        CheckConstraint("plane = 'public'", name="ck_corpus_spans_public_plane"),
+        Index("ix_corpus_spans_legacy_key_lexical", "legacy_key_lexical"),
+        Index("ix_corpus_spans_legacy_key_semantic", "legacy_key_semantic"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    span_id: Mapped[str] = mapped_column(String(80), index=True)
+    scheme: Mapped[str] = mapped_column(String(16))
+    item_id: Mapped[str] = mapped_column(String(255), index=True)
+    item_version: Mapped[str] = mapped_column(String(64))
+    item_kind: Mapped[str] = mapped_column(String(16))
+    plane: Mapped[str] = mapped_column(String(16), default="public")
+    section_ordinal: Mapped[int] = mapped_column(Integer)
+    char_start: Mapped[int] = mapped_column(Integer)
+    char_end: Mapped[int] = mapped_column(Integer)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    source_title_hash: Mapped[str] = mapped_column(String(64))
+    section_title_hash: Mapped[str] = mapped_column(String(64))
+    legacy_key_lexical: Mapped[str] = mapped_column(String(64))
+    legacy_key_semantic: Mapped[str] = mapped_column(String(64))
+    corpus_version_first_seen: Mapped[str] = mapped_column(String(64))
+    registered_by: Mapped[str] = mapped_column(String(32))
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

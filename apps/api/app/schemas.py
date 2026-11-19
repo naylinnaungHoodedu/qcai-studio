@@ -29,8 +29,48 @@ class Citation(BaseModel):
     excerpt: str
     timestamp_label: str | None = None
     source_filename: str | None = None
-    # AC-1-13: span identity is not stable until Phase 2, so every citation is provisional until then.
+    # AC-1-13: every citation is provisional until the provisional marker is lifted for resolved citations (plan
+    # Phase 2 G), which CITATION_PROVISIONAL_LIFT_ENABLED gates (off by default; services/provenance.py).
     provisional: bool = True
+    # Citation v2 (Phase 2 spec 2.3). The schema is read from citation_schema, never from the id form: v1 and v2
+    # span ids share the span-<64 hex> shape. A v0 or v1 dict reads back as legacy_unresolved and provisional.
+    # For v2, content_hash is the sha256 of the FULL span text (v1 hashed the displayed excerpt).
+    citation_schema: int = 1
+    item_id: str | None = None
+    item_version: str | None = None
+    start: int | None = None
+    end: int | None = None
+    resolution: Literal["resolved", "legacy_unresolved"] = "legacy_unresolved"
+    migration_status: Literal["native", "migrated", "legacy_unresolved"] | None = None
+    # excerpt_no_match | excerpt_ambiguous | chapter_summary_excluded | missing_excerpt | invalid_shape |
+    # not_resolvable_on_read
+    unresolved_reason: str | None = None
+    legacy_chunk_id: str | None = None
+    legacy_span_id: str | None = None
+    near_floor: bool = False
+    # "unverified historical reference" on every legacy_unresolved citation (plan 11.2).
+    label: str | None = None
+
+
+class SpanResolution(BaseModel):
+    """GET /spans/{span_id} (task 2.4): span metadata; the excerpt only for a servable span, which D-31 makes none."""
+
+    span_id: str
+    scheme: str
+    item_id: str
+    item_version: str
+    kind: str
+    plane: str
+    section_ordinal: int
+    start: int
+    end: int
+    content_hash: str
+    servable: bool
+    current: bool
+    registered: bool
+    corpus_version_first_seen: str | None = None
+    corpus_version: str
+    excerpt: str | None = None
 
 
 class VideoChapter(BaseModel):
@@ -123,6 +163,16 @@ class SearchResult(BaseModel):
     score: float
     timestamp_label: str | None = None
     source_filename: str | None = None
+    # Phase 2 (spec 2.4): chunk_id equals span_id; lesson_slugs lists every lesson the span is bound to.
+    span_id: str | None = None
+    item_id: str | None = None
+    item_version: str | None = None
+    start: int | None = None
+    end: int | None = None
+    content_hash: str | None = None
+    lesson_slugs: list[str] = Field(default_factory=list)
+    # Within the abstention margin above the floor (bm25f-v1 only): the later X4 trigger.
+    near_floor: bool = False
 
 
 class NoteCreate(BaseModel):
