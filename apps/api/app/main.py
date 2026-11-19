@@ -511,16 +511,21 @@ def _slis() -> dict:
 
 
 def _ledger_head() -> dict:
-    """The response ledger's head: a read that never changes readiness, since the ledger fails open."""
+    """Whether the response ledger's head is readable: a read that never changes readiness (the ledger fails open).
+
+    /ready is public, so it reports a status only, never the head's sequence number: that is the all-time count of
+    tutor responses (traffic volume), which the ledger route shows to reviewers only. The head itself is in the
+    verification job's log line (app.workers.response_ledger) and in every tutor.ledger.appended line.
+    """
     from app.services.ledger import CHAIN, chain_head
 
     try:
         with SessionLocal() as db:
-            head = chain_head(db)
-        return {"chain": CHAIN, "head_seq": head[0] if head else 0}
+            chain_head(db)
+        return {"chain": CHAIN, "status": "ok"}
     except Exception:
         LOGGER.warning("Readiness ledger head read failed", exc_info=True)
-        return {"chain": CHAIN, "head_seq": None, "status": "unavailable"}
+        return {"chain": CHAIN, "status": "unavailable"}
 
 
 @app.get("/ready")

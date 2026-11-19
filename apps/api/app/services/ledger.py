@@ -23,11 +23,14 @@ but cannot be tied to anyone. Every append logs its seq and record_hash (an off-
 from __future__ import annotations
 
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeout, wait
+import contextvars
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
 import logging
 import random
+import threading
 import time
 from typing import Any
 
@@ -46,6 +49,7 @@ from app.services.contained_answers import ABSTENTION, EXTRACTIVE_MODE, MAX_QUOT
 from app.services.tutor_pipeline.bind import claim_id_for
 from app.services.tutor_pipeline.contracts import (
     ENTRY_SCHEMAS,
+    LEGACY_UNRESOLVED,
     ClaimLedgerEntry,
     EvidenceSpan,
     LedgerEntry,
@@ -144,7 +148,9 @@ def append_ledger_entry(
 
     Statements run in a fixed order (Core, so the unit of work never reorders them): head insert-if-missing, head
     SELECT ... FOR UPDATE, record INSERT, head UPDATE. Only an IntegrityError is retried; any other database error
-    (a lock timeout, a busy database, a trigger refusal) is raised at once, so the caller fails open quickly.
+    (a lock timeout, a statement timeout, a busy database, a trigger refusal) is raised at once, so the caller fails
+    open quickly. On PostgreSQL every attempt first sets lock_timeout and statement_timeout to the remaining budget.
+    Neither bounds the wait for a pooled connection: record_legacy_delivery bounds the learner's wait as a whole.
     """
     payload = entry_bytes(entry)
     entry_text = payload.decode("utf-8")
@@ -160,6 +166,12 @@ def append_ledger_entry(
             time.sleep(random.uniform(0, min(0.005 * attempt, remaining_ms / 1000)))
         with session_factory() as db:
             try:
+                dialect = db.get_bind().dialect.name
+                if dialect == "postgresql":
+                    # Integers only (no bind parameters in SET): both end the attempt once the budget is spent.
+                    timeout_ms = max(1, int((deadline - time.monotonic()) * 1000))
+                    db.execute(text(f"SET LOCAL lock_timeout = '{timeout_ms}ms'"))
+                    db.execute(text(f"SET LOCAL statement_timeout = '{timeout_ms}ms'"))
                 existing = db.execute(
                     select(ResponseLedgerRecord.seq, ResponseLedgerRecord.record_hash, ResponseLedgerRecord.entry_sha256).where(
                         ResponseLedgerRecord.response_id == entry.response_id
@@ -173,10 +185,6 @@ def append_ledger_entry(
                     _log(logging.INFO, "Tutor ledger record already present", "tutor.ledger.appended", delivery=entry.delivery,
                          seq=appended.seq, record_hash=appended.record_hash, duplicate=True)
                     return appended
-                dialect = db.get_bind().dialect.name
-                if dialect == "postgresql":
-                    lock_ms = max(1, int((deadline - time.monotonic()) * 1000))
-                    db.execute(text(f"SET LOCAL lock_timeout = '{lock_ms}ms'"))
                 module = postgresql if dialect == "postgresql" else sqlite
                 db.execute(
                     module.insert(ResponseLedgerHead)
@@ -409,7 +417,7 @@ def build_legacy_entry(delivery: LegacyDelivery, *, settings: Settings, package:
         counts=PipelineCounts(
             proposed_claims=len(claims) + int(delivery.dropped_unresolved),
             bound_claims=len(claims),
-            dropped={"unresolved_citation": int(delivery.dropped_unresolved)} if delivery.dropped_unresolved else {},
+            dropped={LEGACY_UNRESOLVED: int(delivery.dropped_unresolved)} if delivery.dropped_unresolved else {},
             render_attempts=0,
         ),
     )
@@ -425,20 +433,106 @@ def record_ledger_failure(delivery: str, stage: str, exc: BaseException) -> None
          error=type(exc).__name__)
 
 
+class _LegacyAppender:
+    """Runs legacy appends on a small pool of worker threads, so the learner's wait is bounded as a whole.
+
+    append_ledger_entry bounds lock waits and statements on PostgreSQL, but not the checkout of a pooled connection
+    (the pool's own timeout, 30 s by default) or a new Cloud SQL connection. The request therefore waits for the
+    append at most its budget plus LEGACY_WAIT_GRACE_MS; an append still running then finishes in the background and
+    is counted when it ends (appended, or failed). At most LEGACY_APPEND_MAX_IN_FLIGHT appends run or wait at once;
+    past that an append is refused at once and counted as failed, so a stuck database never piles up threads.
+    """
+
+    def __init__(self, workers: int, max_in_flight: int) -> None:
+        self._workers = workers
+        self._slots = threading.BoundedSemaphore(max_in_flight)
+        self._lock = threading.Lock()
+        self._executor: ThreadPoolExecutor | None = None
+        self._pending: set[Future] = set()
+
+    def submit(self, task: Callable[[], Any]) -> Future | None:
+        if not self._slots.acquire(blocking=False):
+            return None
+        try:
+            with self._lock:
+                if self._executor is None:
+                    self._executor = ThreadPoolExecutor(max_workers=self._workers, thread_name_prefix="tutor-ledger")
+                # The request's context (its logging fields) goes with the task.
+                future = self._executor.submit(contextvars.copy_context().run, task)
+                self._pending.add(future)
+        except BaseException:
+            self._slots.release()
+            raise
+        future.add_done_callback(self._finished)
+        return future
+
+    def _finished(self, future: Future) -> None:
+        with self._lock:
+            self._pending.discard(future)
+        self._slots.release()
+
+    def pending(self) -> int:
+        with self._lock:
+            return len(self._pending)
+
+    def drain(self, timeout: float) -> bool:
+        """Wait for every running or queued append (tests, and shutdown hooks); True when none is left."""
+        with self._lock:
+            pending = list(self._pending)
+        done, not_done = wait(pending, timeout=timeout)
+        return not not_done
+
+
+LEGACY_WAIT_GRACE_MS = 250
+LEGACY_APPEND_WORKERS = 4
+LEGACY_APPEND_MAX_IN_FLIGHT = 16
+LEGACY_APPENDS = _LegacyAppender(LEGACY_APPEND_WORKERS, LEGACY_APPEND_MAX_IN_FLIGHT)
+
+
 def record_legacy_delivery(
     delivery: LegacyDelivery,
     *,
     settings: Settings | None = None,
     session_factory: Callable[[], Session] = SessionLocal,
 ) -> AppendedRecord | None:
-    """Record a legacy delivery; never raises and never changes the learner's response (fail open, counted)."""
+    """Record a legacy delivery; never raises and never changes the learner's response (fail open, counted).
+
+    The learner waits at most TUTOR_LEDGER_APPEND_BUDGET_MS + LEGACY_WAIT_GRACE_MS for the record, whatever the
+    database does (spec conflict 29). None means the record was not confirmed in that time: it failed and was counted,
+    or it is still being appended in the background and is counted when that ends.
+    """
     try:
         settings = settings or get_settings()
         package = get_config_package(settings)
         entry = build_legacy_entry(delivery, settings=settings, package=package, manifest_sha256=delivery.manifest_sha256)
-        appended = append_ledger_entry(entry, session_factory=session_factory, budget_ms=settings.tutor_ledger_append_budget_ms)
+        budget_ms = settings.tutor_ledger_append_budget_ms
     except Exception as exc:  # noqa: BLE001 - a ledger fault must not change the learner's response
         record_ledger_failure("legacy", "append", exc)
         return None
-    LEDGER_METRICS.appended("legacy", duplicate=appended.duplicate)
-    return appended
+
+    def append() -> AppendedRecord | None:
+        try:
+            appended = append_ledger_entry(entry, session_factory=session_factory, budget_ms=budget_ms)
+        except Exception as exc:  # noqa: BLE001 - counted here, in the worker, whether or not the request still waits
+            record_ledger_failure("legacy", "append", exc)
+            return None
+        LEDGER_METRICS.appended("legacy", duplicate=appended.duplicate)
+        return appended
+
+    try:
+        future = LEGACY_APPENDS.submit(append)
+    except Exception as exc:  # noqa: BLE001 - e.g. no thread could be started
+        record_ledger_failure("legacy", "append", exc)
+        return None
+    if future is None:
+        record_ledger_failure("legacy", "append", LedgerAppendError("too many ledger appends are already in flight"))
+        return None
+    try:
+        return future.result(timeout=(budget_ms + LEGACY_WAIT_GRACE_MS) / 1000)
+    except FutureTimeout:
+        _log(logging.WARNING, "Tutor ledger append is still running; the response was not held for it", "tutor.ledger.append_deferred",
+             delivery="legacy", budget_ms=budget_ms)
+        return None
+    except Exception as exc:  # noqa: BLE001 - append() never raises; this is a defence only
+        record_ledger_failure("legacy", "append", exc)
+        return None

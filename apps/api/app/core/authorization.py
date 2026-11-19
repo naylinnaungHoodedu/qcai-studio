@@ -40,9 +40,10 @@ OWNER = "owner"
 NOT_OWNER = "not_owner"
 PUBLIC_HANDLES = "public_handles"
 
-# Roles that read any tutor ledger record, shadow records included (plan 7.3 "owner or reviewer"; PD-12: admin is
-# added provisionally). Each such read is a security event (plan 7.6 "reviewer access is logged").
-LEDGER_READER_ROLES = ("reviewer", "admin")
+# Roles that read any tutor ledger record, shadow records included: the plan's "reviewer" and nothing wider (plan 7.3
+# "GET /ledger/responses/{response_id} (owner or reviewer)"). Each such read is a security event (plan 7.6 "reviewer
+# access is logged"). No reviewer is provisioned yet (DI-38), so outside development only owners read (PD-12).
+LEDGER_READER_ROLES = ("reviewer",)
 
 OWNERSHIP_SCOPES = {
     NONE: "No learner data.",
@@ -110,8 +111,8 @@ ROUTE_POLICIES: dict[tuple[str, str], RoutePolicy] = {
         PRINCIPAL,
         OWNER,
         "404 unless LEDGER_ROUTE_ENABLED. The turn's owner reads its legacy record (a pre-ledger turn reads as "
-        "no-verdict); roles reviewer and admin read any record, shadow records included, and each such read is a "
-        "security event. A learner never sees a shadow record (AC-3-6).",
+        "no-verdict); the reviewer role reads any record, shadow records included, and each such read is a security "
+        "event. Any other role, admin included, reads only its own turns. A learner never sees a shadow record (AC-3-6).",
     ),
     # Analytics
     ("POST", "/analytics/events"): _p(PRINCIPAL, CALLER),

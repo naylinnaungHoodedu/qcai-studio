@@ -4,9 +4,10 @@ spec 9, conflicts 5 and 27).
 Always registered, so the authorization matrix stays static, but 404 unless LEDGER_ROUTE_ENABLED (on in
 development, off elsewhere while the D-05 freeze holds). The turn's owner reads its own legacy record without the
 chain position fields; a turn recorded before the ledger existed reads as recorded false, legacy_turn true,
-verdict "no-verdict" (plan G; nothing is written). Roles reviewer and admin (LEDGER_READER_ROLES, PD-12) read any
-record, shadow records included, with the chain fields; each such read is a security event (plan 7.6). A learner
-never sees a shadow record (AC-3-6): every miss is the same 404 with Cache-Control: no-store.
+verdict "no-verdict" (plan G; nothing is written). The reviewer role (LEDGER_READER_ROLES; plan 7.3 "owner or
+reviewer", nothing wider) reads any record, shadow records included, with the chain fields; each such read is a
+security event (plan 7.6). Any other role, admin included, is an owner reader only. A learner never sees a shadow
+record (AC-3-6): every miss is the same 404 with Cache-Control: no-store.
 """
 
 from __future__ import annotations

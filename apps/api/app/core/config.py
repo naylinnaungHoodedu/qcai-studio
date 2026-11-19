@@ -152,7 +152,8 @@ class Settings(BaseSettings):
     # Disabling it outside development relaxes an audit control and logs a config.override event.
     tutor_ledger_enabled: bool = True
     # Total deadline of the synchronous legacy ledger append (spec conflict 29); also each PostgreSQL attempt's
-    # lock_timeout. The append fails open after it.
+    # lock_timeout and statement_timeout. The learner waits at most this plus 250 ms (ledger.LEGACY_WAIT_GRACE_MS),
+    # pool checkout included; an append still running then finishes in the background and is counted.
     tutor_ledger_append_budget_ms: int = Field(default=1500, ge=100, le=5000)
     # GET /ledger/responses/{response_id}: None = on in development, off elsewhere (a new route under the freeze).
     ledger_route_enabled: bool | None = None

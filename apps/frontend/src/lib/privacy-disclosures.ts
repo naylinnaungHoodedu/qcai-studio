@@ -53,7 +53,7 @@ export const RETENTION_SCHEDULE = [
   {
     dataClass: "Tutor response ledger",
     personalData:
-      "For each tutor answer: which approved course passages were quoted, the quotations, the decision and version stamps, linked to your tutor turn by a random id. No name, email, account id or question text.",
+      "For each tutor answer: which course passages the search matched for your question, with their match scores and positions in the source; which approved passages were quoted, and the quotations; the decision and version stamps. Where the tutor also runs its internal two-step answer check (never shown to you), that record also holds the ids of the tutor messages your question was taken from. Linked to your tutor turn by a random id. No name, email, account id or question text.",
     retention: "Kept as an audit record; the retention period is an open owner decision.",
     trigger:
       "Deleting your account or tutor history removes the link, so the record can no longer be tied to you; records cannot be edited or deleted.",

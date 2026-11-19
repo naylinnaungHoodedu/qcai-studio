@@ -61,7 +61,7 @@ that each policy matches the route's real dependencies, and that this file is cu
 | POST | `/assistant/threads` | `principal` | `caller` |  |
 | GET | `/assistant/threads/{thread_id}` | `principal` | `owner` |  |
 | POST | `/tutor/turns` | `principal` | `owner` | Two-pass tutor endpoint (plan 7.3). 404 outside development unless TWO_PASS_TUTOR is on, which settings refuse before the Phase 4 exit; returns the legacy contained answer and runs the two-pass pipeline in shadow. A thread_id in the body must be the caller's thread. Rate-limited. |
-| GET | `/ledger/responses/{response_id}` | `principal` | `owner` | 404 unless LEDGER_ROUTE_ENABLED. The turn's owner reads its legacy record (a pre-ledger turn reads as no-verdict); roles reviewer and admin read any record, shadow records included, and each such read is a security event. A learner never sees a shadow record (AC-3-6). |
+| GET | `/ledger/responses/{response_id}` | `principal` | `owner` | 404 unless LEDGER_ROUTE_ENABLED. The turn's owner reads its legacy record (a pre-ledger turn reads as no-verdict); the reviewer role reads any record, shadow records included, and each such read is a security event. Any other role, admin included, reads only its own turns. A learner never sees a shadow record (AC-3-6). |
 | POST | `/analytics/events` | `principal` | `caller` |  |
 | POST | `/analytics/public-web-vitals` | `public` | `none` | Anonymous browser metrics; rate-limited. |
 | GET | `/analytics/public-web-vitals/summary` | `public` | `none` | Aggregates only. |

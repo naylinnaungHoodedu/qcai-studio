@@ -2,7 +2,7 @@ from datetime import datetime
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_serializer
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -302,18 +302,12 @@ class AssistantChatResponse(BaseModel):
     decision_reason: str | None = None
     claims: list["GroundedClaim"] = Field(default_factory=list)
     # Phase 3 (task 3.8): present only when EVIDENCE_PANEL_ENABLED (development by default). When absent the key is
-    # omitted, so production bodies keep today's keys and values (spec conflict 28).
-    evidence: EvidencePanel | None = None
+    # omitted, so production bodies keep today's keys and values (spec conflict 28). A field-level exclude_if, not a
+    # model serializer, so the response schema in /openapi.json keeps every field.
+    evidence: EvidencePanel | None = Field(default=None, exclude_if=lambda value: value is None)
     # Never serialised: the turn's ledger and shadow follow-ups, and the retrieval behind a contained answer.
     _followups: Any = PrivateAttr(default=None)
     _retrieval: Any = PrivateAttr(default=None)
-
-    @model_serializer(mode="wrap")
-    def _omit_absent_evidence(self, handler) -> dict[str, Any]:
-        data = handler(self)
-        if isinstance(data, dict) and self.evidence is None:
-            data.pop("evidence", None)
-        return data
 
 
 class TutorTurnRequest(BaseModel):

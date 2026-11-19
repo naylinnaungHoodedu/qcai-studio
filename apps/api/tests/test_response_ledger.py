@@ -16,6 +16,8 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
+import time
 from uuid import uuid4
 
 import pytest
@@ -168,10 +170,13 @@ def test_statements_run_in_the_fixed_order_and_postgres_sets_a_lock_timeout(isol
     head_select = seen[order[1]]
     if engine.dialect.name == "postgresql":
         assert head_select.endswith("FOR UPDATE")
-        timeout = next(s for s in seen if s.startswith("SET LOCAL lock_timeout"))
-        assert seen.index(timeout) < order[0]
-        milliseconds = int(timeout.split("'")[1].removesuffix("ms"))
-        assert 0 < milliseconds <= 1500
+        # Review 2026-11-19: statements are bounded too, and both timeouts precede the first read of the attempt.
+        first_read = next(i for i, s in enumerate(seen) if s.startswith("SELECT response_ledger.seq"))
+        for name in ("lock_timeout", "statement_timeout"):
+            timeout = next(s for s in seen if s.startswith(f"SET LOCAL {name}"))
+            assert seen.index(timeout) < min(first_read, order[0])
+            milliseconds = int(timeout.split("'")[1].removesuffix("ms"))
+            assert 0 < milliseconds <= 1500
     else:
         assert "FOR UPDATE" not in head_select and not any(s.startswith("SET LOCAL") for s in seen)
 
@@ -211,6 +216,59 @@ def test_record_legacy_delivery_fails_open_and_is_counted(isolated, monkeypatch,
     assert after["failed"]["legacy"] == before["failed"]["legacy"] + 1 and after["write_stop"] is True
     (failure,) = [r for r in caplog.records if getattr(r, "json_fields", {}).get("event") == "tutor.ledger.append_failed"]
     assert failure.json_fields == {"event": "tutor.ledger.append_failed", "delivery": "legacy", "stage": "append", "error": "OperationalError"}
+
+
+def test_the_learner_never_waits_past_the_budget_for_a_stuck_pool_and_the_late_outcome_is_counted(isolated, caplog):
+    # Review 2026-11-19: lock_timeout bounded only lock waits; a saturated pool (checkout waits pool_timeout, 30 s by
+    # default) or a slow new connection held every tutor turn. The wait is now bounded as a whole.
+    _, factory = isolated
+    released = threading.Event()
+
+    def stuck_pool():
+        released.wait(10)  # no connection to check out until the test releases it
+        raise TimeoutError("QueuePool limit reached (test)")
+
+    settings = Settings(tutor_ledger_append_budget_ms=200)
+    before = LEDGER_METRICS.snapshot()["failed"]["legacy"]
+    started = time.monotonic()
+    with caplog.at_level(logging.WARNING, logger="qcai.tutor"):
+        assert record_legacy_delivery(_legacy(), settings=settings, session_factory=stuck_pool) is None
+    waited_ms = (time.monotonic() - started) * 1000
+    assert waited_ms < 200 + ledger.LEGACY_WAIT_GRACE_MS + 500, waited_ms
+    deferred = [r for r in caplog.records if getattr(r, "json_fields", {}).get("event") == "tutor.ledger.append_deferred"]
+    assert [r.json_fields for r in deferred] == [{"event": "tutor.ledger.append_deferred", "delivery": "legacy", "budget_ms": 200}]
+    assert LEDGER_METRICS.snapshot()["failed"]["legacy"] == before  # not yet known
+    released.set()
+    assert ledger.LEGACY_APPENDS.drain(10)
+    assert LEDGER_METRICS.snapshot()["failed"]["legacy"] == before + 1  # counted when it ended
+    # A normal append is still synchronous: the record exists when the call returns.
+    appended = record_legacy_delivery(_legacy(), settings=settings, session_factory=factory)
+    assert appended is not None and _check(factory).count == 1
+
+
+def test_appends_in_flight_are_capped_and_an_append_past_the_cap_fails_at_once(isolated, monkeypatch, caplog):
+    _, factory = isolated
+    monkeypatch.setattr(ledger, "LEGACY_APPENDS", ledger._LegacyAppender(1, 1))
+    released = threading.Event()
+
+    def stuck_pool():
+        released.wait(10)
+        raise TimeoutError("QueuePool limit reached (test)")
+
+    settings = Settings(tutor_ledger_append_budget_ms=100)
+    before = LEDGER_METRICS.snapshot()["failed"]["legacy"]
+    assert record_legacy_delivery(_legacy(), settings=settings, session_factory=stuck_pool) is None  # still in flight
+    with caplog.at_level(logging.ERROR, logger="qcai.tutor"):
+        started = time.monotonic()
+        assert record_legacy_delivery(_legacy(), settings=settings, session_factory=factory) is None
+        assert time.monotonic() - started < 0.5  # refused at once, never queued
+    assert LEDGER_METRICS.snapshot()["failed"]["legacy"] == before + 1
+    (failure,) = [r for r in caplog.records if getattr(r, "json_fields", {}).get("event") == "tutor.ledger.append_failed"]
+    assert failure.json_fields["error"] == "LedgerAppendError"
+    released.set()
+    assert ledger.LEGACY_APPENDS.drain(10) and ledger.LEGACY_APPENDS.pending() == 0
+    assert record_legacy_delivery(_legacy(), settings=settings, session_factory=factory) is not None  # the slot is free again
+    assert LEDGER_METRICS.snapshot()["failed"]["legacy"] == before + 2
 
 
 def test_verify_dispatches_on_entry_schema(isolated, monkeypatch):

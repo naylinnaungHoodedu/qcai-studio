@@ -27,6 +27,9 @@ The text above is kept as history. This revision records how plan Phase 3 (tasks
 **Lock before render.** The pedagogical prompt hash is the hash of the whole renderer registry, all plans included, so it is known at lock time. No lock stamp is plan-, learner-, request- or commit-specific, so the three plans give one `claim_set_hash` and one span set (AC-3-2, spec conflict 1). The three-plan replay (`scripts/replay_tutor_plans.py`, `docs/evaluation/phase3/`) is RQ2-style engineering evidence on public fixtures. It is not E3 or LQ-1 evidence.
 
 **Verbatim claims.** The claim text that is stored, locked, ledgered and rendered is the span's own text with whitespace collapsed. NFKC is used only to compare. The binding rule `resolver-bundle-sentence-v1` refuses a truncated sentence that drops a qualification or a negation (spec conflict 32).
+- Binding locks the matching sentence as the span holds it, never the generator's text.
+- The subset check looks each rendered claim up by its `claim_id` and requires the locked text exactly (whitespace runs aside), so a rendering that folds "x²" to "x2" is an unmapped factual sentence.
+- A sentence that two overlapping spans both hold is locked once, citing both spans (spec 18.4, review fixes of 2026-11-19).
 
 **Provenance.** The append-only, hash-chained `response_ledger` (task 3.8, R-22) records every tutor delivery (`delivery: legacy`) and every shadow run (`delivery: shadow`), with all plan 7.4 version fields. It replaces mutable `TutorTurn` provenance as the record. The `TutorTurn` columns stay for one dual-write release (DI-41).
 

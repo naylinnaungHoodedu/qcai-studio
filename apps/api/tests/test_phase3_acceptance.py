@@ -27,6 +27,7 @@ import logging
 import os
 from pathlib import Path
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -405,16 +406,50 @@ def test_ac_3_2_the_replay_finds_no_mismatch_and_is_labelled_not_e3_or_lq1(tmp_p
     assert report["result"] == "pass" and all(configuration["mismatches"] == [] for configuration in report["configurations"])
     assert "NOT E3 or LQ-1" in report["evidence_class"] and report["public_corpus_only"] is True
     assert [(c["name"], c["gate"]) for c in report["configurations"]] == list(module.CONFIGURATIONS)
+    regressions = module.regression_items()
+    assert regressions and report["fixture"]["items"] == 60 and report["fixture"]["regressions"]["items"] == len(regressions)
     governed = report["configurations"][0]
-    assert governed["answered"] == 0 and governed["claim_set_hash_equal"] == governed["items"] == 60
+    # The regression items are replayed in full beside the evenly spaced sample.
+    assert governed["answered"] == 0 and governed["claim_set_hash_equal"] == governed["items"] == 60 + len(regressions)
     assert all(c["two_pass"]["bound_claim_ratio"] in (None, 1.0) for c in report["configurations"])
+    assert all(c["answered_by_stratum"]["off_topic"] == c["answered_by_stratum"]["stopword_only"] == 0 for c in report["configurations"])
+    # Review 2026-11-19: the overlapping-spans item answers once its two same-sentence claims merge.
+    approved = report["configurations"][1]
+    assert (approved["name"], approved["gate"]) == ("all_public_approved", "bm25f-v1")
+    assert approved["answered_by_stratum"]["regression"] == len(regressions) and approved["two_pass"]["merged_claims"] >= 1
+    assert "subset_check_failed" not in approved["abstention_by_reason"]
     serialised = json.dumps(report)
     assert not any(query in serialised for query in IN_DOMAIN + OFF_TOPIC if len(query) > 12)  # hashes only, never text
+    assert not any(query in serialised for _, query in regressions)
     lqs = REPO_ROOT / "lqs" / "items.json"
     with pytest.raises(SystemExit, match="lqs"):
         module.fixture_items(lqs)
     committed = json.loads((REPO_ROOT / "docs" / "evaluation" / "phase3" / "three_plan_replay_v1.json").read_text(encoding="utf-8"))
     assert committed["result"] == "pass" and committed["config_package"]["sha256"] == PACKAGE.sha256
+    assert re.fullmatch(r"[0-9a-f]{40}(-dirty)?", committed["commit"])  # a commit, marked when its tree was dirty
+
+
+def test_ac_3_2_the_replay_record_names_its_commit_and_refuses_to_write_from_a_dirty_tree(monkeypatch, tmp_path):
+    # Review 2026-11-19: the committed record named the pre-Phase-3 base commit, as it was written from an
+    # uncommitted tree; a record now names HEAD only when the tree is clean.
+    module = load_script("replay_tutor_plans")
+    head = "a" * 40
+
+    def git(status_stdout: str, status_code: int = 0):
+        def fake(*args):
+            if args[0] == "rev-parse":
+                return subprocess.CompletedProcess(args, 0, head + "\n", "")
+            return subprocess.CompletedProcess(args, status_code, status_stdout, "")
+        return fake
+
+    for stdout, code, expected in (("", 0, head), (" M scripts/replay_tutor_plans.py\n", 0, head + "-dirty"),
+                                   ("?? apps/api/new_module.py\n", 0, head + "-dirty"), ("", 128, head + "-dirty")):
+        monkeypatch.setattr(module, "_git", git(stdout, code))
+        assert module._commit() == expected
+    monkeypatch.setattr(module, "_git", git(" M apps/api/app/services/tutor_pipeline/bind.py\n"))
+    monkeypatch.setattr(module, "compute", _raise("a dirty --write must be refused before the replay runs"))
+    target = tmp_path / "record.json"
+    assert module.main(["--write", str(target)]) == module.EXIT_DIRTY == 4 and not target.exists()
 
 
 # ======================================================================================================== AC-3-3
@@ -1166,6 +1201,10 @@ def test_plan_l_a_shadow_or_ledger_failure_never_changes_the_learner_response_an
         assert any(event.get("event") == "tutor.two_pass.budget_exceeded" for event in events)
         (shadow,) = records(shadowed_response_id=response.json()["turn_id"])
         assert entry_of(shadow)["abstention_reason"] == "budget_exceeded"
+        # Review 2026-11-19: a latency event is never a plan L binding stop, and the record's counts reconcile.
+        counts = entry_of(shadow)["counts"]
+        assert counts["proposed_claims"] == counts["bound_claims"] + sum(counts["dropped"].values())
+        assert shadow_slis["bound_claim_ratio_stop"] is False and shadow_slis["bound_claims"] == shadow_slis["proposed_claims"]
     else:
         assert ledger_slis["failed"]["legacy"] == 1 and ledger_slis["write_stop"] is True
         assert ledger_slis["legacy_coverage_rate"] == 0.0
@@ -1211,6 +1250,116 @@ def test_plan_l_the_bound_claim_ratio_is_reported_and_a_drop_below_phase_2_is_a_
     assert report["configurations"][0]["stop"] is False and report["configurations"][0]["two_pass"]["bound_claim_ratio"] is None
 
 
+class _FakeClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+class _ClockedGenerator:
+    """Moves the pipeline's clock on by 10 s while it proposes: the budget runs out after the generator returns."""
+
+    def __init__(self, inner, clock: _FakeClock) -> None:
+        self.inner, self.ref, self.clock = inner, inner.ref, clock
+
+    def propose(self, envelope):
+        self.clock.now += 10.0
+        return self.inner.propose(envelope)
+
+
+def test_plan_l_a_budget_overrun_after_generation_is_a_latency_event_not_a_bound_claim_stop(clean_metrics, caplog):
+    # Review 2026-11-19: claims the generator proposed but bind never saw were counted as proposed and not bound, so
+    # the bound-claim ratio read 0.0 and the plan L stop latched for the life of the process.
+    settings = Settings()
+    clock = _FakeClock()
+    thread_id, message_id = _thread_with_message(f"planl-budget-{uuid4().hex[:8]}", "Why does routing depth matter?")
+    job = _job(thread_id, message_id)
+    with caplog.at_level(logging.WARNING, logger="qcai.tutor"):
+        run_shadow(job, settings=settings, pipeline_factory=lambda: TwoPassPipeline(
+            RetrievalEngine(get_course_store(), settings), settings, generator=_ClockedGenerator(ExtractiveD19Generator(PACKAGE), clock), clock=clock))
+    steps = [record.json_fields.get("step") for record in caplog.records if getattr(record, "json_fields", {}).get("event") == "tutor.two_pass.budget_exceeded"]
+    assert steps == ["generate"]
+    (shadow,) = records(response_id=job.shadow_response_id)
+    entry = entry_of(shadow)
+    proposed = entry["counts"]["proposed_claims"]
+    assert proposed > 0 and entry["abstention_reason"] == "budget_exceeded" and entry["claims"] == []
+    assert entry["counts"] == {"proposed_claims": proposed, "bound_claims": 0, "dropped": {"budget_exceeded": proposed}, "render_attempts": 0}
+    snapshot = TWO_PASS_METRICS.snapshot(PARAMS.phase2_bound_claim_ratio)
+    assert (snapshot["budget_exceeded"], snapshot["abstention_by_reason"]) == (1, {"budget_exceeded": 1})
+    assert (snapshot["proposed_claims"], snapshot["bound_claims"], snapshot["bound_claim_ratio"], snapshot["bound_claim_ratio_stop"]) == (0, 0, None, False)
+    # A healthy run afterwards reports the true ratio, and the stop stays clear.
+    thread_id, message_id = _thread_with_message(f"planl-budget-{uuid4().hex[:8]}", "Why does routing depth matter?")
+    run_shadow(_job(thread_id, message_id), settings=settings, pipeline_factory=lambda: TwoPassPipeline(RetrievalEngine(get_course_store(), settings), settings))
+    snapshot = TWO_PASS_METRICS.snapshot(PARAMS.phase2_bound_claim_ratio)
+    assert snapshot["proposed_claims"] > 0 and (snapshot["bound_claim_ratio"], snapshot["bound_claim_ratio_stop"]) == (1.0, False)
+    # The ledger contract itself refuses counts that do not reconcile.
+    with pytest.raises(ValidationError, match="proposed_claims"):
+        contracts.PipelineCounts(proposed_claims=proposed, bound_claims=0, dropped={}, render_attempts=0)
+
+
+def test_ac_3_3_a_sentence_in_two_overlapping_spans_is_one_claim_and_the_honest_rendering_passes():
+    # Review 2026-11-19: on the real public corpus this query abstained with subset_check_failed after three renders.
+    (query,) = [item["query"] for item in json.loads((DATA / "phase3_replay_regressions.json").read_text(encoding="utf-8"))["items"]]
+    settings = Settings()
+    pipeline = TwoPassPipeline(RetrievalEngine(get_course_store(), settings), settings)
+    results = [_run(pipeline, query, plan_id) for plan_id in ("concise", "stepwise", "socratic")]
+    for result in results:
+        assert (result.decision, result.render_attempts) == ("answer", 1)
+        assert result.entry.counts.dropped.get("merged", 0) >= 1 and check_subset(result.rendered, result.locked).passed
+        assert any(len(claim.span_ids) == 2 for claim in result.locked.claims)
+        texts = [claim.text for claim in result.locked.claims]
+        assert len(texts) == len(set(texts))  # the sentence is shown once, citing both spans
+        rendered = [segment.text for segment in result.rendered.segments if segment.kind == "claim"]
+        assert len(rendered) == len(set(rendered))
+    assert len({result.locked.claim_set_hash for result in results}) == 1
+
+
+def test_ac_3_6_the_ledger_readers_are_the_plans_reviewer_role_only():
+    # Review 2026-11-19: plan 7.3 reads "(owner or reviewer)"; admin is not a ledger reader (PD-12 revised).
+    from app.core.authorization import LEDGER_READER_ROLES
+
+    assert LEDGER_READER_ROLES == ("reviewer",)
+    learner, admin = demo("ledger-learner"), demo("ledger-admin", role="admin")
+    body = chat(learner, "Why does routing depth matter?").json()
+    (shadow,) = records(shadowed_response_id=body["turn_id"])
+    with SessionLocal() as db:
+        start = db.scalar(select(func.max(SecurityEvent.seq))) or 0
+    missing = client.get(f"/ledger/responses/shadow-{uuid4()}", headers=admin)
+    assert missing.status_code == 404
+    for target in (shadow.response_id, body["turn_id"]):
+        refused = client.get(f"/ledger/responses/{target}", headers=admin)
+        assert (refused.status_code, refused.json(), refused.headers["cache-control"]) == (404, missing.json(), "no-store")
+    own_turn = chat(admin, "Why does routing depth matter?").json()["turn_id"]
+    own = client.get(f"/ledger/responses/{own_turn}", headers=admin)
+    assert own.status_code == 200 and own.json()["record"]["delivery"] == "legacy"
+    assert all(own.json()["record"][field] is None for field in ("seq", "prev_hash", "record_hash", "entry_sha256", "shadowed_response_id"))
+    with SessionLocal() as db:
+        reads = db.scalars(select(SecurityEvent).where(SecurityEvent.seq > start, SecurityEvent.event_type == "ledger.reviewer_read")).all()
+    assert reads == []
+
+
+def test_the_chat_response_schemas_keep_every_field_in_openapi():
+    # Review 2026-11-19: a wrap model_serializer made both response schemas a free-form object.
+    from app.schemas import AssistantChatResponse, EvidencePanel, TutorTurnResponse
+
+    document = app.openapi()
+    schemas = document["components"]["schemas"]
+    for name, model in (("AssistantChatResponse", AssistantChatResponse), ("TutorTurnResponse", TutorTurnResponse)):
+        assert set(schemas[name]["properties"]) == set(model.model_fields), name
+        assert set(model.model_json_schema(mode="serialization")["properties"]) == set(model.model_fields), name
+        assert "additionalProperties" not in schemas[name]
+    for path, name in (("/assistant/chat", "AssistantChatResponse"), ("/tutor/turns", "TutorTurnResponse")):
+        content = document["paths"][path]["post"]["responses"]["200"]["content"]["application/json"]["schema"]
+        assert content == {"$ref": f"#/components/schemas/{name}"}
+    bare = AssistantChatResponse(answer="a", citations=[], retrieval_mode="lexical", provider="none", model="m")
+    assert "evidence" not in bare.model_dump(mode="json") and '"evidence"' not in bare.model_dump_json()  # conflict 28 holds
+    panel = bare.model_copy(update={"evidence": EvidencePanel(decision="abstain")})
+    assert panel.model_dump(mode="json")["evidence"]["decision"] == "abstain"
+    assert "evidence" not in TutorTurnResponse(**bare.model_dump()).model_dump(mode="json")
+
+
 def test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode(monkeypatch):
     chat(demo("plani"), "Why does routing depth matter?")
     body = client.get("/ready").json()
@@ -1223,7 +1372,11 @@ def test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode(monkeypatch
     assert pipeline["schemas_sha256"] == PARAMS.schemas_sha256 and pipeline["available"] is True and pipeline["max_regenerations"] == 2
     with SessionLocal() as db:
         head = db.scalar(select(ResponseLedgerHead.seq))
-    assert body["ledger"] == {"chain": "tutor-responses", "head_seq": head} and head >= 2
+    assert head >= 2
+    # Review 2026-11-19: /ready is public, so it says whether the head is readable, never its sequence number (the
+    # all-time count of tutor responses, which only a reviewer's ledger read shows).
+    assert body["ledger"] == {"chain": "tutor-responses", "status": "ok"}
+    assert "head_seq" not in json.dumps(body) and f'"seq": {head}' not in json.dumps(body)
     assert {"tutor_ledger", "two_pass_shadow"} <= set(body["slis"])
     assert (body["tutor_ledger_enabled"], body["ledger_route_enabled"], body["evidence_panel_enabled"], body["tutor_turns_route_enabled"]) == (True,) * 4
     from app import main as main_module
@@ -1231,7 +1384,7 @@ def test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode(monkeypatch
     monkeypatch.setattr(main_module, "SessionLocal", _raise("_build_fields read the database"))
     fields = main_module._build_fields()
     assert fields["two_pass_tutor"] == "shadow" and fields["tutor_pipeline"]["version"] == "two-pass-v1"
-    assert main_module._ledger_head() == {"chain": "tutor-responses", "head_seq": None, "status": "unavailable"}  # fails open
+    assert main_module._ledger_head() == {"chain": "tutor-responses", "status": "unavailable"}  # fails open
 
 
 def _alembic(database_url: str, *args: str) -> subprocess.CompletedProcess:
@@ -1383,6 +1536,20 @@ def test_evidence_spans_alias_matches_the_resolver_route_and_is_off_when_the_fla
     monkeypatch.setattr(spans_route, "get_settings", lambda: Settings(span_resolver_route_enabled=False))
     disabled = client.get(f"/evidence/spans/{authored.span_id}", headers=anonymous())
     assert (disabled.status_code, disabled.json(), disabled.headers["cache-control"]) == (404, {"detail": "Span not found."}, "no-store")
+
+
+def test_the_span_route_and_its_alias_share_one_rate_limit_window(monkeypatch):
+    # Review 2026-11-19: slowapi keeps one window per endpoint, so alternating the two paths doubled the budget.
+    limited = Settings(spans_rate_limit="4/minute")
+    monkeypatch.setattr(spans_route, "get_settings", lambda: limited)
+    authored = next(record for record in get_course_store().span_registry.records if record.item_kind == "authored")
+    headers = anonymous()
+    paths = [f"/spans/{authored.span_id}", f"/evidence/spans/{authored.span_id}"]
+    statuses = [client.get(paths[index % 2], headers=headers).status_code for index in range(4)]
+    assert statuses == [200, 200, 200, 200]
+    assert [client.get(path, headers=headers).status_code for path in paths] == [429, 429]
+    # Another client has its own window.
+    assert client.get(paths[1], headers=anonymous()).status_code == 200
 
 
 def test_the_ledger_is_outside_erasure_and_guarded_at_start_up():

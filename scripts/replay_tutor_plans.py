@@ -5,8 +5,9 @@ Run: python scripts/replay_tutor_plans.py --write docs/evaluation/phase3/three_p
      python scripts/replay_tutor_plans.py --check docs/evaluation/phase3/three_plan_replay_v1.json
 
 The two-pass pipeline runs over the public-corpus fixture apps/api/tests/data/score_floor_queries.json (174
-in-domain, 100 off-topic and 24 stopword-only items) under the three presentation plans (concise, stepwise,
-socratic), in three configurations: governed_empty with p1-floor (the shipped D-31 build), and every public-plane,
+in-domain, 100 off-topic and 24 stopword-only items), plus the regression items of
+apps/api/tests/data/phase3_replay_regressions.json (public-corpus queries, each naming the defect it guards), under
+the three presentation plans (concise, stepwise, socratic), in three configurations: governed_empty with p1-floor (the shipped D-31 build), and every public-plane,
 bound item approved (a temporary manifest) with bm25f-v1 and with p1-floor. For every item the claim_set_hash and
 the span set must be equal across the plans (the lock precedes rendering). It also reports the two-pass
 bound-claim ratio beside the Phase 2 legacy ratio over the same lexical retrieval; a non-null two-pass ratio below
@@ -15,8 +16,10 @@ the package's tutor_pipeline.stop.phase2_bound_claim_ratio is the plan L stop.
 This is an engineering replay on public-corpus fixtures. It is NOT E3 or LQ-1 evidence (plan Phase 3 H). Anything
 under lqs/ is refused; no private-plane item, learner record, tutor turn or rating is read; nothing is written to a
 database. The report holds hashes and counts only, never query, claim or span text.
-Exit codes: --write 0 pass, 1 mismatch, 3 stop; --check 1 if the record differs from a fresh run (created_at and
-commit aside), else as --write.
+Its commit is HEAD when the working tree is clean, else HEAD + "-dirty"; --write refuses a dirty tree (exit 4)
+unless --allow-dirty is given, so a committed record names the commit that holds the code it replayed.
+Exit codes: --write 0 pass, 1 mismatch, 3 stop, 4 dirty tree refused; --check 1 if the record differs from a fresh
+run (created_at and commit aside), else as --write.
 """
 
 from __future__ import annotations
@@ -52,17 +55,20 @@ from app.services.content_assembler import CourseStore  # noqa: E402
 from app.services.provenance import native_citation  # noqa: E402
 from app.services.retrieval_engine import RetrievalEngine  # noqa: E402
 from app.services.spans import span_set_digest  # noqa: E402
-from app.services.tutor_pipeline.contracts import PresentationPlan  # noqa: E402
+from app.services.tutor_pipeline.contracts import PresentationPlan, bound_claim_ratio_terms  # noqa: E402
 from app.services.tutor_pipeline.pipeline import PipelineInput, TwoPassPipeline  # noqa: E402
 from app.services.tutor_pipeline.resolve import LearnerTurn, resolve_turns  # noqa: E402
 
 FIXTURE = API_ROOT / "tests" / "data" / "score_floor_queries.json"
+REGRESSIONS = API_ROOT / "tests" / "data" / "phase3_replay_regressions.json"
+STRATA = ("in_domain", "off_topic", "stopword_only", "regression")
 REPO_MANIFEST = REPO_ROOT / "corpus" / "public" / "manifest.json"
 DEFAULT_REPORT = REPO_ROOT / "docs" / "evaluation" / "phase3" / "three_plan_replay_v1.json"
 PLANS = ("concise", "stepwise", "socratic")
 CONFIGURATIONS = (("governed_empty", "p1-floor"), ("all_public_approved", "bm25f-v1"), ("all_public_approved", "p1-floor"))
 EVIDENCE_CLASS = "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 evidence (plan Phase 3 H)"
 EXIT_MISMATCH = 1
+EXIT_DIRTY = 4
 EXIT_STOP = 3
 
 
@@ -90,6 +96,20 @@ def fixture_items(fixture: Path = FIXTURE, subset: int | None = None) -> list[tu
     return items
 
 
+def regression_items(path: Path = REGRESSIONS) -> list[tuple[str, str]]:
+    """("regression", query) for every regression item, in file order (always replayed in full, subset or not)."""
+    _refuse_lqs(path)
+    return [("regression", item["query"]) for item in json.loads(Path(path).read_text(encoding="utf-8"))["items"]]
+
+
+def _fixture_block(path: Path, items: int) -> dict:
+    try:
+        relative = Path(path).resolve().relative_to(REPO_ROOT.resolve()).as_posix()
+    except ValueError:
+        relative = Path(path).name
+    return {"path": relative, "sha256": canonical_sha256(json.loads(Path(path).read_text(encoding="utf-8"))), "items": items}
+
+
 def _settings(config: str, gate: str, manifest: Path) -> Settings:
     return Settings(environment="production", enforce_corpus_governance=True, corpus_manifest_path=str(manifest), retrieval_gate=gate)
 
@@ -113,14 +133,15 @@ def run_configuration(
     generator = generator_factory(package) if generator_factory else None
     pipeline = TwoPassPipeline(engine, settings, generator=generator)
     baseline = package.tutor_pipeline.phase2_bound_claim_ratio
-    answered = abstained = proposed = bound = 0
+    answered = abstained = proposed = bound = merged = 0
+    answered_by_stratum: Counter[str] = Counter()
     reasons: Counter[str] = Counter()
     hash_equal = span_equal = distinct = 0
     mismatches: list[str] = []
     legacy = {"answered": 0, "claims": 0, "bound": 0}
     digest_rows: list[list[str]] = []
     registry = pipeline.registry
-    for _, query in items:
+    for stratum, query in items:
         query_sha = _sha(query)
         resolved = resolve_turns([], LearnerTurn("fixture-" + query_sha[:12], query), package=package)
         results = []
@@ -147,13 +168,16 @@ def run_configuration(
             mismatches.append(query_sha)
         if first.decision == "answer":
             answered += 1
+            answered_by_stratum[stratum] += 1
             texts = {result.rendered.text for result in results if result.rendered is not None}
             distinct += len(texts) == len(PLANS)
         else:
             abstained += 1
             reasons[first.abstention_reason or "unknown"] += 1
-        proposed += first.entry.counts.proposed_claims
-        bound += first.entry.counts.bound_claims
+        ratio_proposed, ratio_bound = bound_claim_ratio_terms(first.entry.counts)
+        proposed += ratio_proposed
+        bound += ratio_bound
+        merged += first.entry.counts.dropped.get("merged", 0)
         digest_rows.append([query_sha, first.decision, first.locked.claim_set_hash, span_set_digest(first.locked.span_ids)])
         # The Phase 2 legacy path over the same lexical retrieval: contained quotations, each citing its span.
         evidence = engine.evidence(resolved.text, lesson_slug=None, top_k=package.tutor_pipeline.top_k)
@@ -173,21 +197,32 @@ def run_configuration(
         "index_version": store.index_version,
         "items": len(items),
         "answered": answered,
+        "answered_by_stratum": {name: answered_by_stratum.get(name, 0) for name in STRATA},
         "abstained": abstained,
         "abstention_by_reason": dict(sorted(reasons.items())),
         "claim_set_hash_equal": hash_equal,
         "span_set_equal": span_equal,
         "rendered_text_distinct_among_answers": distinct,
         "mismatches": sorted(mismatches),
-        "two_pass": {"proposed_claims": proposed, "bound_claims": bound, "bound_claim_ratio": ratio},
+        # Ratio terms (contracts.bound_claim_ratio_terms); merged_claims bound onto an earlier claim's sentence.
+        "two_pass": {"proposed_claims": proposed, "bound_claims": bound, "bound_claim_ratio": ratio, "merged_claims": merged},
         "phase2_legacy": {**legacy, "bound_claim_ratio": _ratio(legacy["bound"], legacy["claims"])},
         "stop": bool(ratio is not None and ratio < baseline),
         "items_digest": canonical_sha256(sorted(digest_rows)),
     }
 
 
-def compute(*, fixture: Path = FIXTURE, subset: int | None = None, generator_factory: Callable | None = None, configurations=CONFIGURATIONS) -> dict:
-    items = fixture_items(fixture, subset)
+def compute(
+    *,
+    fixture: Path = FIXTURE,
+    subset: int | None = None,
+    generator_factory: Callable | None = None,
+    configurations=CONFIGURATIONS,
+    regressions: Path | None = REGRESSIONS,
+) -> dict:
+    main_items = fixture_items(fixture, subset)
+    extra = regression_items(regressions) if regressions is not None else []
+    items = main_items + extra
     package = get_config_package(Settings())
     params = package.tutor_pipeline
     with tempfile.TemporaryDirectory(prefix="qcai-replay-") as temporary:
@@ -197,10 +232,6 @@ def compute(*, fixture: Path = FIXTURE, subset: int | None = None, generator_fac
         results = [run_configuration(name, gate, manifests[name], items, generator_factory=generator_factory) for name, gate in configurations]
     mismatch = any(result["mismatches"] for result in results)
     stop = any(result["stop"] for result in results)
-    try:
-        fixture_path = Path(fixture).resolve().relative_to(REPO_ROOT.resolve()).as_posix()
-    except ValueError:
-        fixture_path = Path(fixture).name
     return {
         "report": "qcai-three-plan-replay",
         "format_version": 1,
@@ -209,7 +240,10 @@ def compute(*, fixture: Path = FIXTURE, subset: int | None = None, generator_fac
         "evidence_class": EVIDENCE_CLASS,
         "public_corpus_only": True,
         "excluded_sources": ["private plane", "lqs/ (ULQS)", "learner records, tutor turns, ratings"],
-        "fixture": {"path": fixture_path, "sha256": canonical_sha256(json.loads(Path(fixture).read_text(encoding="utf-8"))), "items": len(items)},
+        "fixture": {
+            **_fixture_block(fixture, len(main_items)),
+            "regressions": _fixture_block(regressions, len(extra)) if regressions is not None else None,
+        },
         "config_package": {"version": package.package_version, "sha256": package.sha256},
         "tutor_pipeline": {
             "resolver": params.resolver_id,
@@ -230,11 +264,30 @@ def compute(*, fixture: Path = FIXTURE, subset: int | None = None, generator_fac
     }
 
 
+DIRTY_SUFFIX = "-dirty"
+
+
+def _git(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, timeout=30)
+
+
 def _commit() -> str:
+    """The commit whose code produced the record: HEAD, with "-dirty" when the working tree differs from it (tracked
+    changes or untracked files), so a record never names a commit that does not hold the code it replayed."""
     try:
-        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=30).stdout.strip() or "unknown"
+        head = _git("rev-parse", "HEAD").stdout.strip()
+        if not head:
+            return "unknown"
+        status = _git("status", "--porcelain")
+        if status.returncode != 0:
+            return head + DIRTY_SUFFIX
+        return head + (DIRTY_SUFFIX if status.stdout.strip() else "")
     except (OSError, subprocess.SubprocessError):
         return "unknown"
+
+
+def _is_commit(value: str) -> bool:
+    return len(value) == 40 and not set(value) - set("0123456789abcdef")
 
 
 def exit_code(report: dict) -> int:
@@ -250,10 +303,18 @@ def main(argv: list[str] | None = None) -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--write", type=Path)
     mode.add_argument("--check", type=Path)
+    parser.add_argument("--allow-dirty", action="store_true",
+                        help="--write from a working tree that differs from HEAD; the record's commit then ends in -dirty")
     args = parser.parse_args(argv)
     _refuse_lqs(FIXTURE)
     target = args.write or args.check
     _refuse_lqs(target)
+    if args.write and not args.allow_dirty:
+        commit = _commit()
+        if not _is_commit(commit):
+            print(f"refused: the working tree differs from HEAD ({commit}), so the record would name no commit that holds "
+                  "the replayed code; commit first, or pass --allow-dirty", file=sys.stderr)
+            return EXIT_DIRTY
     fresh = compute()
     if args.write:
         args.write.parent.mkdir(parents=True, exist_ok=True)

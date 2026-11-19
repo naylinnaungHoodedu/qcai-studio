@@ -144,6 +144,16 @@ def test_every_bind_drop_reason_and_no_rebinding():
 def test_claim_text_stays_verbatim_and_claim_ids_are_content_addressed():
     store = get_course_store()
     resolver = SpanResolver(store)
+    record, sentence = _nfkc_changing(store)
+    plan = ClaimPlan(generator=REF, claims=(ProposedClaim(text=sentence, span_ids=(record.span_id,)),))
+    result = bind(plan, _bundle(store, [_span(record)]), resolver=resolver, store=store, registry=resolver.registry, params=PARAMS)
+    assert [draft.text for draft in result.bound] == [whitespace(sentence)]  # verbatim, not NFKC-folded
+    assert result.bound[0].text != normalise(sentence)
+    assert result.bound[0].claim_id == claim_id_for(sentence, [record.span_id]) == claim_id_for("  " + sentence, (record.span_id,))
+    assert claim_id_for(sentence, [record.span_id]) != claim_id_for(sentence + " More.", [record.span_id])
+
+
+def _nfkc_changing(store) -> tuple:
     changing = [
         (record, sentence)
         for record in store.span_registry.records
@@ -152,13 +162,78 @@ def test_claim_text_stays_verbatim_and_claim_ids_are_content_addressed():
         if unicodedata.normalize("NFKC", sentence) != sentence
     ]
     assert changing, "the dev corpus has a sentence NFKC would change (spec M22)"
-    record, sentence = changing[0]
-    plan = ClaimPlan(generator=REF, claims=(ProposedClaim(text=sentence, span_ids=(record.span_id,)),))
-    result = bind(plan, _bundle(store, [_span(record)]), resolver=resolver, store=store, registry=resolver.registry, params=PARAMS)
-    assert [draft.text for draft in result.bound] == [whitespace(sentence)]  # verbatim, not NFKC-folded
-    assert result.bound[0].text != normalise(sentence)
-    assert result.bound[0].claim_id == claim_id_for(sentence, [record.span_id]) == claim_id_for("  " + sentence, (record.span_id,))
-    assert claim_id_for(sentence, [record.span_id]) != claim_id_for(sentence + " More.", [record.span_id])
+    return changing[0]
+
+
+def test_a_folded_claim_binds_to_the_spans_own_text_and_a_folded_rendering_is_unmapped():
+    # Review 2026-11-19: NFKC is used only to compare. A generator that folds a character still binds, but what is
+    # locked, ledgered and rendered is the span's own text; a renderer that folds it changes what a learner reads.
+    from app.services.claim_gate import check_subset
+    from app.services.tutor_pipeline.contracts import PresentationPlan
+    from app.services.tutor_pipeline.render import TemplateRenderer, layout_text
+
+    store = get_course_store()
+    resolver = SpanResolver(store)
+    record, sentence = _nfkc_changing(store)
+    folded = unicodedata.normalize("NFKC", sentence)
+    bundle = _bundle(store, [_span(record)])
+    result = bind(ClaimPlan(generator=REF, claims=(ProposedClaim(text=folded, span_ids=(record.span_id,)),)), bundle, resolver=resolver,
+                  store=store, registry=resolver.registry, params=PARAMS)
+    assert [draft.text for draft in result.bound] == [whitespace(sentence)] and dict(result.dropped) == {}
+    assert result.bound[0].text != folded and result.bound[0].text in whitespace(record.text)
+    locked = lock(result.bound, bundle=bundle, generator=REF, evidential_prompt_hash=REF.prompt_hash, pedagogical_prompt_hash=pedagogical_prompt_hash(),
+                  resolver=RESOLVER, package=PACKAGE)
+    assert locked.claims[0].text == whitespace(sentence)
+    rendered = TemplateRenderer().render(locked, PresentationPlan(plan_id="concise", source="request"), attempt=1)
+    assert whitespace(sentence) in rendered.text and folded not in rendered.text and check_subset(rendered, locked).passed
+    segments = [segment.model_copy(update={"text": unicodedata.normalize("NFKC", segment.text)}) if segment.kind == "claim" else segment
+                for segment in rendered.segments]
+    altered = rendered.model_copy(update={"segments": tuple(segments), "text": layout_text(segments)})
+    assert altered.text != rendered.text
+    checked = check_subset(altered, locked)
+    assert not checked.passed and "unmapped_factual_sentence" in checked.problems
+
+
+def _shared_sentence(store) -> tuple:
+    """A document sentence that sits in two adjacent spans (the splitter overlaps chunks), with both spans."""
+    holders: dict[str, list] = {}
+    registry = get_corpus_registry(Settings())
+    for record in store.span_registry.records:
+        if record.item_kind != "document" or not span_is_quotable(record, registry):
+            continue
+        for sentence in _sentences(record):
+            holders.setdefault(normalise(sentence), []).append((record, sentence))
+    for entries in holders.values():
+        spans = {record.span_id: (record, sentence) for record, sentence in entries}
+        if len(spans) >= 2:
+            (a, sentence), (b, _) = list(spans.values())[:2]
+            return a, b, sentence
+    raise AssertionError("the dev corpus has a sentence in two overlapping spans (review 2026-11-19)")
+
+
+def test_a_sentence_proposed_on_two_overlapping_spans_is_one_locked_claim_on_both():
+    # Review 2026-11-19: the extractive generator proposes such a sentence once per span. Both used to lock as two
+    # claims with one text, and the subset check, keyed on text, then rejected the honest rendering.
+    store = get_course_store()
+    resolver = SpanResolver(store)
+    a, b, sentence = _shared_sentence(store)
+    both = tuple(sorted((a.span_id, b.span_id)))
+    other = next((s for s in _sentences(a) if normalise(s) != normalise(sentence)), None)
+    proposals = [
+        ProposedClaim(text=sentence, span_ids=(a.span_id,)),
+        ProposedClaim(text=sentence, span_ids=(b.span_id,)),  # merged: its span joins the first claim
+        ProposedClaim(text=sentence, span_ids=(a.span_id,)),  # already bound on these spans: a duplicate
+        ProposedClaim(text=sentence, span_ids=both),  # likewise
+    ]
+    if other is not None:
+        proposals.append(ProposedClaim(text=other, span_ids=(a.span_id,)))
+    result = bind(ClaimPlan(generator=REF, claims=tuple(proposals)), _bundle(store, [_span(a), _span(b)]), resolver=resolver, store=store,
+                  registry=resolver.registry, params=PARAMS)
+    assert result.bound[0].text == whitespace(sentence) and result.bound[0].span_ids == both
+    assert result.bound[0].claim_id == claim_id_for(sentence, both)
+    assert [draft.text for draft in result.bound[1:]] == ([whitespace(other)] if other is not None else [])
+    assert dict(result.dropped) == {"merged": 1, "duplicate": 2}
+    assert result.proposed == len(result.bound) + sum(result.dropped.values()) == len(proposals)
 
 
 def test_the_lock_hash_is_stable_and_stamped():

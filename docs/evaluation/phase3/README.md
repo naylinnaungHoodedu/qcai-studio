@@ -19,13 +19,18 @@ python scripts/replay_tutor_plans.py --check docs/evaluation/phase3/three_plan_r
 Exit codes:
 - `0`: pass;
 - `1`: a mismatch across plans (`--check` also exits 1 when the record differs from a fresh run, `created_at` and `commit` aside);
-- `3`: the plan L stop.
+- `3`: the plan L stop;
+- `4`: `--write` refused because the working tree differs from HEAD.
+
+**Provenance.** The record's `commit` is HEAD when `git status --porcelain` is empty, and HEAD + `-dirty` otherwise. `--write` refuses a dirty tree unless `--allow-dirty` is given, so commit the code first and write the record from the clean commit: the committed record then names a commit that holds the code it replayed.
 
 Any change to the configuration package (its sha256 is in the report) needs a fresh `--write`.
 
 ## Inputs and configurations
 
 - **Fixture:** `apps/api/tests/data/score_floor_queries.json`: 174 in-domain, 100 off-topic and 24 stopword-only items (298). Its canonical sha256 is in the report.
+- **Regression items:** `apps/api/tests/data/phase3_replay_regressions.json`, public-corpus queries that each name the defect they guard, replayed in full beside any subset (1 item, so 299 in all):
+  - a sentence that two overlapping document spans both hold. Before the 2026-11-19 review fix the shadow abstained on it with `subset_check_failed`; now it is one locked claim citing both spans (`two_pass.merged_claims`).
 - **Plans:** `concise`, `stepwise` (reordered by source order) and `socratic` (fixed opening and closing questions), from `template-renderer-v1`.
 - **Configurations:**
   - `governed_empty` / `p1-floor`: the shipped D-31 build, where nothing is approved, so it abstains on all 298 items;
@@ -37,12 +42,14 @@ Any change to the configuration package (its sha256 is in the report) needs a fr
 
 | Configuration | Answered | Abstained | Mismatches | Two-pass bound-claim ratio | Phase 2 legacy ratio |
 |---|---|---|---|---|---|
-| governed_empty / p1-floor | 0 | 298 | 0 | null (no claims proposed) | null |
-| all_public_approved / bm25f-v1 | 166 | 132 | 0 | 1.0 | 1.0 |
-| all_public_approved / p1-floor | 146 | 152 | 0 | 1.0 | 1.0 |
+| governed_empty / p1-floor | 0 | 299 | 0 | null (no claims proposed) | null |
+| all_public_approved / bm25f-v1 | 167 (166 in-domain, 1 regression) | 132 | 0 | 1.0 | 1.0 |
+| all_public_approved / p1-floor | 147 (146 in-domain, 1 regression) | 152 | 0 | 1.0 | 1.0 |
 
-- No off-topic or stopword-only item is answered.
+- No off-topic or stopword-only item is answered (`answered_by_stratum`).
 - The answer counts equal the legacy contained path's over the same retrieval (spec M1, M2).
+- The 298 original items replay exactly as before the 2026-11-19 review fixes: each configuration's `items_digest` over them is unchanged.
+- The two-pass counts are the ratio terms (`contracts.bound_claim_ratio_terms`): a claim merged onto an earlier claim's sentence counts as bound; a claim bind never saw (a shadow budget overrun) counts in neither term.
 - The answered items' three renderings are pairwise distinct (`rendered_text_distinct_among_answers`): the plans differ in presentation only.
 
 ## The bound-claim stop (plan Phase 3 L)

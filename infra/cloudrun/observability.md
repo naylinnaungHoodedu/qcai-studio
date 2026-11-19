@@ -98,7 +98,7 @@ The mirrored lines carry no learner identifier, digest, address or email. The pr
 **Not set up yet.** Creating log-based metrics and alerts is a cloud write (Platform Owner approval each time).
 
 Plan Phase 3 I: "Ledger writes 100% of deliveries; bound-claim ratio; abstention by reason; /ready reports versions".
-- `/ready` reports the versions in force: `config_package_version`, `two_pass_tutor` (the effective mode) and `two_pass_tutor_setting`, `phase4_exit_passed`, the `tutor_pipeline` ids and prompt hashes, and `ledger.head_seq`.
+- `/ready` reports the versions in force: `config_package_version`, `two_pass_tutor` (the effective mode) and `two_pass_tutor_setting`, `phase4_exit_passed`, the `tutor_pipeline` ids and prompt hashes, and `ledger.status` (`ok` or `unavailable`). `/ready` is public, so it never shows the head's sequence number, the all-time count of tutor responses: that is in the `response_ledger` job line and in each `tutor.ledger.appended` line.
 - `/ready` `slis.tutor_ledger` holds `attempted`, `appended` and `failed` (legacy and shadow), `duplicates`, `conflicts`, `legacy_coverage_rate` (appended over attempted legacy deliveries) and `write_stop`.
 - `/ready` `slis.two_pass_shadow` holds `scheduled`, `completed`, `failed` (resolve, pipeline, ledger), `decisions`, `abstention_by_reason`, `proposed_claims`, `bound_claims`, `bound_claim_ratio` (beside `phase2_bound_claim_ratio_baseline` 1.0), `bound_claim_ratio_stop`, `render_regenerations` and `budget_exceeded`.
 - These are per-instance counters; the log lines below aggregate across instances.
@@ -109,6 +109,7 @@ All Phase 3 events log on the `qcai.tutor` logger. They carry counts, hashes and
 |---|---|---|
 | `tutor.ledger.appended` | `delivery`, `seq`, `record_hash`, `duplicate` (the off-database copy of the chain) | INFO |
 | `tutor.ledger.append_failed` | `delivery`, `stage`, `error` (class) | ERROR, a plan L stop |
+| `tutor.ledger.append_deferred` | `delivery`, `budget_ms` (the learner was not held past the budget plus 250 ms; the append's outcome is logged when it ends) | WARNING |
 | `tutor.ledger.conflict` | `delivery` | ERROR |
 | `tutor.two_pass.shadow` | `decision`, `reason`, `proposed`, `bound`, `dropped`, `attempts`, `plan_id`, `gate`, `latency_ms`, `seq` | INFO |
 | `tutor.two_pass.shadow_failed` | `step`, `error` | ERROR |

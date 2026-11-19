@@ -113,13 +113,7 @@ def run_shadow(
                                                                      "error": type(exc).__name__}})
         return
     entry = result.entry
-    TWO_PASS_METRICS.completed(
-        decision=result.decision,
-        reason=result.abstention_reason,
-        proposed=entry.counts.proposed_claims,
-        bound=entry.counts.bound_claims,
-        attempts=result.render_attempts,
-    )
+    TWO_PASS_METRICS.completed(decision=result.decision, reason=result.abstention_reason, counts=entry.counts, attempts=result.render_attempts)
     LOGGER.info(
         "Two-pass shadow run",
         extra={

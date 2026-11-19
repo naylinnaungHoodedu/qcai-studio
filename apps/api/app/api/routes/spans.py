@@ -25,6 +25,9 @@ router = APIRouter(prefix="/spans", tags=["spans"])
 evidence_router = APIRouter(prefix="/evidence", tags=["evidence"])
 SPAN_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=60"
 NOT_FOUND = {"detail": "Span not found."}
+# The two paths share one SPANS_RATE_LIMIT window per client (slowapi otherwise keeps one window per endpoint, which
+# would let a client alternating between the paths make twice the limit of span lookups).
+SPANS_RATE_LIMIT_SCOPE = "span-resolver"
 
 
 def _not_found() -> JSONResponse:
@@ -64,12 +67,12 @@ def _resolve_span(span_id: str, request: Request, response: Response, db: Sessio
 
 
 @router.get("/{span_id}", response_model=SpanResolution, responses={404: {"description": "Span not found."}})
-@limiter.limit(lambda: get_settings().spans_rate_limit)
+@limiter.shared_limit(lambda: get_settings().spans_rate_limit, scope=SPANS_RATE_LIMIT_SCOPE)
 def resolve_span(span_id: str, request: Request, response: Response, db: Session = Depends(get_db)):
     return _resolve_span(span_id, request, response, db)
 
 
 @evidence_router.get("/spans/{span_id}", response_model=SpanResolution, responses={404: {"description": "Span not found."}})
-@limiter.limit(lambda: get_settings().spans_rate_limit)
+@limiter.shared_limit(lambda: get_settings().spans_rate_limit, scope=SPANS_RATE_LIMIT_SCOPE)
 def resolve_evidence_span(span_id: str, request: Request, response: Response, db: Session = Depends(get_db)):
     return _resolve_span(span_id, request, response, db)

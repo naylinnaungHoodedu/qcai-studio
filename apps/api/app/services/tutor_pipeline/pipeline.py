@@ -203,6 +203,9 @@ class TwoPassPipeline:
                     reason = "no_claims"
                 elif self._over(started, budget_ms, "generate"):
                     reason = "budget_exceeded"
+                    # Bind never runs: the claims are counted as skipped, never as binding failures, so a slow
+                    # generator does not trip the plan L bound-claim stop (bound_claim_ratio_terms).
+                    dropped[contracts.BUDGET_SKIPPED] = proposed
         if reason is None and plan is not None:
             bound = bind(plan, bundle, resolver=self.resolver, store=self.store, registry=self.registry, params=params)
             drafts, dropped, proposed = bound.bound, bound.dropped, bound.proposed

@@ -6,9 +6,16 @@ Every proposed claim is validated against the spans it cites, and dropped whole 
   unresolvable   the Phase 2 SpanResolver does not resolve it, or its content hash differs from the bundle's
   not_quotable   a cited span is not a quotable (public-plane, bound, approved) document span (D-19, D-31)
   not_verbatim   the claim is not a whole sentences-v1 sentence of EVERY cited span (no entailment checker exists
-                 before Phase 4, so a truncated sentence that drops a qualification or a negation never binds)
-  duplicate      the same claim and span set was already bound
+                 before Phase 4, so a truncated sentence that drops a qualification or a negation never binds), or
+                 the cited spans hold the sentence in different characters
+  duplicate      the same sentence was already bound on all of the spans it cites
 A claim is never re-bound to a span it did not cite: Phase 1's overlap rebinding is gone (plan 3.4).
+
+What is locked is the span's own sentence (whitespace() form), never the generator's text: NFKC is used only to
+compare (spec conflict 32; D-19 "verbatim"), so a generator that folds "x²" to "x2" binds, but the locked, ledgered
+and rendered claim still reads "x²". A sentence proposed again on other spans that also hold it verbatim (the
+splitter overlaps chunks, so one sentence can sit in two adjacent spans) is merged into the first claim, whose span
+set becomes the union; it is counted as "merged", never as a binding failure (contracts.bound_claim_ratio_terms).
 """
 
 from __future__ import annotations
@@ -20,15 +27,23 @@ from typing import TYPE_CHECKING
 from app.core.config_package import TutorPipelineParams
 from app.core.corpus_governance import CorpusRegistry
 from app.services.contained_answers import span_is_quotable
-from app.services.tutor_pipeline.contracts import ClaimPlan, EvidenceBundle, ledger_canonical, sha256_hex
-from app.services.tutor_pipeline.text import normalise, sentences_v1, whitespace
+from app.services.tutor_pipeline.contracts import (
+    BINDING_FAILURES,
+    MERGED,
+    ClaimPlan,
+    EvidenceBundle,
+    ledger_canonical,
+    sha256_hex,
+)
+from app.services.tutor_pipeline.text import normalise, sentences_v1
 
 if TYPE_CHECKING:  # pragma: no cover
     from app.services.content_assembler import CourseStore
     from app.services.span_resolver import SpanResolver
 
 BINDING_RULE = "resolver-bundle-sentence-v1"
-DROP_REASONS = ("unbound", "outside_bundle", "unresolvable", "not_quotable", "not_verbatim", "duplicate")
+# What bind() counts in BindResult.dropped: every binding failure, and "merged" (which is not a failure).
+DROP_REASONS = (*BINDING_FAILURES, MERGED)
 
 
 @dataclass(frozen=True)
@@ -60,19 +75,20 @@ def bind(
     params: TutorPipelineParams,
 ) -> BindResult:
     in_bundle = {span.span_id: span for span in bundle.spans}
-    bound: list[LockedClaimDraft] = []
+    # Bound sentences in first-bound order: (normalised, verbatim) -> the union of the spans that cite it.
+    bound: dict[tuple[str, str], set[str]] = {}
     dropped: Counter = Counter()
-    seen: set[tuple[str, tuple[str, ...]]] = set()
-    sentence_cache: dict[str, set[str]] = {}
+    sentence_cache: dict[str, dict[str, str]] = {}
 
-    def sentences_of(span_id: str) -> set[str]:
+    def sentences_of(span_id: str) -> dict[str, str]:
+        """The span's sentences-v1 sentences: normalised form -> the span's own (whitespace-collapsed) text."""
         if span_id not in sentence_cache:
             record = store.span_registry.get(span_id)
             text = record.text if record is not None else ""
-            sentence_cache[span_id] = {
-                normalise(sentence)
-                for sentence in sentences_v1(text, min_words=params.min_sentence_words, max_chars=params.max_sentence_chars)
-            }
+            sentences: dict[str, str] = {}
+            for sentence in sentences_v1(text, min_words=params.min_sentence_words, max_chars=params.max_sentence_chars):
+                sentences.setdefault(normalise(sentence), sentence)
+            sentence_cache[span_id] = sentences
         return sentence_cache[span_id]
 
     for claim in plan.claims:
@@ -96,15 +112,22 @@ def bind(
                         break
             if reason is None:
                 key = normalise(claim.text)
-                if not all(key in sentences_of(span_id) for span_id in span_ids):
+                verbatim = {sentences_of(span_id).get(key) for span_id in span_ids}
+                if None in verbatim or len(verbatim) != 1:
                     reason = "not_verbatim"
-                elif (key, span_ids) in seen:
-                    reason = "duplicate"
                 else:
-                    seen.add((key, span_ids))
+                    merge_key = (key, verbatim.pop())
+                    spans = bound.get(merge_key)
+                    if spans is None:
+                        bound[merge_key] = set(span_ids)
+                    elif set(span_ids) <= spans:
+                        reason = "duplicate"
+                    else:
+                        spans.update(span_ids)
+                        reason = MERGED
         if reason is not None:
             dropped[reason] += 1
-            continue
-        text = whitespace(claim.text)
-        bound.append(LockedClaimDraft(claim_id=claim_id_for(text, span_ids), text=text, span_ids=span_ids))
-    return BindResult(bound=tuple(bound), dropped=dropped, proposed=len(plan.claims))
+    drafts = tuple(
+        LockedClaimDraft(claim_id=claim_id_for(text, spans), text=text, span_ids=tuple(sorted(spans))) for (_, text), spans in bound.items()
+    )
+    return BindResult(bound=drafts, dropped=dropped, proposed=len(plan.claims))

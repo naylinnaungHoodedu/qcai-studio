@@ -75,4 +75,8 @@ test("the privacy page discloses the tutor response ledger", () => {
   const disclosures = read("lib/privacy-disclosures.ts");
   assert.match(disclosures, /dataClass: "Tutor response ledger"/);
   assert.match(disclosures, /No name, email, account id or question text/);
+  // What a legacy record really holds: the whole matched set with scores and offsets, not only the quotations;
+  // and what a shadow record adds (the resolver's source message ids).
+  assert.match(disclosures, /which course passages the search matched for your question, with their match scores and positions/);
+  assert.match(disclosures, /the ids of the tutor messages your question was taken from/);
 });

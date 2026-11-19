@@ -59,7 +59,7 @@ How to use this spec:
 | M4 | **Index sizes.** Dev: 1071 spans (1030 document, 41 authored), 331 index entries, `corpus-c658893abb6440dd`. Governed empty: 41 spans and 41 entries, all authored. All-approved: the same corpus_version as dev. The API image holds no DOCX (deployment runbook), so in production only authored spans exist. | Positive-path tests run on dev or all-approved. Governed empty and the production image abstain everywhere. |
 | M5 | `TutorMessage.created_at` uses `server_default=func.now()`. SQLite stores whole seconds; a Python-set value keeps microseconds. PostgreSQL `now()` is the transaction start time. | Order within a thread is ambiguous within one second on SQLite. Section 7.11 sets message timestamps in Python (a recorded production-write change, 18). |
 | M6 | `app/services/claim_gate.py` (the overlap `ClaimGate`, `evidence_digest`) is imported by no runtime module and no test. Only ADR-005 and the CS595 blueprint name it. | Safe to repurpose as the subset checker (plan E). |
-| M7 | Roles in code are `learner`, `instructor` and `admin` (`require_role`, STAFF). There is no `reviewer` role. Auth0 roles come from the token claim; demo roles come from `x-demo-role` in development. | Ledger readers are `("reviewer", "admin")` (section 9; PD-12). |
+| M7 | Roles in code are `learner`, `instructor` and `admin` (`require_role`, STAFF). There is no `reviewer` role. Auth0 roles come from the token claim; demo roles come from `x-demo-role` in development. | Ledger readers are `("reviewer",)`, the plan text (section 9; PD-12, revised in 18.4). |
 | M8 | No frontend file renders "lexically screened"; the label exists only as the API `model`/`retrieval_mode` string `extractive-lexically-screened`. `tests/answer-wording.integration.test.ts` forbids `/grounded/i` on the answer surfaces. | The Phase 1 precondition (task 1.11 label) is met in the API string only: a recorded precondition deviation (15.10, DI-34). The new panel files join the wording list. |
 | M9 | `hypothesis` is not installed in the venv. | The property test uses a seeded `random.Random`. No new dependency. |
 | M10 | `scripts/calibrate_abstention.py --check` compares a fresh record to the committed one. The fresh record writes `config_package_version = package.package_version`; the committed record holds `"1.0.0"`. | A version bump would fail CI without the lineage field in section 5.3. |
@@ -137,7 +137,7 @@ Every resolution is a refinement. None reverses a fixed decision except where pl
 - All three are always registered, so the authorization matrix stays static (Phase 2 precedent).
 
 **5. "(owner or reviewer)" (7.3) with no reviewer role in code (M7).**
-- **Resolution:** `LEDGER_READER_ROLES = ("reviewer", "admin")` in `app/core/authorization.py`. Adding `admin` widens the plan text and is recorded as provisional (PD-12). Each reviewer read records `ledger.reviewer_read` per 7.6 (L937): "reviewer access is logged". Provisioning reviewers is Phase 6 (DI-38).
+- **Resolution:** `LEDGER_READER_ROLES = ("reviewer",)` in `app/core/authorization.py`: the plan's own reader, nothing wider. The draft's `admin` widened the plan text and was withdrawn on review (18.4, PD-12 revised): any other role, admin included, reads only its own turns. Each reviewer read records `ledger.reviewer_read` per 7.6 (L937): "reviewer access is logged". Provisioning reviewers is Phase 6 (DI-38).
 
 **6. "daily digest exported off-DB" (7.5, L915).**
 - A scheduled export is a cloud write and is deferred (DI-33).
@@ -195,10 +195,10 @@ Every resolution is a refinement. None reverses a fixed decision except where pl
 
 **28. "Byte-identical" production responses vs a new response field.**
 - Adding `evidence: EvidencePanel | None = None` to `AssistantChatResponse` would put `"evidence": null` into every production response.
-- **Resolution:** `AssistantChatResponse` gets a wrap `model_serializer` (return annotation `dict[str, Any]`) that omits the `evidence` key when it is None; every other key serialises as today. Test 38 pins the production key set and body. (OpenAPI is disabled outside development, so the generic response schema there is acceptable.)
+- **Resolution:** `AssistantChatResponse.evidence` is `Field(default=None, exclude_if=lambda value: value is None)`, which omits the key when it is None; every other key serialises as today. Test 38 pins the production key set and body. The draft's wrap `model_serializer` erased both chat response schemas in `/openapi.json` (a free-form object); a field-level `exclude_if` keeps them (18.4).
 
 **29. E1 "never ... delays the learner's legacy response beyond a bounded budget" vs a synchronous legacy append.**
-- **Resolution:** the legacy append runs synchronously after the turn commits (so the record exists before the answer leaves) but under a total deadline `TUTOR_LEDGER_APPEND_BUDGET_MS` (default 1500): at most 3 attempts; each PostgreSQL attempt sets `lock_timeout` to the remaining budget; only `IntegrityError` is retried; any other error (lock timeout, busy, trigger refusal) fails open at once. Worst-case added latency on PostgreSQL is the budget. SQLite (development and tests) keeps the driver's busy timeout.
+- **Resolution:** the legacy append runs synchronously after the turn commits (so the record exists before the answer leaves) but under a total deadline `TUTOR_LEDGER_APPEND_BUDGET_MS` (default 1500): at most 3 attempts; each PostgreSQL attempt first sets `lock_timeout` and `statement_timeout` to the remaining budget; only `IntegrityError` is retried; any other error (lock or statement timeout, busy, trigger refusal) fails open at once. Neither timeout bounds the checkout of a pooled connection or a new Cloud SQL connection, so the append runs on a small worker pool (4 threads, at most 16 appends in flight; past that an append is refused at once and counted) and the request waits for it at most the budget plus 250 ms (`LEGACY_WAIT_GRACE_MS`). An append still running then finishes in the background and is counted when it ends (`tutor.ledger.append_deferred`). That is the worst-case added latency on every dialect (18.4). SQLite (development and tests) keeps the driver's busy timeout.
 
 **30. Start-up checks for a feature that is off.**
 - **Resolution:** at start-up `check_tutor_pipeline_package(package, structural=False)` verifies schema file hashes and prompt hashes (deterministic from code and package). A governed build stops on a problem only when `TWO_PASS_TUTOR != "off"`; otherwise it logs `tutor.two_pass.unavailable`, reports `tutor_pipeline.available: false` in `/ready`, and keeps `effective_mode` off. The pydantic structural comparison (`structural=True`) runs in tests and `config_package.py --check` (CI) only, because the image's pydantic version is not pinned (M21).
@@ -207,7 +207,7 @@ Every resolution is a refinement. None reverses a fixed decision except where pl
 - **Resolution:** Phase 3 has no delivered two-pass path (R-a). The ledger-before-delivery order is Phase 4's, behind V1. The pipeline's refusal of `delivered` is tested (test 12).
 
 **32. D-19 "verbatim" vs comparison normalisation; and the binding rule.**
-- **Resolution:** claim text stored, locked, ledgered and rendered is the whitespace-normalised verbatim sentence (`whitespace()`); NFKC (`normalise()`) is used only for comparisons (M22). The Phase 3 binding rule `resolver-bundle-sentence-v1` requires the normalised claim to equal a whole `sentences-v1` sentence of every cited span, so no generator can bind a truncated sentence that drops a qualification or negation (R-16 class). Plan M's residual "misleading wording within locked claims" remains for sentence splits at abbreviations (20 of 2299 dev sentences end in "e.g.", "i.e." and similar).
+- **Resolution:** claim text stored, locked, ledgered and rendered is the whitespace-normalised verbatim sentence of the span (`whitespace()`), never the generator's text: bind locks the span's own sentence that the normalised claim matched, and the subset check requires the rendered text to equal the locked text, whitespace runs aside. NFKC (`normalise()`) is used only to find the matching sentence (M22; 18.4). The Phase 3 binding rule `resolver-bundle-sentence-v1` requires the normalised claim to equal a whole `sentences-v1` sentence of every cited span, so no generator can bind a truncated sentence that drops a qualification or negation (R-16 class). Plan M's residual "misleading wording within locked claims" remains for sentence splits at abbreviations (20 of 2299 dev sentences end in "e.g.", "i.e." and similar).
 
 **33. Provider egress from the shadow (D-12, D-23, R-10).**
 - `RetrievalEngine._search` could call the OpenAI embeddings backend if semantic retrieval were ever aligned in the API process; the shadow would send the resolved text (possibly two learner turns) to a provider.
@@ -464,7 +464,9 @@ class VersionStamps(Contract):
 class PipelineCounts(Contract):
     proposed_claims: int
     bound_claims: int
-    dropped: dict[str, int]            # unbound|outside_bundle|unresolvable|not_quotable|not_verbatim|duplicate|unresolved_citation
+    dropped: dict[str, int]            # unbound|outside_bundle|unresolvable|not_quotable|not_verbatim|duplicate (binding failures);
+                                       # merged|budget_exceeded (not failures); unresolved_citation (legacy). Reconciles (18.4):
+                                       # proposed_claims == bound_claims + sum(dropped), bound_claims == len(claims)
     render_attempts: int
 
 class LedgerEntry(Contract):
@@ -694,9 +696,11 @@ For each proposed claim, in order, the claim is **dropped whole** on the first f
 | `resolver.resolve_current(id)` is None, or its `content_hash` differs from the bundle span's | `unresolvable` |
 | `not span_is_quotable(store.span_registry.get(id), registry)` | `not_quotable` |
 | `normalise(text)` is not equal to `normalise(s)` for some `s in sentences_v1(span.text)` of **every** cited span (no entailment checker exists before Phase 4) | `not_verbatim` |
-| the same `(normalise(text), sorted(span_ids))` was already bound | `duplicate` |
+| the cited spans hold the matching sentence in different characters | `not_verbatim` |
+| the same sentence was already bound on every span it cites | `duplicate` |
+| the same sentence was already bound on other spans | `merged` (not a failure: its spans join that claim's, 18.4) |
 
-A claim is never re-bound to a span it did not cite. Phase 1's overlap rebinding is gone (plan 3.4, R-13). The draft keeps `whitespace(text)` as the claim text.
+A claim is never re-bound to a span it did not cite. Phase 1's overlap rebinding is gone (plan 3.4, R-13). The draft keeps the span's own sentence (`whitespace()` form) as the claim text, never the generator's text (conflict 32). One sentence can sit in two adjacent spans (the splitter overlaps chunks by 120 characters), and the extractive generator then proposes it once per span: the merge locks it once, citing both spans, each of which holds it verbatim.
 
 `claim_id = "claim-" + sha256(ledger_canonical({"text": normalise(text), "span_ids": sorted(span_ids)}))[:32]`: content-addressed, identical across plans and responses.
 
@@ -754,7 +758,7 @@ It first calls `verify_locked(locked)`. Each problem has a code:
 |---|---|
 | `empty` | there are no segments |
 | `text_not_segments` | `layout_text(segments) != rendered.text`, a segment contains `"\n"`, or lines are not contiguous from 0 in order |
-| `unmapped_factual_sentence` | a claim segment whose `normalise(text)` matches no locked claim's `normalise(text)`, or whose `claim_id` disagrees with the match |
+| `unmapped_factual_sentence` | a claim segment whose `claim_id` names no locked claim, or whose `whitespace(text)` differs from that claim's text (never NFKC-folded: a rendering that turns `x²` into `x2` changes what a learner reads). Claims are looked up by id, so two claims with one sentence both map (18.4). |
 | `unmapped_factual_sentence` | a connective or question segment with an unknown `template_id`, a wrong kind, or `text != template.format(*params)`. Untyped text in a non-factual slot is treated as factual. |
 | `duplicate_claim` | a locked claim is rendered twice |
 | `citation_outside_locked_set` | a citation `span_id` not in `locked.span_ids`, or `set(rendered.citations) - set(locked.span_ids)` is non-empty |
@@ -1140,7 +1144,7 @@ def create_tutor_turn(request: Request, response: Response, payload: TutorTurnRe
 
 **MOD `app/api/routes/spans.py`**
 - Move the handler body into `_resolve_span(span_id, request, response, db)`, still calling this module's `get_settings` and `get_span_resolver` (Phase 2 monkeypatches keep working).
-- Add `evidence_router = APIRouter(prefix="/evidence", tags=["evidence"])` with `GET /spans/{span_id}`, the same decorator stack and the same call.
+- Add `evidence_router = APIRouter(prefix="/evidence", tags=["evidence"])` with `GET /spans/{span_id}`, the same decorator stack and the same call. Both handlers use `limiter.shared_limit(..., scope="span-resolver")`, so the two paths share one `SPANS_RATE_LIMIT` window per client (18.4).
 - Return `license_class="public"`.
 
 **MOD `app/main.py`**
@@ -1148,12 +1152,12 @@ def create_tutor_turn(request: Request, response: Response, payload: TutorTurnRe
 - Plus section 11.
 
 ### 7.14 MOD `app/core/authorization.py`
-- Add `LEDGER_READER_ROLES = ("reviewer", "admin")` and three policies:
+- Add `LEDGER_READER_ROLES = ("reviewer",)` (the draft's `admin` was withdrawn, 18.4) and three policies:
 
 ```python
 ("GET", "/evidence/spans/{span_id}"): _p(PUBLIC, NONE, "Alias of /spans/{span_id} (plan 7.3): the same SPAN_RESOLVER_ROUTE_ENABLED flag, rate limit and D-31 rules; public license_class only."),
 ("POST", "/tutor/turns"): _p(PRINCIPAL, OWNER, "Two-pass tutor endpoint (plan 7.3). 404 outside development unless TWO_PASS_TUTOR is on, which settings refuse before the Phase 4 exit; returns the legacy contained answer and runs the two-pass pipeline in shadow. A thread_id in the body must be the caller's thread. Rate-limited."),
-("GET", "/ledger/responses/{response_id}"): _p(PRINCIPAL, OWNER, "404 unless LEDGER_ROUTE_ENABLED. The turn's owner reads its legacy record (a pre-ledger turn reads as no-verdict); roles reviewer and admin read any record, shadow records included, and each such read is a security event. A learner never sees a shadow record (AC-3-6)."),
+("GET", "/ledger/responses/{response_id}"): _p(PRINCIPAL, OWNER, "404 unless LEDGER_ROUTE_ENABLED. The turn's owner reads its legacy record (a pre-ledger turn reads as no-verdict); the reviewer role reads any record, shadow records included, and each such read is a security event. Any other role, admin included, reads only its own turns. A learner never sees a shadow record (AC-3-6)."),
 ```
 
 - Regenerate `docs/security/authorization-matrix.md` with `python scripts/authorization_matrix.py`.
@@ -1180,7 +1184,7 @@ python scripts/replay_tutor_plans.py --write docs/evaluation/phase3/three_plan_r
 python scripts/replay_tutor_plans.py --check docs/evaluation/phase3/three_plan_replay_v1.json
 ```
 
-- **Fixture.** `apps/api/tests/data/score_floor_queries.json`: in_domain 174, off_topic 100, stopword_only 24 (298 public items). It refuses any path under `lqs/` (like `calibrate_abstention._refuse_lqs`).
+- **Fixture.** `apps/api/tests/data/score_floor_queries.json`: in_domain 174, off_topic 100, stopword_only 24 (298 public items), plus the regression items of `apps/api/tests/data/phase3_replay_regressions.json` (1, replayed in full even with a subset; 18.4). It refuses any path under `lqs/` (like `calibrate_abstention._refuse_lqs`).
 - **Configurations:** `governed_empty` with `p1-floor`; `all_public_approved` (a temporary `with_all_public_approved` manifest) with `bm25f-v1`; `all_public_approved` with `p1-floor`.
 - **Per item:** `resolved = resolve_turns([], LearnerTurn("fixture-" + sha256(query)[:12], query), package=...)`; for each plan, `TwoPassPipeline(engine, settings).run(PipelineInput(..., delivery="shadow", response_id=f"shadow-{uuid5(...)}", shadowed_response_id=f"turn-{uuid5(...)}"), record=False)` (no database); record `decision`, `abstention_reason`, `claim_set_hash`, `span_set_sha256 = span_set_digest(locked.span_ids)` and `rendered_text_sha256`. Also the legacy Phase 2 path over the same lexical retrieval: `contain_answer` claims, bound = claims with at least one cited span.
 - The report holds hashes and counts only, never query, claim or span text.
@@ -1204,8 +1208,9 @@ python scripts/replay_tutor_plans.py --check docs/evaluation/phase3/three_plan_r
 ```
 
 - `result`: `"pass"`, `"mismatch"` (any `claim_set_hash` or span set differing across plans) or `"stop"` (a non-null two-pass ratio below `tutor_pipeline.stop.phase2_bound_claim_ratio`; null never stops).
-- **Exit codes:** `--write` 0 on pass, 1 on mismatch, 3 on stop; `--check` 1 if the record differs from a fresh run (ignoring `created_at` and `commit`), else as `--write`.
-- **Expected:** governed_empty 298 abstained; all-approved `bm25f-v1` about 166 answered; all-approved `p1-floor` about 146; 0 off-topic answered; 0 mismatches; ratio 1.0 (M1, M2). The committed report is authoritative. Any package change (sha) needs a re-`--write`.
+- **Exit codes:** `--write` 0 on pass, 1 on mismatch, 3 on stop, 4 when the working tree differs from HEAD (refused unless `--allow-dirty`); `--check` 1 if the record differs from a fresh run (ignoring `created_at` and `commit`), else as `--write`.
+- **`commit`** is HEAD when `git status --porcelain` is empty, else HEAD + `-dirty`, so a committed record names the commit that holds the code it replayed (18.4). The report also has `answered_by_stratum` and `two_pass.merged_claims`; the `two_pass` counts are `bound_claim_ratio_terms`.
+- **Expected:** governed_empty abstains on every item; all-approved `bm25f-v1` about 166 answered; all-approved `p1-floor` about 146; 0 off-topic answered; 0 mismatches; ratio 1.0 (M1, M2). The committed report is authoritative. Any package change (sha) needs a re-`--write`.
 
 ### 7.18 MOD `apps/api/app/services/store.py`
 - No change. The pipeline hangs off `TeachingAssistantService`, so `rebuild_course_store()` clears it.
@@ -1310,7 +1315,7 @@ def downgrade():
 |---|---|---|
 | `POST /assistant/chat` | Body and keys identical to today (no `evidence` key; conflict 28), plus a legacy ledger record per turn (`TUTOR_LEDGER_ENABLED`, ≤ append budget). No shadow. | Legacy answer, `evidence` panel, legacy record, and the shadow pipeline as a background task (a shadow record). |
 | `POST /tutor/turns` | 404 `{"detail": "Not Found"}` after authentication (anonymous 401; an invalid body 422) | Like `/assistant/chat`, plus `delivery: "legacy"`. Honours `presentation_plan`. `extra="forbid"`. |
-| `GET /ledger/responses/{id}` | 404 | Owner: own legacy record (no chain fields), or `legacy_turn` no-verdict. Reviewer or admin: any record with chain fields, logged. Shadow ids: 404 to everyone else. |
+| `GET /ledger/responses/{id}` | 404 | Owner: own legacy record (no chain fields), or `legacy_turn` no-verdict. Reviewer: any record with chain fields, logged. Shadow ids: 404 to everyone else, admin included. |
 | `GET /evidence/spans/{id}` | 404 (`SPAN_RESOLVER_ROUTE_ENABLED` false) | Identical to `/spans/{id}`, plus `license_class` |
 | `GET /assistant/threads/{id}` | Unchanged | Unchanged (shadow writes no message) |
 | `POST /qa/ask`, `GET /qa/history` | Unchanged; out of the tutor ledger's scope (DI-39). The plan I "100% of deliveries" SLI is reported for tutor deliveries. | Unchanged |
@@ -1347,7 +1352,7 @@ def downgrade():
 ```
 
   `tutor_pipeline` is `null` with a v1 package.
-- **`readiness_check` (200 path) adds** `"ledger": {"chain": "tutor-responses", "head_seq": <int, 0 if none>}`, wrapped in try/except (`{"head_seq": null, "status": "unavailable"}`); never changes readiness (the ledger fails open).
+- **`readiness_check` (200 path) adds** `"ledger": {"chain": "tutor-responses", "status": "ok"}` when the head is readable, wrapped in try/except (`"status": "unavailable"`); never changes readiness (the ledger fails open). `/ready` is public, so it never reports the head's sequence number, which is the all-time count of tutor responses (18.4); the head is in the verification job's log line and in every `tutor.ledger.appended` line.
 - **`slis` adds two blocks:**
 
 ```json
@@ -1364,7 +1369,7 @@ def downgrade():
 - `TwoPassMetrics` and `LedgerMetrics` are locked counter classes, like `RetrievalMetrics`, with the `snapshot()` shapes above.
 - `legacy_coverage_rate = appended.legacy / attempted.legacy` (null when attempted is 0; `attempted` counts every legacy delivery, including those whose preparation failed).
 - `write_stop = failed.legacy + failed.shadow + conflicts > 0` (plan L "a ledger write fails").
-- `bound_claim_ratio = bound / proposed`, null when proposed is 0; `bound_claim_ratio_stop = ratio is not None and ratio < baseline` (baseline from the package).
+- `bound_claim_ratio = bound / proposed`, null when proposed is 0; `bound_claim_ratio_stop = ratio is not None and ratio < baseline` (baseline from the package). Each run adds `contracts.bound_claim_ratio_terms(counts)`: claims dropped as `budget_exceeded` (bind never ran) are in neither term, and `merged` claims are in both, so a latency event never trips the binding stop (18.4).
 
 ### 11.4 Structured log events (logger `qcai.tutor`; counts, hashes and enumerations only; no question, claim or rendered text; no response, turn, thread or message id)
 
@@ -1455,7 +1460,7 @@ def downgrade():
 28. `test_plan_l_a_shadow_or_ledger_failure_never_changes_the_learner_response_and_is_counted`: parametrised: the pipeline raises; the shadow append raises; the budget is exceeded (a slow fake generator, `TWO_PASS_SHADOW_BUDGET_MS=100`); the legacy append raises; follow-up preparation raises. The response equals that of `off`; each case increments its counter in `/ready` `slis` and emits its event; `write_stop` is true for the ledger cases.
 29. `test_plan_l_flag_off_restores_the_labelled_legacy_path`: with `off`, no shadow record; legacy records still exist; the panel labels are present.
 30. `test_plan_l_the_bound_claim_ratio_is_reported_and_a_drop_below_phase_2_is_a_stop`: the extractive generator gives 1.0 and no stop; a `ScriptedGenerator` with 1 unbound claim in 4 gives 0.75, `bound_claim_ratio_stop` true, and replay `compute(...)` gives `result == "stop"` and exit 3; a null ratio is not a stop.
-31. `test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode`: `config_package_version == "2.0.0"`; `tutor_pipeline` ids and hashes equal the package's; `two_pass_tutor == "shadow"`; `ledger.head_seq` ≥ the appends in the test; both SLI blocks present; `_build_fields()` makes no DB call.
+31. `test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode`: `config_package_version == "2.0.0"`; `tutor_pipeline` ids and hashes equal the package's; `two_pass_tutor == "shadow"`; `ledger == {"chain": "tutor-responses", "status": "ok"}`, with no sequence number (18.4); both SLI blocks present; `_build_fields()` makes no DB call.
 32. `test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_empty_ledger` (SQLite and PostgreSQL via `fresh_database_url`): `create_all` on every table except the ledger tables, `alembic stamp 20261119_phase2_corpus_spans`, `alembic upgrade head`, `run_schema_upgrades`: `compare_metadata == []`; append one row; `alembic downgrade -1` fails with "export first"; `alembic -x allow_ledger_drop=true downgrade -1` succeeds and the tables are gone; `SCHEMA_REVISION` equals the single head.
 33. `test_plan_g_legacy_turns_read_as_no_verdict`: a turn inserted directly with no record gives `recorded == False`, `legacy_turn == True`, `verdict == "no-verdict"`; row counts unchanged.
 34. `test_plan_h_private_plane_spans_never_reach_the_bundle_the_envelope_or_the_alias_route`: a temporary manifest moves one document item to the private plane (as AC-2-7 does); for queries that retrieved it before, no bundle or envelope span names it, the shadow record has none of its span ids, and `/evidence/spans/{id}` is 404; every envelope span is quotable; `governed_empty` abstains with `no_quotable_evidence` or a retrieval reason on all 298 fixture items.
@@ -1520,7 +1525,7 @@ def downgrade():
    - **Approval.** Every step below is a cloud write needing Platform Owner approval under D-05; none is run in Phase 3.
    - **Defaults that ship:** `TWO_PASS_TUTOR` off, `LEDGER_ROUTE_ENABLED` false, `EVIDENCE_PANEL_ENABLED` false, `TUTOR_LEDGER_ENABLED` true, `TUTOR_LEDGER_APPEND_BUDGET_MS` 1500; `POST /tutor/turns` 404.
    - **Before the release:** `config_package.py --check` (v2 and v1); `replay_tutor_plans.py --check`; a backup; optionally the Alembic pre-deploy job (`alembic upgrade head`) from a workstation with the migration scripts.
-   - **Deploy.** `create_all` adds `response_ledger` and `response_ledger_head`; the upgrades add the triggers. `/ready` must show `config_package_version` 2.0.0, `two_pass_tutor` off, `tutor_pipeline.available` true and `ledger.head_seq`. A pipeline-package problem does not stop the start-up while `TWO_PASS_TUTOR` is off; `available` false then needs a fix before any shadow enablement.
+   - **Deploy.** `create_all` adds `response_ledger` and `response_ledger_head`; the upgrades add the triggers. `/ready` must show `config_package_version` 2.0.0, `two_pass_tutor` off, `tutor_pipeline.available` true and `ledger.status` ok. A pipeline-package problem does not stop the start-up while `TWO_PASS_TUTOR` is off; `available` false then needs a fix before any shadow enablement.
    - **Verify** with `python -m app.workers.response_ledger`; its daily schedule is DI-33. Every `tutor.ledger.appended` log line carries `seq` and `record_hash` (the off-DB copy).
    - **Enabling shadow in production** is a separate D-05 decision (DI-32); expect a `config.override` (`two_pass_tutor_shadow`); check Cloud Run CPU allocation for background tasks first.
    - **Stop conditions** (plan L): any `tutor.ledger.append_failed` or `tutor.ledger.conflict` (`slis.tutor_ledger.write_stop`); `bound_claim_ratio_stop` true; `verify_response_ledger` problems. On a stop, set `TWO_PASS_TUTOR=off` (shadow) or investigate the database (legacy appends); legacy deliveries continue.
@@ -1546,7 +1551,7 @@ def downgrade():
 | PD-09 | D-12, provider and terms (PO, counsel); hold H6 | 14.3: "D-12 \|OPEN \|PO \|Generation provider terms \|single pinned (interim)"; 9.4: "H6 \| Provider [Decision D-12] \| P3 interim path; P5 exit \| Payload register"; "OPEN decisions ... MUST NOT be closed by engineering alone." | Unresolved path. No provider generator is wired (the `ClaimGenerator` Protocol is the interface; `WIRED_GENERATORS` holds only the extractive id). H6 stays open. The D-19 extractive generator is the Phase 3 interim path, with no provider payloads; shadow retrieval is lexical only. | Package v2 `owner_decisions.D-12`, `WIRED_GENERATORS` | 3 |
 | PD-10 | The Phase 3 switches outside development (freeze, D-05) | Phase 3 G: "two_pass_tutor MUST run shadow-only until the Phase 4 exit; zero outputs reach learners"; 5.3 release rule | `TWO_PASS_TUTOR` off (shadow in development; `on` refused until `phase4_exit_passed`). `EVIDENCE_PANEL_ENABLED` false. `LEDGER_ROUTE_ENABLED` false. `/tutor/turns` 404. `TUTOR_LEDGER_ENABLED` true (not learner-visible; append budget 1500 ms). Each relaxation logs `config.override`. | `app/core/config.py`; package v2 `flag_policy`; env example | 3 |
 | PD-11 | Two-pass parameters with no plan value | 3.1-3.7 give no values (the regeneration limit "at most two" is plan text, not provisional) | Resolver: at least 2 content terms, the cue list, lookback 4. Retrieval top_k 4, lexical. Near-miss: the gate's `near_floor` on the top result. At most 3 claims, 2 per span, sentences of 4+ words and ≤1000 chars (`sentences-v1`). Plans concise, stepwise, socratic; default concise. Shadow budget 2000 ms; ledger append budget 1500 ms. Stop baseline 1.0 (measured). | Package v2 `tutor_pipeline`; settings | 3 |
-| PD-12 | Ledger reader roles (SL) | 7.3: "GET /ledger/responses/{response_id} (owner or reviewer)"; 7.6: "reviewer access is logged" | Roles `reviewer` and `admin` (admin widens the plan text) read any record, shadow included; each read is a security event; owners see no chain position fields. No reviewer role is provisioned (DI-38). | `app/core/authorization.py` `LEDGER_READER_ROLES`; the authorization matrix | 3 |
+| PD-12 | Ledger reader roles (SL) | 7.3: "GET /ledger/responses/{response_id} (owner or reviewer)"; 7.6: "reviewer access is logged" | The plan text: only role `reviewer` reads any record, shadow included; each read is a security event; owners see no chain position fields. No reviewer role is provisioned (DI-38). (Revised in 18.4: the draft's `admin` widened the plan text and was withdrawn.) | `app/core/authorization.py` `LEDGER_READER_ROLES`; the authorization matrix | 3 |
 
 ### 16.2 `DEFERRED_ITEMS_REGISTER.md`: a `## Phase 3` heading
 
@@ -1628,7 +1633,7 @@ This section records every refinement or departure the code forced, against sect
 - **Production stored-data change:** tutor message and turn `created_at` are set in Python (7.11), needed for a deterministic per-thread order on SQLite (M5). The user message gets `now`, the assistant reply `now + 1 µs`, the turn and `thread.updated_at` `now`.
 - **`"evidence"` is omitted from serialisation when None** (conflict 28), so production response bodies keep today's keys. Test 38 pins the key set and the bytes (ids aside).
 - **No delivered two-pass path in Phase 3** (R-a, conflict 31). `ledger_write_failed` is not in the abstention vocabulary.
-- **The legacy append is bounded** by `TUTOR_LEDGER_APPEND_BUDGET_MS` (default 1500), which is also each PostgreSQL attempt's `lock_timeout`.
+- **The legacy append is bounded** by `TUTOR_LEDGER_APPEND_BUDGET_MS` (default 1500), which is also each PostgreSQL attempt's `lock_timeout` and `statement_timeout`; the learner waits at most the budget plus 250 ms, pool checkout included (18.4).
 - **Start-up pipeline-package problems are fatal only when the pipeline is requested** (conflict 30): a governed build with `TWO_PASS_TUTOR` not off.
 - **Cuts:** no `GatewayGenerator` class (the `ClaimGenerator` Protocol is the interface); no `own_hashes_verified`; no shadow latency percentiles (latency is in each `tutor.two_pass.shadow` line); no per-combination orchestrator runs in test 27 (one per effective mode).
 
@@ -1714,3 +1719,33 @@ This section records every refinement or departure the code forced, against sect
 - `authorization_matrix.py --check` passes, and so does every other CI validator (listed in the phase record).
 
 **Frontend:** lint and typecheck are clean, and `test:integration` gives 138 of 138.
+
+### 18.4 Review fixes (2026-11-19)
+
+Ten confirmed review findings were fixed on the branch. Each fix has a test.
+1. **Budget overrun after generation (plan L).** A shadow whose budget ran out after the generator returned counted the proposed claims as proposed and not bound. `/ready` then reported a bound-claim ratio of 0.0 and `bound_claim_ratio_stop` true for the life of the process.
+   - The claims are now counted as `dropped.budget_exceeded`, and `contracts.bound_claim_ratio_terms` leaves them out of both terms.
+   - `PipelineCounts` refuses counts that do not reconcile (`proposed_claims == bound_claims + sum(dropped)`, known reasons only), and `LedgerEntry` requires `bound_claims == len(claims)`.
+   - Tests: the plan L "budget" case, and `test_plan_l_a_budget_overrun_after_generation_is_a_latency_event_not_a_bound_claim_stop` (a fake clock, so the generate step is the one that trips).
+2. **Verbatim claim text (conflict 32, D-19).** Bind stored the generator's text, and the subset check compared NFKC forms, so a folded claim or a folded rendering passed. Bind now locks the span's own sentence, and the subset check compares whitespace forms. Tests: a folded generator claim locks the corpus characters; folded renderings (`n²`, `½`, a ligature, U+2011) are unmapped.
+3. **Ledger readers (PD-12).** `admin` was withdrawn, because plan 7.3 says "(owner or reviewer)". Test: an admin gets the missing-id 404 for a shadow record and for another learner's turn, and reads its own turn as an owner; no `ledger.reviewer_read` event is written.
+4. **Two locked claims with one sentence.** A sentence in two overlapping spans was proposed once per span and locked twice. The subset check, keyed on text, then rejected the honest rendering, so the shadow abstained with `subset_check_failed`.
+   - Bind merges such proposals into one claim citing both spans (`dropped.merged`, counted as bound in the ratio).
+   - The subset check looks claims up by `claim_id`.
+   - Tests: bind and subset unit tests, the real-corpus query, and a replay regression item.
+5. **OpenAPI.** The wrap `model_serializer` erased both chat response schemas; `exclude_if` on the field keeps them (conflict 28). Test: `/openapi.json` lists every field of `AssistantChatResponse` and `TutorTurnResponse`.
+6. **Public `/ready`.** It no longer reports `ledger.head_seq` (the all-time count of tutor responses), only `ledger.status`.
+7. **The legacy append's wait** is bounded as a whole (conflict 29): `statement_timeout` beside `lock_timeout`, and a worker pool, so neither pool checkout nor a new connection can hold the learner. Tests: a stuck pool returns within the budget plus the grace, and is counted when it ends; the in-flight cap refuses at once.
+8. **The privacy row** now says what the ledger keeps: the passages the search matched, with their match scores and positions; and, for the internal two-step check, the ids of the learner's tutor messages that the question was taken from.
+9. **`/evidence/spans` rate limit.** The alias and `/spans` share one window (`shared_limit`, scope `span-resolver`). Test: alternating the two paths reaches the limit at the limit.
+10. **The replay record's `commit`.** It is HEAD only on a clean tree, else HEAD + `-dirty`, and `--write` refuses a dirty tree unless `--allow-dirty` is given (exit 4).
+    - The record was regenerated. The 298 original items replay identically (equal `items_digest` in every configuration).
+    - It was then rewritten from the committed fix, so it names that commit.
+
+**Verification of the review fixes (local, 2026-11-19).**
+- **Full suite, SQLite:** 730 passed, 2 skipped, 3 xfailed (strict), 1 deselected: 15 new tests, no new skips or xfails.
+- **Full API suite, PostgreSQL 17** (scratch cluster, psycopg, a fresh database): 728 passed, 3 xfailed.
+- **pg8000** (the production driver), `test_phase3_acceptance.py` and `test_response_ledger.py`: 82 passed.
+- **Validators:** every CI validator passes, including `config_package.py --check` (v2 and v1, both unchanged), `authorization_matrix.py --check` (regenerated) and `replay_tutor_plans.py --check`.
+- **Frontend:** lint and typecheck are clean; `test:integration` gives 138 of 138.
+- **Not run:** `pip-audit` and `npm audit` (they need the network; no dependency changed).

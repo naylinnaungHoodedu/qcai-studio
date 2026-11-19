@@ -2,10 +2,14 @@
 task 3.7; Phase 3 spec 4.9). Phase 4 V1.4 subsumes it.
 
 The overlap ClaimGate and evidence_digest are gone (plan 3.4: "overlap rebinding removed", R-13): nothing binds a
-sentence to whichever citation shares its words. Instead every factual segment of a rendered response must equal a
-locked claim by exact normalised match, and every citation must be one of that claim's locked spans. Questions and
-connectives are typed by the renderer, never detected heuristically; a non-factual segment whose text is not its
-template's text counts as an unmapped factual sentence. The caller regenerates (at most twice), then abstains.
+sentence to whichever citation shares its words. Instead every factual segment of a rendered response must name a
+locked claim (its claim_id) and carry that claim's text exactly, whitespace runs aside, and every citation must be
+one of that claim's locked spans. The text comparison is never NFKC-folded: the locked text is the span's own
+(spec conflict 32), so a rendering that turns "x²" into "x2" or "½" into "1⁄2" changes what a learner reads and is
+an unmapped factual sentence. Claims are looked up by id, not by text, so two locked claims with the same sentence
+can both be rendered. Questions and connectives are typed by the renderer, never detected heuristically; a
+non-factual segment whose text is not its template's text counts as an unmapped factual sentence. The caller
+regenerates (at most twice), then abstains.
 """
 
 from __future__ import annotations
@@ -14,7 +18,7 @@ from dataclasses import dataclass
 
 from app.services.tutor_pipeline.contracts import LockedClaimSet, RenderedResponse, verify_locked
 from app.services.tutor_pipeline.render import TEMPLATES, layout_text
-from app.services.tutor_pipeline.text import normalise
+from app.services.tutor_pipeline.text import whitespace
 
 SUBSET_CHECK_RULE = "segment-exact-normalised-v1"
 PROBLEM_CODES = (
@@ -63,7 +67,7 @@ def check_subset(rendered: RenderedResponse, locked: LockedClaimSet, *, template
     ):
         problems.append("text_not_segments")
 
-    by_text = {normalise(claim.text): claim for claim in locked.claims}
+    by_id = {claim.claim_id: claim for claim in locked.claims}  # ids are unique in a locked set (verify_locked)
     locked_spans = set(locked.span_ids)
     citation_order = list(rendered.citations)
     rendered_claims: set[str] = set()
@@ -72,8 +76,8 @@ def check_subset(rendered: RenderedResponse, locked: LockedClaimSet, *, template
     for segment in segments:
         if segment.kind == "claim":
             factual += 1
-            claim = by_text.get(normalise(segment.text))
-            if claim is None or segment.claim_id != claim.claim_id:
+            claim = by_id.get(segment.claim_id or "")
+            if claim is None or whitespace(segment.text) != whitespace(claim.text):
                 problems.append("unmapped_factual_sentence")
                 continue
             mapped += 1

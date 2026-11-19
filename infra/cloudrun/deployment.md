@@ -115,7 +115,7 @@ Before the first digest-pinned rollout, the previous revisions are `qcai-api-000
   - `config_package_version` 2.0.0 (with `config_package_sha256`);
   - `two_pass_tutor` off and `phase4_exit_passed` false;
   - `tutor_pipeline.available` true;
-  - `ledger.head_seq`.
+  - `ledger.status` ok (the head is readable; public `/ready` never shows its sequence number).
 - A pipeline-package problem (a schema pin or a prompt hash) does not stop start-up while `TWO_PASS_TUTOR` is off. It shows as `tutor_pipeline.available` false, which needs a fix before any shadow enablement.
 
 **Verify** the chain with `python -m app.workers.response_ledger [--expect-head SEQ:HASH]`, a job on the API image. Its daily schedule is DI-33.

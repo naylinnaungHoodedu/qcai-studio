@@ -45,6 +45,18 @@ ABSTENTION_REASONS = (
 # The legacy contained path's own abstention reason (contained_answers.contain_answer).
 LEGACY_ABSTENTION_REASON = "no_approved_span"
 
+# Why a proposed claim is not a locked claim of its own (PipelineCounts.dropped). Every proposed claim is either
+# locked or counted under exactly one reason, so proposed_claims == bound_claims + sum(dropped).
+BINDING_FAILURES = ("unbound", "outside_bundle", "unresolvable", "not_quotable", "not_verbatim", "duplicate")
+# Not binding failures, so the plan L bound-claim ratio treats them apart (bound_claim_ratio_terms):
+#   merged           it bound, onto the spans of an earlier claim with the same sentence (bind.py)
+#   budget_exceeded  bind never ran: the shadow budget ran out after the generator returned (pipeline.py)
+MERGED = "merged"
+BUDGET_SKIPPED = "budget_exceeded"
+# The legacy contained path: a citation the Phase 2 pipeline produced but could not verify (a binding failure).
+LEGACY_UNRESOLVED = "unresolved_citation"
+DROP_REASONS = (*BINDING_FAILURES, MERGED, BUDGET_SKIPPED, LEGACY_UNRESOLVED)
+
 # Field names that would carry learner state. None may appear in a retrieval request or an evidential envelope
 # (AC-3-1); the contract tests add each one and expect a refusal.
 LEARNER_STATE_FIELDS = (
@@ -367,9 +379,31 @@ class VersionStamps(Contract):
 
 class PipelineCounts(Contract):
     proposed_claims: int = Field(ge=0)
+    # The locked claims (len(LedgerEntry.claims) for a two-pass entry).
     bound_claims: int = Field(ge=0)
     dropped: dict[str, int]
     render_attempts: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _reconciles(self) -> "PipelineCounts":
+        unknown = sorted(set(self.dropped) - set(DROP_REASONS))
+        if unknown:
+            raise ValueError(f"unknown drop reasons {unknown}")
+        if any(count < 1 for count in self.dropped.values()):
+            raise ValueError("a drop reason is listed only with a positive count")
+        if self.proposed_claims != self.bound_claims + sum(self.dropped.values()):
+            raise ValueError("proposed_claims must equal bound_claims plus the dropped claims")
+        return self
+
+
+def bound_claim_ratio_terms(counts: PipelineCounts) -> tuple[int, int]:
+    """(proposed, bound) for the plan L bound-claim ratio ("Stop if bound-claim ratio falls below Phase 2").
+
+    A claim bind never saw (budget_exceeded) is in neither term: a slow generator is a latency event, not a binding
+    failure. A claim merged into an earlier claim on the same sentence did bind, so it is in both.
+    """
+    skipped = counts.dropped.get(BUDGET_SKIPPED, 0)
+    return counts.proposed_claims - skipped, counts.bound_claims + counts.dropped.get(MERGED, 0)
 
 
 class LedgerEntry(Contract):
@@ -416,6 +450,8 @@ class LedgerEntry(Contract):
         for claim in self.claims:
             if claim.response_id != self.response_id or claim.provenance != self.provenance:
                 problems.append(f"{claim.claim_id} names another response or another provenance")
+        if self.counts.bound_claims != len(self.claims):
+            problems.append("counts.bound_claims is the number of recorded claims")
         if problems:
             raise ValueError("; ".join(problems))
         return self

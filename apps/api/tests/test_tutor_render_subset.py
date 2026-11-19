@@ -138,6 +138,58 @@ def test_matching_is_exact_after_normalisation_only():
     assert "unmapped_factual_sentence" in check_subset(digit, LOCKED).problems
 
 
+def _locked_with(claims) -> LockedClaimSet:
+    span_ids = tuple(sorted({span_id for claim in claims for span_id in claim.span_ids}))
+    draft = LockedClaimSet.model_construct(
+        claims=tuple(claims), span_ids=span_ids, corpus_version="c", index_version="i", generator=None, evidential_prompt_hash=None,
+        pedagogical_prompt_hash=H, resolver=ResolverRef(model_id="thread-resolver-v1", prompt_hash=H),
+        config_package=ConfigStamp(version="2.0.0", sha256=H), claim_set_hash="0" * 64,
+    )
+    return LockedClaimSet.model_validate({**draft.model_dump(mode="json"), "claim_set_hash": lock_hash(draft)})
+
+
+def test_two_locked_claims_with_one_sentence_both_render_and_pass():
+    # Review 2026-11-19: claims were looked up by text, so the second of two claims with the same sentence (on
+    # different spans) hid the first, and the honest rendering abstained with subset_check_failed.
+    from app.services.tutor_pipeline.pipeline import render_checked
+
+    text = "Routing adds SWAP gates on sparse hardware."
+    locked = _locked_with((
+        LockedClaim(claim_id="claim-" + "c" * 32, text=text, span_ids=(SPAN_A,), source_order=("item-a", 0)),
+        LockedClaim(claim_id="claim-" + "d" * 32, text=text, span_ids=(SPAN_B,), source_order=("item-a", 60)),
+    ))
+    for plan_id in ("concise", "stepwise", "socratic"):
+        plan = PresentationPlan(plan_id=plan_id, source="request")
+        rendered = RENDERER.render(locked, plan, attempt=1)
+        result = check_subset(rendered, locked)
+        assert result.passed and (result.mapped, result.missing_claims) == (2, 0), (plan_id, result.problems)
+        assert render_checked(RENDERER, locked, plan, max_regenerations=2)[1:] == (1, None)
+    # Swapping the two claims' ids keeps every text equal, but each citation is then on the other claim.
+    base = RENDERER.render(locked, PresentationPlan(plan_id="concise", source="request"), attempt=1)
+    swap = {"claim-" + "c" * 32: "claim-" + "d" * 32, "claim-" + "d" * 32: "claim-" + "c" * 32}
+    swapped = _with(base, [segment.model_copy(update={"claim_id": swap[segment.claim_id]}) if segment.kind == "claim" else segment
+                           for segment in base.segments])
+    assert "citation_not_on_claim" in check_subset(swapped, locked).problems
+
+
+@pytest.mark.parametrize(("verbatim", "folded"), [
+    ("The cost grows as n² on dense coupling graphs.", "The cost grows as n2 on dense coupling graphs."),
+    ("About ½ of the circuits needed a SWAP gate.", "About 1⁄2 of the circuits needed a SWAP gate."),
+    ("The ﬁnal layout uses a non‑adjacent qubit pair.", "The final layout uses a non‐adjacent qubit pair."),
+])
+def test_a_rendering_that_folds_the_locked_text_is_an_unmapped_factual_sentence(verbatim, folded):
+    # Review 2026-11-19: NFKC is used only to compare; the rendered claim must carry the locked (corpus) characters.
+    import unicodedata
+
+    assert unicodedata.normalize("NFKC", verbatim) == unicodedata.normalize("NFKC", folded) and verbatim != folded
+    locked = _locked_with((LockedClaim(claim_id="claim-" + "e" * 32, text=verbatim, span_ids=(SPAN_A,), source_order=("item-a", 0)),))
+    base = RENDERER.render(locked, PresentationPlan(plan_id="concise", source="request"), attempt=1)
+    assert check_subset(base, locked).passed
+    altered = _with(base, [segment.model_copy(update={"text": folded}) if segment.kind == "claim" else segment for segment in base.segments])
+    result = check_subset(altered, locked)
+    assert not result.passed and "unmapped_factual_sentence" in result.problems
+
+
 def test_the_overlap_gate_and_evidence_digest_are_gone():
     assert not hasattr(claim_gate, "ClaimGate") and not hasattr(claim_gate, "evidence_digest")
     assert claim_gate.SUBSET_CHECK_RULE == "segment-exact-normalised-v1"

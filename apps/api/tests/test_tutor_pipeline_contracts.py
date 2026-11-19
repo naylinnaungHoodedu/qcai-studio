@@ -174,6 +174,25 @@ def test_ledger_entry_rules_hold_both_ways():
     assert contracts.TWO_PASS_DELIVERY_IMPLEMENTED is False
 
 
+def test_counts_reconcile_and_the_bound_claim_ratio_terms_leave_skipped_claims_out():
+    # Review 2026-11-19: every proposed claim is locked or dropped under exactly one known reason.
+    def counts(proposed, bound, dropped):
+        return PipelineCounts(proposed_claims=proposed, bound_claims=bound, dropped=dropped, render_attempts=0)
+
+    assert contracts.bound_claim_ratio_terms(counts(3, 0, {"budget_exceeded": 3})) == (0, 0)  # bind never ran: no ratio
+    assert contracts.bound_claim_ratio_terms(counts(3, 2, {"merged": 1})) == (3, 3)  # a merged claim did bind
+    assert contracts.bound_claim_ratio_terms(counts(4, 2, {"merged": 1, "unbound": 1})) == (4, 3)
+    assert contracts.bound_claim_ratio_terms(counts(2, 1, {"unresolved_citation": 1})) == (2, 1)  # legacy
+    assert contracts.bound_claim_ratio_terms(counts(0, 0, {})) == (0, 0)
+    for proposed, bound, dropped, message in ((3, 0, {}, "proposed_claims"), (1, 2, {}, "proposed_claims"),
+                                              (2, 1, {"rebound": 1}, "unknown drop reasons"), (1, 1, {"unbound": 0}, "positive count")):
+        with pytest.raises(ValidationError, match=message):
+            counts(proposed, bound, dropped)
+    assert set(contracts.DROP_REASONS) == {*contracts.BINDING_FAILURES, "merged", "budget_exceeded", "unresolved_citation"}
+    with pytest.raises(ValidationError, match="counts.bound_claims"):
+        LedgerEntry(**_entry(counts=counts(2, 2, {})))  # two counted, one recorded
+
+
 def test_the_bundle_refuses_conflicts_before_phase_4():
     sufficiency = Sufficiency(score=None, gate="p1-floor", threshold_version="t", floor=6.0, margin=0.0, decision="abstain", reason="no_match")
     with pytest.raises(ValidationError, match="Phase 4"):

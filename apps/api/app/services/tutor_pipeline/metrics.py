@@ -6,13 +6,17 @@ set up (a cloud write, documented in infra/cloudrun/observability.md, not create
 
 Plan L stop conditions: write_stop is true once any ledger write failed or conflicted; bound_claim_ratio_stop is
 true once the two-pass bound-claim ratio is below the Phase 2 baseline pinned in the package. A null ratio (no
-claims proposed) is never a stop.
+claims proposed) is never a stop. A run's proposed and bound claims are counted as
+contracts.bound_claim_ratio_terms gives them: claims bind never saw (the budget ran out after the generator
+returned) are in neither term, and claims merged onto an earlier claim's sentence are in both.
 """
 
 from __future__ import annotations
 
 from collections import Counter
 import threading
+
+from app.services.tutor_pipeline.contracts import PipelineCounts, bound_claim_ratio_terms
 
 DELIVERIES = ("legacy", "shadow")
 SHADOW_FAILURE_STEPS = ("resolve", "pipeline", "ledger")
@@ -89,7 +93,8 @@ class TwoPassMetrics:
         with self._lock:
             self._failed[step] += 1
 
-    def completed(self, *, decision: str, reason: str | None, proposed: int, bound: int, attempts: int) -> None:
+    def completed(self, *, decision: str, reason: str | None, counts: PipelineCounts, attempts: int) -> None:
+        proposed, bound = bound_claim_ratio_terms(counts)
         with self._lock:
             self._completed += 1
             self._decisions[decision] += 1

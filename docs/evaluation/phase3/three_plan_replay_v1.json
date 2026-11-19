@@ -1,8 +1,8 @@
 {
  "report": "qcai-three-plan-replay",
  "format_version": 1,
- "created_at": "2026-11-19T11:13:56+00:00",
- "commit": "72f1b5e8ab493218b4855da19d75e5ed59d33170",
+ "created_at": "2026-11-19T12:54:03+00:00",
+ "commit": "6f28049a0787d0226d1eed7ce74f0bbd71e50ba8-dirty",
  "evidence_class": "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 evidence (plan Phase 3 H)",
  "public_corpus_only": true,
  "excluded_sources": [
@@ -13,7 +13,12 @@
  "fixture": {
   "path": "apps/api/tests/data/score_floor_queries.json",
   "sha256": "321f37372144a7c8088799af13c2b5a46c5db759dc322e05b46867bd98c53a57",
-  "items": 298
+  "items": 298,
+  "regressions": {
+   "path": "apps/api/tests/data/phase3_replay_regressions.json",
+   "sha256": "d7dfd78aae03d894101be876905b4e3ef8ad136c28a4fa7e18de03505650c010",
+   "items": 1
+  }
  },
  "config_package": {
   "version": "2.0.0",
@@ -44,22 +49,29 @@
    "threshold_version": "score-floor-p1-v1",
    "corpus_version": "corpus-a02930b08f2e9251",
    "index_version": "index-13cddd96619c7afa",
-   "items": 298,
+   "items": 299,
    "answered": 0,
-   "abstained": 298,
+   "answered_by_stratum": {
+    "in_domain": 0,
+    "off_topic": 0,
+    "stopword_only": 0,
+    "regression": 0
+   },
+   "abstained": 299,
    "abstention_by_reason": {
     "below_floor": 138,
     "no_match": 12,
-    "no_quotable_evidence": 148
+    "no_quotable_evidence": 149
    },
-   "claim_set_hash_equal": 298,
-   "span_set_equal": 298,
+   "claim_set_hash_equal": 299,
+   "span_set_equal": 299,
    "rendered_text_distinct_among_answers": 0,
    "mismatches": [],
    "two_pass": {
     "proposed_claims": 0,
     "bound_claims": 0,
-    "bound_claim_ratio": null
+    "bound_claim_ratio": null,
+    "merged_claims": 0
    },
    "phase2_legacy": {
     "answered": 0,
@@ -68,7 +80,7 @@
     "bound_claim_ratio": null
    },
    "stop": false,
-   "items_digest": "8eb2cbff73c809fdf217721a176d5a4387ada84c97a43f495d1e4ca31fccc8fb"
+   "items_digest": "dc07b9866a38f11f9e5d8a7a6f86fb4cc098e5f5e90d082b655298e8ee64c1a5"
   },
   {
    "name": "all_public_approved",
@@ -76,31 +88,38 @@
    "threshold_version": "abstention-p2-v1",
    "corpus_version": "corpus-c658893abb6440dd",
    "index_version": "index-473cb92221ea2165",
-   "items": 298,
-   "answered": 166,
+   "items": 299,
+   "answered": 167,
+   "answered_by_stratum": {
+    "in_domain": 166,
+    "off_topic": 0,
+    "stopword_only": 0,
+    "regression": 1
+   },
    "abstained": 132,
    "abstention_by_reason": {
     "insufficient_coverage": 56,
     "no_match": 56,
     "no_query_terms": 20
    },
-   "claim_set_hash_equal": 298,
-   "span_set_equal": 298,
-   "rendered_text_distinct_among_answers": 166,
+   "claim_set_hash_equal": 299,
+   "span_set_equal": 299,
+   "rendered_text_distinct_among_answers": 167,
    "mismatches": [],
    "two_pass": {
-    "proposed_claims": 479,
-    "bound_claims": 479,
-    "bound_claim_ratio": 1.0
+    "proposed_claims": 482,
+    "bound_claims": 482,
+    "bound_claim_ratio": 1.0,
+    "merged_claims": 1
    },
    "phase2_legacy": {
-    "answered": 166,
-    "claims": 473,
-    "bound": 473,
+    "answered": 167,
+    "claims": 476,
+    "bound": 476,
     "bound_claim_ratio": 1.0
    },
    "stop": false,
-   "items_digest": "f4651419255c948bdda9e919a1143ba4a3fd04b68b914aed95486f4751d2e325"
+   "items_digest": "9d5c239870aef687851b02d8a23fea5347b3f3bd35e8c1f21960ed44be93c995"
   },
   {
    "name": "all_public_approved",
@@ -108,30 +127,37 @@
    "threshold_version": "score-floor-p1-v1",
    "corpus_version": "corpus-c658893abb6440dd",
    "index_version": "index-afc81543f34c17f8",
-   "items": 298,
-   "answered": 146,
+   "items": 299,
+   "answered": 147,
+   "answered_by_stratum": {
+    "in_domain": 146,
+    "off_topic": 0,
+    "stopword_only": 0,
+    "regression": 1
+   },
    "abstained": 152,
    "abstention_by_reason": {
     "below_floor": 145,
     "no_match": 7
    },
-   "claim_set_hash_equal": 298,
-   "span_set_equal": 298,
-   "rendered_text_distinct_among_answers": 146,
+   "claim_set_hash_equal": 299,
+   "span_set_equal": 299,
+   "rendered_text_distinct_among_answers": 147,
    "mismatches": [],
    "two_pass": {
-    "proposed_claims": 405,
-    "bound_claims": 405,
-    "bound_claim_ratio": 1.0
+    "proposed_claims": 408,
+    "bound_claims": 408,
+    "bound_claim_ratio": 1.0,
+    "merged_claims": 1
    },
    "phase2_legacy": {
-    "answered": 146,
-    "claims": 396,
-    "bound": 396,
+    "answered": 147,
+    "claims": 399,
+    "bound": 399,
     "bound_claim_ratio": 1.0
    },
    "stop": false,
-   "items_digest": "e0eb1cd51aa3c04e292546da624376d278dd659f55ee098c021bc47bb9c56ca7"
+   "items_digest": "801221613cba89d8243bd472d83c3e2d0561469cfe7abce8e0bac9929afbb4d3"
   }
  ],
  "result": "pass"
