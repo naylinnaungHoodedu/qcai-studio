@@ -1873,3 +1873,21 @@ The second review round sent twelve items (C1-C12). Each is fixed with a test th
   - no export or analytics path reads the tutor tables.
   None changes behaviour beyond the stricter order. The thread's own `created_at` stays `server_default=now()`.
 - Tests: with a stalled and then backwards clock, three turns stay strictly ordered, and the thread view returns them in that order. With 6 concurrent turns of one thread on PostgreSQL (all asking for the same instant), the 12 messages are strictly ordered in question-reply pairs, timestamptz values are UTC, and the turn times equal their questions' times.
+
+**Verification of the second review round (local, 2026-11-19, code commit `f974355`, record commit `b341e49`).** The three suites ran at the same time, which loaded the machine the way the `test_rate_limit[database]` flake needed.
+- **Full suite, SQLite:** 808 passed, 2 skipped, 3 xfailed (strict), 1 deselected. The branch had 730 passed; the 78 new tests in `test_phase3_hardening.py` add no skip or xfail.
+- **Full API suite, PostgreSQL 17, psycopg:** 806 passed, 3 xfailed, on a private scratch cluster (port 55441) with a fresh database. The cluster's session time zone is America/New_York, not UTC.
+- **Full API suite, PostgreSQL 17, pg8000** (the production driver), on a fresh database: 806 passed, 3 xfailed. On `15b4793` the same run had 726 passed and 2 failed; the two pg8000-only failures are fixed in C7.
+- **Reused databases:** `test_demo_seed.py` passed 3 of 3 twice on the reused psycopg database and once on the reused pg8000 database (C6).
+- **Validators:** all exit 0.
+  - `validate_corpus.py --check-public-assets --check-recall-stop` and `validate_lqs.py --allow-draft`.
+  - `config_package.py --check`: v2 2.0.0, sha256 `2220e47d…`; v1 is unchanged.
+  - `authorization_matrix.py --check`, `generate_manifest.py --check` and `validate_corpus.py --check-hashes --check-near-duplicates`.
+  - `calibrate_abstention.py --check`, with the Phase 2 record unchanged.
+  - `replay_tutor_plans.py --check`: the record is current, and its `commit` is `f974355`.
+  - `scan_boundary.py --repo` with both Docker contexts: path scan pass.
+- **Frontend:** lint and typecheck are clean; `test:integration` gives 139 of 139. `next build` was not run, so `next-env.d.ts` is untouched.
+- **Not run:**
+  - `pip-audit` and `npm audit` need the network; no dependency changed.
+  - The Docker image build and its scan.
+  - PostgreSQL 16 itself: the local cluster is 17, and CI runs 16 for both drivers. A cited CI run needs a push (DI-31).
