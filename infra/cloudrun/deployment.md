@@ -74,7 +74,7 @@ Before the first digest-pinned rollout, the previous revisions are `qcai-api-000
 1. **Deploy** by digest, as in sections 1-3.
    - Start-up loads and verifies configuration package v1, then the manifest and its drift report. A governed build fails closed before any table is touched.
    - `create_all` adds the `corpus_spans` table, and the schema upgrades add its append-only triggers. No span row is written at start-up.
-   - Check `/ready`. It must report `config_package_version` 1.0.0 and `config_package_sha256`, `span_scheme` span-v2, `retrieval_gate` p1-floor with `threshold_version` score-floor-p1-v1 (floor 6, P1-D-04), `duplicate_span_ids` 0, `manifest_drift` 0, `semantic_enabled` false, and `slis`.
+   - Check `/ready`. It must report `config_package_version` 1.0.0 (2.0.0 from the Phase 3 release; see the Phase 3 section) and `config_package_sha256`, `span_scheme` span-v2, `retrieval_gate` p1-floor with `threshold_version` score-floor-p1-v1 (floor 6, P1-D-04), `duplicate_span_ids` 0, `manifest_drift` 0, `semantic_enabled` false, and `slis`.
    - A governed start-up also stops on the conflict 29 recall stop: a manifest that approves a document while the gate is `p1-floor`.
 2. **Register spans:** `python -m app.workers.register_spans --dry-run`, then `--apply`. This is a job on the API image, and its output is one JSON line. In the image only authored spans register, because the image holds no DOCX. Document spans need an approved workstation run.
 3. **Dry-run the migration:** `python -m app.workers.migrate_citations --dry-run --report migration-report.json`.
@@ -91,3 +91,50 @@ Before the first digest-pinned rollout, the previous revisions are `qcai-api-000
 - Any document is approved while `p1-floor` is the default. P1 recall drops once chapter summaries are excluded (spec conflict 29), so this needs the switch in step 6 or a recalibration. The stop is enforced: governed start-up and `validate_corpus.py --check-recall-stop` refuse it. Only an owner decision sets `ALLOW_P1_FLOOR_WITH_DOCUMENTS`, which logs a `config.override` event (`p1_floor_recall_stop_overridden`).
 - A governed start-up fails on the authored hash or on document drift. The manifest was not regenerated; regenerate it by PR.
 - The migration reports `native_unresolved` > 0, an exact-match regression, or (in `--apply`) a non-canonical row.
+
+## Phase 3: two-channel tutor, response ledger and shadow (runbook)
+
+**Approval.** Every step below is a cloud write. Each needs the Platform Owner's approval under D-05, and **none was run in Phase 3**.
+
+**Defaults that ship outside development** (the freeze holds; learners see today's behaviour):
+- `TWO_PASS_TUTOR` is `off`. In development it is `shadow`. `on` is refused by settings until the configuration package records the Phase 4 exit.
+- `LEDGER_ROUTE_ENABLED` and `EVIDENCE_PANEL_ENABLED` are false.
+- `TUTOR_LEDGER_ENABLED` is true: the ledger is not learner-visible.
+- `TUTOR_LEDGER_APPEND_BUDGET_MS` is 1500 and `TWO_PASS_SHADOW_BUDGET_MS` is 2000.
+- `POST /tutor/turns` answers 404.
+
+**Before the release:**
+- `python scripts/config_package.py --check`, for v2 (the default) and for v1 (`--path apps/api/app/config_package/v1.json`).
+- `python scripts/replay_tutor_plans.py --check docs/evaluation/phase3/three_plan_replay_v1.json`. Exit 3 is the plan L bound-claim stop.
+- Take an on-demand backup.
+- Optionally, run the Alembic pre-deploy job (`alembic upgrade head`) from a workstation that has the migration scripts; the image does not ship them.
+
+**Deploy** by digest, as in sections 1-3.
+- `create_all` adds `response_ledger` and `response_ledger_head`, and the schema upgrades add their append-only and chain triggers. No ledger row is written at start-up.
+- `/ready` must report:
+  - `config_package_version` 2.0.0 (with `config_package_sha256`);
+  - `two_pass_tutor` off and `phase4_exit_passed` false;
+  - `tutor_pipeline.available` true;
+  - `ledger.head_seq`.
+- A pipeline-package problem (a schema pin or a prompt hash) does not stop start-up while `TWO_PASS_TUTOR` is off. It shows as `tutor_pipeline.available` false, which needs a fix before any shadow enablement.
+
+**Verify** the chain with `python -m app.workers.response_ledger [--expect-head SEQ:HASH]`, a job on the API image. Its daily schedule is DI-33.
+- Every `tutor.ledger.appended` log line carries `seq` and `record_hash`: the platform log is the off-database copy of the chain.
+- `scripts/verify_ledger.py --expect-head SEQ:HASH` checks the chain against any logged head.
+- `--coverage-since <time>` reports tutor turns without a ledger record.
+
+**Enabling shadow in production** (`TWO_PASS_TUTOR=shadow`) is a separate D-05 decision (DI-32).
+- Expect a `config.override` event (`two_pass_tutor_shadow`).
+- First check that Cloud Run allocates CPU to work after the response (background tasks), and how keep-alive connections and the thread pool behave (spec section 9).
+- Shadow processes real learner questions, so plan Phase 3 H applies.
+
+**Stop conditions** (plan Phase 3 L):
+- any `tutor.ledger.append_failed` or `tutor.ledger.conflict` (`slis.tutor_ledger.write_stop` true);
+- `slis.two_pass_shadow.bound_claim_ratio_stop` true;
+- `verify_response_ledger` problems.
+
+On a stop, set `TWO_PASS_TUTOR=off` (for the shadow) or investigate the database (for legacy appends). Legacy deliveries continue either way, because every ledger write fails open.
+
+**Roll back** by digest, as in "Rollback" above. The ledger stays: it is append-only. The Alembic downgrade refuses while the ledger holds rows:
+1. Export first with `python scripts/verify_ledger.py --export <path outside the repository>`.
+2. Then run `alembic -x allow_ledger_drop=true downgrade -1`.

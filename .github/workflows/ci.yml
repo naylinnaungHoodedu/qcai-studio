@@ -24,6 +24,12 @@ jobs:
       # Phase 2 (corpus, span identity, retrieval integrity). The checkout has no LFS content, so video hashes are
       # checked through their LFS pointer oids, which are the content sha256 (AC-2-6).
       - run: python scripts/config_package.py --check
+      # Phase 3: configuration package v1 stays readable for one release (DI-42).
+      - run: python scripts/config_package.py --check --path apps/api/app/config_package/v1.json
+      - run: python scripts/authorization_matrix.py --check
+      # Plan Phase 3 F: the three-plan replay over public-corpus fixtures (not E3 or LQ-1 evidence); exit 3 is the
+      # plan L bound-claim-ratio stop.
+      - run: python scripts/replay_tutor_plans.py --check docs/evaluation/phase3/three_plan_replay_v1.json
       - run: python scripts/generate_manifest.py --check
       - run: python scripts/validate_corpus.py --check-hashes --check-near-duplicates
       - run: python scripts/calibrate_abstention.py --check docs/evaluation/phase2/calibration_record_v1.json
