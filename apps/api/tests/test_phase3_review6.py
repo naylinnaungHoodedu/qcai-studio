@@ -106,12 +106,18 @@ def test_g1_no_file_that_runs_or_checks_the_replay_record_asks_git_about_history
     # The exemption is not stale: the fixture builder exists and is what asks the ancestry question.
     builder = _function(REPO_ROOT / FIXTURE_BUILDER[0], FIXTURE_BUILDER[1])
     assert any(isinstance(node, ast.Call) and _git_subcommand(node) == "merge-base" for node in ast.walk(builder))
-    # The committed-record check and the AC-3-2 record test run no process at all; the squash-merge test runs the
-    # former inside a squash-merged repository.
+    # Neither the committed-record check nor the AC-3-2 record test calls a process runner itself; the squash-merge
+    # test runs the former inside a squash-merged repository. (Corrected in 18.10 H4: this comment said both "run no
+    # process at all", but this AST scan sees only direct calls, and the AC-3-2 test's compute() ran git rev-parse and
+    # git status for the informational commit. That test now supplies its own commit and refuses every process while
+    # it runs (refuse_processes), so the property holds at run time; test_phase3_review7.py H4 proves both halves.)
     acceptance = REPO_ROOT / "apps" / "api" / "tests" / "test_phase3_acceptance.py"
     for name in RECORD_CHECKS:
         called = _called(_function(acceptance, name))
         assert not {call for call in called if call.startswith(("subprocess.", "os.system", "os.popen")) or call in {"_git", "git", "ok"}}, (name, called)
+    record_test = _function(acceptance, RECORD_CHECKS[1])
+    assert "refuse_processes" in _called(record_test)
+    assert any(isinstance(node, ast.keyword) and node.arg == "commit_source" for node in ast.walk(record_test))
     squash_test = _function(acceptance, "test_ac_3_2_the_committed_record_check_passes_on_a_squash_merged_main_that_keeps_the_branch_objects")
     assert {"_squash_merged_main", "_check_committed_replay_record"} <= _called(squash_test)
     # The script asks git only which HEAD it runs on and whether the tree is clean (the informational commit), and only

@@ -400,9 +400,23 @@ def test_ac_3_2_three_presentation_plans_give_the_same_claim_set_hash_and_span_s
         assert answered >= 25
 
 
-def test_ac_3_2_the_replay_finds_no_mismatch_and_is_labelled_not_e3_or_lq1(tmp_path):
+def refuse_processes(monkeypatch) -> None:
+    """Fail the test if anything starts a process (spec 18.10 H4): the record test and the committed-record check are
+    said to run none, and the replay's only process is the informational commit, which the test supplies itself."""
+    def refused(*args, **kwargs):
+        raise AssertionError(f"a process was started: {args[:1]!r}")
+
+    for owner, name in ((subprocess, "run"), (subprocess, "Popen"), (subprocess, "call"), (subprocess, "check_call"),
+                        (subprocess, "check_output"), (os, "system"), (os, "popen")):
+        monkeypatch.setattr(owner, name, refused)
+
+
+def test_ac_3_2_the_replay_finds_no_mismatch_and_is_labelled_not_e3_or_lq1(tmp_path, monkeypatch):
     module = load_script("replay_tutor_plans")
-    report = module.compute(subset=60)
+    # Neither this test nor the committed-record check below runs a process (spec 18.9 G1, made true in 18.10 H4).
+    refuse_processes(monkeypatch)
+    report = module.compute(subset=60, commit_source=lambda: "0" * 40)
+    assert report["commit"] == "0" * 40
     assert report["result"] == "pass" and all(configuration["mismatches"] == [] for configuration in report["configurations"])
     assert "NOT E3 or LQ-1" in report["evidence_class"] and report["public_corpus_only"] is True
     assert [(c["name"], c["gate"]) for c in report["configurations"]] == list(module.CONFIGURATIONS)
@@ -464,6 +478,30 @@ def _check_committed_replay_record():
     # commit is informational: the HEAD the record was written on, + "-dirty" when written from a working tree.
     assert re.fullmatch(r"[0-9a-f]{40}(-dirty)?", committed["commit"]), committed["commit"]
     return module, committed
+
+
+def test_ac_3_2_the_record_check_and_a_replay_with_its_own_commit_run_no_process(monkeypatch):
+    # Spec 18.10 H4: spec 18.9 said the record check and the AC-3-2 record test run no process, but the test's
+    # compute() ran git for the informational commit and the 18.9 scan saw only direct calls. The default commit is the
+    # replay's only process (rev-parse and status, never a history question); a supplied commit source starts none.
+    module = load_script("replay_tutor_plans")
+    small = {"subset": 1, "configurations": (("governed_empty", "p1-floor"),), "regressions": None}
+    started: list[list[str]] = []
+    real_run = subprocess.run
+
+    def spy(*args, **kwargs):
+        started.append(list(args[0]))
+        return real_run(*args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(subprocess, "run", spy)
+        default = module.compute(**small)
+    assert started and all(command[:2] in (["git", "rev-parse"], ["git", "status"]) for command in started), started
+    assert re.fullmatch(r"([0-9a-f]{40}(-dirty)?|unknown)", default["commit"]), default["commit"]
+    refuse_processes(monkeypatch)
+    supplied = module.compute(**small, commit_source=lambda: "c" * 40)
+    assert supplied["commit"] == "c" * 40 and supplied["result"] == "pass"
+    _check_committed_replay_record()
 
 
 def _squash_merged_main(tmp_path: Path) -> tuple[Path, str, int]:
@@ -622,8 +660,9 @@ def _random_locked(rng: random.Random, sentences: list[tuple[str, str]], store: 
         if (sentence, span_id) in seen:
             continue
         seen.add((sentence, span_id))
-        drafts.append(LockedClaimDraft(claim_id=claim_id_for(sentence, [span_id]), text=sentence, span_ids=(span_id,)))
         record = store.span_registry.get(span_id)
+        drafts.append(LockedClaimDraft(claim_id=claim_id_for(sentence, [span_id]), text=sentence, span_ids=(span_id,),
+                                       source_order=(record.item_id, record.start + max(0, record.text.find(sentence.split(" ", 1)[0])))))
         spans[span_id] = EvidenceSpan(span_id=span_id, item_id=record.item_id, item_version=record.item_version, kind="document", char_start=record.start,
                                       char_end=record.end, content_hash=record.content_hash, score=5.0, near_floor=False, license_class="public", quotable=True)
     drafts = list({draft.claim_id: draft for draft in drafts}.values())
@@ -686,7 +725,8 @@ def test_ac_3_3_the_overlap_gate_is_gone_and_claims_are_never_rebound():
     settings = Settings()
     store = get_course_store()
     engine = RetrievalEngine(store, settings)
-    query = "How does graph shrinking reduce routing overhead?"
+    # Spec 18.10 H1: a query with several whole-sentence spans (the graph-shrinking query now has one).
+    query = "Explain why quantum logistics needs both problem reduction before execution and routing control during compilation."
     baseline = _run(TwoPassPipeline(engine, settings), query)
     assert baseline.decision == "answer" and len(baseline.envelope.evidence) >= 2
 
@@ -727,9 +767,12 @@ def test_ac_3_4_every_delivered_tutor_response_has_a_ledger_record_and_the_chain
         response = chat(headers, message)
         assert response.status_code == 200
         delivered.append(response.json())
+    # Another learner for the /tutor/turns half: since spec 18.10 H5 both routes share one 8/minute window, and these
+    # nine turns would exceed one learner's budget.
+    second = demo("ac34t")
     for message, plan in (("Why does routing depth matter?", "stepwise"), ("What is the capital of France?", None), ("QUBO logistics", "socratic")):
         body = {"message": message, **({"presentation_plan": plan} if plan else {})}
-        response = client.post("/tutor/turns", headers=fresh(headers), json=body)
+        response = client.post("/tutor/turns", headers=fresh(second), json=body)
         assert response.status_code == 200 and response.json()["delivery"] == "legacy"
         delivered.append(response.json())
     assert {body["decision"] for body in delivered} == {"answer", "abstain"}

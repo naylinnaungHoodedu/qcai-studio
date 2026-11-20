@@ -20,7 +20,7 @@ from app.services.provenance import native_citation
 from app.services.retrieval_engine import RetrievalEngine
 from app.services.span_resolver import SpanResolver
 from app.services.store import get_course_store
-from app.services.tutor_pipeline.bind import bind, claim_id_for
+from app.services.tutor_pipeline.bind import bind, claim_id_for, whole_sentences
 from app.services.tutor_pipeline.contracts import (
     ClaimPlan,
     EvidenceBundle,
@@ -45,7 +45,10 @@ RESOLVER = ResolverRef(model_id="thread-resolver-v1", prompt_hash=PARAMS.resolve
 
 
 def _sentences(record) -> list[str]:
-    return sentences(record.text, min_words=PARAMS.min_sentence_words, max_chars=PARAMS.max_sentence_chars)
+    """The span's whole sentences, the ones binding accepts (rule resolver-bundle-sentence-v2). Until spec 18.10 H1
+    these tests cut the span's own text, whose first and last pieces can be span-edge fragments."""
+    return [sentence.text for sentence in whole_sentences(record, get_course_store(), min_words=PARAMS.min_sentence_words,
+                                                         max_chars=PARAMS.max_sentence_chars)]
 
 
 def _span(record, *, score: float | None = 5.0, quotable: bool = True) -> EvidenceSpan:
@@ -142,27 +145,47 @@ def test_every_bind_drop_reason_and_no_rebinding():
 
 
 def test_claim_text_stays_verbatim_and_claim_ids_are_content_addressed():
-    store = get_course_store()
-    resolver = SpanResolver(store)
-    record, sentence = _nfkc_changing(store)
+    store, resolver, registry, record, sentence = _nfkc_changing()
     plan = ClaimPlan(generator=REF, claims=(ProposedClaim(text=sentence, span_ids=(record.span_id,)),))
-    result = bind(plan, _bundle(store, [_span(record)]), resolver=resolver, store=store, registry=resolver.registry, params=PARAMS)
+    result = bind(plan, _bundle(store, [_span(record)]), resolver=resolver, store=store, registry=registry, params=PARAMS)
     assert [draft.text for draft in result.bound] == [whitespace(sentence)]  # verbatim, not NFKC-folded
     assert result.bound[0].text != normalise(sentence)
     assert result.bound[0].claim_id == claim_id_for(sentence, [record.span_id]) == claim_id_for("  " + sentence, (record.span_id,))
     assert claim_id_for(sentence, [record.span_id]) != claim_id_for(sentence + " More.", [record.span_id])
 
 
-def _nfkc_changing(store) -> tuple:
-    changing = [
-        (record, sentence)
-        for record in store.span_registry.records
-        if record.item_kind == "document"
-        for sentence in _sentences(record)
-        if unicodedata.normalize("NFKC", sentence) != sentence
-    ]
-    assert changing, "the dev corpus has a sentence NFKC would change (spec M22)"
-    return changing[0]
+# Two whole sentences that NFKC changes (a superscript, a ligature). The dev corpus's only such sentence (spec M22, a
+# U+2011 in a bibliography line) is a span-edge fragment in every span that holds it, which binding refuses since
+# spec 18.10 H1, so these tests quote a one-section public document of their own, with real spans and the real binding.
+NFKC_BODY = ("Routing overhead grows roughly as n² swaps on a line of qubits. "
+             "The ﬁrst mapping pass places every logical qubit before routing starts. "
+             "A later pass repairs what the first placement left behind.")
+
+
+def _nfkc_changing() -> tuple:
+    """(store, resolver, registry, record, sentence): a public document span and one of its whole sentences that NFKC
+    would change."""
+    from app.services.spans import CanonicalItem, CanonicalSection, SpanRegistry, build_spans, make_splitter
+
+    heading = "Synthetic routing notes"
+    item = CanonicalItem(item_id="doc-nfkc-synthetic", item_version="sha256:0000000000000000", kind="document", plane="public",
+                         source_title=heading, source_filename="nfkc-synthetic.docx", text=heading + "\n\n" + NFKC_BODY,
+                         sections=(CanonicalSection(ordinal=0, heading=heading, body=NFKC_BODY, body_start=len(heading) + 2, lesson_slug=None),))
+    records = build_spans(item, make_splitter(PACKAGE))
+    real = get_course_store()
+    span_registry = SpanRegistry(records)
+    store = SimpleNamespace(span_registry=span_registry, items={item.item_id: item}, index=real.index, corpus_version=real.corpus_version,
+                            index_version=real.index_version, gate=real.gate)
+    resolver = SimpleNamespace(resolve_current=span_registry.get)  # a SpanRecord carries its content_hash
+    registry = SimpleNamespace(is_indexable=lambda filename: filename == "nfkc-synthetic.docx")
+    (record,) = records
+    changing = [sentence for sentence in _whole(record, store) if unicodedata.normalize("NFKC", sentence) != sentence]
+    assert len(changing) == 2
+    return store, resolver, registry, record, changing[0]
+
+
+def _whole(record, store) -> list[str]:
+    return [sentence.text for sentence in whole_sentences(record, store, min_words=PARAMS.min_sentence_words, max_chars=PARAMS.max_sentence_chars)]
 
 
 def test_a_folded_claim_binds_to_the_spans_own_text_and_a_folded_rendering_is_unmapped():
@@ -172,13 +195,11 @@ def test_a_folded_claim_binds_to_the_spans_own_text_and_a_folded_rendering_is_un
     from app.services.tutor_pipeline.contracts import PresentationPlan
     from app.services.tutor_pipeline.render import TemplateRenderer, layout_text
 
-    store = get_course_store()
-    resolver = SpanResolver(store)
-    record, sentence = _nfkc_changing(store)
+    store, resolver, registry, record, sentence = _nfkc_changing()
     folded = unicodedata.normalize("NFKC", sentence)
     bundle = _bundle(store, [_span(record)])
     result = bind(ClaimPlan(generator=REF, claims=(ProposedClaim(text=folded, span_ids=(record.span_id,)),)), bundle, resolver=resolver,
-                  store=store, registry=resolver.registry, params=PARAMS)
+                  store=store, registry=registry, params=PARAMS)
     assert [draft.text for draft in result.bound] == [whitespace(sentence)] and dict(result.dropped) == {}
     assert result.bound[0].text != folded and result.bound[0].text in whitespace(record.text)
     locked = lock(result.bound, bundle=bundle, generator=REF, evidential_prompt_hash=REF.prompt_hash, pedagogical_prompt_hash=pedagogical_prompt_hash(),
@@ -249,7 +270,10 @@ def test_the_lock_hash_is_stable_and_stamped():
                  resolver=RESOLVER, package=PACKAGE)
     assert first == again and first.claim_set_hash == again.claim_set_hash
     assert (first.corpus_version, first.index_version, first.config_package.version) == (store.corpus_version, store.index_version, "2.0.0")
-    assert first.claims[0].source_order == (record.item_id, record.start)
+    # The sentence's own place in the item (spec 18.10 H2; it was the span's start until then).
+    (first_sentence,) = [sentence for sentence in whole_sentences(record, store, min_words=PARAMS.min_sentence_words,
+                                                                  max_chars=PARAMS.max_sentence_chars) if sentence.text == _sentences(record)[0]]
+    assert first.claims[0].source_order == (record.item_id, first_sentence.position) and first_sentence.position >= record.start
     other = lock(drafts, bundle=bundle, generator=REF, evidential_prompt_hash=REF.prompt_hash, pedagogical_prompt_hash=pedagogical_prompt_hash(),
                  resolver=ResolverRef(model_id="thread-resolver-v1", prompt_hash="9" * 64), package=PACKAGE)
     assert other.claim_set_hash != first.claim_set_hash

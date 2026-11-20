@@ -1,14 +1,20 @@
 """The evidential pass: envelope, generator interface and the D-19 extractive generator (plan task 3.3; spec 4.5).
 
-The generator sees only a typed EvidentialEnvelope: the resolved question, the corpus version and the text of the
-quotable spans of the bundle, with the rule in typed instruction fields (F-2, R-11). It returns a ClaimPlan, which
-is re-validated with extra="forbid"; a malformed plan abstains (claim_plan_invalid).
+The generator sees only a typed EvidentialEnvelope: the resolved question, the corpus version and, for each quotable
+span of the bundle, the span's whole-sentence text, with the rule in typed instruction fields (F-2, R-11). It returns
+a ClaimPlan, which is re-validated with extra="forbid"; a malformed plan abstains (claim_plan_invalid).
+
+The whole-sentence text (bind.whole_sentence_text) is the span's own characters from the start of its first whole
+document sentence to the end of its last: a span is a splitter chunk that can start or end inside a sentence, and
+that leading or trailing fragment never reaches a generator, so a generator that quotes the envelope never proposes
+a fragment that drops a sentence's opening words or its end (spec 18.10 H1). A span that holds no whole sentence is
+left out; binding still checks every claim against the section text itself.
 
 D-12 (the provider) is open, so no provider generator exists (hold H6, PD-09): ClaimGenerator is the interface a
 Phase 5 gateway generator implements, and get_generator refuses any id outside WIRED_GENERATORS. The only wired
-generator is extractive-d19-v1 (D-19 RECOMMENDATION, PD-08): each claim is one verbatim sentence of a quotable span
-that shares at least tutor_pipeline.evidential.min_question_overlap_terms content terms (1; PD-11, spec 18.8 F5) with
-the question. Under D-31 no span is quotable, so the governed build abstains.
+generator is extractive-d19-v1 (D-19 RECOMMENDATION, PD-08): each claim is one verbatim whole sentence of a quotable
+span that shares at least tutor_pipeline.evidential.min_question_overlap_terms content terms (1; PD-11, spec 18.8 F5)
+with the question. Under D-31 no span is quotable, so the governed build abstains.
 """
 
 from __future__ import annotations
@@ -17,6 +23,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol
 
 from app.core.config_package import WIRED_GENERATORS, ConfigPackage, TutorPipelineParams, canonical_sha256
+from app.services.tutor_pipeline.bind import whole_sentence_text
 from app.services.tutor_pipeline.contracts import (
     ClaimPlan,
     EnvelopeSpan,
@@ -34,10 +41,12 @@ if TYPE_CHECKING:  # pragma: no cover
     from app.services.content_assembler import CourseStore
 
 EXTRACTIVE_ID = "extractive-d19-v1"
+# Since spec 18.10 H1 "whole sentence": each envelope text holds only the span's whole document sentences.
 EXTRACTIVE_RULE = (
-    "D-19 extractive mode: each claim is one verbatim sentence (sentences-v2) of an approved, public-plane document "
-    "span in the envelope that shares at least {min_question_overlap_terms} content terms with the question; at most "
-    "{max_claims_per_span} per span and {max_claims} in all, in evidence order."
+    "D-19 extractive mode: each claim is one verbatim whole sentence (sentences-v2) of an approved, public-plane "
+    "document span in the envelope, whose text holds only the span's whole document sentences, that shares at least "
+    "{min_question_overlap_terms} content terms with the question; at most {max_claims_per_span} per span and "
+    "{max_claims} in all, in evidence order."
 )
 
 
@@ -61,15 +70,19 @@ def evidential_prompt_hash(params: TutorPipelineParams) -> str:
 
 
 def build_envelope(request: RetrievalRequest, bundle: EvidenceBundle, *, store: "CourseStore", params: TutorPipelineParams) -> EvidentialEnvelope | None:
-    """The quotable bundle spans with their registry text, in bundle order; None when there is none (D-19, D-31)."""
+    """The quotable bundle spans with their whole-sentence text, in bundle order; None when there is none (D-19, D-31).
+    A span holding no whole document sentence is left out (spec 18.10 H1)."""
     evidence = []
     for span in bundle.spans:
         if not span.quotable:
             continue
         record = store.span_registry.get(span.span_id)
-        if record is None or not record.text.strip():
+        if record is None:
             continue
-        evidence.append(EnvelopeSpan(span_id=span.span_id, text=record.text))
+        text = whole_sentence_text(record, store)
+        if text is None or not text.strip():
+            continue
+        evidence.append(EnvelopeSpan(span_id=span.span_id, text=text))
     if not evidence:
         return None
     return EvidentialEnvelope(
@@ -95,7 +108,8 @@ class ClaimGenerator(Protocol):
 
 
 class ExtractiveD19Generator:
-    """D-19 extractive mode: verbatim whole sentences of quotable spans, each bound to its own span."""
+    """D-19 extractive mode: verbatim whole sentences of quotable spans, each bound to its own span. The envelope text
+    holds only whole document sentences (build_envelope), so each sentences-v2 piece of it is one."""
 
     def __init__(self, package: ConfigPackage) -> None:
         if package.tutor_pipeline is None:

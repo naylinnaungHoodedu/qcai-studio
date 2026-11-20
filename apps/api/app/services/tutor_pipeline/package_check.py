@@ -3,8 +3,10 @@
 Always (start-up, tests, CI): each pinned schema file exists and its canonical sha256 equals its pin; the three
 prompt hashes the code computes equal the pinned values; every rule id and name the package records (sentence,
 binding and subset rules, the near-miss rule, the ledger's chain, entry schema, record-hash rule and genesis) equals
-the code's (spec 18.8 F4); the generator registry equals WIRED_GENERATORS. The two_pass_tutor defaults in
-flag_policy are compared with the code by the loader itself (config_package._parse_flag_policy).
+the code's (spec 18.8 F4), and so do the pipeline version, the resolver and renderer ids, the Idempotency-Key header,
+the presentation plans and the default plan (spec 18.10 H3); the generator registry equals WIRED_GENERATORS. The
+two_pass_tutor defaults in flag_policy are compared with the code by the loader itself
+(config_package._parse_flag_policy).
 
 structural=True (tests and scripts/config_package.py --check only): each committed schema has the structure and
 the constraints of its pydantic model: property names, the required set, additionalProperties false at every
@@ -147,9 +149,46 @@ def check_tutor_pipeline_package(package: ConfigPackage, *, structural: bool) ->
         "ledger.record_hash_rule": (RECORD_HASH_RULE, params.record_hash_rule),
         "ledger.genesis": (GENESIS_HASH, params.genesis),
     }
+    # The component ids, the pipeline version and the idempotency header (spec 18.10 H3): the prompt hashes are
+    # computed from the code's RESOLVER_ID and RENDERER_ID, so they cannot catch a package that names another
+    # component, and /ready reports these package values while the ledger stamps the code's.
+    from app.services.tutor_pipeline.pipeline import PIPELINE_VERSION
+    from app.services.tutor_pipeline.render import RENDERER_ID
+    from app.services.tutor_pipeline.resolve import RESOLVER_ID
+    from app.services.turn_idempotency import IDEMPOTENCY_HEADER
+
+    rules.update({
+        "version": (PIPELINE_VERSION, params.version),
+        "resolver.id": (RESOLVER_ID, params.resolver_id),
+        "pedagogical.renderer": (RENDERER_ID, params.renderer_id),
+        "idempotency.header": (IDEMPOTENCY_HEADER, params.idempotency_header),
+    })
     for name, (code_value, pinned) in rules.items():
         if code_value != pinned:
             problems.append(f"tutor_pipeline.{name} in the package ({pinned}) differs from the code's ({code_value})")
+    problems.extend(_plan_problems(params))
     if set(GENERATORS) != set(WIRED_GENERATORS):
         problems.append("the generator registry differs from WIRED_GENERATORS")
+    return problems
+
+
+def _plan_problems(params) -> list[str]:
+    """The package's presentation plans must be exactly the plans the renderer lays out and the PresentationPlan
+    contract accepts, without repeats, and its default one of them (spec 18.10 H3): a default the contract refuses
+    would fail every shadow run at prepare."""
+    from typing import get_args
+
+    from app.services.tutor_pipeline.contracts import PresentationPlan
+    from app.services.tutor_pipeline.render import PLANS_LAYOUT
+
+    contract_plans = set(get_args(PresentationPlan.model_fields["plan_id"].annotation))
+    problems = []
+    plans = list(params.presentation_plans)
+    if len(plans) != len(set(plans)) or set(plans) != set(PLANS_LAYOUT) or set(plans) != contract_plans:
+        problems.append(
+            f"tutor_pipeline.pedagogical.presentation_plans in the package ({', '.join(plans)}) differ from the renderer's "
+            f"({', '.join(PLANS_LAYOUT)}) or the PresentationPlan contract's ({', '.join(sorted(contract_plans))})"
+        )
+    if params.default_plan not in PLANS_LAYOUT or params.default_plan not in contract_plans:
+        problems.append(f"tutor_pipeline.pedagogical.default_plan in the package ({params.default_plan}) is not a plan the renderer and the contract know")
     return problems

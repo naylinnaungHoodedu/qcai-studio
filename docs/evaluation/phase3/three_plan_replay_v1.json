@@ -1,8 +1,8 @@
 {
  "report": "qcai-three-plan-replay",
  "format_version": 1,
- "created_at": "2026-11-19T22:11:47+00:00",
- "commit": "feb025fdea17a56fce6fb2044a2074b3d5d56f6a-dirty",
+ "created_at": "2026-11-19T23:50:10+00:00",
+ "commit": "68222060728a00dee1649737c8b9d8c12dce963f-dirty",
  "evidence_class": "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 evidence (plan Phase 3 H)",
  "public_corpus_only": true,
  "excluded_sources": [
@@ -22,17 +22,17 @@
  },
  "config_package": {
   "version": "2.0.0",
-  "sha256": "e7116589639119330256672a2e05e23aebbedcf32e121e2d9a8e1f856479866b"
+  "sha256": "71fe1ab7dedf27a2abb32e6708ab10db2811b567601037fa93f55f9d8b730e5b"
  },
  "tutor_pipeline": {
   "resolver": "thread-resolver-v1",
   "generator": "extractive-d19-v1",
   "renderer": "template-renderer-v1",
   "subset_check": "segment-exact-whitespace-v3",
-  "binding_rule": "resolver-bundle-sentence-v1",
+  "binding_rule": "resolver-bundle-sentence-v2",
   "prompt_hashes": {
    "resolver": "c7409f113bf7f5358ff16e981092d5d0fc4c3c407cd9731b869061fd26c7ad22",
-   "evidential": "5b8a34d3da037ce1d4efe324b6727e104f167f361fbe1920173afef9d4d43842",
+   "evidential": "6bf3f1f1030374216d123e7fdbd6f5075b4a0d0bbe5d00b394636563f85f4b09",
    "pedagogical": "452fbef12b51d5c1d2aa615ac845a1ab518f31d949e990bdf52ec948fefc613b"
   },
   "phase2_bound_claim_ratio_baseline": 1.0
@@ -80,7 +80,7 @@
     "bound_claim_ratio": null
    },
    "stop": false,
-   "items_digest": "233adeb978f8c8752bf78db3a0b9117b5a5c15dc9ffdf9887ae5cc6415b1515b"
+   "items_digest": "da3bc2281099540934d75e19078bfe2e953b46721312e9579cfe2c742f3e0e5d"
   },
   {
    "name": "all_public_approved",
@@ -89,26 +89,28 @@
    "corpus_version": "corpus-c658893abb6440dd",
    "index_version": "index-473cb92221ea2165",
    "items": 299,
-   "answered": 167,
+   "answered": 148,
    "answered_by_stratum": {
-    "in_domain": 166,
+    "in_domain": 147,
     "off_topic": 0,
     "stopword_only": 0,
     "regression": 1
    },
-   "abstained": 132,
+   "abstained": 151,
    "abstention_by_reason": {
     "insufficient_coverage": 56,
+    "no_claims": 8,
     "no_match": 56,
-    "no_query_terms": 20
+    "no_query_terms": 20,
+    "no_quotable_evidence": 11
    },
    "claim_set_hash_equal": 299,
    "span_set_equal": 299,
-   "rendered_text_distinct_among_answers": 167,
+   "rendered_text_distinct_among_answers": 148,
    "mismatches": [],
    "two_pass": {
-    "proposed_claims": 482,
-    "bound_claims": 482,
+    "proposed_claims": 337,
+    "bound_claims": 337,
     "bound_claim_ratio": 1.0,
     "merged_claims": 1
    },
@@ -119,7 +121,7 @@
     "bound_claim_ratio": 1.0
    },
    "stop": false,
-   "items_digest": "8a198f3c2fbbb37538a42b95a8afcab9d5201845a340b3fee25a268477e65915"
+   "items_digest": "99b8a8cce0dd048d2521e82c3cfe6f73112665e9939585f0be518a712be3a780"
   },
   {
    "name": "all_public_approved",
@@ -128,25 +130,27 @@
    "corpus_version": "corpus-c658893abb6440dd",
    "index_version": "index-afc81543f34c17f8",
    "items": 299,
-   "answered": 147,
+   "answered": 130,
    "answered_by_stratum": {
-    "in_domain": 146,
+    "in_domain": 129,
     "off_topic": 0,
     "stopword_only": 0,
     "regression": 1
    },
-   "abstained": 152,
+   "abstained": 169,
    "abstention_by_reason": {
     "below_floor": 145,
-    "no_match": 7
+    "no_claims": 4,
+    "no_match": 7,
+    "no_quotable_evidence": 13
    },
    "claim_set_hash_equal": 299,
    "span_set_equal": 299,
-   "rendered_text_distinct_among_answers": 147,
+   "rendered_text_distinct_among_answers": 130,
    "mismatches": [],
    "two_pass": {
-    "proposed_claims": 408,
-    "bound_claims": 408,
+    "proposed_claims": 281,
+    "bound_claims": 281,
     "bound_claim_ratio": 1.0,
     "merged_claims": 1
    },
@@ -157,7 +161,7 @@
     "bound_claim_ratio": 1.0
    },
    "stop": false,
-   "items_digest": "353b6d02e11795aa5ad22cca6a22ac53d64b8f2f9d5f9756eb6b83b379f02d12"
+   "items_digest": "67f2472f9ab7def49729ea35388dfbee76251b64e3a6cd7c6c606cd64ac7fccf"
   }
  ],
  "result": "pass",
@@ -165,7 +169,7 @@
   "rule": "imported-repository-modules-sha256-lf-v1",
   "files": {
    "apps/api/app/__init__.py": "a45661633011b095a62071507cf3309e100424dd64d34feabf2cc6d084696348",
-   "apps/api/app/core/config.py": "15badd7b6689ba035a3d4eb6fa995abd0a8d01b08a0346a80da8e26dd7d6545c",
+   "apps/api/app/core/config.py": "df5ca426c2f0c73a6d4c4b4f69f044e1aee5336829b1540063ced685c2eba9ef",
    "apps/api/app/core/config_package.py": "07926b4328f102e8c6e3e7fd31c419f7bd6befc59966e79c7eefd0baab29e340",
    "apps/api/app/core/corpus_governance.py": "39153061b8d613ca0298a5210b4d9abeb4da2298608b1b471c0cf659a7f9a4fd",
    "apps/api/app/core/data_planes.py": "195f35a4a4a01cabeb32d48a0d81c1beb0ca714e943d7c154abe3e96a35a5976",
@@ -174,7 +178,7 @@
    "apps/api/app/core/manifest_v2.py": "993892df5fb5e97fa34d5e8bd645eabca4d2960b7cf8959383064d2de10087a3",
    "apps/api/app/core/source_assets.py": "1889e9d025697c0d928b6e068325c0569adc7b8a802394a6dd3750f451e39ce5",
    "apps/api/app/core/structured_logging.py": "854ef58ab42efdb665dc20cff8595e296241ccd63c5322eb77bcb7830b691ea1",
-   "apps/api/app/db_models.py": "b45bfeda7a3ef58163dba11a3833e759842a9738b2cf977e6ee374490e7aafd3",
+   "apps/api/app/db_models.py": "91065db0b401aae8cf3c1061fea06b5dbc5e250e3aa0672fe3ef122529ba6492",
    "apps/api/app/schemas.py": "1761b66b14909b835fd16b9dec76591f0051078e5ae6ed2f0f0b95dd3b0b68dc",
    "apps/api/app/services/claim_gate.py": "f49811bd1c1b1b2960387b783cce56b8a4c0c588e923b27bcbd946c8f14b926b",
    "apps/api/app/services/contained_answers.py": "b32a28b65f294fb7de09229679ca2503666de9c45e8179f1f4f52c0302c96e99",
@@ -191,18 +195,18 @@
    "apps/api/app/services/text_utils.py": "dd37e0c66bb965d3183b46b727ae523f059737eee577614f83da58eae55153af",
    "apps/api/app/services/transcripts.py": "1a55f3f5b7e0ce0b9f74999691b50fa3ebb9aeb63bc1051f2bc16b334bd8f053",
    "apps/api/app/services/tutor_pipeline/__init__.py": "bd5834bd1aff386c87af74f04165403a38ed4edaebe388ef3fc82906f5d43fb3",
-   "apps/api/app/services/tutor_pipeline/bind.py": "a42b8f77cdc63266b4d8e56f724271aa64f3e652ce4c8737ea498eff97e80f79",
-   "apps/api/app/services/tutor_pipeline/contracts.py": "bae5bcae0b6e43e1c6e6b44cc4d3bbe78a985c4ecc3a46ed455b0fe90445b5c1",
-   "apps/api/app/services/tutor_pipeline/evidential.py": "7ba137589fe95c0b6836eda4e62b11ac24dd976cf28cbb8fd80e449a526336ee",
-   "apps/api/app/services/tutor_pipeline/lock.py": "5ef8ec27e85486ed85e463ade637e76f90c9c1c24b6532dcdaf139862798f430",
+   "apps/api/app/services/tutor_pipeline/bind.py": "9821d727e88c4412f9e7610166c4ababe60c14f5ba3809b5d8ecf7ea0fee2d40",
+   "apps/api/app/services/tutor_pipeline/contracts.py": "8e8ca9b99a009bb1740c07201d22c1d48c19d91435c514062bf4c4dec3bfe8f3",
+   "apps/api/app/services/tutor_pipeline/evidential.py": "f5199400698d88b65dbb5a963c588962478d8e38a4ea389f1b9588b7cecb763a",
+   "apps/api/app/services/tutor_pipeline/lock.py": "2add716bfc729ef6044aebaafe6a2ef842e2182e9169c58b073e9505fe520eca",
    "apps/api/app/services/tutor_pipeline/metrics.py": "30b50d5547e2785b6c8635322062f368023c587a0b71de69cff507942d40ec57",
    "apps/api/app/services/tutor_pipeline/pipeline.py": "3e42822298142c74b59c01e38b791e4a4d04456ea5d5b9071dcd32bf46d017dc",
    "apps/api/app/services/tutor_pipeline/render.py": "76715cf2a0dc456323a952f10751fcff8d6eae82aaf5d317c01e8282b3e8b919",
    "apps/api/app/services/tutor_pipeline/resolve.py": "60cad8ad9ad51c5eddf20e93f24aa2ebac6555f349f2a7c38aed17a3d2e5cc39",
    "apps/api/app/services/tutor_pipeline/retrieve.py": "aafcd03079caf2e71a410055e69753378e374c21b0c5e97955b186ea74880551",
-   "apps/api/app/services/tutor_pipeline/text.py": "5c6110c9deddefc74c7466ea71ca7d0b5df784ea4cef64b7204b116d1b735bc3",
-   "scripts/replay_tutor_plans.py": "eafe108f4b2fcbb2e1a9fc3b0f4928e6b0d65025a026532ea787d28ebae2d7d6"
+   "apps/api/app/services/tutor_pipeline/text.py": "f8a8d6eaedd82f69dd63a7542f711378914d71918d5cf1e3c846018581764cea",
+   "scripts/replay_tutor_plans.py": "ada1518d55d933283d132c1074271585fd7b78ac78c328bdd24f3fa22c9a31f0"
   },
-  "sha256": "6b0a1b42b2c437cec4c681117c3c198b441f2a138b57328e5c13299317f051ef"
+  "sha256": "16d6f10eff2ecfe4a4abc455329329caa024c2238fd639b3c5df8541869d8864"
  }
 }

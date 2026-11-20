@@ -41,6 +41,9 @@ from sqlalchemy.orm import Session
 from app.core.config_package import TutorPipelineParams, canonical_sha256
 from app.db_models import TutorTurnIdempotency
 
+# The request header POST /tutor/turns reads the key from; configuration package v2 names it
+# (tutor_pipeline.idempotency.header) and package_check requires the two to agree (spec 18.10 H3).
+IDEMPOTENCY_HEADER = "Idempotency-Key"
 REPLAYED_HEADER = "Idempotent-Replayed"
 SUPERSEDED = "This request ran past its Idempotency-Key lease and a retry took the key over; that retry's turn stands."
 

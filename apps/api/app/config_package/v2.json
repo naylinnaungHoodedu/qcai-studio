@@ -414,14 +414,14 @@
       "generators_allowed": [
         "extractive-d19-v1"
       ],
-      "prompt_hash": "5b8a34d3da037ce1d4efe324b6727e104f167f361fbe1920173afef9d4d43842",
+      "prompt_hash": "6bf3f1f1030374216d123e7fdbd6f5075b4a0d0bbe5d00b394636563f85f4b09",
       "max_claims": 3,
       "max_claims_per_span": 2,
       "min_sentence_words": 4,
       "max_sentence_chars": 1000,
       "min_question_overlap_terms": 1,
       "sentence_rule": "sentences-v2",
-      "binding_rule": "resolver-bundle-sentence-v1"
+      "binding_rule": "resolver-bundle-sentence-v2"
     },
     "pedagogical": {
       "renderer": "template-renderer-v1",
@@ -554,7 +554,7 @@
       "deviations": [
         {
           "plan": "3.3: \"Claim plan: atomic claims bound to span ids from a structured envelope; unbound dropped [Risk R-11].\"",
-          "applied": "under D-19 extractive mode the claim unit is one verbatim whole sentence of every cited span (sentences-v2, at most max_sentence_chars), not a decomposed atomic claim: a sub-sentence cut can drop a qualification or a negation (spec conflict 32), so binding refuses it (not_verbatim). A compound sentence is one claim with one future verdict. Atomic decomposition needs a generator that writes claims (Phase 5, D-12) and per-claim V1.3 entailment (Phase 4)"
+          "applied": "under D-19 extractive mode the claim unit is one verbatim whole sentence of every cited span (a sentences-v2 sentence of the document's section text lying wholly inside the span, at most max_sentence_chars), not a decomposed atomic claim: a sub-sentence cut can drop a qualification or a negation (spec conflict 32), so binding refuses it (not_verbatim), and refuses a span-edge fragment of a longer document sentence too (partial_sentence; rule resolver-bundle-sentence-v2, spec 18.10 H1). A compound sentence is one claim with one future verdict. Atomic decomposition needs a generator that writes claims (Phase 5, D-12) and per-claim V1.3 entailment (Phase 4)"
         }
       ],
       "record": "Phase 3 spec conflict 34; DI-47"

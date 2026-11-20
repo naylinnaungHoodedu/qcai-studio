@@ -18,10 +18,17 @@ or when the next word starts with a lowercase letter (an unknown abbreviation; a
 capital, a digit or a symbol). Decimal numbers and version strings (3.14, v1.2.3, Python 3.11) hold no whitespace
 after their periods, so they are never split. When in doubt the rule keeps text together: a merged quotation is
 longer but still verbatim, while a split one can drop its qualification.
+
+sentence_bounds() gives the same cuts as (start, end) offsets in the text's own characters. A span is a splitter
+chunk (chunk_size 700, chunk_overlap 120) that can start and end inside a document sentence, so its first and last
+pieces under split_sentences() need not be sentences of the document at all; binding and the envelope therefore cut
+the span's section text, never the span's own text, and keep only the sentences that lie wholly inside the span
+(bind.whole_sentences; spec 18.10 H1).
 """
 
 from __future__ import annotations
 
+from functools import lru_cache
 import re
 import unicodedata
 
@@ -73,17 +80,44 @@ def _is_boundary(before: str, after: str) -> bool:
     return True
 
 
+_WORD = re.compile(r"\S+")
+
+
+def _flat_cuts(flat: str) -> list[tuple[int, int]]:
+    """The sentences-v2 pieces of whitespace-normalised text, as (start, end) offsets into it. _is_boundary reads at
+    most two characters after a candidate, so only those are passed (a long section is cut in linear time)."""
+    cuts: list[tuple[int, int]] = []
+    start = 0
+    for match in _CANDIDATE.finditer(flat):
+        if _is_boundary(flat[start : match.start()], flat[match.end() : match.end() + 2]):
+            cuts.append((start, match.start()))
+            start = match.end()
+    cuts.append((start, len(flat)))
+    return [(begin, end) for begin, end in cuts if end > begin]
+
+
 def split_sentences(text: str) -> list[str]:
     """Whitespace-normalised text cut at sentences-v2 boundaries (no length filter)."""
     flat = whitespace(text)
-    parts: list[str] = []
-    start = 0
-    for match in _CANDIDATE.finditer(flat):
-        if _is_boundary(flat[start : match.start()], flat[match.end() :]):
-            parts.append(flat[start : match.start()])
-            start = match.end()
-    parts.append(flat[start:])
-    return [part for part in parts if part]
+    return [flat[begin:end] for begin, end in _flat_cuts(flat)]
+
+
+@lru_cache(maxsize=1024)
+def sentence_bounds(text: str) -> tuple[tuple[int, int], ...]:
+    """The cuts of split_sentences(text) as (start, end) offsets into text itself: whitespace(text[start:end]) is the
+    matching split_sentences() piece. Each piece starts at a word's first character and ends after a word's last,
+    so the offsets never include surrounding whitespace. Cached: binding cuts each span's whole section (spec 18.10 H1)."""
+    words = [(match.start(), match.end()) for match in _WORD.finditer(text)]
+    flat = " ".join(text[begin:end] for begin, end in words)
+    raw_start: dict[int, int] = {}
+    raw_end: dict[int, int] = {}
+    position = 0
+    for begin, end in words:
+        raw_start[position] = begin
+        position += end - begin
+        raw_end[position] = end
+        position += 1
+    return tuple((raw_start[begin], raw_end[end]) for begin, end in _flat_cuts(flat))
 
 
 def sentences(text: str, *, min_words: int, max_chars: int) -> list[str]:

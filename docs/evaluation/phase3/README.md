@@ -35,26 +35,27 @@ Any change to the configuration package (its sha256 is in the report) needs a fr
 - **Fixture:** `apps/api/tests/data/score_floor_queries.json`: 174 in-domain, 100 off-topic and 24 stopword-only items (298). Its canonical sha256 is in the report.
 - **Regression items:** `apps/api/tests/data/phase3_replay_regressions.json`, public-corpus queries that each name the defect they guard, replayed in full beside any subset (1 item, so 299 in all):
   - a sentence that two overlapping document spans both hold. Before the 2026-11-19 review fix the shadow abstained on it with `subset_check_failed`; now it is one locked claim citing both spans (`two_pass.merged_claims`).
-- **Plans:** `concise`, `stepwise` (reordered by source order) and `socratic` (fixed opening and closing questions), from `template-renderer-v1`.
+- **Plans:** `concise`, `stepwise` (reordered by each claim's own place in the source: its item, then the item offset of its sentence, so two sentences of one span keep their order; spec 18.10 H2) and `socratic` (fixed opening and closing questions), from `template-renderer-v1`.
 - **Configurations:**
   - `governed_empty` / `p1-floor`: the shipped D-31 build, where nothing is approved, so it abstains on all 299 items (the 298 fixture items and the regression item);
   - `all_public_approved` / `bm25f-v1`: a temporary manifest approving every public-plane, bound item;
   - `all_public_approved` / `p1-floor`: the same manifest under the Phase 1 floor.
-- **Pipeline:** `thread-resolver-v1` on single turns; lexical retrieval, `top_k` 4; generator `extractive-d19-v1` (D-19, PD-08) over `sentences-v2` sentences; binding `resolver-bundle-sentence-v1`; subset check `segment-exact-whitespace-v3` (renamed in Phase 3 spec 18.6 D4, when it began to fail a rendering with no claim or an uncited claim, and again in 18.7 E1, when it began to fail a citation list that is not exactly the displayed spans); regeneration limit 2.
+- **Pipeline:** `thread-resolver-v1` on single turns; lexical retrieval, `top_k` 4; generator `extractive-d19-v1` (D-19, PD-08) over whole `sentences-v2` sentences of each span's section text; binding `resolver-bundle-sentence-v2` (spec 18.10 H1; `-v1` before, which cut the span's own text and so accepted span-edge fragments); subset check `segment-exact-whitespace-v3` (renamed in Phase 3 spec 18.6 D4, when it began to fail a rendering with no claim or an uncited claim, and again in 18.7 E1, when it began to fail a citation list that is not exactly the displayed spans); regeneration limit 2.
 
 ## Results (committed record)
 
 | Configuration | Answered | Abstained | Mismatches | Two-pass bound-claim ratio | Phase 2 legacy ratio |
 |---|---|---|---|---|---|
 | governed_empty / p1-floor | 0 | 299 | 0 | null (no claims proposed) | null |
-| all_public_approved / bm25f-v1 | 167 (166 in-domain, 1 regression) | 132 | 0 | 1.0 | 1.0 |
-| all_public_approved / p1-floor | 147 (146 in-domain, 1 regression) | 152 | 0 | 1.0 | 1.0 |
+| all_public_approved / bm25f-v1 | 148 (147 in-domain, 1 regression) | 151 | 0 | 1.0 | 1.0 (167 answered) |
+| all_public_approved / p1-floor | 130 (129 in-domain, 1 regression) | 169 | 0 | 1.0 | 1.0 (147 answered) |
 
 - No off-topic or stopword-only item is answered (`answered_by_stratum`).
-- The answer counts equal the legacy contained path's over the same retrieval (spec M1, M2).
+- Until the seventh review round the answer counts equalled the legacy contained path's over the same retrieval (spec M1, M2). They no longer do (spec 18.10 H1). Binding now refuses a span-edge fragment of a longer document sentence, and the envelope carries only whole document sentences. So an item whose spans hold no whole sentence sharing a content term with the question abstains (`no_quotable_evidence` 11 and `no_claims` 8 under `bm25f-v1`). Before the fix, 42 of the 263 locked claims of that configuration were such fragments. The legacy path still answers 167 and 147 items. Most such spans fall inside long `sentences-v2` sentences: the rule never ends a sentence at a period followed directly by a footnote number ("optimization.15 If").
 - The 298 original items replayed exactly as before the first 2026-11-19 review fixes (equal `items_digest`). The second review round (Phase 3 spec 18.5) changed the configuration package (budgets, idempotency, `PLAN-12.8`) and the sentence rule (`sentences-v2`, C10), so the package sha256, the claim hashes and every `items_digest` changed; the answer counts, the 0 mismatches and the bound-claim ratio of 1.0 did not. The third and fourth rounds (18.6, 18.7) changed the package again (the subset rule id, the idempotency lease) with the same answer counts, mismatches and ratio.
 - **Which code.** The third round's record named `028cd40…-dirty`, a commit that did not hold the code it replayed (18.7 E3). The fourth round named the clean `65f56d1`, which did, but required it to be an ancestor of HEAD, which a squash merge breaks (18.8 F2). Since the fifth round the record names its code by `inputs`, checked against every checkout; its `commit` is where it was written.
 - The fifth round (18.8) changed the package again (the question-overlap threshold, F5; the D-12 wording, F6), so the package sha256 and the evidential prompt hash changed; the answer counts, the 0 mismatches and the ratio did not.
+- The seventh round (18.10) changed the binding rule (`resolver-bundle-sentence-v2`), the evidential prompt (whole sentences), the claims' source order and the package (the rule id, the evidential prompt hash, the PLAN-3.3 text), so the package sha256, the claim hashes and every `items_digest` changed. The 0 mismatches and the ratio of 1.0 did not.
 - The two-pass counts are the ratio terms (`contracts.bound_claim_ratio_terms`): a claim merged onto an earlier claim's sentence counts as bound; a claim bind never saw (a shadow budget overrun) counts in neither term.
 - The answered items' three renderings are pairwise distinct (`rendered_text_distinct_among_answers`): the plans differ in presentation only.
 
@@ -69,6 +70,6 @@ Any change to the configuration package (its sha256 is in the report) needs a fr
 ## Limitations
 
 - The renderer is deterministic (fixed templates), so regeneration matters only for test renderers and the Phase 5 model renderer.
-- There is no entailment checker before Phase 4. Binding requires a whole verbatim sentence of every cited span, so the replay measures structure, not meaning.
+- There is no entailment checker before Phase 4. Binding requires a whole verbatim sentence of every cited span (a sentence of the document's section text lying wholly inside the span), so the replay measures structure, not meaning.
 - Retrieval is lexical only (spec conflict 33).
 - Single-turn items only: follow-up resolution is tested in `test_phase3_acceptance.py` (AC-3-5), not replayed here.

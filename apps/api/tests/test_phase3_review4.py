@@ -92,6 +92,9 @@ MIGRATION = (API_ROOT / "alembic" / "versions" / "20261119_phase3_response_ledge
 PACKAGE = get_config_package(Settings())
 PARAMS = PACKAGE.tutor_pipeline
 IN_DOMAIN = "How does graph shrinking reduce routing overhead?"
+# A query whose two-pass answer has several claims on several spans (spec 18.10 H1: the graph-shrinking query now
+# answers with one whole sentence, because its other spans start or end inside the sentences it matched).
+MULTI_CLAIM = "Explain why quantum logistics needs both problem reduction before execution and routing control during compilation."
 HEADER_SUBSET = ("content-type", "cache-control", "x-assistant-provider", "x-assistant-model")
 PHASE2_REVISION = "20261119_phase2_corpus_spans"
 PHASE3_REVISION = "20261119_phase3_response_ledger"
@@ -164,7 +167,7 @@ class _StaleCitations:
 def test_e1_a_rendering_that_lists_a_span_it_never_shows_never_answers():
     settings = Settings()
     engine = RetrievalEngine(get_course_store(), settings)
-    full = _run(TwoPassPipeline(engine, settings), IN_DOMAIN)
+    full = _run(TwoPassPipeline(engine, settings), MULTI_CLAIM)
     assert full.decision == "answer" and len(full.locked.claims) >= 2
     # On the reviewer's query the last claim's span is cited by no other claim, so the stale list names an unshown span.
     probe = _StaleCitations().render(full.locked, PresentationPlan(plan_id="concise", source="request"), attempt=1)
@@ -184,7 +187,7 @@ def test_e1_the_record_names_the_displayed_spans_even_if_a_check_let_a_stale_lis
     engine = RetrievalEngine(get_course_store(), settings)
     # Defence in depth: even a subset check that passed the stale list could not make the record name the unshown span.
     monkeypatch.setattr(pipeline_module, "check_subset", lambda rendered, locked: claim_gate.SubsetCheckResult(True, (), 0, 0, 0))
-    result = _run(TwoPassPipeline(engine, settings, renderer=_StaleCitations()), IN_DOMAIN)
+    result = _run(TwoPassPipeline(engine, settings, renderer=_StaleCitations()), MULTI_CLAIM)
     assert result.decision == "answer"
     displayed = tuple(dict.fromkeys(segment.span_id for segment in result.rendered.segments if segment.kind == "citation"))
     assert result.entry.presentation.rendered_span_ids == displayed == rendered_span_ids(result.rendered)

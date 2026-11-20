@@ -9,6 +9,9 @@ unknown fields, so no learner-state field (page_path, history, mastery, ids) can
 An optional Idempotency-Key header (plan 7.3 "mutations carry client keys"; DI-40) makes a retried POST return the
 first turn instead of creating a second one (app.services.turn_idempotency). It is read after the flag, so a
 disabled route answers 404 whatever the header holds.
+
+The route shares one rate-limit window with POST /assistant/chat (scope "tutor-turn", ASSISTANT_CHAT_RATE_LIMIT):
+both deliver the same tutor turn, so alternating them never doubles a client's budget (spec 18.10 H5).
 """
 
 from datetime import UTC, datetime
@@ -18,7 +21,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.routes.assistant import deliver_tutor_turn
+from app.api.routes.assistant import TUTOR_TURN_RATE_LIMIT_SCOPE, deliver_tutor_turn, tutor_turn_rate_limit
 from app.core.auth import AuthUser, get_current_user
 from app.core.config import get_settings
 from app.core.config_package import get_config_package
@@ -38,7 +41,7 @@ router = APIRouter(prefix="/tutor", tags=["tutor"])
     response_model=TutorTurnResponse,
     responses={404: {"description": "Not Found"}, 409: {"description": "A request with this Idempotency-Key is still running."}},
 )
-@limiter.limit(lambda: get_settings().tutor_turns_rate_limit)
+@limiter.shared_limit(tutor_turn_rate_limit, scope=TUTOR_TURN_RATE_LIMIT_SCOPE)
 def create_tutor_turn(
     request: Request,
     response: Response,
@@ -46,7 +49,7 @@ def create_tutor_turn(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: AuthUser = Depends(get_current_user),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    idempotency_key: str | None = Header(default=None, alias=turn_idempotency.IDEMPOTENCY_HEADER),
 ):
     settings = get_settings()
     if not settings.tutor_turns_route_enabled:

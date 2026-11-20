@@ -75,7 +75,9 @@ def run_schema_upgrades(engine: Engine) -> None:
 
 def _guard_security_events(connection: Connection) -> None:
     # The security log is append-only (task 1.7): no UPDATE, no TRUNCATE, and DELETE only of rows past the
-    # retention period. Re-created on every start, so a changed retention period takes effect.
+    # retention period. Checked on every start and re-created when not current (on PostgreSQL only then, spec 18.8
+    # F8; SQLite re-creates its triggers each start), so a changed retention period takes effect: the function body
+    # then differs from the catalog's.
     # No '%' in these statements: psycopg would read it as a parameter marker.
     days = int(SECURITY_EVENT_RETENTION_DAYS)
     if connection.dialect.name == "postgresql":
@@ -118,7 +120,8 @@ def _guard_security_events(connection: Connection) -> None:
 def _guard_corpus_spans(connection: Connection) -> None:
     # Span identity is append-only (plan Phase 2 task 2.2): stored citations must keep resolving, so a span row is
     # never updated, deleted or truncated. Inserts use ON CONFLICT DO NOTHING, which fires no UPDATE trigger.
-    # Re-created on every start, like the security-log guard. No '%' in these statements (psycopg parameters).
+    # Checked on every start and re-created when not current, like the security-log guard (spec 18.8 F8). No '%' in
+    # these statements (psycopg parameters).
     if connection.dialect.name == "postgresql":
         _postgres_guard(
             connection,

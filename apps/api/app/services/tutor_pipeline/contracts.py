@@ -53,7 +53,10 @@ GATE_ABSTENTION_REASONS = ("no_query_terms", "no_match", "insufficient_coverage"
 
 # Why a proposed claim is not a locked claim of its own (PipelineCounts.dropped). Every proposed claim is either
 # locked or counted under exactly one reason, so proposed_claims == bound_claims + sum(dropped).
-BINDING_FAILURES = ("unbound", "outside_bundle", "unresolvable", "not_quotable", "not_verbatim", "duplicate")
+# partial_sentence (spec 18.10 H1): a piece of a cited span's own text that the span cuts out of a longer document
+# sentence (it starts or ends at the span's edge), so it is not a whole sentence and never binds.
+PARTIAL_SENTENCE = "partial_sentence"
+BINDING_FAILURES = ("unbound", "outside_bundle", "unresolvable", "not_quotable", PARTIAL_SENTENCE, "not_verbatim", "duplicate")
 # Not binding failures, so the plan L bound-claim ratio treats them apart (bound_claim_ratio_terms):
 #   merged           it bound, onto the spans of an earlier claim with the same sentence (bind.py)
 #   budget_exceeded  bind never ran: the shadow budget ran out after the generator returned (pipeline.py)
@@ -181,6 +184,8 @@ class EvidenceBundle(Contract):
 
 class EnvelopeSpan(Contract):
     span_id: str = Field(pattern=SPAN_ID)
+    # The span's own characters from its first whole document sentence to its last (bind.whole_sentence_text): a
+    # leading or trailing span-edge fragment of a longer sentence is never sent (spec 18.10 H1).
     text: str = Field(min_length=1)
 
 

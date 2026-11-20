@@ -17,6 +17,17 @@ from app.services.tutor_followups import run_turn_followups
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
+# One rate-limit window for every path that delivers a tutor turn (spec 18.10 H5): POST /assistant/chat and
+# POST /tutor/turns both run deliver_tutor_turn, and slowapi keeps one window per endpoint unless they share a
+# scope, so a client alternating the two got twice the budget (as the /spans alias did, 18.4). The rate is
+# ASSISTANT_CHAT_RATE_LIMIT, the production route's own limit, so /assistant/chat keeps its budget; requests to
+# POST /tutor/turns, which answers 404 outside development, count against the same window.
+TUTOR_TURN_RATE_LIMIT_SCOPE = "tutor-turn"
+
+
+def tutor_turn_rate_limit() -> str:
+    return get_settings().assistant_chat_rate_limit
+
 
 def deliver_tutor_turn(
     request: Request,
@@ -57,7 +68,7 @@ def deliver_tutor_turn(
 
 
 @router.post("/chat", response_model=AssistantChatResponse)
-@limiter.limit(lambda: get_settings().assistant_chat_rate_limit)
+@limiter.shared_limit(tutor_turn_rate_limit, scope=TUTOR_TURN_RATE_LIMIT_SCOPE)
 def chat_with_teaching_assistant(
     request: Request,
     response: Response,

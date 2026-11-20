@@ -21,7 +21,8 @@ imported (apps/api/app and scripts/) with the sha256 of its text (line endings n
 The committed-record test recomputes those hashes from the checkout, and --check compares the whole block with a
 fresh run, so a record and its code can be committed together and the check survives a squash merge, a shallow
 clone and a rebase alike. `commit` is informational: the HEAD the record was written on, + "-dirty" when the working
-tree differed from it. --write refuses a dirty tree (exit 4) unless --allow-dirty is given.
+tree differed from it. --write refuses a dirty tree (exit 4) unless --allow-dirty is given. _git (rev-parse HEAD and
+status --porcelain, for `commit` only) is the one place that runs a process; compute(commit_source=...) skips it.
 Exit codes: --write 0 pass, 1 mismatch, 3 stop, 4 dirty tree refused; --check 1 if the record differs from a fresh
 run (created_at and commit aside, inputs included), else as --write.
 """
@@ -271,7 +272,10 @@ def compute(
     generator_factory: Callable | None = None,
     configurations=CONFIGURATIONS,
     regressions: Path | None = REGRESSIONS,
+    commit_source: Callable[[], str] | None = None,
 ) -> dict:
+    """The report. commit_source gives its informational `commit` (default _commit, which asks git which HEAD this
+    is and whether the tree is clean); a test passes its own so that the replay runs no process (spec 18.10 H4)."""
     main_items = fixture_items(fixture, subset)
     extra = regression_items(regressions) if regressions is not None else []
     items = main_items + extra
@@ -288,7 +292,7 @@ def compute(
         "report": "qcai-three-plan-replay",
         "format_version": 1,
         "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "commit": _commit(),
+        "commit": (commit_source or _commit)(),
         "evidence_class": EVIDENCE_CLASS,
         "public_corpus_only": True,
         "excluded_sources": ["private plane", "lqs/ (ULQS)", "learner records, tutor turns, ratings"],

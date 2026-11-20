@@ -75,6 +75,9 @@ PACKAGE = get_config_package(Settings())
 PARAMS = PACKAGE.tutor_pipeline
 REGRESSION_QUERY = json.loads((DATA / "phase3_replay_regressions.json").read_text(encoding="utf-8"))["items"][0]["query"]
 IN_DOMAIN = "How does graph shrinking reduce routing overhead?"
+# A query whose two-pass answer has several claims on several spans (spec 18.10 H1: the graph-shrinking query now
+# answers with one whole sentence, because its other spans start or end inside the sentences it matched).
+MULTI_CLAIM = "Explain why quantum logistics needs both problem reduction before execution and routing control during compilation."
 client = TestClient(app)
 
 
@@ -245,13 +248,13 @@ class _DropLastClaim:
 def test_d4_the_ledger_records_which_claims_and_spans_the_answer_showed():
     settings = Settings()
     engine = RetrievalEngine(get_course_store(), settings)
-    full = _run(TwoPassPipeline(engine, settings), IN_DOMAIN)
+    full = _run(TwoPassPipeline(engine, settings), MULTI_CLAIM)
     assert full.decision == "answer" and len(full.locked.claims) >= 2
     presentation = full.entry.presentation
     assert presentation.rendered_claim_ids == tuple(claim.claim_id for claim in full.locked.claims)
     assert presentation.rendered_span_ids == full.rendered.citations
     # A rendering that leaves a claim out still answers (spec 4.9: a subset), and the record says what it showed.
-    partial = _run(TwoPassPipeline(engine, settings, renderer=_DropLastClaim()), IN_DOMAIN)
+    partial = _run(TwoPassPipeline(engine, settings, renderer=_DropLastClaim()), MULTI_CLAIM)
     assert partial.decision == "answer" and partial.locked.claim_set_hash == full.locked.claim_set_hash
     shown = partial.entry.presentation.rendered_claim_ids
     assert len(shown) == len(partial.locked.claims) - 1 and set(shown) < {claim.claim_id for claim in partial.entry.claims}
@@ -310,9 +313,10 @@ def test_d6_flag_policy_is_marked_provisional_and_the_loader_requires_it():
     payload["flag_policy"].pop("provisional")
     with pytest.raises(ConfigPackageError, match="flag_policy must be marked provisional"):
         parse_config_package(payload, path=DEFAULT_PACKAGE_PATH, sha256="", hash_verified=False)
-    # The two new route limits are the existing routes' limits, recorded as PD-11 engineering parameters.
+    # The new route limits are the existing routes' limits, recorded as PD-11 engineering parameters. Since spec 18.10
+    # H5 POST /tutor/turns has no limit of its own: it shares POST /assistant/chat's window and limit.
     settings = Settings()
-    assert (settings.tutor_turns_rate_limit, settings.ledger_rate_limit) == (settings.assistant_chat_rate_limit, settings.spans_rate_limit)
+    assert settings.ledger_rate_limit == settings.spans_rate_limit and not hasattr(settings, "tutor_turns_rate_limit")
     source = (API_ROOT / "app" / "core" / "config.py").read_text(encoding="utf-8")
     assert "provisional (PD-11" in source
 

@@ -3,8 +3,10 @@ task 3.8, G; R-22), and tutor_turn_idempotency, the Idempotency-Key records of P
 "mutations carry client keys"; DI-40). This revision had not been applied anywhere when the second table was added
 (Phase 3 is unmerged), so the head stays 20261119_phase3_response_ledger (ledger.SCHEMA_REVISION).
 
-Additive and reversible (expand step, plan 13.3). The append-only and chain triggers are re-created on every API
-start by app.core.schema_upgrades, so the downgrade drops them with the tables. Append-only evidence is never
+Additive and reversible (expand step, plan 13.3). The append-only and chain triggers come from app.core.schema_upgrades,
+which checks them at each API start and re-creates them only when they are not current (spec 18.8 F8; corrected in
+spec 18.10 H6, which found this docstring still saying "re-created on every API start"), so the downgrade drops
+them with the tables. Append-only evidence is never
 dropped by accident: the downgrade refuses while response_ledger holds rows, unless run as
     alembic -x allow_ledger_drop=true downgrade 20261119_phase2_corpus_spans
 (an absolute target, never -1: a database built by create_all may carry no stamp, or a Phase 2 one, and -1 would

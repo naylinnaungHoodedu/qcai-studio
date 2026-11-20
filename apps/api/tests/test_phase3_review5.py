@@ -831,7 +831,11 @@ def test_f15_the_bep_records_say_what_the_code_does():
     pin = (API_ROOT / "app" / "config_package" / "v2.json.sha256").read_text(encoding="utf-8").strip()
     record = (BEP_ROOT / "phase03" / "PHASE_RECORD.md").read_text(encoding="utf-8")
     pointer = next(line for line in record.splitlines() if line.startswith("**Configuration package v2**"))
-    assert pin[:8] in pointer and "Fifth review round" in pointer
+    # The pointer names the current pin and the round section that holds it (the fifth round's until the pin moved in
+    # the seventh, spec 18.10).
+    named = re.search(r'is in "(\w+ review round)" below', pointer)
+    assert pin[:8] in pointer and named, pointer
+    assert pin in record.split(f"## {named.group(1)} (", 1)[1].split("\n## ", 1)[0]
     built = record.split("## What was built", 1)[1].split("## Acceptance criteria", 1)[0]
     assert "also trimmed `slis.two_pass_shadow` to fields that describe no single run)" not in built
     assert "citation_list_mismatch" in built

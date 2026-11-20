@@ -165,9 +165,11 @@ class Settings(BaseSettings):
     ledger_route_enabled: bool | None = None
     # The evidence panel field on tutor responses (task 3.8): None = on in development, off elsewhere (E9).
     evidence_panel_enabled: bool | None = None
-    # Rate limits of the two new Phase 3 routes: engineering parameters with no plan value, provisional (PD-11; they
-    # copy the existing assistant_chat_rate_limit and spans_rate_limit), ratified with the rest of PD-11 (DI-37).
-    tutor_turns_rate_limit: str = "8/minute"
+    # Rate limit of the new Phase 3 ledger route: an engineering parameter with no plan value, provisional (PD-11; it
+    # copies the existing spans_rate_limit), ratified with the rest of PD-11 (DI-37). POST /tutor/turns has no limit of
+    # its own since spec 18.10 H5: it shares POST /assistant/chat's window and assistant_chat_rate_limit (scope
+    # "tutor-turn"), so alternating the two routes never doubles a client's tutor-turn budget. TUTOR_TURNS_RATE_LIMIT
+    # (8/minute, the same value) is gone; an environment that still sets it is ignored (extra="ignore").
     ledger_rate_limit: str = "30/minute"
 
     @field_validator("allowed_origins", mode="before")
