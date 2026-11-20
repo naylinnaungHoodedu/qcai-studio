@@ -218,9 +218,12 @@ def treat_dead_sockets_as_disconnects(engine: Engine) -> None:
     engine.dialect.do_ping = do_ping  # type: ignore[method-assign]
 
 
-# PEP 249 classes by SQLSTATE class, as psycopg (the CI driver) raises them. pg8000 (the production driver) raises
-# IntegrityError only for 23505 and ProgrammingError for every other server error, so code that catches
-# IntegrityError, DataError or OperationalError behaved differently in production than in CI (DI-46).
+# PEP 249 classes by SQLSTATE class, as psycopg raises them. pg8000, the production driver, has two interfaces that
+# raise different classes. Production connects through the Cloud SQL connector, whose adapter calls
+# pg8000.dbapi.connect: that interface raises every server error as a plain DatabaseError, 23505 included. A
+# postgresql+pg8000:// URL (CI's pg8000 leg) uses the legacy pg8000.connect, which raises IntegrityError for 23505 and
+# ProgrammingError for every other server error. Without this map no `except IntegrityError` fired in production, and
+# code that catches IntegrityError, DataError or OperationalError behaved differently there than in CI (DI-46).
 _SQLSTATE_CLASSES: dict[str, type[sa_exc.DBAPIError]] = {
     "22": sa_exc.DataError,
     "23": sa_exc.IntegrityError,

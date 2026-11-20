@@ -62,7 +62,9 @@ jobs:
 
   # Task 1.10 (R-52): the API suite and the schema checks against PostgreSQL 16, the Cloud SQL major version.
   # The service container is disposable; conftest uses TEST_DATABASE_URL and never an ambient DATABASE_URL.
-  # Both drivers (DI-46): psycopg, and pg8000, the driver production uses through the Cloud SQL connector.
+  # Both drivers (DI-46): psycopg, and pg8000, the driver production uses through the Cloud SQL connector. The pg8000
+  # leg's URL goes through pg8000's legacy pg8000.connect; production's connector calls pg8000.dbapi.connect, whose
+  # error classes differ, and test_m1_* runs that interface on both legs (spec 7.19).
   # The legs report as "api-postgres (psycopg)" and "api-postgres (pg8000)"; the job named api-postgres below is the
   # required status check on main (P1-D-12) and passes only when both legs pass.
   api-postgres-driver:
