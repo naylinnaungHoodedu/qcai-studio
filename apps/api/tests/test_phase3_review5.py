@@ -360,13 +360,14 @@ def test_f7_the_records_say_what_the_code_does():
     assert "so outside development only owners read (PD-12)" not in authorization
     assert "the route answers 404 to everyone, owners included" in authorization
     ac33 = next(line for line in TEST_STRATEGY.splitlines() if line.startswith("| AC-3-3"))
-    assert f"({len(FAULT_MODES)} failure modes" in ac33 and len(FAULT_MODES) == 12
+    assert f"the {len(FAULT_MODES)} fault modes" in ac33 and len(FAULT_MODES) == 12
     record = BEP_ROOT / "phase03" / "PHASE_RECORD.md"
     if record.exists():
         text_ = record.read_text(encoding="utf-8")
-        subset = next(line for line in text_.splitlines() if line.startswith("- `claim_gate.py` is now the subset checker"))
-        assert "`segment-exact-whitespace-v3`" in subset.split("(", 1)[0]
-        assert "(11 since the third review round)" not in text_ and "12 fault modes" in text_
+        current = text_.split("## History", 1)[0]
+        subset = next(line for line in current.splitlines() if line.startswith("- **3.7 Subset check.**"))
+        assert "`segment-exact-whitespace-v3`" in subset and "-v2`" not in subset
+        assert "(11 since the third review round)" not in text_ and "12 fault modes" in current
 
 
 # ============================================================================================================ F8
@@ -832,17 +833,16 @@ def test_f15_the_bep_records_say_what_the_code_does():
         return
     pin = (API_ROOT / "app" / "config_package" / "v2.json.sha256").read_text(encoding="utf-8").strip()
     record = (BEP_ROOT / "phase03" / "PHASE_RECORD.md").read_text(encoding="utf-8")
-    pointer = next(line for line in record.splitlines() if line.startswith("**Configuration package v2**"))
-    # The pointer names the current pin and the round section that holds it (the fifth round's until the pin moved in
-    # the seventh, spec 18.10).
-    named = re.search(r'is in "(\w+ review round)" below', pointer)
-    assert pin[:8] in pointer and named, pointer
-    assert pin in record.split(f"## {named.group(1)} (", 1)[1].split("\n## ", 1)[0]
-    built = record.split("## What was built", 1)[1].split("## Acceptance criteria", 1)[0]
+    current = record.split("## History", 1)[0]
+    # The current-state section names the current pin and where it lives.
+    pointer = next(line for line in current.splitlines() if line.startswith("- **Configuration package v2**"))
+    assert pin[:8] in pointer and "v2.json.sha256" in pointer, pointer
+    built = current.split("### What exists", 1)[1].split("### Acceptance criteria", 1)[0]
     assert "also trimmed `slis.two_pass_shadow` to fields that describe no single run)" not in built
     assert "citation_list_mismatch" in built
     notes = (BEP_ROOT / "phase03" / "CLOSURE_EVIDENCE_NOTES.md").read_text(encoding="utf-8")
-    assert "## Fourth review round" in notes and "## Fifth review round" in notes
+    history = notes.split("## History", 1)[1]
+    assert "| 4 | `65f56d1` |" in history and "| 5 | `feb025f` |" in history
     assert "the current pin is in the third-round section below" not in notes
     register = (BEP_ROOT / "00_meta" / "DEFERRED_ITEMS_REGISTER.md").read_text(encoding="utf-8")
     di40 = next(line for line in register.splitlines() if line.startswith("| DI-40 |"))
@@ -866,12 +866,11 @@ def _event_names(table_text: str) -> set[str]:
 
 
 def test_f16_the_spec_and_the_runbook_say_what_the_code_does():
-    intro = SPEC.split("### 18.7 Fourth review round", 1)[1].split("**Production changes**", 1)[0]
-    assert "DI-50" in intro and "Two exit items were added" in intro
     section_16 = SPEC.split("## 16. Provisional defaults", 1)[1].split("## 17.", 1)[0]
-    assert "**Revised in 18.7" in section_16 and "**Revised in 18.8" in section_16
+    # Section 16 lists every Phase 3 register row the fourth round added (DI-49, DI-50), in its current text.
+    assert "| DI-49 |" in section_16 and "| DI-50 |" in section_16 and "Revised in" not in section_16
     alembic_block = SPEC.split("### 8.3 Alembic", 1)[1].split("### 8.4", 1)[0]
-    assert "create the three tables" in alembic_block and "create both tables" not in alembic_block.split("(Corrected in 18.8 F16", 1)[0]
+    assert "create the three tables" in alembic_block and "create both tables" not in alembic_block
     # 11.4 names every event the code logs, and so does observability.md.
     logged = set()
     for path in (API_ROOT / "app").rglob("*.py"):

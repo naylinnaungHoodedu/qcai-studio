@@ -6,16 +6,21 @@ K1  the invariant 1 fixture tells learners apart by every field it is meant to c
     keeps every field of the shadow record but its ids.
 K2  a new Cloud SQL connection is bounded by app.core.db (CONNECT_TIMEOUT_S), as the attempt horizon assumes: the
     connector bounds none of it.
+K3  the Phase 3 records state the current code only (P2-12-D-03): no narrative markers in the authoritative text, one
+    review-history row per round in the spec, a test-strategy map of every test_phase3_*.py file, spec section 3
+    listed from the code, and, where the evidence package is present, its current-state sections and register rows.
 """
 
 from __future__ import annotations
 
+import ast
 import copy
 import dataclasses
 import inspect
 import logging
 import math
 from pathlib import Path
+import re
 import threading
 import time
 
@@ -359,3 +364,183 @@ def test_k2_the_production_engine_uses_the_bounded_creator_and_the_horizon_count
     per_append = ledger.POOL_CHECKOUT_TIMEOUT_S + CONNECT_TIMEOUT_S + (ledger.ATTEMPT_STATEMENTS + 1) * params.ledger_append_budget_ms / 1000
     assert ledger.attempt_horizon_s(params, params.ledger_append_budget_ms) == 60 * math.ceil(
         (math.ceil(params.ledger_append_max_in_flight / params.ledger_append_workers) * per_append + ledger.HORIZON_MARGIN_S) / 60) == 360
+
+
+# ============================================================================================================ K3
+
+
+SPEC = (REPO_ROOT / "docs" / "architecture" / "phase3-implementation-spec.md").read_text(encoding="utf-8")
+STRATEGY = (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
+BEP_ROOT = REPO_ROOT.parent / "BEP-2-12"
+# Phrases that narrate what an earlier round's text or code said. P2-12-D-03: the authoritative text states the current
+# code only, and each round is one row of the spec's review history (18.4).
+NARRATIVE = re.compile(
+    r"\b(?:[Cc]orrected|[Ss]uperseded|[Rr]evised|[Rr]enamed|[Rr]eplaced|[Rr]emoved|[Mm]arked|[Aa]dded) in (?:Phase 3 )?(?:spec )?18\.\d"
+    r"|\b[Uu]ntil (?:Phase 3 )?(?:spec )?18\.\d|\b[Ss]ince (?:Phase 3 )?(?:spec )?18\.\d|first wording|spec-time|kept as history"
+    r"|\bthis (?:said|comment said|docstring said|row said|line said|bullet said|listing said)\b|^\s*History:",
+    flags=re.MULTILINE,
+)
+
+
+def _bep(relative: str) -> str | None:
+    path = BEP_ROOT / relative
+    return path.read_text(encoding="utf-8") if path.exists() else None
+
+
+def _test_functions() -> set[str]:
+    names = set()
+    for path in (API_ROOT / "tests").glob("test_*.py"):
+        names |= set(re.findall(r"^(?:async )?def (test_\w+)\(", path.read_text(encoding="utf-8"), flags=re.MULTILINE))
+    return names
+
+
+def _groups(path: Path) -> set[str]:
+    return set(re.findall(r"^def (test_[a-z]\d*)_\w+\(", path.read_text(encoding="utf-8"), flags=re.MULTILINE))
+
+
+def _resolves(text: str, functions: set[str], *, prefix: str | None = None) -> list[str]:
+    """Backticked test names, wildcards and suffixes in text that name no test."""
+    missing = []
+    for match in re.finditer(r"`(test_[a-z0-9_]+)`", text):
+        if match.group(1) not in functions:
+            missing.append(match.group(1))
+    for match in re.finditer(r"`(test_[a-z0-9_]+?)_?\*`", text):
+        if not any(name.startswith(match.group(1)) for name in functions):
+            missing.append(match.group(0))
+    for match in re.finditer(r"`\.\.\.(_[a-z0-9_]+)`", text):
+        if not (prefix and prefix + match.group(1) in functions):
+            missing.append(match.group(0))
+    for match in re.finditer(r"`(test_[a-z0-9_]+\.py)`", text):
+        if not (API_ROOT / "tests" / match.group(1)).exists():
+            missing.append(match.group(1))
+    return missing
+
+
+def test_k3_the_test_strategy_maps_every_phase3_test_file():
+    phase_3 = STRATEGY.split("## Phase 3 acceptance map", 1)[1].split("**Exit gate.**", 1)[0]
+    files_table = phase_3.split("### Phase 3 test files", 1)[1]
+    rows = {match.group(1): line for line in files_table.splitlines() if (match := re.match(r"\| `(test_phase3_\w+\.py)` \| (.+) \|$", line))}
+    files = sorted(path.name for path in (API_ROOT / "tests").glob("test_phase3_*.py"))
+    assert files and sorted(rows) == files, (sorted(rows), files)
+    for name in files:
+        row = rows[name]
+        assert len(row) > 120, name  # it says what the file proves, not just its name
+        for group in _groups(API_ROOT / "tests" / name):
+            if name != "test_phase3_acceptance.py":
+                assert f"`{group}_*`" in row, (name, group)
+    functions = _test_functions()
+    for line in phase_3.splitlines():
+        if line.startswith("| AC-3-"):
+            prefix = "test_ac_3_" + line[len("| AC-3-")]
+            assert _resolves(line, functions, prefix=prefix) == [], line[:60]
+        elif line.startswith("| "):
+            assert _resolves(line, functions) == [], line[:60]
+
+
+def test_k3_the_spec_records_each_round_once_in_the_review_history_table():
+    record = SPEC.split("## 18. Implementation record", 1)[1]
+    headings = re.findall(r"^### (18\.\d+) ", record, flags=re.MULTILINE)
+    assert headings == ["18.1", "18.2", "18.3", "18.4"], headings  # no per-round narrative section
+    history = record.split("### 18.4 Review history", 1)[1]
+    intro = history.split("| Round", 1)[0]
+    assert "may describe behaviour that a later round superseded" in intro and "sections 0-17 are authoritative" in intro
+    rows = [line for line in history.splitlines() if re.match(r"\| \d+, ", line)]
+    assert [int(re.match(r"\| (\d+),", row).group(1)) for row in rows] == list(range(1, 11))
+    functions = _test_functions()
+    files = {f"test_phase3_review{n}.py": n - 1 for n in range(3, 11)} | {"test_phase3_hardening.py": 1}
+    for row in rows:
+        commit = row.split(" | ")[1]
+        assert re.search(r"`[0-9a-f]{7,40}`", commit), row[:40]
+        findings = row.split(" | ", 2)[2].rstrip(" |").split("<br>")
+        assert findings and all("`" in finding and ("test_" in finding or ".test.ts" in finding) for finding in findings), row[:40]
+        assert _resolves(row, functions) == [], (row[:30], _resolves(row, functions))
+    for name, index in files.items():
+        row = rows[index]
+        for group in _groups(API_ROOT / "tests" / name):
+            if group != "test_j":
+                assert f"`{group}_*`" in row, (name, group)
+
+
+def _authoritative_texts() -> dict[str, str]:
+    texts = {
+        "spec 0-17": SPEC.split("## 18. Implementation record", 1)[0],
+        "spec 18.1-18.3": SPEC.split("## 18. Implementation record", 1)[1].split("### 18.4 Review history", 1)[0],
+        "test strategy": STRATEGY.split("## Phase 3 acceptance map", 1)[1],
+        "README": (REPO_ROOT / "docs" / "evaluation" / "phase3" / "README.md").read_text(encoding="utf-8"),
+        "env example": (REPO_ROOT / "infra" / "cloudrun" / "api-production.env.example.yaml").read_text(encoding="utf-8"),
+        "ci": (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"),
+    }
+    for name in ("ADR-001-grounding-separation.md", "ADR-005-abstention-gate.md"):
+        texts[name] = (REPO_ROOT / "docs" / "adr" / name).read_text(encoding="utf-8").split("## Revision 2026-11-19", 1)[1]
+    for name in ("deployment.md", "observability.md"):
+        texts[name] = (REPO_ROOT / "infra" / "cloudrun" / name).read_text(encoding="utf-8").split("## Phase 3", 1)[1]
+    for root in ("app", "alembic"):
+        for path in (API_ROOT / root).rglob("*.py"):
+            texts[str(path.relative_to(REPO_ROOT))] = path.read_text(encoding="utf-8")
+    for path in (REPO_ROOT / "scripts").glob("*.py"):
+        texts[str(path.relative_to(REPO_ROOT))] = path.read_text(encoding="utf-8")
+    return texts
+
+
+def test_k3_the_authoritative_text_states_the_current_code_only():
+    offending = [(name, match.group(0)) for name, text in _authoritative_texts().items() for match in NARRATIVE.finditer(text)]
+    assert offending == []
+    # The guard sees each kind of narrative the review rounds left behind.
+    for sample in ("(Corrected in 18.10 H1: the rule cut ...)", "since 18.8 F3", "until spec 18.12 J1 it was", "Superseded in 18.5 C3",
+                   "the first wording named", "this comment said \"only owners\"", "History: the spec-time block", "(Revised in 18.4"):
+        assert NARRATIVE.search(sample), sample
+    assert not NARRATIVE.search("the record can then no longer be tied to anyone; 18.4: \"D-19 RECOMMENDATION")
+
+
+def _code_fields(source: str, name: str) -> list[str]:
+    node = next(node for node in ast.parse(source).body if isinstance(node, ast.ClassDef) and node.name == name)
+    return [ast.unparse(item) for item in node.body if isinstance(item, (ast.AnnAssign, ast.Assign))]
+
+
+def test_k3_spec_section_3_lists_the_code_s_fields():
+    section = SPEC.split("## 3. Data shapes", 1)[1].split("## 4. Algorithms", 1)[0]
+    contracts = (API_ROOT / "app" / "services" / "tutor_pipeline" / "contracts.py").read_text(encoding="utf-8")
+    schemas = (API_ROOT / "app" / "schemas.py").read_text(encoding="utf-8")
+    code_classes = {node.name for node in ast.parse(contracts).body if isinstance(node, ast.ClassDef)}
+    checked = 0
+    for block in re.findall(r"```python\n(.*?)```", section, flags=re.DOTALL):
+        for node in ast.parse(block).body:
+            if not isinstance(node, ast.ClassDef):
+                continue
+            source = contracts if node.name in code_classes else schemas
+            listed = [ast.unparse(item) for item in node.body if isinstance(item, (ast.AnnAssign, ast.Assign))]
+            code = _code_fields(source, node.name)
+            header = block.splitlines()[node.lineno - 1]
+            if "additions only" in header:
+                assert listed and set(listed) <= set(code), node.name
+            else:
+                assert listed == code, node.name
+            checked += 1
+    assert checked >= 30
+    # Every contract the package pins a schema for is listed.
+    for name in ("ResolvedQuestion", "RetrievalRequest", "EvidenceBundle", "EvidentialEnvelope", "ClaimPlan", "LockedClaimSet", "PresentationPlan",
+                 "LedgerEntry", "BudgetStamp", "PresentationRecord"):
+        assert f"class {name}(Contract):" in section, name
+
+
+def test_k3_the_evidence_package_states_the_current_phase_3_state():
+    record = _bep("phase03/PHASE_RECORD.md")
+    if record is None:
+        return  # the evidence package lives beside the repository; CI's checkout has none
+    assert record.index("## Current state") < record.index("## History")
+    current = record.split("## History", 1)[0]
+    assert NARRATIVE.findall(current) == []
+    for needed in ("44676365093", "DI-31", "exit gate is NOT passed", "test_ac_3_1_", "test_ac_3_6_"):
+        assert needed in current, needed
+    history = record.split("## History", 1)[1]
+    assert len([line for line in history.splitlines() if re.match(r"\| \d+, ", line)]) == 10
+    notes = _bep("phase03/CLOSURE_EVIDENCE_NOTES.md")
+    assert notes.index("## Current state") < notes.index("## History")
+    assert NARRATIVE.findall(notes.split("## History", 1)[0]) == []
+    status = next(line for line in _bep("00_meta/STATUS.md").splitlines() if line.startswith("| 3 |"))
+    assert "44676365093" in status and "NOT passed" in status and "not pushed" not in status
+    registers = _bep("00_meta/DEFERRED_ITEMS_REGISTER.md") + _bep("00_meta/PROVISIONAL_DEFAULTS_REGISTER.md")
+    rows = [line for line in registers.splitlines() if re.match(r"\| (?:PD-(?:0[89]|1[0-2])|DI-(?:3[1-9]|4\d|5\d)) \|", line)]
+    assert len(rows) >= 26 and [line[:7] for line in rows if NARRATIVE.search(line)] == []
+    di_31 = next(line for line in rows if line.startswith("| DI-31 |"))
+    assert "44676365093" in di_31 and "main" in di_31

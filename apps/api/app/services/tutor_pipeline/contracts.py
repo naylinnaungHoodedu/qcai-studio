@@ -57,9 +57,9 @@ ABSTENTION_REASONS = (
     RENDER_FAILED,
     "budget_exceeded",
 )
-# The legacy contained path's own abstention reason (contained_answers.contain_answer). Since Phase 3 spec 18.8 F1 a
-# legacy ledger record keeps it only for a gate that matched passages none of which could be quoted (not approved
-# under D-31, or not verified); when the gate itself returned nothing, the record carries the gate's reason.
+# The legacy contained path's own abstention reason (contained_answers.contain_answer). A legacy ledger record keeps
+# it only for a gate that matched passages none of which could be quoted (not approved under D-31, or not verified);
+# when the gate itself returned nothing, the record carries the gate's reason.
 LEGACY_ABSTENTION_REASON = "no_approved_span"
 # The Phase 2 retrieval gate's own abstention reasons (lexical_index.Reason without "evidence").
 GATE_ABSTENTION_REASONS = ("no_query_terms", "no_match", "insufficient_coverage", "below_floor")
@@ -73,9 +73,8 @@ BINDING_FAILURES = ("unbound", "outside_bundle", "unresolvable", "not_quotable",
 # Not binding failures, so the plan L bound-claim ratio treats them apart (bound_claim_ratio_terms):
 #   merged           it bound, onto the spans of an earlier claim with the same sentence (bind.py)
 #   duplicate        it bound too: its sentence was already bound on every span it cites, so it adds nothing. It
-#                    passed every binding check, exactly as a merged claim did, so the ratio counts it as bound
-#                    (spec 18.12 J1; until then it was a binding failure, and two claim plans that lock one claim
-#                    set read 1.0 or 0.5 by the order of their claims alone)
+#                    passed every binding check, exactly as a merged claim did, so the ratio counts it as bound, and
+#                    two claim plans that lock one claim set give one ratio whatever the order of their claims
 #   budget_exceeded  bind never ran: the shadow budget ran out after the generator returned (pipeline.py)
 MERGED = "merged"
 DUPLICATE = "duplicate"
@@ -453,7 +452,7 @@ def bound_claim_ratio_terms(counts: PipelineCounts) -> tuple[int, int]:
 
     A claim bind never saw (budget_exceeded) is in neither term: a slow generator is a latency event, not a binding
     failure. A claim merged into an earlier claim on the same sentence, or a duplicate of one (its sentence already
-    bound on every span it cites), passed every binding check, so it is in both (spec 18.12 J1): the ratio of a
+    bound on every span it cites), passed every binding check, so it is in both: the ratio of a
     locked claim set does not depend on the order in which its claims were proposed.
     """
     skipped = counts.dropped.get(BUDGET_SKIPPED, 0)

@@ -159,12 +159,13 @@ def test_j1_a_generator_that_repeats_its_claims_is_not_a_replay_stop():
 
 
 def test_j1_the_records_count_a_duplicate_as_bound():
-    counts = _section("class PipelineCounts(Contract):", "class LedgerEntry(Contract):")
-    assert "not_verbatim (binding failures)" in counts and "merged|duplicate (18.12 J1)|budget_exceeded (not failures)" in counts
+    constants = _section("### 3.3 Ledger entry", "### 3.4")
+    assert 'BINDING_FAILURES = ("unbound", "outside_bundle", "unresolvable", "not_quotable", PARTIAL_SENTENCE, "not_verbatim")' in constants
+    assert "DROP_REASONS = (*BINDING_FAILURES, MERGED, DUPLICATE, BUDGET_SKIPPED" in constants and "so the ratio counts it as bound" in constants
     row = next(line for line in _section("### 4.6 Bind", "### 4.7").splitlines() if line.startswith("| the same sentence was already bound on every span"))
-    assert "`duplicate`" in row and "18.12 J1" in row
+    assert "`duplicate`" in row and "the ratio counts it as bound" in row
     metrics = next(line for line in _section("### 11.3 Metrics", "### 11.4").splitlines() if line.startswith("- `bound_claim_ratio = "))
-    assert "`duplicate` claims are in both terms" in metrics
+    assert "`merged` and `duplicate` claims passed every binding check and are in both" in metrics
     assert "and so does a duplicate" in README and "a merged or duplicate claim in both" in OBSERVABILITY
     assert "which read a merge, a duplicate or a budget overrun as a binding failure" in OBSERVABILITY
     source = (API_ROOT / "app" / "services" / "tutor_pipeline" / "contracts.py").read_text(encoding="utf-8")
@@ -256,21 +257,21 @@ def test_j2_a_learner_dependent_threshold_fails_the_invariant_1_fixture(monkeypa
 def test_j2_the_records_name_what_the_invariant_1_fixture_compares():
     acceptance = (API_ROOT / "tests" / "test_phase3_acceptance.py").read_text(encoding="utf-8")
     helper = acceptance.split("def observe_three_learners(", 1)[1].split("\ndef ", 1)[0]
-    for needed in ('"retrieve":', '"top_k"', '"envelopes":', '"plans":', '"record": learner_independent(entry)'):
+    for needed in ('"retrieve":', '"top_k": kw.get("top_k")', '"envelopes":', '"plans":', '"record": learner_independent(entry)'):
         assert needed in helper, needed
     test = acceptance.split("def test_ac_3_1_what_the_evidential_pass_receives_holds_zero_learner_state_under_three_learner_contexts", 1)[1].split("\ndef ", 1)[0]
     assert "observe_three_learners(monkeypatch)" in test and "all(learner == observed[0] for learner in observed)" in test
     item_3 = next(line for line in SPEC.splitlines() if line.startswith("3. `test_ac_3_1_what_the_evidential_pass_receives"))
-    for needed in ("`ClaimPlan`s", "threshold version", "abstention reason", "`top_k`", "Corrected in 18.12 J2"):
+    for needed in ("`ClaimPlan`s", "threshold version", "abstention reason", "`top_k`", "`test_k1_*`"):
         assert needed in item_3, needed
     revision = ADR_001.split("## Revision 2026-11-19", 1)[1]
     sentence = next(line for line in revision.splitlines() if "The invariant 1 test replays" in line)
-    assert "ClaimPlans" in sentence and "threshold version" in sentence and "Corrected in Phase 3 spec 18.12 J2" in sentence
+    assert "ClaimPlans" in sentence and "threshold version" in sentence and "every field of the shadow record but its ids" in sentence
     ac_3_1 = next(line for line in STRATEGY.splitlines() if line.startswith("| AC-3-1"))
-    assert "ClaimPlans" in ac_3_1 and "18.12 J2" in ac_3_1
+    assert "ClaimPlans" in ac_3_1 and "`test_k1_*`" in ac_3_1 and "`test_j2_*`" in ac_3_1
     if (record := _bep("phase03/PHASE_RECORD.md")) is not None:
         row = next(line for line in record.splitlines() if line.startswith("| AC-3-1 "))
-        assert "ClaimPlans" in row and "18.12 J2" in row and "identical requests, envelopes, bundles, hashes and decisions" not in row
+        assert "ClaimPlans" in row and "`test_k1_*`" in row and "identical requests, envelopes, bundles, hashes and decisions" not in row
 
 
 # ============================================================================================================ J3
@@ -358,9 +359,9 @@ def test_j3_a_shadow_run_with_a_crashing_renderer_completes_with_its_reason_and_
 
 def test_j3_the_records_name_the_render_fault():
     step_7 = next(line for line in _section("### 4.10 Pipeline", "### 4.11").splitlines() if line.startswith("7. **Render loop.**"))
-    assert "`tutor.two_pass.render_failed`" in step_7 and "`render_failed`" in step_7 and "18.12 J3" in step_7
+    assert "`tutor.two_pass.render_failed`" in step_7 and "`render_failed`" in step_7 and "the exception was swallowed" not in step_7
     revision = ADR_005.split("## Revision 2026-11-19 (Phase 3)", 1)[1]
-    assert "`render_failed`" in revision and "18.12 J3" in revision
+    assert "`render_failed`" in revision and "`tutor.two_pass.render_failed`" in revision
     assert any(line.startswith("| `tutor.two_pass.render_failed` |") for line in OBSERVABILITY.splitlines())
     alert = next(line for line in OBSERVABILITY.splitlines() if line.startswith("| Shadow render faults |"))
     assert 'jsonPayload.event="tutor.two_pass.render_failed"' in alert and "Alert on any match" in alert
@@ -376,12 +377,12 @@ def test_j3_the_records_name_the_render_fault():
 
 
 def test_j4_spec_18_11_says_what_the_pipeline_records_for_a_refused_fault():
-    i2 = _section("**I2. Four fault-injection tests", "**I3.")
-    bullet = next(line for line in i2.splitlines() if line.startswith("- New tests: under each of the three plans"))
-    assert "Corrected in 18.12 J4" in bullet and "`FaultyRenderer.placed`" in bullet and "`render_failed`" in bullet
-    for line in SPEC.split("### 18.12 Ninth review round", 1)[0].splitlines():  # 18.12 J4 itself quotes the old sentence
-        if "the pipeline records `not_placed`" in line:
-            assert "Corrected in 18.12 J4" in line, line[:160]
+    # The spec's current text and its review history never say the pipeline records `not_placed`: only the test fake does.
+    assert "the pipeline records `not_placed`" not in SPEC
+    item_9 = next(line for line in SPEC.splitlines() if line.startswith("9. `test_ac_3_3_a_renderer_that_adds"))
+    assert "every exact injection asserts what it placed" in item_9
+    ninth = next(line for line in SPEC.split("### 18.4 Review history", 1)[1].splitlines() if line.startswith("| 9, J1-J8 "))
+    assert "J4 every exact fault test asserts what it placed: `test_j4_*`" in ninth
     assert "not_placed" not in "".join(path.read_text(encoding="utf-8") for path in (API_ROOT / "app").rglob("*.py"))
 
 
@@ -519,13 +520,13 @@ def test_j5_a_turn_older_than_the_horizon_without_its_record_is_still_a_lost_rec
 
 def test_j5_the_runbook_and_the_spec_name_the_pending_count():
     bullet = next(line for line in RUNBOOK.splitlines() if line.startswith("- `python -m app.workers.response_ledger --coverage-since <time>`"))
-    for needed in ("`pending`", "`horizon_s`", "360 s", "`--coverage-horizon-s 0`", "18.12 J5"):
+    for needed in ("`pending`", "`horizon_s`", "360 s", "`--coverage-horizon-s 0`", "`ledger.attempt_horizon_s`"):
         assert needed in bullet, needed
     row = next(line for line in OBSERVABILITY.splitlines() if line.startswith("| Ledger coverage (100%) |"))
-    assert "`pending`" in row and "18.12 J5" in row
+    assert "`pending`" in row and "360 s" in row
     for title, end in (("### 7.15 NEW", "### 7.16"), ("### 7.16 NEW", "### 7.17")):
         section = _section(title, end)
-        assert "`--coverage-horizon-s" in section and "18.12 J5" in section, title
+        assert "`--coverage-horizon-s" in section and "`pending`" in section, title
     script = _section("### 7.16 NEW", "### 7.17")
     for key in ("`pending`", "`horizon_s`", "`settled_before`"):
         assert key in script, key
@@ -597,23 +598,23 @@ def test_j6_the_runbook_reads_the_horizon_by_cpu_allocation():
                    "has stopped", "`pending` is not a stop"):
         assert needed in stop, needed
     deferred = next(line for line in RUNBOOK.splitlines() if line.startswith("Each `tutor.ledger.append_deferred`"))
-    assert "within the horizon is not a stop" in deferred and "18.12 J6" in deferred
+    assert "within the horizon is not a stop" in deferred and "30 s connect bound that `app.core.db` enforces" in deferred
     cpu = next(line for line in RUNBOOK.splitlines() if line.startswith("- **Check CPU allocation after the response.**"))
     assert "Until the allocation is read and recorded, read the stops as for always-on CPU" in cpu
     row = next(line for line in OBSERVABILITY.splitlines() if line.startswith("| Ledger coverage (100%) |"))
-    for needed in ("360 s", "`ledger.attempt_horizon_s`", "30 s checkout timeout", "30 s connect timeout", "six statements", "16 in flight on 4 workers",
-                   "always-on CPU allocation", "Python runs the queued appends before the process exits", "Corrected in 18.12 J6"):
+    for needed in ("360 s", "`ledger.attempt_horizon_s`", "30 s checkout timeout", "30 s connect bound that `app.core.db` enforces", "six statements",
+                   "16 in flight on 4 workers", "always-on CPU allocation", "Python runs the queued appends before the process exits"):
         assert needed in row, needed
-    # The 60 s horizon survives only where a line marks it as superseded.
-    for name, text in (("runbook", RUNBOOK), ("observability", OBSERVABILITY), ("spec", SPEC.split("### 18.12 Ninth review round", 1)[0])):
+    # No current text gives the 60 s horizon: it is in the review history only.
+    for name, text in (("runbook", RUNBOOK), ("observability", OBSERVABILITY), ("spec", SPEC.split("### 18.4 Review history", 1)[0])):
         for line in text.splitlines():
-            if re.search(r"\b60 s\b", line) and "horizon" in line:
-                assert re.search(r"18\.12 (J5, )?J6", line), (name, line[:160])
+            assert not (re.search(r"\b60 s\b", line) and "horizon" in line and "60 s for ingestion" not in line and "`HORIZON_MARGIN_S` (60 s)" not in line
+                        and "`HORIZON_MARGIN_S` 60 s" not in line), (name, line[:160])
     for name in ("00_meta/DEFERRED_ITEMS_REGISTER.md",):
         if (register := _bep(name)) is not None:
             di_48 = next(line for line in register.splitlines() if line.startswith("| DI-48 |"))
             di_50 = next(line for line in register.splitlines() if line.startswith("| DI-50 |"))
-            assert "ninth review round, spec 18.12 J6" in di_48 and "360 s" in di_50 and "`pending`" in di_50
+            assert "attempt horizon" in di_48 and "360 s" in di_50 and "`pending`" in di_50
 
 
 # ============================================================================================================ J7
@@ -623,18 +624,18 @@ def test_j7_spec_4_11_section_9_and_tests_28_and_39_say_what_the_code_does():
     shadow = _section("### 4.11 Shadow runner", "### 4.12")
     listing = shadow.split("```python", 1)[1].split("```", 1)[0]
     assert "TWO_PASS_DELIVERY_IMPLEMENTED = False" not in listing and "def shadow_budget_ms" in listing
-    assert "Corrected in 18.12 J7" in shadow.split("```", 2)[2].split("**`effective_mode`", 1)[0]
+    assert "TWO_PASS_DELIVERY_IMPLEMENTED lives in contracts.py" in listing
     step_3 = next(line for line in shadow.splitlines() if line.startswith("3. `pipeline.run("))
-    assert "budget_ms=shadow_budget_ms(settings, pipeline.package)" in step_3 and "Corrected in 18.12 J7" in step_3
+    assert "budget_ms=shadow_budget_ms(settings, pipeline.package)" in step_3 and "settings.two_pass_shadow_budget_ms`" not in step_3
     source = (API_ROOT / "app" / "services" / "tutor_pipeline" / "shadow.py").read_text(encoding="utf-8")
     assert "budget_ms=shadow_budget_ms(settings, pipeline.package)" in source and "TWO_PASS_DELIVERY_IMPLEMENTED =" not in source
     assert "TWO_PASS_DELIVERY_IMPLEMENTED = False" in (API_ROOT / "app" / "services" / "tutor_pipeline" / "contracts.py").read_text(encoding="utf-8")
     note = next(line for line in SPEC.splitlines() if line.startswith("**Connection note.**"))
-    assert "`shadow_budget_ms`" in note and "18.12 J7" in note
+    assert "`shadow_budget_ms`" in note and "the package's 2000 ms unless `TWO_PASS_SHADOW_BUDGET_MS` overrides it" in note
     item_28 = next(line for line in SPEC.splitlines() if line.startswith("28. `test_plan_l_a_shadow_or_ledger_failure"))
-    assert "`TWO_PASS_METRICS.snapshot()`" in item_28 and "Corrected in 18.12 J7" in item_28
+    assert "`TWO_PASS_METRICS.snapshot()`" in item_28 and "increments its counter in `/ready`" not in item_28
     item_39 = next(line for line in SPEC.splitlines() if line.startswith("39. `test_plan_l_a_held_ledger_lock"))
-    assert "+ 500 ms + 1500 ms" in item_39 and "40P01" in item_39 and "Corrected in 18.12 J7" in item_39
+    assert "+ 500 ms + 1500 ms" in item_39 and "40P01" in item_39
     acceptance = (API_ROOT / "tests" / "test_phase3_acceptance.py").read_text(encoding="utf-8")
     assert "+ 500 + 1500" in acceptance.split("def test_plan_l_a_held_ledger_lock_never_delays_the_learner_beyond_the_append_budget", 1)[1]
     plan_l = acceptance.split("def test_plan_l_a_shadow_or_ledger_failure_never_changes_the_learner_response_and_is_counted", 1)[1].split("\ndef ", 1)[0]
@@ -650,12 +651,12 @@ def test_j8_spec_sections_14_and_15_mark_what_later_rounds_changed():
     assert 'needs.api-postgres-driver.result' in ci
     section_14 = _section("## 14. CI changes", "## 15.")
     bullet = next(line for line in section_14.splitlines() if "runs the API suite on PostgreSQL 16" in line)
-    assert bullet.startswith("- `api-postgres-driver` runs") and "Corrected in 18.12 J8" in bullet
-    item_5 = _section("5. **`infra/cloudrun/deployment.md`:**", "6. **`infra/cloudrun/observability.md`:**")
+    assert bullet.startswith("- `api-postgres-driver` runs") and "needs both legs" in bullet
+    item_5 = _section("5. **`infra/cloudrun/deployment.md`**", "6. **`infra/cloudrun/observability.md`:**")
     defaults = next(line for line in item_5.splitlines() if "**Defaults that ship:**" in line)
-    assert "Superseded in 18.5 C3, marked in 18.12 J8" in defaults
+    assert "`TUTOR_LEDGER_APPEND_BUDGET_MS` and `TWO_PASS_SHADOW_BUDGET_MS` unset" in defaults and "`TUTOR_LEDGER_APPEND_BUDGET_MS` 1500" not in defaults
     before = next(line for line in item_5.splitlines() if "**Before the release:**" in line)
-    assert "Superseded in 18.8 F14, marked in 18.12 J8" in before and "`alembic current`" in before
+    assert "`alembic current`" in before and "alembic upgrade 20261119_phase3_response_ledger" in before and "Pre-deploy job (`alembic upgrade head`)" not in before
     config = (API_ROOT / "app" / "core" / "config.py").read_text(encoding="utf-8")
     assert re.search(r"tutor_ledger_append_budget_ms: int \| None = Field\(\s*default=None", config)
     assert "`alembic upgrade head` on such a database replays revisions" in RUNBOOK
@@ -665,22 +666,19 @@ def test_j8_spec_sections_14_and_15_mark_what_later_rounds_changed():
 
 
 def test_j_the_spec_record_and_the_evidence_package_name_the_ninth_round():
-    record = SPEC.split("### 18.12 Ninth review round", 1)[1]
+    history = SPEC.split("### 18.4 Review history", 1)[1]
+    ninth = next(line for line in history.splitlines() if line.startswith("| 9, J1-J8 "))
+    assert "`94aa3e6`" in ninth
     for group in ("J1", "J2", "J3", "J4", "J5", "J6", "J7", "J8"):
-        assert f"**{group}." in record, group
-    assert "test_phase3_review9.py" in record and "**Verification of the ninth review round**" in record
-    section_16 = _section("## 16. Provisional defaults", "## 17.")
-    assert "**Revised in 18.12" in section_16
-    row = next(line for line in STRATEGY.splitlines() if line.startswith("| Ninth review round (spec 18.12, J1-J8)"))
-    assert "`test_phase3_review9.py`" in row
+        assert f"{group} " in ninth and f"`test_{group.lower()}_*`" in ninth, group
+    row = next(line for line in STRATEGY.splitlines() if line.startswith("| `test_phase3_review9.py` |"))
     source = (API_ROOT / "tests" / "test_phase3_review9.py").read_text(encoding="utf-8")
     for name in re.findall(r"^def (test_\w+)\(", source, flags=re.MULTILINE):
         group = re.match(r"(test_j\d*)_", name).group(1)
         assert f"`{group}_*`" in row, name
     if (phase_record := _bep("phase03/PHASE_RECORD.md")) is not None:
-        assert "## Ninth review round (2026-11-19)" in phase_record
-        suite = next(line for line in phase_record.splitlines() if line.startswith("| Local suite |"))
-        assert 'The latest run is in "Ninth review round"' in suite
+        ninth_row = next(line for line in phase_record.split("## History", 1)[1].splitlines() if line.startswith("| 9, J1-J8 "))
+        assert "`94aa3e6`" in ninth_row and "44676365093" in ninth_row
     if (register := _bep("00_meta/PROVISIONAL_DEFAULTS_REGISTER.md")) is not None:
         pd_11 = next(line for line in register.splitlines() if line.startswith("| PD-11 |"))
         assert "attempt_horizon_s" in pd_11 and "HORIZON_MARGIN_S" in pd_11

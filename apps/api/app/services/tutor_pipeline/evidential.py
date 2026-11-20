@@ -49,7 +49,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from app.services.content_assembler import CourseStore
 
 EXTRACTIVE_ID = "extractive-d19-v1"
-# Since spec 18.10 H1 "whole sentence": each envelope text holds only the span's whole document sentences.
+# "whole sentence": each envelope text holds only the span's whole document sentences (bind.whole_sentence_text).
 EXTRACTIVE_RULE = (
     "D-19 extractive mode: each claim is one verbatim whole sentence (sentences-v2) of an approved, public-plane "
     "document span in the envelope, whose text holds only the span's whole document sentences, that shares at least "

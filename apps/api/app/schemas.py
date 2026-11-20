@@ -393,7 +393,7 @@ class LedgerResponseRead(BaseModel):
     verdict: Literal["no-verdict"] = "no-verdict"
     recorded: bool
     # With recorded false: true for a turn an image that keeps no ledger created (before Phase 3, or during a rollback
-    # window), false for a turn a Phase 3 image created (spec 18.7 E6, 18.8 F10 and F12). unrecorded_reason says which:
+    # window), false for a turn a Phase 3 image created (TutorTurn.ledger_record_expected). unrecorded_reason says which:
     # earlier_image (legacy_turn true), ledger_disabled (made while TUTOR_LEDGER_ENABLED was off) or missing (it
     # expected a record and has none: a lost record, a plan L stop). Null when recorded.
     legacy_turn: bool

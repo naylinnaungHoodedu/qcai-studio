@@ -299,7 +299,10 @@ def test_e3_the_replay_readme_and_the_spec_say_where_the_ratio_is_reported():
 
 
 def test_e4_f2_is_recorded_with_the_method_it_was_taken_by():
-    assert "**E4. F-2" in SPEC and "static check of logged prompts" in SPEC
+    di_49 = next(line for line in SPEC.split("## 16.", 1)[1].split("## 17.", 1)[0].splitlines() if line.startswith("| DI-49 |"))
+    assert "F-2" in di_49 and "AC-3-1" in di_49 and "static check of logged prompts" in di_49
+    history = SPEC.split("### 18.4 Review history", 1)[1]
+    assert "<br>E4 F-2 recorded: `test_e4_*`" in history
     register = BEP_ROOT / "00_meta" / "DEFERRED_ITEMS_REGISTER.md"
     if register.exists():  # the evidence package sits beside the repository on the workstation; CI has the spec only
         rows = [line for line in register.read_text(encoding="utf-8").splitlines() if line.startswith("| DI-") and "F-2" in line]
@@ -538,9 +541,9 @@ def test_e9_the_migration_names_the_worker_and_an_absolute_target():
     assert "python -m app.workers.response_ledger --export" in MIGRATION
     assert f"downgrade {PHASE2_REVISION}" in MIGRATION
     conflict_22 = next(line for line in SPEC.splitlines() if line.startswith("**22. Plan G"))
-    resolution, history = conflict_22.split("(Corrected in 18.7", 1)  # the old wording stays, marked, as history
-    assert "scripts/verify_ledger.py --export" not in resolution and "app.workers.response_ledger --export" in resolution
-    assert "downgrade -1" not in resolution and "--restore" in resolution
+    # The resolution states the current rule only; the superseded `downgrade -1` wording is in no current text.
+    assert "scripts/verify_ledger.py --export" not in conflict_22 and "app.workers.response_ledger --export" in conflict_22
+    assert "downgrade -1" not in conflict_22 and "--restore" in conflict_22 and "Corrected in" not in conflict_22
     assert "is measured by `verify_ledger.py --coverage-since`" not in SPEC
     assert "alembic -x allow_ledger_drop=true downgrade -1" not in RUNBOOK
 
@@ -769,12 +772,15 @@ def test_e13_the_observability_tables_measure_coverage_and_name_every_stop_signa
 
 def test_e14_the_spec_says_what_the_code_and_the_page_do_now():
     conflict_29 = next(line for line in SPEC.splitlines() if "under a total deadline" in line)
-    resolution, history = conflict_29.split("(Corrected in 18.7 E14", 1)  # the old wording stays, marked, as history
-    assert "LEGACY_WAIT_GRACE_MS" not in resolution and "ledger_wait_grace_ms" in resolution and "(default 1500)" not in resolution
-    assert "LEGACY_WAIT_GRACE_MS" in history
+    assert "ledger_wait_grace_ms" in conflict_29 and "(default 1500)" not in conflict_29 and "Corrected in" not in conflict_29
+    # The superseded constant survives in no current text: only the review history may name it.
+    assert "LEGACY_WAIT_GRACE_MS" not in SPEC.split("### 18.4 Review history", 1)[0]
     section_12 = SPEC.split("## 12. Frontend", 1)[1].split("## 13. Tests", 1)[0]
     row = next(line for line in section_12.splitlines() if "MOD `src/lib/privacy-disclosures.ts`" in line)
-    assert "Superseded" in row and "18.6 D10" in row
+    for needed in ("can be matched to the learner's Q&A history while it is kept", "deleting the account deletes the tutor turns and the Q&A history",
+                   "older than one year", "Kept as an audit record; the retention period is an open owner decision."):
+        assert needed in row, needed
+    assert "tutor history removes the link" not in row and "Superseded" not in row
     assert "`abstain`: \"No answer: no approved course passage matched this question closely enough\"" in section_12
 
 

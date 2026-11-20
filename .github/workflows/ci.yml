@@ -97,8 +97,8 @@ jobs:
       - run: psql -h localhost -U postgres -d qcai_test -c "SELECT version();" -c "SHOW TimeZone;"
       - run: python -m pytest -q -rxX -m "not release_artifacts" apps/api/tests
 
-  # The required check "api-postgres" (P1-D-12): before the driver matrix it was the single PostgreSQL job, and a
-  # matrix renames its checks, so this job keeps the name and fails unless every driver leg succeeded.
+  # The required check "api-postgres" (P1-D-12): a matrix renames its checks, so this job carries the required name
+  # and fails unless every driver leg of api-postgres-driver succeeded.
   api-postgres:
     if: always()
     needs: [api-postgres-driver]

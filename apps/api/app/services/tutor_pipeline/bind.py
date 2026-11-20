@@ -15,9 +15,8 @@ A claim is never re-bound to a span it did not cite: Phase 1's overlap rebinding
 A whole sentence of a span (whole_sentences) is a sentences-v2 sentence of the span's section text that lies wholly
 inside the span: it starts and ends at sentences-v2 boundaries of the document, never at a span edge. No entailment
 checker exists before Phase 4, so this is what keeps a truncated sentence that drops a qualification or a negation
-from binding. Until spec 18.10 H1 (rule resolver-bundle-sentence-v1) the sentences were cut from the span's own text,
-whose first and last pieces can begin or end mid-sentence (spans are splitter chunks), so 42 of 263 locked claims in
-the replay were fragments of a document sentence, one with its "fail to" dropped.
+from binding. A span is a splitter chunk whose first and last pieces can begin or end mid-sentence, so a sentence is
+taken from the span's section text, never cut from the span's own text (rule resolver-bundle-sentence-v2).
 
 What is locked is the span's own sentence (whitespace() form), never the generator's text: NFKC is used only to
 compare (spec conflict 32; D-19 "verbatim"), so a generator that folds "x²" to "x2" binds, but the locked, ledgered

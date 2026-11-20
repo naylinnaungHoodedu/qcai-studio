@@ -167,9 +167,9 @@ class Settings(BaseSettings):
     evidence_panel_enabled: bool | None = None
     # Rate limit of the new Phase 3 ledger route: an engineering parameter with no plan value, provisional (PD-11; it
     # copies the existing spans_rate_limit), ratified with the rest of PD-11 (DI-37). POST /tutor/turns has no limit of
-    # its own since spec 18.10 H5: it shares POST /assistant/chat's window and assistant_chat_rate_limit (scope
-    # "tutor-turn"), so alternating the two routes never doubles a client's tutor-turn budget. TUTOR_TURNS_RATE_LIMIT
-    # (8/minute, the same value) is gone; an environment that still sets it is ignored (extra="ignore").
+    # its own: it shares POST /assistant/chat's window and assistant_chat_rate_limit (scope "tutor-turn"), so
+    # alternating the two routes never doubles a client's tutor-turn budget. Unknown environment keys are ignored
+    # (extra="ignore").
     ledger_rate_limit: str = "30/minute"
 
     @field_validator("allowed_origins", mode="before")

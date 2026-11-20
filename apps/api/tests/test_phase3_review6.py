@@ -210,10 +210,10 @@ def test_g2_the_code_comment_the_spec_listing_and_the_closure_notes_say_h6_block
     section = SPEC.split("### 5.1 File", 1)[1].split("### 5.2", 1)[0]
     evidential = section.split('"evidential": {', 1)[1].split("}", 1)[0]
     assert set(re.findall(r'"([a-z_]+)":', evidential)) == set(RAW["tutor_pipeline"]["evidential"])
-    # The spec 16.1 PD-09 copy keeps its spec-time wording, marked as corrected (the register holds the current text).
+    # The spec 16.1 PD-09 row states the current wording, as the register does.
     pd09 = next(line for line in SPEC.splitlines() if line.startswith("| PD-09 |"))
-    assert CORRECTION_MARK.search(pd09) and "hold H6 blocks the provider interim path" in pd09
+    assert "hold H6 blocks the provider interim path" in pd09 and not SUPERSEDED_D12.search(pd09)
     notes = BEP_ROOT / "phase03" / "CLOSURE_EVIDENCE_NOTES.md"
     if notes.exists():
-        r11 = notes.read_text(encoding="utf-8").split("## R-11", 1)[1].split("\n## ", 1)[0]
+        r11 = notes.read_text(encoding="utf-8").split("## R-11", 1)[1].split("\n### ", 1)[0]
         assert "hold H6 blocks the provider interim path" in r11 and "D-19 extractive generator instead" in r11

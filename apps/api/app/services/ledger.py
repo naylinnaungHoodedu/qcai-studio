@@ -426,7 +426,7 @@ def ledger_started_at(db: Session) -> datetime | None:
     """When the chain began (informational): the earlier of the head's started_at, which the first append writes,
     and the first record's created_at (a restored chain keeps its own times). None before either exists.
 
-    It does not say which turns should have a record, and start-up no longer writes it (spec 18.8 F10): a revision
+    It does not say which turns should have a record, and start-up does not write it: a revision
     deployed with no traffic starts while the earlier image still serves every learner, so a start time is not when
     the ledger began recording deliveries. Each turn says so itself instead: TutorTurn.ledger_record_expected is true
     when a Phase 3 image created it with TUTOR_LEDGER_ENABLED on, false under the kill switch, and null when an image

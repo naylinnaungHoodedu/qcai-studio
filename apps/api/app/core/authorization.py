@@ -43,8 +43,7 @@ PUBLIC_HANDLES = "public_handles"
 # Roles that read any tutor ledger record, shadow records included: the plan's "reviewer" and nothing wider (plan 7.3
 # "GET /ledger/responses/{response_id} (owner or reviewer)"). Each such read is a security event (plan 7.6 "reviewer
 # access is logged"). No reviewer is provisioned yet (DI-38). Outside development LEDGER_ROUTE_ENABLED is false, so
-# the route answers 404 to everyone, owners included (PD-12 as corrected in spec 18.6 D7; this comment said "only
-# owners read" until spec 18.8 F7).
+# the route answers 404 to everyone, owners included (PD-12).
 LEDGER_READER_ROLES = ("reviewer",)
 
 OWNERSHIP_SCOPES = {

@@ -248,11 +248,13 @@ def test_h1_a_store_without_the_section_text_binds_nothing():
 def test_h1_the_records_say_binding_refuses_span_edge_fragments():
     assert BINDING_RULE == RAW["tutor_pipeline"]["evidential"]["binding_rule"] == "resolver-bundle-sentence-v2"
     conflict_32 = SPEC.split("**32. D-19", 1)[1].split("**33.", 1)[0]
-    assert "resolver-bundle-sentence-v2" in conflict_32 and "partial_sentence" in conflict_32 and "Corrected in 18.10 H1" in conflict_32
+    assert "resolver-bundle-sentence-v2" in conflict_32 and "partial_sentence" in conflict_32
+    assert "resolver-bundle-sentence-v1" not in conflict_32  # the superseded rule is in the review history only
     bind_section = SPEC.split("### 4.6 Bind", 1)[1].split("### 4.7", 1)[0]
     assert "`partial_sentence`" in bind_section and "section text" in bind_section
-    assert "resolver-bundle-sentence-v2" in ADR and "partial_sentence" in ADR and "Corrected in spec 18.10 H1" in ADR
-    assert "span's edge" in ADR.split("**Residual risks.**", 1)[1] or "span's edge" in ADR
+    revision = ADR.split("## Revision 2026-11-19", 1)[1]
+    assert "resolver-bundle-sentence-v2" in revision and "partial_sentence" in revision and "resolver-bundle-sentence-v1" not in revision
+    assert "span's edge" in revision
     applied = RAW["owner_decisions"]["PLAN-3.3"]["deviations"][0]["applied"]
     assert "partial_sentence" in applied and "wholly inside the span" in applied
     bind_doc = ast.get_docstring(ast.parse((API_ROOT / "app" / "services" / "tutor_pipeline" / "bind.py").read_text(encoding="utf-8")))
@@ -379,8 +381,11 @@ def test_h4_the_ac_3_2_record_test_supplies_its_commit_and_refuses_processes():
     assert "test_ac_3_2_the_record_check_and_a_replay_with_its_own_commit_run_no_process" in functions
     review6 = (API_ROOT / "tests" / "test_phase3_review6.py").read_text(encoding="utf-8")
     assert "Corrected in 18.10 H4" in review6
-    g1 = SPEC.split("### 18.9 Sixth review round", 1)[1].split("### 18.10", 1)[0]
-    assert "Corrected in 18.10 H4" in g1
+    # The spec's review history records G1 with its tests and H4 with the run-time test.
+    history = SPEC.split("### 18.4 Review history", 1)[1]
+    seventh = next(line for line in history.splitlines() if line.startswith("| 7, H1-H9 "))
+    assert "`test_h4_*`, `test_ac_3_2_the_record_check_and_a_replay_with_its_own_commit_run_no_process`" in seventh
+    assert "| 6, G1-G2 " in history
 
 
 # ============================================================================================================ H5
@@ -416,28 +421,29 @@ def test_h6_the_ledger_records_say_what_the_code_does():
     assert "start-up while TUTOR_LEDGER_ENABLED" not in head_comment and "ledger_record_expected" in head_comment
     append = SPEC.split("**Append**", 1)[1].split("**`record_legacy_delivery`**", 1)[0]
     step_3 = next(line for line in append.splitlines() if line.startswith("3. "))
-    assert "Start-up writes no head" in step_3 and step_3.count("mark_ledger_started") == 1 and "Corrected in 18.10 H6" in step_3
+    assert "Start-up writes no head" in step_3 and "mark_ledger_started" not in step_3
     step_7 = next(line for line in append.splitlines() if line.startswith("7. "))
-    assert "40P01" in step_7 and "40001" in step_7 and "Corrected in 18.10 H6" in step_7
+    assert "40P01" in step_7 and "40001" in step_7 and "other than `IntegrityError` raises at once" not in step_7
     conflict_29 = SPEC.split("**29. E1", 1)[1].split("**30.", 1)[0]
-    assert "40P01" in conflict_29 and "Corrected in 18.10 H6" in conflict_29
+    assert "40P01" in conflict_29 and "only `IntegrityError` is retried" not in conflict_29
     orm = SPEC.split("### 8.1 ORM", 1)[1].split("### 8.2", 1)[0]
-    started = next(line for line in orm.splitlines() if line.startswith("`started_at` (18.7 E6)"))
-    assert "informational" in started and "ledger_record_expected" in started and "Corrected in 18.10 H6" in started
+    started = next(line for line in orm.splitlines() if line.startswith("`started_at` is informational"))
+    assert "ledger_record_expected" in started and "start-up marker" not in started
     triggers = SPEC.split("### 8.2 Triggers", 1)[1].split("**PostgreSQL**", 1)[0]
-    assert "re-created only when" in triggers and "Corrected in 18.10 H6" in triggers
+    assert "re-created only when" in triggers and "re-created on every start\"" not in triggers
+    assert "mark_ledger_started" not in SPEC.split("### 18.4 Review history", 1)[0]
     for path in (API_ROOT / "app" / "core" / "schema_upgrades.py", API_ROOT / "alembic" / "versions" / "20261119_phase3_response_ledger.py",
                  API_ROOT / "alembic" / "versions" / "20261119_phase2_corpus_spans.py"):
         text = path.read_text(encoding="utf-8")
         assert "Re-created on every start" not in text
-        assert all("18.10 H6" in line or "until Phase 3" in line for line in text.splitlines() if "re-created on every" in line.lower()), path
+        assert not any("re-created on every" in line.lower() for line in text.splitlines()), path
 
 
 def test_h7_the_verify_script_section_names_the_split_coverage_counts():
     section = SPEC.split("### 7.16 NEW `scripts/verify_ledger.py`", 1)[1].split("### 7.17", 1)[0]
-    for key in ("turns_since", "unrecorded", "not_expected_earlier_image", "ledger_disabled", "qa_records_since"):
+    for key in ("turns_since", "unrecorded", "pending", "not_expected_earlier_image", "ledger_disabled", "qa_records_since"):
         assert f"`{key}`" in section, key
-    assert "Corrected in 18.10 H7" in section
+    assert '{"turns_since": n, "unrecorded": m}' not in section  # the superseded block is in the review history only
 
 
 # ============================================================================================================ H8
@@ -460,11 +466,12 @@ def test_h9_status_counts_the_review_rounds_the_phase_record_holds():
     if not record_path.exists():
         return
     record = record_path.read_text(encoding="utf-8")
-    rounds = 1 + len(re.findall(r"^## \w+ review round \(", record, flags=re.MULTILINE))  # "## Review fixes" was the first
-    assert re.search(r"^## Review fixes \(", record, flags=re.MULTILINE)
+    history = record.split("## History", 1)[1]
+    rounds = len(re.findall(r"^\| \d+, ", history, flags=re.MULTILINE))  # one row per review round
+    assert rounds >= 10
     status = (BEP_ROOT / "00_meta" / "STATUS.md").read_text(encoding="utf-8")
     row = next(line for line in status.splitlines() if line.startswith("| 3 |"))
-    words = {"five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+    words = {"five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
     stated = re.findall(r"\b(\w+) review rounds\b", row)
     assert stated, row
     assert all(words.get(word, -1) == rounds for word in stated), (stated, rounds)

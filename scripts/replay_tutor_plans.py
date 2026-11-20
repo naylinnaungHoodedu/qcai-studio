@@ -332,7 +332,7 @@ def _git(*args: str) -> subprocess.CompletedProcess:
 
 def _commit() -> str:
     """The HEAD the record was written on, with "-dirty" when the working tree differs from it (tracked changes or
-    untracked files). Informational since spec 18.8 F2: `inputs` names the code the record replayed."""
+    untracked files). Informational: `inputs` names the code the record replayed."""
     try:
         head = _git("rev-parse", "HEAD").stdout.strip()
         if not head:

@@ -161,12 +161,14 @@ def test_i1_over_the_in_domain_fixture_each_empty_envelope_reason_matches_its_ow
 
 def test_i1_the_records_name_both_reasons():
     listing = re.search(r"^ABSTENTION_REASONS = (\(.*?\))", SPEC, flags=re.MULTILINE | re.DOTALL)
-    assert listing and ast.literal_eval(listing.group(1)) == contracts.ABSTENTION_REASONS
+    names = {"NO_QUOTABLE_EVIDENCE": contracts.NO_QUOTABLE_EVIDENCE, "NO_WHOLE_SENTENCE": contracts.NO_WHOLE_SENTENCE, "RENDER_FAILED": contracts.RENDER_FAILED}
+    assert listing and eval(listing.group(1), {}, names) == contracts.ABSTENTION_REASONS  # noqa: S307 - the spec's listing of the code
     revision = ADR_005.split("## Revision 2026-11-19 (Phase 3)", 1)[1]
     for reason in set(contracts.ABSTENTION_REASONS) - set(contracts.GATE_ABSTENTION_REASONS):
         assert f"`{reason}`" in revision, reason
     envelope = _section("**`build_envelope`**", "**`ExtractiveD19Generator.propose`**")
-    assert "`no_quotable_evidence`" in envelope and "`no_whole_sentence`" in envelope and "Corrected in 18.11 I1" in envelope
+    assert "`no_quotable_evidence`" in envelope and "`no_whole_sentence`" in envelope
+    assert "the pipeline gave that reason for both causes" not in envelope
     step_3 = next(line for line in _section("### 4.10 Pipeline", "### 4.11").splitlines() if line.startswith("3. "))
     assert "`no_quotable_evidence`" in step_3 and "`no_whole_sentence`" in step_3
     assert "`no_whole_sentence` (11 under `bm25f-v1`, 13 under `p1-floor`)" in README
@@ -178,15 +180,14 @@ def test_i1_the_records_name_both_reasons():
     for gate, count in (("bm25f-v1", 11), ("p1-floor", 13)):
         reasons = by_name[("all_public_approved", gate)]
         assert reasons.get("no_whole_sentence") == count and "no_quotable_evidence" not in reasons, (gate, reasons)
-    # The superseded counts survive only where a line marks them as corrected.
-    texts = {"spec": SPEC, "README": README}
+    # The superseded counts survive in no current text.
+    texts = {"spec": SPEC.split("### 18.4 Review history", 1)[0], "README": README}
     for name in ("phase03/PHASE_RECORD.md", "phase03/CLOSURE_EVIDENCE_NOTES.md"):
         if (text := _bep(name)) is not None:
-            texts[name] = text
+            texts[name] = text.split("## History", 1)[0]
     for name, text in texts.items():
         for line in text.splitlines():
-            if re.search(r"`no_quotable_evidence` \(?11\b|extra abstentions are `no_quotable_evidence`", line):
-                assert "18.11 I1" in line, (name, line[:160])
+            assert not re.search(r"`no_quotable_evidence` \(?11\b|extra abstentions are `no_quotable_evidence`", line), (name, line[:160])
 
 
 # ============================================================================================================ I2
@@ -253,8 +254,8 @@ def test_i2_the_fault_tests_run_on_the_several_claim_query_and_the_records_say_s
     for name in ("test_e1_a_rendering_that_lists_a_span_it_never_shows_never_answers", "test_e1_the_rule_id_names_the_new_behaviour_and_the_fault_modes_include_it"):
         body = review4.split(f"def {name}", 1)[1].split("\ndef ", 1)[0]
         assert "IN_DOMAIN)" not in body and 'seen == [("citation_list_mismatch",)] * 3' in body, name
-    moved = next(line for line in _section("### 18.10 Seventh review round", "### 18.11").splitlines() if "D4 and the two E1 tests" in line)
-    assert "Corrected in 18.11 I2" in moved
+    eighth = next(line for line in SPEC.split("### 18.4 Review history", 1)[1].splitlines() if line.startswith("| 8, I1-I8 "))
+    assert "I2 every fault mode is placed as itself on a several-claim answer: `test_i2_*`" in eighth
     item_9 = next(line for line in SPEC.splitlines() if line.startswith("9. `test_ac_3_3_a_renderer_that_adds"))
     assert "FAULT_SIGNATURES" in item_9 and "several-claim" in item_9
 
@@ -265,11 +266,13 @@ def test_i2_the_fault_tests_run_on_the_several_claim_query_and_the_records_say_s
 def test_i3_the_contract_listing_and_the_evidential_pass_say_what_the_code_does():
     listing = _section("### 3.1 Evidential channel", "### 3.2")
     envelope_span = listing.split("class EnvelopeSpan(Contract):", 1)[1].split("\nclass ", 1)[0]
-    assert "whole_sentence_text" in envelope_span and "Corrected in 18.11 I3" in envelope_span
-    assert "# the span's own text from the span registry" not in envelope_span
+    assert "whole_sentence_text" in envelope_span
+    assert "the span's own text from the span registry" not in envelope_span
     locked_claim = listing.split("class LockedClaim(Contract):", 1)[1].split("\nclass ", 1)[0]
-    assert "item offset" in locked_claim and "Corrected in 18.11 I3" in locked_claim
-    assert "# (item_id, char_start) of the first span id in sorted order" not in locked_claim
+    assert "source_order: tuple[str, int]" in locked_claim
+    assert "(item_id, char_start) of the first span id in sorted order" not in locked_claim
+    rule = _section("### 4.7 Lock", "### 4.8")
+    assert "item offset of the sentence's first character" in rule
     # 4.5's prompt-hash listing holds exactly the keys the code hashes.
     source = (API_ROOT / "app" / "services" / "tutor_pipeline" / "evidential.py").read_text(encoding="utf-8")
     function = next(node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.FunctionDef) and node.name == "evidential_prompt_hash")
@@ -279,10 +282,10 @@ def test_i3_the_contract_listing_and_the_evidential_pass_say_what_the_code_does(
     block = evidential.split("def evidential_prompt_hash(params) -> str:", 1)[1].split("```", 1)[0]
     assert set(re.findall(r'"(\w+)":', block)) == hashed, block
     propose = next(line for line in evidential.splitlines() if line.startswith("- For each envelope span"))
-    assert "`min_question_overlap_terms`" in propose and "Corrected in 18.11 I3" in propose
-    # 5.4 names the leaf comparison the structural check makes (18.7 E2).
+    assert "`min_question_overlap_terms`" in propose and "the intersection is non-empty" not in propose
+    # 5.4 names the leaf comparison the structural check makes.
     structural = next(line for line in _section("### 5.4 Pipeline/package", "### 5.5").splitlines() if line.startswith("With `structural=True`"))
-    assert "LEAF_KEYWORDS" in structural and "`$ref`" in structural and "Corrected in 18.11 I3" in structural
+    assert "LEAF_KEYWORDS" in structural and "`$ref`" in structural
     named = {"type", "enum", "const", "pattern", "format", "multipleOf", "uniqueItems", "default"}
     assert all(f"`{key}`" in structural for key in named)
     assert all(re.match(r"(min|max|exclusive)", key) for key in set(LEAF_KEYWORDS) - named) and "bounds" in structural
@@ -299,9 +302,9 @@ def test_i4_the_ledger_route_listing_and_its_no_record_rule_say_what_the_code_do
     assert literal and set(ast.literal_eval(f"({literal.group(1)},)")) == set(get_args(get_args(LedgerResponseRead.model_fields["unrecorded_reason"].annotation)[0]))
     assert "ledger_record_expected" in listing and "ledger_started_at" not in listing
     step_3 = next(line for line in _section("### 7.13 Routes", "### 7.14").splitlines() if line.startswith("3. **Everyone else:**"))
-    for needed in ("ledger_record_expected", "unrecorded_reason", "`earlier_image`", "`ledger_disabled`", "`missing`", "Corrected in 18.11 I4"):
+    for needed in ("ledger_record_expected", "unrecorded_reason", "`earlier_image`", "`ledger_disabled`", "`missing`", "`ledger_started_at` decides nothing"):
         assert needed in step_3, needed
-    stale = [line for line in SPEC.splitlines() if "created before `ledger.ledger_started_at" in line and "Corrected in 18.11 I4" not in line]
+    stale = [line for line in SPEC.split("### 18.4 Review history", 1)[0].splitlines() if "created before `ledger.ledger_started_at" in line]
     assert stale == [], stale
     route = (API_ROOT / "app" / "api" / "routes" / "ledger.py").read_text(encoding="utf-8")
     assert "turn.ledger_record_expected" in route and "ledger_started_at" not in route
@@ -323,24 +326,23 @@ def test_i5_the_registers_and_spec_sections_6_and_16_say_what_the_code_does():
     assert named == phase3_set and len(named) == 5, (named, phase3_set)
     for budget in ("TWO_PASS_SHADOW_BUDGET_MS", "TUTOR_LEDGER_APPEND_BUDGET_MS"):
         assert budget not in set_keys and f"`{budget}`" in bullet
-    assert "Corrected in 18.11 I5" in bullet
-    assert all("Corrected in 18.11 I5" in line for line in SPEC.splitlines() if "gains the eight settings" in line)
+    assert "TUTOR_TURNS_RATE_LIMIT" not in section_6 and not any("gains the eight settings" in line for line in SPEC.splitlines())
     section_16 = _section("## 16. Provisional defaults", "## 17.")
-    assert "**Revised in 18.10" in section_16 and "**Revised in 18.11" in section_16
+    from app.services.tutor_pipeline.bind import BINDING_RULE
+
     pd_08_copy = next(line for line in section_16.splitlines() if line.startswith("| PD-08 |"))
-    assert "corrected in 18.10 H1" in pd_08_copy and "`resolver-bundle-sentence-v2`" in pd_08_copy
+    assert f"`{BINDING_RULE}`" in pd_08_copy and "resolver-bundle-sentence-v1" not in pd_08_copy
+    assert "Revised in" not in section_16
     register = _bep("00_meta/PROVISIONAL_DEFAULTS_REGISTER.md")
     if register is None:
         return
-    from app.services.tutor_pipeline.bind import BINDING_RULE
-
     pd_08 = next(line for line in register.splitlines() if line.startswith("| PD-08 |"))
-    assert f"bound by `{BINDING_RULE}`" in pd_08 and "`partial_sentence`" in pd_08 and "18.11 I5" in pd_08
-    assert all("corrected in 18.10 H1" in pd_08 for _ in re.finditer(r"resolver-bundle-sentence-v1", pd_08))
+    assert f"bound by `{BINDING_RULE}`" in pd_08 and "`partial_sentence`" in pd_08 and "resolver-bundle-sentence-v1" not in pd_08
     pd_11 = next(line for line in register.splitlines() if line.startswith("| PD-11 |"))
     where = pd_11.rstrip(" |").rsplit(" | ", 2)[1]
-    assert "`LEDGER_RATE_LIMIT`" in where and "`ASSISTANT_CHAT_RATE_LIMIT`" in where
-    assert "two route rate limits are" not in where.replace('said "The two route rate limits are', "")
+    text = pd_11.rstrip(" |").rsplit(" | ", 2)[0]
+    assert "`LEDGER_RATE_LIMIT`" in text and "`ASSISTANT_CHAT_RATE_LIMIT`" in text and "TUTOR_TURNS_RATE_LIMIT" not in pd_11
+    assert "config.py" in where
 
 
 # ============================================================================================================ I6
@@ -356,10 +358,10 @@ def test_i6_spec_12_lists_every_production_frontend_change():
         assert (FRONTEND / path).exists(), path
         assert any(f"`{path}`" in row.split(" | ", 1)[0] for row in rows), path
     production = next(line for line in section_12.splitlines() if line.startswith("**Production.**"))
-    assert "`guest-session.ts`" in production and "Corrected in 18.11 I6" in production
-    assert all("Corrected in 18.11 I6" in line for line in SPEC.splitlines() if "the privacy row is the only production frontend change" in line)
-    changes = _section("### 18.5 Hardening, second review round", "**C1.").split("**Production changes.**", 1)[1]
-    assert "(C11;" in changes
+    assert "`guest-session.ts`" in production and "Two frontend changes ship to production" in production
+    assert not any("the privacy row is the only production frontend change" in line for line in SPEC.splitlines())
+    second = next(line for line in SPEC.split("### 18.4 Review history", 1)[1].splitlines() if line.startswith("| 2, C1-C12 "))
+    assert "C11 a span link never mints a guest session in the proxy" in second
 
 
 # ============================================================================================================ I7
@@ -374,25 +376,22 @@ def test_i7_the_phase_record_and_closure_notes_point_at_the_latest_run_and_the_c
     notes = _bep("phase03/CLOSURE_EVIDENCE_NOTES.md")
     if record is None or notes is None:
         return
-    rounds = re.findall(r"^## (\w+) review round \(", record, flags=re.MULTILINE)
-    suite = next(line for line in record.splitlines() if line.startswith("| Local suite |"))
-    named = re.search(r'The latest run is in "(\w+) review round"', suite)
-    # The latest round (the ninth since spec 18.12; each round moves the row and this name on).
-    assert named and named.group(1) == rounds[-1] == "Ninth", (suite, rounds)
-    assert "**SQLite:**" in _round_section(record, rounds[-1])
-    changed = _round_section(record, "Seventh").split("**Existing tests changed (intent kept):**", 1)[1].split("**Configuration package v2:**", 1)[0]
-    for needed in ("overlap-gate", "second learner", "source order", "D4", "E1", "test_phase3_review4.py"):
-        assert needed in changed, needed
-    r_13 = notes.split("## R-13", 1)[1].split("\n## ", 1)[0]
+    current = record.split("## History", 1)[0]
+    # The current-state section holds the latest run; the history table holds one row per round, the latest last.
+    latest = current.split("### Latest verification", 1)[1]
+    assert "SQLite" in latest and "PostgreSQL" in latest and "__SUITE__" not in latest
+    rows = [line for line in record.split("## History", 1)[1].splitlines() if re.match(r"\| \d+, ", line)]
+    assert rows[-1].startswith("| 10, ") and "__K" not in rows[-1]
+    r_13 = notes.split("### R-13", 1)[1].split("\n### ", 1)[0]
     tests = next(line for line in r_13.splitlines() if line.startswith("- **Tests:**"))
     for reason in contracts.BINDING_FAILURES:
         assert f"`{reason}`" in tests, reason
     pin = (API_ROOT / "app" / "config_package" / "v2.json.sha256").read_text(encoding="utf-8").strip()
-    pointer = re.search(r"the current pin is in the (\w+)-round section below", notes)
-    assert pointer, "the R-46 pointer is gone"
-    assert pin in _round_section(notes, pointer.group(1).capitalize())
-    for match in re.finditer(r"The package sha256 is `([0-9a-f]{64})`", notes):
-        assert match.group(1) == pin, match.group(0)
+    r_46 = notes.split("### R-46", 1)[1].split("\n### ", 1)[0]
+    assert "v2.json.sha256" in r_46
+    for text in (current, notes):
+        for match in re.finditer(r"sha256 `([0-9a-f]{8,64})", text):
+            assert pin.startswith(match.group(1).rstrip("…")), match.group(0)
 
 
 # ============================================================================================================ I8
@@ -408,13 +407,11 @@ def _test_functions() -> set[str]:
 def test_i8_the_test_strategy_maps_every_review_round_and_names_only_tests_that_exist():
     phase_3 = STRATEGY.split("## Phase 3 acceptance map", 1)[1].split("**Exit gate.**", 1)[0]
     functions = _test_functions()
-    rows = [line for line in phase_3.splitlines() if line.startswith("| ") and not line.startswith("| AC |") and not line.startswith("|---")]
+    rows = [line for line in phase_3.splitlines() if line.startswith("| ") and not line.startswith("| AC |") and not line.startswith("| File |") and not line.startswith("|---")]
     for row in rows:
         ac = re.match(r"\| AC-3-(\d)", row)
         prefix = f"test_ac_3_{ac.group(1)}" if ac else None
         for match in re.finditer(r"`(test_[a-z0-9_]+)`", row):
-            if row[match.end():match.end() + 12].startswith(", renamed in"):
-                continue  # a former name, followed by the name it has now
             assert match.group(1) in functions, match.group(1)
         for match in re.finditer(r"`\.\.\.(_[a-z0-9_]+)`", row):
             assert prefix and prefix + match.group(1) in functions, (prefix, match.group(1))
@@ -422,10 +419,9 @@ def test_i8_the_test_strategy_maps_every_review_round_and_names_only_tests_that_
             assert any(name.startswith(match.group(1)) for name in functions), match.group(1)
     for path in sorted((API_ROOT / "tests").glob("test_phase3_review*.py")):
         assert f"`{path.name}`" in phase_3, path.name
-    for module, labels in (("test_phase3_review7.py", ("Seventh review round (spec 18.10, H1-H9)",)),
-                           ("test_phase3_review8.py", ("Eighth review round (spec 18.11, I1-I8)",))):
-        row = next((line for line in rows if any(label in line for label in labels)), None)
-        assert row and f"`{module}`" in row, module
+    for module in ("test_phase3_review7.py", "test_phase3_review8.py"):
+        row = next((line for line in rows if line.startswith(f"| `{module}` |")), None)
+        assert row, module
         source = (API_ROOT / "tests" / module).read_text(encoding="utf-8")
         for name in re.findall(r"^def (test_\w+)\(", source, flags=re.MULTILINE):
             group = re.match(r"(test_[a-z]\d+)_", name).group(1)
@@ -433,4 +429,4 @@ def test_i8_the_test_strategy_maps_every_review_round_and_names_only_tests_that_
     ac_3_2 = next(line for line in rows if line.startswith("| AC-3-2"))
     assert "`..._the_record_check_and_a_replay_with_its_own_commit_run_no_process`" in ac_3_2
     ac_3_3 = next(line for line in rows if line.startswith("| AC-3-3"))
-    assert "`partial_sentence`" in ac_3_3 and "18.11 I2" in ac_3_3
+    assert "`partial_sentence`" in ac_3_3 and "several-claim answer" in ac_3_3

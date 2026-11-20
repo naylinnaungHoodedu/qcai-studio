@@ -137,8 +137,8 @@ def check_tutor_pipeline_package(package: ConfigPackage, *, structural: bool) ->
     from app.services.tutor_pipeline.retrieve import NEAR_MISS_RULE
     from app.services.tutor_pipeline.text import SENTENCE_RULE
 
-    # The rule ids and names the package records must be the code's (a rule changed under its old id is a silent
-    # change; spec 18.8 F4 added the ledger's chain, entry schema, record-hash rule and genesis, and the near-miss rule).
+    # The rule ids and names the package records must be the code's: a rule changed under its old id is a silent
+    # change.
     rules = {
         "evidential.sentence_rule": (SENTENCE_RULE, params.sentence_rule),
         "evidential.binding_rule": (BINDING_RULE, params.binding_rule),
@@ -149,7 +149,7 @@ def check_tutor_pipeline_package(package: ConfigPackage, *, structural: bool) ->
         "ledger.record_hash_rule": (RECORD_HASH_RULE, params.record_hash_rule),
         "ledger.genesis": (GENESIS_HASH, params.genesis),
     }
-    # The component ids, the pipeline version and the idempotency header (spec 18.10 H3): the prompt hashes are
+    # The component ids, the pipeline version and the idempotency header: the prompt hashes are
     # computed from the code's RESOLVER_ID and RENDERER_ID, so they cannot catch a package that names another
     # component, and /ready reports these package values while the ledger stamps the code's.
     from app.services.tutor_pipeline.pipeline import PIPELINE_VERSION
