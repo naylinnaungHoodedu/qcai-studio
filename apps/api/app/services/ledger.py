@@ -70,7 +70,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.config_package import ConfigPackage, TutorPipelineParams, canonical_sha256, get_config_package
-from app.core.db import SessionLocal
+from app.core.db import CONNECT_TIMEOUT_S, SessionLocal
 from app.core.structured_logging import FIELDS
 from app.db_models import ResponseLedgerHead, ResponseLedgerRecord, TutorTurn
 from app.services.contained_answers import ABSTENTION, EXTRACTIVE_MODE, MAX_QUOTED_SPANS, QUOTATION_LEAD
@@ -149,15 +149,15 @@ def ledger_budget_ms(settings: Settings, package: ConfigPackage) -> int:
     return ledger_params(package).ledger_append_budget_ms
 
 
-# The terms of the attempt horizon (attempt_horizon_s; spec 18.12 J6). The first two are library defaults the code
-# keeps: app.core.db sets no pool_timeout (SQLAlchemy's QueuePool waits up to 30 s for a free connection) and passes
-# no timeout to the Cloud SQL Python connector (up to 30 s for a new connection), and one checkout can take both (a
-# pooled connection that fails its pre-ping is replaced by a new one).
+# The terms of the attempt horizon (attempt_horizon_s). app.core.db sets no pool_timeout, so SQLAlchemy's QueuePool
+# waits up to its default 30 s for a free connection. A new Cloud SQL connection is bounded by app.core.db's
+# CONNECT_TIMEOUT_S (30 s), which its creator enforces. One checkout can take both: a pooled connection that fails
+# its pre-ping is replaced by a new one.
 POOL_CHECKOUT_TIMEOUT_S = 30
-CONNECT_TIMEOUT_S = 30
 # The statements of one append attempt after its PostgreSQL SET LOCALs, the commit included: the response_id read,
 # the head insert-if-missing, the head lock, the record insert, the head update and the commit (append_ledger_entry).
-# Each is bounded by the budget left when the attempt began.
+# The server ends each one when the budget left at the start of the attempt runs out (statement, lock and
+# idle-in-transaction timeouts).
 ATTEMPT_STATEMENTS = 6
 # Log ingestion, and the time between a turn's created_at and its attempted line (the turn's own commit).
 HORIZON_MARGIN_S = 60
@@ -166,13 +166,20 @@ HORIZON_MARGIN_S = 60
 def attempt_horizon_s(params: TutorPipelineParams, budget_ms: int) -> int:
     """The longest a legacy attempt takes from its tutor.ledger.attempted line to its terminal line, and a tutor turn
     from its created_at to its ledger record, while the process keeps its CPU (always-on CPU allocation). It is the
-    runbook's horizon for both checks (infra/cloudrun/deployment.md, Phase 3; spec 18.12 J5, J6).
+    runbook's horizon for both checks (infra/cloudrun/deployment.md, Phase 3).
 
     One append takes at most a connection wait (POOL_CHECKOUT_TIMEOUT_S + CONNECT_TIMEOUT_S) and ATTEMPT_STATEMENTS
     statements of at most the budget each, after earlier attempts that all ended within the budget (a retry starts
     only while budget remains): (ATTEMPT_STATEMENTS + 1) budgets in all. Appends run on ledger_append_workers threads
     with at most ledger_append_max_in_flight running or queued, so an append ends within ceil(max_in_flight /
     workers) such appends. Add HORIZON_MARGIN_S and round up to whole minutes: 360 s with the package's values.
+
+    Each term is enforced by the code or by a library default it keeps, on the Cloud SQL connector path that
+    production uses: the pool's checkout timeout, app.core.db's connect bound, and the server's statement, lock and
+    idle-in-transaction timeouts. One wait is not bounded by the code: a reply on a connection that is already open.
+    If the database or the network stops answering mid-statement (or mid pre-ping), the kernel's TCP timeouts end
+    the wait. An attempt that ends after the horizon on an always-on instance therefore means such a stall, and the
+    runbook treats it as a stop.
 
     With request-based CPU allocation nothing bounds it: an append still queued or running when the response has
     gone runs on only when the instance next has CPU (its next request, or its shutdown, when Python runs the queued
@@ -546,7 +553,8 @@ def ledger_coverage(db: Session, since: datetime, *, now: datetime | None = None
       not_expected_earlier_image  an image that keeps no ledger created it (before Phase 3, or a rollback window);
       ledger_disabled             it was created while TUTOR_LEDGER_ENABLED was off (the kill switch);
     and the /qa/ask records since then. settled_before is `now` (the check's start) less horizon_s, which defaults to
-    coverage_horizon_s() (attempt_horizon_s: every append of an always-on instance has ended by then); horizon_s=0
+    coverage_horizon_s() (attempt_horizon_s: on an always-on instance every append has ended by then, unless an open
+    database connection stopped answering); horizon_s=0
     counts every turn, for a check run once traffic has stopped. A qa- record holds no id of its Q&A row, so Q&A
     coverage is the per-process legacy_by_surface.qa.coverage_rate SLI and the tutor.ledger.* outcome lines, not a
     join."""
@@ -911,8 +919,9 @@ def record_ledger_failure(delivery: str, stage: str, exc: BaseException, *, surf
 class _LegacyAppender:
     """Runs legacy appends on a small pool of worker threads, so the learner's wait is bounded as a whole.
 
-    append_ledger_entry bounds lock waits and statements on PostgreSQL, but not the checkout of a pooled connection
-    (the pool's own timeout, 30 s by default) or a new Cloud SQL connection. The request therefore waits for the
+    append_ledger_entry bounds lock waits and statements on PostgreSQL, but not the wait for a connection: the pool's
+    checkout timeout (30 s by default) and a new Cloud SQL connection's bound (app.core.db.CONNECT_TIMEOUT_S, 30 s)
+    are far longer than a learner should wait. The request therefore waits for the
     append at most its budget plus the package's ledger_wait_grace_ms; an append still running then finishes in the
     background and is counted when it ends (appended, or failed). At most ledger_append_max_in_flight appends run or
     wait at once; past that an append is refused at once and counted as failed, so a stuck database never piles up

@@ -543,15 +543,14 @@ def test_j6_the_attempt_horizon_is_derived_from_the_code_s_own_terms():
     assert ledger.coverage_horizon_s(Settings(tutor_ledger_append_budget_ms=5000)) > 360  # follows the budget in force
     # A smaller worker pool, or more appends in flight, lengthens it.
     assert ledger.attempt_horizon_s(SimpleNamespace(ledger_append_max_in_flight=16, ledger_append_workers=1), 1500) > 360
-    # The two library timeouts are the defaults the code keeps.
+    # The pool's checkout timeout is the library default the code keeps; the connect bound is the one app.core.db
+    # enforces (round 10, K2: the connector's own timeout never bounded a new connection).
     db_source = (API_ROOT / "app" / "core" / "db.py").read_text(encoding="utf-8")
     assert "pool_timeout" not in db_source
     assert inspect.signature(QueuePool.__init__).parameters["timeout"].default == ledger.POOL_CHECKOUT_TIMEOUT_S
-    from google.cloud.sql.connector import Connector
+    from app.core.db import CONNECT_TIMEOUT_S, cloud_sql_creator
 
-    assert inspect.signature(Connector.__init__).parameters["timeout"].default == ledger.CONNECT_TIMEOUT_S
-    connect_call = db_source.split("cloud_sql_connector.connect(", 1)[1].split(")", 1)[0]
-    assert "timeout" not in connect_call
+    assert ledger.CONNECT_TIMEOUT_S == CONNECT_TIMEOUT_S == inspect.signature(cloud_sql_creator).parameters["timeout_s"].default == 30
 
 
 def test_j6_an_append_attempt_runs_the_statements_the_horizon_counts(fresh_database_url):

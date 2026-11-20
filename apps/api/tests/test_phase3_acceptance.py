@@ -332,9 +332,9 @@ THREE_LEARNER_QUESTIONS = ["Why does routing depth matter?", "QUBO logistics", "
 def learner_independent(entry: dict) -> dict:
     """A shadow record without the fields that name its response, turn or messages: everything plan 7.8 invariant 1
     holds equal across learners (spec 18.12 J2)."""
-    kept = {key: value for key, value in entry.items() if key not in ("response_id", "shadowed_response_id", "resolved_question")}
+    kept = {key: value for key, value in entry.items() if key not in ("response_id", "shadowed_response_id")}
     kept["claims"] = [{key: value for key, value in claim.items() if key != "response_id"} for claim in entry["claims"]]
-    kept["resolver"] = entry["resolved_question"]["resolver"]
+    kept["resolved_question"] = {key: value for key, value in entry["resolved_question"].items() if key != "source_turn_ids"}
     return kept
 
 
