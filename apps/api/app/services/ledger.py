@@ -70,7 +70,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.config_package import ConfigPackage, TutorPipelineParams, canonical_sha256, get_config_package
-from app.core.db import CONNECT_TIMEOUT_S, SessionLocal
+from app.core.db import CONNECT_TIMEOUT_S, DEAD_PEER_BOUND_S, SessionLocal
 from app.core.structured_logging import FIELDS
 from app.db_models import ResponseLedgerHead, ResponseLedgerRecord, TutorTurn
 from app.services.contained_answers import ABSTENTION, EXTRACTIVE_MODE, MAX_QUOTED_SPANS, QUOTATION_LEAD
@@ -107,6 +107,10 @@ RECORD_HASH_RULE = "sha256(canonical{chain,seq,created_at,prev_hash,entry_sha256
 RETRYABLE_SQLSTATES = frozenset({"40P01", "40001"})
 # The Alembic revision this code expects (tested against the single head); stamped on every record (plan 13.5).
 SCHEMA_REVISION = "20261119_phase3_response_ledger"
+# The legacy contained path's ids and rule hash, stamped on every legacy record (the only records production writes).
+# Configuration package v2 pins all four (tutor_pipeline.legacy) and package_check requires them to agree, so the
+# provenance audit (ledger_provenance) has a pinned reference value (DI-49).
+LEGACY_PIPELINE_VERSION = "legacy-contained-v1"
 LEGACY_GENERATOR_ID = "contained-answers-v1"
 LEGACY_CONTAINMENT_RULE_HASH = canonical_sha256(
     {
@@ -161,6 +165,9 @@ POOL_CHECKOUT_TIMEOUT_S = 30
 ATTEMPT_STATEMENTS = 6
 # Log ingestion, and the time between a turn's created_at and its attempted line (the turn's own commit).
 HORIZON_MARGIN_S = 60
+# The reads on an open connection whose peer is gone that one append can meet (dead_peer_horizon_s): a pooled
+# connection's pre-ping and one statement.
+DEAD_PEER_READS = 2
 
 
 def attempt_horizon_s(params: TutorPipelineParams, budget_ms: int) -> int:
@@ -176,17 +183,38 @@ def attempt_horizon_s(params: TutorPipelineParams, budget_ms: int) -> int:
 
     Each term is enforced by the code or by a library default it keeps, on the Cloud SQL connector path that
     production uses: the pool's checkout timeout, app.core.db's connect bound, and the server's statement, lock and
-    idle-in-transaction timeouts. One wait is not bounded by the code: a reply on a connection that is already open.
-    If the database or the network stops answering mid-statement (or mid pre-ping), the kernel's TCP timeouts end
-    the wait. An attempt that ends after the horizon on an always-on instance therefore means such a stall, and the
-    runbook treats it as a stop.
+    idle-in-transaction timeouts. One wait is not in the horizon: a reply on a connection that is already open, which
+    the server's timeouts bound only while the server answers (and the pre-ping and the first SET LOCAL run before
+    any statement_timeout applies). When the database host or the network to it is gone, the TCP keepalive
+    app.core.db sets on each Cloud SQL connection ends the read within DEAD_PEER_BOUND_S of the connection's last
+    traffic (dead_peer_horizon_s). When the server keeps the connection up and never replies, nothing in the code
+    ends the read: it lasts until the server replies or the process exits, and it holds one of the appender's
+    workers meanwhile. An attempt that ends after the horizon on an always-on instance therefore means such a stall,
+    and the runbook treats it as a stop; one still without a terminal line after dead_peer_horizon_s is held by a
+    server that never replies, and the runbook replaces the instance.
 
     With request-based CPU allocation nothing bounds it: an append still queued or running when the response has
     gone runs on only when the instance next has CPU (its next request, or its shutdown, when Python runs the queued
     appends before the process exits). The runbook therefore reads a missing terminal line there as a case to
     investigate, and decides by a coverage check run once that instance has stopped.
     """
-    per_append_s = POOL_CHECKOUT_TIMEOUT_S + CONNECT_TIMEOUT_S + (ATTEMPT_STATEMENTS + 1) * max(1, int(budget_ms)) / 1000
+    return _horizon_s(params, budget_ms, stall_s=0)
+
+
+def dead_peer_horizon_s(params: TutorPipelineParams, budget_ms: int) -> int:
+    """attempt_horizon_s plus DEAD_PEER_READS dead-peer reads in each append: the longest a legacy attempt takes,
+    while the process keeps its CPU, when the database host or the network to it is gone. Such a read ends within
+    app.core.db.DEAD_PEER_BOUND_S of its connection's last traffic (TCP keepalive on each Cloud SQL connection). An
+    append meets at most two: the pre-ping of a pooled connection, after which the pool replaces the connection
+    (the connect term), and one statement, after which the append fails (a network error is never retried, and a
+    retry starts only while budget remains): 840 s with the package's values. An attempt still without a terminal
+    line after it is held by a server that keeps its connection up and never replies, which nothing in the code
+    ends (infra/cloudrun/deployment.md, Phase 3: replace the instance)."""
+    return _horizon_s(params, budget_ms, stall_s=DEAD_PEER_READS * DEAD_PEER_BOUND_S)
+
+
+def _horizon_s(params: TutorPipelineParams, budget_ms: int, *, stall_s: int) -> int:
+    per_append_s = POOL_CHECKOUT_TIMEOUT_S + CONNECT_TIMEOUT_S + (ATTEMPT_STATEMENTS + 1) * max(1, int(budget_ms)) / 1000 + stall_s
     rounds = math.ceil(params.ledger_append_max_in_flight / max(1, params.ledger_append_workers))
     return 60 * math.ceil((rounds * per_append_s + HORIZON_MARGIN_S) / 60)
 
@@ -587,6 +615,85 @@ def ledger_coverage(db: Session, since: datetime, *, now: datetime | None = None
     }
 
 
+def _provenance_problems(seq: int, entry: dict[str, Any], params: TutorPipelineParams) -> list[str]:
+    """What in one record's provenance differs from the package's pins (ledger_provenance)."""
+    provenance = entry.get("provenance") if isinstance(entry.get("provenance"), dict) else {}
+    versions = entry.get("versions") if isinstance(entry.get("versions"), dict) else {}
+    pipeline = entry.get("pipeline")
+    problems = []
+    if pipeline == params.legacy_pipeline_version:
+        expected = {
+            "provenance.evidential_prompt_hash": (provenance.get("evidential_prompt_hash"), params.legacy_containment_rule_hash),
+            "provenance.generator_model_id": (provenance.get("generator_model_id"), params.legacy_generator_model_id),
+            "provenance.pedagogical_prompt_hash": (provenance.get("pedagogical_prompt_hash"), None),
+            "versions.pipeline_version": (versions.get("pipeline_version"), params.legacy_pipeline_version),
+            "versions.generator_id": (versions.get("generator_id"), params.legacy_generator_id),
+        }
+    elif pipeline == params.version:
+        resolved = entry.get("resolved_question") if isinstance(entry.get("resolved_question"), dict) else {}
+        resolver = resolved.get("resolver") if isinstance(resolved.get("resolver"), dict) else {}
+        expected = {
+            "provenance.evidential_prompt_hash": (provenance.get("evidential_prompt_hash"), params.evidential_prompt_hash),
+            "provenance.pedagogical_prompt_hash": (provenance.get("pedagogical_prompt_hash"), params.pedagogical_prompt_hash),
+            "versions.pipeline_version": (versions.get("pipeline_version"), params.version),
+            "resolved_question.resolver.prompt_hash": (resolver.get("prompt_hash"), params.resolver_prompt_hash),
+        }
+        if versions.get("generator_id") not in params.generators_allowed:
+            problems.append(f"seq {seq} versions.generator_id is not a generator the package allows")
+    else:
+        return [f"seq {seq} names a pipeline the package does not pin"]
+    for name, (recorded, pinned) in expected.items():
+        if recorded != pinned:
+            problems.append(f"seq {seq} {name} is not the package pin")
+    claims = entry.get("claims") if isinstance(entry.get("claims"), list) else []
+    if any(not isinstance(claim, dict) or claim.get("provenance") != provenance for claim in claims):
+        problems.append(f"seq {seq} has a claim whose provenance differs from its record's")
+    return problems
+
+
+def ledger_provenance(db: Session, package: ConfigPackage) -> dict[str, Any]:
+    """F-2's audit until a provider prompt exists (plan 15.1 "Zero learner-state fields in evidential-pass prompts";
+    DI-49): no evidential prompt is logged or ledgered, so instead every record must name the pinned, learner-free
+    evidential input of its pipeline. A record stamped with the package in force (versions.config_package_sha256) is
+    compared with that package's pins:
+      legacy (tutor_pipeline.legacy)  provenance.evidential_prompt_hash is the containment rule hash, and the
+                                      generator model id, pipeline version and generator id are the legacy ids (no
+                                      pedagogical prompt);
+      two-pass (tutor_pipeline)       the evidential, pedagogical and resolver prompt hashes are the package's, the
+                                      pipeline version is its version, and the generator is one it allows;
+    and every claim carries its record's provenance. A record stamped with another package is counted
+    (other_package) and not compared: its pins are that package's. Counts and seq numbers only, never record text.
+    Read-only; run by the worker's and the script's --check-provenance."""
+    params = ledger_params(package)
+    problems: list[str] = []
+    records = checked = other_package = 0
+    rows = db.execute(select(ResponseLedgerRecord.seq, ResponseLedgerRecord.entry).order_by(ResponseLedgerRecord.seq).execution_options(yield_per=500))
+    for seq, raw in rows:
+        records += 1
+        try:
+            entry = json.loads(raw)
+        except (TypeError, ValueError):
+            entry = None
+        if not isinstance(entry, dict):
+            problems.append(f"seq {seq} entry is not a JSON object")
+            continue
+        versions = entry.get("versions") if isinstance(entry.get("versions"), dict) else {}
+        if versions.get("config_package_sha256") != package.sha256:
+            other_package += 1
+            continue
+        checked += 1
+        problems.extend(_provenance_problems(seq, entry, params))
+    return {
+        "package_version": package.package_version,
+        "package_sha256": package.sha256,
+        "records": records,
+        "checked": checked,
+        "other_package": other_package,
+        "problem_count": len(problems),
+        "problems": problems[:_MAX_REPORTED_PROBLEMS],
+    }
+
+
 def export_ledger(db: Session, path: Path) -> int:
     """Every record as one JSON object per line (the step before an Alembic downgrade); returns the row count.
 
@@ -856,7 +963,7 @@ def build_legacy_entry(delivery: LegacyDelivery, *, settings: Settings, package:
         response_id=delivery.response_id,
         delivery="legacy",
         shadowed_response_id=None,
-        pipeline="legacy-contained-v1",
+        pipeline=LEGACY_PIPELINE_VERSION,
         decision="abstain" if abstained else "answer",
         abstention_reason=delivery.reason if abstained else None,
         resolved_question=None,
@@ -879,7 +986,7 @@ def build_legacy_entry(delivery: LegacyDelivery, *, settings: Settings, package:
         rendered_text_sha256=delivery.answer_sha256,
         provenance=provenance,
         versions=VersionStamps(
-            pipeline_version="legacy-contained-v1",
+            pipeline_version=LEGACY_PIPELINE_VERSION,
             code_sha=settings.git_sha,
             schema_revision_expected=SCHEMA_REVISION,
             config_package_version=package.package_version,

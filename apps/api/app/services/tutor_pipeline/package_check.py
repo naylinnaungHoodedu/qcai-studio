@@ -163,6 +163,24 @@ def check_tutor_pipeline_package(package: ConfigPackage, *, structural: bool) ->
         "pedagogical.renderer": (RENDERER_ID, params.renderer_id),
         "idempotency.header": (IDEMPOTENCY_HEADER, params.idempotency_header),
     })
+    # The legacy contained path's ids and rule hash, which every legacy ledger record stamps: the provenance audit's
+    # reference values (ledger.ledger_provenance; DI-49).
+    from app.services.contained_answers import EXTRACTIVE_MODE
+    from app.services.ledger import LEGACY_CONTAINMENT_RULE_HASH, LEGACY_GENERATOR_ID, LEGACY_PIPELINE_VERSION
+
+    rules.update({
+        "legacy.pipeline_version": (LEGACY_PIPELINE_VERSION, params.legacy_pipeline_version),
+        "legacy.generator_id": (LEGACY_GENERATOR_ID, params.legacy_generator_id),
+        "legacy.generator_model_id": (EXTRACTIVE_MODE, params.legacy_generator_model_id),
+        "legacy.containment_rule_hash": (LEGACY_CONTAINMENT_RULE_HASH, params.legacy_containment_rule_hash),
+    })
+    # Both pipeline versions are ones the LedgerEntry contract accepts.
+    from typing import get_args
+
+    accepted = set(get_args(LedgerEntry.model_fields["pipeline"].annotation))
+    for name, value in (("version", params.version), ("legacy.pipeline_version", params.legacy_pipeline_version)):
+        if value not in accepted:
+            problems.append(f"tutor_pipeline.{name} in the package ({value}) is not a pipeline the LedgerEntry contract accepts")
     for name, (code_value, pinned) in rules.items():
         if code_value != pinned:
             problems.append(f"tutor_pipeline.{name} in the package ({pinned}) differs from the code's ({code_value})")

@@ -6,7 +6,8 @@ value: the span-identity scheme, the BM25 parameters and stopword list, the prov
 margin, the near-duplicate thresholds, the D-30 legacy-citation rule, the provisional owner decisions (D-17, D-30,
 Q-10) and the boundary policy. Version 2 (Phase 3) copies every v1 block and adds the two-channel tutor: the
 sha256 pins of the eight contract schemas (app/config_package/schemas/), the resolver, generator and renderer ids
-and prompt hashes, the regeneration limit, the presentation plans, the bound-claim stop baseline and the
+and prompt hashes, the regeneration limit, the presentation plans, the bound-claim stop baseline, the ids and rule
+hash of the legacy contained path that every legacy ledger record stamps (tutor_pipeline.legacy) and the
 two_pass_tutor flag policy (phase4_exit_passed). Next to each file, <name>.json.sha256 holds the sha256 of its
 canonical JSON, so a CRLF checkout hashes the same. v1.json stays readable for one release (DI-42).
 
@@ -173,6 +174,13 @@ class TutorPipelineParams:
     # An in-progress claim (no response yet) older than this is abandoned: its request died without releasing it
     # (spec 18.7 E7). Well above a request's worst case: twice Cloud Run's default 300 s request timeout.
     idempotency_lease_seconds: int
+    # tutor_pipeline.legacy: the ids and rule hash of the legacy contained path (D-19 containment, task 1.11) that
+    # every legacy ledger record stamps; package_check compares them with app.services.ledger, and the provenance
+    # audit (ledger.ledger_provenance) compares records with them (DI-49).
+    legacy_pipeline_version: str
+    legacy_generator_id: str
+    legacy_generator_model_id: str
+    legacy_containment_rule_hash: str
 
     @property
     def schemas_sha256(self) -> str:
@@ -321,6 +329,7 @@ def _parse_tutor_pipeline(raw: Mapping[str, Any]) -> TutorPipelineParams:
     evidential = _mapping(tutor, "evidential")
     pedagogical = _mapping(tutor, "pedagogical")
     ledger = _mapping(tutor, "ledger")
+    legacy = _mapping(tutor, "legacy")
     stop = _mapping(tutor, "stop")
     budgets = _mapping(tutor, "budgets")
     _require(budgets.get("provisional") is True, "tutor_pipeline.budgets must be marked provisional: true (PD-11)")
@@ -419,6 +428,10 @@ def _parse_tutor_pipeline(raw: Mapping[str, Any]) -> TutorPipelineParams:
         idempotency_key_pattern=key_pattern,
         idempotency_ttl_hours=ttl_hours,
         idempotency_lease_seconds=lease_seconds,
+        legacy_pipeline_version=_text(legacy, "pipeline_version"),
+        legacy_generator_id=_text(legacy, "generator_id"),
+        legacy_generator_model_id=_text(legacy, "generator_model_id"),
+        legacy_containment_rule_hash=_hex64(legacy, "containment_rule_hash"),
     )
 
 

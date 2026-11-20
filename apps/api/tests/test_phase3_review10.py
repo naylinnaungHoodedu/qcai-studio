@@ -387,6 +387,15 @@ def _bep(relative: str) -> str | None:
     return path.read_text(encoding="utf-8") if path.exists() else None
 
 
+def _last_round() -> int:
+    """The latest review round: round n's tests are in test_phase3_review{n}.py from round 3 on (round 2's in
+    test_phase3_hardening.py, round 1's in the acceptance and unit files), and each round is one history row."""
+    rounds = [int(match.group(1)) for path in (API_ROOT / "tests").glob("test_phase3_review*.py")
+              if (match := re.fullmatch(r"test_phase3_review(\d+)\.py", path.name))]
+    assert rounds and min(rounds) == 3 and sorted(rounds) == list(range(3, max(rounds) + 1)), rounds
+    return max(rounds)
+
+
 def _test_functions() -> set[str]:
     names = set()
     for path in (API_ROOT / "tests").glob("test_*.py"):
@@ -445,9 +454,9 @@ def test_k3_the_spec_records_each_round_once_in_the_review_history_table():
     intro = history.split("| Round", 1)[0]
     assert "may describe behaviour that a later round superseded" in intro and "sections 0-17 are authoritative" in intro
     rows = [line for line in history.splitlines() if re.match(r"\| \d+, ", line)]
-    assert [int(re.match(r"\| (\d+),", row).group(1)) for row in rows] == list(range(1, 11))
+    assert [int(re.match(r"\| (\d+),", row).group(1)) for row in rows] == list(range(1, _last_round() + 1))
     functions = _test_functions()
-    files = {f"test_phase3_review{n}.py": n - 1 for n in range(3, 11)} | {"test_phase3_hardening.py": 1}
+    files = {f"test_phase3_review{n}.py": n - 1 for n in range(3, _last_round() + 1)} | {"test_phase3_hardening.py": 1}
     for row in rows:
         commit = row.split(" | ")[1]
         assert re.search(r"`[0-9a-f]{7,40}`", commit), row[:40]
@@ -533,7 +542,7 @@ def test_k3_the_evidence_package_states_the_current_phase_3_state():
     for needed in ("44676365093", "DI-31", "exit gate is NOT passed", "test_ac_3_1_", "test_ac_3_6_"):
         assert needed in current, needed
     history = record.split("## History", 1)[1]
-    assert len([line for line in history.splitlines() if re.match(r"\| \d+, ", line)]) == 10
+    assert len([line for line in history.splitlines() if re.match(r"\| \d+, ", line)]) == _last_round()
     notes = _bep("phase03/CLOSURE_EVIDENCE_NOTES.md")
     assert notes.index("## Current state") < notes.index("## History")
     assert NARRATIVE.findall(notes.split("## History", 1)[0]) == []

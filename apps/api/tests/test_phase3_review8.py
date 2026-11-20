@@ -381,7 +381,8 @@ def test_i7_the_phase_record_and_closure_notes_point_at_the_latest_run_and_the_c
     latest = current.split("### Latest verification", 1)[1]
     assert "SQLite" in latest and "PostgreSQL" in latest and "__SUITE__" not in latest
     rows = [line for line in record.split("## History", 1)[1].splitlines() if re.match(r"\| \d+, ", line)]
-    assert rows[-1].startswith("| 10, ") and "__K" not in rows[-1]
+    # The latest round is the last row, and it holds no placeholder (rows are numbered 1..n, one per round).
+    assert rows[-1].startswith(f"| {len(rows)}, ") and "__" not in rows[-1] and "PENDING" not in rows[-1]
     r_13 = notes.split("### R-13", 1)[1].split("\n### ", 1)[0]
     tests = next(line for line in r_13.splitlines() if line.startswith("- **Tests:**"))
     for reason in contracts.BINDING_FAILURES:

@@ -24,9 +24,13 @@ CLOUD_SQL_CONNECTION_NAME is set), so the runbook's production checks need no wo
                             --expect-head set to the export's last head, the restored chain must reach it
                             (spec 18.7 E12). A ledger that already holds records, or a line that does not extend
                             the chain, is refused and nothing is written.
-Exit codes: 0 ok, 1 broken, failed or a refused restore, 2 a usage error.
+  --check-provenance        also compares every record stamped with the configuration package in force with that
+                            package's pins (ledger.ledger_provenance; F-2's audit until a provider prompt exists,
+                            DI-49): the evidential prompt hash and ids of its pipeline. A difference logs a
+                            `provenance` block with its problems and status provenance_mismatch.
+Exit codes: 0 ok, 1 broken, a provenance mismatch, failed or a refused restore, 2 a usage error.
 Run as: python -m app.workers.response_ledger [--expect-head SEQ:HASH] [--coverage-since ISO8601]
-        [--coverage-horizon-s N] [--export PATH] [--restore PATH]
+        [--coverage-horizon-s N] [--export PATH] [--restore PATH] [--check-provenance]
 """
 
 import argparse
@@ -35,9 +39,19 @@ from pathlib import Path
 import sys
 import time
 
+from app.core.config import get_settings
+from app.core.config_package import get_config_package
 from app.core.db import SessionLocal
 from app.core.structured_logging import FIELDS
-from app.services.ledger import LedgerRestoreRefused, export_ledger, ledger_coverage, parse_head, restore_ledger, verify_response_ledger
+from app.services.ledger import (
+    LedgerRestoreRefused,
+    export_ledger,
+    ledger_coverage,
+    ledger_provenance,
+    parse_head,
+    restore_ledger,
+    verify_response_ledger,
+)
 from app.workers.common import LOGGER
 
 # The application tree: the repository in a checkout, /app in the image. An export never lands inside it.
@@ -72,6 +86,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="count a turn as unrecorded only once it is this many seconds old (default: the attempt horizon)")
     parser.add_argument("--export", type=Path, default=None, help="also write every record as JSON lines to this path (outside the application tree)")
     parser.add_argument("--restore", type=Path, default=None, help="first re-insert an --export file into an empty ledger")
+    parser.add_argument("--check-provenance", action="store_true",
+                        help="also compare each record's provenance with the configuration package's pins (DI-49)")
     args = parser.parse_args(argv)
     started = time.monotonic()
     try:
@@ -109,12 +125,15 @@ def main(argv: list[str] | None = None) -> int:
                 extra["coverage"] = ledger_coverage(db, since, horizon_s=args.coverage_horizon_s)
             if args.export is not None:
                 extra["exported"] = {"rows": export_ledger(db, args.export)}
+            if args.check_provenance:
+                extra["provenance"] = ledger_provenance(db, get_config_package(get_settings()))
     except Exception:
         LOGGER.exception("Response ledger check failed", extra={FIELDS: {"job": "response_ledger", "status": "failed"}})
         return 1
+    mismatch = bool(extra.get("provenance", {}).get("problem_count"))
     fields = {
         "job": "response_ledger",
-        "status": "ok" if check.ok else "broken",
+        "status": "broken" if not check.ok else "provenance_mismatch" if mismatch else "ok",
         "records": check.count,
         "first_seq": check.first_seq,
         "last_seq": check.last_seq,
@@ -127,6 +146,9 @@ def main(argv: list[str] | None = None) -> int:
     }
     if not check.ok:
         LOGGER.error("Response ledger chain is broken", extra={FIELDS: fields})
+        return 1
+    if mismatch:
+        LOGGER.error("Response ledger provenance differs from the configuration package", extra={FIELDS: fields})
         return 1
     LOGGER.info("Response ledger chain verified", extra={FIELDS: fields})
     return 0

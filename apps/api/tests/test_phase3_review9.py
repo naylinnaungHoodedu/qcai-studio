@@ -605,9 +605,14 @@ def test_j6_the_runbook_reads_the_horizon_by_cpu_allocation():
     for needed in ("360 s", "`ledger.attempt_horizon_s`", "30 s checkout timeout", "30 s connect bound that `app.core.db` enforces", "six statements",
                    "16 in flight on 4 workers", "always-on CPU allocation", "Python runs the queued appends before the process exits"):
         assert needed in row, needed
-    # No current text gives the 60 s horizon: it is in the review history only.
+    # No current text gives the 60 s horizon: it is in the review history only. The 60 s keepalive bound on a read
+    # whose peer is gone (app.core.db.DEAD_PEER_BOUND_S; round 11, L3) is not a horizon, so its phrases are read out
+    # first.
+    keepalive_bound = ("within 60 s of the connection's last traffic", "`DEAD_PEER_BOUND_S` (60 s)")
     for name, text in (("runbook", RUNBOOK), ("observability", OBSERVABILITY), ("spec", SPEC.split("### 18.4 Review history", 1)[0])):
         for line in text.splitlines():
+            for phrase in keepalive_bound:
+                line = line.replace(phrase, "")
             assert not (re.search(r"\b60 s\b", line) and "horizon" in line and "60 s for ingestion" not in line and "`HORIZON_MARGIN_S` (60 s)" not in line
                         and "`HORIZON_MARGIN_S` 60 s" not in line), (name, line[:160])
     for name in ("00_meta/DEFERRED_ITEMS_REGISTER.md",):

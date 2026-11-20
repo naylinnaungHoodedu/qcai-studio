@@ -3,8 +3,9 @@
 Run: python scripts/config_package.py --check [--path P]   (validates the package and its sidecar hash; for package
                                                              v2 also the tutor-pipeline schema pins, prompt hashes and
                                                              schema structure; exit 1 on a problem)
-     python scripts/config_package.py --rehash [--path P]  (recomputes the stopword hash and, for v2, the schema pins
-                                                             and the three prompt hashes from the code; rewrites the sidecar)
+     python scripts/config_package.py --rehash [--path P]  (recomputes the stopword hash and, for v2, the schema pins,
+                                                             the three prompt hashes and the legacy containment rule
+                                                             hash from the code; rewrites the sidecar)
      python scripts/config_package.py --write-schemas      (writes the eight contract schemas from the pydantic models,
                                                              then --rehash)
 The default path is the shipped package v2; v1 stays readable for one release (--path .../v1.json, DI-42).
@@ -72,6 +73,9 @@ def rehash(path: Path) -> str:
         tutor["resolver"]["prompt_hash"] = resolver_prompt_hash(params, parsed.retrieval)
         tutor["evidential"]["prompt_hash"] = evidential_prompt_hash(params)
         tutor["pedagogical"]["prompt_hash"] = pedagogical_prompt_hash()
+        from app.services.ledger import LEGACY_CONTAINMENT_RULE_HASH
+
+        tutor["legacy"]["containment_rule_hash"] = LEGACY_CONTAINMENT_RULE_HASH
     return write_package(path, payload)
 
 

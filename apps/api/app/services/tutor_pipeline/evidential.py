@@ -11,8 +11,9 @@ a fragment that drops a sentence's opening words or its end (spec 18.10 H1). A s
 left out; binding still checks every claim against the section text itself.
 
 When no span is left, the pipeline abstains, and no_envelope_reason says why (spec 18.11 I1): no_quotable_evidence
-when the bundle holds no quotable span (nothing approved under D-31, or the license gate excluded every result), and
-no_whole_sentence when it holds quotable spans of which none holds a whole document sentence. The two causes have
+when the bundle holds no quotable span (nothing approved under D-31), and no_whole_sentence when it holds quotable
+spans of which none holds a whole document sentence. A bundle the license gate emptied never gets here: it abstains
+at retrieval with no_quotable_evidence too (retrieve.retrieve; spec 4.3). The two causes have
 different remedies (an approval, or a sentence rule that fits the corpus), so plan I's "abstention by reason" keeps
 them apart.
 

@@ -448,6 +448,13 @@
       ],
       "retention": "retain"
     },
+    "legacy": {
+      "pipeline_version": "legacy-contained-v1",
+      "generator_id": "contained-answers-v1",
+      "generator_model_id": "extractive-lexically-screened",
+      "containment_rule_hash": "aa942034579c6fcdb7fe1b14818c07a8bccf66cf0552544d6dbd90ff94ffbff0",
+      "authority": "the D-19 contained path (task 1.11) that every legacy ledger record names, production's only records; pinned so the provenance audit has a reference value (F-2 stand-in, DI-49); package_check compares each value with app.services.ledger"
+    },
     "stop": {
       "phase2_bound_claim_ratio": 1.0,
       "authority": "plan Phase 3 L; measured, spec M1"

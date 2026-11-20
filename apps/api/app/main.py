@@ -498,6 +498,14 @@ def _tutor_pipeline_fields(package) -> dict | None:
             "pedagogical": params.pedagogical_prompt_hash,
         },
         "subset_check": params.subset_check,
+        # The legacy contained path's pinned ids and rule hash, which every legacy ledger record stamps: the values
+        # the provenance audit compares records with (DI-49).
+        "legacy": {
+            "pipeline_version": params.legacy_pipeline_version,
+            "generator_id": params.legacy_generator_id,
+            "generator_model_id": params.legacy_generator_model_id,
+            "containment_rule_hash": params.legacy_containment_rule_hash,
+        },
         # The budgets in force (PD-11) and which of them an environment override changed (R-46; spec 18.6 D5).
         "budgets": _budget_fields(package),
         "available": tutor_shadow.PIPELINE_UNAVAILABLE_REASON is None,

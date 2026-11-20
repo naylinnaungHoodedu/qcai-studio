@@ -1,6 +1,7 @@
 import atexit
 from collections.abc import Callable, Generator
 import logging
+import socket
 import threading
 import time
 from typing import Any
@@ -35,6 +36,20 @@ CONNECT_TIMEOUT_S = 30
 # How many connects may run at once: the pool's 20 connections and 10 overflow. A connect that outlives its bound
 # keeps its thread until the connector returns, so a stalled instance cannot add threads without limit.
 CONNECT_MAX_PENDING = 30
+
+# A reply on a connection that is already open. The connector opens its socket with no timeout and no keepalive, and
+# pg8000 keeps a socket it is given as it is, so a read whose peer is gone (a failover, a silent network partition, a
+# frozen host) would wait for the life of the process. cloud_sql_creator turns TCP keepalive on for each new
+# connection's socket (enable_tcp_keepalive): after KEEPALIVE_IDLE_S without traffic the kernel probes the peer every
+# KEEPALIVE_INTERVAL_S and drops the connection after KEEPALIVE_PROBES unanswered probes, so such a read ends within
+# DEAD_PEER_BOUND_S of the connection's last traffic. On Linux, TCP_USER_TIMEOUT ends a connection whose sent data
+# stays unacknowledged for as long. Neither ends a wait on a server whose TCP stack still answers but which never
+# replies: nothing in the code does, so that wait lasts until the server replies or the process exits
+# (ledger.dead_peer_horizon_s; infra/cloudrun/deployment.md, Phase 3).
+KEEPALIVE_IDLE_S = 30
+KEEPALIVE_INTERVAL_S = 10
+KEEPALIVE_PROBES = 3
+DEAD_PEER_BOUND_S = KEEPALIVE_IDLE_S + KEEPALIVE_INTERVAL_S * KEEPALIVE_PROBES
 
 
 class ConnectTimeout(pg8000.dbapi.OperationalError):
@@ -108,6 +123,49 @@ def _log_connect_timeout(timeout_s: float, *, slot_free: bool) -> None:
     )
 
 
+def keepalive_options() -> list[tuple[str, int, int, int]]:
+    """(name, level, option, value) of each keepalive option this platform has, SO_KEEPALIVE first."""
+    options = [("SO_KEEPALIVE", socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)]
+    for name, value in (
+        ("TCP_KEEPIDLE", KEEPALIVE_IDLE_S),
+        ("TCP_KEEPINTVL", KEEPALIVE_INTERVAL_S),
+        ("TCP_KEEPCNT", KEEPALIVE_PROBES),
+        ("TCP_USER_TIMEOUT", DEAD_PEER_BOUND_S * 1000),  # milliseconds; Linux only
+    ):
+        option = getattr(socket, name, None)
+        if option is not None:
+            options.append((name, socket.IPPROTO_TCP, option, value))
+    return options
+
+
+def enable_tcp_keepalive(connection: Any) -> tuple[str, ...]:
+    """Turn TCP keepalive on for a pg8000 connection's socket and return the options set.
+
+    pg8000 keeps the socket it was given (the connector's TLS socket) as Connection._usock. A connection whose socket
+    cannot be reached, or an option the kernel refuses, is logged (db.connect.keepalive_unset) and the connection is
+    kept: it works as it did before, without that bound."""
+    sock = getattr(connection, "_usock", None)
+    if not isinstance(sock, socket.socket):
+        _log_keepalive_unset("SO_KEEPALIVE", "no_socket")
+        return ()
+    applied: list[str] = []
+    for name, level, option, value in keepalive_options():
+        try:
+            sock.setsockopt(level, option, value)
+        except OSError as exc:
+            _log_keepalive_unset(name, type(exc).__name__)
+            continue
+        applied.append(name)
+    return tuple(applied)
+
+
+def _log_keepalive_unset(option: str, error: str) -> None:
+    LOGGER.warning(
+        "A database connection's socket keepalive could not be set",
+        extra={FIELDS: {"event": "db.connect.keepalive_unset", "option": option, "error": error}},
+    )
+
+
 def cloud_sql_creator(
     connector: Connector,
     connection_name: str,
@@ -119,15 +177,17 @@ def cloud_sql_creator(
     timeout_s: float = CONNECT_TIMEOUT_S,
     max_pending: int = CONNECT_MAX_PENDING,
 ) -> Callable[[], Any]:
-    """The engine's creator for Cloud SQL: one pg8000 connection through the connector, bounded by timeout_s."""
+    """The engine's creator for Cloud SQL: one pg8000 connection through the connector, bounded by timeout_s, with TCP
+    keepalive on its socket (enable_tcp_keepalive)."""
     slots = threading.BoundedSemaphore(max_pending)
 
+    def connect() -> Any:
+        connection = connector.connect(connection_name, "pg8000", user=user, password=password, db=db, ip_type=ip_type)
+        enable_tcp_keepalive(connection)
+        return connection
+
     def creator() -> Any:
-        return bounded_connect(
-            lambda: connector.connect(connection_name, "pg8000", user=user, password=password, db=db, ip_type=ip_type),
-            timeout_s=timeout_s,
-            slots=slots,
-        )
+        return bounded_connect(connect, timeout_s=timeout_s, slots=slots)
 
     return creator
 
