@@ -1463,7 +1463,8 @@ def test_d9_ready_reports_the_configuration_package_corpus_gate_and_slis():
     package = get_config_package(Settings())
     body = client.get("/ready").json()
     assert body["status"] == "ready"
-    assert (body["config_package_version"], body["config_package_sha256"]) == ("1.0.0", package.sha256)
+    # Phase 3: /ready reports the package in force (2.0.0 since configuration package v2), not a fixed version.
+    assert (body["config_package_version"], body["config_package_sha256"]) == (package.package_version, package.sha256)
     assert body["span_scheme"] == "span-v2" and body["index_version"] == get_course_store().index_version
     assert body["corpus_version"] == get_corpus_registry(Settings()).corpus_version
     assert (body["retrieval_gate"], body["duplicate_span_ids"], body["manifest_drift"]) == ("bm25f-v1", 0, 0)
@@ -1474,7 +1475,8 @@ def test_d9_ready_reports_the_configuration_package_corpus_gate_and_slis():
                                            "margin": package.abstention.margin, "provisional": True, "provisional_until": "Phase 4"}
     assert (body["semantic_enabled"], body["semantic_setting"]) == (False, False)
     slis = body["slis"]
-    assert set(slis) == {"citation_resolution", "abstention", "search_latency_ms", "manifest_drift"}
+    # Still an exact set: Phase 3 adds exactly the ledger and the two-pass shadow SLIs (plan Phase 3 I).
+    assert set(slis) == {"citation_resolution", "abstention", "search_latency_ms", "manifest_drift"} | {"tutor_ledger", "two_pass_shadow"}
     assert slis["manifest_drift"]["drifted"] == 0 and slis["manifest_drift"]["checked"] >= 13
 
 

@@ -1,0 +1,239 @@
+"""Renderer template-renderer-v1 and the subset checker (plan tasks 3.6-3.7; Phase 3 spec 4.8, 4.9, 13.2)."""
+
+from __future__ import annotations
+
+import pytest
+
+from app.core.config_package import canonical_sha256
+from app.services import claim_gate
+from app.services.claim_gate import PROBLEM_CODES, check_subset
+from app.services.tutor_pipeline import render
+from app.services.tutor_pipeline.contracts import ConfigStamp, LockedClaim, LockedClaimSet, PresentationPlan, ResolverRef, Segment, lock_hash
+from app.services.tutor_pipeline.render import PLANS_LAYOUT, TEMPLATES, TemplateRenderer, layout_text, pedagogical_prompt_hash
+
+H = "a" * 64
+SPAN_A, SPAN_B, SPAN_C = ("span-" + digit * 64 for digit in "123")
+
+
+def _locked() -> LockedClaimSet:
+    claims = (
+        # Locked order is evidence order; source order puts the second claim first.
+        LockedClaim(claim_id="claim-" + "b" * 32, text="Routing adds SWAP gates on sparse hardware.", span_ids=(SPAN_B,), source_order=("item-b", 40)),
+        LockedClaim(claim_id="claim-" + "a" * 32, text="Graph shrinking reduces the routing burden.", span_ids=(SPAN_A, SPAN_C), source_order=("item-a", 5)),
+    )
+    draft = LockedClaimSet.model_construct(
+        claims=claims, span_ids=(SPAN_A, SPAN_B, SPAN_C), corpus_version="c", index_version="i", generator=None, evidential_prompt_hash=None,
+        pedagogical_prompt_hash=H, resolver=ResolverRef(model_id="thread-resolver-v1", prompt_hash=H),
+        config_package=ConfigStamp(version="2.0.0", sha256=H), claim_set_hash="0" * 64,
+    )
+    return LockedClaimSet.model_validate({**draft.model_dump(mode="json"), "claim_set_hash": lock_hash(draft)})
+
+
+LOCKED = _locked()
+RENDERER = TemplateRenderer()
+
+
+def _render(plan_id: str):
+    return RENDERER.render(LOCKED, PresentationPlan(plan_id=plan_id, source="request"), attempt=1)
+
+
+def test_each_plan_has_its_exact_layout():
+    concise = _render("concise")
+    assert concise.text == (
+        "These sentences are quoted from the approved course sources:\n"
+        "Routing adds SWAP gates on sparse hardware. [1]\n"
+        "Graph shrinking reduces the routing burden. [2] [3]"
+    )
+    assert concise.citations == (SPAN_B, SPAN_A, SPAN_C)
+    stepwise = _render("stepwise")
+    assert stepwise.text == (
+        "The approved course sources make these points, in source order:\n"
+        "Point 1: Graph shrinking reduces the routing burden. [1] [2]\n"
+        "Point 2: Routing adds SWAP gates on sparse hardware. [3]"
+    )
+    assert stepwise.citations == (SPAN_A, SPAN_C, SPAN_B)  # numbered by first appearance after reordering
+    socratic = _render("socratic")
+    assert socratic.text == (
+        "What do the approved course sources say about your question?\n"
+        "Routing adds SWAP gates on sparse hardware. [1]\n"
+        "Graph shrinking reduces the routing burden. [2] [3]\n"
+        "Which of these points would you like to look at more closely?"
+    )
+    for rendered in (concise, stepwise, socratic):
+        assert layout_text(rendered.segments) == rendered.text
+        assert check_subset(rendered, LOCKED).passed
+        assert [segment.claim_id for segment in rendered.segments if segment.kind == "claim"].count("claim-" + "a" * 32) == 1
+        assert {segment.kind for segment in rendered.segments} <= {"connective", "question", "claim", "citation"}
+    assert len({concise.text, stepwise.text, socratic.text}) == 3
+
+
+def test_the_renderer_is_never_called_for_an_abstention():
+    empty = LockedClaimSet.model_validate({**LOCKED.model_dump(mode="json"), "claims": [], "span_ids": [],
+                                            "claim_set_hash": lock_hash(LOCKED.model_copy(update={"claims": (), "span_ids": ()}))})
+    with pytest.raises(ValueError, match="abstention"):
+        RENDERER.render(empty, PresentationPlan(plan_id="concise", source="default"), attempt=1)
+
+
+def test_the_pedagogical_hash_covers_every_plan(monkeypatch):
+    pinned = pedagogical_prompt_hash()
+    changed = {**PLANS_LAYOUT, "socratic": {**PLANS_LAYOUT["socratic"], "close": None}}
+    monkeypatch.setitem(render.PEDAGOGICAL_PROMPT_HASH_INPUT, "plans", changed)
+    assert pedagogical_prompt_hash() != pinned
+    monkeypatch.setitem(render.PEDAGOGICAL_PROMPT_HASH_INPUT, "plans", PLANS_LAYOUT)
+    assert pedagogical_prompt_hash() == pinned == canonical_sha256(render.PEDAGOGICAL_PROMPT_HASH_INPUT)
+
+
+def _with(rendered, segments, *, citations=None, text=None):
+    segments = tuple(segments)
+    return rendered.model_copy(update={"segments": segments, "citations": tuple(citations if citations is not None else rendered.citations),
+                                       "text": text if text is not None else layout_text(segments)})
+
+
+def test_every_problem_code_is_raised():
+    base = _render("concise")
+    segments = list(base.segments)
+    claim0 = next(segment for segment in segments if segment.kind == "claim")
+    cite_b = next(segment for segment in segments if segment.kind == "citation" and segment.span_id == SPAN_B)
+    cases = {
+        "empty": _with(base, [], text=""),
+        "text_not_segments": _with(base, segments, text=base.text + " More."),
+        "unmapped_factual_sentence": _with(base, [*segments, Segment(kind="claim", line=1, text="An invented fact.", claim_id="claim-" + "0" * 32)]),
+        "duplicate_claim": _with(base, [*segments, claim0.model_copy(update={"line": 3})]),
+        "citation_outside_locked_set": _with(base, [*segments, Segment(kind="citation", line=1, text="[4]", template_id="citation", params=(4,),
+                                                                          span_id="span-" + "9" * 64)], citations=(*base.citations, "span-" + "9" * 64)),
+        "citation_not_on_claim": _with(base, [segment if segment is not cite_b else segment.model_copy(update={"line": 0}) for segment in segments]),
+        "citation_marker_mismatch": _with(base, [segment if segment is not cite_b else segment.model_copy(update={"text": "[7]", "params": (7,)})
+                                                 for segment in segments]),
+        # Review round 3 (spec 18.6 D4): an "answer" of connectives only, and a claim shown with none of its spans.
+        "no_claim_rendered": _with(base, [segments[0]], citations=()),
+        "claim_uncited": _with(base, [segment for segment in segments if segment.kind != "citation"], citations=()),
+        # Review round 4 (spec 18.7 E1): the citation list names a locked span that no segment displays.
+        "citation_list_mismatch": _with(base, [segment for segment in segments if segment.line != 2]),
+    }
+    for code, rendered in cases.items():
+        result = check_subset(rendered, LOCKED)
+        assert not result.passed and code in result.problems, (code, result.problems)
+    assert set(cases) == set(PROBLEM_CODES)
+    # A fact in a connective slot, and a wrong template kind, are unmapped factual sentences.
+    lead = segments[0]
+    for edited in (lead.model_copy(update={"text": "Routing is always optimal."}), lead.model_copy(update={"kind": "question"}),
+                   lead.model_copy(update={"template_id": "stepwise.point"})):
+        assert "unmapped_factual_sentence" in check_subset(_with(base, [edited, *segments[1:]]), LOCKED).problems
+    # A claim segment whose claim_id disagrees with the matching locked claim.
+    wrong_id = _with(base, [segment if segment is not claim0 else segment.model_copy(update={"claim_id": "claim-" + "a" * 32}) for segment in segments])
+    assert "unmapped_factual_sentence" in check_subset(wrong_id, LOCKED).problems
+    # Lines must be contiguous from 0, in order.
+    shifted = _with(base, [segment.model_copy(update={"line": segment.line + 1}) for segment in segments])
+    assert "text_not_segments" in check_subset(shifted, LOCKED).problems
+    # A missing claim is reported, not failed: the plan requires a subset only.
+    partial = _with(base, [segment for segment in segments if segment.line != 2], citations=(SPAN_B,))
+    result = check_subset(partial, LOCKED)
+    assert result.passed and result.missing_claims == 1
+    # A claim needs at least one of its own spans on its line, not every one: claim a cites A and C, and A alone passes.
+    cite_c = next(segment for segment in segments if segment.kind == "citation" and segment.span_id == SPAN_C)
+    one_of_two = _with(base, [segment for segment in segments if segment is not cite_c], citations=(SPAN_B, SPAN_A))
+    assert check_subset(one_of_two, LOCKED).passed
+    # One claim shown without its citation fails, while the other claim keeps its own.
+    claim_b_line = claim0.line
+    moved = _with(base, [segment for segment in segments if not (segment.kind == "citation" and segment.line == claim_b_line)], citations=(SPAN_A, SPAN_C))
+    problems = check_subset(moved, LOCKED).problems
+    assert "claim_uncited" in problems
+
+
+def test_matching_is_exact_after_normalisation_only():
+    base = _render("concise")
+    segments = list(base.segments)
+    claim0 = next(segment for segment in segments if segment.kind == "claim")
+    spaced = _with(base, [segment if segment is not claim0 else segment.model_copy(update={"text": "Routing  adds SWAP gates on sparse hardware. "})
+                          for segment in segments])
+    assert check_subset(spaced, LOCKED).passed  # whitespace is normalised
+    digit = _with(base, [segment if segment is not claim0 else segment.model_copy(update={"text": "Routing adds SWAP gates on sparse hardware 2."})
+                         for segment in segments])
+    assert "unmapped_factual_sentence" in check_subset(digit, LOCKED).problems
+
+
+def _locked_with(claims) -> LockedClaimSet:
+    span_ids = tuple(sorted({span_id for claim in claims for span_id in claim.span_ids}))
+    draft = LockedClaimSet.model_construct(
+        claims=tuple(claims), span_ids=span_ids, corpus_version="c", index_version="i", generator=None, evidential_prompt_hash=None,
+        pedagogical_prompt_hash=H, resolver=ResolverRef(model_id="thread-resolver-v1", prompt_hash=H),
+        config_package=ConfigStamp(version="2.0.0", sha256=H), claim_set_hash="0" * 64,
+    )
+    return LockedClaimSet.model_validate({**draft.model_dump(mode="json"), "claim_set_hash": lock_hash(draft)})
+
+
+def test_two_locked_claims_with_one_sentence_both_render_and_pass():
+    # Review 2026-11-19: claims were looked up by text, so the second of two claims with the same sentence (on
+    # different spans) hid the first, and the honest rendering abstained with subset_check_failed.
+    from app.services.tutor_pipeline.pipeline import render_checked
+
+    text = "Routing adds SWAP gates on sparse hardware."
+    locked = _locked_with((
+        LockedClaim(claim_id="claim-" + "c" * 32, text=text, span_ids=(SPAN_A,), source_order=("item-a", 0)),
+        LockedClaim(claim_id="claim-" + "d" * 32, text=text, span_ids=(SPAN_B,), source_order=("item-a", 60)),
+    ))
+    for plan_id in ("concise", "stepwise", "socratic"):
+        plan = PresentationPlan(plan_id=plan_id, source="request")
+        rendered = RENDERER.render(locked, plan, attempt=1)
+        result = check_subset(rendered, locked)
+        assert result.passed and (result.mapped, result.missing_claims) == (2, 0), (plan_id, result.problems)
+        assert render_checked(RENDERER, locked, plan, max_regenerations=2)[1:] == (1, None)
+    # Swapping the two claims' ids keeps every text equal, but each citation is then on the other claim.
+    base = RENDERER.render(locked, PresentationPlan(plan_id="concise", source="request"), attempt=1)
+    swap = {"claim-" + "c" * 32: "claim-" + "d" * 32, "claim-" + "d" * 32: "claim-" + "c" * 32}
+    swapped = _with(base, [segment.model_copy(update={"claim_id": swap[segment.claim_id]}) if segment.kind == "claim" else segment
+                           for segment in base.segments])
+    assert "citation_not_on_claim" in check_subset(swapped, locked).problems
+
+
+@pytest.mark.parametrize(("verbatim", "folded"), [
+    ("The cost grows as n² on dense coupling graphs.", "The cost grows as n2 on dense coupling graphs."),
+    ("About ½ of the circuits needed a SWAP gate.", "About 1⁄2 of the circuits needed a SWAP gate."),
+    ("The ﬁnal layout uses a non‑adjacent qubit pair.", "The final layout uses a non‐adjacent qubit pair."),
+])
+def test_a_rendering_that_folds_the_locked_text_is_an_unmapped_factual_sentence(verbatim, folded):
+    # Review 2026-11-19: NFKC is used only to compare; the rendered claim must carry the locked (corpus) characters.
+    import unicodedata
+
+    assert unicodedata.normalize("NFKC", verbatim) == unicodedata.normalize("NFKC", folded) and verbatim != folded
+    locked = _locked_with((LockedClaim(claim_id="claim-" + "e" * 32, text=verbatim, span_ids=(SPAN_A,), source_order=("item-a", 0)),))
+    base = RENDERER.render(locked, PresentationPlan(plan_id="concise", source="request"), attempt=1)
+    assert check_subset(base, locked).passed
+    altered = _with(base, [segment.model_copy(update={"text": folded}) if segment.kind == "claim" else segment for segment in base.segments])
+    result = check_subset(altered, locked)
+    assert not result.passed and "unmapped_factual_sentence" in result.problems
+
+
+def test_the_overlap_gate_and_evidence_digest_are_gone():
+    assert not hasattr(claim_gate, "ClaimGate") and not hasattr(claim_gate, "evidence_digest")
+    # Renamed in review round 3: whitespace-only matching (never NFKC) plus the no-claim and uncited-claim checks;
+    # renamed again in round 4 (spec 18.7 E1) for the citation-list check, so one id names one behaviour.
+    assert claim_gate.SUBSET_CHECK_RULE == "segment-exact-whitespace-v3"
+    assert TEMPLATES["citation"] == ("citation", "[{0}]")
+
+
+
+def test_the_citation_list_must_be_exactly_what_the_segments_display():
+    """Spec 18.7 E1: a renderer may leave a claim out, but its citation list may not keep that claim's span."""
+    base = _render("concise")
+    segments = list(base.segments)
+    assert base.citations == claim_gate.displayed_span_ids(base) == (SPAN_B, SPAN_A, SPAN_C)
+    # The reviewer's case: the last claim line and its markers are left out, the list is not rebuilt.
+    kept = [segment for segment in segments if segment.line != 2]
+    stale = _with(base, kept)
+    result = check_subset(stale, LOCKED)
+    assert not result.passed and result.problems == ("citation_list_mismatch",)
+    assert check_subset(_with(base, kept, citations=(SPAN_B,)), LOCKED).passed  # rebuilt: a partial answer passes
+    # The unshown span listed first: markers numbered by list position would skip [1].
+    cite_b = next(segment for segment in segments if segment.kind == "citation" and segment.span_id == SPAN_B)
+    renumbered = [segment.model_copy(update={"text": "[2]", "params": (2,)}) if segment is cite_b else segment for segment in kept]
+    skipped = _with(base, renumbered, citations=(SPAN_C, SPAN_B))
+    assert "citation_list_mismatch" in check_subset(skipped, LOCKED).problems
+    # A span listed twice, and the right spans in another order.
+    assert "citation_list_mismatch" in check_subset(_with(base, segments, citations=(*base.citations, SPAN_B)), LOCKED).problems
+    reordered = _with(base, segments, citations=(SPAN_A, SPAN_B, SPAN_C))
+    assert "citation_list_mismatch" in check_subset(reordered, LOCKED).problems
+    # Every plan's own rendering lists exactly what it displays.
+    for plan_id in PLANS_LAYOUT:
+        rendered = _render(plan_id)
+        assert rendered.citations == claim_gate.displayed_span_ids(rendered) and check_subset(rendered, LOCKED).passed

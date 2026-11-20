@@ -60,7 +60,7 @@ class TeachingAssistantService:
         # Decision D-19: no provider is called and nothing generated is delivered until the verified
         # tutor exists; the learner gets verbatim approved spans or an abstention (AC-1-14).
         contained = contain_answer(citations, get_corpus_registry(self.settings), store.span_registry, settings=self.settings)
-        return AssistantChatResponse(
+        response = AssistantChatResponse(
             answer=contained.answer,
             citations=contained.citations,
             retrieval_mode=f"{retrieval.mode}-{EXTRACTIVE_MODE}",
@@ -71,6 +71,17 @@ class TeachingAssistantService:
             decision_reason=contained.reason,
             claims=contained.claims,
         )
+        # Not serialised: the retrieval set behind the quotations, for the turn's ledger record (Phase 3 spec M20).
+        response._retrieval = retrieval
+        return response
+
+    @cached_property
+    def pipeline(self):
+        """The two-pass pipeline over this assistant's retrieval engine (plan Phase 3 E: "teaching_assistant (two
+        passes)"). It runs in shadow only until the Phase 4 exit; rebuild_course_store() drops it with the store."""
+        from app.services.tutor_pipeline.pipeline import TwoPassPipeline
+
+        return TwoPassPipeline(self.retrieval_engine, self.settings)
 
     @property
     def vertex_enabled(self) -> bool:

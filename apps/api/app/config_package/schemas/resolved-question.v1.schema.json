@@ -1,0 +1,59 @@
+{
+  "$defs": {
+    "ResolverRef": {
+      "additionalProperties": false,
+      "properties": {
+        "model_id": {
+          "title": "Model Id",
+          "type": "string"
+        },
+        "prompt_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Prompt Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model_id",
+        "prompt_hash"
+      ],
+      "title": "ResolverRef",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Plan 7.4: built only from the learner's own user turns of one thread (task 3.1).",
+  "properties": {
+    "contains_learner_state": {
+      "const": false,
+      "default": false,
+      "title": "Contains Learner State",
+      "type": "boolean"
+    },
+    "resolver": {
+      "$ref": "#/$defs/ResolverRef"
+    },
+    "source_turn_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 2,
+      "minItems": 1,
+      "title": "Source Turn Ids",
+      "type": "array"
+    },
+    "text": {
+      "maxLength": 4001,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "text",
+    "resolver",
+    "source_turn_ids"
+  ],
+  "title": "ResolvedQuestion",
+  "type": "object"
+}

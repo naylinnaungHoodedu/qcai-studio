@@ -370,7 +370,8 @@ def compute(workdir: Path) -> dict:
     return {
         "record": "qcai-abstention-calibration",
         "format_version": 1,
-        "config_package_version": package.package_version,
+        # Phase 3 spec 5.3: the record names the package it was calibrated with (v2 keeps v1's calibration).
+        "config_package_version": package.abstention.calibrated_with_package_version or package.package_version,
         "retrieval_sha256": package.retrieval_sha256,
         "corpus_version": configurations[0].corpus_version,
         "span_scheme": package.span_scheme,

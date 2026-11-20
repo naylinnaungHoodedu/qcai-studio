@@ -414,6 +414,40 @@ class TutorTurn(Base):
     corpus_version: Mapped[str] = mapped_column(String(255))
     policy_version: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Phase 3 (spec 18.8 F12): true when the image that created the turn ledgers its delivery (TUTOR_LEDGER_ENABLED
+    # on), false under the kill switch, null when an image that keeps no ledger created it (before Phase 3, or during
+    # a rollback window). A turn without a ledger record is a lost record only when this is true.
+    ledger_record_expected: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+
+class TutorTurnIdempotency(Base):
+    # POST /tutor/turns Idempotency-Key records (plan 7.3 "mutations carry client keys"; DI-40; Phase 3 spec 7.13). A
+    # retried POST with the same key from the same caller returns response_body, the first turn's response, instead of
+    # creating a second turn. The key itself is never stored: key_sha256 is its sha256, unique per caller. Past the
+    # package's idempotency ttl_hours the key starts a new turn (the expired row is replaced). User-keyed, so erasure
+    # deletes these rows and guest retention deletes a guest's with the rest of its data; otherwise a row lives as
+    # long as the turn it answers for. The row is claimed (committed, turn_id null) before the turn runs, filled in the
+    # turn's own transaction, and released if the turn fails, so two concurrent requests with one key never create
+    # two turns. Every fill and release is conditional on the claim's random claim_token (and the fill on the row
+    # still having no response), so a request that outlived its lease cannot fill or release another request's claim,
+    # even where SQLite reuses a deleted row's id (spec 18.8 F13); AUTOINCREMENT stops that reuse as well.
+    __tablename__ = "tutor_turn_idempotency"
+    __table_args__ = (
+        UniqueConstraint("user_id", "key_sha256", name="uq_tutor_turn_idempotency_user_key"),
+        Index("ix_tutor_turn_idempotency_created_at", "created_at"),
+        {"sqlite_autoincrement": True},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(255))
+    key_sha256: Mapped[str] = mapped_column(String(64))
+    request_sha256: Mapped[str] = mapped_column(String(64))
+    # Null while the first request with this key is still running (a concurrent retry then gets 409).
+    turn_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    response_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Random per claim (uuid4 hex). Null only on rows an unreleased Phase 3 build made before it existed.
+    claim_token: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 class CorpusSpan(Base):
@@ -447,3 +481,48 @@ class CorpusSpan(Base):
     corpus_version_first_seen: Mapped[str] = mapped_column(String(64))
     registered_by: Mapped[str] = mapped_column(String(32))
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ResponseLedgerRecord(Base):
+    # Append-only, hash-chained provenance record of every tutor response (plan task 3.8, 7.5; R-22). No user id and
+    # no learner text: the learner link is tutor_turns (user-keyed, erasable), so after erasure a row stays but is
+    # unlinkable. No foreign key to any tutor table, so erasure never reaches it. Triggers refuse UPDATE, DELETE and
+    # TRUNCATE (schema_upgrades); an insert must extend the chain. See app.services.ledger.
+    __tablename__ = "response_ledger"
+    __table_args__ = (
+        UniqueConstraint("response_id", name="uq_response_ledger_response_id"),
+        CheckConstraint("delivery IN ('shadow', 'delivered', 'legacy')", name="ck_response_ledger_delivery"),
+        CheckConstraint("decision IN ('answer', 'abstain')", name="ck_response_ledger_decision"),
+        Index("ix_response_ledger_shadowed_response_id", "shadowed_response_id"),
+        Index("ix_response_ledger_created_at", "created_at"),
+    )
+
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    response_id: Mapped[str] = mapped_column(String(64))
+    delivery: Mapped[str] = mapped_column(String(16))
+    decision: Mapped[str] = mapped_column(String(16))
+    shadowed_response_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    claim_set_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    entry_schema: Mapped[str] = mapped_column(String(32))
+    # The canonical JSON of the LedgerEntry: exactly the bytes entry_sha256 hashes (TEXT, so no driver re-encodes it).
+    entry: Mapped[str] = mapped_column(Text)
+    entry_sha256: Mapped[str] = mapped_column(String(64))
+    prev_hash: Mapped[str] = mapped_column(String(64))
+    record_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ResponseLedgerHead(Base):
+    # The chain head, locked with SELECT ... FOR UPDATE by every append so the chain stays linear, and compared with
+    # the last record so a truncated tail is detected. A trigger lets it move forward only, one record at a time.
+    __tablename__ = "response_ledger_head"
+
+    chain: Mapped[str] = mapped_column(String(32), primary_key=True)
+    seq: Mapped[int] = mapped_column(Integer)
+    record_hash: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # When the chain began (informational): written by the first append, never changed by the trigger's rules. It
+    # decides nothing about coverage: start-up writes no head, and whether a turn without a record is a lost record is
+    # the turn's own ledger_record_expected (ledger.ledger_started_at). Null only on a head written before the column
+    # existed (a development database).
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

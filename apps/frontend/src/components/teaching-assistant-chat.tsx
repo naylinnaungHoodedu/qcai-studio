@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
+import { EvidencePanel } from "@/components/evidence-panel";
 import { normalizeAssistantHistory } from "@/lib/assistant-chat";
 import { chatWithTeachingAssistant, fetchTutorThread, fetchTutorThreads, postAnalyticsEvent } from "@/lib/api";
 import { AssistantChatMessage, AssistantChatResponse } from "@/lib/types";
@@ -13,6 +14,8 @@ type ChatBubble = {
   content: string;
   createdAt: string;
   citations?: AssistantChatResponse["citations"];
+  // Phase 3 (task 3.8): the evidence panel, only when the API sends one; stored history bubbles have none.
+  evidence?: AssistantChatResponse["evidence"];
   isError?: boolean;
 };
 
@@ -211,6 +214,7 @@ export function TeachingAssistantChat() {
         content: response.answer,
         createdAt: new Date().toISOString(),
         citations: response.citations,
+        evidence: response.evidence ?? null,
       };
       setMessages((current) => [...current, assistantBubble]);
       void postAnalyticsEvent("teaching_assistant_message", lessonSlug, {
@@ -317,6 +321,7 @@ export function TeachingAssistantChat() {
                       ))}
                     </div>
                   ) : null}
+                  {message.evidence ? <EvidencePanel evidence={message.evidence} /> : null}
                   <time className="assistant-bubble-time" dateTime={message.createdAt}>
                     {formatTimestamp(message.createdAt)}
                   </time>

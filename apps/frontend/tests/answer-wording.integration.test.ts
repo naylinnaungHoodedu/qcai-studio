@@ -12,6 +12,9 @@ const read = (path: string) => readFileSync(resolve(SRC, path), "utf8");
 const ANSWER_SURFACES = [
   "components/qa-panel.tsx",
   "components/teaching-assistant-chat.tsx",
+  // Phase 3 (task 3.8): the evidence panel labels a contained answer and must never call it grounded.
+  "components/evidence-panel.tsx",
+  "lib/evidence-panel.ts",
   "lib/public-status.ts",
   "lib/public-course.ts",
   "app/opengraph-image.tsx",

@@ -23,18 +23,21 @@ import json
 import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, status
 
 from app.core.config import Settings
-from app.core.config_package import ConfigPackage, get_config_package
+from app.core.config_package import ConfigPackage, canonical_sha256, get_config_package
 from app.core.source_assets import source_asset_id, source_asset_kind
 
 SUPPORTED_SCHEMAS = ("1.0", "2.0")
 ITEM_KINDS = ("document", "video", "authored")
 PLANES = ("public", "private")
+# The only license class a span may carry in Phase 3 (CorpusRegistry.license_class derives it; nothing labels it).
+PUBLIC_LICENSE_CLASS = "public"
 AUTHORED_ITEM_ID = "authored-curriculum"
 
 
@@ -279,6 +282,15 @@ class CorpusRegistry:
     def package(self) -> ConfigPackage:
         return get_config_package(self.settings)
 
+    @cached_property
+    def manifest_sha256(self) -> str | None:
+        """The sha256 of the manifest's canonical JSON (a CRLF checkout hashes the same), or None without one.
+
+        Stamped on every tutor ledger record (Phase 3 spec 7.6; plan 13.5 "corpus manifest hash")."""
+        if self.manifest_path is None:
+            return None
+        return canonical_sha256(json.loads(self.manifest_path.read_text(encoding="utf-8")))
+
     def _item_bound(self, item: CorpusItem) -> bool:
         package = self.package
         return (
@@ -315,6 +327,18 @@ class CorpusRegistry:
     def is_private_plane(self, filename: str) -> bool:
         item = self.item_for_filename(filename)
         return item is not None and item.plane != "public"
+
+    def license_class(self, *, plane: object, item_id: str, source_filename: str | None = None) -> str | None:
+        """The license class of a span, derived, never labelled (plan 7.4 license_class; 7.5 "defense in depth";
+        Phase 3 H "public-corpus spans only"): "public" only when the span's own plane is public AND the manifest
+        does not put its item (by span item id, or by its source file) on another plane. None otherwise, and a
+        caller never emits a span whose class is None (fail closed). There is no other class in Phase 3: the
+        private licensed corpus has no API path (task 2.8)."""
+        if plane != "public" or self.is_private_item(item_id):
+            return None
+        if source_filename and self.is_private_plane(source_filename):
+            return None
+        return PUBLIC_LICENSE_CLASS
 
     def is_bound(self, filename: str) -> bool:
         package = self.package

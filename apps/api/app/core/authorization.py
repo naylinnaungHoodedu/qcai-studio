@@ -40,6 +40,12 @@ OWNER = "owner"
 NOT_OWNER = "not_owner"
 PUBLIC_HANDLES = "public_handles"
 
+# Roles that read any tutor ledger record, shadow records included: the plan's "reviewer" and nothing wider (plan 7.3
+# "GET /ledger/responses/{response_id} (owner or reviewer)"). Each such read is a security event (plan 7.6 "reviewer
+# access is logged"). No reviewer is provisioned yet (DI-38). Outside development LEDGER_ROUTE_ENABLED is false, so
+# the route answers 404 to everyone, owners included (PD-12).
+LEDGER_READER_ROLES = ("reviewer",)
+
 OWNERSHIP_SCOPES = {
     NONE: "No learner data.",
     CALLER: "Only the caller's own rows; no parameter names another learner.",
@@ -85,6 +91,9 @@ ROUTE_POLICIES: dict[tuple[str, str], RoutePolicy] = {
     ("HEAD", "/source-assets/{filename}"): _p(ASSET_READER, NONE, "Approved corpus assets only (manifest governance)."),
     ("GET", "/search"): _p(PUBLIC, NONE, "Rate-limited."),
     ("GET", "/spans/{span_id}"): _p(PUBLIC, NONE, "Rate-limited span metadata; 404 unless SPAN_RESOLVER_ROUTE_ENABLED; no excerpt under D-31."),
+    ("GET", "/evidence/spans/{span_id}"): _p(
+        PUBLIC, NONE, "Alias of /spans/{span_id} (plan 7.3): the same SPAN_RESOLVER_ROUTE_ENABLED flag, rate limit and D-31 rules; public license_class only."
+    ),
     # Questions and tutor
     ("POST", "/qa/ask"): _p(PRINCIPAL, CALLER, "Rate-limited."),
     ("GET", "/qa/history"): _p(PRINCIPAL, CALLER),
@@ -92,6 +101,20 @@ ROUTE_POLICIES: dict[tuple[str, str], RoutePolicy] = {
     ("GET", "/assistant/threads"): _p(PRINCIPAL, CALLER),
     ("POST", "/assistant/threads"): _p(PRINCIPAL, CALLER),
     ("GET", "/assistant/threads/{thread_id}"): _p(PRINCIPAL, OWNER),
+    ("POST", "/tutor/turns"): _p(
+        PRINCIPAL,
+        OWNER,
+        "Two-pass tutor endpoint (plan 7.3). 404 outside development unless TWO_PASS_TUTOR is on, which settings refuse "
+        "before the Phase 4 exit; returns the legacy contained answer and runs the two-pass pipeline in shadow. A "
+        "thread_id in the body must be the caller's thread. Rate-limited.",
+    ),
+    ("GET", "/ledger/responses/{response_id}"): _p(
+        PRINCIPAL,
+        OWNER,
+        "404 unless LEDGER_ROUTE_ENABLED. The turn's owner reads its legacy record (a pre-ledger turn reads as "
+        "no-verdict); the reviewer role reads any record, shadow records included, and each such read is a security "
+        "event. Any other role, admin included, reads only its own turns. A learner never sees a shadow record (AC-3-6).",
+    ),
     # Analytics
     ("POST", "/analytics/events"): _p(PRINCIPAL, CALLER),
     ("POST", "/analytics/public-web-vitals"): _p(PUBLIC, NONE, "Anonymous browser metrics; rate-limited."),

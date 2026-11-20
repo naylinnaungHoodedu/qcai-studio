@@ -2965,6 +2965,54 @@ button:disabled,
   color: var(--muted);
 }
 
+/* Phase 3 (task 3.8): the evidence panel of a contained answer, labels only. */
+.assistant-evidence-panel {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px dashed rgba(124, 146, 210, 0.22);
+  font-size: 0.82rem;
+}
+
+.assistant-evidence-panel p,
+.assistant-evidence-panel ul,
+.assistant-evidence-panel ol {
+  margin: 0;
+}
+
+.assistant-evidence-labels,
+.assistant-evidence-degraded,
+.assistant-evidence-verdict {
+  color: var(--muted);
+}
+
+.assistant-evidence-labels,
+.assistant-evidence-degraded,
+.assistant-evidence-spans {
+  display: grid;
+  gap: 4px;
+  padding-left: 18px;
+}
+
+/* A passage link looks like a link (the global a rule inherits colour and drops the underline). */
+.assistant-evidence-spans a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.assistant-evidence-spans a:hover {
+  color: var(--warm);
+}
+
+/* The global focus ring (a translucent teal) is about 1.5:1 on the dark chat bubble; the accent is about 8:1, above
+   the 3:1 a focus indicator needs (WCAG 1.4.11; Phase 3 spec 18.7 E17). */
+.assistant-evidence-spans a:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .assistant-compose {
   display: grid;
   gap: 10px;
@@ -3583,6 +3631,37 @@ button:disabled,
 :root[data-theme="light"] .footer-link,
 :root[data-theme="light"] .footer-link-list a {
   color: #0b6e8c;
+}
+
+/* The floating assistant chat keeps its dark styling in the light theme, so the
+   evidence panel inside it keeps the dark tokens: otherwise its muted text, links
+   and focus rings take the light theme's darker values on a dark bubble (about
+   1.9:1 and 3.9:1; Phase 3 spec 18.7 E17). Scoped to the development-only panel,
+   not the whole chat (spec 18.8 F9): on the whole chat the light-theme compose
+   field, which keeps its white background, took --ink #f2f7ff (1.08:1), and the
+   rest of the chat changed in production. The values are the dark :root tokens. */
+:root[data-theme="light"] .assistant-panel .assistant-evidence-panel {
+  --ink: #f2f7ff;
+  --muted: #95acd1;
+  --line: rgba(88, 137, 255, 0.24);
+  --accent: #1bd4ff;
+  --accent-deep: #7a6cff;
+  --accent-soft: rgba(27, 212, 255, 0.16);
+  --warm: #82e7ff;
+  --text: var(--ink);
+  --text-muted: var(--muted);
+  --border: var(--line);
+}
+
+/* The Q&A panel's evidence panel sits on the light lesson panel in the light
+   theme: its passage links take the light theme's darker link colour (--warm,
+   about 5.8:1 on white; --accent is about 3.7:1), spec 18.8 F3. */
+:root[data-theme="light"] .qa-response .assistant-evidence-spans a {
+  color: var(--warm);
+}
+
+:root[data-theme="light"] .qa-response .assistant-evidence-spans a:hover {
+  color: var(--ink);
 }
 
 /* Light theme, extended to the interactive studios (builder / arena /

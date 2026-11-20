@@ -1,7 +1,7 @@
 """Phase 2 span identity: the append-only, text-free corpus_spans table (plan Phase 2 task 2.2).
 
-Additive and reversible (expand step, plan 11.6). The append-only triggers are re-created on every API start by
-app.core.schema_upgrades, so the downgrade drops them with the table. The chain still cannot build an empty
+Additive and reversible (expand step, plan 11.6). The append-only triggers come from app.core.schema_upgrades, which
+checks them at each API start and re-creates them when not current, so the downgrade drops them with the table. The chain still cannot build an empty
 database (test_alembic_head_builds_the_orm_schema stays a strict xfail until the production baseline lands).
 
 Revision ID: 20261119_phase2_corpus_spans

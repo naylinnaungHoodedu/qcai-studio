@@ -124,6 +124,8 @@ export type QAResponse = {
     provisional?: boolean;
   }>;
   retrieval_mode: string;
+  // Phase 3 (task 3.8; E-46 names the Q&A citation cards): sent only when EVIDENCE_PANEL_ENABLED (development).
+  evidence?: EvidencePanelPayload | null;
 };
 
 export type QAHistoryItem = {
@@ -182,6 +184,18 @@ export type AssistantChatResponse = {
     cited_span_ids: string[];
     supported: boolean;
   }>;
+  // Phase 3 (task 3.8): present only when the API enables the evidence panel (development by default).
+  evidence?: EvidencePanelPayload | null;
+};
+
+// The evidence panel of a contained tutor answer: labels only, never a "verified" claim (plan Phase 3 task 3.8).
+export type EvidencePanelPayload = {
+  panel_schema: "evidence-panel-v1";
+  decision: "answer" | "abstain";
+  labels: Array<"lexically_screened">;
+  degraded: Array<"extractive_only" | "retrieval_fallback" | "citations_provisional">;
+  spans: Array<{ span_id: string; label: string; resolvable: boolean }>;
+  verdict: "no-verdict";
 };
 
 export type TutorThread = {

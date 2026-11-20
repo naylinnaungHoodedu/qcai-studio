@@ -1,4 +1,5 @@
-"""Configuration package v1 (plan Phase 2 P; decision D9; spec 2.5, 4.2)."""
+"""Configuration package (plan Phase 2 P; decision D9; Phase 2 spec 2.5, 4.2; Phase 3 P "schemas in configuration
+package v2", Phase 3 spec section 5)."""
 
 from __future__ import annotations
 
@@ -11,6 +12,8 @@ import pytest
 from app.core.config import Settings
 from app.core.config_package import (
     DEFAULT_PACKAGE_PATH,
+    V1_PACKAGE_PATH,
+    WIRED_GENERATORS,
     ConfigPackageError,
     canonical_sha256,
     load_config_package,
@@ -30,8 +33,10 @@ def _write(tmp_path: Path, payload: dict, *, sidecar: str | None = None) -> Path
 
 
 def test_the_shipped_package_validates_and_matches_its_hash():
+    # Phase 3 P: the shipped package is v2 (2.0.0); the 1.0.0 assertions moved to test_v1_stays_readable_for_one_release.
     package = load_config_package(DEFAULT_PACKAGE_PATH, governed=True)
-    assert package.hash_verified and package.is_default_path and package.package_version == "1.0.0"
+    assert package.hash_verified and package.is_default_path and package.package_version == "2.0.0"
+    assert package.schema_version == 2 and package.tutor_pipeline is not None
     assert package.sha256 == recorded_sha256(DEFAULT_PACKAGE_PATH) == canonical_sha256(RAW)
     assert package.span_scheme == "span-v2" and package.abstention.provisional is True
     # The image copies apps/api/app, so the package ships inside it (the Dockerfile has no other path for it).
@@ -110,3 +115,106 @@ def test_a_numeric_d30_legacy_threshold_loads_and_is_what_the_migration_reads(tm
     payload["legacy_citations"]["max_unresolved_share_legacy"] = 0.2
     package = load_config_package(_write(tmp_path, payload), governed=True)
     assert package.legacy_citations["max_unresolved_share_legacy"] == 0.2
+
+
+# --- Package v2 (Phase 3) ---
+
+V1_RAW = json.loads(V1_PACKAGE_PATH.read_text(encoding="utf-8"))
+V1_BLOCKS = ("span_identity", "corpus_version", "gates", "retrieval", "semantic", "near_duplicate", "legacy_citations", "boundary")
+
+
+def test_v1_stays_readable_for_one_release():
+    package = load_config_package(V1_PACKAGE_PATH, governed=True)
+    assert package.hash_verified and package.package_version == "1.0.0" and package.schema_version == 1
+    assert package.sha256 == recorded_sha256(V1_PACKAGE_PATH) == canonical_sha256(V1_RAW)
+    assert package.tutor_pipeline is None and package.flag_policy.phase4_exit_passed is False
+    assert not package.is_default_path
+
+
+def test_package_v2_keeps_every_phase_2_value_of_v1():
+    v2 = load_config_package(DEFAULT_PACKAGE_PATH, governed=True)
+    v1 = load_config_package(V1_PACKAGE_PATH, governed=True)
+    for block in V1_BLOCKS:
+        assert RAW[block] == V1_RAW[block], block
+    lineage = dict(RAW["abstention"])
+    assert lineage.pop("calibrated_with_package_version") == "1.0.0"
+    assert lineage == V1_RAW["abstention"]
+    for name, decision in V1_RAW["owner_decisions"].items():
+        assert RAW["owner_decisions"][name] == decision, name
+    # PLAN-12.8 (2026-11-19 hardening): the ledger retention period, an open decision (DI-45). PLAN-3.3 (review
+    # round 3): the reading of task 3.3 "atomic claims" under D-19, unratified (DI-47).
+    assert set(RAW["owner_decisions"]) == set(V1_RAW["owner_decisions"]) | {"D-19", "D-12", "PLAN-12.8", "PLAN-3.3"}
+    # The index and corpus versions do not move with the package version.
+    assert v2.retrieval_sha256 == v1.retrieval_sha256
+    assert RAW["supersedes"] == {"package_version": "1.0.0", "sha256": v1.sha256, "readable_until": RAW["supersedes"]["readable_until"]}
+    assert v2.owner_decisions["D-12"]["state"] == "open" and v2.owner_decisions["D-19"]["ratified"] is False
+    assert v2.flag_policy.phase4_exit_passed is False and v2.tutor_pipeline.max_regenerations == 2
+    assert set(v2.tutor_pipeline.generators_allowed) == WIRED_GENERATORS == {"extractive-d19-v1"}
+
+
+def _schema_path_edit(value: str):
+    def edit(payload):
+        payload["tutor_pipeline"]["schemas"]["ClaimPlan"]["path"] = value
+
+    return edit
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        lambda p: p["tutor_pipeline"]["pedagogical"].update(max_regenerations=3),
+        lambda p: p["tutor_pipeline"]["pedagogical"].update(default_plan="lecture"),
+        lambda p: p["tutor_pipeline"]["pedagogical"].update(presentation_plans=["concise", "stepwise"]),
+        lambda p: p["tutor_pipeline"]["evidential"].update(generators_allowed=["extractive-d19-v1", "gateway-v1"]),
+        lambda p: p["tutor_pipeline"]["evidential"].update(generator_default="gateway-v1"),
+        _schema_path_edit("/etc/claim-plan.json"),
+        _schema_path_edit("schemas/../../claim-plan.json"),
+        _schema_path_edit("C:/claim-plan.json"),
+        lambda p: p["tutor_pipeline"]["schemas"].pop("LedgerEntry"),
+        lambda p: p["tutor_pipeline"]["schemas"]["ClaimPlan"].update(sha256="not-a-hash"),
+        lambda p: p["tutor_pipeline"]["resolver"].update(prompt_hash="0" * 63),
+        lambda p: p["flag_policy"].update(phase4_exit_passed=True),
+        lambda p: p["flag_policy"].update(phase4_exit_passed="yes"),
+        lambda p: p["tutor_pipeline"]["retrieval"].update(mode="hybrid"),
+        lambda p: p["tutor_pipeline"]["retrieval"].update(request_fields=["text", "lesson_slug", "corpus_version", "page_path"]),
+        lambda p: p["tutor_pipeline"]["retrieval"].update(top_k=13),
+        lambda p: p["tutor_pipeline"]["stop"].update(phase2_bound_claim_ratio=0),
+        lambda p: p["tutor_pipeline"]["stop"].update(phase2_bound_claim_ratio=1.5),
+        lambda p: p["tutor_pipeline"]["evidential"].update(max_claims_per_span=4),
+        lambda p: p["tutor_pipeline"].update(unused_provenance_fields=["v1_3_checker_model_id"]),
+        lambda p: p["flag_policy"]["two_pass_tutor"].update(default_elsewhere="shadow"),
+        lambda p: p.pop("supersedes"),
+        lambda p: p["owner_decisions"].pop("D-12"),
+        lambda p: p.update(schema_version=3),
+    ],
+)
+def test_v2_structural_errors_always_stop_the_load(tmp_path, edit):
+    payload = json.loads(json.dumps(RAW))
+    edit(payload)
+    path = _write(tmp_path, payload)
+    for governed in (True, False):
+        with pytest.raises(ConfigPackageError):
+            load_config_package(path, governed=governed)
+
+
+def test_d12_open_allows_only_the_extractive_generator(tmp_path):
+    payload = json.loads(json.dumps(RAW))
+    payload["tutor_pipeline"]["evidential"]["generators_allowed"] = ["extractive-d19-v1", "extractive-d19-v1"]
+    with pytest.raises(ConfigPackageError, match="D-12"):
+        load_config_package(_write(tmp_path, payload), governed=False)
+
+
+def test_on_is_refused_unless_phase4_exit_passed(tmp_path):
+    with pytest.raises(ValueError, match="phase4_exit_passed"):
+        Settings(two_pass_tutor="on")
+    with pytest.raises(ValueError, match="phase4_exit_passed"):
+        Settings(environment="production", two_pass_tutor="on")
+    payload = json.loads(json.dumps(RAW))
+    payload["flag_policy"].update(phase4_exit_passed=True, phase4_exit_evidence="test-only")
+    path = _write(tmp_path, payload)
+    import shutil
+
+    shutil.copytree(DEFAULT_PACKAGE_PATH.parent / "schemas", tmp_path / "schemas")
+    assert Settings(two_pass_tutor="on", config_package_path=str(path)).two_pass_tutor == "on"  # development, a test package
+    with pytest.raises(ValueError, match="shipped, hash-verified"):
+        Settings(environment="production", two_pass_tutor="on", config_package_path=str(path))

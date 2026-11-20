@@ -1160,7 +1160,7 @@ def drift_report(self, root: Path, mode: str, *, settings: Settings) -> DriftRep
 **Unchanged:** `get_corpus_registry` still creates a new instance on each call.
 
 ### 4.6 MOD `apps/api/app/core/schema_upgrades.py`
-Add `_guard_corpus_spans(connection)`, re-created on every start like `_guard_security_events`:
+Add `_guard_corpus_spans(connection)`, checked on every start like `_guard_security_events`; on PostgreSQL the guards are re-created only when they are not current (Phase 3 spec 8.2):
 - PostgreSQL: a function and the triggers `corpus_spans_append_only` (`BEFORE UPDATE OR DELETE … FOR EACH ROW`) and `corpus_spans_no_truncate` (`BEFORE TRUNCATE … FOR EACH STATEMENT`).
 - SQLite: `DROP TRIGGER IF EXISTS` and `CREATE TRIGGER` for `corpus_spans_no_update` and `corpus_spans_no_delete`.
 

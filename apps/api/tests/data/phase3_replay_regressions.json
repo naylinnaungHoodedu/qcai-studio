@@ -1,0 +1,9 @@
+{
+  "about": "Regression items of the Phase 3 three-plan replay (scripts/replay_tutor_plans.py). Public-corpus queries only, never lqs/ (ULQS) items or learner text. Each item names the defect it guards.",
+  "items": [
+    {
+      "query": "How should the trained model be evaluated on a physical QPU against classical baselines?",
+      "guards": "A document sentence that sits in two adjacent, overlapping spans (the splitter overlaps chunks by 120 characters). The extractive generator proposes it once per span; bind merges the two into one locked claim on both spans, and the renderer's output passes the subset check (review finding, 2026-11-19: it abstained with subset_check_failed)."
+    }
+  ]
+}

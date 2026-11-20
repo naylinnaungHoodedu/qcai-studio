@@ -5,8 +5,10 @@ from contextlib import contextmanager
 import os
 from pathlib import Path
 import socket
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from types import SimpleNamespace
 from uuid import uuid4
@@ -250,33 +252,73 @@ def _stop(process: subprocess.Popen) -> None:
         process.kill()
 
 
-@contextmanager
-def _instance(database_url: str, storage: str) -> Iterator[str]:
+# A cold start builds the corpus store and the schema; under parallel load (other suites, validators) it has taken
+# longer than the old fixed 90 s. The wait is bounded, polls readiness, and says why it gave up.
+API_START_TIMEOUT_SECONDS = float(os.environ.get("API_TEST_START_TIMEOUT_SECONDS", "300"))
+_PORT_IN_USE = ("address already in use", "only one usage of each socket address", "errno 98", "errno 10048")
+
+
+def _tail(path: Path, lines: int = 40) -> str:
+    try:
+        return "\n".join(path.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:])
+    except OSError:
+        return "(no output captured)"
+
+
+def _start(database_url: str, storage: str, log: Path) -> tuple[subprocess.Popen, str]:
     port = _free_port()
     env = {**os.environ, "DATABASE_URL": database_url, "ENVIRONMENT": "development", "RATE_LIMIT_STORAGE": storage, "PYTHONUNBUFFERED": "1"}
     env.pop("TEST_DATABASE_URL", None)
-    process = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"],
-        cwd=API_ROOT,
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    base = f"http://127.0.0.1:{port}"
+    with log.open("wb") as output:
+        process = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"],
+            cwd=API_ROOT,
+            env=env,
+            stdout=output,
+            stderr=subprocess.STDOUT,
+        )
+    return process, f"http://127.0.0.1:{port}"
+
+
+def _wait_until_ready(process: subprocess.Popen, base: str, log: Path) -> str | None:
+    """None once /health answers 200; otherwise why the instance did not start (it exited, or the bound passed)."""
+    started = time.monotonic()
+    while True:
+        try:
+            if httpx.get(f"{base}/health", timeout=2).status_code == 200:
+                return None
+        except httpx.HTTPError:
+            pass
+        code = process.poll()
+        if code is not None:
+            return f"it exited with code {code} after {time.monotonic() - started:.1f} s"
+        if time.monotonic() - started > API_START_TIMEOUT_SECONDS:
+            return f"/health did not answer within {API_START_TIMEOUT_SECONDS:.0f} s (API_TEST_START_TIMEOUT_SECONDS)"
+        time.sleep(0.25)
+
+
+@contextmanager
+def _instance(database_url: str, storage: str) -> Iterator[str]:
+    logs = Path(tempfile.mkdtemp(prefix="api-instance-"))
+    process = None
     try:
-        deadline = time.monotonic() + 90
-        while True:
-            try:
-                if httpx.get(f"{base}/health", timeout=2).status_code == 200:
-                    break
-            except httpx.HTTPError:
-                pass
-            if process.poll() is not None or time.monotonic() > deadline:
-                raise RuntimeError("The API instance did not start.")
-            time.sleep(0.3)
+        for attempt in (1, 2):
+            log = logs / f"attempt-{attempt}.log"
+            process, base = _start(database_url, storage, log)
+            failure = _wait_until_ready(process, base, log)
+            if failure is None:
+                break
+            _stop(process)
+            output = _tail(log)
+            # Another process can take the free port between the probe and uvicorn's bind: try once more on a new one.
+            if attempt == 1 and any(marker in output.lower() for marker in _PORT_IN_USE):
+                continue
+            raise RuntimeError(f"The API instance did not start: {failure}.\nLast output:\n{output}")
         yield base
     finally:
-        _stop(process)
+        if process is not None:
+            _stop(process)
+        shutil.rmtree(logs, ignore_errors=True)
 
 
 def _alternate_sign_ins(first: str, second: str, attempts: int, address: str) -> list[int]:

@@ -1,0 +1,37 @@
+{
+  "additionalProperties": false,
+  "description": "Plan 3.2: exactly the resolved text, the lesson scope and the corpus version; no learner field (R-41).",
+  "properties": {
+    "corpus_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Corpus Version",
+      "type": "string"
+    },
+    "lesson_slug": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Lesson Slug"
+    },
+    "text": {
+      "maxLength": 4001,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "text",
+    "corpus_version"
+  ],
+  "title": "RetrievalRequest",
+  "type": "object"
+}

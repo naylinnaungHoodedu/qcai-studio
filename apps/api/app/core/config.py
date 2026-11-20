@@ -140,6 +140,37 @@ class Settings(BaseSettings):
     # size or LFS pointer; "full" also hashes video content.
     manifest_drift_check: Literal["off", "fast", "full"] = "fast"
     spans_rate_limit: str = "30/minute"
+    # Phase 3 (provenance-first two-channel tutor; docs/architecture/phase3-implementation-spec.md section 6). Every
+    # learner-visible change keeps today's behaviour outside development while the D-05 freeze holds.
+    # Plan Phase 3 G: "two_pass_tutor MUST run shadow-only until the Phase 4 exit; zero outputs reach learners".
+    # None = "shadow" in development, "off" elsewhere (TWO_PASS_DEFAULT_DEVELOPMENT, TWO_PASS_DEFAULT_ELSEWHERE, which
+    # the configuration package's flag_policy must name: the loader refuses a package that says otherwise, spec 18.8
+    # F4). "on" is refused while the package says flag_policy.phase4_exit_passed is false (AC-3-6); "shadow" outside
+    # development logs a config.override event.
+    two_pass_tutor: Literal["off", "shadow", "on"] | None = None
+    # How long a shadow run may hold its worker after the response is sent (E1 "bounded budget"). None = the
+    # configuration package's tutor_pipeline.budgets.shadow_ms (2000; PD-11); set only to override it.
+    two_pass_shadow_budget_ms: int | None = Field(default=None, ge=100, le=30000)
+    # (Either budget override, when set outside development, logs a config.override event and is stamped on every
+    # ledger record it applies to: versions.budgets.)
+    # Kill switch for the response-ledger write of every tutor delivery (not learner-visible; plan 3.8, R-22).
+    # Disabling it outside development relaxes an audit control and logs a config.override event.
+    tutor_ledger_enabled: bool = True
+    # Total deadline of the synchronous legacy ledger append (spec conflict 29); also each PostgreSQL attempt's
+    # lock_timeout and statement_timeout. The learner waits at most this plus the package's ledger_wait_grace_ms
+    # (250), pool checkout included; an append still running then finishes in the background and is counted.
+    # None = the configuration package's tutor_pipeline.budgets.ledger_append_ms (1500; PD-11); set only to override.
+    tutor_ledger_append_budget_ms: int | None = Field(default=None, ge=100, le=5000)
+    # GET /ledger/responses/{response_id}: None = on in development, off elsewhere (a new route under the freeze).
+    ledger_route_enabled: bool | None = None
+    # The evidence panel field on tutor responses (task 3.8): None = on in development, off elsewhere (E9).
+    evidence_panel_enabled: bool | None = None
+    # Rate limit of the new Phase 3 ledger route: an engineering parameter with no plan value, provisional (PD-11; it
+    # copies the existing spans_rate_limit), ratified with the rest of PD-11 (DI-37). POST /tutor/turns has no limit of
+    # its own: it shares POST /assistant/chat's window and assistant_chat_rate_limit (scope "tutor-turn"), so
+    # alternating the two routes never doubles a client's tutor-turn budget. Unknown environment keys are ignored
+    # (extra="ignore").
+    ledger_rate_limit: str = "30/minute"
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
@@ -174,6 +205,15 @@ class Settings(BaseSettings):
             self.retrieval_gate = "bm25f-v1" if self.environment.lower() == "development" else "p1-floor"
         if self.span_resolver_route_enabled is None:
             self.span_resolver_route_enabled = self.environment.lower() == "development"
+        development = self.environment.lower() == "development"
+        if self.two_pass_tutor is None:
+            self.two_pass_tutor = TWO_PASS_DEFAULT_DEVELOPMENT if development else TWO_PASS_DEFAULT_ELSEWHERE
+        if self.ledger_route_enabled is None:
+            self.ledger_route_enabled = development
+        if self.evidence_panel_enabled is None:
+            self.evidence_panel_enabled = development
+        if self.two_pass_tutor == "on":
+            self._refuse_two_pass_on_before_phase_4_exit(development)
         if self.arena_enabled and self.environment.lower() != "development":
             raise ValueError("ARENA_ENABLED is not permitted outside development (Decision D-03).")
         if self.guest_token_secret is None and self.environment.lower() == "development":
@@ -184,6 +224,27 @@ class Settings(BaseSettings):
             raise ValueError("Wildcard ALLOWED_ORIGINS is not permitted outside development.")
         self.database_url = normalize_sqlite_database_url(self.database_url)
         return self
+
+    def _refuse_two_pass_on_before_phase_4_exit(self, development: bool) -> None:
+        # The package is read only when "on" is asked for, so no other construction of Settings depends on it.
+        from app.core.config_package import ConfigPackageError, get_config_package  # lazy: avoids an import cycle
+
+        try:
+            package = get_config_package(self)
+        except ConfigPackageError as exc:
+            raise ValueError(f"TWO_PASS_TUTOR=on needs a valid configuration package: {exc}") from exc
+        if not package.flag_policy.phase4_exit_passed:
+            raise ValueError(
+                "TWO_PASS_TUTOR=on is refused before the Phase 4 exit (configuration package flag_policy.phase4_exit_passed "
+                "is false; plan Phase 3 G, AC-3-6). Use off or shadow."
+            )
+        if not development and not (package.is_default_path and package.hash_verified):
+            raise ValueError("TWO_PASS_TUTOR=on outside development needs the shipped, hash-verified configuration package.")
+
+    @property
+    def tutor_turns_route_enabled(self) -> bool:
+        """POST /tutor/turns: development, or two_pass_tutor on (which settings refuse before the Phase 4 exit)."""
+        return self.environment.lower() == "development" or self.two_pass_tutor == "on"
 
     @property
     def project_root(self) -> Path:
@@ -238,6 +299,13 @@ class Settings(BaseSettings):
                     resolved_paths.append(candidate)
                     break
         return resolved_paths
+
+
+# The two_pass_tutor defaults (PD-10). Configuration package v2 records them as flag_policy.two_pass_tutor.
+# default_development and default_elsewhere, and parse_config_package refuses a package whose values differ, so the
+# package can never say one default while the code applies another (spec 18.8 F4).
+TWO_PASS_DEFAULT_DEVELOPMENT = "shadow"
+TWO_PASS_DEFAULT_ELSEWHERE = "off"
 
 
 @lru_cache

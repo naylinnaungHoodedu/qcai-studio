@@ -52,6 +52,8 @@ def run_retention_cleanup(db: Session, now: datetime | None = None) -> dict[str,
             )
         ).rowcount,
     )
+    # No rule touches response_ledger or response_ledger_head: plan 12.8 (the retention period) is an open decision,
+    # so the ledger is retained (configuration package owner_decisions.PLAN-12.8, DI-45) and its triggers refuse DELETE.
     # A day past the trigger's limit, so a database clock a little behind this one cannot refuse the pass.
     # The newest event always stays, so the chain continues instead of restarting from the genesis hash.
     record(

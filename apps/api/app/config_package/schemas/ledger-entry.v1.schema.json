@@ -1,0 +1,766 @@
+{
+  "$defs": {
+    "BudgetStamp": {
+      "additionalProperties": false,
+      "description": "The budgets in force for this record (PD-11). They are package values unless TWO_PASS_SHADOW_BUDGET_MS or\nTUTOR_LEDGER_APPEND_BUDGET_MS overrode them, so config_package_sha256 alone does not name them when\n`overridden` is not empty (R-46). shadow_ms is null where no shadow budget applies (a legacy record, an\nunbounded replay run).",
+      "properties": {
+        "ledger_append_ms": {
+          "minimum": 1,
+          "title": "Ledger Append Ms",
+          "type": "integer"
+        },
+        "overridden": {
+          "default": [],
+          "items": {
+            "enum": [
+              "shadow_ms",
+              "ledger_append_ms"
+            ],
+            "type": "string"
+          },
+          "title": "Overridden",
+          "type": "array"
+        },
+        "shadow_ms": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Shadow Ms"
+        }
+      },
+      "required": [
+        "shadow_ms",
+        "ledger_append_ms"
+      ],
+      "title": "BudgetStamp",
+      "type": "object"
+    },
+    "ClaimLedgerEntry": {
+      "additionalProperties": false,
+      "description": "Plan 7.4 ClaimLedgerEntry. text is corpus text (a verbatim span sentence or a delivered quotation).",
+      "properties": {
+        "claim_id": {
+          "pattern": "^claim-[0-9a-f]{32}$",
+          "title": "Claim Id",
+          "type": "string"
+        },
+        "entailment_score": {
+          "default": null,
+          "title": "Entailment Score",
+          "type": "null"
+        },
+        "locked": {
+          "const": true,
+          "default": true,
+          "title": "Locked",
+          "type": "boolean"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "response_id": {
+          "pattern": "^(turn|shadow|qa)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Response Id",
+          "type": "string"
+        },
+        "span_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Span Ids",
+          "type": "array"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claim_id",
+        "response_id",
+        "text",
+        "span_ids",
+        "provenance"
+      ],
+      "title": "ClaimLedgerEntry",
+      "type": "object"
+    },
+    "EvidenceSpan": {
+      "additionalProperties": false,
+      "properties": {
+        "char_end": {
+          "minimum": 1,
+          "title": "Char End",
+          "type": "integer"
+        },
+        "char_start": {
+          "minimum": 0,
+          "title": "Char Start",
+          "type": "integer"
+        },
+        "content_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "item_id": {
+          "title": "Item Id",
+          "type": "string"
+        },
+        "item_version": {
+          "title": "Item Version",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "document",
+            "authored"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "license_class": {
+          "const": "public",
+          "title": "License Class",
+          "type": "string"
+        },
+        "near_floor": {
+          "title": "Near Floor",
+          "type": "boolean"
+        },
+        "quotable": {
+          "title": "Quotable",
+          "type": "boolean"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Score"
+        },
+        "span_id": {
+          "pattern": "^span-[0-9a-f]{64}$",
+          "title": "Span Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "span_id",
+        "item_id",
+        "item_version",
+        "kind",
+        "char_start",
+        "char_end",
+        "content_hash",
+        "score",
+        "near_floor",
+        "license_class",
+        "quotable"
+      ],
+      "title": "EvidenceSpan",
+      "type": "object"
+    },
+    "PipelineCounts": {
+      "additionalProperties": false,
+      "properties": {
+        "bound_claims": {
+          "minimum": 0,
+          "title": "Bound Claims",
+          "type": "integer"
+        },
+        "dropped": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Dropped",
+          "type": "object"
+        },
+        "proposed_claims": {
+          "minimum": 0,
+          "title": "Proposed Claims",
+          "type": "integer"
+        },
+        "render_attempts": {
+          "minimum": 0,
+          "title": "Render Attempts",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "proposed_claims",
+        "bound_claims",
+        "dropped",
+        "render_attempts"
+      ],
+      "title": "PipelineCounts",
+      "type": "object"
+    },
+    "PresentationRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "attempts": {
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Attempts",
+          "type": "integer"
+        },
+        "plan_id": {
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "rendered_claim_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Rendered Claim Ids",
+          "type": "array"
+        },
+        "rendered_span_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Rendered Span Ids",
+          "type": "array"
+        },
+        "renderer_id": {
+          "title": "Renderer Id",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "subset_check": {
+          "enum": [
+            "passed",
+            "failed"
+          ],
+          "title": "Subset Check",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan_id",
+        "source",
+        "renderer_id",
+        "attempts",
+        "subset_check"
+      ],
+      "title": "PresentationRecord",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "description": "Plan 7.4 provenance. Fields without a Phase 3 value are explicit nulls (Phase 4 and 5 fill them).",
+      "properties": {
+        "corpus_version": {
+          "title": "Corpus Version",
+          "type": "string"
+        },
+        "evidential_prompt_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Evidential Prompt Hash"
+        },
+        "generator_model_id": {
+          "title": "Generator Model Id",
+          "type": "string"
+        },
+        "panel_weights_version": {
+          "default": null,
+          "title": "Panel Weights Version",
+          "type": "null"
+        },
+        "pedagogical_prompt_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pedagogical Prompt Hash"
+        },
+        "routing_table_version": {
+          "default": null,
+          "title": "Routing Table Version",
+          "type": "null"
+        },
+        "threshold_set_version": {
+          "title": "Threshold Set Version",
+          "type": "string"
+        },
+        "tool_contract_version": {
+          "default": null,
+          "title": "Tool Contract Version",
+          "type": "null"
+        },
+        "v1_3_checker_model_id": {
+          "default": null,
+          "title": "V1 3 Checker Model Id",
+          "type": "null"
+        }
+      },
+      "required": [
+        "generator_model_id",
+        "evidential_prompt_hash",
+        "pedagogical_prompt_hash",
+        "corpus_version",
+        "threshold_set_version"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "ResolvedQuestionRef": {
+      "additionalProperties": false,
+      "description": "The resolved question without its text (no learner text in the ledger).",
+      "properties": {
+        "contains_learner_state": {
+          "const": false,
+          "default": false,
+          "title": "Contains Learner State",
+          "type": "boolean"
+        },
+        "resolver": {
+          "$ref": "#/$defs/ResolverRef"
+        },
+        "source_turn_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Turn Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "resolver",
+        "source_turn_ids"
+      ],
+      "title": "ResolvedQuestionRef",
+      "type": "object"
+    },
+    "ResolverRef": {
+      "additionalProperties": false,
+      "properties": {
+        "model_id": {
+          "title": "Model Id",
+          "type": "string"
+        },
+        "prompt_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Prompt Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model_id",
+        "prompt_hash"
+      ],
+      "title": "ResolverRef",
+      "type": "object"
+    },
+    "RetrievalRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "corpus_version": {
+          "title": "Corpus Version",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceSpan"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "evidence_scope": {
+          "enum": [
+            "retrieved",
+            "delivered_citations"
+          ],
+          "title": "Evidence Scope",
+          "type": "string"
+        },
+        "floor": {
+          "title": "Floor",
+          "type": "number"
+        },
+        "gate": {
+          "title": "Gate",
+          "type": "string"
+        },
+        "index_version": {
+          "title": "Index Version",
+          "type": "string"
+        },
+        "margin": {
+          "title": "Margin",
+          "type": "number"
+        },
+        "mode": {
+          "title": "Mode",
+          "type": "string"
+        },
+        "sufficiency": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sufficiency"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "threshold_version": {
+          "title": "Threshold Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "corpus_version",
+        "index_version",
+        "gate",
+        "threshold_version",
+        "floor",
+        "margin",
+        "mode",
+        "evidence_scope",
+        "sufficiency",
+        "evidence"
+      ],
+      "title": "RetrievalRecord",
+      "type": "object"
+    },
+    "Sufficiency": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "enum": [
+            "answer",
+            "abstain",
+            "near_miss"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "floor": {
+          "title": "Floor",
+          "type": "number"
+        },
+        "gate": {
+          "enum": [
+            "p1-floor",
+            "bm25f-v1"
+          ],
+          "title": "Gate",
+          "type": "string"
+        },
+        "margin": {
+          "title": "Margin",
+          "type": "number"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Score"
+        },
+        "threshold_version": {
+          "title": "Threshold Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "score",
+        "gate",
+        "threshold_version",
+        "floor",
+        "margin",
+        "decision",
+        "reason"
+      ],
+      "title": "Sufficiency",
+      "type": "object"
+    },
+    "VersionStamps": {
+      "additionalProperties": false,
+      "properties": {
+        "budgets": {
+          "$ref": "#/$defs/BudgetStamp"
+        },
+        "code_sha": {
+          "title": "Code Sha",
+          "type": "string"
+        },
+        "config_package_sha256": {
+          "title": "Config Package Sha256",
+          "type": "string"
+        },
+        "config_package_version": {
+          "title": "Config Package Version",
+          "type": "string"
+        },
+        "generator_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Generator Id"
+        },
+        "manifest_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Manifest Sha256"
+        },
+        "pipeline_version": {
+          "title": "Pipeline Version",
+          "type": "string"
+        },
+        "policy_version": {
+          "title": "Policy Version",
+          "type": "string"
+        },
+        "renderer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Renderer Id"
+        },
+        "resolver_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Resolver Id"
+        },
+        "schema_revision_expected": {
+          "title": "Schema Revision Expected",
+          "type": "string"
+        },
+        "span_scheme": {
+          "title": "Span Scheme",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pipeline_version",
+        "code_sha",
+        "schema_revision_expected",
+        "config_package_version",
+        "config_package_sha256",
+        "manifest_sha256",
+        "span_scheme",
+        "policy_version",
+        "resolver_id",
+        "generator_id",
+        "renderer_id",
+        "budgets"
+      ],
+      "title": "VersionStamps",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "abstention_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Abstention Reason"
+    },
+    "claim_set_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Claim Set Hash"
+    },
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/ClaimLedgerEntry"
+      },
+      "title": "Claims",
+      "type": "array"
+    },
+    "counts": {
+      "$ref": "#/$defs/PipelineCounts"
+    },
+    "decision": {
+      "enum": [
+        "answer",
+        "abstain"
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
+    "delivery": {
+      "enum": [
+        "shadow",
+        "delivered",
+        "legacy"
+      ],
+      "title": "Delivery",
+      "type": "string"
+    },
+    "entry_schema": {
+      "const": "ledger-entry-v1",
+      "default": "ledger-entry-v1",
+      "title": "Entry Schema",
+      "type": "string"
+    },
+    "pipeline": {
+      "enum": [
+        "two-pass-v1",
+        "legacy-contained-v1"
+      ],
+      "title": "Pipeline",
+      "type": "string"
+    },
+    "presentation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PresentationRecord"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "rendered_text_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Rendered Text Sha256"
+    },
+    "resolved_question": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ResolvedQuestionRef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "response_id": {
+      "pattern": "^(turn|shadow|qa)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "title": "Response Id",
+      "type": "string"
+    },
+    "retrieval": {
+      "$ref": "#/$defs/RetrievalRecord"
+    },
+    "shadowed_response_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Shadowed Response Id"
+    },
+    "span_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Span Ids",
+      "type": "array"
+    },
+    "verification": {
+      "default": null,
+      "title": "Verification",
+      "type": "null"
+    },
+    "versions": {
+      "$ref": "#/$defs/VersionStamps"
+    }
+  },
+  "required": [
+    "response_id",
+    "delivery",
+    "shadowed_response_id",
+    "pipeline",
+    "decision",
+    "abstention_reason",
+    "resolved_question",
+    "retrieval",
+    "claim_set_hash",
+    "claims",
+    "span_ids",
+    "presentation",
+    "rendered_text_sha256",
+    "provenance",
+    "versions",
+    "counts"
+  ],
+  "title": "LedgerEntry",
+  "type": "object"
+}

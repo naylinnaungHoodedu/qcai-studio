@@ -21,7 +21,7 @@ from app.services.provenance import CITATION_SCHEMA, provisional_flag
 from app.services.text_utils import truncate_display_excerpt
 
 if TYPE_CHECKING:  # pragma: no cover
-    from app.services.spans import SpanRegistry
+    from app.services.spans import SpanRecord, SpanRegistry
 
 EXTRACTIVE_MODE = "extractive-lexically-screened"
 MAX_QUOTED_SPANS = 3
@@ -52,6 +52,17 @@ def is_quotable(citation: Citation, registry: CorpusRegistry) -> bool:
         and bool(citation.source_filename)
         and bool(citation.excerpt.strip())
         and registry.is_public_asset(citation.source_filename)
+    )
+
+
+def span_is_quotable(record: "SpanRecord", registry: CorpusRegistry) -> bool:
+    """D-19 eligibility of a span record for the two-pass evidential pass (Phase 3 spec 4.4): exactly the spans
+    contain_answer would quote. A test proves the two agree over every span of the dev and governed registries."""
+    return (
+        record.item_kind == "document"
+        and record.plane == "public"
+        and bool(record.source_filename)
+        and registry.is_indexable(record.source_filename or "")
     )
 
 

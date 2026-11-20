@@ -1,0 +1,194 @@
+{
+  "$defs": {
+    "EvidenceSpan": {
+      "additionalProperties": false,
+      "properties": {
+        "char_end": {
+          "minimum": 1,
+          "title": "Char End",
+          "type": "integer"
+        },
+        "char_start": {
+          "minimum": 0,
+          "title": "Char Start",
+          "type": "integer"
+        },
+        "content_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "item_id": {
+          "title": "Item Id",
+          "type": "string"
+        },
+        "item_version": {
+          "title": "Item Version",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "document",
+            "authored"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "license_class": {
+          "const": "public",
+          "title": "License Class",
+          "type": "string"
+        },
+        "near_floor": {
+          "title": "Near Floor",
+          "type": "boolean"
+        },
+        "quotable": {
+          "title": "Quotable",
+          "type": "boolean"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Score"
+        },
+        "span_id": {
+          "pattern": "^span-[0-9a-f]{64}$",
+          "title": "Span Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "span_id",
+        "item_id",
+        "item_version",
+        "kind",
+        "char_start",
+        "char_end",
+        "content_hash",
+        "score",
+        "near_floor",
+        "license_class",
+        "quotable"
+      ],
+      "title": "EvidenceSpan",
+      "type": "object"
+    },
+    "Sufficiency": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "enum": [
+            "answer",
+            "abstain",
+            "near_miss"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "floor": {
+          "title": "Floor",
+          "type": "number"
+        },
+        "gate": {
+          "enum": [
+            "p1-floor",
+            "bm25f-v1"
+          ],
+          "title": "Gate",
+          "type": "string"
+        },
+        "margin": {
+          "title": "Margin",
+          "type": "number"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Score"
+        },
+        "threshold_version": {
+          "title": "Threshold Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "score",
+        "gate",
+        "threshold_version",
+        "floor",
+        "margin",
+        "decision",
+        "reason"
+      ],
+      "title": "Sufficiency",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "bundle_schema": {
+      "const": "evidence-bundle-v1",
+      "default": "evidence-bundle-v1",
+      "title": "Bundle Schema",
+      "type": "string"
+    },
+    "conflicts": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Conflicts",
+      "type": "array"
+    },
+    "corpus_version": {
+      "title": "Corpus Version",
+      "type": "string"
+    },
+    "index_version": {
+      "title": "Index Version",
+      "type": "string"
+    },
+    "retrieval_mode": {
+      "const": "lexical",
+      "title": "Retrieval Mode",
+      "type": "string"
+    },
+    "spans": {
+      "items": {
+        "$ref": "#/$defs/EvidenceSpan"
+      },
+      "maxItems": 12,
+      "title": "Spans",
+      "type": "array"
+    },
+    "sufficiency": {
+      "$ref": "#/$defs/Sufficiency"
+    }
+  },
+  "required": [
+    "corpus_version",
+    "index_version",
+    "retrieval_mode",
+    "spans",
+    "sufficiency"
+  ],
+  "title": "EvidenceBundle",
+  "type": "object"
+}

@@ -24,6 +24,12 @@ jobs:
       # Phase 2 (corpus, span identity, retrieval integrity). The checkout has no LFS content, so video hashes are
       # checked through their LFS pointer oids, which are the content sha256 (AC-2-6).
       - run: python scripts/config_package.py --check
+      # Phase 3: configuration package v1 stays readable for one release (DI-42).
+      - run: python scripts/config_package.py --check --path apps/api/app/config_package/v1.json
+      - run: python scripts/authorization_matrix.py --check
+      # Plan Phase 3 F: the three-plan replay over public-corpus fixtures (not E3 or LQ-1 evidence); exit 3 is the
+      # plan L bound-claim-ratio stop.
+      - run: python scripts/replay_tutor_plans.py --check docs/evaluation/phase3/three_plan_replay_v1.json
       - run: python scripts/generate_manifest.py --check
       - run: python scripts/validate_corpus.py --check-hashes --check-near-duplicates
       - run: python scripts/calibrate_abstention.py --check docs/evaluation/phase2/calibration_record_v1.json
@@ -56,8 +62,18 @@ jobs:
 
   # Task 1.10 (R-52): the API suite and the schema checks against PostgreSQL 16, the Cloud SQL major version.
   # The service container is disposable; conftest uses TEST_DATABASE_URL and never an ambient DATABASE_URL.
-  api-postgres:
+  # Both drivers (DI-46): psycopg, and pg8000, the driver production uses through the Cloud SQL connector. The pg8000
+  # leg's URL goes through pg8000's legacy pg8000.connect; production's connector calls pg8000.dbapi.connect, whose
+  # error classes differ, and test_m1_* runs that interface on both legs (spec 7.19).
+  # The legs report as "api-postgres (psycopg)" and "api-postgres (pg8000)"; the job named api-postgres below is the
+  # required status check on main (P1-D-12) and passes only when both legs pass.
+  api-postgres-driver:
+    name: api-postgres (${{ matrix.driver }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        driver: [psycopg, pg8000]
     services:
       postgres:
         image: postgres:16
@@ -72,7 +88,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      TEST_DATABASE_URL: postgresql+psycopg://postgres@localhost:5432/qcai_test
+      TEST_DATABASE_URL: postgresql+${{ matrix.driver }}://postgres@localhost:5432/qcai_test
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -82,6 +98,15 @@ jobs:
       - run: python -m pip install -r apps/api/requirements.txt
       - run: psql -h localhost -U postgres -d qcai_test -c "SELECT version();" -c "SHOW TimeZone;"
       - run: python -m pytest -q -rxX -m "not release_artifacts" apps/api/tests
+
+  # The required check "api-postgres" (P1-D-12): a matrix renames its checks, so this job carries the required name
+  # and fails unless every driver leg of api-postgres-driver succeeded.
+  api-postgres:
+    if: always()
+    needs: [api-postgres-driver]
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.api-postgres-driver.result }}" = "success"
 
   frontend:
     runs-on: ubuntu-latest
