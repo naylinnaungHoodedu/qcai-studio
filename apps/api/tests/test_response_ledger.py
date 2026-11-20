@@ -323,7 +323,8 @@ def _load_verify_script():
 
 def test_the_verify_script_reports_coverage_and_refuses_an_export_inside_the_repository(fresh_database_url, isolated, tmp_path, capsys):
     _, factory = isolated
-    since = datetime.now(UTC) - timedelta(minutes=1)
+    # Spec 18.12 J5: older than the 360 s attempt horizon, so the turn without a record is unrecorded, not pending.
+    since = datetime.now(UTC) - timedelta(hours=1)
     with factory() as db:
         thread = TutorThread(id=f"thread-{uuid4()}", user_id=f"verify-{uuid4().hex[:8]}", title="t")
         db.add(thread)
@@ -333,7 +334,7 @@ def test_the_verify_script_reports_coverage_and_refuses_an_export_inside_the_rep
             # Made by a Phase 3 image with the ledger on: each expects a record (spec 18.8 F12).
             db.add(TutorTurn(id=turn_id, thread_id=thread.id, user_id=thread.user_id, resolved_query="q", retrieval_mode="lexical", provider="none",
                              model="m", decision="abstain", decision_reason="no_approved_span", citations=[], claims=[], corpus_version="c",
-                             policy_version="p", created_at=datetime.now(UTC), ledger_record_expected=True))
+                             policy_version="p", created_at=datetime.now(UTC) - timedelta(minutes=10), ledger_record_expected=True))
         db.commit()
     for turn_id in turns[:2]:
         record_legacy_delivery(_legacy(turn_id), settings=Settings(), session_factory=factory)

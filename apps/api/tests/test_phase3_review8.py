@@ -240,7 +240,9 @@ def test_i2_an_exact_injection_refuses_a_fault_a_one_claim_answer_cannot_hold():
         renderer = FaultyRenderer(TemplateRenderer(), [True, True, True], random.Random(1), modes=(mode,), outside_sentence="x",
                                   outside_span_id=OUTSIDE_SPAN, exact=True)
         refused = _run(TwoPassPipeline(engine, settings, generator=ScriptedGenerator([[(first.text, first.span_ids)]]), renderer=renderer), MULTI_CLAIM)
-        assert refused.abstention_reason == "subset_check_failed" and renderer.placed == [f"not_placed:{mode}"] * 3
+        # Every attempt raised FaultNotPlaced: since spec 18.12 J3 the pipeline records render_failed, never
+        # subset_check_failed, so a refused (unplaced) fault can no longer pass as a refused rendering.
+        assert refused.abstention_reason == contracts.RENDER_FAILED and renderer.placed == [f"not_placed:{mode}"] * 3
 
 
 def test_i2_the_fault_tests_run_on_the_several_claim_query_and_the_records_say_so():
@@ -375,7 +377,8 @@ def test_i7_the_phase_record_and_closure_notes_point_at_the_latest_run_and_the_c
     rounds = re.findall(r"^## (\w+) review round \(", record, flags=re.MULTILINE)
     suite = next(line for line in record.splitlines() if line.startswith("| Local suite |"))
     named = re.search(r'The latest run is in "(\w+) review round"', suite)
-    assert named and named.group(1) == rounds[-1] == "Eighth", (suite, rounds)
+    # The latest round (the ninth since spec 18.12; each round moves the row and this name on).
+    assert named and named.group(1) == rounds[-1] == "Ninth", (suite, rounds)
     assert "**SQLite:**" in _round_section(record, rounds[-1])
     changed = _round_section(record, "Seventh").split("**Existing tests changed (intent kept):**", 1)[1].split("**Configuration package v2:**", 1)[0]
     for needed in ("overlap-gate", "second learner", "source order", "D4", "E1", "test_phase3_review4.py"):

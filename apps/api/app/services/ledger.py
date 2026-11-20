@@ -27,7 +27,9 @@ learner's response and the turn's decision_reason are unchanged.
 
 Each delivery's attempt logs one tutor.ledger.attempted line with its decision, its abstention reason and an
 attempt id, and ends in exactly one terminal line with the same attempt id once its append ends:
-tutor.ledger.appended (delivery legacy) or tutor.ledger.append_failed (spec 18.8 F11).
+tutor.ledger.appended (delivery legacy) or tutor.ledger.append_failed (spec 18.8 F11). attempt_horizon_s bounds how
+long that takes while the process keeps its CPU, and ledger_coverage counts a turn as lost only once it is older
+than that horizon (spec 18.12 J5, J6).
 
 Budgets, attempts and the appender's size come from configuration package v2 (tutor_pipeline.budgets; PD-11).
 TUTOR_LEDGER_APPEND_BUDGET_MS and TWO_PASS_SHADOW_BUDGET_MS override the two budgets only; every record stamps
@@ -49,9 +51,10 @@ from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeout, wait
 import contextvars
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import json
 import logging
+import math
 from pathlib import Path
 import random
 import threading
@@ -144,6 +147,48 @@ def ledger_budget_ms(settings: Settings, package: ConfigPackage) -> int:
     if settings.tutor_ledger_append_budget_ms is not None:
         return int(settings.tutor_ledger_append_budget_ms)
     return ledger_params(package).ledger_append_budget_ms
+
+
+# The terms of the attempt horizon (attempt_horizon_s; spec 18.12 J6). The first two are library defaults the code
+# keeps: app.core.db sets no pool_timeout (SQLAlchemy's QueuePool waits up to 30 s for a free connection) and passes
+# no timeout to the Cloud SQL Python connector (up to 30 s for a new connection), and one checkout can take both (a
+# pooled connection that fails its pre-ping is replaced by a new one).
+POOL_CHECKOUT_TIMEOUT_S = 30
+CONNECT_TIMEOUT_S = 30
+# The statements of one append attempt after its PostgreSQL SET LOCALs, the commit included: the response_id read,
+# the head insert-if-missing, the head lock, the record insert, the head update and the commit (append_ledger_entry).
+# Each is bounded by the budget left when the attempt began.
+ATTEMPT_STATEMENTS = 6
+# Log ingestion, and the time between a turn's created_at and its attempted line (the turn's own commit).
+HORIZON_MARGIN_S = 60
+
+
+def attempt_horizon_s(params: TutorPipelineParams, budget_ms: int) -> int:
+    """The longest a legacy attempt takes from its tutor.ledger.attempted line to its terminal line, and a tutor turn
+    from its created_at to its ledger record, while the process keeps its CPU (always-on CPU allocation). It is the
+    runbook's horizon for both checks (infra/cloudrun/deployment.md, Phase 3; spec 18.12 J5, J6).
+
+    One append takes at most a connection wait (POOL_CHECKOUT_TIMEOUT_S + CONNECT_TIMEOUT_S) and ATTEMPT_STATEMENTS
+    statements of at most the budget each, after earlier attempts that all ended within the budget (a retry starts
+    only while budget remains): (ATTEMPT_STATEMENTS + 1) budgets in all. Appends run on ledger_append_workers threads
+    with at most ledger_append_max_in_flight running or queued, so an append ends within ceil(max_in_flight /
+    workers) such appends. Add HORIZON_MARGIN_S and round up to whole minutes: 360 s with the package's values.
+
+    With request-based CPU allocation nothing bounds it: an append still queued or running when the response has
+    gone runs on only when the instance next has CPU (its next request, or its shutdown, when Python runs the queued
+    appends before the process exits). The runbook therefore reads a missing terminal line there as a case to
+    investigate, and decides by a coverage check run once that instance has stopped.
+    """
+    per_append_s = POOL_CHECKOUT_TIMEOUT_S + CONNECT_TIMEOUT_S + (ATTEMPT_STATEMENTS + 1) * max(1, int(budget_ms)) / 1000
+    rounds = math.ceil(params.ledger_append_max_in_flight / max(1, params.ledger_append_workers))
+    return 60 * math.ceil((rounds * per_append_s + HORIZON_MARGIN_S) / 60)
+
+
+def coverage_horizon_s(settings: Settings | None = None) -> int:
+    """attempt_horizon_s for the package and the ledger budget in force: ledger_coverage's default horizon."""
+    settings = settings or get_settings()
+    package = get_config_package(settings)
+    return attempt_horizon_s(ledger_params(package), ledger_budget_ms(settings, package))
 
 
 def budget_stamp(settings: Settings, package: ConfigPackage, *, shadow_ms: int | None) -> BudgetStamp:
@@ -490,15 +535,28 @@ def verify_response_ledger(db: Session, *, expected_head: tuple[int, str] | None
 # ------------------------------------------------------------------------------- operator tools (worker, script)
 
 
-def ledger_coverage(db: Session, since: datetime) -> dict[str, Any]:
+def ledger_coverage(db: Session, since: datetime, *, now: datetime | None = None, horizon_s: int | None = None) -> dict[str, Any]:
     """Tutor turns created since `since` with no ledger record (plan I "ledger writes 100% of deliveries"; report
     only), split by what each turn expected (TutorTurn.ledger_record_expected; spec 18.8 F12):
-      unrecorded                  it expected a record and has none: a lost record, a plan L stop;
+      unrecorded                  it expected a record, has none, and was created before settled_before: a lost
+                                  record, a plan L stop;
+      pending                     it expected a record and has none yet, but was created at or after settled_before,
+                                  so its append may still be running (the turn commits first and its append runs
+                                  after the commit): not counted as lost; a later run counts it (spec 18.12 J5);
       not_expected_earlier_image  an image that keeps no ledger created it (before Phase 3, or a rollback window);
       ledger_disabled             it was created while TUTOR_LEDGER_ENABLED was off (the kill switch);
-    and the /qa/ask records since then. A qa- record holds no id of its Q&A row, so Q&A coverage is the per-process
-    legacy_by_surface.qa.coverage_rate SLI and the tutor.ledger.* outcome lines, not a join."""
+    and the /qa/ask records since then. settled_before is `now` (the check's start) less horizon_s, which defaults to
+    coverage_horizon_s() (attempt_horizon_s: every append of an always-on instance has ended by then); horizon_s=0
+    counts every turn, for a check run once traffic has stopped. A qa- record holds no id of its Q&A row, so Q&A
+    coverage is the per-process legacy_by_surface.qa.coverage_rate SLI and the tutor.ledger.* outcome lines, not a
+    join."""
     since = _utc(since)
+    now = _utc(now or datetime.now(UTC))
+    if horizon_s is None:
+        horizon_s = coverage_horizon_s()
+    if int(horizon_s) < 0:
+        raise ValueError("the coverage horizon is a number of seconds, 0 or more")
+    settled_before = now - timedelta(seconds=int(horizon_s))
     recorded = select(ResponseLedgerRecord.response_id).where(ResponseLedgerRecord.response_id == TutorTurn.id).exists()
 
     def count(*conditions) -> int:
@@ -507,10 +565,14 @@ def ledger_coverage(db: Session, since: datetime) -> dict[str, Any]:
     qa_records = db.scalar(
         select(func.count()).select_from(ResponseLedgerRecord).where(ResponseLedgerRecord.created_at >= since, ResponseLedgerRecord.response_id.like("qa-%"))
     ) or 0
+    expected_missing = (TutorTurn.ledger_record_expected.is_(True), ~recorded)
     return {
         "since": since.isoformat(),
+        "settled_before": settled_before.isoformat(),
+        "horizon_s": int(horizon_s),
         "turns_since": count(),
-        "unrecorded": count(TutorTurn.ledger_record_expected.is_(True), ~recorded),
+        "unrecorded": count(*expected_missing, TutorTurn.created_at < settled_before),
+        "pending": count(*expected_missing, TutorTurn.created_at >= settled_before),
         "not_expected_earlier_image": count(TutorTurn.ledger_record_expected.is_(None), ~recorded),
         "ledger_disabled": count(TutorTurn.ledger_record_expected.is_(False), ~recorded),
         "qa_records_since": int(qa_records),

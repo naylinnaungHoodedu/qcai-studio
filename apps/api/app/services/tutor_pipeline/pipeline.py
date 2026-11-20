@@ -121,20 +121,35 @@ def render_checked(
     over: Callable[[], bool] | None = None,
 ) -> tuple[RenderedResponse | None, int, str | None]:
     """Plan 3.7: render, subset-check; on an unmapped factual sentence re-render, at most max_regenerations times,
-    then abstain. Returns (the passing rendering or None, attempts made, abstention reason or None)."""
-    for attempt in range(1, 2 + max_regenerations):
+    then abstain. Returns (the passing rendering or None, attempts made, abstention reason or None).
+
+    An attempt that raises (in the renderer, or in the subset check on its output) is a failed attempt too, but it is
+    not a subset-check failure: it logs tutor.two_pass.render_failed with the step and the error class, and when every
+    attempt raised the run abstains with render_failed, never subset_check_failed (spec 18.12 J3). So a crashing
+    renderer is told apart from the plan J case of a renderer that adds a claim, in the record and in "abstention by
+    reason". A tampered locked set still propagates."""
+    attempts = 1 + max_regenerations
+    faults = 0
+    for attempt in range(1, attempts + 1):
+        step = "render"
         try:
             candidate = renderer.render(locked, presentation, attempt=attempt)
+            step = "subset_check"
             passed = check_subset(candidate, locked).passed
         except contracts.LockedClaimSetTampered:
             raise
-        except Exception:  # noqa: BLE001 - a renderer fault is a failed attempt
+        except Exception as exc:  # noqa: BLE001 - a fault is a failed attempt, logged and counted apart (spec 18.12 J3)
+            faults += 1
             passed = False
+            LOGGER.error(
+                "Two-pass render attempt raised",
+                extra={FIELDS: {"event": "tutor.two_pass.render_failed", "step": step, "render_attempt": attempt, "error": type(exc).__name__}},
+            )
         if passed:
             return candidate, attempt, None
-        if attempt < 1 + max_regenerations and over is not None and over():
+        if attempt < attempts and over is not None and over():
             return None, attempt, "budget_exceeded"
-    return None, 1 + max_regenerations, "subset_check_failed"
+    return None, attempts, contracts.RENDER_FAILED if faults == attempts else "subset_check_failed"
 
 
 class TwoPassPipeline:

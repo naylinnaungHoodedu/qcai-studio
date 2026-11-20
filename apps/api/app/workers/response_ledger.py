@@ -11,7 +11,11 @@ CLOUD_SQL_CONNECTION_NAME is set), so the runbook's production checks need no wo
   --coverage-since ISO8601  also logs tutor turns since then that have no ledger record, split by what each turn
                             expected (unrecorded: a lost record; not_expected_earlier_image; ledger_disabled; spec
                             18.8 F12), and the qa- records since then (counts only; plan I "ledger writes 100% of
-                            deliveries").
+                            deliveries"). A turn that expects a record is counted unrecorded only when it is older
+                            than the horizon; a newer one is pending, its append possibly still running (spec 18.12
+                            J5).
+  --coverage-horizon-s N    that horizon in seconds (default: ledger.attempt_horizon_s for the package and the ledger
+                            budget in force, 360 s; 0 counts every turn, for a check once traffic has stopped).
   --export PATH             also writes every record as one JSON object per line to PATH, which must lie outside
                             the application tree: the step before an Alembic downgrade. The file holds corpus text
                             and learner-linked ids; its handling rule is in infra/cloudrun/deployment.md.
@@ -21,8 +25,8 @@ CLOUD_SQL_CONNECTION_NAME is set), so the runbook's production checks need no wo
                             (spec 18.7 E12). A ledger that already holds records, or a line that does not extend
                             the chain, is refused and nothing is written.
 Exit codes: 0 ok, 1 broken, failed or a refused restore, 2 a usage error.
-Run as: python -m app.workers.response_ledger [--expect-head SEQ:HASH] [--coverage-since ISO8601] [--export PATH]
-        [--restore PATH]
+Run as: python -m app.workers.response_ledger [--expect-head SEQ:HASH] [--coverage-since ISO8601]
+        [--coverage-horizon-s N] [--export PATH] [--restore PATH]
 """
 
 import argparse
@@ -64,6 +68,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--expect-head", default=None, help="a head logged earlier, SEQ:HASH, that the chain must still reach")
     parser.add_argument("--coverage-since", default=None, help="also count tutor turns since this time without a ledger record")
+    parser.add_argument("--coverage-horizon-s", type=int, default=None,
+                        help="count a turn as unrecorded only once it is this many seconds old (default: the attempt horizon)")
     parser.add_argument("--export", type=Path, default=None, help="also write every record as JSON lines to this path (outside the application tree)")
     parser.add_argument("--restore", type=Path, default=None, help="first re-insert an --export file into an empty ledger")
     args = parser.parse_args(argv)
@@ -71,6 +77,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         expected = parse_head(args.expect_head)
         since = _since(args.coverage_since) if args.coverage_since else None
+        if args.coverage_horizon_s is not None and args.coverage_horizon_s < 0:
+            raise ValueError("--coverage-horizon-s takes a number of seconds, 0 or more")
     except ValueError as exc:
         LOGGER.error("Response ledger check refused its arguments", extra={FIELDS: {"job": "response_ledger", "status": "usage", "error": str(exc)}})
         return 2
@@ -98,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
         with SessionLocal() as db:
             check = verify_response_ledger(db, expected_head=expected)
             if since is not None:
-                extra["coverage"] = ledger_coverage(db, since)
+                extra["coverage"] = ledger_coverage(db, since, horizon_s=args.coverage_horizon_s)
             if args.export is not None:
                 extra["exported"] = {"rows": export_ledger(db, args.export)}
     except Exception:

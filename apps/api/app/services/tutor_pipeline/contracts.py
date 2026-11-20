@@ -38,6 +38,10 @@ TWO_PASS_DELIVERY_IMPLEMENTED = False
 #                         is nothing to quote whole
 NO_QUOTABLE_EVIDENCE = "no_quotable_evidence"
 NO_WHOLE_SENTENCE = "no_whole_sentence"
+# Every render attempt raised (in the renderer, or in the subset check on its output) instead of producing a
+# rendering that the subset check could refuse (spec 18.12 J3). Each such attempt logs tutor.two_pass.render_failed;
+# subset_check_failed stays for a run in which at least one rendering was checked and every checked one failed.
+RENDER_FAILED = "render_failed"
 ABSTENTION_REASONS = (
     "no_query_terms",
     "no_match",
@@ -50,6 +54,7 @@ ABSTENTION_REASONS = (
     "no_claims",
     "no_bound_claims",
     "subset_check_failed",
+    RENDER_FAILED,
     "budget_exceeded",
 )
 # The legacy contained path's own abstention reason (contained_answers.contain_answer). Since Phase 3 spec 18.8 F1 a
@@ -64,18 +69,23 @@ GATE_ABSTENTION_REASONS = ("no_query_terms", "no_match", "insufficient_coverage"
 # partial_sentence (spec 18.10 H1): a piece of a cited span's own text that the span cuts out of a longer document
 # sentence (it starts or ends at the span's edge), so it is not a whole sentence and never binds.
 PARTIAL_SENTENCE = "partial_sentence"
-BINDING_FAILURES = ("unbound", "outside_bundle", "unresolvable", "not_quotable", PARTIAL_SENTENCE, "not_verbatim", "duplicate")
+BINDING_FAILURES = ("unbound", "outside_bundle", "unresolvable", "not_quotable", PARTIAL_SENTENCE, "not_verbatim")
 # Not binding failures, so the plan L bound-claim ratio treats them apart (bound_claim_ratio_terms):
 #   merged           it bound, onto the spans of an earlier claim with the same sentence (bind.py)
+#   duplicate        it bound too: its sentence was already bound on every span it cites, so it adds nothing. It
+#                    passed every binding check, exactly as a merged claim did, so the ratio counts it as bound
+#                    (spec 18.12 J1; until then it was a binding failure, and two claim plans that lock one claim
+#                    set read 1.0 or 0.5 by the order of their claims alone)
 #   budget_exceeded  bind never ran: the shadow budget ran out after the generator returned (pipeline.py)
 MERGED = "merged"
+DUPLICATE = "duplicate"
 BUDGET_SKIPPED = "budget_exceeded"
 # The legacy contained path: a citation the Phase 2 pipeline produced but could not verify (a binding failure).
 LEGACY_UNRESOLVED = "unresolved_citation"
 # The legacy contained path: a delivered quotation whose span's derived license class is not public. Its claim is
 # kept out of the ledger (no non-public text is ever recorded) and counted; any such count is an upstream breach.
 LEGACY_NOT_PUBLIC = "not_public"
-DROP_REASONS = (*BINDING_FAILURES, MERGED, BUDGET_SKIPPED, LEGACY_UNRESOLVED, LEGACY_NOT_PUBLIC)
+DROP_REASONS = (*BINDING_FAILURES, MERGED, DUPLICATE, BUDGET_SKIPPED, LEGACY_UNRESOLVED, LEGACY_NOT_PUBLIC)
 
 # Field names that would carry learner state. None may appear in a retrieval request or an evidential envelope
 # (AC-3-1); the contract tests add each one and expect a refusal.
@@ -442,10 +452,12 @@ def bound_claim_ratio_terms(counts: PipelineCounts) -> tuple[int, int]:
     """(proposed, bound) for the plan L bound-claim ratio ("Stop if bound-claim ratio falls below Phase 2").
 
     A claim bind never saw (budget_exceeded) is in neither term: a slow generator is a latency event, not a binding
-    failure. A claim merged into an earlier claim on the same sentence did bind, so it is in both.
+    failure. A claim merged into an earlier claim on the same sentence, or a duplicate of one (its sentence already
+    bound on every span it cites), passed every binding check, so it is in both (spec 18.12 J1): the ratio of a
+    locked claim set does not depend on the order in which its claims were proposed.
     """
     skipped = counts.dropped.get(BUDGET_SKIPPED, 0)
-    return counts.proposed_claims - skipped, counts.bound_claims + counts.dropped.get(MERGED, 0)
+    return counts.proposed_claims - skipped, counts.bound_claims + counts.dropped.get(MERGED, 0) + counts.dropped.get(DUPLICATE, 0)
 
 
 class LedgerEntry(Contract):

@@ -1,13 +1,15 @@
 """Verify the tutor response ledger (plan Phase 3 F: "ledger integrity script"; task 3.8; Phase 3 spec 7.16).
 
 Run: python scripts/verify_ledger.py [--database-url URL] [--report PATH] [--expect-head SEQ:HASH]
-                                     [--coverage-since ISO8601] [--export PATH.jsonl]
+                                     [--coverage-since ISO8601] [--coverage-horizon-s N] [--export PATH.jsonl]
 
 Read-only. It walks the whole hash chain (gaps, broken links, edited entries or columns, non-canonical entries,
 schema failures, a missing or mismatched head, a record past the head) and, with --expect-head, checks that the
 chain still reaches a head logged earlier off the database (a forged head over a truncated tail). Appends that
 commit while it runs are counted (appended_during_check), never reported as a break. --coverage-since reports
-tutor turns created since then that have no ledger record (plan I "ledger writes 100% of deliveries"; report only),
+tutor turns created since then that have no ledger record (plan I "ledger writes 100% of deliveries"; report only):
+unrecorded once older than --coverage-horizon-s (default ledger.attempt_horizon_s, 360 s), pending before that (an
+append may still be running; spec 18.12 J5),
 and counts the /qa/ask records since then (a qa- record holds no id of its Q&A row, so Q&A coverage is the
 per-process legacy_by_surface.qa.coverage_rate SLI, not a join). --export writes every row as one JSON object per
 line to a path outside the repository: the step before an Alembic downgrade. The restore that undoes the
@@ -70,6 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report", type=Path, default=None)
     parser.add_argument("--expect-head", default=None)
     parser.add_argument("--coverage-since", default=None)
+    parser.add_argument("--coverage-horizon-s", type=int, default=None)
     parser.add_argument("--export", type=Path, default=None)
     args = parser.parse_args(argv)
     url = args.database_url or _AMBIENT_URL
@@ -82,6 +85,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         expected = parse_head(args.expect_head)
         since = _since(args.coverage_since) if args.coverage_since else None
+        if args.coverage_horizon_s is not None and args.coverage_horizon_s < 0:
+            raise ValueError("--coverage-horizon-s takes a number of seconds, 0 or more")
     except ValueError as exc:
         print(f"verify_ledger: {exc}", file=sys.stderr)
         return 2
@@ -104,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
                 "problems": list(check.problems),
             }
             if since is not None:
-                report["coverage"] = ledger_coverage(db, since)
+                report["coverage"] = ledger_coverage(db, since, horizon_s=args.coverage_horizon_s)
             if args.export is not None:
                 report["exported"] = {"rows": export_ledger(db, args.export)}
     except SQLAlchemyError as exc:

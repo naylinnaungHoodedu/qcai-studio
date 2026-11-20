@@ -26,7 +26,8 @@ block's write_stop counts legacy writes only); bound_claim_ratio_stop is true on
 is below the Phase 2 baseline pinned in the package (in process only). A null ratio (no
 claims proposed) is never a stop. A run's proposed and bound claims are counted as
 contracts.bound_claim_ratio_terms gives them: claims bind never saw (the budget ran out after the generator
-returned) are in neither term, and claims merged onto an earlier claim's sentence are in both.
+returned) are in neither term, and claims merged onto an earlier claim's sentence, or duplicates of one, are in both
+(spec 18.12 J1).
 """
 
 from __future__ import annotations

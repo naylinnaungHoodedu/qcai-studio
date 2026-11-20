@@ -142,11 +142,11 @@ def _legacy(response_id: str | None = None) -> LegacyDelivery:
     )
 
 
-def _turn(db: Session, thread: TutorThread, *, expected: bool | None) -> str:
+def _turn(db: Session, thread: TutorThread, *, expected: bool | None, age: timedelta = timedelta(0)) -> str:
     turn_id = f"turn-{uuid4()}"
     db.add(TutorTurn(id=turn_id, thread_id=thread.id, user_id=thread.user_id, resolved_query="q", retrieval_mode="lexical", provider="none",
                      model="m", decision="abstain", decision_reason="no_approved_span", citations=[], claims=[], corpus_version="c",
-                     policy_version="p", created_at=datetime.now(UTC), ledger_record_expected=expected))
+                     policy_version="p", created_at=datetime.now(UTC) - age, ledger_record_expected=expected))
     return turn_id
 
 
@@ -631,14 +631,16 @@ def test_f12_a_kill_switch_turn_says_so_and_a_default_turn_expects_a_record(monk
 def test_f12_the_worker_splits_unrecorded_turns_by_what_they_expected(fresh_database_url):
     factory, engine = fresh_sessions(fresh_database_url)
     try:
-        since = datetime.now(UTC) - timedelta(minutes=1)
+        # Spec 18.12 J5: a turn without its record counts as unrecorded only once it is older than the attempt horizon
+        # (a newer one is pending), so these turns are 10 minutes old, past the 360 s horizon.
+        since = datetime.now(UTC) - timedelta(hours=1)
         with factory() as db:
             thread = TutorThread(id=f"thread-{uuid4()}", user_id=f"review5-{uuid4().hex[:8]}", title="t")
             db.add(thread)
             db.flush()
-            recorded = _turn(db, thread, expected=True)
+            recorded = _turn(db, thread, expected=True, age=timedelta(minutes=10))
             for expected in (True, None, False):
-                _turn(db, thread, expected=expected)
+                _turn(db, thread, expected=expected, age=timedelta(minutes=10))
             db.commit()
         append_ledger_entry(make_entry(recorded), session_factory=factory, budget_ms=5000)
         with factory() as db:

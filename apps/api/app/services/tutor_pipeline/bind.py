@@ -24,6 +24,8 @@ compare (spec conflict 32; D-19 "verbatim"), so a generator that folds "x²" to 
 and rendered claim still reads "x²". A sentence proposed again on other spans that also hold it verbatim (the
 splitter overlaps chunks, so one sentence can sit in two adjacent spans) is merged into the first claim, whose span
 set becomes the union; it is counted as "merged", never as a binding failure (contracts.bound_claim_ratio_terms).
+A sentence proposed again on spans it is already bound on adds nothing and is counted as "duplicate", which is not a
+binding failure either: it passed every check, so the ratio counts it as bound (spec 18.12 J1).
 Each draft carries its sentence's own place in the source, (item_id, the item offset of its first character), the
 earliest over the spans it cites, so the stepwise plan's "in source order" holds for two sentences of one span
 (spec 18.10 H2).
@@ -40,6 +42,7 @@ from app.core.corpus_governance import CorpusRegistry
 from app.services.contained_answers import span_is_quotable
 from app.services.tutor_pipeline.contracts import (
     BINDING_FAILURES,
+    DUPLICATE,
     MERGED,
     PARTIAL_SENTENCE,
     ClaimPlan,
@@ -55,8 +58,8 @@ if TYPE_CHECKING:  # pragma: no cover
     from app.services.spans import SpanRecord
 
 BINDING_RULE = "resolver-bundle-sentence-v2"
-# What bind() counts in BindResult.dropped: every binding failure, and "merged" (which is not a failure).
-DROP_REASONS = (*BINDING_FAILURES, MERGED)
+# What bind() counts in BindResult.dropped: every binding failure, and "merged" and "duplicate" (which are not).
+DROP_REASONS = (*BINDING_FAILURES, MERGED, DUPLICATE)
 
 
 @dataclass(frozen=True)
@@ -205,7 +208,7 @@ def bind(
                         bound[merge_key] = set(span_ids)
                         places[merge_key] = place
                     elif set(span_ids) <= spans:
-                        reason = "duplicate"
+                        reason = DUPLICATE
                     else:
                         spans.update(span_ids)
                         places[merge_key] = min(places[merge_key], place)

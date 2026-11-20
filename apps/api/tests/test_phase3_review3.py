@@ -513,7 +513,9 @@ def _worker(database_url: str, *args: str) -> tuple[int, dict | None, str]:
 def test_d13_the_in_image_worker_runs_coverage_and_export(fresh_database_url, tmp_path):
     factory, engine = fresh_sessions(fresh_database_url)
     try:
-        since = datetime.now(UTC) - timedelta(minutes=1)
+        # Spec 18.12 J5: the turns are older than the 360 s attempt horizon, so the one without a record is unrecorded
+        # (a newer one would be pending: its append may still be running).
+        since = datetime.now(UTC) - timedelta(hours=1)
         with factory() as db:
             thread = TutorThread(id=f"thread-{uuid4()}", user_id=f"review3-{uuid4().hex[:8]}", title="t")
             db.add(thread)
@@ -523,13 +525,13 @@ def test_d13_the_in_image_worker_runs_coverage_and_export(fresh_database_url, tm
                 # Made by a Phase 3 image with the ledger on (spec 18.8 F12): each expects a record.
                 db.add(TutorTurn(id=turn_id, thread_id=thread.id, user_id=thread.user_id, resolved_query="q", retrieval_mode="lexical", provider="none",
                                  model="m", decision="abstain", decision_reason="no_approved_span", citations=[], claims=[], corpus_version="c",
-                                 policy_version="p", created_at=datetime.now(UTC), ledger_record_expected=True))
+                                 policy_version="p", created_at=datetime.now(UTC) - timedelta(minutes=10), ledger_record_expected=True))
             db.commit()
         append_ledger_entry(make_entry(turns[0]), session_factory=factory, budget_ms=5000)
         export_path = tmp_path / "ledger-export.jsonl"
         code, report, _ = _worker(fresh_database_url, "--coverage-since", since.isoformat(), "--export", str(export_path))
         assert code == 0 and report["status"] == "ok" and report["records"] == 1
-        assert (report["coverage"]["turns_since"], report["coverage"]["unrecorded"]) == (2, 1)
+        assert (report["coverage"]["turns_since"], report["coverage"]["unrecorded"], report["coverage"]["pending"]) == (2, 1, 0)
         assert report["exported"] == {"rows": 1} and json.loads(export_path.read_text(encoding="utf-8").splitlines()[0])["response_id"] == turns[0]
         assert fresh_database_url not in json.dumps(report)
         inside = REPO_ROOT / "ledger-export-review3.jsonl"

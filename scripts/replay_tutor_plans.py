@@ -257,7 +257,8 @@ def run_configuration(
         "span_set_equal": span_equal,
         "rendered_text_distinct_among_answers": distinct,
         "mismatches": sorted(mismatches),
-        # Ratio terms (contracts.bound_claim_ratio_terms); merged_claims bound onto an earlier claim's sentence.
+        # Ratio terms (contracts.bound_claim_ratio_terms: a merged or duplicate claim counts as bound, spec 18.12 J1);
+        # merged_claims bound onto an earlier claim's sentence.
         "two_pass": {"proposed_claims": proposed, "bound_claims": bound, "bound_claim_ratio": ratio, "merged_claims": merged},
         "phase2_legacy": {**legacy, "bound_claim_ratio": _ratio(legacy["bound"], legacy["claims"])},
         "stop": bool(ratio is not None and ratio < baseline),

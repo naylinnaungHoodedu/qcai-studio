@@ -182,6 +182,7 @@ def test_counts_reconcile_and_the_bound_claim_ratio_terms_leave_skipped_claims_o
 
     assert contracts.bound_claim_ratio_terms(counts(3, 0, {"budget_exceeded": 3})) == (0, 0)  # bind never ran: no ratio
     assert contracts.bound_claim_ratio_terms(counts(3, 2, {"merged": 1})) == (3, 3)  # a merged claim did bind
+    assert contracts.bound_claim_ratio_terms(counts(3, 2, {"duplicate": 1})) == (3, 3)  # so did a duplicate (spec 18.12 J1)
     assert contracts.bound_claim_ratio_terms(counts(4, 2, {"merged": 1, "unbound": 1})) == (4, 3)
     assert contracts.bound_claim_ratio_terms(counts(2, 1, {"unresolved_citation": 1})) == (2, 1)  # legacy
     assert contracts.bound_claim_ratio_terms(counts(0, 0, {})) == (0, 0)
@@ -190,7 +191,9 @@ def test_counts_reconcile_and_the_bound_claim_ratio_terms_leave_skipped_claims_o
         with pytest.raises(ValidationError, match=message):
             counts(proposed, bound, dropped)
     # not_public (2026-11-19 hardening): a delivered legacy quotation whose span's derived license class is not public.
-    assert set(contracts.DROP_REASONS) == {*contracts.BINDING_FAILURES, "merged", "budget_exceeded", "unresolved_citation", "not_public"}
+    # duplicate (spec 18.12 J1) left the binding failures: it bound, as a merged claim did.
+    assert "duplicate" not in contracts.BINDING_FAILURES
+    assert set(contracts.DROP_REASONS) == {*contracts.BINDING_FAILURES, "merged", "duplicate", "budget_exceeded", "unresolved_citation", "not_public"}
     with pytest.raises(ValidationError, match="counts.bound_claims"):
         LedgerEntry(**_entry(counts=counts(2, 2, {})))  # two counted, one recorded
 

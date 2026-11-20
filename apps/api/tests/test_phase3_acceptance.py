@@ -326,42 +326,75 @@ class _SpyAssistant(TeachingAssistantService):
         return self._spy_pipeline
 
 
-def test_ac_3_1_what_the_evidential_pass_receives_holds_zero_learner_state_under_three_learner_contexts(monkeypatch):
+THREE_LEARNER_QUESTIONS = ["Why does routing depth matter?", "QUBO logistics", "What is the capital of France?", "quantum kernels for finance"]
+
+
+def learner_independent(entry: dict) -> dict:
+    """A shadow record without the fields that name its response, turn or messages: everything plan 7.8 invariant 1
+    holds equal across learners (spec 18.12 J2)."""
+    kept = {key: value for key, value in entry.items() if key not in ("response_id", "shadowed_response_id", "resolved_question")}
+    kept["claims"] = [{key: value for key, value in claim.items() if key != "response_id"} for claim in entry["claims"]]
+    kept["resolver"] = entry["resolved_question"]["resolver"]
+    return kept
+
+
+def observe_three_learners(monkeypatch, *, assistant_class=None, prefix: str = "ac31", on_learner=None):
+    """Plan 7.8 invariant 1's fixture: three learners (mastery 0.1, 0.5, 0.9, each with a note, a quiz attempt and
+    markers in page_path and history) ask the same public-corpus questions. Per learner and question it records the
+    retrieval call (request and top_k), the envelopes the generator was sent, the ClaimPlans it returned and the
+    whole shadow record but its ids: the EvidenceBundle (every span field, the sufficiency, the threshold version,
+    floor and margin), the locked claims and claim_set_hash, the decision, the abstention reason, the counts and the
+    presentation (spec 18.12 J2). Returns (observed per learner, captured inputs, markers)."""
+    assistant_class = assistant_class or _SpyAssistant
+    monkeypatch.setattr(assistant_class, "spy", None)  # this run's spy only: the pipeline makes a new one on first use
     settings = Settings()
-    orchestrator = orchestrator_for(settings, assistant_class=_SpyAssistant)
+    orchestrator = orchestrator_for(settings, assistant_class=assistant_class)
     monkeypatch.setattr(assistant_route, "get_tutor_orchestrator", lambda: orchestrator)
     captured_requests: list[dict] = []
     real_retrieve = pipeline_module.retrieve
-    monkeypatch.setattr(pipeline_module, "retrieve", lambda engine, request, **kw: captured_requests.append(request.model_dump(mode="json")) or real_retrieve(engine, request, **kw))
+    monkeypatch.setattr(pipeline_module, "retrieve", lambda engine, request, **kw: captured_requests.append(
+        {"request": request.model_dump(mode="json"), "top_k": kw.get("top_k")}) or real_retrieve(engine, request, **kw))
     legacy_calls: list[dict] = []
     real_search = RetrievalEngine.search
     monkeypatch.setattr(RetrievalEngine, "search", lambda self, query, lesson_slug=None, top_k=8, *, surface="search": legacy_calls.append(
         {"query": query, "lesson_slug": lesson_slug, "top_k": top_k}) or real_search(self, query, lesson_slug, top_k, surface=surface))
-    questions = ["Why does routing depth matter?", "QUBO logistics", "What is the capital of France?", "quantum kernels for finance"]
     markers, observed = [], []
     for mastery in (0.1, 0.5, 0.9):
-        headers = demo(f"ac31-{int(mastery * 10)}")
+        if on_learner is not None:
+            on_learner(mastery)
+        headers = demo(f"{prefix}-{int(mastery * 10)}")
         marker = f"MARKER-{uuid4().hex}"
         markers.append(marker)
         seed_learner(headers["x-demo-user"], mastery, marker)
         per_learner = []
-        for question in questions:
-            start = len(_SpyAssistant.spy.envelopes) if _SpyAssistant.spy else 0
+        for question in THREE_LEARNER_QUESTIONS:
+            spy = assistant_class.spy
+            start = len(spy.envelopes) if spy else 0
             response = chat(headers, question, page_path=f"/lessons/{marker}", history=[{"role": "user", "content": f"history {marker}"}])
             assert response.status_code == 200, response.text
             (shadow,) = records(shadowed_response_id=response.json()["turn_id"])
             entry = entry_of(shadow)
+            spy = assistant_class.spy
             per_learner.append({
-                "request": captured_requests[-1],
-                "envelopes": _SpyAssistant.spy.envelopes[start:] if _SpyAssistant.spy else [],
-                "bundle": [(span["span_id"], span["score"]) for span in entry["retrieval"]["evidence"]],
-                "claim_set_hash": entry["claim_set_hash"],
-                "decision": entry["decision"],
+                "retrieve": captured_requests[-1],
+                "envelopes": spy.envelopes[start:] if spy else [],
+                "plans": spy.plans[start:] if spy else [],
+                "record": learner_independent(entry),
             })
         observed.append(per_learner)
-    assert all(learner == observed[0] for learner in observed)  # invariant 1: identical across learner contexts
-    assert any(item["envelopes"] for item in observed[0])  # the evidential pass ran (not vacuous)
-    captured = {"requests": captured_requests, "envelopes": _SpyAssistant.spy.envelopes, "legacy": legacy_calls}
+    spy = assistant_class.spy
+    captured = {"requests": captured_requests, "envelopes": spy.envelopes if spy else [], "plans": spy.plans if spy else [], "legacy": legacy_calls}
+    return observed, captured, markers
+
+
+def test_ac_3_1_what_the_evidential_pass_receives_holds_zero_learner_state_under_three_learner_contexts(monkeypatch):
+    observed, captured, markers = observe_three_learners(monkeypatch)
+    # Invariant 1 (plan 7.8): identical retrieval request and top-k, envelopes, ClaimPlans, EvidenceBundle (threshold
+    # and sufficiency included), locked claims, abstention decision and reason, counts and presentation.
+    assert all(learner == observed[0] for learner in observed)
+    assert any(item["envelopes"] and item["plans"] for item in observed[0])  # the evidential pass ran (not vacuous)
+    assert any(item["record"]["decision"] == "abstain" for item in observed[0])  # an abstention is compared too
+    assert all(len(item["envelopes"]) == len(item["plans"]) for item in observed[0])
     for _, key, value in walk(captured):
         assert key not in LEARNER_STATE_FIELDS, key
     serialised = json.dumps(captured)
@@ -1875,7 +1908,8 @@ def test_plan_l_a_held_ledger_lock_never_delays_the_learner_beyond_the_append_bu
         assert elapsed_ms < ledger.ledger_budget_ms(settings, get_config_package(settings)) + 500 + 1500
         assert LEDGER_METRICS.snapshot()["failed"]["legacy"] == 1
         assert records(response_id=response.json()["turn_id"]) == []
-    # Both dialects: an IntegrityError is retried at most three times; any other database error is not retried.
+    # Both dialects: an IntegrityError is retried at most three times; a database error without a deadlock (40P01) or
+    # serialization (40001) SQLSTATE is not retried (those two are, spec 18.8 F8; test_phase3_review5.py).
     for error, expected_attempts, raised in ((IntegrityError("INSERT", {}, Exception("race")), 3, ledger.LedgerAppendError),
                                              (OperationalError("SELECT", {}, Exception("lock timeout")), 1, OperationalError)):
         attempts = []

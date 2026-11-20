@@ -1,7 +1,8 @@
 """Fakes for the Phase 3 two-channel tutor tests (Phase 3 spec 13.1).
 
 ScriptedGenerator emits scripted claim plans (unbound, outside-bundle, invented, non-verbatim, truncated or
-cross-span claims, or a malformed plan); SpyGenerator records every envelope the evidential pass sends; FaultyRenderer
+cross-span claims, or a malformed plan); SpyGenerator records every envelope the evidential pass sends and every claim
+plan it returns (spec 18.12 J2); FaultyRenderer
 injects one fault per scheduled attempt and records the fault it placed; FailingLedger stands in for a ledger append
 that fails. FAULT_SIGNATURES names the problem code each fault mode must raise (spec 18.11 I2).
 """
@@ -71,14 +72,19 @@ class ScriptedGenerator:
 
 
 class SpyGenerator:
+    """Records each envelope it is sent and the claim plan it returns for it (one of each per call, in order)."""
+
     def __init__(self, inner) -> None:
         self.inner = inner
         self.ref = inner.ref
         self.envelopes: list[dict] = []
+        self.plans: list[Any] = []
 
     def propose(self, envelope):
         self.envelopes.append(envelope.model_dump(mode="json"))
-        return self.inner.propose(envelope)
+        plan = self.inner.propose(envelope)
+        self.plans.append(plan.model_dump(mode="json") if hasattr(plan, "model_dump") else plan)
+        return plan
 
 
 class FailingLedger:
