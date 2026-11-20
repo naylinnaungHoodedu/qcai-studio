@@ -105,7 +105,7 @@ from app.services.tutor_pipeline.resolve import LearnerTurn, ResolverInputError,
 from app.services.tutor_pipeline.shadow import ShadowJob, effective_mode, run_shadow
 from app.services.tutor_pipeline.text import sentences
 from app.services.claim_gate import check_subset
-from tutor_fakes import FAULT_MODES, FailingLedger, FaultyRenderer, ScriptedGenerator, SpyGenerator, make_entry
+from tutor_fakes import FAULT_MODES, FAULT_SIGNATURES, FailingLedger, FaultyRenderer, ScriptedGenerator, SpyGenerator, make_entry
 
 API_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = API_ROOT.parents[1]
@@ -113,6 +113,9 @@ DATA = Path(__file__).parent / "data"
 REPO_MANIFEST = REPO_ROOT / "corpus" / "public" / "manifest.json"
 AC = json.loads((DATA / "score_floor_queries.json").read_text(encoding="utf-8"))
 IN_DOMAIN = [item["query"] for item in AC["in_domain"]]
+# A query whose two-pass answer locks several claims on several spans (spec 18.10 H1, 18.11 I2): a fault that moves a
+# citation between claims, or leaves a claim line out, needs at least two claim lines citing distinct spans.
+MULTI_CLAIM = "Explain why quantum logistics needs both problem reduction before execution and routing control during compilation."
 OFF_TOPIC = AC["off_topic"]
 ROUTING_DOCUMENT = "Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx"
 TRUSTED_ORIGIN = "http://localhost:3000"
@@ -290,8 +293,8 @@ def test_ac_3_1_the_evidential_pass_takes_no_learner_input_and_imports_no_learne
     allowed = {"self", "resolved", "lesson_slug", "corpus_version", "engine", "request", "top_k", "registry", "query", "bundle", "store",
                "params", "envelope", "plan", "resolver", "drafts", "generator", "evidential_prompt_hash", "pedagogical_prompt_hash", "package",
                "rendered", "locked", "templates"}
-    callables = [retrieve.build_request, retrieve.retrieve, RetrievalEngine.evidence, evidential.build_envelope, ExtractiveD19Generator.propose,
-                 bind.bind, lock_module.lock, claim_gate.check_subset]
+    callables = [retrieve.build_request, retrieve.retrieve, RetrievalEngine.evidence, evidential.build_envelope, evidential.no_envelope_reason,
+                 ExtractiveD19Generator.propose, bind.bind, lock_module.lock, claim_gate.check_subset]
     for function in callables:
         names = set(inspect.signature(function).parameters)
         assert names <= allowed, (function.__qualname__, names - allowed)
@@ -679,6 +682,7 @@ def test_ac_3_3_property_an_unmapped_sentence_regenerates_at_most_twice_then_abs
     store = get_course_store()
     sentences = _document_sentences(store)
     injected_modes: set[str] = set()
+    placed_modes: set[str] = set()
     for trial in range(300):
         locked = _random_locked(rng, sentences, store)
         locked_texts = {claim.text for claim in locked.claims}
@@ -689,6 +693,7 @@ def test_ac_3_3_property_an_unmapped_sentence_regenerates_at_most_twice_then_abs
         plan = PresentationPlan(plan_id=rng.choice(("concise", "stepwise", "socratic")), source="request")
         rendered, attempts, reason = render_checked(renderer, locked, plan, max_regenerations=PARAMS.max_regenerations)
         injected_modes |= {mode for mode in renderer.injected if mode}
+        placed_modes |= {mode for mode in renderer.placed if mode}
         first_clean = next((index + 1 for index, faulty in enumerate(schedule) if not faulty), None)
         if first_clean is None:
             assert (rendered, attempts, reason) == (None, 3, "subset_check_failed"), (trial, renderer.injected)
@@ -697,25 +702,55 @@ def test_ac_3_3_property_an_unmapped_sentence_regenerates_at_most_twice_then_abs
             assert check_subset(rendered, locked).passed
         assert attempts <= 1 + PARAMS.max_regenerations == 3
     assert injected_modes == set(FAULT_MODES)  # every failure mode was drawn (wrong_citation on one span falls back to invented)
+    # ... and every one was placed as itself at least once, not only through a fallback (spec 18.11 I2).
+    assert placed_modes >= set(FAULT_MODES), set(FAULT_MODES) - placed_modes
+
+
+def _spy_subset_problems(monkeypatch) -> list[tuple[str, ...]]:
+    """The problem codes of every subset check the pipeline runs (spec 18.11 I2)."""
+    seen: list[tuple[str, ...]] = []
+
+    def spy(rendered, locked):
+        result = check_subset(rendered, locked)
+        seen.append(result.problems)
+        return result
+
+    monkeypatch.setattr(pipeline_module, "check_subset", spy)
+    return seen
 
 
 @pytest.mark.parametrize("mode", FAULT_MODES)
-def test_ac_3_3_a_renderer_that_adds_a_claim_a_citation_or_a_fact_in_a_connective_is_caught(mode):
+def test_ac_3_3_a_renderer_that_adds_a_claim_a_citation_or_a_fact_in_a_connective_is_caught(mode, monkeypatch):
     settings = Settings()
     store = get_course_store()
     sentences = _document_sentences(store)
     engine = RetrievalEngine(store, settings)
-    query = "How does graph shrinking reduce routing overhead?"
+    # Spec 18.11 I2: the graph-shrinking query locks one claim on one span since 18.10 H1, so wrong_citation fell back to
+    # invented and undisplayed_citation left no claim line out. The several-claim query holds every fault as itself.
+    query = MULTI_CLAIM
+    baseline = _run(TwoPassPipeline(engine, settings), query)
+    assert baseline.decision == "answer" and len(baseline.locked.claims) >= 2 and len(baseline.locked.span_ids) >= 2
+    assert len({segment.line for segment in baseline.rendered.segments if segment.kind == "claim"}) >= 2
+    seen = _spy_subset_problems(monkeypatch)
     always = FaultyRenderer(TemplateRenderer(), [True, True, True], random.Random(1), modes=(mode,), outside_sentence=sentences[-1][1],
-                            outside_span_id="span-" + "9" * 64)
+                            outside_span_id="span-" + "9" * 64, exact=True)
     result = _run(TwoPassPipeline(engine, settings, renderer=always), query)
     assert (result.decision, result.abstention_reason, result.rendered, result.render_attempts) == ("abstain", "subset_check_failed", None, 3)
     assert result.entry.presentation.subset_check == "failed" and result.locked.claims  # the locked claims are kept, withheld
+    # The named fault was placed as itself on every attempt, and the subset check refused it by the fault's own rule.
+    assert always.placed == [mode, mode, mode] and len(seen) == 3, (always.placed, seen)
+    assert all(FAULT_SIGNATURES[mode] in problems for problems in seen), seen
+    if mode == "wrong_citation":  # a moved citation, not the invented claim it fell back to on one span
+        assert all("unmapped_factual_sentence" not in problems for problems in seen), seen
+    if mode == "undisplayed_citation":  # a claim line left out with its markers, the list kept: that rule alone
+        assert seen == [("citation_list_mismatch",)] * 3, seen
+    seen.clear()
     once = FaultyRenderer(TemplateRenderer(), [True, False], random.Random(1), modes=(mode,), outside_sentence=sentences[-1][1],
-                          outside_span_id="span-" + "9" * 64)
+                          outside_span_id="span-" + "9" * 64, exact=True)
     recovered = _run(TwoPassPipeline(engine, settings, renderer=once), query)
     assert (recovered.decision, recovered.render_attempts) == ("answer", 2)
-    assert recovered.locked.claim_set_hash == result.locked.claim_set_hash
+    assert once.placed == [mode, None] and FAULT_SIGNATURES[mode] in seen[0] and seen[1] == ()
+    assert recovered.locked.claim_set_hash == result.locked.claim_set_hash == baseline.locked.claim_set_hash
 
 
 def test_ac_3_3_the_overlap_gate_is_gone_and_claims_are_never_rebound():

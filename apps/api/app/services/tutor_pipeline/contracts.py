@@ -31,13 +31,21 @@ RESPONSE_ID = r"^(turn|shadow|qa)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
 # delivered). While it is False no code path builds a "delivered" ledger entry or returns two-pass text (AC-3-6).
 TWO_PASS_DELIVERY_IMPLEMENTED = False
 
+# Two reasons for an empty evidential envelope (spec 18.11 I1; evidential.no_envelope_reason):
+#   no_quotable_evidence  the bundle holds no quotable span: nothing approved under D-31, or the license gate excluded
+#                         every result (retrieve.py)
+#   no_whole_sentence     it holds quotable spans, but none holds a whole document sentence (spec 18.10 H1), so there
+#                         is nothing to quote whole
+NO_QUOTABLE_EVIDENCE = "no_quotable_evidence"
+NO_WHOLE_SENTENCE = "no_whole_sentence"
 ABSTENTION_REASONS = (
     "no_query_terms",
     "no_match",
     "insufficient_coverage",
     "below_floor",
     "corpus_version_mismatch",
-    "no_quotable_evidence",
+    NO_QUOTABLE_EVIDENCE,
+    NO_WHOLE_SENTENCE,
     "claim_plan_invalid",
     "no_claims",
     "no_bound_claims",

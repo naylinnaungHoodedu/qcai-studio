@@ -1,8 +1,8 @@
 {
  "report": "qcai-three-plan-replay",
  "format_version": 1,
- "created_at": "2026-11-19T23:50:10+00:00",
- "commit": "68222060728a00dee1649737c8b9d8c12dce963f-dirty",
+ "created_at": "2026-11-20T01:51:33+00:00",
+ "commit": "e7909f0f823cbfd8bf175f10e57a28fb74440061-dirty",
  "evidence_class": "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 evidence (plan Phase 3 H)",
  "public_corpus_only": true,
  "excluded_sources": [
@@ -102,7 +102,7 @@
     "no_claims": 8,
     "no_match": 56,
     "no_query_terms": 20,
-    "no_quotable_evidence": 11
+    "no_whole_sentence": 11
    },
    "claim_set_hash_equal": 299,
    "span_set_equal": 299,
@@ -142,7 +142,7 @@
     "below_floor": 145,
     "no_claims": 4,
     "no_match": 7,
-    "no_quotable_evidence": 13
+    "no_whole_sentence": 13
    },
    "claim_set_hash_equal": 299,
    "span_set_equal": 299,
@@ -196,17 +196,17 @@
    "apps/api/app/services/transcripts.py": "1a55f3f5b7e0ce0b9f74999691b50fa3ebb9aeb63bc1051f2bc16b334bd8f053",
    "apps/api/app/services/tutor_pipeline/__init__.py": "bd5834bd1aff386c87af74f04165403a38ed4edaebe388ef3fc82906f5d43fb3",
    "apps/api/app/services/tutor_pipeline/bind.py": "9821d727e88c4412f9e7610166c4ababe60c14f5ba3809b5d8ecf7ea0fee2d40",
-   "apps/api/app/services/tutor_pipeline/contracts.py": "8e8ca9b99a009bb1740c07201d22c1d48c19d91435c514062bf4c4dec3bfe8f3",
-   "apps/api/app/services/tutor_pipeline/evidential.py": "f5199400698d88b65dbb5a963c588962478d8e38a4ea389f1b9588b7cecb763a",
+   "apps/api/app/services/tutor_pipeline/contracts.py": "ffea2c5ffc307554f67094b11f8c78c315b94e10c65ec3cc8416225b8889f970",
+   "apps/api/app/services/tutor_pipeline/evidential.py": "5449d4d053fe489c76c43ce7d4ba456f7ff46d765d3a017591c98785725a644a",
    "apps/api/app/services/tutor_pipeline/lock.py": "2add716bfc729ef6044aebaafe6a2ef842e2182e9169c58b073e9505fe520eca",
    "apps/api/app/services/tutor_pipeline/metrics.py": "30b50d5547e2785b6c8635322062f368023c587a0b71de69cff507942d40ec57",
-   "apps/api/app/services/tutor_pipeline/pipeline.py": "3e42822298142c74b59c01e38b791e4a4d04456ea5d5b9071dcd32bf46d017dc",
+   "apps/api/app/services/tutor_pipeline/pipeline.py": "da601dbd0b6638e95d9822da15fc6b1c9585a4b1e49785104764d9653a465b2f",
    "apps/api/app/services/tutor_pipeline/render.py": "76715cf2a0dc456323a952f10751fcff8d6eae82aaf5d317c01e8282b3e8b919",
    "apps/api/app/services/tutor_pipeline/resolve.py": "60cad8ad9ad51c5eddf20e93f24aa2ebac6555f349f2a7c38aed17a3d2e5cc39",
-   "apps/api/app/services/tutor_pipeline/retrieve.py": "aafcd03079caf2e71a410055e69753378e374c21b0c5e97955b186ea74880551",
+   "apps/api/app/services/tutor_pipeline/retrieve.py": "12179a344db846585f77a39ca50fbf715c020bed6692bc019848747e39b8ba98",
    "apps/api/app/services/tutor_pipeline/text.py": "f8a8d6eaedd82f69dd63a7542f711378914d71918d5cf1e3c846018581764cea",
    "scripts/replay_tutor_plans.py": "ada1518d55d933283d132c1074271585fd7b78ac78c328bdd24f3fa22c9a31f0"
   },
-  "sha256": "16d6f10eff2ecfe4a4abc455329329caa024c2238fd639b3c5df8541869d8864"
+  "sha256": "c85155dead8ace0239ce5bf28511f0529633a35b41fa383799e16e76752d01db"
  }
 }

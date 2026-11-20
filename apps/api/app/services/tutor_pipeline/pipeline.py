@@ -52,7 +52,7 @@ from app.services.tutor_pipeline.contracts import (
     VersionStamps,
     sha256_hex,
 )
-from app.services.tutor_pipeline.evidential import ClaimGenerator, build_envelope, get_generator
+from app.services.tutor_pipeline.evidential import ClaimGenerator, build_envelope, get_generator, no_envelope_reason
 from app.services.tutor_pipeline.lock import lock
 from app.services.tutor_pipeline.metrics import LEDGER_METRICS
 from app.services.tutor_pipeline.render import Renderer, TemplateRenderer
@@ -202,7 +202,8 @@ class TwoPassPipeline:
         if reason is None:
             envelope = build_envelope(request, bundle, store=self.store, params=params)
             if envelope is None:
-                reason = "no_quotable_evidence"
+                # no_quotable_evidence or no_whole_sentence: which cause emptied the envelope (spec 18.11 I1).
+                reason = no_envelope_reason(bundle, store=self.store)
         if reason is None and envelope is not None:
             try:
                 plan = self._propose(envelope)

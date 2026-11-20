@@ -164,7 +164,7 @@ class _StaleCitations:
         return _relayout(rendered, kept, rendered.citations)
 
 
-def test_e1_a_rendering_that_lists_a_span_it_never_shows_never_answers():
+def test_e1_a_rendering_that_lists_a_span_it_never_shows_never_answers(monkeypatch):
     settings = Settings()
     engine = RetrievalEngine(get_course_store(), settings)
     full = _run(TwoPassPipeline(engine, settings), MULTI_CLAIM)
@@ -173,13 +173,32 @@ def test_e1_a_rendering_that_lists_a_span_it_never_shows_never_answers():
     probe = _StaleCitations().render(full.locked, PresentationPlan(plan_id="concise", source="request"), attempt=1)
     assert set(probe.citations) - set(claim_gate.displayed_span_ids(probe)), "the query no longer has a span shown only by its last claim"
     assert check_subset_problems(probe, full.locked) == ("citation_list_mismatch",)
-    stale = _run(TwoPassPipeline(engine, settings, renderer=_StaleCitations()), IN_DOMAIN)
+    # Spec 18.11 I2: the pipeline half runs on the same several-claim query (on the graph-shrinking query, one claim
+    # since 18.10 H1, the stale renderer dropped the only claim and also failed no_claim_rendered), and every attempt is
+    # refused by the stale list alone.
+    seen = _spy_subset_problems(monkeypatch)
+    stale = _run(TwoPassPipeline(engine, settings, renderer=_StaleCitations()), MULTI_CLAIM)
     assert (stale.decision, stale.abstention_reason, stale.render_attempts) == ("abstain", "subset_check_failed", 3)
+    assert seen == [("citation_list_mismatch",)] * 3, seen
     assert stale.entry.presentation.rendered_span_ids == () and stale.entry.presentation.subset_check == "failed"
 
 
 def check_subset_problems(rendered, locked) -> tuple[str, ...]:
     return claim_gate.check_subset(rendered, locked).problems
+
+
+def _spy_subset_problems(monkeypatch) -> list[tuple[str, ...]]:
+    """The problem codes of every subset check the pipeline runs (spec 18.11 I2)."""
+    seen: list[tuple[str, ...]] = []
+    check = claim_gate.check_subset
+
+    def spy(rendered, locked):
+        result = check(rendered, locked)
+        seen.append(result.problems)
+        return result
+
+    monkeypatch.setattr(pipeline_module, "check_subset", spy)
+    return seen
 
 
 def test_e1_the_record_names_the_displayed_spans_even_if_a_check_let_a_stale_list_through(monkeypatch):
@@ -194,16 +213,20 @@ def test_e1_the_record_names_the_displayed_spans_even_if_a_check_let_a_stale_lis
     assert set(result.rendered.citations) - set(displayed)  # the renderer's own list named more
 
 
-def test_e1_the_rule_id_names_the_new_behaviour_and_the_fault_modes_include_it():
+def test_e1_the_rule_id_names_the_new_behaviour_and_the_fault_modes_include_it(monkeypatch):
     assert claim_gate.SUBSET_CHECK_RULE == "segment-exact-whitespace-v3" == PARAMS.subset_check
     assert "citation_list_mismatch" in claim_gate.PROBLEM_CODES
     assert "undisplayed_citation" in FAULT_MODES
     settings = Settings()
     engine = RetrievalEngine(get_course_store(), settings)
+    # Spec 18.11 I2: on the several-claim query the fault leaves a claim line out (on the one-claim graph-shrinking
+    # query it fell back to listing a shown span twice), and exact refuses any fallback.
+    seen = _spy_subset_problems(monkeypatch)
     always = FaultyRenderer(TemplateRenderer(), [True, True, True], random.Random(5), modes=("undisplayed_citation",), outside_sentence="x",
-                            outside_span_id="span-" + "9" * 64)
-    result = _run(TwoPassPipeline(engine, settings, renderer=always), IN_DOMAIN)
+                            outside_span_id="span-" + "9" * 64, exact=True)
+    result = _run(TwoPassPipeline(engine, settings, renderer=always), MULTI_CLAIM)
     assert (result.decision, result.abstention_reason) == ("abstain", "subset_check_failed")
+    assert always.placed == ["undisplayed_citation"] * 3 and seen == [("citation_list_mismatch",)] * 3, (always.placed, seen)
     for path in ("docs/adr/ADR-001-grounding-separation.md", "docs/adr/ADR-005-abstention-gate.md", "docs/evaluation/phase3/README.md"):
         assert "segment-exact-whitespace-v3" in (REPO_ROOT / path).read_text(encoding="utf-8"), path
     assert "citation_list_mismatch" in SPEC

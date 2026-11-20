@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 from app.core.corpus_governance import CorpusRegistry
 from app.core.structured_logging import FIELDS
 from app.services.contained_answers import span_is_quotable
-from app.services.tutor_pipeline.contracts import EvidenceBundle, EvidenceSpan, ResolvedQuestion, RetrievalRequest, Sufficiency
+from app.services.tutor_pipeline.contracts import NO_QUOTABLE_EVIDENCE, EvidenceBundle, EvidenceSpan, ResolvedQuestion, RetrievalRequest, Sufficiency
 from app.services.tutor_pipeline.metrics import LICENSE_METRICS
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -99,7 +99,7 @@ def retrieve(engine: "RetrievalEngine", request: RetrievalRequest, *, top_k: int
             spans.append(span)
     if not spans:
         # Every result excluded by the license gate: nothing quotable is left, so the bundle abstains.
-        reason = "no_quotable_evidence" if response.results else response.reason
+        reason = NO_QUOTABLE_EVIDENCE if response.results else response.reason
         sufficiency = Sufficiency(score=None, gate=response.gate, threshold_version=threshold_version, floor=response.floor,
                                   margin=response.margin, decision="abstain", reason=reason)
     else:

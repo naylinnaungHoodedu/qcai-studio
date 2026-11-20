@@ -10,6 +10,12 @@ that leading or trailing fragment never reaches a generator, so a generator that
 a fragment that drops a sentence's opening words or its end (spec 18.10 H1). A span that holds no whole sentence is
 left out; binding still checks every claim against the section text itself.
 
+When no span is left, the pipeline abstains, and no_envelope_reason says why (spec 18.11 I1): no_quotable_evidence
+when the bundle holds no quotable span (nothing approved under D-31, or the license gate excluded every result), and
+no_whole_sentence when it holds quotable spans of which none holds a whole document sentence. The two causes have
+different remedies (an approval, or a sentence rule that fits the corpus), so plan I's "abstention by reason" keeps
+them apart.
+
 D-12 (the provider) is open, so no provider generator exists (hold H6, PD-09): ClaimGenerator is the interface a
 Phase 5 gateway generator implements, and get_generator refuses any id outside WIRED_GENERATORS. The only wired
 generator is extractive-d19-v1 (D-19 RECOMMENDATION, PD-08): each claim is one verbatim whole sentence of a quotable
@@ -25,6 +31,8 @@ from typing import TYPE_CHECKING, Protocol
 from app.core.config_package import WIRED_GENERATORS, ConfigPackage, TutorPipelineParams, canonical_sha256
 from app.services.tutor_pipeline.bind import whole_sentence_text
 from app.services.tutor_pipeline.contracts import (
+    NO_QUOTABLE_EVIDENCE,
+    NO_WHOLE_SENTENCE,
     ClaimPlan,
     EnvelopeSpan,
     EvidenceBundle,
@@ -84,7 +92,7 @@ def build_envelope(request: RetrievalRequest, bundle: EvidenceBundle, *, store: 
             continue
         evidence.append(EnvelopeSpan(span_id=span.span_id, text=text))
     if not evidence:
-        return None
+        return None  # no_envelope_reason(bundle, store=store) says why
     return EvidentialEnvelope(
         question=request.text,
         corpus_version=request.corpus_version,
@@ -97,6 +105,13 @@ def build_envelope(request: RetrievalRequest, bundle: EvidenceBundle, *, store: 
             min_sentence_words=params.min_sentence_words,
         ),
     )
+
+
+def no_envelope_reason(bundle: EvidenceBundle, *, store: "CourseStore") -> str:
+    """Why build_envelope found nothing to send (spec 18.11 I1): no_quotable_evidence when the bundle holds no quotable,
+    registered span; no_whole_sentence when it holds some, none of which holds a whole document sentence."""
+    quotable = any(span.quotable and store.span_registry.get(span.span_id) is not None for span in bundle.spans)
+    return NO_WHOLE_SENTENCE if quotable else NO_QUOTABLE_EVIDENCE
 
 
 class ClaimGenerator(Protocol):

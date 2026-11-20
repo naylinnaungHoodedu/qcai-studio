@@ -2,7 +2,8 @@
 
 ScriptedGenerator emits scripted claim plans (unbound, outside-bundle, invented, non-verbatim, truncated or
 cross-span claims, or a malformed plan); SpyGenerator records every envelope the evidential pass sends; FaultyRenderer
-injects one fault per scheduled attempt; FailingLedger stands in for a ledger append that fails.
+injects one fault per scheduled attempt and records the fault it placed; FailingLedger stands in for a ledger append
+that fails. FAULT_SIGNATURES names the problem code each fault mode must raise (spec 18.11 I2).
 """
 
 from __future__ import annotations
@@ -32,6 +33,23 @@ FAULT_MODES = (
     "undisplayed_citation",
 )
 INVENTED = "Quantum annealers always outperform every classical solver on routing problems."
+# The problem code each fault mode is named for (spec 18.11 I2). A pipeline-level fault test asserts that its mode's own
+# code fired on every faulty attempt, so a fault that fell back to another mode, or was never placed, fails the test
+# instead of passing through a different rule.
+FAULT_SIGNATURES = {
+    "invented": "unmapped_factual_sentence",
+    "digit": "unmapped_factual_sentence",
+    "outside": "unmapped_factual_sentence",
+    "connective_fact": "unmapped_factual_sentence",
+    "extra_citation": "citation_outside_locked_set",
+    "wrong_citation": "citation_not_on_claim",
+    "duplicate": "duplicate_claim",
+    "text_mismatch": "text_not_segments",
+    "non_contiguous": "text_not_segments",
+    "drop_all_claims": "no_claim_rendered",
+    "drop_citations": "claim_uncited",
+    "undisplayed_citation": "citation_list_mismatch",
+}
 
 
 class ScriptedGenerator:
@@ -80,8 +98,24 @@ def _relayout(rendered: RenderedResponse, segments: list[Segment], citations: Se
     )
 
 
-def inject(rendered: RenderedResponse, mode: str, *, outside_sentence: str, outside_span_id: str) -> RenderedResponse:
-    """One fault in a rendered response; every mode must be caught by check_subset."""
+class FaultNotPlaced(ValueError):
+    """An exact injection whose fault this rendering cannot hold (spec 18.11 I2): the test must use a richer answer."""
+
+
+def inject(rendered: RenderedResponse, mode: str, *, outside_sentence: str, outside_span_id: str, exact: bool = False) -> RenderedResponse:
+    """One fault in a rendered response; every mode must be caught by check_subset. With exact, a mode this rendering
+    cannot hold raises FaultNotPlaced instead of falling back to another fault (spec 18.11 I2)."""
+    faulty, placed = place_fault(rendered, mode, outside_sentence=outside_sentence, outside_span_id=outside_span_id)
+    if exact and placed != mode:
+        raise FaultNotPlaced(f"{mode} cannot be placed in this rendering; it would fall back to {placed}")
+    return faulty
+
+
+def place_fault(rendered: RenderedResponse, mode: str, *, outside_sentence: str, outside_span_id: str) -> tuple[RenderedResponse, str]:
+    """(the faulty rendering, the fault actually placed). The placed fault differs from the mode only on a fallback:
+    wrong_citation on a rendering with no claim line citing a span another line does not is "invented";
+    undisplayed_citation on a rendering with one claim line is "listed_twice" (a shown span listed twice, so no locked
+    span is left undisplayed)."""
     segments = list(rendered.segments)
     claims = [segment for segment in segments if segment.kind == "claim"]
     last_line = max(segment.line for segment in segments)
@@ -98,64 +132,69 @@ def inject(rendered: RenderedResponse, mode: str, *, outside_sentence: str, outs
             foreign = sorted(span for line, spans in by_line.items() if line != segment.line for span in spans if span not in by_line.get(segment.line, set()))
             if foreign:
                 segments[index] = segment.model_copy(update={"span_id": foreign[0]})
-                return _relayout(rendered, segments)
+                return _relayout(rendered, segments), "wrong_citation"
         mode = "invented"  # a single-span locked set has no wrong citation to place
     if mode == "invented":
         segments.append(Segment(kind="claim", line=claims[0].line, text=INVENTED, claim_id="claim-" + "0" * 32))
         segments.sort(key=lambda segment: segment.line)
-        return _relayout(rendered, segments)
+        return _relayout(rendered, segments), "invented"
     if mode == "digit":
         target = claims[0]
         text = target.text
         match = re.search(r"\d", text)
         changed = text[: match.start()] + str((int(match.group()) + 1) % 10) + text[match.end():] if match else "2 " + text
         segments[segments.index(target)] = target.model_copy(update={"text": changed})
-        return _relayout(rendered, segments)
+        return _relayout(rendered, segments), "digit"
     if mode == "outside":
         target = claims[0]
         segments[segments.index(target)] = target.model_copy(update={"text": outside_sentence})
-        return _relayout(rendered, segments)
+        return _relayout(rendered, segments), "outside"
     if mode == "connective_fact":
         lead = next(segment for segment in segments if segment.kind in ("connective", "question"))
         segments[segments.index(lead)] = lead.model_copy(update={"text": INVENTED})
-        return _relayout(rendered, segments)
+        return _relayout(rendered, segments), "connective_fact"
     if mode == "extra_citation":
         number = len(rendered.citations) + 1
         segments.append(Segment(kind="citation", line=claims[0].line, text=f"[{number}]", template_id="citation", params=(number,), span_id=outside_span_id))
         segments.sort(key=lambda segment: segment.line)
-        return _relayout(rendered, segments, (*rendered.citations, outside_span_id))
+        return _relayout(rendered, segments, (*rendered.citations, outside_span_id)), "extra_citation"
     if mode == "duplicate":
         segments.append(claims[0].model_copy(update={"line": last_line + 1}))
-        return _relayout(rendered, segments)
+        return _relayout(rendered, segments), "duplicate"
     if mode == "text_mismatch":
-        return rendered.model_copy(update={"text": rendered.text + " " + INVENTED})
+        return rendered.model_copy(update={"text": rendered.text + " " + INVENTED}), "text_mismatch"
     if mode == "non_contiguous":
         segments = [segment.model_copy(update={"line": segment.line + 1}) for segment in segments]
-        return _relayout(rendered, segments)
+        return _relayout(rendered, segments), "non_contiguous"
     if mode in ("drop_all_claims", "drop_citations"):
         # Well-formed otherwise: lines renumbered to stay contiguous, markers and the citation list consistent.
         dropped = ("claim", "citation") if mode == "drop_all_claims" else ("citation",)
         kept = [segment for segment in segments if segment.kind not in dropped]
         renumber = {line: index for index, line in enumerate(sorted({segment.line for segment in kept}))}
         kept = [segment.model_copy(update={"line": renumber[segment.line]}) for segment in kept]
-        return _relayout(rendered, kept, ())
+        return _relayout(rendered, kept, ()), mode
     if mode == "undisplayed_citation":
         # Leave the last claim line (with its markers) out but keep the renderer's citation list, as a renderer that
         # forgets to rebuild it would; when that list still matches what is shown, list a shown span twice.
         last_claim_line = max(segment.line for segment in claims)
-        kept = [segment for segment in segments if segment.line != last_claim_line] if len({s.line for s in claims}) > 1 else segments
+        several = len({s.line for s in claims}) > 1
+        kept = [segment for segment in segments if segment.line != last_claim_line] if several else segments
         renumber = {line: index for index, line in enumerate(sorted({segment.line for segment in kept}))}
         kept = [segment.model_copy(update={"line": renumber[segment.line]}) for segment in kept]
         shown = tuple(dict.fromkeys(segment.span_id for segment in kept if segment.kind == "citation"))
-        citations = tuple(rendered.citations) if tuple(rendered.citations) != shown else (*rendered.citations, rendered.citations[0])
-        return _relayout(rendered, kept, citations)
+        undisplayed = tuple(rendered.citations) != shown
+        citations = tuple(rendered.citations) if undisplayed else (*rendered.citations, rendered.citations[0])
+        return _relayout(rendered, kept, citations), "undisplayed_citation" if several and undisplayed else "listed_twice"
     raise ValueError(mode)
 
 
 class FaultyRenderer:
-    """Wraps a renderer; schedule[n] True injects a fault (a mode drawn from rng) into attempt n + 1."""
+    """Wraps a renderer; schedule[n] True injects a fault (a mode drawn from rng) into attempt n + 1. injected records
+    the mode drawn for each attempt (None when clean); placed records the fault actually placed, which differs from the
+    mode only on a fallback (place_fault), or is "not_placed:<mode>" when exact refused it (spec 18.11 I2)."""
 
-    def __init__(self, inner, schedule: Sequence[bool], rng: random.Random, *, outside_sentence: str, outside_span_id: str, modes=FAULT_MODES) -> None:
+    def __init__(self, inner, schedule: Sequence[bool], rng: random.Random, *, outside_sentence: str, outside_span_id: str, modes=FAULT_MODES,
+                 exact: bool = False) -> None:
         self.inner = inner
         self.renderer_id = inner.renderer_id
         self.schedule = list(schedule)
@@ -163,17 +202,25 @@ class FaultyRenderer:
         self.modes = tuple(modes)
         self.outside_sentence = outside_sentence
         self.outside_span_id = outside_span_id
+        self.exact = exact
         self.injected: list[str | None] = []
+        self.placed: list[str | None] = []
 
     def render(self, locked, plan, *, attempt: int):
         rendered = self.inner.render(locked, plan, attempt=attempt)
         faulty = self.schedule[attempt - 1] if attempt - 1 < len(self.schedule) else False
         if not faulty:
             self.injected.append(None)
+            self.placed.append(None)
             return rendered
         mode = self.rng.choice(self.modes)
         self.injected.append(mode)
-        return inject(rendered, mode, outside_sentence=self.outside_sentence, outside_span_id=self.outside_span_id)
+        result, placed = place_fault(rendered, mode, outside_sentence=self.outside_sentence, outside_span_id=self.outside_span_id)
+        if self.exact and placed != mode:
+            self.placed.append(f"not_placed:{mode}")
+            raise FaultNotPlaced(f"{mode} cannot be placed in this rendering; it would fall back to {placed}")
+        self.placed.append(placed)
+        return result
 
 
 def make_entry(response_id: str | None = None, *, delivery: str = "legacy", shadowed_response_id: str | None = None,
