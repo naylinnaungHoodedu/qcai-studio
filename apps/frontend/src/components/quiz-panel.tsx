@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { postAnalyticsEvent, recordQuizAttempt } from "@/lib/api";
-import { feedbackFor } from "@/lib/quiz-feedback";
+import { feedbackFor, resultLabel } from "@/lib/quiz-feedback";
 import { QuizAttemptResult, QuizQuestion } from "@/lib/types";
 
 function toErrorMessage(error: unknown, fallback: string): string {
@@ -13,7 +13,8 @@ function toErrorMessage(error: unknown, fallback: string): string {
 // Plan Phase 4 B (R-42): the questions carry no answer key, and the panel computes no score. The server scores a saved
 // attempt and returns its feedback; the model answer and rubric of each answered question come from that response.
 // The feedback arrives after a network call, so the save result is announced in a live region (WCAG 2.1 4.1.3), and
-// each question's input names its feedback (aria-describedby).
+// each question's input names its feedback (aria-describedby). The server's exact-match verdict is labelled as such for
+// a short answer (resultLabel): only a choice item is called correct or not correct.
 export function QuizPanel({
   lessonSlug,
   questions,
@@ -67,6 +68,7 @@ export function QuizPanel({
           const feedback = feedbackFor(question.id, savedAttempt);
           const feedbackId = `quiz-feedback-${question.id}`;
           const describedBy = feedback.state === "none" ? undefined : feedbackId;
+          const result = resultLabel(question, feedback);
           return (
             <article className="quiz-card" key={question.id}>
               <p className="quiz-index">
@@ -109,10 +111,10 @@ export function QuizPanel({
                   value={answers[question.id] ?? ""}
                 />
               )}
-              {feedback.state === "correct" || feedback.state === "incorrect" ? (
+              {result ? (
                 <div className="quiz-result" id={feedbackId}>
                   <p>
-                    <strong>{feedback.state === "correct" ? "Correct" : "Not correct"}</strong>
+                    <strong>{result}</strong>
                   </p>
                   <p>
                     <strong>Model answer:</strong> {feedback.answer}

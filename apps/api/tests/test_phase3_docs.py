@@ -981,6 +981,25 @@ def test_k3_the_spec_records_each_round_once_in_the_review_history_table():
                 assert f"`{group}_*`" in row, (name, group)
 
 
+def test_k3_the_records_state_the_merge_and_the_cited_run_on_main():
+    # PR #35 squash-merged as 078bc75 (tree identical to 82ded75); main run 44723513394 is the cited run, so DI-31 is
+    # closed. The exit is still not passed (preconditions deviated under P1-D-18; no owner acceptance).
+    di_31 = next(line for line in SPEC.splitlines() if line.startswith("| DI-31 |"))
+    exit_text = _section("**Exit (plan Phase 3 P)**", "\n---")
+    ci = next(line for line in _section("### 18.3 Verification results", "### 18.4").splitlines() if line.startswith("**CI:**"))
+    strategy = STRATEGY.split("## Phase 3 acceptance map", 1)[1].split("**Exit gate.**", 1)[1].split("\n## ", 1)[0]
+    for name, text in (("DI-31", di_31), ("section 17", exit_text), ("18.3", ci), ("strategy", strategy)):
+        assert "44723513394" in text and "needs a cited green run on `main`" not in text, name
+        assert "until a cited run is green on `main`" not in text, name
+    for name, text in (("section 17", exit_text), ("18.3", ci), ("strategy", strategy), ("DI-31", di_31)):
+        assert "`078bc75`" in text and ("44722532183" in text or name == "section 17"), name
+    assert di_31.rstrip(" |").endswith("Closed (main run 44723513394)")
+    assert "The exit is not passed" in exit_text and "P1-D-18" in exit_text and "no owner acceptance" in exit_text
+    assert "The exit is not passed" in strategy and "no owner acceptance" in strategy
+    round_12 = next(line for line in SPEC.split("### 18.4 Review history", 1)[1].splitlines() if line.startswith("| 12, M1-M2 |"))
+    assert round_12.split(" | ")[1] == "`82ded75` (PR #35's head; squash-merged as `078bc75`)"
+
+
 def _authoritative_texts() -> dict[str, str]:
     texts = {
         "spec 0-17": SPEC.split("## 18. Implementation record", 1)[0],

@@ -527,6 +527,41 @@ def test_ac_4_6_the_evidence_panel_shows_the_disclosure_for_a_contained_answer(m
     assert "evidence" not in body
 
 
+def test_ac_4_6_with_no_disclosure_shown_a_contained_answer_quoting_conflicting_spans_is_withheld(monkeypatch, caplog):
+    # AC-4-6 on the learner path: with the evidence panel off (its default outside development) nothing discloses a
+    # conflict, so the legacy guard withholds the answer (V1.7 / conflict_withheld) as today's abstention, on the tutor
+    # and the Q&A surface; with the panel on the same answer is delivered with the panel's conflicts.
+    citations, family = _family_citations()
+    overlay = dataclasses.replace(PACKAGE, v1=dataclasses.replace(V1, version_families={item: "fixture" for item in family}))
+    real = contain_answer
+    for module in (tutor_orchestrator, qa_engine):
+        monkeypatch.setattr(module, "contain_answer", lambda _citations, registry, spans, **kwargs: real(citations, registry, spans, **kwargs))
+        monkeypatch.setattr(module, "get_config_package", lambda settings=None: overlay)
+    for panel in (True, False):
+        settings = Settings(evidence_panel_enabled=panel)
+        orchestrator = TutorOrchestrator(TeachingAssistantService(get_retrieval_engine(), settings), settings)
+        monkeypatch.setattr(assistant_route, "get_tutor_orchestrator", lambda orchestrator=orchestrator: orchestrator)
+        monkeypatch.setattr(qa_route, "get_qa_engine", lambda settings=settings: QAEngine(get_retrieval_engine(), settings))
+        V1_METRICS.reset()
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="qcai.tutor"):
+            chat = client.post("/assistant/chat", json={"message": "Why does routing depth matter?"}, headers=demo("p4-conflict")).json()
+            asked = client.post("/qa/ask", json={"question": "Why does routing depth matter?"}, headers=demo("p4-conflict")).json()
+        lines = _events(caplog, "tutor.v1.legacy_guard_withheld")
+        guard = V1_METRICS.detail_snapshot()["legacy_guard"]
+        if panel:
+            assert (chat["decision"], asked["decision"]) == ("answer", "answer")
+            assert chat["evidence"]["conflicts"] == asked["evidence"]["conflicts"] == [{"kind": "version_of_same_asset", "passages": [1, 2]}]
+            assert lines == [] and guard["by_check"]["V1.7"] == 0
+        else:
+            for body in (chat, asked):
+                assert (body["decision"], body["answer"], body["citations"], body["claims"] if "claims" in body else []) == ("abstain", ABSTENTION, [], [])
+                assert "evidence" not in body
+            assert [(line["check_id"], line["reason_code"], line["surface"]) for line in lines] == [
+                ("V1.7", "conflict_withheld", "tutor"), ("V1.7", "conflict_withheld", "qa")]
+            assert guard["by_check"]["V1.7"] == 2 and guard["withheld"] == {"tutor": 1, "qa": 1}
+
+
 # ======================================================================================================== AC-4-7
 
 
@@ -1095,6 +1130,24 @@ def test_phase4_docs_quote_plan_m_and_state_the_current_rules():
     runbook = (REPO_ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8")
     assert "**Rollback order: the API first, then the frontend**" in runbook and "Auto-score: N / N" in runbook
     assert "# from a clean tree" not in readme and "**Provenance.**" in readme and "--allow-dirty" in readme
+
+
+def test_phase4_docs_name_every_q_22_value_and_the_package_s_provisional_until():
+    # The spec's DI-52 row names every value package v3 lists under owner_decisions.Q-22, and main.py's comment on
+    # bm25f-v1's floor and margin states the package's abstention.provisional_until.
+    raw = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
+    labels = {"v1.v1_5.x4_margin": "X4 margin", "v1.v1_3.support_threshold": "V1.3 threshold", "v1.v1_7": "V1.7 alignment rule",
+              "v1.v1_9.readability": "V1.9 band", "v1.stop": "stop values"}
+    assert sorted(raw["owner_decisions"]["Q-22"]["provisional_values"]) == sorted(labels)
+    row = next(line for line in SPEC.splitlines() if line.startswith("| DI-52 |"))
+    for value, label in labels.items():
+        assert label in row, value
+    until = raw["abstention"]["provisional_until"]
+    assert until == "Q-22 (DI-52)" and f"`abstention.provisional_until` `{until}`" in row
+    main_source = (API_ROOT / "app" / "main.py").read_text(encoding="utf-8")
+    comment = " ".join(line.strip().lstrip("# ") for line in main_source.split('"manifest_drift"', 1)[1].split('"threshold_version"', 1)[0].splitlines())
+    assert "bm25f-v1's floor and margin" in comment and f"provisional until {until}" in comment
+    assert "provisional until Phase 4" not in main_source
 
 
 def _code_fields(source: str, name: str) -> list[str]:

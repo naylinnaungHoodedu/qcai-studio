@@ -478,7 +478,8 @@ def _build_fields() -> dict:
         "duplicate_span_ids": store.duplicate_span_ids,
         "manifest_drift": STARTUP_DRIFT.drift_count if STARTUP_DRIFT else 0,
         # The thresholds in force: the active gate's. p1-floor is P1-D-04's approved floor; bm25f-v1's floor and
-        # margin are the package's calibrated values, provisional until Phase 4 and reported below either way.
+        # margin are the package's calibrated values, provisional until Q-22 (DI-52) in package v3 (its
+        # abstention.provisional_until, reported below) and reported below either way.
         "threshold_version": threshold_version,
         "abstention_floor": floor,
         "abstention_margin": margin,

@@ -8,12 +8,17 @@ compiles every source, so a new one fails the suite wherever it is.
 A test that reads a file outside the checkout (the evidence package or the plan beside it on the workstation) tests
 nothing in CI, whose checkout holds neither, and breaks the suite whenever those records change. The evidence package
 checks its own records (its 00_meta/check_records.py).
+
+A test that reads one row of the append-only security-event table (.first(), or Session.scalar of a select of its
+rows) from a select with no ORDER BY gets an undefined row: PostgreSQL returns rows in physical order, and the suite
+under psycopg read two lockout events out of order.
 """
 
 from __future__ import annotations
 
 import ast
 from pathlib import Path
+import re
 import warnings
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -94,3 +99,48 @@ def test_the_outside_read_scan_catches_each_way_a_test_reached_the_evidence_pack
         assert _outside_reads(source, "sample.py", 3), source
     assert _outside_reads('REPO_ROOT = Path(__file__).resolve().parents[3]\nAPI_ROOT = REPO_ROOT / "apps" / "api"\n', "sample.py", 3) == []
     assert _outside_reads('"""The score floor, approved as P1-D-04 (BEP-1)."""\n', "sample.py", 3) == []
+
+
+def _unordered_event_reads(source: str, name: str) -> list[str]:
+    """Where a module reads one security event from a select of SecurityEvent rows that has no ORDER BY."""
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+            continue
+        if node.func.attr == "first":
+            query = ast.unparse(node.func.value)
+        elif node.func.attr == "scalar" and node.args:
+            query = ast.unparse(node.args[0])
+        else:
+            continue
+        if re.search(r"\bselect\(SecurityEvent\b", query) and "order_by" not in query:
+            found.append(f"{name}:{node.lineno}: {query[:80]}")
+    return found
+
+
+def test_no_test_reads_one_security_event_without_an_order():
+    found, scanned = [], 0
+    for root in TEST_ROOTS:
+        for path in sorted(root.rglob("*.py")):
+            if "__pycache__" in path.parts:
+                continue
+            scanned += 1
+            found += _unordered_event_reads(path.read_text(encoding="utf-8"), path.relative_to(REPO_ROOT).as_posix())
+    assert scanned > 50 and found == []
+
+
+def test_the_event_order_scan_catches_an_unordered_read_and_accepts_an_ordered_one():
+    unordered = (
+        'event = db.scalars(select(SecurityEvent).where(SecurityEvent.event_type == "authz.denied")).first()\n',
+        "event = db.scalar(select(SecurityEvent).where(SecurityEvent.seq > start))\n",
+    )
+    for source in unordered:
+        assert _unordered_event_reads(source, "sample.py"), source
+    ordered = (
+        "events = db.scalars(select(SecurityEvent).where(SecurityEvent.seq > start).order_by(SecurityEvent.seq)).all()\n",
+        "start = db.scalar(select(SecurityEvent.seq).order_by(SecurityEvent.seq.desc()).limit(1)) or 0\n",
+        "start = db.scalar(select(func.max(SecurityEvent.seq))) or 0\n",
+        'row = db.scalars(select(UserAccount).where(UserAccount.email == email)).first()\n',
+    )
+    for source in ordered:
+        assert _unordered_event_reads(source, "sample.py") == [], source

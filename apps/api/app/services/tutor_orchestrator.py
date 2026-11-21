@@ -157,8 +157,10 @@ class TutorOrchestrator:
         registry = get_corpus_registry(self.settings)
         contained = contain_answer(candidate.citations, registry, self._span_registry(), settings=self.settings)
         # Plan Phase 4 L: V1.1 and V1.2 stay enforced on every delivery path, in every V1_PIPELINE mode (no flag).
+        # AC-4-6: conflicting quotations are labelled by the evidence panel when it is shown, else withheld (V1.7).
         package = get_config_package(self.settings)
-        contained = guard_contained(contained, store=self._store(), package=package, surface="tutor").contained
+        contained = guard_contained(contained, store=self._store(), package=package, surface="tutor",
+                                    disclosure_shown=self.settings.evidence_panel_enabled).contained
         record_citations("tutor", len(contained.citations), contained.dropped_unresolved, 0)
         turn_id = f"turn-{uuid4()}"
         user_message_id = f"message-{uuid4()}"

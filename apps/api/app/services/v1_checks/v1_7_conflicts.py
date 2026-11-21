@@ -15,7 +15,8 @@ over older") is Phase 7's.
 
 The shipped family is the 2025/2026 lecture video (Q-10, E-21): video spans are never cited and the 2026 item is
 unbound, so in production disclosure can come only from a number or negation disagreement. legacy_conflicts applies
-the same rule to the quotations of a contained answer for the development evidence panel (labels only).
+the same rule to the quotations of a contained answer: the evidence panel labels what it finds, and while the panel
+is off (its default outside development) the legacy guard withholds the answer instead (AC-4-6).
 """
 
 from __future__ import annotations
@@ -105,8 +106,8 @@ def check_v1_7(
 
 
 def legacy_conflicts(citations: Sequence["Citation"], *, v1: "V1Params", stopwords: Iterable[str]) -> list[EvidenceConflict]:
-    """The same rule over a contained answer's quotations (from different items), for the development evidence panel:
-    version families, and the sentences-v2 pieces of each quotation. Passages are 1-based panel positions."""
+    """The same rule over a contained answer's quotations (from different items), for the evidence panel and the
+    legacy guard: version families, and the sentences-v2 pieces of each quotation. Passages are 1-based panel positions."""
     found: list[EvidenceConflict] = []
     seen: set[tuple] = set()
     for (index_a, left), (index_b, right) in combinations(list(enumerate(citations, start=1)), PAIR):

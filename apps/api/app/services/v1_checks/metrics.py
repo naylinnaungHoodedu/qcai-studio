@@ -33,7 +33,7 @@ OUTCOMES = ("pass", "flag", "hard_fail", "abstain", "mark")
 FINALS = ("deliver", "withhold", "abstain")
 MODES = ("shadow", "enforce")
 GUARD_SURFACES = ("tutor", "qa")
-GUARD_CHECKS = ("V1.1", "V1.2")
+GUARD_CHECKS = ("V1.1", "V1.2", "V1.7")
 
 
 def checks_run(record: "VerificationRecord") -> set[str]:

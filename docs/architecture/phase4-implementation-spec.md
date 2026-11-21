@@ -88,7 +88,7 @@ Unless stated otherwise, measurements use `all_public_approved` (a temporary man
 
 **M6. Readability (`fk-grade-segments-v1`).** Over the corpus's whole sentences plus the renderer templates, the component envelope (minimum and maximum words per sentence and syllables per word) is [−3.40, 63.54] (fixture report `readability_envelope`).
 
-**M7. V1.7 alignment.** 0 conflicts occur in any two-pass answer of the dev corpus.
+**M7. V1.7 alignment.** 0 conflicts occur in any two-pass answer of the dev corpus, and 0 of the 166 answered development contained answers (`bm25f-v1`, the fixture's 298 queries) quote conflicting passages (`legacy_conflicts`).
 
 **M8. Legacy D-19 quotations cut sentences.** Of 473 dev quotations (`bm25f-v1`), 107 leave out a negation cue or a number of the sentence they cut, at a span edge or at the 320-character display truncation. Every quotation is a substring of its span's `normalize_display_text`, and every number and negation cue in a quotation is in its span (`test_v1_legacy_guard`: every dev contained answer passes the guard unchanged).
 
@@ -114,6 +114,7 @@ Unless stated otherwise, measurements use `all_public_approved` (a temporary man
 - No two-pass text reaches a learner: `TWO_PASS_DELIVERY_IMPLEMENTED` stays `False`, `TWO_PASS_TUTOR=on` stays refused, and `phase4_exit_passed` stays `false` (conflict 9).
 - In AC-4-4 and AC-4-5, "delivered text" is the text of V1's accepted rendering. It is recorded in the shadow ledger record (`rendered_text_sha256`), with per-claim `final` verdicts.
 - The learner's delivery is still the legacy D-19 contained answer.
+- In AC-4-6, "a disclosure block is shown" on the learner path is the evidence panel's `conflicts` (labels of the passages that disagree); with the panel off nothing is shown, so the legacy guard withholds the answer (4.15). On the two-pass track the `DisclosureBlock` is on the verification record; V1's accepted rendering holds no disclosure text, and the delivered path must show the block before a `disclose` verdict reaches a learner (DI-59).
 
 **R-b. "The legacy gate" that V1 shadows** (plan G; E10). The overlap gate is gone (M9). The shadowed path is:
 1. the Phase 3 decision path: the composition of bind, lock, render and the subset check, plus its abstention;
@@ -208,8 +209,8 @@ Each resolution is a refinement. None reverses a fixed decision without quoted p
 
 ```
 learner turn ──► TutorOrchestrator.chat / QAEngine.ask
-   ├─ contain_answer (D-19, unchanged) ─► legacy_guard.guard_contained (V1.1, V1.2; every mode) ─► learner response
-   │       └─ (EVIDENCE_PANEL_ENABLED) evidence panel + V1.7 legacy conflicts (labels only, development)
+   ├─ contain_answer (D-19, unchanged) ─► legacy_guard.guard_contained (V1.1, V1.2; V1.7 when no panel is shown; every mode) ─► learner response
+   │       └─ (EVIDENCE_PANEL_ENABLED, development by default) evidence panel + V1.7 legacy conflicts (labels only)
    └─ ShadowJob(legacy_decision=…) ─► background: TwoPassPipeline.run (shadow only, AC-3-6)
         retrieve ─► V1.5 (abstain | mark | pass) ─► envelope
         V1_PIPELINE=off     : Phase 3 composition ─► ledger-entry-v1
@@ -232,7 +233,7 @@ learner turn ──► TutorOrchestrator.chat / QAEngine.ask
 | AC-4-3 | `check_v1_5` maps the active gate's decision; the in-domain rate is compared with the calibration record by counts | `test_ac_4_3_*` |
 | AC-4-4 | V1.4 (the subset check inside `render_checked`), at most 2 re-renders | `test_ac_4_4_*` |
 | AC-4-5 | V1.6 key containment plus Socratic omission; the public `QuizQuestion` has no key | `test_ac_4_5_*` |
-| AC-4-6 | V1.7 `DisclosureBlock` (disclose) or withhold; legacy evidence panel `conflicts` | `test_ac_4_6_*` |
+| AC-4-6 | Two-pass: V1.7 `DisclosureBlock` (disclose) on the record, or the claims withheld. Learner path: the evidence panel's `conflicts`, or, with the panel off, the legacy guard withholds the answer (4.15) | `test_ac_4_6_*` |
 | AC-4-7 | V1.3 call; an error, wrong type or late result gives `abstain` / `checker_unavailable` | `test_ac_4_7_*` |
 
 ---
@@ -615,7 +616,7 @@ Rule `conflict-version-polarity-v1`:
 1. **Versions.** Cited spans of two different items of one `v1.version_families` family form one `version_of_same_asset` pair per item pair, naming all cited spans of both items and the claims that cite them.
 2. **Polarity.** For each locked claim and each whole sentence of a cited span of another item: both need at least `min_alignment_terms` alignment terms and `jaccard >= v1.alignment_threshold`; `number_disagreement` when both hold numbers and their number values differ; `negation_disagreement` when the parities of their negation-cue counts differ.
 3. **Output.** No pair: `pass` / `no_conflict`, no block. Otherwise a `DisclosureBlock` with `policy = v1.on_conflict` (at most 20 pairs): `disclose` gives `flag` / `conflict_disclosed` and the label; `withhold` gives `flag` / `conflict_withheld` and withholds the claims involved. Precedence ("newer peer-reviewed over older") belongs to Phase 7.
-4. **Legacy panel.** `legacy_conflicts` applies the same rule to a contained answer's quotations from different items (families, and the sentences-v2 pieces of each quotation); passages are panel positions. `evidence_panel.panel_conflicts` calls it for answers with at least two quotations when the package has a v1 block.
+4. **Legacy path.** `legacy_conflicts` applies the same rule to a contained answer's quotations from different items (families, and the sentences-v2 pieces of each quotation); passages are panel positions. `evidence_panel.panel_conflicts` calls it for answers with at least two quotations when the package has a v1 block, and the panel labels them; with the panel off, `legacy_guard.undisclosed_conflict` applies the same test and the guard withholds the answer (4.15).
 
 ### 4.9 V1.8 misconceptions (`v1_8_misconceptions.py`)
 
@@ -742,7 +743,8 @@ def score_attempt(keys: Sequence[QuizKey], responses: Mapping) -> tuple[int, dic
 ```python
 @dataclass(frozen=True)
 class GuardResult: contained: ContainedAnswer; withheld: tuple[tuple[str, str], ...]   # (check_id, reason_code)
-def guard_contained(contained: ContainedAnswer, *, store, package, surface: Literal["tutor", "qa"]) -> GuardResult
+def guard_contained(contained: ContainedAnswer, *, store, package, surface: Literal["tutor", "qa"], disclosure_shown: bool = False) -> GuardResult
+def undisclosed_conflict(contained: ContainedAnswer, package) -> bool   # panel_conflicts' rule and inputs
 ```
 
 1. An abstention passes. For each quotation (a `GroundedClaim`) and each span it cites:
@@ -750,8 +752,9 @@ def guard_contained(contained: ContainedAnswer, *, store, package, surface: Lite
    - **V1.2 binding:** at least one span, and the quotation without a trailing `...`, whitespace collapsed, is a substring of the span's `normalize_display_text`;
    - **V1.2 polarity (E3, claim→span; only with a v1 block):** `quantities_covered(quotation, span)`, and every negation cue of the quotation is in the span at least as often.
    An answer with no quotation is withheld too (`no_bound_claims`).
-2. Any failure withholds the whole answer: `ContainedAnswer(answer=ABSTENTION, decision="abstain", reason="no_approved_span", dropped_unresolved=…)`, the body bytes of today's abstention; it is counted (`V1_METRICS.legacy_guard`) and logged as `tutor.v1.legacy_guard_withheld` with `check_id`, `reason_code` and `surface`.
-3. The guard has no flag and runs in every mode. Every current development quotation passes (M8). Under D-31 nothing is quoted outside development. Without a v1 block it skips polarity (conflict 34; only a development build with governance off starts without one). The polarity rule runs claim to span only: a quotation may hold no number or cue its span lacks, so it never adds one, but an edge-cut quotation can omit one (M8, DI-60). It catches what verbatim binding cannot: a quotation that is a substring of its span but cuts a token, such as "12" out of "128" (`quantity_mismatch`) or "no" out of "not" (`negation_mismatch`).
+   **V1.7 (AC-4-6; only with a v1 block):** when the caller shows no disclosure (`disclosure_shown` False; the orchestrator and the Q&A engine pass `EVIDENCE_PANEL_ENABLED`, off by default outside development) and V1.7 finds a conflict among the answer's quotations (`undisclosed_conflict`, `legacy_conflicts` over at least two quotations), the answer is withheld (`V1.7`, `conflict_withheld`). With the panel on, the panel labels the conflict instead. The default `False` is the conservative one.
+2. Any failure withholds the whole answer: `ContainedAnswer(answer=ABSTENTION, decision="abstain", reason="no_approved_span", dropped_unresolved=…)`, the body bytes of today's abstention; it is counted (`V1_METRICS.legacy_guard`, `by_check` over V1.1, V1.2 and V1.7) and logged as `tutor.v1.legacy_guard_withheld` with `check_id`, `reason_code` and `surface`.
+3. The guard has no flag and runs in every mode. Every current development quotation passes (M8), and no current development answer quotes conflicting passages (M7). Under D-31 nothing is quoted outside development. Without a v1 block it skips polarity and V1.7 (conflict 34; only a development build with governance off starts without one). The polarity rule runs claim to span only: a quotation may hold no number or cue its span lacks, so it never adds one, but an edge-cut quotation can omit one (M8, DI-60). It catches what verbatim binding cannot: a quotation that is a substring of its span but cuts a token, such as "12" out of "128" (`quantity_mismatch`) or "no" out of "not" (`negation_mismatch`).
 
 ### 4.16 Effective mode and start-up (`v1_checks/__init__.py`)
 
@@ -846,11 +849,11 @@ def guard_contained(contained: ContainedAnswer, *, store, package, surface: Lite
 
 ### 7.4 MOD `app/services/tutor_orchestrator.py`
 
-After `contain_answer(...)`, `contained = guard_contained(contained, store=self._store(), package=get_config_package(self.settings), surface="tutor").contained` before anything reads it (citation SLIs, messages, `TutorTurn`, ledger follow-up, response). `_shadow_followup` passes `legacy_decision=contained.decision`. With `EVIDENCE_PANEL_ENABLED`, the panel gets `conflicts=panel_conflicts(contained, package)`. `TeachingAssistantService.chat`'s own internal containment is never delivered (the orchestrator re-contains), so it needs no guard.
+After `contain_answer(...)`, `contained = guard_contained(contained, store=self._store(), package=get_config_package(self.settings), surface="tutor", disclosure_shown=self.settings.evidence_panel_enabled).contained` before anything reads it (citation SLIs, messages, `TutorTurn`, ledger follow-up, response). `_shadow_followup` passes `legacy_decision=contained.decision`. With `EVIDENCE_PANEL_ENABLED`, the panel gets `conflicts=panel_conflicts(contained, package)`. `TeachingAssistantService.chat`'s own internal containment is never delivered (the orchestrator re-contains), so it needs no guard.
 
 ### 7.5 MOD `app/services/qa_engine.py`
 
-The same guard (`surface="qa"`) before the response, the Q&A row and the ledger record, and the same panel conflicts.
+The same guard (`surface="qa"`, `disclosure_shown=self.settings.evidence_panel_enabled`) before the response, the Q&A row and the ledger record, and the same panel conflicts.
 
 ### 7.6 MOD `app/services/evidence_panel.py`
 
@@ -907,7 +910,7 @@ No code change. Its record is re-written (`--write`) because the package is v3 a
 |---|---|---|
 | `GET /content/lessons/{slug}`, `GET /content/modules/{slug}` | No `answer` or `explanation` on quiz questions; otherwise unchanged. Strictly less disclosure; ships with a D-05 release. | Same |
 | `POST /content/quiz-attempts` | `{status, attempt_id, score}` as before, plus `feedback` (keys only for answered questions) | Same |
-| `POST /assistant/chat`, `POST /tutor/turns`, `POST /qa/ask` | Legacy guard runs; bytes unchanged on every current answer (M8) | Same, plus panel `conflicts` when V1.7 finds one (labels) |
+| `POST /assistant/chat`, `POST /tutor/turns`, `POST /qa/ask` | Legacy guard runs: V1.1, V1.2, and V1.7 (the panel is off, so an answer quoting conflicting passages is withheld); bytes unchanged on every current answer (M7, M8; under D-31 nothing is quoted) | V1.1 and V1.2; with the panel on (the default), panel `conflicts` when V1.7 finds one (labels) |
 | Shadow pipeline | Off (`TWO_PASS_TUTOR` off) | V1 `enforce` on the shadow run; nothing reaches a learner |
 
 No route is added, and the authorization matrix is unchanged.
@@ -940,7 +943,7 @@ No route is added, and the authorization matrix is unchanged.
 
 ### 10.3 Metrics (`v1_checks/metrics.py`; locked counters)
 
-`V1_METRICS.detail_snapshot()`: `runs` by mode; `finals`; `checks` (check → outcome → count); `hard_fail_rate` (per check, the runs in which it hard-failed at least once over the runs in which it ran: `metrics.hard_failed_checks` and `metrics.checks_run`, which the fixture report's `per_check` also uses, and which the runbook's log-based metric states); `citation_resolution` (`checked`, `resolved`, `rate`) over the span ids of delivered verdicts; `v1_3` (`claims_checked`, `flagged`, `flag_rate`, `unavailable`); `latency_ms` (`buckets` 1-1000 ms and `+Inf`, nearest-rank `p95` over the last 1024 runs, `budget` from the package, `stop = p95 > budget`); `disagreements` (`phase3`, `legacy`); `v3_intents`; `legacy_guard` (`checked` and `withheld` per surface, `by_check`). There is no public snapshot.
+`V1_METRICS.detail_snapshot()`: `runs` by mode; `finals`; `checks` (check → outcome → count); `hard_fail_rate` (per check, the runs in which it hard-failed at least once over the runs in which it ran: `metrics.hard_failed_checks` and `metrics.checks_run`, which the fixture report's `per_check` also uses, and which the runbook's log-based metric states); `citation_resolution` (`checked`, `resolved`, `rate`) over the span ids of delivered verdicts; `v1_3` (`claims_checked`, `flagged`, `flag_rate`, `unavailable`); `latency_ms` (`buckets` 1-1000 ms and `+Inf`, nearest-rank `p95` over the last 1024 runs, `budget` from the package, `stop = p95 > budget`); `disagreements` (`phase3`, `legacy`); `v3_intents`; `legacy_guard` (`checked` and `withheld` per surface, `by_check` for V1.1, V1.2 and V1.7). There is no public snapshot.
 
 ### 10.4 Log events (logger `qcai.tutor`; enums, counts and hashes only; no text, no ids)
 
@@ -949,7 +952,7 @@ No route is added, and the authorization matrix is unchanged.
 | `tutor.v1.run` | `mode`, `final`, `final_reason`, `hard_fail`, `generation_attempts`, `render_attempts`, `cycle_count`, `outcomes` (check → outcome → count), `flagged_claims`, `v3_intents`, `disclosure` (bool), `latency_ms`, `gate` | INFO |
 | `tutor.v1.disagreement` | `with` (`phase3`\|`legacy`), `v1_outcome`, `reference` | INFO |
 | `tutor.v1.checker_unavailable` | `cause`, `error` | WARNING |
-| `tutor.v1.legacy_guard_withheld` | `check_id`, `reason_code`, `surface` | WARNING (a guard failure is an upstream defect) |
+| `tutor.v1.legacy_guard_withheld` | `check_id`, `reason_code`, `surface` | WARNING (a V1.1 or V1.2 failure is an upstream defect; V1.7 `conflict_withheld` is an answer quoting conflicting passages with no panel shown) |
 | `tutor.v1.unavailable` | `reason` (a development build with governance off only; every other build stops) | WARNING |
 | `tutor.v1.budget_exceeded` | `step`, `elapsed_ms`, `budget_ms`: in `shadow`, the V1 track overran after the record's decision (4.13) | WARNING |
 
@@ -960,9 +963,9 @@ No route is added, and the authorization matrix is unchanged.
 | File | Change |
 |---|---|
 | `src/lib/types.ts` | `QuizQuestion` has no `answer` or `explanation`. `QuizFeedback = {question_id; answered; correct; answer; explanation}`. `QuizAttemptResult.feedback?: QuizFeedback[]`. `EvidencePanelPayload.conflicts?: Array<{kind; passages: number[]}> \| null`. |
-| NEW `src/lib/quiz-feedback.ts` | `publicQuestions(questions)` keeps exactly `id, question_type, prompt, choices, difficulty`. `feedbackFor(questionId, result \| null)` gives `{state: "none" \| "unanswered" \| "correct" \| "incorrect"; answer?; explanation?}`; a result without `feedback` (an older API) gives `"none"`. |
+| NEW `src/lib/quiz-feedback.ts` | `publicQuestions(questions)` keeps exactly `id, question_type, prompt, choices, difficulty`. `feedbackFor(questionId, result \| null)` gives `{state: "none" \| "unanswered" \| "correct" \| "incorrect"; answer?; explanation?}`; a result without `feedback` (an older API) gives `"none"`. `resultLabel(question, feedback)` gives the result line, or null without one: for a question with no choices it names the exact-match result, never "Not correct". |
 | `src/app/quiz/[lessonSlug]/page.tsx` | Passes `publicQuestions(lesson.quiz_questions)` to `QuizPanel`. Hero text: "Work through the questions, then save an attempt to see the model answers and rubrics." |
-| `src/components/quiz-panel.tsx` | No client score, no "Reveal rubric", no "Auto-score". Keeps "Answered: n / N", `recordQuizAttempt(lessonSlug, answers)`, the textarea `aria-label` and "Recorded score: {savedAttempt.score} / …". After saving, each answered question shows "Correct" or "Not correct", "Model answer: {answer}" and the explanation from `feedbackFor`; an unanswered one "Answer this question and save an attempt to see its rubric."; each question's input names its feedback (`aria-describedby` to `quiz-feedback-{id}`), and the save error and "Saved attempt #n. Recorded score: … Feedback is shown under each question." are in an always-rendered `role="status"` `aria-live="polite"` region (WCAG 2.1 4.1.3: the feedback arrives after a network call). The short-answer note reads "Short answers are scored on the server by exact match; use the model answer shown after saving for final judgment." |
+| `src/components/quiz-panel.tsx` | No client score, no "Reveal rubric", no "Auto-score". Keeps "Answered: n / N", `recordQuizAttempt(lessonSlug, answers)`, the textarea `aria-label` and "Recorded score: {savedAttempt.score} / …". After saving, each answered question shows its result line from `resultLabel` (a choice item: "Correct" or "Not correct"; a short answer, which the server scores by exact string match: "Matches the model answer" or "Does not match the model answer exactly"), "Model answer: {answer}" and the explanation from `feedbackFor`; an unanswered one "Answer this question and save an attempt to see its rubric."; each question's input names its feedback (`aria-describedby` to `quiz-feedback-{id}`), and the save error and "Saved attempt #n. Recorded score: … Feedback is shown under each question." are in an always-rendered `role="status"` `aria-live="polite"` region (WCAG 2.1 4.1.3: the feedback arrives after a network call). The short-answer note reads "Short answers are scored on the server by exact match; use the model answer shown after saving for final judgment." |
 | `src/lib/evidence-panel.ts` | `CONFLICT_TEXT` for the three kinds ("Passages {a} and {b} …"); `evidencePanelView` gains `conflicts: string[]`. |
 | `src/components/evidence-panel.tsx` | Renders `<ul className="assistant-evidence-conflicts">` when `view.conflicts.length`. |
 | `src/app/globals.css` | `.assistant-evidence-conflicts` in `var(--ink)`, at least 4.5:1 on the panel in both themes. |
@@ -1089,7 +1092,7 @@ Fakes are in NEW `apps/api/tests/v1_fakes.py` (`AlwaysSupportedChecker`, `Always
 
 **AC-4-6**
 16. `test_ac_4_6_conflicting_cited_spans_get_a_disclosure_block_or_are_withheld`.
-17. `test_ac_4_6_the_evidence_panel_shows_the_disclosure_for_a_contained_answer`.
+17. `test_ac_4_6_the_evidence_panel_shows_the_disclosure_for_a_contained_answer`, with `test_ac_4_6_with_no_disclosure_shown_a_contained_answer_quoting_conflicting_spans_is_withheld` (`/assistant/chat` and `/qa/ask`: with the panel off the answer is today's abstention, logged and counted as V1.7 `conflict_withheld`; with it on, delivered with the panel's conflicts).
 
 **AC-4-7**
 18. `test_ac_4_7_an_unavailable_or_late_checker_makes_the_decision_abstain` (raising, wrong type, late on an injected clock).
@@ -1126,7 +1129,7 @@ Fakes are in NEW `apps/api/tests/v1_fakes.py` (`AlwaysSupportedChecker`, `Always
 | `test_v1_8_misconceptions.py` | v0 empty and hashed; all-terms match; withhold and V3 intent; malformed libraries; entries refused while Q-14 is unavailable |
 | `test_v1_9_schema_readability.py` | Plan and envelope schema; an invalid envelope reaching `render_checked`; syllables; FK vectors; band edges; templates inside the band |
 | `test_v1_aggregate_and_runner.py` | The no-hook path equals Phase 3's on 300 fault schedules; cycle counts; replacements; omission; hook reasons; budget, and the event a V1-track overrun logs in shadow and in enforce; shadow and enforce records; a V1.1 hard-failed candidate's counts across modes; every record rule; result and intent validators |
-| `test_v1_legacy_guard.py` | Every dev contained answer passes; each failure at its exact (check, reason); the polarity rule on verbatim quotations cut mid-number and mid-cue; truncation; counts; without a v1 block only the polarity rule is skipped |
+| `test_v1_legacy_guard.py` | Every dev contained answer passes; each failure at its exact (check, reason); the polarity rule on verbatim quotations cut mid-number and mid-cue; truncation; counts; without a v1 block only the polarity rule is skipped; conflicting quotations withheld unless a disclosure is shown (V1.7) |
 | `test_v1_fixtures.py` | Wilson vectors; determinism; unrealisable exit 1; a crippled check exit 5; `lqs/` refusal; no fixture string holds a 12-word shingle of a source document |
 | `test_quiz_keys.py` | `score_attempt`; `QuizKeyStore`; the public/internal split; `/content/modules`; the rebuild constructor; the attempt route |
 | `test_config_package.py` (additions) | `test_v2_stays_readable_for_one_release`; `test_v3_keeps_every_v2_value_but_the_listed_changes`; `test_v3_structural_errors_always_stop_the_load` (55 refusals); `test_package_check_v1_problems`; `test_the_v1_start_up_check_runs_from_the_image_layout` and `test_no_image_module_computes_a_parent_its_image_path_lacks_at_import` (the API image's `/app/app` paths) |
@@ -1150,7 +1153,7 @@ Fakes are in NEW `apps/api/tests/v1_fakes.py` (`AlwaysSupportedChecker`, `Always
 
 ### 13.4 Frontend tests
 
-- **NEW `tests/quiz-keys.integration.test.ts`:** `QuizQuestion` has no `answer` or `explanation`; the panel has no `question.answer`, `question.explanation`, "Reveal rubric", `=== question.answer`, "Auto-score" or `showResults`, and calls `feedbackFor(`; the page passes `publicQuestions(lesson.quiz_questions)`; `publicQuestions` drops an older payload's keys; `feedbackFor` maps none, unanswered, correct, incorrect and an older API's result; the save result and error are in a polite status region and each input names its feedback.
+- **NEW `tests/quiz-keys.integration.test.ts`:** `QuizQuestion` has no `answer` or `explanation`; the panel has no `question.answer`, `question.explanation`, "Reveal rubric", `=== question.answer`, "Auto-score" or `showResults`, and calls `feedbackFor(`; the page passes `publicQuestions(lesson.quiz_questions)`; `publicQuestions` drops an older payload's keys; `feedbackFor` maps none, unanswered, correct, incorrect and an older API's result; the save result and error are in a polite status region and each input names its feedback; `resultLabel` names a short answer's exact-match result and calls only a choice item correct or not, and the final-judgment note stays.
 - **`evidence-panel.integration.test.ts` additions:** each `CONFLICT_TEXT`; conflicts rendered only when present; no "grounded"; the contrast of `.assistant-evidence-conflicts`.
 
 ### 13.5 Mutation checks (each must fail its test when reverted)
@@ -1203,13 +1206,13 @@ The PostgreSQL matrix jobs, the frontend job and `release-artifacts` are unchang
 | PD-18 | Phase 4 stop conditions (Q-22) | Phase 4 L: "Stop below the answer-rate floor or above the V1 p95 budget, both named in configuration package v3 (Q-22)" | Floor = the Phase 2 baseline per gate, as counts (166/174, 146/174), on the V1.5 metric; the composition stop (V1 adds no in-domain abstention under (b)); p95 250 ms | v3 `v1.stop` |
 | PD-19 | `V1_PIPELINE` defaults (freeze) | Phase 4 G; 13.6 | Development enforce; elsewhere shadow; enforce refused before the Phase 4 exit; off refused outside development | `config.py`; v3 `flag_policy.v1_pipeline`; env example |
 | PD-20 | V1 lexicon (engineering parameters) | Phase 4 D (no values) | The negation cues, suffixes, number words, closed unit list, quantity rule and alignment terms of 4.1 | v3 `v1.lexicon`, `rules.py` |
-| PD-21 | Quiz key disclosure (R-42; no owner decision named) | Phase 4 B "keyed answers outside public payloads" | No key in any public payload or page; key and explanation only after a saved attempt, only for answered questions (rule `keys-after-saved-attempt-answered-only-v1`). Residual: a placeholder answer counts as answered (DI-65) | v3 `v1.quiz_feedback` (provisional; `/ready` `v1.quiz_feedback`); `schemas.py`, `quiz_keys.py` (`FEEDBACK_RULE`), quiz page and panel |
+| PD-21 | Quiz key disclosure (R-42; no owner decision named) | Phase 4 B "keyed answers outside public payloads" | No key in any public payload or page; key and explanation only after a saved attempt, only for answered questions (rule `keys-after-saved-attempt-answered-only-v1`); a short answer's result reads "Matches the model answer" or "Does not match the model answer exactly" (the server's exact match). Residual: a placeholder answer counts as answered (DI-65) | v3 `v1.quiz_feedback` (provisional; `/ready` `v1.quiz_feedback`); `schemas.py`, `quiz_keys.py` (`FEEDBACK_RULE`), quiz page and panel |
 
 ### 16.2 Deferred items
 
 | # | Item | Who | State |
 |---|---|---|---|
-| DI-52 | Q-22 / D-06 owner values (X4 margin, V1.3 threshold, V1.5 frozen before E1, V1.9 band, stop values) and hold H7's "Signed configuration" | PI | Open |
+| DI-52 | Q-22 / D-06 owner values (X4 margin, V1.3 threshold, V1.7 alignment rule, V1.5 frozen before E1 (`abstention.provisional_until` `Q-22 (DI-52)`), V1.9 band, stop values; `owner_decisions.Q-22.provisional_values` names each) and hold H7's "Signed configuration" | PI | Open |
 | DI-53 | Q-14 misconception seed list (A-18); v0 ships empty; Content Owner edits follow in Phase 7 | CO / PI | Open |
 | DI-54 | D-21 hosting decision, then a real checker with a pre-emptive timeout and an in-flight cap (H14 at the P5 exit) | PO | Open |
 | DI-55 | Ratify PD-13..PD-21; file D-20's interim policy (H15 release evidence) | PI / PO | Open |

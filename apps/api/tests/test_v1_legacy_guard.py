@@ -187,3 +187,43 @@ def test_without_a_v1_block_the_polarity_rule_is_skipped_in_development():
     assert guard_contained(_forged(contained, span_id="span-" + "e" * 64), store=store, package=no_v1, surface="qa").withheld[0] == ("V1.1", "unresolvable")
     assert guard_contained(_forged(contained, text=contained.claims[0].text + " Always."), store=store, package=no_v1,
                            surface="qa").withheld[0] == ("V1.2", "not_verbatim")
+
+
+def _conflicting():
+    """A contained answer quoting one span of each of two document items, and a package whose v1 block makes the two
+    items one version family, so V1.7 finds a version_of_same_asset conflict between the quotations."""
+    from app.schemas import Citation
+    from app.services.provenance import CITATION_SCHEMA
+
+    store = get_course_store()
+    family = ("analyzing-quantum-computing-and-ai-paper-2025", "quantum-computing-ai-research-synthesis-2026")
+    citations = []
+    for item_id in family:
+        record = next(r for r in store.span_registry.records if r.item_id == item_id and len(r.text) > 200)
+        citations.append(Citation(chunk_id=record.span_id, span_id=record.span_id, source_kind="document", source_title="t", section_title="s",
+                                  excerpt=record.text, source_filename=record.source_filename, content_hash=record.content_hash,
+                                  citation_schema=CITATION_SCHEMA, item_id=record.item_id))
+    contained = contain_answer(citations, get_corpus_registry(SETTINGS), store.span_registry, settings=SETTINGS)
+    assert contained.decision == "answer" and len(contained.citations) == 2
+    package = dataclasses.replace(PACKAGE, v1=dataclasses.replace(PACKAGE.v1, version_families={item: "fixture" for item in family}))
+    return contained, package
+
+
+def test_conflicting_quotations_are_withheld_unless_a_disclosure_is_shown(caplog):
+    # AC-4-6 on the learner path: V1.7 over the quotations, withheld when no disclosure is shown (the default), passed
+    # unchanged when the caller shows the evidence panel's conflicts, skipped without a v1 block.
+    store = get_course_store()
+    contained, package = _conflicting()
+    assert guard_contained(contained, store=store, package=PACKAGE, surface="qa").withheld == ()  # no family, no conflict
+    V1_METRICS.reset()
+    with caplog.at_level(logging.WARNING, logger="qcai.tutor"):
+        guarded = guard_contained(contained, store=store, package=package, surface="tutor")
+    assert guarded.withheld == (("V1.7", "conflict_withheld"),)
+    assert (guarded.contained.answer, guarded.contained.decision, guarded.contained.citations) == (ABSTENTION, "abstain", [])
+    (line,) = [r.json_fields for r in caplog.records if getattr(r, "json_fields", {}).get("event") == "tutor.v1.legacy_guard_withheld"]
+    assert (line["check_id"], line["reason_code"], line["surface"]) == ("V1.7", "conflict_withheld", "tutor")
+    assert V1_METRICS.detail_snapshot()["legacy_guard"]["by_check"] == {"V1.1": 0, "V1.2": 0, "V1.7": 1}
+    shown = guard_contained(contained, store=store, package=package, surface="tutor", disclosure_shown=True)
+    assert shown.withheld == () and shown.contained is contained
+    no_v1 = dataclasses.replace(package, v1=None)
+    assert guard_contained(contained, store=store, package=no_v1, surface="tutor").contained is contained

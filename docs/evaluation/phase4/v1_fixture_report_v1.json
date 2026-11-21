@@ -1,8 +1,8 @@
 {
  "report": "qcai-v1-fixture-report",
  "format_version": 1,
- "created_at": "2026-11-21T04:10:20+00:00",
- "commit": "4b05ae1e8d2368e6d067f4e79fd259695cd87aca-dirty",
+ "created_at": "2026-11-21T16:19:16+00:00",
+ "commit": "e3ac4365c7271b2147609f3e89c54e2df600da84-dirty",
  "evidence_class": "fixture measurements, not research results (plan Phase 4 H)",
  "public_corpus_only": true,
  "fixtures": {
@@ -1258,7 +1258,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 4.779,
+    "p95_ms": 3.518,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2485,7 +2485,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 6.092,
+    "p95_ms": 4.688,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2539,7 +2539,7 @@
   "contained": true
  },
  "latency": {
-  "p95_ms": 4.318,
+  "p95_ms": 3.265,
   "budget_ms": 250,
   "within_budget": true
  },
@@ -2586,10 +2586,10 @@
    "apps/api/app/services/tutor_pipeline/resolve.py": "60cad8ad9ad51c5eddf20e93f24aa2ebac6555f349f2a7c38aed17a3d2e5cc39",
    "apps/api/app/services/tutor_pipeline/retrieve.py": "12179a344db846585f77a39ca50fbf715c020bed6692bc019848747e39b8ba98",
    "apps/api/app/services/tutor_pipeline/text.py": "f0cba778cbd9c2a16d23d220aa4342d3426a38ff0cc6bf8acd52701713ab7869",
-   "apps/api/app/services/v1_checks/__init__.py": "3464ab96730915a4dc7d5987b053136cecb4b51c665a874eaf1a56c14ced125c",
+   "apps/api/app/services/v1_checks/__init__.py": "36805aeec9811946fe230e5021e8a77bde32253f5aa43590709de6b77934b7eb",
    "apps/api/app/services/v1_checks/aggregate.py": "9006f0c7c3d3c2ce6dfc928978ba0fbaeb263d07747176ce0f89c7fb88e28e14",
    "apps/api/app/services/v1_checks/lexicon.py": "65a5e1d63a11262eb9264240c1dc230cce457083b49dfb334a593498804b90a8",
-   "apps/api/app/services/v1_checks/metrics.py": "e57d088f6d1d58617a351262024f1927863f0cc0b7403d89f6c90d98b22d8c45",
+   "apps/api/app/services/v1_checks/metrics.py": "23b69babb82d883e58b93cbf2cb046b2343ed5f3ad1d7229692f8c714eb71083",
    "apps/api/app/services/v1_checks/package_check.py": "90fc427c8007a092a558b41a23d30412452587c99d27eacf40730667fac4ae63",
    "apps/api/app/services/v1_checks/results.py": "e8ee833e645c37bdae2cb573945fb660a22640db4ec2a37562cde3fd8483c5b2",
    "apps/api/app/services/v1_checks/rules.py": "8e8da3c6a6f02809cc493002c8c5aa37ae72756d9fd9b896694eddd56b646168",
@@ -2600,11 +2600,11 @@
    "apps/api/app/services/v1_checks/v1_4_subset.py": "4d22656fa52d72ad2a0984dbbb0e056fd803cab2fa1ca2fd49acb32182b51991",
    "apps/api/app/services/v1_checks/v1_5_abstention.py": "57509a22c6107bb555802c1a9f4d853fd8b64514c1e9b0550d3c047879faa65a",
    "apps/api/app/services/v1_checks/v1_6_keyed_answers.py": "8828b83da335ed16f30f7069b12a4693d87720475014a8b0dd35a4e4e4983f9c",
-   "apps/api/app/services/v1_checks/v1_7_conflicts.py": "6724a59bc774daa0e8dff248e8a0b3a4e5edc11b10cd13de84833c03d3069b99",
+   "apps/api/app/services/v1_checks/v1_7_conflicts.py": "aa06d9f5d92becce554c82962d1ef0f6c72a1fa850741797db4655b0b926374b",
    "apps/api/app/services/v1_checks/v1_8_misconceptions.py": "613d7bd27f04f430383c418611da4cf3fb7467ef29fd5bc2f17f5b00f2066a79",
    "apps/api/app/services/v1_checks/v1_9_schema_readability.py": "19a237f4c033e4e0f1815ece41164a8db0dc05dc3ca585f14d464081e17cfecb",
    "scripts/run_v1_fixtures.py": "a2233b847d25b52682eb6028d484233d75e7dcb3a7e66b976e8a8f5a9688cbea"
   },
-  "sha256": "301a2117ffcb42789a21ce037b7a324ab687999fa99383621fd900564260f43d"
+  "sha256": "4366673633fd7312b1bfb965155d7d1eaee9f4eab5538f65b53d586ae130c824"
  }
 }

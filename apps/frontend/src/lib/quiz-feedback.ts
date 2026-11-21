@@ -35,3 +35,18 @@ export function feedbackFor(questionId: string, result: QuizAttemptResult | null
     explanation: item.explanation ?? undefined,
   };
 }
+
+// The per-question result line after a saved attempt, or null when there is none. The server decides `correct` by
+// exact string match against the key (apps/api/app/services/quiz_keys.py). For a choice item that is the item's
+// answer. For a short answer (no choices) it says only whether the text equals the model answer, so a sound answer in
+// the learner's own words is never called wrong: the label names the exact-match result, and the panel's note leaves
+// the final judgment to the model answer.
+export function resultLabel(question: Pick<QuizQuestion, "choices">, feedback: QuestionFeedback): string | null {
+  if (feedback.state !== "correct" && feedback.state !== "incorrect") {
+    return null;
+  }
+  if (question.choices.length === 0) {
+    return feedback.state === "correct" ? "Matches the model answer" : "Does not match the model answer exactly";
+  }
+  return feedback.state === "correct" ? "Correct" : "Not correct";
+}

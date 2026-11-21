@@ -1,8 +1,8 @@
 {
  "report": "qcai-three-plan-replay",
  "format_version": 1,
- "created_at": "2026-11-21T04:10:46+00:00",
- "commit": "4b05ae1e8d2368e6d067f4e79fd259695cd87aca-dirty",
+ "created_at": "2026-11-21T16:19:47+00:00",
+ "commit": "e3ac4365c7271b2147609f3e89c54e2df600da84-dirty",
  "evidence_class": "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 evidence (plan Phase 3 H)",
  "public_corpus_only": true,
  "excluded_sources": [
@@ -206,10 +206,10 @@
    "apps/api/app/services/tutor_pipeline/resolve.py": "60cad8ad9ad51c5eddf20e93f24aa2ebac6555f349f2a7c38aed17a3d2e5cc39",
    "apps/api/app/services/tutor_pipeline/retrieve.py": "12179a344db846585f77a39ca50fbf715c020bed6692bc019848747e39b8ba98",
    "apps/api/app/services/tutor_pipeline/text.py": "f0cba778cbd9c2a16d23d220aa4342d3426a38ff0cc6bf8acd52701713ab7869",
-   "apps/api/app/services/v1_checks/__init__.py": "3464ab96730915a4dc7d5987b053136cecb4b51c665a874eaf1a56c14ced125c",
+   "apps/api/app/services/v1_checks/__init__.py": "36805aeec9811946fe230e5021e8a77bde32253f5aa43590709de6b77934b7eb",
    "apps/api/app/services/v1_checks/aggregate.py": "9006f0c7c3d3c2ce6dfc928978ba0fbaeb263d07747176ce0f89c7fb88e28e14",
    "apps/api/app/services/v1_checks/lexicon.py": "65a5e1d63a11262eb9264240c1dc230cce457083b49dfb334a593498804b90a8",
-   "apps/api/app/services/v1_checks/metrics.py": "e57d088f6d1d58617a351262024f1927863f0cc0b7403d89f6c90d98b22d8c45",
+   "apps/api/app/services/v1_checks/metrics.py": "23b69babb82d883e58b93cbf2cb046b2343ed5f3ad1d7229692f8c714eb71083",
    "apps/api/app/services/v1_checks/results.py": "e8ee833e645c37bdae2cb573945fb660a22640db4ec2a37562cde3fd8483c5b2",
    "apps/api/app/services/v1_checks/rules.py": "8e8da3c6a6f02809cc493002c8c5aa37ae72756d9fd9b896694eddd56b646168",
    "apps/api/app/services/v1_checks/runner.py": "948c4e86613d490db0720125a90368a405a86b05c4002b59267d38d1cbc11d97",
@@ -219,11 +219,11 @@
    "apps/api/app/services/v1_checks/v1_4_subset.py": "4d22656fa52d72ad2a0984dbbb0e056fd803cab2fa1ca2fd49acb32182b51991",
    "apps/api/app/services/v1_checks/v1_5_abstention.py": "57509a22c6107bb555802c1a9f4d853fd8b64514c1e9b0550d3c047879faa65a",
    "apps/api/app/services/v1_checks/v1_6_keyed_answers.py": "8828b83da335ed16f30f7069b12a4693d87720475014a8b0dd35a4e4e4983f9c",
-   "apps/api/app/services/v1_checks/v1_7_conflicts.py": "6724a59bc774daa0e8dff248e8a0b3a4e5edc11b10cd13de84833c03d3069b99",
+   "apps/api/app/services/v1_checks/v1_7_conflicts.py": "aa06d9f5d92becce554c82962d1ef0f6c72a1fa850741797db4655b0b926374b",
    "apps/api/app/services/v1_checks/v1_8_misconceptions.py": "613d7bd27f04f430383c418611da4cf3fb7467ef29fd5bc2f17f5b00f2066a79",
    "apps/api/app/services/v1_checks/v1_9_schema_readability.py": "19a237f4c033e4e0f1815ece41164a8db0dc05dc3ca585f14d464081e17cfecb",
    "scripts/replay_tutor_plans.py": "287a264cea97c41d4e59c958c817c00d6a84e5b8f4d47dd76a867584cc11191a"
   },
-  "sha256": "ce203d43c92b5e97017e729770c9d274a17a1514b8875783b8cf026304221042"
+  "sha256": "3ade4c3a4610706a80e30036975a518adc081b9e4234427e111aae7365b3dec4"
  }
 }

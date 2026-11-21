@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { feedbackFor, publicQuestions } from "../src/lib/quiz-feedback";
+import { feedbackFor, publicQuestions, resultLabel } from "../src/lib/quiz-feedback";
 import type { QuizAttemptResult, QuizQuestion } from "../src/lib/types";
 
 // Plan Phase 4 B "keyed answers outside public payloads" (R-42; Phase 4 spec 11, 13.4): no answer key reaches a public
@@ -81,4 +81,25 @@ test("feedbackFor maps none, unanswered, correct and incorrect, and tolerates an
   assert.deepEqual(feedbackFor("q9", result), { state: "none" });
   const older: QuizAttemptResult = { status: "saved", attempt_id: 8, score: 0 };
   assert.deepEqual(feedbackFor("q1", older), { state: "none" });
+});
+
+test("a short answer's result names the exact match; only a choice item is called correct or not", () => {
+  // The server's verdict is an exact string match (quiz_keys.score_attempt): for a short answer it says whether the text
+  // equals the model answer, never that a sound answer in the learner's own words is wrong.
+  const shortAnswer = { choices: [] as string[] };
+  const choice = { choices: ["a", "b"] };
+  assert.equal(resultLabel(shortAnswer, { state: "correct" }), "Matches the model answer");
+  assert.equal(resultLabel(shortAnswer, { state: "incorrect" }), "Does not match the model answer exactly");
+  assert.equal(resultLabel(choice, { state: "correct" }), "Correct");
+  assert.equal(resultLabel(choice, { state: "incorrect" }), "Not correct");
+  for (const question of [shortAnswer, choice]) {
+    assert.equal(resultLabel(question, { state: "none" }), null);
+    assert.equal(resultLabel(question, { state: "unanswered" }), null);
+  }
+  const panel = read("components/quiz-panel.tsx");
+  assert.match(panel, /const result = resultLabel\(question, feedback\);/);
+  assert.match(panel, /\{result \? \(\n\s*<div className="quiz-result" id=\{feedbackId\}>\n\s*<p>\n\s*<strong>\{result\}<\/strong>/);
+  assert.doesNotMatch(panel, /"Not correct"|"Correct"/);
+  // The final-judgment caveat stays beside the short-answer result.
+  assert.match(panel, /Short answers are scored on the server by exact match; use the model answer shown after saving for final judgment\./);
 });

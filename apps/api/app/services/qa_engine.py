@@ -45,9 +45,11 @@ class QAEngine:
         # Decision D-19: no generation; verbatim approved spans or an abstention (AC-1-14).
         registry = get_corpus_registry(self.settings)
         contained = contain_answer(citations, registry, store.span_registry, settings=self.settings)
-        # Plan Phase 4 L: V1.1 and V1.2 stay enforced on every delivery path (no flag).
+        # Plan Phase 4 L: V1.1 and V1.2 stay enforced on every delivery path (no flag). AC-4-6: conflicting quotations
+        # are labelled by the evidence panel when it is shown, else withheld (V1.7).
         package = get_config_package(self.settings)
-        contained = guard_contained(contained, store=store, package=package, surface="qa").contained
+        contained = guard_contained(contained, store=store, package=package, surface="qa",
+                                    disclosure_shown=self.settings.evidence_panel_enabled).contained
         record_citations("qa", len(contained.citations), contained.dropped_unresolved, 0)
         retrieval_mode = f"{retrieval.mode}-{EXTRACTIVE_MODE}"
         response = QAResponse(

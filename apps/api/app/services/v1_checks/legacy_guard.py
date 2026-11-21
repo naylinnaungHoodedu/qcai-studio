@@ -1,5 +1,7 @@
 """V1.1 and V1.2 on the legacy contained answer (plan Phase 4 L: "V1.1/V1.2 stay enforced with extractive mode or
-abstention [Decision D-19], never the legacy overlap gate alone [Risk R-16]"; Phase 4 spec 4.15, conflicts 4, 22, 34).
+abstention [Decision D-19], never the legacy overlap gate alone [Risk R-16]"), and V1.7 where no disclosure is shown
+(AC-4-6: "Given conflicting cited spans, then a disclosure block is shown or the response withheld"; Phase 4 spec
+4.15, conflicts 4, 22, 34).
 
 Every delivery path that can deliver a claim (/assistant/chat, /tutor/turns, /qa/ask) passes the D-19 contained answer
 through guard_contained before anything reads it. For each quotation (a GroundedClaim) and each span it cites:
@@ -9,12 +11,17 @@ through guard_contained before anything reads it. For each quotation (a Grounded
   V1.2  polarity, claim to span (E-27; only with a package v1 block): every quantity of the quotation is covered by the
         span (lexicon.quantities_covered, closed units) and every negation cue of the quotation is in the span at
         least as often.
+Then, when the caller shows no disclosure (disclosure_shown False: the evidence panel, whose `conflicts` label the
+conflicting passages, is off) and the package has a v1 block, V1.7 over the answer's quotations
+(v1_7_conflicts.legacy_conflicts, the rule the panel's conflicts use): any conflict withholds the answer
+(V1.7 / conflict_withheld).
 Any failure withholds the whole answer: the contained answer becomes today's abstention (the same bytes), the guard
 counts it (V1_METRICS.legacy_guard) and logs tutor.v1.legacy_guard_withheld with the check, the reason and the surface
-(a guard failure is an upstream defect). The guard has no flag and runs in every V1_PIPELINE mode. contain_answer
-quotes only verified spans, so every current quotation passes and response bytes are unchanged; under D-31 nothing
-is quoted outside development. Without a v1 block (a v1 or v2 package, only in development with governance off:
-every other build refuses one at start-up) the polarity rule is skipped.
+(a V1.1 or V1.2 failure is an upstream defect; a V1.7 one is conflicting sources quoted with no disclosure shown). The
+guard has no flag and runs in every V1_PIPELINE mode. contain_answer quotes only verified spans, so every current
+quotation passes, no current development answer quotes conflicting passages, and response bytes are unchanged; under
+D-31 nothing is quoted outside development. Without a v1 block (a v1 or v2 package, only in development with
+governance off: every other build refuses one at start-up) the polarity rule and V1.7 are skipped.
 """
 
 from __future__ import annotations
@@ -29,6 +36,8 @@ from app.services.span_resolver import SpanResolver
 from app.services.text_utils import normalize_display_text
 from app.services.v1_checks.lexicon import negation_cues, quantities_covered
 from app.services.v1_checks.metrics import V1_METRICS
+from app.services.v1_checks.rules import PAIR
+from app.services.v1_checks.v1_7_conflicts import legacy_conflicts
 
 if TYPE_CHECKING:  # pragma: no cover
     from app.core.config_package import ConfigPackage
@@ -72,8 +81,17 @@ def quotation_problem(text: str, span_ids, hashes: dict[str, str], resolver: Spa
     return None
 
 
+def undisclosed_conflict(contained: ContainedAnswer, package: "ConfigPackage") -> bool:
+    """Whether V1.7 finds a conflict among an answer's quotations: evidence_panel.panel_conflicts' rule and inputs."""
+    if package.v1 is None or contained.decision != "answer" or len(contained.citations) < PAIR:
+        return False
+    return bool(legacy_conflicts(contained.citations, v1=package.v1, stopwords=package.retrieval.stopwords))
+
+
 def guard_contained(contained: ContainedAnswer, *, store: "CourseStore", package: "ConfigPackage",
-                    surface: Literal["tutor", "qa"]) -> GuardResult:
+                    surface: Literal["tutor", "qa"], disclosure_shown: bool = False) -> GuardResult:
+    """The guarded answer. disclosure_shown: the caller shows V1.7's disclosure (the evidence panel's conflicts), so a
+    conflict is labelled there instead of withheld; its default is the conservative False."""
     if contained.decision != "answer":
         V1_METRICS.guard(surface, withheld_by=None)
         return GuardResult(contained=contained, withheld=())
@@ -86,13 +104,15 @@ def guard_contained(contained: ContainedAnswer, *, store: "CourseStore", package
             withheld.append(problem)
     if not contained.claims:
         withheld.append(("V1.2", "no_bound_claims"))
+    if not withheld and not disclosure_shown and undisclosed_conflict(contained, package):
+        withheld.append(("V1.7", "conflict_withheld"))
     if not withheld:
         V1_METRICS.guard(surface, withheld_by=None)
         return GuardResult(contained=contained, withheld=())
     check_id, reason = withheld[0]
     V1_METRICS.guard(surface, withheld_by=check_id)
     LOGGER.warning(
-        "The V1.1/V1.2 legacy guard withheld a contained answer",
+        "The legacy guard withheld a contained answer",
         extra={FIELDS: {"event": "tutor.v1.legacy_guard_withheld", "check_id": check_id, "reason_code": reason, "surface": surface}},
     )
     # Exactly contain_answer's own abstention, so the body bytes equal today's abstention.

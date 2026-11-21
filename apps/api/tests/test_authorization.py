@@ -195,11 +195,14 @@ def test_a_role_denial_is_a_security_event():
 
     assert response.status_code == 403
     with SessionLocal() as db:
-        event = db.scalars(
-            select(SecurityEvent).where(SecurityEvent.seq > start, SecurityEvent.event_type == "authz.denied")
-        ).first()
-    assert event is not None
-    assert event.details == {"route": "/admin/guest-revocations", "required": "role:admin", "provider": "demo"}
+        # Every matching event, in seq (append) order: one denial is exactly one event. Without ORDER BY, PostgreSQL
+        # returns rows in physical order, so .first() would not name a defined row.
+        events = db.scalars(
+            select(SecurityEvent)
+            .where(SecurityEvent.seq > start, SecurityEvent.event_type == "authz.denied")
+            .order_by(SecurityEvent.seq)
+        ).all()
+    assert [event.details for event in events] == [{"route": "/admin/guest-revocations", "required": "role:admin", "provider": "demo"}]
 
 
 # --- Object ownership: every owner-scoped route is tested here ---

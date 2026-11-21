@@ -1785,7 +1785,7 @@ The registers in `BEP-2-12/00_meta` (`PROVISIONAL_DEFAULTS_REGISTER.md`, `DEFERR
 
 | # | Item | Who | State |
 |---|---|---|---|
-| DI-31 | A cited green CI run for AC-3-1..AC-3-6 (plan Phase 3 P), on `main`. The branch was pushed; run 44676365093 at `94aa3e6` passed every job. Each later commit needs its own run, and the exit needs a cited green run on `main` after the merge. | Eng | Open |
+| DI-31 | A cited green CI run for AC-3-1..AC-3-6 (plan Phase 3 P), on `main`. PR #35 ran green on its head `82ded75` (runs 44722532183 and 44722541714) and was squash-merged as `078bc75` on 2026-11-20 (tree identical to `82ded75`); main run 44723513394 (push, at `078bc75`) passed every job (api-and-evaluation, frontend, api-postgres (psycopg), api-postgres (pg8000) on PostgreSQL 16, api-postgres, api-image-boundary-scan; release-artifacts skipped by design): the cited run. | Eng | Closed (main run 44723513394) |
 | DI-32 | Production shadow enablement (`TWO_PASS_TUTOR=shadow` outside development): D-05, CPU for background tasks, keep-alive and thread-pool effects (section 9); plan H applies to real learner questions. | PfO / PO | Not started |
 | DI-33 | The daily off-DB ledger digest (7.5): schedule `python -m app.workers.response_ledger` and keep the logged head (a cloud write). | PfO, then Eng | Worker built; not scheduled |
 | DI-34 | The evidence-panel production rollout (`EVIDENCE_PANEL_ENABLED` outside development; D-05), which completes the task 1.11 label precondition in production; the panel for reloaded threads; the trust indicator. | PO | Deferred |
@@ -1840,7 +1840,8 @@ The latest results are in 18.3. Against the Phase 2 baseline (576 passed, 2 skip
 
 **Exit (plan Phase 3 P)**
 - "AC-3-1 to AC-3-6 green in a cited CI run; schemas in configuration package v2; ADR-001 revised".
-- Schemas in package v2 and the ADR-001 revision are done. The cited CI run is DI-31: the exit is not passed until a cited run is green on `main`.
+- All three are evidenced: schemas in package v2, the ADR-001 revision, and AC-3-1 to AC-3-6 green in main run 44723513394 at `078bc75` (DI-31, closed).
+- The exit is not passed: the phase was entered with deviated or provisional preconditions under P1-D-18 (the Phase 2 exit not passed; D-12 open; D-19 and PD-08..PD-12 unratified), and no owner acceptance is recorded.
 
 ---
 
@@ -1922,7 +1923,7 @@ The latest results are in 18.3. Against the Phase 2 baseline (576 passed, 2 skip
 
 ### 18.3 Verification results (latest local run)
 
-Local runs on 2026-11-20, twelfth review round (the commit after `4283194`, run on its working tree before the commit).
+Local runs on 2026-11-20, twelfth review round (`82ded75`, run on its working tree before the commit).
 
 **Suites**
 - **Full suite, SQLite** (`pytest -m "not release_artifacts" apps/api/tests evaluation/tests`): 1020 passed, 2 skipped, 3 xfailed (strict), 1 deselected (`release_artifacts`). Against the eleventh round's 1002 passed, the twelfth round's 18 new tests (`test_m1_*`, `test_m2_*`) add no skip or xfail.
@@ -1933,7 +1934,7 @@ Local runs on 2026-11-20, twelfth review round (the commit after `4283194`, run 
 
 **Frontend:** unchanged in this round, so not rerun. **Not run here:** `pip-audit` and `npm audit` (network; no dependency changed), the Docker image build and its scan, PostgreSQL 16 itself, and the provenance audit against production (a cloud job under D-05, DI-49).
 
-**CI:** branch run 44676365093 (push) at `94aa3e6` passed every job. The commits from the tenth round on need their own run, and the exit needs a cited green run on `main` (DI-31).
+**CI:** branch run 44676365093 (push) at `94aa3e6` passed every job; PR #35 ran green on its head `82ded75` (runs 44722532183 and 44722541714) and was squash-merged as `078bc75` on 2026-11-20 (tree identical to `82ded75`); main run 44723513394 (push, at `078bc75`) passed every job, the cited run (DI-31, closed).
 
 ### 18.4 Review history
 
@@ -1952,4 +1953,4 @@ The rows below record what each review round fixed, in order. They may describe 
 | 9, J1-J8 (18.12) | `94aa3e6` | J1 a duplicate claim counts as bound in the plan L ratio, as a merged one does: `test_j1_*`<br>J2 the invariant 1 fixture compares the ClaimPlans and the whole shadow record: `test_j2_*`<br>J3 a renderer exception logs `tutor.two_pass.render_failed`, and a run whose every attempt raised abstains with `render_failed`: `test_j3_*`<br>J4 every exact fault test asserts what it placed: `test_j4_*`<br>J5 a turn whose append may still be running is `pending`, not `unrecorded`: `test_j5_*`<br>J6 the attempt horizon is derived from the code's own terms, the append queue included, and read by CPU allocation: `test_j6_*`<br>J7 the shadow budget source, the connection note and tests 28 and 39: `test_j7_*`<br>J8 the CI job, budget setting and Alembic step in sections 14 and 15: `test_j8_*` |
 | 10, K1-K3 | `23cc281` (K1, K2); `79d8516` (K3) | K1 the invariant 1 fixture tells learners apart by the abstention reason, counts, floor, margin, sufficiency and `top_k`, and compares every field of the shadow record but its ids, `contains_learner_state` included: `test_k1_*`<br>K2 a new Cloud SQL connection is bounded by `app.core.db.CONNECT_TIMEOUT_S`, which the attempt horizon counts; the connector bounds none of it: `test_k2_*`<br>K3 the Phase 3 records state current behaviour: sections 0-17, the ADR revisions, the runbooks and the evidence package corrected in place, this table in place of per-round sections, the test strategy mapping every `test_phase3_*.py` file, and section 3 listed from the code: `test_k3_*` |
 | 11, L1-L8 | `4283194` | L1 spec 4.12 lists the append's statements in the code's order, the `SET LOCAL`s before the `response_id` read: `test_l1_*`<br>L2 spec section 7 names every production file the phase changes and states `app/core/db.py`, the `_ExcludeIfProbe` refusal and the pydantic floor; 18.1 lists them: `test_l2_*`<br>L3 each Cloud SQL connection's socket gets TCP keepalive (a dead peer ends a read within 60 s; the 840 s dead-peer horizon); a server that never replies is stated as unbounded, and the runbook replaces the instance: `test_l3_*`<br>L4 spec 13.2 describes the retry test the file holds: `test_l4_*`<br>L5 the ADR-005 revision withdraws the overlap gate and keeps fail-closed abstention: `test_l5_*`<br>L6 spec 5.1 names the four owner decisions v2 adds: `test_l6_*`<br>L7 F-2's stand-in audit: package v2 pins the legacy path (`tutor_pipeline.legacy`), `ledger_provenance` and `--check-provenance` compare every record with the pins, and the records say what exists: `test_l7_*`<br>L8 spec 4.3, 4.5, 4.10 and 13.1 item 3 state the license-gate abstention, `top`, the budget checks and the mutation tests: `test_l8_*` |
-| 12, M1-M2 | the commit after `4283194` (its message lists M1-M2) | M1 spec 7.19, 14 and 16, the `app/core/db.py` comment, the CI comment, the test strategy and DI-46 state production's pg8000 interface (the Cloud SQL connector's `pg8000.dbapi.connect`, which raises every server error as a plain `DatabaseError`, 23505 included) and CI's (the legacy `pg8000.connect`); a raw `DatabaseError` takes psycopg's class, and the ledger retries a real duplicate key on production's interface: `test_m1_*`<br>M2 spec 0.2 M24 names the four owner decisions v2 adds, as 5.1 does, and every line that says what v2 adds to `owner_decisions` names all four: `test_m2_*` |
+| 12, M1-M2 | `82ded75` (PR #35's head; squash-merged as `078bc75`) | M1 spec 7.19, 14 and 16, the `app/core/db.py` comment, the CI comment, the test strategy and DI-46 state production's pg8000 interface (the Cloud SQL connector's `pg8000.dbapi.connect`, which raises every server error as a plain `DatabaseError`, 23505 included) and CI's (the legacy `pg8000.connect`); a raw `DatabaseError` takes psycopg's class, and the ledger retries a real duplicate key on production's interface: `test_m1_*`<br>M2 spec 0.2 M24 names the four owner decisions v2 adds, as 5.1 does, and every line that says what v2 adds to `owner_decisions` names all four: `test_m2_*` |

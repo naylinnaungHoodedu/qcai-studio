@@ -41,7 +41,8 @@ def build_evidence_panel(*, decision: str, citations: list[Citation], retrieval_
 
 
 def panel_conflicts(contained, package) -> list[EvidenceConflict] | None:
-    """V1.7 over a contained answer's quoted passages, for the evidence panel (labels only), or None (Phase 4 spec 4.8)."""
+    """V1.7 over a contained answer's quoted passages, for the evidence panel (labels only), or None (Phase 4 spec 4.8).
+    With the panel off the legacy guard withholds such an answer instead (legacy_guard.undisclosed_conflict)."""
     if package.v1 is None or contained.decision != "answer" or len(contained.citations) < 2:
         return None
     from app.services.v1_checks.v1_7_conflicts import legacy_conflicts
