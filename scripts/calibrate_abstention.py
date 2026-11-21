@@ -16,8 +16,9 @@ Selection (spec 3.14): a floor is feasible on the cal fold when no oos_general o
 result and recall@5 (cal in-domain, and learner questions) is not below the legacy recall. Per configuration take
 the contiguous feasible interval from the lowest feasible floor; intersect; floor = midpoint rounded down to 0.05,
 margin = upper end - floor rounded down to 0.05. Confirm on the conf fold, hold-out B and the AC fixture; any
-failure, or an empty intersection, is a stop (plan Phase 2 L): exit 3, package unchanged. The values stay
-provisional until Phase 4 and are not final before the E1 freeze.
+failure, or an empty intersection, is a stop (plan Phase 2 L): exit 3, package unchanged. The record says the values
+stay provisional until Phase 4 (the Phase 2 reading); Phase 4 did not lift that, so configuration package v3 keeps them
+provisional until Q-22 sets them (abstention.provisional_until, DI-52), and they are not final before the E1 freeze.
 """
 
 from __future__ import annotations
@@ -489,7 +490,8 @@ def main(argv: list[str] | None = None) -> int:
     if committed["result"] != "pass":
         print("the committed record is a stop", file=sys.stderr)
         return EXIT_STOP
-    print(f"calibration record is current: floor {committed['selection']['floor']}, margin {committed['selection']['margin']} (provisional until Phase 4)")
+    print(f"calibration record is current: floor {committed['selection']['floor']}, margin {committed['selection']['margin']} "
+          f"(provisional until {package.abstention.provisional_until})")
     return 0
 
 

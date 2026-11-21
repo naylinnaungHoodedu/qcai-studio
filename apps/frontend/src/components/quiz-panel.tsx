@@ -12,6 +12,8 @@ function toErrorMessage(error: unknown, fallback: string): string {
 
 // Plan Phase 4 B (R-42): the questions carry no answer key, and the panel computes no score. The server scores a saved
 // attempt and returns its feedback; the model answer and rubric of each answered question come from that response.
+// The feedback arrives after a network call, so the save result is announced in a live region (WCAG 2.1 4.1.3), and
+// each question's input names its feedback (aria-describedby).
 export function QuizPanel({
   lessonSlug,
   questions,
@@ -63,6 +65,8 @@ export function QuizPanel({
       <div className="stack">
         {questions.map((question, index) => {
           const feedback = feedbackFor(question.id, savedAttempt);
+          const feedbackId = `quiz-feedback-${question.id}`;
+          const describedBy = feedback.state === "none" ? undefined : feedbackId;
           return (
             <article className="quiz-card" key={question.id}>
               <p className="quiz-index">
@@ -74,6 +78,7 @@ export function QuizPanel({
                   {question.choices.map((choice) => (
                     <label className="choice-item" key={choice}>
                       <input
+                        aria-describedby={describedBy}
                         checked={answers[question.id] === choice}
                         name={question.id}
                         onChange={() =>
@@ -90,6 +95,7 @@ export function QuizPanel({
                 </div>
               ) : (
                 <textarea
+                  aria-describedby={describedBy}
                   aria-label={`Answer for question ${index + 1}: ${question.prompt}`}
                   className="note-input"
                   onChange={(event) =>
@@ -104,7 +110,7 @@ export function QuizPanel({
                 />
               )}
               {feedback.state === "correct" || feedback.state === "incorrect" ? (
-                <div className="quiz-result">
+                <div className="quiz-result" id={feedbackId}>
                   <p>
                     <strong>{feedback.state === "correct" ? "Correct" : "Not correct"}</strong>
                   </p>
@@ -115,7 +121,9 @@ export function QuizPanel({
                 </div>
               ) : null}
               {feedback.state === "unanswered" ? (
-                <p className="muted">Answer this question and save an attempt to see its rubric.</p>
+                <p className="muted" id={feedbackId}>
+                  Answer this question and save an attempt to see its rubric.
+                </p>
               ) : null}
             </article>
           );
@@ -137,12 +145,15 @@ export function QuizPanel({
           Short answers are scored on the server by exact match; use the model answer shown after saving for final judgment.
         </p>
       ) : null}
-      {saveError ? <p className="muted">{saveError}</p> : null}
-      {savedAttempt ? (
-        <p className="muted">
-          Saved attempt #{savedAttempt.attempt_id}. Recorded score: {savedAttempt.score} / {questions.length}.
-        </p>
-      ) : null}
+      <div aria-live="polite" role="status">
+        {saveError ? <p className="muted">{saveError}</p> : null}
+        {savedAttempt ? (
+          <p className="muted">
+            Saved attempt #{savedAttempt.attempt_id}. Recorded score: {savedAttempt.score} / {questions.length}.
+            {savedAttempt.feedback?.length ? " Feedback is shown under each question." : null}
+          </p>
+        ) : null}
+      </div>
     </section>
   );
 }

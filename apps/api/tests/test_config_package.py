@@ -3,9 +3,12 @@ package v2", Phase 3 spec section 5; Phase 4 P "fixture hashes in configuration 
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import sys
+import types
 
 import pytest
 
@@ -23,6 +26,9 @@ from app.core.config_package import (
 from app.services.retrieval_p1 import QUERY_STOPWORDS, SCORE_FLOOR, SCORE_FLOOR_VERSION
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+API_APP = REPO_ROOT / "apps" / "api" / "app"
+# apps/api/Dockerfile: WORKDIR /app and COPY apps/api/app ./app, so the image holds each module under /app/app.
+IMAGE_APP = PurePosixPath("/app/app")
 RAW = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
 V2_RAW = json.loads(V2_PACKAGE_PATH.read_text(encoding="utf-8"))
 
@@ -189,12 +195,15 @@ def _schema_path_edit(value: str):
         lambda p: p["flag_policy"]["two_pass_tutor"].update(default_elsewhere="shadow"),
         lambda p: p.pop("supersedes"),
         lambda p: p["owner_decisions"].pop("D-12"),
-        lambda p: p.update(schema_version=3),
+        # v2 claiming schema 3 (no v1 block), and v3 claiming an unknown schema 4.
+        lambda p: p.update(schema_version=p["schema_version"] + 1),
     ],
 )
-def test_v2_structural_errors_always_stop_the_load(tmp_path, edit):
-    # Package v2 itself: it stays readable for one release (DI-63), so its own refusals still hold.
-    payload = json.loads(json.dumps(V2_RAW))
+@pytest.mark.parametrize("package", ["v2", "v3"])
+def test_v2_structural_errors_always_stop_the_load(tmp_path, edit, package):
+    # The Phase 3 refusals, on package v2 itself (it stays readable for one release, DI-63) and on the shipped package
+    # v3, so a schema-3 branch of the loader cannot stop refusing one of them unnoticed.
+    payload = json.loads(json.dumps(V2_RAW if package == "v2" else RAW))
     edit(payload)
     path = _write(tmp_path, payload)
     for governed in (True, False):
@@ -242,12 +251,18 @@ def test_v2_stays_readable_for_one_release():
 
 def test_v3_keeps_every_v2_value_but_the_listed_changes():
     for key in V2_RAW:
-        if key in {"package_version", "schema_version", "phase", "created", "supersedes", "tutor_pipeline", "flag_policy", "owner_decisions"}:
+        if key in {"package_version", "schema_version", "phase", "created", "supersedes", "tutor_pipeline", "flag_policy", "owner_decisions",
+                   "abstention"}:
             continue
         assert RAW[key] == V2_RAW[key], key
     assert (RAW["package_version"], RAW["schema_version"], RAW["phase"]) == ("3.0.0", 3, "4")
     assert RAW["supersedes"] == {"package_version": "2.0.0", "sha256": canonical_sha256(V2_RAW), "readable_until": "the release after the Phase 4 merge"}
     assert RAW["abstention"]["calibrated_with_package_version"] == "1.0.0"
+    # The abstention values stay provisional past Phase 4: until Q-22 sets them (DI-52), not "Phase 4" as v2 says.
+    abstention = dict(RAW["abstention"])
+    assert (abstention.pop("provisional_until"), V2_RAW["abstention"]["provisional_until"]) == ("Q-22 (DI-52)", "Phase 4")
+    assert abstention == {key: value for key, value in V2_RAW["abstention"].items() if key != "provisional_until"}
+    assert abstention["provisional"] is True
     for key, value in V2_RAW["tutor_pipeline"].items():
         if key not in V3_CHANGED_TUTOR_KEYS:
             assert RAW["tutor_pipeline"][key] == value, key
@@ -264,6 +279,9 @@ def test_v3_keeps_every_v2_value_but_the_listed_changes():
                                          "authority": "plan Phase 4 G; 13.6; PD-19"}
     assert policy == V2_RAW["flag_policy"] and policy["phase4_exit_passed"] is False and policy["phase4_exit_evidence"] is None
     assert set(RAW["owner_decisions"]) == set(V2_RAW["owner_decisions"]) | {"D-20", "D-21", "Q-22", "Q-14", "D-06"}
+    # Q-22 names every value PD-15, PD-16 and PD-18 apply as operator policy, V1.7's alignment rule included.
+    assert RAW["owner_decisions"]["Q-22"]["provisional_values"] == ["v1.v1_5.x4_margin", "v1.v1_3.support_threshold", "v1.v1_7",
+                                                                     "v1.v1_9.readability", "v1.stop"]
     for name, decision in V2_RAW["owner_decisions"].items():
         assert RAW["owner_decisions"][name] == decision, name
     # Every prompt hash is v2's, and the eight v1 schema files are unchanged.
@@ -274,7 +292,13 @@ def test_v3_keeps_every_v2_value_but_the_listed_changes():
     v1 = package.v1
     assert v1.checker_hosting == v1.checker_model_id == "none" and v1.library_entries == () and v1.d20_rule == "withhold-all-flagged-v1"
     assert dict(v1.answer_rate_floor) == {"bm25f-v1": (166, 174), "p1-floor": (146, 174)} and v1.p95_budget_ms == 250
-    assert all(RAW["v1"][block]["provisional"] is True for block in ("lexicon", "v1_3", "v1_5", "v1_6", "v1_7", "v1_9", "d20_interim", "stop"))
+    assert all(RAW["v1"][block]["provisional"] is True
+               for block in ("lexicon", "v1_3", "v1_5", "v1_6", "v1_7", "v1_9", "quiz_feedback", "d20_interim", "stop"))
+    # PD-21 lives in the package, provisional, and names the rule the quiz route implements.
+    assert {key: value for key, value in RAW["v1"]["quiz_feedback"].items() if key != "authority"} == {
+        "provisional": True, "rule": "keys-after-saved-attempt-answered-only-v1", "public_payloads": "no_keys",
+        "feedback": "answered_questions_after_a_saved_attempt"}
+    assert "PD-21" in RAW["v1"]["quiz_feedback"]["authority"] and v1.quiz_feedback_rule == "keys-after-saved-attempt-answered-only-v1"
 
 
 def _v3(edit):
@@ -336,6 +360,11 @@ def _v3(edit):
         lambda p: p["tutor_pipeline"]["ledger"].update(legacy_entry_schema="ledger-entry-v2"),
         lambda p: p["tutor_pipeline"].update(unused_provenance_fields=["v1_3_checker_model_id"]),
         lambda p: p.pop("v1"),
+        lambda p: p["v1"]["quiz_feedback"].update(provisional=False),
+        lambda p: p["v1"]["quiz_feedback"].update(rule="keys-in-public-payloads-v0"),
+        lambda p: p["v1"]["quiz_feedback"].update(public_payloads="keys"),
+        lambda p: p["v1"]["quiz_feedback"].update(feedback="every_question_after_a_saved_attempt"),
+        lambda p: p["v1"].pop("quiz_feedback"),
     ],
 )
 def test_v3_structural_errors_always_stop_the_load(tmp_path, edit):
@@ -363,4 +392,52 @@ def test_package_check_v1_problems(tmp_path):
     missing = dataclasses.replace(package, v1=dataclasses.replace(package.v1, fixtures_path="docs/evaluation/phase4/missing.json"))
     assert any("missing" in problem for problem in check_v1_package(missing, structural=True))
     assert check_v1_package(dataclasses.replace(package, v1=None), structural=False) == ["the configuration package has no v1 block"]
+    other_quiz_rule = dataclasses.replace(package, v1=dataclasses.replace(package.v1, quiz_feedback_rule="keys-every-question-v2"))
+    assert check_v1_package(other_quiz_rule, structural=False) == [
+        "v1.quiz_feedback.rule differs from the quiz route's rule (quiz_keys.FEEDBACK_RULE, PD-21)"]
+
+
+def _image_module(relative: str, name: str) -> types.ModuleType:
+    """A module's committed source executed as the API image holds it (__file__ under /app/app), so a module-level
+    computation that needs a repository checkout fails here as it fails at start-up in the image."""
+    module = types.ModuleType(name)
+    module.__file__ = str(IMAGE_APP / relative)
+    exec(compile((API_APP / relative).read_text(encoding="utf-8"), module.__file__, "exec"), module.__dict__)
+    return module
+
+
+def test_the_v1_start_up_check_runs_from_the_image_layout(monkeypatch):
+    # In the image the package check is /app/app/services/v1_checks/package_check.py: five parents and no checkout.
+    # Start-up imports it (lifespan -> _initialize_database -> _check_tutor_pipeline_package -> _check_v1_package), so
+    # it must import and check the shipped package there; only a structural check needs docs/, and it says so.
+    from app import main as main_module
+    from app.services import v1_checks
+
+    image = _image_module("services/v1_checks/package_check.py", "app.services.v1_checks.package_check")
+    monkeypatch.setitem(sys.modules, "app.services.v1_checks.package_check", image)
+    monkeypatch.setattr(main_module, "settings", Settings(environment="production"))
+    package = load_config_package(DEFAULT_PACKAGE_PATH, governed=True)
+    main_module._check_v1_package(package)  # a governed build: any problem raises ConfigPackageError
+    assert v1_checks.V1_UNAVAILABLE_REASON is None
+    assert image.check_v1_package(package, structural=False) == []
+    assert image.fixture_problems(package) == [f"v1 fixtures: {package.v1.fixtures_path} is missing or not JSON"]
+
+
+def test_no_image_module_computes_a_parent_its_image_path_lacks_at_import():
+    # Every module-level `.parents[N]` in apps/api/app has a constant N that exists at the module's image path: the
+    # image imports these modules at start-up or in its jobs and holds no repository checkout above /app.
+    checked = 0
+    for path in sorted(API_APP.rglob("*.py")):
+        relative = path.relative_to(API_APP).as_posix()
+        depth = len((IMAGE_APP / relative).parents)
+        for statement in ast.parse(path.read_text(encoding="utf-8")).body:
+            if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            for node in ast.walk(statement):
+                if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Attribute) and node.value.attr == "parents":
+                    index = node.slice
+                    assert isinstance(index, ast.Constant) and isinstance(index.value, int), (relative, ast.unparse(node))
+                    assert index.value < depth, (relative, ast.unparse(node), f"the image path has {depth} parents")
+                    checked += 1
+    assert checked >= 3
 

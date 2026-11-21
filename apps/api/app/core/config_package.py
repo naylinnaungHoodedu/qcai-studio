@@ -12,7 +12,8 @@ hash of the legacy contained path that every legacy ledger record stamps (tutor_
 two_pass_tutor flag policy (phase4_exit_passed). Version 3 (Phase 4) copies every v2 block, pins a ninth schema
 (LedgerEntryV2) and adds the V1 checks (`v1`): rule ids and their hash, the lexicon, every V1 threshold and band
 (provisional, Q-22), the checker hosting (none, D-21), the misconception library (v0, empty, Q-14), the D-20 interim
-rule, the adversarial fixture set's hash and the plan L stop conditions; and the v1_pipeline flag policy. Next to
+rule, the quiz-key disclosure rule (PD-21), the adversarial fixture set's hash and the plan L stop conditions; and the
+v1_pipeline flag policy. Next to
 each file, <name>.json.sha256 holds the sha256 of its canonical JSON, so a CRLF checkout hashes the same. v2.json and
 v1.json stay readable for one release (DI-63, DI-42).
 
@@ -78,9 +79,13 @@ V1_FAMILY_LIMIT = 20
 # The plan's EHMF types per check (plan Phase 4 D table), which package v3 v1.ehmf must repeat.
 V1_EHMF = {"V1.1": ("B",), "V1.2": ("A", "B"), "V1.3": ("A", "B", "C"), "V1.4": ("D", "E"), "V1.5": ("A",),
            "V1.6": ("E",), "V1.7": ("D",), "V1.8": ("C",), "V1.9": ("E",)}
-V1_PROVISIONAL_BLOCKS = ("lexicon", "v1_3", "v1_5", "v1_6", "v1_7", "v1_9", "d20_interim", "stop")
+V1_PROVISIONAL_BLOCKS = ("lexicon", "v1_3", "v1_5", "v1_6", "v1_7", "v1_9", "quiz_feedback", "d20_interim", "stop")
 V1_COMPOSITION_RULE = "v1-adds-no-in-domain-abstention-v1"
 V1_D20_RULE = "withhold-all-flagged-v1"
+# PD-21 (plan Phase 4 B "keyed answers outside public payloads"; R-42): no quiz key in any public payload; a saved
+# attempt returns the key and explanation of the questions it answered. The only rule the quiz route implements
+# (app.services.quiz_keys.FEEDBACK_RULE, which package_check compares); provisional until DI-55 ratifies it.
+V1_QUIZ_FEEDBACK_RULE = "keys-after-saved-attempt-answered-only-v1"
 MISCONCEPTION_LIBRARY_NAME = "qcai-misconception-library"
 GATE_IDS = ("bm25f-v1", "p1-floor")
 LEDGER_DELIVERIES = ("legacy", "shadow", "delivered")
@@ -281,6 +286,8 @@ class V1Params:
     answer_rate_floor: Mapping[str, tuple[int, int]]
     composition_rule: str
     p95_budget_ms: int
+    # PD-21: the quiz-key disclosure rule the quiz route implements (V1_QUIZ_FEEDBACK_RULE).
+    quiz_feedback_rule: str
 
 
 @dataclass(frozen=True)
@@ -667,6 +674,11 @@ def _parse_v1(raw: Mapping[str, Any], *, tutor: TutorPipelineParams, abstention:
     low = _number(readability, "min_grade", minimum=-50.0, maximum=200.0)
     high = _number(readability, "max_grade", minimum=-50.0, maximum=200.0)
     _require(low < high, "v1.v1_9.readability.min_grade must be below max_grade")
+    quiz = _mapping(v1, "quiz_feedback")
+    _require(quiz.get("rule") == V1_QUIZ_FEEDBACK_RULE, f"v1.quiz_feedback.rule must be '{V1_QUIZ_FEEDBACK_RULE}' (PD-21, the rule the quiz route implements)")
+    _require(quiz.get("public_payloads") == "no_keys", "v1.quiz_feedback.public_payloads must be 'no_keys' (plan Phase 4 B: keyed answers outside public payloads)")
+    _require(quiz.get("feedback") == "answered_questions_after_a_saved_attempt",
+             "v1.quiz_feedback.feedback must be 'answered_questions_after_a_saved_attempt' (PD-21)")
     d20 = _mapping(v1, "d20_interim")
     fixtures = _mapping(v1, "fixtures")
     stop = _mapping(v1, "stop")
@@ -718,6 +730,7 @@ def _parse_v1(raw: Mapping[str, Any], *, tutor: TutorPipelineParams, abstention:
         answer_rate_floor=floors,
         composition_rule=V1_COMPOSITION_RULE,
         p95_budget_ms=_integer_in(stop, "v1_p95_latency_ms", 1, tutor.shadow_budget_ms),
+        quiz_feedback_rule=V1_QUIZ_FEEDBACK_RULE,
     )
 
 

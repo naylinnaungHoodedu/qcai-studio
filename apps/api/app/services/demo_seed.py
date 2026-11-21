@@ -9,10 +9,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.manifest_v2 import repository_root
 from app.db_models import ArenaMatchRecord, ArenaProfile, BuilderRun, BuilderShare, PeerReview, ProjectSubmission
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+# The checkout's root, bounded: the API image (/app/app/services/demo_seed.py) has fewer parents than a checkout, and
+# holds no seeds/, so the seed fixtures are found only in a checkout.
+REPO_ROOT = repository_root()
 DEFAULT_FIXTURES_ROOT = REPO_ROOT / "seeds" / "demo"
 
 

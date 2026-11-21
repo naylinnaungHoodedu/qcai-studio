@@ -3,10 +3,14 @@
 Always (start-up, tests, CI): v1.rules_hash equals the hash of the code's rule vocabulary and the package's lexicon
 (v1_rules_hash); v1.rule_ids equal RULE_IDS (V1.4's is claim_gate.SUBSET_CHECK_RULE); the contract's
 SUBSET_PROBLEM_CODES equal claim_gate.PROBLEM_CODES; REASON_OUTCOMES is total over bind's outcomes and the gate's
-sufficiency reasons; the checker registry equals WIRED_CHECKERS.
+sufficiency reasons; the checker registry equals WIRED_CHECKERS; v1.quiz_feedback.rule is the quiz route's rule
+(quiz_keys.FEEDBACK_RULE, PD-21).
 
 structural=True (tests, CI and scripts/config_package.py --check only): the adversarial fixture file exists and its
-set_sha256 and case count equal the package's pin. The image holds no docs/, so start-up never compares them.
+set_sha256 and case count equal the package's pin. The image holds no docs/, so start-up never compares them, and the
+repository root is found only when a structural check asks for it (repository_root): in the API image this module is
+/app/app/services/v1_checks/package_check.py, which has fewer parents than a checkout, so nothing here may compute the
+root at import (start-up imports this module).
 """
 
 from __future__ import annotations
@@ -21,7 +25,14 @@ from app.services.v1_checks.rules import REPOSITORY_DEPTH
 if TYPE_CHECKING:  # pragma: no cover
     from app.core.config_package import ConfigPackage
 
-REPO_ROOT = Path(__file__).resolve().parents[REPOSITORY_DEPTH]
+
+def repository_root() -> Path:
+    """The checkout this module runs from (tests, CI, scripts). FileNotFoundError where there is none: the API image
+    has fewer parents than REPOSITORY_DEPTH and no docs/."""
+    parents = Path(__file__).resolve().parents
+    if len(parents) <= REPOSITORY_DEPTH:
+        raise FileNotFoundError("no repository checkout holds this module (the API image has none)")
+    return parents[REPOSITORY_DEPTH]
 
 
 def fixture_set_sha256(cases: list) -> str:
@@ -29,10 +40,10 @@ def fixture_set_sha256(cases: list) -> str:
     return canonical_sha256(sorted(canonical_sha256(case) for case in cases))
 
 
-def fixture_problems(package: "ConfigPackage", *, root: Path = REPO_ROOT) -> list[str]:
+def fixture_problems(package: "ConfigPackage", *, root: Path | None = None) -> list[str]:
     v1 = package.v1
-    path = root / v1.fixtures_path
     try:
+        path = (root if root is not None else repository_root()) / v1.fixtures_path
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return [f"v1 fixtures: {v1.fixtures_path} is missing or not JSON"]
@@ -80,6 +91,10 @@ def check_v1_package(package: "ConfigPackage", *, structural: bool) -> list[str]
         problems.append("REASON_OUTCOMES V1.5 is not total over the gate's sufficiency reasons")
     if set(CHECKERS) != set(WIRED_CHECKERS):
         problems.append("the checker registry differs from WIRED_CHECKERS")
+    from app.services.quiz_keys import FEEDBACK_RULE
+
+    if v1.quiz_feedback_rule != FEEDBACK_RULE:
+        problems.append("v1.quiz_feedback.rule differs from the quiz route's rule (quiz_keys.FEEDBACK_RULE, PD-21)")
     if structural:
         problems.extend(fixture_problems(package))
     return problems

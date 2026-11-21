@@ -304,7 +304,7 @@
     "floor": 2.35,
     "margin": 2.4,
     "provisional": true,
-    "provisional_until": "Phase 4",
+    "provisional_until": "Q-22 (DI-52)",
     "not_final_before": "E1 freeze",
     "calibration_record": "docs/evaluation/phase2/calibration_record_v1.json",
     "calibration_record_sha256": "ab8aca0d58c9ea201773fcf11972d45a6fb57a29d64b91921bf40a72e755d7e9",
@@ -385,7 +385,7 @@
       "LedgerEntryV2": {
         "version": "ledger-entry-v2",
         "path": "schemas/ledger-entry.v2.schema.json",
-        "sha256": "5d7cdc0730187e5c78c3adebdbcd55485d9ce4ea288f38738ef600e138176f11"
+        "sha256": "efb4b6749d2f56458fa1444249dc17806ee5022460a4f223479bd59fa072b490"
       }
     },
     "resolver": {
@@ -687,6 +687,13 @@
         "basis": "component envelope of the dev public corpus's whole document sentences and the renderer templates (Phase 4 spec M6)"
       }
     },
+    "quiz_feedback": {
+      "provisional": true,
+      "authority": "PD-21: plan Phase 4 B precondition \"keyed answers outside public payloads\" (R-42); no owner decision is named, ratification is DI-55",
+      "rule": "keys-after-saved-attempt-answered-only-v1",
+      "public_payloads": "no_keys",
+      "feedback": "answered_questions_after_a_saved_attempt"
+    },
     "d20_interim": {
       "provisional": true,
       "authority": "PD-13 (D-20 OPEN, its own text; hold H15)",
@@ -852,6 +859,7 @@
       "provisional_values": [
         "v1.v1_5.x4_margin",
         "v1.v1_3.support_threshold",
+        "v1.v1_7",
         "v1.v1_9.readability",
         "v1.stop"
       ],

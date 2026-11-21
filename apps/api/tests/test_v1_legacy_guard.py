@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import dataclasses
+import functools
 import json
 import logging
 from pathlib import Path
+import re
 
 from app.core.config import Settings
 from app.core.config_package import get_config_package
@@ -13,8 +15,11 @@ from app.core.corpus_governance import get_corpus_registry
 from app.services.contained_answers import ABSTENTION, contain_answer
 from app.services.provenance import native_citation
 from app.services.retrieval_engine import RetrievalEngine
+from app.services.span_resolver import SpanResolver
 from app.services.store import get_course_store
-from app.services.v1_checks.legacy_guard import guard_contained
+from app.services.text_utils import normalize_display_text
+from app.services.v1_checks.legacy_guard import DISPLAY_ELLIPSIS, guard_contained
+from app.services.v1_checks.lexicon import negation_cues, quantities, quantities_covered
 from app.services.v1_checks.metrics import V1_METRICS
 
 SETTINGS = Settings()
@@ -58,22 +63,23 @@ def test_each_guard_failure_withholds_the_whole_answer_as_today_s_abstention(cap
     store = get_course_store()
     contained = _answered()
     quote = contained.claims[0].text
-    import re
 
     numbered = next((claim.text for claim in contained.claims if re.search(r"\d", claim.text)), None)
-    forgeries = {
-        ("V1.1", "unresolvable"): _forged(contained, span_id="span-" + "e" * 64),
-        ("V1.2", "not_verbatim"): _forged(contained, text=quote + " And quantum computers are always faster."),
-        ("V1.2", "negation_inserted"): _forged(contained, text=quote.replace(" ", " not ", 1)),
-        ("V1.2", "unbound"): dataclasses.replace(contained, claims=[contained.claims[0].model_copy(update={"cited_span_ids": []})]),
-        ("V1.1", "content_hash_mismatch"): dataclasses.replace(
-            contained, citations=[contained.citations[0].model_copy(update={"content_hash": "0" * 64}), *contained.citations[1:]]),
-    }
+    # (label, expected (check_id, reason_code), forgery): each forgery fails at the named check and reason.
+    forgeries = [
+        ("fabricated span id", ("V1.1", "unresolvable"), _forged(contained, span_id="span-" + "e" * 64)),
+        ("appended sentence", ("V1.2", "not_verbatim"), _forged(contained, text=quote + " And quantum computers are always faster.")),
+        ("inserted negation", ("V1.2", "not_verbatim"), _forged(contained, text=quote.replace(" ", " not ", 1))),
+        ("no cited span", ("V1.2", "unbound"),
+         dataclasses.replace(contained, claims=[contained.claims[0].model_copy(update={"cited_span_ids": []})])),
+        ("changed content hash", ("V1.1", "content_hash_mismatch"), dataclasses.replace(
+            contained, citations=[contained.citations[0].model_copy(update={"content_hash": "0" * 64}), *contained.citations[1:]])),
+    ]
     V1_METRICS.reset()
-    for (check_id, reason), forged in forgeries.items():
+    for label, expected, forged in forgeries:
         with caplog.at_level(logging.WARNING, logger="qcai.tutor"):
             guarded = guard_contained(forged, store=store, package=PACKAGE, surface="tutor")
-        assert guarded.withheld[0][0] == check_id, (check_id, reason, guarded.withheld)
+        assert guarded.withheld[0] == expected, (label, guarded.withheld)
         assert guarded.contained.answer == ABSTENTION and guarded.contained.decision == "abstain" and guarded.contained.reason == "no_approved_span"
         assert guarded.contained.citations == [] and guarded.contained.claims == [] and guarded.contained.grounded is False
     lines = [r.json_fields for r in caplog.records if getattr(r, "json_fields", {}).get("event") == "tutor.v1.legacy_guard_withheld"]
@@ -86,7 +92,8 @@ def test_each_guard_failure_withholds_the_whole_answer_as_today_s_abstention(cap
         index = next(i for i, claim in enumerate(contained.claims) if claim.text == numbered)
         changed = [*contained.claims]
         changed[index] = changed[index].model_copy(update={"text": swapped})
-        assert guard_contained(dataclasses.replace(contained, claims=changed), store=store, package=PACKAGE, surface="qa").contained.decision == "abstain"
+        swapped_guard = guard_contained(dataclasses.replace(contained, claims=changed), store=store, package=PACKAGE, surface="qa")
+        assert swapped_guard.contained.decision == "abstain" and swapped_guard.withheld[0] == ("V1.2", "not_verbatim")
 
 
 def test_a_truncated_quotation_and_a_number_before_a_non_unit_word_pass():
@@ -106,11 +113,77 @@ def test_an_abstention_passes_and_is_counted():
     assert V1_METRICS.detail_snapshot()["legacy_guard"]["checked"]["qa"] == 1
 
 
+def _collapsed(text: str) -> str:
+    return " ".join(text.split())
+
+
+@functools.lru_cache(maxsize=1)
+def _edge_cuts() -> dict[str, tuple]:
+    """Development quotations cut mid-token, each still a verbatim substring of its span: a number cut short ("128" to
+    "12", a number the span does not hold) and a negation cue cut short ("not" to "no", a cue the span does not hold).
+    Only the polarity rule can tell these from a faithful quotation (the claim-to-span rule, E-27)."""
+    store = get_course_store()
+    resolver = SpanResolver(store)
+    lexicon = PACKAGE.v1.lexicon
+    found: dict[str, tuple] = {}
+    for item in DATA["in_domain"]:
+        contained = _contained(item["query"])
+        if contained.decision != "answer":
+            continue
+        for index, claim in enumerate(contained.claims):
+            if len(claim.cited_span_ids) != 1:
+                continue
+            span = _collapsed(normalize_display_text(resolver.resolve_current(claim.cited_span_ids[0]).text or ""))
+            quotation = _collapsed(claim.text.removesuffix(DISPLAY_ELLIPSIS))
+            if quotation not in span:
+                continue
+            for match in re.finditer(r"(?<![\w.,])(\d{2,})(?![\w.,])", quotation):
+                cut = quotation[: match.end(1) - 1]
+                if ("quantity" not in found and (match.group(1)[:-1], "") in quantities(cut, lexicon)
+                        and not quantities_covered(cut, span, lexicon)):
+                    found["quantity"] = (contained, index, cut)
+            for match in re.finditer(r"\bnot\b", quotation):
+                cut = quotation[: match.start() + 2]
+                if ("negation" not in found and quantities_covered(cut, span, lexicon)
+                        and negation_cues(cut, lexicon)["no"] > negation_cues(span, lexicon)["no"]):
+                    found["negation"] = (contained, index, cut)
+        if len(found) == 2:
+            break
+    assert set(found) == {"quantity", "negation"}, "no development quotation to cut"
+    return found
+
+
+def _with_quotation(contained, index: int, text: str):
+    claims = [*contained.claims]
+    claims[index] = claims[index].model_copy(update={"text": text})
+    return dataclasses.replace(contained, claims=claims)
+
+
+def test_the_polarity_rule_withholds_a_verbatim_quotation_that_cuts_a_number_or_a_cue():
+    # Each cut is verbatim in its span, so V1.1 and verbatim binding pass it: the withholding is the polarity rule's.
+    store = get_course_store()
+    for kind, reason in (("quantity", "quantity_mismatch"), ("negation", "negation_mismatch")):
+        contained, index, cut = _edge_cuts()[kind]
+        forged = _with_quotation(contained, index, cut)
+        guarded = guard_contained(forged, store=store, package=PACKAGE, surface="qa")
+        assert guarded.withheld == (("V1.2", reason),), (kind, guarded.withheld)
+        assert guarded.contained.answer == ABSTENTION and guarded.contained.decision == "abstain"
+        # The quotation it was cut from is faithful and passes.
+        assert guard_contained(contained, store=store, package=PACKAGE, surface="qa").withheld == ()
+
+
 def test_without_a_v1_block_the_polarity_rule_is_skipped_in_development():
     store = get_course_store()
-    contained = _answered()
-    negated = _forged(contained, text=contained.claims[0].text)  # verbatim: passes either way
     no_v1 = dataclasses.replace(PACKAGE, v1=None)
-    assert guard_contained(negated, store=store, package=no_v1, surface="qa").withheld == ()
+    # The polarity rule's own cases pass without the lexicon (they are verbatim): only the polarity rule is skipped.
+    for kind in ("quantity", "negation"):
+        contained, index, cut = _edge_cuts()[kind]
+        forged = _with_quotation(contained, index, cut)
+        assert guard_contained(forged, store=store, package=PACKAGE, surface="qa").withheld != ()
+        guarded = guard_contained(forged, store=store, package=no_v1, surface="qa")
+        assert guarded.withheld == () and guarded.contained is forged, kind
     # V1.1 and verbatim binding still run without the lexicon.
+    contained = _answered()
     assert guard_contained(_forged(contained, span_id="span-" + "e" * 64), store=store, package=no_v1, surface="qa").withheld[0] == ("V1.1", "unresolvable")
+    assert guard_contained(_forged(contained, text=contained.claims[0].text + " Always."), store=store, package=no_v1,
+                           surface="qa").withheld[0] == ("V1.2", "not_verbatim")

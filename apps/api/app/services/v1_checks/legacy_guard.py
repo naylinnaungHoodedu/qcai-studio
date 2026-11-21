@@ -13,8 +13,8 @@ Any failure withholds the whole answer: the contained answer becomes today's abs
 counts it (V1_METRICS.legacy_guard) and logs tutor.v1.legacy_guard_withheld with the check, the reason and the surface
 (a guard failure is an upstream defect). The guard has no flag and runs in every V1_PIPELINE mode. contain_answer
 quotes only verified spans, so every current quotation passes and response bytes are unchanged; under D-31 nothing
-is quoted outside development. Without a v1 block (a v1 or v2 package, development only: a governed build refuses
-one at start-up) the polarity rule is skipped.
+is quoted outside development. Without a v1 block (a v1 or v2 package, only in development with governance off:
+every other build refuses one at start-up) the polarity rule is skipped.
 """
 
 from __future__ import annotations

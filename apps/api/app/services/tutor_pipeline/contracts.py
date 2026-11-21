@@ -556,6 +556,10 @@ SUBSET_PROBLEM_CODES = ("empty", "text_not_segments", "unmapped_factual_sentence
                         "citation_list_mismatch")   # == claim_gate.PROBLEM_CODES (package_check and a test compare)
 # V1.2's polarity drop codes: a claim whose bind passed but whose quantities or negation cues differ from its span.
 V1_DROP_REASONS = ("quantity_mismatch", "negation_mismatch")
+# Every claim of a final candidate V1.1 hard-failed: V1.1 judges the candidate whole, so none of its claims is bound
+# (an enforce record's counts; Phase 3 counts the same plan per claim, as outside_bundle).
+UNRESOLVABLE_CANDIDATE = "unresolvable_citation"
+V1_COUNT_REASONS = (*V1_DROP_REASONS, UNRESOLVABLE_CANDIDATE)
 REASON_OUTCOMES: dict[str, dict[str, str]] = {
     "V1.1": {"resolved": "pass", "unresolvable": "hard_fail", "malformed_span_id": "hard_fail", "content_hash_mismatch": "hard_fail"},
     "V1.2": {"bound": "pass", "merged": "pass", "duplicate": "pass", **{code: "hard_fail" for code in BINDING_FAILURES},
@@ -777,11 +781,12 @@ class ClaimLedgerEntryV2(ClaimLedgerEntry):
 
 
 class PipelineCountsV2(PipelineCounts):
-    """PipelineCounts that also accept V1.2's polarity drops (V1_DROP_REASONS); the arithmetic rule is unchanged."""
+    """PipelineCounts that also accept V1's own reasons (V1_COUNT_REASONS: V1.2's polarity drops, and a V1.1
+    hard-failed candidate's claims); the arithmetic rule is unchanged."""
 
     @model_validator(mode="after")
     def _reconciles(self) -> "PipelineCountsV2":
-        unknown = sorted(set(self.dropped) - set(DROP_REASONS) - set(V1_DROP_REASONS))
+        unknown = sorted(set(self.dropped) - set(DROP_REASONS) - set(V1_COUNT_REASONS))
         if unknown:
             raise ValueError(f"unknown drop reasons {unknown}")
         if any(count < 1 for count in self.dropped.values()):
@@ -823,8 +828,8 @@ class LedgerEntryV2(LedgerEntry):
                 problems.append("in shadow, the record is the Phase 3 decision and the comparison names it")
             if self.abstention_reason is not None and self.abstention_reason not in (*ABSTENTION_REASONS, LEGACY_ABSTENTION_REASON):
                 problems.append("in shadow, the abstention reason is a Phase 3 reason")
-            if set(self.counts.dropped) & set(V1_DROP_REASONS):
-                problems.append("in shadow, the counts are the Phase 3 composition's (no V1 drop reason)")
+            if set(self.counts.dropped) & set(V1_COUNT_REASONS):
+                problems.append("in shadow, the counts are the Phase 3 composition's (no V1 count reason)")
         if problems:
             raise ValueError("; ".join(problems))
         return self

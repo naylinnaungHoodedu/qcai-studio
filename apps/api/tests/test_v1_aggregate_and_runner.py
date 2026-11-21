@@ -13,11 +13,11 @@ from app.core.structured_logging import FIELDS
 from app.services.claim_gate import check_subset
 from app.services.tutor_pipeline import contracts
 from app.services.tutor_pipeline import pipeline as pipeline_module
-from app.services.tutor_pipeline.contracts import LedgerEntryV2, PresentationPlan, VerificationRecord
+from app.services.tutor_pipeline.contracts import LedgerEntryV2, PresentationPlan, VerificationRecord, bound_claim_ratio_terms
 from app.services.tutor_pipeline.pipeline import render_checked
 from app.services.tutor_pipeline.render import TemplateRenderer
 from app.services.v1_checks.aggregate import cycle_count, replacement_for
-from tutor_fakes import FAULT_MODES, FaultyRenderer, INVENTED
+from tutor_fakes import FAULT_MODES, FaultyRenderer, INVENTED, ScriptedGenerator
 from v1_fakes import MULTI_CLAIM, AlwaysSupportedChecker, ScriptedChecker, UnmappedRenderer, dev_pipeline, run
 
 
@@ -130,6 +130,37 @@ def test_the_budget_stops_the_render_loop():
     assert (result.abstention_reason, record.hard_fail, record.render_attempts) == ("budget_exceeded", False, 1)
 
 
+@pytest.mark.parametrize("mode", ["shadow", "enforce"])
+def test_a_v1_track_overrun_logs_the_phase_3_budget_event_only_when_v1_is_the_record(mode, caplog):
+    # Every rendering takes the whole budget. In shadow the first is Phase 3's, which passes, so the record stays within
+    # its budget and only the V1 track that follows overruns: tutor.v1.budget_exceeded, never the Phase 3 event. In
+    # enforce the V1 track is the record's composition (here its first rendering is refused, so the budget stops the
+    # render loop), and its overrun is the record's: tutor.two_pass.budget_exceeded.
+    from v1_fakes import InjectedClock
+
+    clock = InjectedClock()
+
+    class Slow(UnmappedRenderer):
+        def render(self, locked, plan, *, attempt, **options):
+            clock.now += 10.0
+            return super().render(locked, plan, attempt=attempt, **options)
+
+    renderer = Slow(TemplateRenderer(), () if mode == "shadow" else None)
+    pipeline = dev_pipeline(Settings(v1_pipeline=mode), checker=AlwaysSupportedChecker(), renderer=renderer, clock=clock)
+    with caplog.at_level(logging.WARNING, logger="qcai.tutor"):
+        result = run(pipeline, MULTI_CLAIM, budget_ms=1000, legacy_decision="answer")
+    events = [getattr(r, FIELDS) for r in caplog.records if str(getattr(r, FIELDS, {}).get("event", "")).endswith("budget_exceeded")]
+    record = result.entry.verification
+    if mode == "shadow":
+        assert (result.decision, result.abstention_reason) == ("answer", None)
+        assert (record.final, record.final_reason) == ("abstain", "budget_exceeded")
+        assert [line["event"] for line in events] == ["tutor.v1.budget_exceeded"]
+    else:
+        assert (result.decision, result.abstention_reason) == ("abstain", "budget_exceeded")
+        assert [line["event"] for line in events] == ["tutor.two_pass.budget_exceeded"]
+    assert set(events[0]) == {"event", "step", "elapsed_ms", "budget_ms"} and events[0]["budget_ms"] == 1000
+
+
 def test_shadow_and_enforce_records():
     shadow = run(dev_pipeline(Settings(v1_pipeline="shadow")), MULTI_CLAIM, legacy_decision="answer").entry
     enforce = run(dev_pipeline(Settings(v1_pipeline="enforce")), MULTI_CLAIM, legacy_decision="answer").entry
@@ -139,6 +170,33 @@ def test_shadow_and_enforce_records():
     assert enforce.verification.mode == "enforce" and enforce.verification.comparison.phase3_decision is None
     assert shadow.claim_set_hash == off.claim_set_hash == enforce.claim_set_hash
     assert shadow.provenance.v1_3_checker_model_id == "none" and all(claim.entailment_score is None for claim in enforce.claims)
+
+
+def test_a_v1_1_hard_failed_candidate_counts_its_claims_so_the_bound_claim_ratio_sees_them():
+    # The same three-claim plan in every mode, one claim citing a fabricated span id (R-13, R-16). Off and shadow
+    # record the Phase 3 composition (that claim dropped as outside_bundle); enforce hard-fails the candidate on
+    # every attempt, so none of its claims is bound and each is counted, never left out of the plan L ratio.
+    clean = [(claim.text, list(claim.span_ids)) for claim in run(dev_pipeline(Settings(v1_pipeline="off")), MULTI_CLAIM).plan.claims]
+    assert len(clean) == 3
+    forged = [(clean[0][0], ["span-" + "e" * 64]), *clean[1:]]
+    entries = {}
+    for mode in ("off", "shadow", "enforce"):
+        pipeline = dev_pipeline(Settings(v1_pipeline=mode), generator=ScriptedGenerator([forged]), checker=AlwaysSupportedChecker())
+        entries[mode] = run(pipeline, MULTI_CLAIM, legacy_decision="answer").entry
+    for mode in ("off", "shadow"):
+        counts = entries[mode].counts
+        assert (counts.proposed_claims, counts.bound_claims, dict(counts.dropped)) == (3, 2, {"outside_bundle": 1}), mode
+        assert bound_claim_ratio_terms(counts) == (3, 2), mode
+    enforced = entries["enforce"]
+    assert (enforced.decision, enforced.abstention_reason, enforced.verification.hard_fail) == ("abstain", "unresolvable_citation", True)
+    counts = enforced.counts
+    assert (counts.proposed_claims, counts.bound_claims, dict(counts.dropped)) == (3, 0, {contracts.UNRESOLVABLE_CANDIDATE: 3})
+    assert bound_claim_ratio_terms(counts) == (3, 0)
+    # The counts reconcile, and the reason belongs to V1: a shadow record (the Phase 3 counts) may not carry it.
+    payload = entries["shadow"].model_dump(mode="json")
+    payload["counts"].update(dropped={contracts.UNRESOLVABLE_CANDIDATE: 1})
+    with pytest.raises(ValidationError, match="no V1 count reason"):
+        LedgerEntryV2.model_validate(payload)
 
 
 def _record_payload():

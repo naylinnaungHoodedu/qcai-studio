@@ -30,6 +30,7 @@ from app.core.structured_logging import FIELDS
 from app.services.tutor_pipeline.bind import whole_sentences
 from app.services.tutor_pipeline.contracts import (
     BUDGET_SKIPPED,
+    UNRESOLVABLE_CANDIDATE,
     CheckResult,
     ClaimPlan,
     DisclosureBlock,
@@ -251,7 +252,7 @@ class V1Track:
             presentation=decision.presentation if passed else ctx.presentation,
             latency_ms=latency_ms,
             proposed=state.proposed,
-            dropped=state.binding.dropped if state.binding is not None else Counter({BUDGET_SKIPPED: state.skipped} if state.skipped else {}),
+            dropped=state.binding.dropped if state.binding is not None else Counter(state.unbound),
             scores=dict(state.scores),
         )
 
@@ -288,13 +289,16 @@ class V1Track:
                 return V1Abstained(results=tuple(results), generation_attempts=generation, render_attempts=0, abstention_reason="no_claims")
             if budget_over("generate"):
                 # As in Phase 3: bind never runs, so the claims are counted as skipped, never as binding failures.
-                state.proposed, state.skipped = len(plan.claims), len(plan.claims)
+                state.proposed, state.unbound = len(plan.claims), Counter({BUDGET_SKIPPED: len(plan.claims)})
                 return V1Abstained(results=tuple(results), generation_attempts=generation, render_attempts=0, abstention_reason="budget_exceeded")
             resolution = check_v1_1(plan, bundle, resolver=pipeline.resolver, attempt=generation)
             results.append(resolution)
             if resolution.outcome == "hard_fail":
                 if generation < attempts:
                     continue
+                # V1.1 judges the candidate whole, so none of its claims is bound: each is counted under
+                # unresolvable_citation (proposed == bound + dropped holds, and the plan L bound-claim ratio sees them).
+                state.proposed, state.unbound = len(plan.claims), Counter({UNRESOLVABLE_CANDIDATE: len(plan.claims)})
                 return V1HardFail(results=tuple(results), failing=(resolution,), generation_attempts=generation, render_attempts=0,
                                   abstention_reason="unresolvable_citation")
             binding = check_v1_2(plan, bundle, resolver=pipeline.resolver, store=pipeline.store, registry=pipeline.registry,
@@ -398,7 +402,8 @@ class _RunState:
     plan: ClaimPlan | None = None
     binding: BindingCheck | None = None
     proposed: int = 0
-    skipped: int = 0
+    # The final candidate's claims that bind never judged (budget_exceeded, unresolvable_citation), by reason.
+    unbound: Counter = field(default_factory=Counter)
     locked: LockedClaimSet | None = None
     disclosure: DisclosureBlock | None = None
     scores: dict = field(default_factory=dict)
@@ -408,5 +413,5 @@ class _RunState:
 
     def reset_candidate(self) -> None:
         """A regeneration is a new candidate: nothing of the previous one is carried over."""
-        self.plan, self.binding, self.proposed, self.skipped, self.locked, self.disclosure = None, None, 0, 0, self.empty, None
+        self.plan, self.binding, self.proposed, self.unbound, self.locked, self.disclosure = None, None, 0, Counter(), self.empty, None
         self.scores.clear()

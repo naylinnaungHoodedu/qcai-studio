@@ -197,7 +197,7 @@ Each resolution is a refinement. None reverses a fixed decision without quoted p
 31. **Prompt hashes.** Socratic omission (E7) adds a renderer parameter, but `pedagogical_prompt_hash` must stay equal to v2's pin (M13). **Resolution:** the template registry (`PEDAGOGICAL_PROMPT_HASH_INPUT`) is unchanged. Omission is V1.6's rule (`keyed-answer-socratic-omit-v1`), pinned in `v1.rule_ids` and `v1.rules_hash`, and recorded per response in `verification.checks`.
 32. **13.6 stop-the-line "delivered V1 hard failure, unresolvable citation".** **Resolution:** the aggregator and the `VerificationRecord`/`LedgerEntryV2` rules refuse `final: deliver` for any claim with a non-pass result in its accepted candidate, or involved in a withheld V1.7 conflict; the legacy guard withholds any unresolvable quotation. Both are tested (13.1 tests 2 and 21).
 33. **V1.7 "2025-vs-2026 disclosed" (coverage map) in production.** The plan's 2025/2026 pair is the lecture video (Q-10, E-21), and the 2026 item is unbound. Video spans are never cited: D-19 quotes document spans only, and the two-pass envelope takes quotable document spans only. **Resolution:** the production family is recorded (Q-10) but cannot fire. AC-4-6 is proven with a fixture family over two document items. In production, disclosure can come only from a number or negation disagreement (M7: none today). Recorded as a residual in ADR-005 and the closure notes.
-34. **The legacy guard without a v1 block.** A v1 or v2 package can be selected (`CONFIG_PACKAGE_PATH`). **Resolution:** a governed build refuses at start-up a package with no `v1` block, because the guard needs its lexicon. In development the guard runs V1.1 and verbatim binding (no package value needed), skips the polarity rule, and logs `tutor.v1.unavailable` once at start-up.
+34. **The legacy guard without a v1 block.** A v1 or v2 package can be selected (`CONFIG_PACKAGE_PATH`). **Resolution:** a governed build, and any build outside development whatever its governance setting (plan 13.6: no flag, setting or governance override may disable V1), refuses at start-up a package with no `v1` block, because the guard needs its lexicon. Only in development with governance off does the guard run V1.1 and verbatim binding alone (no package value needed), skipping the polarity rule, with `tutor.v1.unavailable` logged once at start-up.
 35. **D-20 replacement wording.** D-20: "withheld, replaced by pre-verified module content or extractive mode [Decision D-19], else abstain". **Resolution:** the record's `replacement` is `extractive_d19` when the learner's contained answer quoted spans, `abstention` when it abstained, `unknown` when no legacy decision exists (replay and fixture runs).
 36. **P2-12-D-03 and Phase 3 text that described Phase 4 as future.** The text is edited in place where Phase 4 makes it false (7.14).
 37. **The Phase 3 tests that pin rule ids in package_check** (`test_phase3_review5::test_f4`). **Resolution:** the v3 loader does not itself require `ledger.entry_schema` to be `ledger-entry-v2`; `package_check` compares it with the `LedgerEntryV2` contract, as it compares every rule id. The loader requires `legacy_entry_schema` and `entry_schemas`.
@@ -256,6 +256,8 @@ SUBSET_PROBLEM_CODES = ("empty", "text_not_segments", "unmapped_factual_sentence
                         "citation_not_on_claim", "citation_marker_mismatch", "no_claim_rendered", "claim_uncited",
                         "citation_list_mismatch")   # == claim_gate.PROBLEM_CODES (package_check and a test compare)
 V1_DROP_REASONS = ("quantity_mismatch", "negation_mismatch")
+UNRESOLVABLE_CANDIDATE = "unresolvable_citation"   # each claim of a final candidate V1.1 hard-failed (counts only)
+V1_COUNT_REASONS = (*V1_DROP_REASONS, UNRESOLVABLE_CANDIDATE)
 REASON_OUTCOMES: dict[str, dict[str, str]] = {
     "V1.1": {"resolved": "pass", "unresolvable": "hard_fail", "malformed_span_id": "hard_fail", "content_hash_mismatch": "hard_fail"},
     "V1.2": {"bound": "pass", "merged": "pass", "duplicate": "pass", **{code: "hard_fail" for code in BINDING_FAILURES},
@@ -363,7 +365,7 @@ class ClaimLedgerEntryV2(ClaimLedgerEntry):
     provenance: ProvenanceV2
 
 class PipelineCountsV2(PipelineCounts):
-    pass  # _reconciles overridden: accepts DROP_REASONS + V1_DROP_REASONS; the arithmetic rule is unchanged
+    pass  # _reconciles overridden: accepts DROP_REASONS + V1_COUNT_REASONS; the arithmetic rule is unchanged
 
 class LedgerEntryV2(LedgerEntry):
     entry_schema: Literal["ledger-entry-v2"] = "ledger-entry-v2"
@@ -374,7 +376,7 @@ class LedgerEntryV2(LedgerEntry):
 ```
 
 - `SCHEMA_MODELS["LedgerEntryV2"] = LedgerEntryV2`; `ENTRY_SCHEMAS = {"ledger-entry-v1": LedgerEntry, "ledger-entry-v2": LedgerEntryV2}`.
-- `bound_claim_ratio_terms` counts `V1_DROP_REASONS` as binding failures: in `proposed`, not in `bound`.
+- `bound_claim_ratio_terms` counts `V1_COUNT_REASONS` as binding failures: in `proposed`, not in `bound`. V1.1 judges a candidate whole, so when it hard-fails the last candidate every claim of it is counted under `unresolvable_citation` (an enforce record holds `proposed == len(plan.claims)`, `bound == 0`); Phase 3 counts the same plan per claim (`outside_bundle`).
 
 **`CheckResult._consistent`**
 - `reason_code in REASON_OUTCOMES[check_id]`, and `outcome == REASON_OUTCOMES[check_id][reason_code]`.
@@ -405,7 +407,7 @@ class LedgerEntryV2(LedgerEntry):
 - `provenance.v1_3_checker_model_id == verification.policy.checker_model_id`, and every V1.3 result carries that id.
 - A claim's `entailment_score` is `None` when the checker id is `"none"` and in `shadow` mode.
 - In `enforce`: `(decision == "abstain") == (final == "abstain")`; the verdict claim ids equal `[claim.claim_id for claim in claims]`, in order; `verification.claim_set_hash == claim_set_hash`.
-- In `shadow`: `comparison.phase3_decision == decision`; `abstention_reason` lies in `ABSTENTION_REASONS + (LEGACY_ABSTENTION_REASON,)`; `counts.dropped` holds no `V1_DROP_REASONS` key.
+- In `shadow`: `comparison.phase3_decision == decision`; `abstention_reason` lies in `ABSTENTION_REASONS + (LEGACY_ABSTENTION_REASON,)`; `counts.dropped` holds no `V1_COUNT_REASONS` key.
 
 In enforce, `decision == "answer"` means "a rendering passed V1" (a `V1Passed`), and `presentation.plan_id` is the accepted rendering's plan. Whether any of it may be delivered is `verification.final`. Consumers read `final`; the Phase 3 metrics keep counting `decision`.
 
@@ -664,7 +666,7 @@ class V1Track:
    1. `raw` is `first_raw` on g = 1 when given (shadow mode reuses Phase 3's raw proposal or its exception, which `run()` keeps), else `generator.propose(envelope)`, an exception becoming the raw value.
    2. **V1.9 plan.** A `hard_fail` regenerates, or after the last attempt gives `V1HardFail` / `claim_plan_invalid`. A valid plan stamps its generator on the (still empty) lock, as Phase 3's lock does. Zero claims: `V1Abstained` / `no_claims`.
    3. **Budget** (`generate`): `V1Abstained` / `budget_exceeded`, the claims counted as skipped (Phase 3's rule).
-   4. **V1.1.** A `hard_fail` regenerates, or after the last attempt gives `V1HardFail` / `unresolvable_citation`.
+   4. **V1.1.** A `hard_fail` regenerates, or after the last attempt gives `V1HardFail` / `unresolvable_citation`, every claim of that candidate counted under `unresolvable_citation` (none is bound; 3.2).
    5. **V1.2.** No drafts: `V1Abstained` / `no_bound_claims`.
    6. **Lock**, exactly as Phase 3; then **budget** (`bind`).
    7. **V1.3.** `checker_unavailable`: `V1Abstained` / `checker_unavailable`.
@@ -717,7 +719,7 @@ class V1Track:
   - **`shadow`**: the Phase 3 composition (`_propose(envelope, keep=raws)` keeps the generator's raw output or exception), then `V1Track.run(..., first_raw=<that raw>, phase3_decision=decision)`; `_entry_v2(..., mode="shadow")` with the Phase 3 fields and counts.
   - **`enforce`**: `V1Track.run(...)`; its plan, bind, locked set, rendering, presentation and counts fill the record (`_entry_v2`, mode `enforce`). The decision is `answer` iff the result is a `V1Passed`.
 - **`_entry_v2`** builds a `LedgerEntryV2`: `ProvenanceV2(v1_3_checker_model_id=<the policy's checker>, …)`; claims with `entailment_score` (enforce only); `verification = run.record`; `PipelineCountsV2`.
-- **Budget.** The shadow budget covers the V1 track (checks at retrieve, generate, bind, between render attempts and before each regeneration). V1 latency goes to `V1_METRICS` and `tutor.v1.run`, never into the entry. The ledger append is unchanged.
+- **Budget.** The shadow budget covers the V1 track (checks at retrieve, generate, bind, between render attempts and before each regeneration). An overrun logs `tutor.two_pass.budget_exceeded` when it is the record's own (Phase 3's composition, or the V1 track in `enforce`); in `shadow` the V1 track runs after the record's decision is fixed, so its overrun logs `tutor.v1.budget_exceeded` (`pipeline._over(..., event=)`) and only its verdict abstains. V1 latency goes to `V1_METRICS` and `tutor.v1.run`, never into the entry. The ledger append is unchanged.
 
 ### 4.14 Quiz keys (`app/services/quiz_keys.py`)
 
@@ -733,7 +735,7 @@ class QuizKeySource:                      # V1.6 KeyedItemSource over a QuizKeyS
 def score_attempt(keys: Sequence[QuizKey], responses: Mapping) -> tuple[int, dict[str, str], list[QuizFeedbackItem]]
 ```
 
-`score_attempt` keeps only this lesson's question ids with string answers, each at most 2000 characters (the task 1.2 rule); the score counts exact matches against `key.answer`; feedback has one item per question in lesson order: an answered question (non-empty after `strip()`) gets `answered=True`, `correct`, `answer` and `explanation`; any other gets `answered=False` and no key. Nothing is logged.
+`score_attempt` keeps only this lesson's question ids with string answers, each at most 2000 characters (the task 1.2 rule); the score counts exact matches against `key.answer`; feedback has one item per question in lesson order: an answered question (non-empty after `strip()`) gets `answered=True`, `correct`, `answer` and `explanation`; any other gets `answered=False` and no key. Nothing is logged. The rule is `FEEDBACK_RULE = "keys-after-saved-attempt-answered-only-v1"` (PD-21), which package v3 names in `v1.quiz_feedback` (provisional) and `package_check` compares. Residual: any answer counts as answered, so a caller that saves an attempt with a placeholder answer for every question gets every key of the lesson (DI-65).
 
 ### 4.15 Legacy guard (`v1_checks/legacy_guard.py`)
 
@@ -749,7 +751,7 @@ def guard_contained(contained: ContainedAnswer, *, store, package, surface: Lite
    - **V1.2 polarity (E3, claim→span; only with a v1 block):** `quantities_covered(quotation, span)`, and every negation cue of the quotation is in the span at least as often.
    An answer with no quotation is withheld too (`no_bound_claims`).
 2. Any failure withholds the whole answer: `ContainedAnswer(answer=ABSTENTION, decision="abstain", reason="no_approved_span", dropped_unresolved=…)`, the body bytes of today's abstention; it is counted (`V1_METRICS.legacy_guard`) and logged as `tutor.v1.legacy_guard_withheld` with `check_id`, `reason_code` and `surface`.
-3. The guard has no flag and runs in every mode. Every current development quotation passes (M8). Under D-31 nothing is quoted outside development. Without a v1 block it skips polarity (conflict 34).
+3. The guard has no flag and runs in every mode. Every current development quotation passes (M8). Under D-31 nothing is quoted outside development. Without a v1 block it skips polarity (conflict 34; only a development build with governance off starts without one). The polarity rule runs claim to span only: a quotation may hold no number or cue its span lacks, so it never adds one, but an edge-cut quotation can omit one (M8, DI-60). It catches what verbatim binding cannot: a quotation that is a substring of its span but cuts a token, such as "12" out of "128" (`quantity_mismatch`) or "no" out of "not" (`negation_mismatch`).
 
 ### 4.16 Effective mode and start-up (`v1_checks/__init__.py`)
 
@@ -761,25 +763,25 @@ def guard_contained(contained: ContainedAnswer, *, store, package, surface: Lite
 
 ### 5.1 File
 
-- v3 is a copy of v2 with `package_version "3.0.0"`, `schema_version 3`, `phase "4"`, `created "2026-11-20"` and `supersedes: {"package_version": "2.0.0", "sha256": "f35a4edf…7a42a", "readable_until": "the release after the Phase 4 merge"}`. Every other v2 block is unchanged; `abstention` keeps `calibrated_with_package_version "1.0.0"`, and `retrieval_sha256` is unchanged.
+- v3 is a copy of v2 with `package_version "3.0.0"`, `schema_version 3`, `phase "4"`, `created "2026-11-20"` and `supersedes: {"package_version": "2.0.0", "sha256": "f35a4edf…7a42a", "readable_until": "the release after the Phase 4 merge"}`. Every other v2 block is unchanged except `abstention.provisional_until`, which is `"Q-22 (DI-52)"` (v2 says `"Phase 4"`; Phase 4 did not lift the provisional status, PD-15); `abstention` keeps `calibrated_with_package_version "1.0.0"`, and `retrieval_sha256` is unchanged.
 - **`tutor_pipeline` changes:** `schemas` adds `LedgerEntryV2` (`ledger-entry-v2`, `schemas/ledger-entry.v2.schema.json`); `ledger.entry_schema` is `"ledger-entry-v2"`, with `"legacy_entry_schema": "ledger-entry-v1"` and `"entry_schemas": ["ledger-entry-v1", "ledger-entry-v2"]`; `unused_provenance_fields` is `["panel_weights_version", "routing_table_version", "tool_contract_version"]`; every prompt hash is v2's.
-- **New block `v1`** (its values, all frozen and provisional where the plan gives none): `version "v1-checks-v1"`, `status "provisional"`, `provisional: true`, `rules_hash`, `rule_ids` (4.1), `ehmf` (the plan table), `regeneration` (2 generation, 2 render), `lexicon` (PD-20: the negation cues `cannot, neither, never, no, nobody, none, nor, not, nothing, nowhere, without`, the suffixes `n't`/`n’t`, 21 number words, the closed unit list `bit … μs`, `min_alignment_term_chars 2`), `v1_3` (`hosting "none"`, `checker_model_id "none"`, `support_threshold 0.5`, `timeout_ms 1000`, `unavailable "abstain"`), `v1_5` (`x4_margin {"bm25f-v1": 2.4, "p1-floor": 0.0}`), `v1_6` (`assessment_threshold 0.6`, `short_key_min_tokens 3`, `socratic_plan "socratic"`, `scope "all_lessons"`), `v1_7` (`alignment_threshold 0.6`, `min_alignment_terms 4`, `on_conflict "disclose"`, the family `qcai-lecture-2025-2026` over the two lecture video items), `v1_8` (library v0, empty, hashed; `on_match "flag_withhold_queue_v3"`), `v1_9` (band [−4.0, 64.0]), `d20_interim` (`withhold-all-flagged-v1`, replacement `extractive_d19_else_abstention`), `fixtures` (`docs/evaluation/phase4/v1_adversarial_fixtures_v1.json`, `set_sha256`, `cases 66`, `public_corpus_only`), `stop` (`answer_rate_floor` `{"bm25f-v1": {"answered": 166, "in_domain": 174}, "p1-floor": {"answered": 146, "in_domain": 174}}` compared as `answered * floor.in_domain >= floor.answered * in_domain`; `composition` rule `v1-adds-no-in-domain-abstention-v1` under `deterministic_only`; `v1_p95_latency_ms 250`).
+- **New block `v1`** (its values, all frozen and provisional where the plan gives none): `version "v1-checks-v1"`, `status "provisional"`, `provisional: true`, `rules_hash`, `rule_ids` (4.1), `ehmf` (the plan table), `regeneration` (2 generation, 2 render), `lexicon` (PD-20: the negation cues `cannot, neither, never, no, nobody, none, nor, not, nothing, nowhere, without`, the suffixes `n't`/`n’t`, 21 number words, the closed unit list `bit … μs`, `min_alignment_term_chars 2`), `v1_3` (`hosting "none"`, `checker_model_id "none"`, `support_threshold 0.5`, `timeout_ms 1000`, `unavailable "abstain"`), `v1_5` (`x4_margin {"bm25f-v1": 2.4, "p1-floor": 0.0}`), `v1_6` (`assessment_threshold 0.6`, `short_key_min_tokens 3`, `socratic_plan "socratic"`, `scope "all_lessons"`), `v1_7` (`alignment_threshold 0.6`, `min_alignment_terms 4`, `on_conflict "disclose"`, the family `qcai-lecture-2025-2026` over the two lecture video items), `v1_8` (library v0, empty, hashed; `on_match "flag_withhold_queue_v3"`), `v1_9` (band [−4.0, 64.0]), `quiz_feedback` (PD-21: `rule "keys-after-saved-attempt-answered-only-v1"`, `public_payloads "no_keys"`, `feedback "answered_questions_after_a_saved_attempt"`, provisional), `d20_interim` (`withhold-all-flagged-v1`, replacement `extractive_d19_else_abstention`), `fixtures` (`docs/evaluation/phase4/v1_adversarial_fixtures_v1.json`, `set_sha256`, `cases 66`, `public_corpus_only`), `stop` (`answer_rate_floor` `{"bm25f-v1": {"answered": 166, "in_domain": 174}, "p1-floor": {"answered": 146, "in_domain": 174}}` compared as `answered * floor.in_domain >= floor.answered * in_domain`; `composition` rule `v1-adds-no-in-domain-abstention-v1` under `deterministic_only`; `v1_p95_latency_ms 250`).
 - **`flag_policy` adds** `"v1_pipeline": {"values": ["off", "shadow", "enforce"], "default_development": "enforce", "default_elsewhere": "shadow", "enforce_requires": "phase4_exit_passed", "off_outside_development": "refused", "authority": "plan Phase 4 G; 13.6; PD-19"}`. `phase4_exit_passed: false` and `phase4_exit_evidence: null` are unchanged.
-- **`owner_decisions` adds** `D-20` (`state open`, `applied withhold-all-flagged-v1`, its 18.4 text, `ratified false`, record PD-13), `D-21` (`state open`, path none, record PD-14), `Q-22` (`state unresolved`, the provisional values, records PD-15, PD-16, PD-18, DI-52), `Q-14` (`state unavailable`, record DI-53) and `D-06` (`state open`, record DI-52).
+- **`owner_decisions` adds** `D-20` (`state open`, `applied withhold-all-flagged-v1`, its 18.4 text, `ratified false`, record PD-13), `D-21` (`state open`, path none, record PD-14), `Q-22` (`state unresolved`, the provisional values `v1.v1_5.x4_margin`, `v1.v1_3.support_threshold`, `v1.v1_7`, `v1.v1_9.readability` and `v1.stop`, records PD-15, PD-16, PD-18, DI-52), `Q-14` (`state unavailable`, record DI-53) and `D-06` (`state open`, record DI-52).
 - **New files:** `v3.json.sha256` and `schemas/ledger-entry.v2.schema.json`. No other file is added, so every package copy that carries `schemas/` stays complete. `v2.json`, `v1.json`, their sidecars and the 8 v1 schema files are byte-unchanged.
 
 ### 5.2 Loader (`app/core/config_package.py`)
 
 - `DEFAULT_PACKAGE_PATH` is `v3.json`; `V2_PACKAGE_PATH` and `V1_PACKAGE_PATH` name the readable older packages.
 - `schema_version in (1, 2, 3)`. Schema 3 applies every v2 rule with the schema names `TUTOR_SCHEMA_NAMES_V3`, `legacy_entry_schema == "ledger-entry-v1"`, `entry_schemas == ["ledger-entry-v1", "ledger-entry-v2"]` and the v3 unused fields (`ledger.entry_schema` is compared with the `LedgerEntryV2` contract by `package_check`, conflict 37).
-- **`_parse_v1` refuses**: an unmarked provisional block (`v1`, `lexicon`, `v1_3`, `v1_5`, `v1_6`, `v1_7`, `v1_9`, `d20_interim`, `stop`); `ehmf` other than the plan's; regeneration values outside 0-2; empty lexicon lists or lists that are not lowercase, sorted and unique (suffixes exempt); `hosting` not in `WIRED_CHECKERS`; `support_threshold` outside [0, 1]; `timeout_ms` outside 10-10000 or not below `budgets.shadow_ms`; `unavailable` other than `abstain`; an `x4_margin` other than `{"bm25f-v1": abstention.margin, "p1-floor": 0.0}`; `assessment_threshold` or `alignment_threshold` outside (0, 1]; `min_alignment_terms` outside 1-20; `short_key_min_tokens` outside 1-10; a `socratic_plan` that is not a presentation plan; a `scope` other than `all_lessons`; `on_conflict` other than disclose or withhold; a family with fewer than 2 distinct items, an item in two families, or more than 20 families; a library that is malformed, breaks the entry rules or whose `sha256` is not its canonical sha256; `on_match` other than `flag_withhold_queue_v3`; a band with `min_grade >= max_grade` or a bound outside [−50, 200]; answer-rate floors that are not integers with 0 < answered ≤ in_domain; another composition rule; `v1_p95_latency_ms` outside 1 to `shadow_ms`; a `fixtures` path that is absolute or holds `..`; a malformed `rules_hash` or `set_sha256`.
+- **`_parse_v1` refuses**: an unmarked provisional block (`v1`, `lexicon`, `v1_3`, `v1_5`, `v1_6`, `v1_7`, `v1_9`, `quiz_feedback`, `d20_interim`, `stop`); a `quiz_feedback` rule other than `V1_QUIZ_FEEDBACK_RULE`, `public_payloads` other than `no_keys` or `feedback` other than `answered_questions_after_a_saved_attempt`; `ehmf` other than the plan's; regeneration values outside 0-2; empty lexicon lists or lists that are not lowercase, sorted and unique (suffixes exempt); `hosting` not in `WIRED_CHECKERS`; `support_threshold` outside [0, 1]; `timeout_ms` outside 10-10000 or not below `budgets.shadow_ms`; `unavailable` other than `abstain`; an `x4_margin` other than `{"bm25f-v1": abstention.margin, "p1-floor": 0.0}`; `assessment_threshold` or `alignment_threshold` outside (0, 1]; `min_alignment_terms` outside 1-20; `short_key_min_tokens` outside 1-10; a `socratic_plan` that is not a presentation plan; a `scope` other than `all_lessons`; `on_conflict` other than disclose or withhold; a family with fewer than 2 distinct items, an item in two families, or more than 20 families; a library that is malformed, breaks the entry rules or whose `sha256` is not its canonical sha256; `on_match` other than `flag_withhold_queue_v3`; a band with `min_grade >= max_grade` or a bound outside [−50, 200]; answer-rate floors that are not integers with 0 < answered ≤ in_domain; another composition rule; `v1_p95_latency_ms` outside 1 to `shadow_ms`; a `fixtures` path that is absolute or holds `..`; a malformed `rules_hash` or `set_sha256`.
 - **Owner decisions:** `D-20`, `D-21`, `Q-22`, `Q-14` and `D-06` must be objects; `D-21` open ⇒ hosting and model id `"none"`; `Q-14` unavailable ⇒ no library entries; `D-20` open ⇒ `d20_interim.rule == "withhold-all-flagged-v1"`.
 - **`flag_policy.v1_pipeline`** (schema 3): its values; its defaults equal `V1_PIPELINE_DEFAULT_DEVELOPMENT` ("enforce") and `V1_PIPELINE_DEFAULT_ELSEWHERE` ("shadow"); `enforce_requires == "phase4_exit_passed"`; `off_outside_development == "refused"`.
-- **`V1Params`** (frozen dataclass) holds every value, with `lexicon` as a frozen `V1Lexicon`, `version_families: Mapping[item_id, family]`, the library (version, sha256, entries), the fixture pin, the stop counts and `rules_hash`. `ConfigPackage` gains `v1: V1Params | None = None`.
+- **`V1Params`** (frozen dataclass) holds every value, with `lexicon` as a frozen `V1Lexicon`, `version_families: Mapping[item_id, family]`, the library (version, sha256, entries), the fixture pin, the stop counts, `rules_hash` and `quiz_feedback_rule`. `ConfigPackage` gains `v1: V1Params | None = None`.
 
 ### 5.3 Package check (`v1_checks/package_check.py`)
 
-`check_v1_package(package, *, structural) -> list[str]`. Always: `rules_hash` equals `v1_rules_hash(package)`; `rule_ids` equal `RULE_IDS`, V1.4's equal to `claim_gate.SUBSET_CHECK_RULE`; `SUBSET_PROBLEM_CODES == claim_gate.PROBLEM_CODES`; `REASON_OUTCOMES` is total over `bind`'s outcomes and the gate's reasons; the checker registry equals `WIRED_CHECKERS`. With `structural=True` only: the fixture file exists and its `set_sha256` and case count match the pin.
+`check_v1_package(package, *, structural) -> list[str]`. Always: `rules_hash` equals `v1_rules_hash(package)`; `rule_ids` equal `RULE_IDS`, V1.4's equal to `claim_gate.SUBSET_CHECK_RULE`; `SUBSET_PROBLEM_CODES == claim_gate.PROBLEM_CODES`; `REASON_OUTCOMES` is total over `bind`'s outcomes and the gate's reasons; the checker registry equals `WIRED_CHECKERS`; `v1.quiz_feedback_rule` equals `quiz_keys.FEEDBACK_RULE`. With `structural=True` only: the fixture file exists and its `set_sha256` and case count match the pin. The repository root is found only then (`repository_root()`, never at import): in the API image the module is `/app/app/services/v1_checks/package_check.py`, which has five parents and no checkout, and start-up imports it.
 
 `tutor_pipeline/package_check.check_tutor_pipeline_package` is unchanged except for two schema-3 rules: `ledger.entry_schema` is compared with `LedgerEntryV2`'s literal, and `entry_schemas == sorted(ENTRY_SCHEMAS)`.
 
@@ -917,8 +919,8 @@ No route is added, and the authorization matrix is unchanged.
 ### 10.1 Start-up
 
 `main._check_tutor_pipeline_package` first runs `_check_v1_package(package)`: `check_v1_package(package, structural=False)` when `package.v1` is set, else the problem "no v1 block". It reads only the package and in-memory code values, and writes nothing.
-- **Governed build:** any problem raises `ConfigPackageError("v1 checks: …")`, a package without a v1 block included (conflict 34), before any table.
-- **Development:** `v1_checks.V1_UNAVAILABLE_REASON` is set and `tutor.v1.unavailable` (WARNING) is logged; the two-pass V1 mode becomes `off`, and the legacy guard still runs.
+- **A governed build, and any build outside development whatever its governance setting:** any problem raises `ConfigPackageError("v1 checks: …")`, a package without a v1 block included (conflict 34), before any table.
+- **Development with governance off:** `v1_checks.V1_UNAVAILABLE_REASON` is set and `tutor.v1.unavailable` (WARNING) is logged; the two-pass V1 mode becomes `off` (`/ready` `v1_pipeline` `off`, `v1.available` false), and the legacy guard still runs.
 
 ### 10.2 `/ready`
 
@@ -930,14 +932,15 @@ No route is added, and the authorization matrix is unchanged.
        "misconception_library": {"version": "v0", "entries": 0, "sha256": "…"}, "fixtures_set_sha256": "…",
        "regeneration": {"generation": 2, "render": 2}, "readability_band": [-4.0, 64.0], "x4_margin": {"bm25f-v1": 2.4, "p1-floor": 0.0},
        "stop": {"answer_rate_floor": {"bm25f-v1": "166/174", "p1-floor": "146/174"}, "v1_p95_latency_ms": 250},
+       "quiz_feedback": {"rule": "keys-after-saved-attempt-answered-only-v1", "provisional": true},
        "provisional": true, "available": true, "legacy_guard": "on"}
 ```
 
-`v1` is `null` with a v1 or v2 package. `slis` is unchanged: no per-run V1 outcome and no guard count is public (conflict 29).
+`v1_pipeline` is `v1_checks.mode(settings, package)`: the mode the two-pass shadow pipeline's V1 track runs in (`off` when the start-up check found a problem, else the setting). It acts only while `TWO_PASS_TUTOR` is not `off`, so production reports `shadow` while it runs no V1 track. `v1` is `null` with a v1 or v2 package. `slis` is unchanged: no per-run V1 outcome and no guard count is public (conflict 29).
 
 ### 10.3 Metrics (`v1_checks/metrics.py`; locked counters)
 
-`V1_METRICS.detail_snapshot()`: `runs` by mode; `finals`; `checks` (check → outcome → count); `hard_fail_rate` (per check, the runs in which it hard-failed at least once over the runs in which it ran); `citation_resolution` (`checked`, `resolved`, `rate`) over the span ids of delivered verdicts; `v1_3` (`claims_checked`, `flagged`, `flag_rate`, `unavailable`); `latency_ms` (`buckets` 1-1000 ms and `+Inf`, nearest-rank `p95` over the last 1024 runs, `budget` from the package, `stop = p95 > budget`); `disagreements` (`phase3`, `legacy`); `v3_intents`; `legacy_guard` (`checked` and `withheld` per surface, `by_check`). There is no public snapshot.
+`V1_METRICS.detail_snapshot()`: `runs` by mode; `finals`; `checks` (check → outcome → count); `hard_fail_rate` (per check, the runs in which it hard-failed at least once over the runs in which it ran: `metrics.hard_failed_checks` and `metrics.checks_run`, which the fixture report's `per_check` also uses, and which the runbook's log-based metric states); `citation_resolution` (`checked`, `resolved`, `rate`) over the span ids of delivered verdicts; `v1_3` (`claims_checked`, `flagged`, `flag_rate`, `unavailable`); `latency_ms` (`buckets` 1-1000 ms and `+Inf`, nearest-rank `p95` over the last 1024 runs, `budget` from the package, `stop = p95 > budget`); `disagreements` (`phase3`, `legacy`); `v3_intents`; `legacy_guard` (`checked` and `withheld` per surface, `by_check`). There is no public snapshot.
 
 ### 10.4 Log events (logger `qcai.tutor`; enums, counts and hashes only; no text, no ids)
 
@@ -947,7 +950,8 @@ No route is added, and the authorization matrix is unchanged.
 | `tutor.v1.disagreement` | `with` (`phase3`\|`legacy`), `v1_outcome`, `reference` | INFO |
 | `tutor.v1.checker_unavailable` | `cause`, `error` | WARNING |
 | `tutor.v1.legacy_guard_withheld` | `check_id`, `reason_code`, `surface` | WARNING (a guard failure is an upstream defect) |
-| `tutor.v1.unavailable` | `reason` | WARNING |
+| `tutor.v1.unavailable` | `reason` (a development build with governance off only; every other build stops) | WARNING |
+| `tutor.v1.budget_exceeded` | `step`, `elapsed_ms`, `budget_ms`: in `shadow`, the V1 track overran after the record's decision (4.13) | WARNING |
 
 ---
 
@@ -958,12 +962,12 @@ No route is added, and the authorization matrix is unchanged.
 | `src/lib/types.ts` | `QuizQuestion` has no `answer` or `explanation`. `QuizFeedback = {question_id; answered; correct; answer; explanation}`. `QuizAttemptResult.feedback?: QuizFeedback[]`. `EvidencePanelPayload.conflicts?: Array<{kind; passages: number[]}> \| null`. |
 | NEW `src/lib/quiz-feedback.ts` | `publicQuestions(questions)` keeps exactly `id, question_type, prompt, choices, difficulty`. `feedbackFor(questionId, result \| null)` gives `{state: "none" \| "unanswered" \| "correct" \| "incorrect"; answer?; explanation?}`; a result without `feedback` (an older API) gives `"none"`. |
 | `src/app/quiz/[lessonSlug]/page.tsx` | Passes `publicQuestions(lesson.quiz_questions)` to `QuizPanel`. Hero text: "Work through the questions, then save an attempt to see the model answers and rubrics." |
-| `src/components/quiz-panel.tsx` | No client score, no "Reveal rubric", no "Auto-score". Keeps "Answered: n / N", `recordQuizAttempt(lessonSlug, answers)`, the textarea `aria-label` and "Recorded score: {savedAttempt.score} / …". After saving, each answered question shows "Correct" or "Not correct", "Model answer: {answer}" and the explanation from `feedbackFor`; an unanswered one "Answer this question and save an attempt to see its rubric." The short-answer note reads "Short answers are scored on the server by exact match; use the model answer shown after saving for final judgment." |
+| `src/components/quiz-panel.tsx` | No client score, no "Reveal rubric", no "Auto-score". Keeps "Answered: n / N", `recordQuizAttempt(lessonSlug, answers)`, the textarea `aria-label` and "Recorded score: {savedAttempt.score} / …". After saving, each answered question shows "Correct" or "Not correct", "Model answer: {answer}" and the explanation from `feedbackFor`; an unanswered one "Answer this question and save an attempt to see its rubric."; each question's input names its feedback (`aria-describedby` to `quiz-feedback-{id}`), and the save error and "Saved attempt #n. Recorded score: … Feedback is shown under each question." are in an always-rendered `role="status"` `aria-live="polite"` region (WCAG 2.1 4.1.3: the feedback arrives after a network call). The short-answer note reads "Short answers are scored on the server by exact match; use the model answer shown after saving for final judgment." |
 | `src/lib/evidence-panel.ts` | `CONFLICT_TEXT` for the three kinds ("Passages {a} and {b} …"); `evidencePanelView` gains `conflicts: string[]`. |
 | `src/components/evidence-panel.tsx` | Renders `<ul className="assistant-evidence-conflicts">` when `view.conflicts.length`. |
 | `src/app/globals.css` | `.assistant-evidence-conflicts` in `var(--ink)`, at least 4.5:1 on the panel in both themes. |
 
-**Production.** The quiz change ships to production: less disclosure, plus post-attempt feedback. Panel `conflicts` appear in development only. Frontend first: at once no key reaches page HTML (`publicQuestions`); lesson JSON from the old API still carries keys until the API deploys and caches expire (API max-age 300 + stale-while-revalidate 60, and the Next revalidate window). Then the API: keys leave every public payload. `feedbackFor` tolerates the older API.
+**Production.** The quiz change ships to production: less disclosure, plus post-attempt feedback. Panel `conflicts` appear in development only. Frontend first: at once no key reaches page HTML (`publicQuestions`); lesson JSON from the old API still carries keys until the API deploys and caches expire (API max-age 300 + stale-while-revalidate 60, and the Next revalidate window). Then the API: keys leave every public payload. `feedbackFor` tolerates the older API. A rollback runs in the reverse order, the API first: the pre-Phase-4 panel against the Phase 4 API would score an empty quiz N/N (`undefined === undefined`) and show a blank model answer (the runbook).
 
 ---
 
@@ -971,7 +975,7 @@ No route is added, and the authorization matrix is unchanged.
 
 ### 12.1 Fixture file `docs/evaluation/phase4/v1_adversarial_fixtures_v1.json`
 
-Public-corpus only, never ULQS: the runner refuses `lqs/` paths. The fixture holds no corpus text: attacked sentences are taken from the store at run time, and its own sentences are synthetic. Its queries are the project's public fixture queries (`score_floor_queries.json`, whose in-domain items are the authored curriculum's learner questions) and six short synthetic keyword queries (one `unit_swap` case; the three `conflict_version` cases), because the in-domain list holds too few claims with a lexicon unit and no envelope with both fixture-family items.
+Public-corpus only, never ULQS: the runner refuses `lqs/` paths. The fixture holds no corpus text: attacked sentences are taken from the store at run time, and its own sentences are synthetic. Its queries are the project's public fixture queries (`score_floor_queries.json`, whose in-domain items are the authored curriculum's learner questions) and four short synthetic keyword queries (one `unit_swap` case; the three `conflict_version` cases), because the in-domain list holds too few claims with a lexicon unit and no envelope with both fixture-family items.
 
 ```json
 {"fixture_set": "qcai-v1-adversarial", "format_version": 1, "public_corpus_only": true,
@@ -1029,7 +1033,7 @@ python scripts/run_v1_fixtures.py --check docs/evaluation/phase4/v1_fixture_repo
  "evidence_class": "fixture measurements, not research results (plan Phase 4 H)", "public_corpus_only": true,
  "fixtures": {"path": "…", "set_sha256": "…", "cases": 66}, "config_package": {"version": "3.0.0", "sha256": "…"},
  "fixture_overlay_sha256": "…",
- "configurations": [{"name": "production", "checker_model_id": "none", "per_check": {"V1.1": {"runs": 0, "hard_fail": 0, "hard_fail_rate": null, "flag": 0, "abstain": 0, "mark": 0}},
+ "configurations": [{"name": "production", "checker_model_id": "none", "per_check": {"V1.1": {"runs": 0, "hard_fail": 0, "hard_fail_runs": 0, "hard_fail_rate": null, "flag": 0, "abstain": 0, "mark": 0}},
     "v1_3_flag_rate": {"checked": 0, "flagged": 0, "rate": null}, "citation_resolution_delivered": {"span_ids": 0, "resolved": 0, "rate": null},
     "finals": {"deliver": 0, "withhold": 0, "abstain": 0},
     "classes": {"stripped_negation": {"cases": 5, "caught": 5, "catch_rate": 1.0, "wilson95": [0.5655, 1.0], "caught_by": {"V1.2": 5}, "delivered": 0}},
@@ -1045,8 +1049,10 @@ python scripts/run_v1_fixtures.py --check docs/evaluation/phase4/v1_fixture_repo
 ```
 
 - `wilson95` is the Wilson score interval with z = 1.959964, rounded to 4 places; null when n = 0.
+- `per_check`: `runs` are the runs the check ran in; `hard_fail`, `flag`, `abstain` and `mark` count results; `hard_fail_runs` counts the runs in which it hard-failed at least once, and `hard_fail_rate = hard_fail_runs / runs` (10.3).
+- `commit` is informational: the HEAD the record was written on, with `-dirty` when the tree differed (`--write --allow-dirty`, as the committed record is written before the commit that holds it); `inputs` is the provenance `--check` compares.
 - `inputs` uses the replay's rule (every imported repository module's LF text sha256).
-- **Report invariants** (AC-4-2 and the runner): every non-residual class is 100% caught in both configurations; `composition_answered_v1_b == composition_answered_v1_off` and `composition_identical_b == 174`; `citation_resolution_delivered.rate` is 1.0 or null; under (a) `finals.deliver == 0`.
+- **Report invariants** (AC-4-2 and the runner): every non-residual class is 100% caught in both configurations, and the residual class under (a) only (its three cases are delivered under (b); AC-4-2 holds for them only while V1.3 withholds every claim, DI-64); `composition_answered_v1_b == composition_answered_v1_off` and `composition_identical_b == 174`; `citation_resolution_delivered.rate` is 1.0 or null; under (a) `finals.deliver == 0`.
 
 ---
 
@@ -1062,7 +1068,7 @@ Fakes are in NEW `apps/api/tests/v1_fakes.py` (`AlwaysSupportedChecker`, `Always
 3. `test_ac_4_1_a_regenerated_candidate_is_judged_afresh_and_the_hard_failed_one_never_reaches_v2`.
 
 **AC-4-2**
-4. `test_ac_4_2_the_adversarial_set_fails_or_abstains_in_both_checker_configurations`.
+4. `test_ac_4_2_the_adversarial_set_fails_or_abstains_under_production_and_only_the_residual_class_is_delivered_with_a_perfect_checker` (every non-residual class caught under (a) and (b); the residual paraphrased contradiction withheld under (a) and delivered under (b), DI-64).
 5. `test_ac_4_2_the_committed_fixture_report_matches_a_fresh_run_and_its_hashes_match_the_package` (the record equals a fresh run, the volatile fields and the imported-module map aside, whose hashes are checked against the checkout; the pins; the label; `lqs/` refused; only the manifest in the runner's temporary directory).
 6. `test_ac_4_2_deterministic_checks_alone_catch_negation_number_fabrication_unresolvable_and_conflict_cases` (`negation_mismatch`, `quantity_mismatch`, `not_verbatim`, `unresolvable`, `unmapped_factual_sentence`, `conflict_disclosed`).
 
@@ -1090,7 +1096,7 @@ Fakes are in NEW `apps/api/tests/v1_fakes.py` (`AlwaysSupportedChecker`, `Always
 
 **Plan G / L / D / I / H, invariants, freeze**
 19. `test_plan_g_ledger_v2_is_additive_and_old_records_still_verify` (a mixed chain verifies; `verify_ledger.py --check-provenance` exits 0; export and restore round-trip; a tampered v2 entry is refused as `entry fails ledger-entry-v2`; `pending_v3_intents`; runs on the session dialect).
-20. `test_plan_g_shadow_logs_disagreements_with_the_phase_3_decision_path`.
+20. `test_plan_g_shadow_logs_disagreements_with_the_phase_3_decision_path`, with `test_plan_g_a_route_turn_s_shadow_record_compares_v1_with_the_decision_the_learner_received` (`/assistant/chat` and `/tutor/turns`: an answered, a guard-withheld and an off-topic turn; `comparison.legacy_decision`, `agrees_legacy` and the D-20 replacement on the route-produced shadow record).
 21. `test_plan_l_v1_1_and_v1_2_are_enforced_on_every_delivery_path_in_every_mode`, with `test_plan_l_the_unforged_answer_is_byte_identical_across_modes`.
 22. `test_plan_l_flag_back_to_shadow_restores_the_phase_3_decision_and_keeps_the_verdict`.
 23. `test_plan_l_the_stop_conditions_are_named_in_package_v3_and_the_fixture_runner_exits_3` (a raised floor, a 1 ms budget against slow samples, a crippled V1 track).
@@ -1099,12 +1105,12 @@ Fakes are in NEW `apps/api/tests/v1_fakes.py` (`AlwaysSupportedChecker`, `Always
 26. `test_plan_e_with_no_checker_v1_3_flags_every_claim_and_every_answer_is_withheld`.
 27. `test_plan_d_thresholds_load_only_from_the_configuration_package`.
 28. `test_plan_i_ready_reports_package_v3_and_the_v1_fields_and_no_shadow_outcome`.
-29. `test_plan_i_v1_metrics_report_resolution_hard_fails_flag_rate_latency_and_disagreements`.
+29. `test_plan_i_v1_metrics_report_resolution_hard_fails_flag_rate_latency_and_disagreements`, with `test_plan_i_the_hard_fail_rate_per_check_has_one_definition_in_process_in_the_report_and_in_the_runbook` and `test_plan_i_the_runbook_names_every_configuration_override_the_api_records`.
 30. `test_plan_h_and_ac_3_1_v1_checks_import_no_learner_module_and_hold_no_learner_state`.
 31. `test_invariant_6_no_two_pass_text_reaches_a_learner_with_v1_enforcing`.
 32. `test_freeze_production_bodies_are_unchanged_by_v1` (production settings over an all-approved store: `/qa/ask` bodies equal those with the guard replaced by identity, on 8 queries).
-33. `test_settings_v1_pipeline_defaults_and_refusals` (defaults; production off and enforce refused; a package claiming the exit allows production enforce and records the override; start-up subprocesses).
-34. `test_phase4_spec_section_3_lists_the_code_s_fields`.
+33. `test_settings_v1_pipeline_defaults_and_refusals` (defaults; production off and enforce refused; a package claiming the exit allows production enforce and records the override; start-up subprocesses, a production build with governance off and a v2 package included), with `test_start_up_a_v1_package_problem_turns_v1_off_only_in_development_with_governance_off` (10.1).
+34. `test_phase4_spec_section_3_lists_the_code_s_fields`, with `test_phase4_docs_quote_plan_m_and_state_the_current_rules` (the plan M quote, the guard's claim-to-span rule, the synthetic query count, the rollback order).
 
 ### 13.2 NEW unit test files
 
@@ -1119,17 +1125,19 @@ Fakes are in NEW `apps/api/tests/v1_fakes.py` (`AlwaysSupportedChecker`, `Always
 | `test_v1_7_conflicts.py` | Version family; number and negation disagreement; the min-terms filter; same item; disclose and withhold; legacy panel passages |
 | `test_v1_8_misconceptions.py` | v0 empty and hashed; all-terms match; withhold and V3 intent; malformed libraries; entries refused while Q-14 is unavailable |
 | `test_v1_9_schema_readability.py` | Plan and envelope schema; an invalid envelope reaching `render_checked`; syllables; FK vectors; band edges; templates inside the band |
-| `test_v1_aggregate_and_runner.py` | The no-hook path equals Phase 3's on 300 fault schedules; cycle counts; replacements; omission; hook reasons; budget; shadow and enforce records; every record rule; result and intent validators |
-| `test_v1_legacy_guard.py` | Every dev contained answer passes; each failure; truncation; counts; without a v1 block |
+| `test_v1_aggregate_and_runner.py` | The no-hook path equals Phase 3's on 300 fault schedules; cycle counts; replacements; omission; hook reasons; budget, and the event a V1-track overrun logs in shadow and in enforce; shadow and enforce records; a V1.1 hard-failed candidate's counts across modes; every record rule; result and intent validators |
+| `test_v1_legacy_guard.py` | Every dev contained answer passes; each failure at its exact (check, reason); the polarity rule on verbatim quotations cut mid-number and mid-cue; truncation; counts; without a v1 block only the polarity rule is skipped |
 | `test_v1_fixtures.py` | Wilson vectors; determinism; unrealisable exit 1; a crippled check exit 5; `lqs/` refusal; no fixture string holds a 12-word shingle of a source document |
 | `test_quiz_keys.py` | `score_attempt`; `QuizKeyStore`; the public/internal split; `/content/modules`; the rebuild constructor; the attempt route |
-| `test_config_package.py` (additions) | `test_v2_stays_readable_for_one_release`; `test_v3_keeps_every_v2_value_but_the_listed_changes`; `test_v3_structural_errors_always_stop_the_load` (50 refusals); `test_package_check_v1_problems` |
+| `test_config_package.py` (additions) | `test_v2_stays_readable_for_one_release`; `test_v3_keeps_every_v2_value_but_the_listed_changes`; `test_v3_structural_errors_always_stop_the_load` (55 refusals); `test_package_check_v1_problems`; `test_the_v1_start_up_check_runs_from_the_image_layout` and `test_no_image_module_computes_a_parent_its_image_path_lacks_at_import` (the API image's `/app/app` paths) |
 | `test_response_ledger.py` (additions) | v2 dispatch beside v1; the v2 provenance audit; `pending_v3_intents` |
 
 ### 13.3 Existing tests that change (intent kept; the commit message gives each reason)
 
-1. **`test_config_package.py`:** the shipped package is "3.0.0"; `test_package_v2_keeps_every_phase_2_value_of_v1` and `test_v2_structural_errors_always_stop_the_load` read `v2.json` itself (the default is v3).
+1. **`test_config_package.py`:** the shipped package is "3.0.0"; `test_package_v2_keeps_every_phase_2_value_of_v1` reads `v2.json` itself (the default is v3); `test_v2_structural_errors_always_stop_the_load` applies its 24 Phase 3 refusals to `v2.json` and to the shipped v3 (its schema edit is "the next schema version", 3 for v2 and 4 for v3), so a schema-3 loader branch cannot drop one.
 2. **`test_phase3_acceptance.py`:** `/ready` reports `PACKAGE.package_version`; `PACKAGE_FILE` is `DEFAULT_PACKAGE_PATH.relative_to(REPO_ROOT)`; the start-up test copies the default package under its own name and sidecar; the AC-3-1 signature scan allows `bind`'s `outcomes` and `TemplateRenderer.render`'s `omit_claim_ids` (neither is learner input).
+2a. **`test_phase3_hardening.py::write_package`, `test_phase3_acceptance.py::test_ac_3_6_on_forced_past_settings_still_runs_shadow_only`, `test_phase3_review4.py::_package_copy` and `test_tutor_pipeline_contracts.py::test_a_changed_schema_file_or_prompt_hash_is_a_package_problem`:** copy the shipped package under its own name (`v3.json`), not as `v2.json`; behaviour is unchanged (the loader dispatches on `schema_version`).
+2b. **`test_phase2_acceptance.py`:** `test_plan_h_thresholds_are_provisional_until_phase_4` and the `/ready` test read `provisional_until` `"Q-22 (DI-52)"` from package v3 and `"Phase 4"` from v1, v2 and the calibration record.
 3. **`test_phase3_review8.py`, `test_phase3_review9.py`, `test_phase3_review11.py` (`_changed` and the generator edit):** validate with `ENTRY_SCHEMAS[entry_schema]`. `test_phase3_review11.py::test_l7` also passes the package's v1 block to `_provenance_problems` (7.9): its two-pass record is now a v2 record.
 4. **`test_phase3_review3.py::test_d4`:** validates the edited payload with its own schema and matches each refusal's rule text, so it cannot pass on a schema-literal mismatch.
 5. **`test_phase3_review10.py::_patch_entry`:** patches both record builders (`_entry` and `_entry_v2`).
@@ -1142,12 +1150,12 @@ Fakes are in NEW `apps/api/tests/v1_fakes.py` (`AlwaysSupportedChecker`, `Always
 
 ### 13.4 Frontend tests
 
-- **NEW `tests/quiz-keys.integration.test.ts`:** `QuizQuestion` has no `answer` or `explanation`; the panel has no `question.answer`, `question.explanation`, "Reveal rubric", `=== question.answer`, "Auto-score" or `showResults`, and calls `feedbackFor(`; the page passes `publicQuestions(lesson.quiz_questions)`; `publicQuestions` drops an older payload's keys; `feedbackFor` maps none, unanswered, correct, incorrect and an older API's result.
+- **NEW `tests/quiz-keys.integration.test.ts`:** `QuizQuestion` has no `answer` or `explanation`; the panel has no `question.answer`, `question.explanation`, "Reveal rubric", `=== question.answer`, "Auto-score" or `showResults`, and calls `feedbackFor(`; the page passes `publicQuestions(lesson.quiz_questions)`; `publicQuestions` drops an older payload's keys; `feedbackFor` maps none, unanswered, correct, incorrect and an older API's result; the save result and error are in a polite status region and each input names its feedback.
 - **`evidence-panel.integration.test.ts` additions:** each `CONFLICT_TEXT`; conflicts rendered only when present; no "grounded"; the contrast of `.assistant-evidence-conflicts`.
 
 ### 13.5 Mutation checks (each must fail its test when reverted)
 
-The checks (V1.1 hard fail; V1.2 polarity; closed units; bind `outcomes`; NullChecker flag-all; unavailable→abstain; the V1.4 seam; V1.5 abstain and mark; V1.6 containment, id-in-text and all-lessons scope; Socratic omission; V1.7 disclose and withhold; V1.8 match; V1.9 schema, envelope order and band); the typed decisions and ledger rules (the `consult_v2` guard; the `V1Passed` post-init and its V1.2 exemption; the deliver and withheld-conflict rules; `PipelineCountsV2`; the replacement rule); the guard, quiz and settings changes (the legacy guard; the public `QuizQuestion`; `publicQuestions`; answered-only feedback; the settings refusals; the governed v1-block refusal); and the fixture runner (drift; the stop exit 3). Section 18 records the run.
+The checks (V1.1 hard fail; V1.2 polarity; closed units; bind `outcomes`; NullChecker flag-all; unavailable→abstain; the V1.4 seam; V1.5 abstain and mark; V1.6 containment, id-in-text and all-lessons scope; Socratic omission; V1.7 disclose and withhold; V1.8 match; V1.9 schema, envelope order and band); the typed decisions and ledger rules (the `consult_v2` guard; the `V1Passed` post-init and its V1.2 exemption; the deliver and withheld-conflict rules; `PipelineCountsV2`; the replacement rule); the guard, quiz and settings changes (the legacy guard; the public `QuizQuestion`; `publicQuestions`; answered-only feedback; the settings refusals; the governed v1-block refusal); the fixture runner (drift; the stop exit 3); and the review 1 fixes (the image-layout root; the guard's quantity and negation sub-rules and the no-v1 skip; the legacy decision through the orchestrator and the shadow job; the development-only start-up fallback, the mode's and `/ready`'s reading of it; the V1.1 candidate counts and the shadow count rule; the V1-track budget event; the one hard-fail-rate definition; the v3-only loader branch; the quiz rule pin; the quiz live region and `aria-describedby`). Section 18 records the run.
 
 ---
 
@@ -1171,10 +1179,10 @@ The PostgreSQL matrix jobs, the frontend job and `release-artifacts` are unchang
 ## 15. Docs and evidence
 
 1. **This spec.** Section 4 is the plan F "V1 specification".
-2. **ADR-005.** The title line is kept, followed by the dated status line (conflict 24); the 2025 sections and the Phase 3 revision stay verbatim; `## Decision 2026-11-20 (Phase 4: V1 deterministic validation)` states V1.1-V1.9 with their rule ids and EHMF types, HARD = final (typed), the modes and the shadowed path, the unflagged legacy guard, V1.3 none and the D-20 withholding with its replacement values, the V1.5 gate rule, V1.7 disclosure and its inert production family, the abstention reasons, and the residuals (checker error, paraphrased leakage, paraphrased contradiction, the legacy edge cuts, short keys).
+2. **ADR-005.** The title line is kept, followed by the dated status line (conflict 24); the 2025 sections and the Phase 3 revision stay verbatim; `## Decision 2026-11-20 (Phase 4: V1 deterministic validation)` states V1.1-V1.9 with their rule ids and EHMF types, HARD = final (typed), the modes and the shadowed path, the unflagged legacy guard, V1.3 none and the D-20 withholding with its replacement values, the V1.5 gate rule, V1.7 disclosure and its inert production family, the abstention reasons, and the residuals: plan M's "checker error, paraphrased leakage", with paraphrased contradiction as the implementation-defined case of checker error (DI-64), plus the legacy edge cuts, short keys and placeholder-answer key disclosure (DI-65).
 3. **`docs/evaluation/phase4/README.md`:** reproduction, configurations, classes, Wilson intervals, "fixture measurements, not research results", residuals, the answer-rate block and the stops; no corpus text.
 4. **`docs/testing/test-strategy.md`:** `## Phase 4 acceptance map (plan Phase 4 K)` after Phase 3.
-5. **`infra/cloudrun/deployment.md`:** `## Phase 4: V1 validation and quiz keys (runbook)` (D-05 cloud writes; shipped defaults; pre-release checks; frontend first, then the API, with the cache windows; `/ready` checks; stop conditions; rollback to `V1_PIPELINE=shadow`; the export before a digest rollback; the package-version notes of the Phase 2 and Phase 3 sections).
+5. **`infra/cloudrun/deployment.md`:** `## Phase 4: V1 validation and quiz keys (runbook)` (D-05 cloud writes; shipped defaults; pre-release checks; frontend first, then the API, with the cache windows; `/ready` checks; stop conditions; rollback to `V1_PIPELINE=shadow`; the export before a digest rollback; the rollback order, the API first; the package-version notes of the Phase 2 and Phase 3 sections).
 6. **`infra/cloudrun/observability.md`:** `## Phase 4 SLIs: V1 (plan Phase 4 I)`, the log-based metrics and alerts marked "Not set up yet" (DI-62).
 7. **`infra/cloudrun/api-production.env.example.yaml`:** `V1_PIPELINE: "shadow"`.
 8. **BEP-2-12** (outside the repository): `phase04/PHASE_RECORD.md` (current state first, then `## History`, one row per round); `phase04/CLOSURE_EVIDENCE_NOTES.md` (R-13, R-15, R-16, R-19, R-42, R-46); the register rows (16); `00_meta/STATUS.md` gains a `| 4 |` row.
@@ -1195,7 +1203,7 @@ The PostgreSQL matrix jobs, the frontend job and `release-artifacts` are unchang
 | PD-18 | Phase 4 stop conditions (Q-22) | Phase 4 L: "Stop below the answer-rate floor or above the V1 p95 budget, both named in configuration package v3 (Q-22)" | Floor = the Phase 2 baseline per gate, as counts (166/174, 146/174), on the V1.5 metric; the composition stop (V1 adds no in-domain abstention under (b)); p95 250 ms | v3 `v1.stop` |
 | PD-19 | `V1_PIPELINE` defaults (freeze) | Phase 4 G; 13.6 | Development enforce; elsewhere shadow; enforce refused before the Phase 4 exit; off refused outside development | `config.py`; v3 `flag_policy.v1_pipeline`; env example |
 | PD-20 | V1 lexicon (engineering parameters) | Phase 4 D (no values) | The negation cues, suffixes, number words, closed unit list, quantity rule and alignment terms of 4.1 | v3 `v1.lexicon`, `rules.py` |
-| PD-21 | Quiz key disclosure (R-42; no owner decision named) | Phase 4 B "keyed answers outside public payloads" | No key in any public payload or page; key and explanation only after a saved attempt, only for answered questions | `schemas.py`, `quiz_keys.py`, quiz page and panel |
+| PD-21 | Quiz key disclosure (R-42; no owner decision named) | Phase 4 B "keyed answers outside public payloads" | No key in any public payload or page; key and explanation only after a saved attempt, only for answered questions (rule `keys-after-saved-attempt-answered-only-v1`). Residual: a placeholder answer counts as answered (DI-65) | v3 `v1.quiz_feedback` (provisional; `/ready` `v1.quiz_feedback`); `schemas.py`, `quiz_keys.py` (`FEEDBACK_RULE`), quiz page and panel |
 
 ### 16.2 Deferred items
 
@@ -1213,8 +1221,10 @@ The PostgreSQL matrix jobs, the frontend job and `release-artifacts` are unchang
 | DI-61 | The quiz-key change ships only with a D-05 release, frontend first | PfO | Not released |
 | DI-62 | Phase 4 log-based metrics and alerts (a cloud write); operating the answer-rate stop needs labelled in-domain traffic | PfO, then Eng | Defined, not created |
 | DI-63 | Remove package v2 after one release, with its CI step (and v1 under DI-42) | Eng | Deferred |
+| DI-64 | AC-4-2 for the paraphrased-contradiction class once D-21 hosts a checker: it holds today only because the NullChecker withholds every claim (3 cases delivered under (b)) | MLE (after DI-54) | Open |
+| DI-65 | The quiz-key harvesting residual: a saved attempt with placeholder answers returns every key of the lesson; a mitigation (attempt limits, a substantive-answer rule, or server-side assessment, Phase 8) is a learner-visible change (D-05) needing PD-21's ratification (DI-55) | PO / PI, then Eng | Open |
 
-The residuals named by plan M (checker error, paraphrased leakage, paraphrased contradiction) and the inert production V1.7 family are in the closure notes and in ADR-005.
+Plan M names the phase's residuals: "Residual: checker error, paraphrased leakage." The paraphrased-contradiction class is this phase's implementation-defined case of checker error (DI-64). These, the quiz-key harvesting residual (DI-65) and the inert production V1.7 family are in the closure notes and in ADR-005.
 
 ---
 
@@ -1255,3 +1265,4 @@ git status --short   (no stray files; nothing in the repository root)
 |---|---|---|
 | Spec review 1 (pre-code) | — | Seven high and 18 other findings folded into sections 0-17, each with a test: the stop floors as counts (8, 23); V1Passed exempts claim-scoped V1.2 drops and hard_fail is the V1HardFail type (2); `PipelineCountsV2` counts polarity drops (`test_v1_2_binding`); the Phase 3 test changes (13.3); the Phase 3 spec `EvidencePanel` listing (7.14, `test_k3`); `publicQuestions` on the quiz page (13.4); closed units (`test_v1_2_binding`, 16, 21); `REASON_OUTCOMES` totality; V1.6 id-in-text and all-lessons scope (12); the guard without a v1 block (33); no public guard SLI (28); one V1.4 seam (`test_v1_4_subset`); envelope order (`test_v1_9_schema_readability`); replacement values (26); inline checker call (18); no forged exit package (5); 20 verdicts; the composition stop (23); P2-12-D-03 text (7.14); V1.7 inert production family (16); inline library; V1.5 maps the gate (`test_v1_5_abstention`) |
 | Implementation (build) | `669510a` | The code forced: named groups in `QUANTITY_PATTERN`; `results.make_result`; the V-1 SLI over delivered verdicts; the V1 track's budget checks at Phase 3's points; a valid plan stamping its generator on an empty lock (174/174 identical, test 9); the v3 loader leaving `ledger.entry_schema` to `package_check` (conflict 37, `test_f4`); the bundle message keeping "Phase 4" (`test_the_bundle_refuses_conflicts_before_phase_4`); the record rule that a claim abstains only with its response (`test_v1_aggregate_and_runner`); the hard-fail rate per run; fixture queries for `unit_swap` and `conflict_version` (12.1); the shingle test over source documents (`test_v1_fixtures`). Verification found two test gaps, fixed before the commit: AC-4-5 now runs a turn on another lesson's page, so narrowing V1.6 to the request's lesson fails it (13.5); `test_rate_limit` reads the lockout events in seq order (13.3, item 9). Verified locally on `669510a`: the full suite (SQLite 1250 passed, 2 skipped, 3 xfailed; PostgreSQL 17 1252 passed, 3 xfailed under psycopg and 1252 passed, 3 xfailed under pg8000); every section 17 validator; the frontend lint, typecheck and 151 integration tests; the 13.5 mutation checks (35 API, 4 frontend), each failing its test |
+| Review 1 | the commit after `4b05ae1` | 20 findings, each fixed with a test that fails when the fix is reverted. Blocker: `package_check` computed `parents[5]` at import and the API image path has five parents, so no image could start; the root is found on demand (5.3; `test_the_v1_start_up_check_runs_from_the_image_layout`, `test_no_image_module_computes_a_parent_its_image_path_lacks_at_import`, which also bounded `demo_seed`). The guard's polarity rule (4.15; `test_the_polarity_rule_withholds_a_verbatim_quotation_that_cuts_a_number_or_a_cue`, the no-v1 test no longer tautological); plan G's legacy decision on real turns (`test_plan_g_a_route_turn_s_shadow_record_compares_v1_with_the_decision_the_learner_received`); the start-up fallback only in development with governance off (10.1; `test_start_up_a_v1_package_problem_turns_v1_off_only_in_development_with_governance_off`, a subprocess case); V1.1 candidate counts (3.2; `test_a_v1_1_hard_failed_candidate_counts_its_claims_so_the_bound_claim_ratio_sees_them`); one hard-fail-rate definition (10.3, 12.3 `hard_fail_runs`); PD-21 in `v1.quiz_feedback` (5.1-5.3, 10.2); Q-22 names `v1.v1_7`, `abstention.provisional_until` `Q-22 (DI-52)`; AC-4-2 qualified and its test renamed (DI-64); the R-42 harvesting residual (DI-65); the rollback order; observability current; the Phase 3 refusals on v3 (13.3); the V1-track budget event (4.13, 10.4); the Phase 3 helpers' package names; the quiz live region (11, 13.4); four synthetic queries (12.1); the records' `--allow-dirty` provenance (12.3). Verified locally: SQLite 1291 passed, 2 skipped, 1 deselected, 3 xfailed; PostgreSQL 17 1293 passed, 1 deselected, 3 xfailed under psycopg and under pg8000; every section 17 validator; frontend lint, typecheck and 152 integration tests; 26 mutation checks (19 code, 5 docs, 2 frontend), each failing its test |

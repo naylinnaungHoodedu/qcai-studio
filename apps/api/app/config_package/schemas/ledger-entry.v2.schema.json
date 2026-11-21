@@ -423,7 +423,7 @@
     },
     "PipelineCountsV2": {
       "additionalProperties": false,
-      "description": "PipelineCounts that also accept V1.2's polarity drops (V1_DROP_REASONS); the arithmetic rule is unchanged.",
+      "description": "PipelineCounts that also accept V1's own reasons (V1_COUNT_REASONS: V1.2's polarity drops, and a V1.1\nhard-failed candidate's claims); the arithmetic rule is unchanged.",
       "properties": {
         "bound_claims": {
           "minimum": 0,

@@ -29,6 +29,23 @@ test("the quiz panel scores nothing from keys and reveals no rubric before a sav
   assert.match(panel, /Answer this question and save an attempt to see its rubric\./);
 });
 
+test("the saved attempt's result is announced and each question's input names its feedback", () => {
+  // WCAG 2.1 4.1.3: the feedback appears only after recordQuizAttempt resolves, so the save result (and a save error)
+  // is in a live region that is always rendered, and each input points at its own feedback.
+  const panel = read("components/quiz-panel.tsx");
+  const region = panel.match(/<div aria-live="polite" role="status">([\s\S]*?)\n      <\/div>/);
+  assert.ok(region, "a polite status region");
+  assert.match(region[1], /saveError \?/);
+  assert.match(region[1], /Saved attempt #\{savedAttempt\.attempt_id\}\. Recorded score: \{savedAttempt\.score\}/);
+  assert.match(region[1], /Feedback is shown under each question\./);
+  assert.doesNotMatch(panel.replace(region[0], ""), /Saved attempt #|\{saveError\}/);
+  assert.match(panel, /const feedbackId = `quiz-feedback-\$\{question\.id\}`;/);
+  assert.match(panel, /const describedBy = feedback\.state === "none" \? undefined : feedbackId;/);
+  assert.equal((panel.match(/aria-describedby=\{describedBy\}/g) ?? []).length, 2, "the radio inputs and the textarea");
+  assert.match(panel, /<div className="quiz-result" id=\{feedbackId\}>/);
+  assert.match(panel, /<p className="muted" id=\{feedbackId\}>\s*Answer this question and save an attempt to see its rubric\./);
+});
+
 test("the quiz page passes only the public fields to the client component", () => {
   const page = read("app/quiz/[lessonSlug]/page.tsx");
   assert.match(page, /questions=\{publicQuestions\(lesson\.quiz_questions\)\}/);

@@ -236,9 +236,10 @@ def test_e1_the_rule_id_names_the_new_behaviour_and_the_fault_modes_include_it(m
 
 
 def _package_copy(tmp_path: Path):
+    """A copy of the shipped package (package v3 since Phase 4) under its own name, with its schema files."""
     shutil.copytree(PACKAGE.path.parent / "schemas", tmp_path / "schemas")
     raw = json.loads(PACKAGE.path.read_text(encoding="utf-8"))
-    (tmp_path / "v2.json").write_text(json.dumps(raw), encoding="utf-8")
+    (tmp_path / PACKAGE.path.name).write_text(json.dumps(raw), encoding="utf-8")
     return raw
 
 
@@ -256,8 +257,8 @@ def test_e2_a_leaf_change_in_a_repinned_schema_file_is_a_package_problem(tmp_pat
     edit(schema)
     target.write_text(json.dumps(schema), encoding="utf-8")
     pin["sha256"] = canonical_sha256(schema)  # re-pinned, so only the structural comparison can catch it
-    (tmp_path / "v2.json").write_text(json.dumps(raw), encoding="utf-8")
-    problems = check_tutor_pipeline_package(load_config_package(tmp_path / "v2.json", governed=False), structural=True)
+    (tmp_path / PACKAGE.path.name).write_text(json.dumps(raw), encoding="utf-8")
+    problems = check_tutor_pipeline_package(load_config_package(tmp_path / PACKAGE.path.name, governed=False), structural=True)
     assert problems == [f"schema {name}: the committed file's structure differs from the {name} model (a property, the required set or a constraint)"]
 
 

@@ -67,12 +67,12 @@ def rehash(path: Path) -> str:
     payload["retrieval"]["stopwords"]["sha256"] = stopwords_sha256(words)
     if payload.get("schema_version") == 3:
         from app.core.config_package import misconception_library_sha256
-        from app.services.v1_checks.package_check import REPO_ROOT as V1_ROOT, fixture_set_sha256
+        from app.services.v1_checks.package_check import fixture_set_sha256, repository_root
 
         v1 = payload["v1"]
         library = v1["v1_8"]["library"]
         library["sha256"] = misconception_library_sha256(library)
-        fixtures_path = V1_ROOT / v1["fixtures"]["path"]
+        fixtures_path = repository_root() / v1["fixtures"]["path"]
         if fixtures_path.exists():
             cases = json.loads(fixtures_path.read_text(encoding="utf-8"))["cases"]
             v1["fixtures"]["set_sha256"] = fixture_set_sha256(cases)

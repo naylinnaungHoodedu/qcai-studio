@@ -17,6 +17,10 @@ from app.schemas import QuizFeedbackItem
 from app.services.v1_checks.v1_6_keyed_answers import KeyedItem
 
 QUIZ_RESPONSE_MAX_LENGTH = 2000
+# PD-21, the disclosure rule score_attempt implements: no key in any public payload; a saved attempt returns the key
+# and explanation of the questions it answered. Configuration package v3 names it (v1.quiz_feedback, provisional until
+# DI-55 ratifies it), package_check compares the two, and /ready reports it.
+FEEDBACK_RULE = "keys-after-saved-attempt-answered-only-v1"
 
 
 @dataclass(frozen=True)

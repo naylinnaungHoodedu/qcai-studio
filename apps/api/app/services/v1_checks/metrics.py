@@ -8,6 +8,7 @@ view, and detail_snapshot is in-process only, read by tests.
 
   citation_resolution   the span ids of delivered V1 verdicts and how many resolve (V-1: 100% of delivered citations)
   hard_fail_rate        per check, the runs in which it hard-failed (at least once) over the runs in which it ran
+                        (checks_run, hard_failed_checks: the one definition the fixture report and the runbook use)
   v1_3                  claims checked, flagged (flag rate) and checker-unavailable runs
   latency_ms            a histogram and the nearest-rank p95 over the last LATENCY_WINDOW runs; stop is p95 above the
                         package's v1.stop.v1_p95_latency_ms (a plan L stop condition)
@@ -33,6 +34,17 @@ FINALS = ("deliver", "withhold", "abstain")
 MODES = ("shadow", "enforce")
 GUARD_SURFACES = ("tutor", "qa")
 GUARD_CHECKS = ("V1.1", "V1.2")
+
+
+def checks_run(record: "VerificationRecord") -> set[str]:
+    """The checks that ran in one V1 run: the denominator of the hard-fail rate per check."""
+    return {result.check_id for result in record.checks}
+
+
+def hard_failed_checks(record: "VerificationRecord") -> set[str]:
+    """The checks that hard-failed at least once in one V1 run, however many of their results did: the numerator of the
+    hard-fail rate per check (spec 10.3), so the rate is a share of runs and never exceeds 1."""
+    return {result.check_id for result in record.checks if result.outcome == "hard_fail"}
 
 
 def nearest_rank_p95(samples) -> float | None:
@@ -70,10 +82,9 @@ class V1Metrics:
         with self._lock:
             self._runs[record.mode] += 1
             self._finals[record.final] += 1
-            ran = {result.check_id for result in record.checks}
-            for check in ran:
+            for check in checks_run(record):
                 self._ran[check] += 1
-            for check in {result.check_id for result in record.checks if result.outcome == "hard_fail"}:
+            for check in hard_failed_checks(record):
                 self._hard_runs[check] += 1
             for result in record.checks:
                 self._outcomes[result.check_id][result.outcome] += 1

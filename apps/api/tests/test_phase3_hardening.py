@@ -113,12 +113,13 @@ def fresh_sessions(database_url: str):
 
 
 def write_package(tmp_path: Path, edit) -> Path:
-    """A copy of package v2 with `edit` applied, its sidecar rewritten and its schema files alongside."""
+    """A copy of the shipped package (DEFAULT_PACKAGE_PATH, package v3 since Phase 4) under its own name, with `edit`
+    applied, its sidecar rewritten and its schema files alongside."""
     payload = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
     edit(payload)
-    path = tmp_path / "v2.json"
+    path = tmp_path / DEFAULT_PACKAGE_PATH.name
     path.write_text(json.dumps(payload), encoding="utf-8")
-    (tmp_path / "v2.json.sha256").write_text(canonical_sha256(payload) + "\n", encoding="utf-8")
+    path.with_name(f"{path.name}.sha256").write_text(canonical_sha256(payload) + "\n", encoding="utf-8")
     shutil.copytree(DEFAULT_PACKAGE_PATH.parent / "schemas", tmp_path / "schemas", dirs_exist_ok=True)
     return path
 

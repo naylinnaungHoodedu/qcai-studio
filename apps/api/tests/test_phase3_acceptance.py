@@ -1305,9 +1305,10 @@ def test_ac_3_6_on_forced_past_settings_still_runs_shadow_only(tmp_path, monkeyp
     shutil.copytree(DEFAULT_PACKAGE_PATH.parent / "schemas", package_dir / "schemas")
     payload = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
     payload["flag_policy"].update(phase4_exit_passed=True, phase4_exit_evidence="test-only")
-    (package_dir / "v2.json").write_text(json.dumps(payload), encoding="utf-8")
-    (package_dir / "v2.json.sha256").write_text(canonical_sha256(payload) + "\n", encoding="utf-8")
-    forced = Settings(two_pass_tutor="on", config_package_path=str(package_dir / "v2.json"))
+    # A copy of the shipped package (v3 since Phase 4) under its own name and sidecar.
+    (package_dir / DEFAULT_PACKAGE_PATH.name).write_text(json.dumps(payload), encoding="utf-8")
+    (package_dir / f"{DEFAULT_PACKAGE_PATH.name}.sha256").write_text(canonical_sha256(payload) + "\n", encoding="utf-8")
+    forced = Settings(two_pass_tutor="on", config_package_path=str(package_dir / DEFAULT_PACKAGE_PATH.name))
     assert forced.two_pass_tutor == "on"
     monkeypatch.setattr(shadow_module, "_ON_DOWNGRADE_LOGGED", False)
     results = {}

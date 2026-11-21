@@ -52,6 +52,8 @@ from app.api.routes import search as search_route
 from app.api.routes import spans as spans_route
 from app.core.config import DEVELOPMENT_GUEST_TOKEN_SECRET, Settings, get_settings
 from app.core.config_package import (
+    V1_PACKAGE_PATH,
+    V2_PACKAGE_PATH,
     ConfigPackageError,
     canonical_sha256,
     clear_config_package_cache,
@@ -1203,7 +1205,12 @@ def test_plan_h_thresholds_are_provisional_until_phase_4(monkeypatch):
     package = get_config_package(Settings())
     record_path = REPO_ROOT / package.abstention.calibration_record
     record = json.loads(record_path.read_text(encoding="utf-8"))
-    assert package.abstention.provisional is True and package.abstention.provisional_until == "Phase 4"
+    # Phase 2 made them provisional until Phase 4 (packages v1 and v2, and the record, say so); Phase 4 did not lift
+    # that, so package v3 keeps them provisional until Q-22 sets them (DI-52).
+    assert package.abstention.provisional is True and package.abstention.provisional_until == "Q-22 (DI-52)"
+    for older in (V1_PACKAGE_PATH, V2_PACKAGE_PATH):
+        abstention = load_config_package(older, governed=True).abstention
+        assert abstention.provisional is True and abstention.provisional_until == record["provisional_until"] == "Phase 4"
     assert package.abstention.calibration_record_sha256 == canonical_sha256(record)
     assert (record["selection"]["floor"], record["selection"]["margin"]) == (package.abstention.floor, package.abstention.margin)
     assert record["public_corpus_only"] is True and record["provisional"] is True and record["result"] == "pass"
@@ -1472,7 +1479,7 @@ def test_d9_ready_reports_the_configuration_package_corpus_gate_and_slis():
     assert (body["abstention_floor"], body["abstention_margin"], body["thresholds_provisional"]) == (package.abstention.floor, package.abstention.margin, True)
     assert body["threshold_version"] == package.abstention.version
     assert body["bm25f_v1_calibrated"] == {"version": package.abstention.version, "floor": package.abstention.floor,
-                                           "margin": package.abstention.margin, "provisional": True, "provisional_until": "Phase 4"}
+                                           "margin": package.abstention.margin, "provisional": True, "provisional_until": "Q-22 (DI-52)"}
     assert (body["semantic_enabled"], body["semantic_setting"]) == (False, False)
     slis = body["slis"]
     # Still an exact set: Phase 3 adds exactly the ledger and the two-pass shadow SLIs (plan Phase 3 I).

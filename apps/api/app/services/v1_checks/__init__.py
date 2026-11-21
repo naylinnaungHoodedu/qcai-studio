@@ -20,7 +20,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from app.core.config_package import ConfigPackage
 
 # Set (or cleared) by the start-up check (main._check_tutor_pipeline_package): a reason keeps the two-pass V1 mode off
-# in development; the legacy guard still runs.
+# (only in development with governance off: every other build stops instead); the legacy guard still runs.
 V1_UNAVAILABLE_REASON: str | None = None
 
 _EXPORTS = {

@@ -193,9 +193,10 @@ def _check_tutor_pipeline_package(package) -> None:
 
 def _check_v1_package(package) -> None:
     """Package v3's v1 block against the V1 code (Phase 4 spec 10.1). The legacy guard runs on every delivery path,
-    so a governed build stops on any problem, and on a package without a v1 block (the guard needs its lexicon). In
-    development the two-pass V1 mode becomes off and the guard runs without its polarity rule. Reads only the package
-    and in-memory code values; writes nothing."""
+    so a build stops on any problem, and on a package without a v1 block (the guard needs its lexicon), when it is
+    governed or outside development, whatever its governance setting (plan 13.6: no flag, setting or governance
+    override may disable V1). Only in development with governance off does the two-pass V1 mode become off, the
+    guard running without its polarity rule. Reads only the package and in-memory code values; writes nothing."""
     from app.services import v1_checks
 
     if package.v1 is None:
@@ -208,7 +209,7 @@ def _check_v1_package(package) -> None:
         v1_checks.V1_UNAVAILABLE_REASON = None
         return
     reason = "; ".join(problems)[:500]
-    if settings.enforce_corpus_governance:
+    if settings.enforce_corpus_governance or settings.environment.lower() != "development":
         raise ConfigPackageError(f"v1 checks: {reason}")
     v1_checks.V1_UNAVAILABLE_REASON = reason
     TUTOR_LOGGER.warning("The V1 checks are unavailable; the two-pass V1 mode stays off", extra={FIELDS: {"event": "tutor.v1.unavailable", "reason": reason}})
@@ -536,6 +537,7 @@ def _v1_fields(package) -> dict | None:
             "answer_rate_floor": {gate: f"{answered}/{in_domain}" for gate, (answered, in_domain) in v1.answer_rate_floor.items()},
             "v1_p95_latency_ms": v1.p95_budget_ms,
         },
+        "quiz_feedback": {"rule": v1.quiz_feedback_rule, "provisional": True},
         "provisional": True,
         "available": v1_checks.V1_UNAVAILABLE_REASON is None,
         "legacy_guard": "on",

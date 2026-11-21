@@ -301,15 +301,19 @@ class TwoPassPipeline:
             if self.misconceptions is None:
                 self.misconceptions = load_library(self.package)
 
-    def _over(self, started: float, budget_ms: int | None, step: str) -> bool:
+    def _over(self, started: float, budget_ms: int | None, step: str, *, event: str = "tutor.two_pass.budget_exceeded") -> bool:
+        """Whether the shadow budget is spent at `step`, logging `event` when it is. The record's own composition logs
+        tutor.two_pass.budget_exceeded; a shadow-mode V1 track, which runs after the Phase 3 decision is fixed, logs
+        tutor.v1.budget_exceeded, so the Phase 3 signal still means the record itself overran (spec 4.13, 10.4)."""
         if budget_ms is None:
             return False
         elapsed_ms = (self.clock() - started) * 1000
         if elapsed_ms <= budget_ms:
             return False
+        message = "Two-pass shadow exceeded its budget" if event == "tutor.two_pass.budget_exceeded" else "The shadow V1 track exceeded its budget"
         LOGGER.warning(
-            "Two-pass shadow exceeded its budget",
-            extra={FIELDS: {"event": "tutor.two_pass.budget_exceeded", "step": step, "elapsed_ms": round(elapsed_ms, 3), "budget_ms": budget_ms}},
+            message,
+            extra={FIELDS: {"event": event, "step": step, "elapsed_ms": round(elapsed_ms, 3), "budget_ms": budget_ms}},
         )
         return True
 
@@ -424,11 +428,13 @@ class TwoPassPipeline:
                         clock=self.v1_clock)
         context = V1Context(resolved=item.resolved, lesson_slug=item.lesson_slug, presentation=item.presentation,
                             legacy_decision=item.legacy_decision)
+        # In enforce the V1 track is the record's composition; in shadow it runs after the record's decision.
+        event = "tutor.two_pass.budget_exceeded" if mode == "enforce" else "tutor.v1.budget_exceeded"
         return track.run(
             context, bundle, envelope,
             envelope_reason=envelope_reason,
             first_raw=_UNSET if first_raw is _NO_RAW else first_raw,
-            budget_over=lambda step: self._over(started, budget_ms, step),
+            budget_over=lambda step: self._over(started, budget_ms, step, event=event),
             mode=mode,
             phase3_decision=phase3_decision,
         )

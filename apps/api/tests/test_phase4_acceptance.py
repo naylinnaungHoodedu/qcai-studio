@@ -224,7 +224,7 @@ def test_ac_4_1_a_regenerated_candidate_is_judged_afresh_and_the_hard_failed_one
 # ======================================================================================================== AC-4-2
 
 
-def test_ac_4_2_the_adversarial_set_fails_or_abstains_in_both_checker_configurations(fixture_report):
+def test_ac_4_2_the_adversarial_set_fails_or_abstains_under_production_and_only_the_residual_class_is_delivered_with_a_perfect_checker(fixture_report):
     assert fixture_report["result"] == "pass" and fixture_report["problems"] == []
     for configuration in fixture_report["configurations"]:
         for name, block in configuration["classes"].items():
@@ -242,7 +242,10 @@ def test_ac_4_2_the_adversarial_set_fails_or_abstains_in_both_checker_configurat
                 "out_of_scope": "V1.5", "checker_unavailable": "V1.3", "invalid_schema": "V1.9", "misconception": "V1.8"}
     for name, check in expected.items():
         assert deterministic["classes"][name]["caught_by"].get(check) == deterministic["classes"][name]["cases"], name
-    # Plan M: what only V1.3 could catch is the residual; under production V1.3 withholds it.
+    # The residual class is an implementation-defined case of plan M's "checker error" (plan M names only "checker
+    # error, paraphrased leakage"): with a perfect-support checker its three contradiction cases are delivered, so
+    # AC-4-2 holds for them only while V1.3 withholds every claim (the NullChecker, D-21 none). DI-64 re-establishes
+    # it when a checker is hosted.
     assert deterministic["classes"]["residual_paraphrased_contradiction"]["delivered"] == 3
     assert production["classes"]["residual_paraphrased_contradiction"]["caught_by"] == {"V1.3": 3}
     assert deterministic["citation_resolution_delivered"]["rate"] in (1.0, None)
@@ -639,6 +642,32 @@ def _forge(kind: str):
     return forged
 
 
+@pytest.mark.parametrize("path", ["/assistant/chat", "/tutor/turns"])
+def test_plan_g_a_route_turn_s_shadow_record_compares_v1_with_the_decision_the_learner_received(monkeypatch, path):
+    # Spec R-b: the shadowed path includes the legacy contained decision the learner received. A real turn carries it
+    # to its shadow record (orchestrator -> ShadowJob -> PipelineInput -> V1Context), where plan G's comparison and
+    # D-20's replacement read it. Three turns: answered; withheld by the legacy guard (the learner gets the
+    # abstention while the shadow's own retrieval answers, so V1 disagrees); and off-topic (both abstain).
+    question = "Why does routing depth matter on sparse hardware?"
+    headers = demo("p4-legacy-decision")
+    turns = [(client.post(path, json={"message": question}, headers=fresh(headers)).json(), "answer", "withhold", "extractive_d19", True)]
+    monkeypatch.setattr(tutor_orchestrator, "contain_answer", _forge("span")(contain_answer))
+    turns.append((client.post(path, json={"message": question}, headers=fresh(headers)).json(), "abstain", "withhold", "abstention", False))
+    monkeypatch.setattr(tutor_orchestrator, "contain_answer", contain_answer)
+    turns.append((client.post(path, json={"message": OFF_TOPIC[0]}, headers=fresh(headers)).json(), "abstain", "abstain", "none", True))
+    for body, decision, final, replacement, agrees in turns:
+        assert body["decision"] == decision, body
+        with SessionLocal() as db:
+            rows = list(db.scalars(select(ResponseLedgerRecord).where(ResponseLedgerRecord.shadowed_response_id == body["turn_id"])))
+        assert len(rows) == 1 and rows[0].entry_schema == "ledger-entry-v2"
+        verification = json.loads(rows[0].entry)["verification"]
+        comparison = verification["comparison"]
+        assert (comparison["legacy_decision"], comparison["agrees_legacy"]) == (decision, agrees), (path, decision)
+        assert (verification["final"], verification["replacement"]) == (final, replacement), (path, decision)
+        if final == "withhold":
+            assert verification["final_reason"] == "d20_interim_withhold"
+
+
 @pytest.mark.parametrize("mode", ["off", "shadow", "enforce"])
 def test_plan_l_v1_1_and_v1_2_are_enforced_on_every_delivery_path_in_every_mode(monkeypatch, mode, caplog):
     settings = Settings(v1_pipeline=mode)
@@ -806,6 +835,7 @@ def test_plan_i_ready_reports_package_v3_and_the_v1_fields_and_no_shadow_outcome
                   "misconception_library": {"version": "v0", "entries": 0, "sha256": V1.library_sha256}, "fixtures_set_sha256": V1.fixtures_set_sha256,
                   "regeneration": {"generation": 2, "render": 2}, "readability_band": [-4.0, 64.0], "x4_margin": {"bm25f-v1": 2.4, "p1-floor": 0.0},
                   "stop": {"answer_rate_floor": {"bm25f-v1": "166/174", "p1-floor": "146/174"}, "v1_p95_latency_ms": 250},
+                  "quiz_feedback": {"rule": "keys-after-saved-attempt-answered-only-v1", "provisional": True},
                   "provisional": True, "available": True, "legacy_guard": "on"}
     assert set(body["slis"]) == set(retrieval_slis()) | {"manifest_drift", "tutor_ledger", "two_pass_shadow"}
     before = main_module._build_fields()
@@ -836,6 +866,51 @@ def test_plan_i_v1_metrics_report_resolution_hard_fails_flag_rate_latency_and_di
     assert snapshot["latency_ms"]["budget"] == 250 and snapshot["latency_ms"]["stop"] is False
     assert snapshot["disagreements"] == {"phase3": 0, "legacy": 1}
     assert snapshot["finals"]["abstain"] == 2 and snapshot["v3_intents"] >= 1
+
+
+def test_plan_i_the_hard_fail_rate_per_check_has_one_definition_in_process_in_the_report_and_in_the_runbook():
+    # Spec 10.3: per check, the runs in which it hard-failed at least once over the runs in which it ran. A run whose
+    # three V1.1 attempts all hard-fail is one hard-failed run, not three.
+    V1_METRICS.reset()
+    records = [run(pipeline, MULTI_CLAIM).entry.verification for pipeline in (
+        dev_pipeline(generator=ScriptedGenerator([[("x y z w", ["span-" + "e" * 64])]])),
+        dev_pipeline(checker=AlwaysSupportedChecker()),
+        dev_pipeline(renderer=UnmappedRenderer(TemplateRenderer(), None), checker=AlwaysSupportedChecker()),
+    )]
+    snapshot = V1_METRICS.detail_snapshot()
+    per_check = RUNNER._per_check(records)
+    assert {check: block["hard_fail_rate"] for check, block in per_check.items()} == snapshot["hard_fail_rate"]
+    assert {check: block["hard_fail"] for check, block in per_check.items()} == {check: counts["hard_fail"] for check, counts in snapshot["checks"].items()}
+    assert (per_check["V1.1"]["runs"], per_check["V1.1"]["hard_fail"], per_check["V1.1"]["hard_fail_runs"]) == (3, 3, 1)
+    assert per_check["V1.1"]["hard_fail_rate"] == round(1 / 3, 6)
+    assert (per_check["V1.4"]["runs"], per_check["V1.4"]["hard_fail"], per_check["V1.4"]["hard_fail_runs"]) == (2, 3, 1)
+    assert per_check["V1.4"]["hard_fail_rate"] == 0.5
+    assert all(block["hard_fail_rate"] is None or 0 <= block["hard_fail_rate"] <= 1 for block in per_check.values())
+    # The committed report and the runbook state the same rate.
+    report = json.loads(REPORT_PATH.read_text(encoding="utf-8"))
+    for configuration in report["configurations"]:
+        for block in configuration["per_check"].values():
+            assert block["hard_fail_rate"] == (round(block["hard_fail_runs"] / block["runs"], 6) if block["runs"] else None)
+    runbook = (REPO_ROOT / "infra" / "cloudrun" / "observability.md").read_text(encoding="utf-8")
+    row = next(line for line in runbook.splitlines() if line.startswith("| `tutor.v1.run` |"))
+    assert "runs whose `outcomes.<check>.hard_fail` is above 0, over the runs whose `outcomes` has `<check>`" in row
+    assert "(`outcomes.<check>.hard_fail` over runs)" not in runbook
+
+
+def test_plan_i_the_runbook_names_every_configuration_override_the_api_records():
+    # "Alert on overrides" (plan Phase 1 I): every detail main._record_configuration_overrides can emit is named on a
+    # config.override line of the runbook, the Phase 4 v1_pipeline_enforce included.
+    source = (API_ROOT / "app" / "main.py").read_text(encoding="utf-8")
+    function = next(node for node in ast.parse(source).body if isinstance(node, ast.FunctionDef) and node.name == "_record_configuration_overrides")
+    names = [node.elts[0].value for node in ast.walk(function)
+             if isinstance(node, ast.Tuple) and len(node.elts) == 2 and isinstance(node.elts[0], ast.Constant) and isinstance(node.elts[0].value, str)]
+    assert "v1_pipeline_enforce" in names and len(names) == len(set(names)) >= 16
+    runbook = (REPO_ROOT / "infra" / "cloudrun" / "observability.md").read_text(encoding="utf-8")
+    override_lines = [line for line in runbook.splitlines() if "config.override" in line]
+    assert [name for name in names if not any(f"`{name}`" in line for line in override_lines)] == []
+    # Under V1 enforce the shadow line's reason label takes the V1 abstention reasons too, and the runbook says so.
+    row = next(line for line in runbook.splitlines() if line.startswith("| Shadow abstention by reason |"))
+    assert "contracts.V1_ABSTENTION_REASONS" in row and all(f"`{reason}`" in row for reason in contracts.V1_ABSTENTION_REASONS)
 
 
 def test_plan_h_and_ac_3_1_v1_checks_import_no_learner_module_and_hold_no_learner_state(caplog):
@@ -925,11 +1000,68 @@ def test_settings_v1_pipeline_defaults_and_refusals(monkeypatch, fresh_database_
     governed = _startup({**env, "ENVIRONMENT": "development", "ENFORCE_CORPUS_GOVERNANCE": "true", "CONFIG_PACKAGE_PATH": str(V2_PACKAGE_PATH),
                          "CORPUS_MANIFEST_PATH": str(REPO_MANIFEST)})
     assert governed.returncode != 0 and "no v1 block" in governed.stderr
+    # Outside development a governance override does not reopen the development fallback (plan 13.6).
+    ungoverned = _startup({**env, "ENVIRONMENT": "production", "ENFORCE_CORPUS_GOVERNANCE": "false", "CONFIG_PACKAGE_PATH": str(V2_PACKAGE_PATH),
+                           "CORPUS_MANIFEST_PATH": str(REPO_MANIFEST)})
+    assert ungoverned.returncode != 0 and "ConfigPackageError: v1 checks: the configuration package has no v1 block" in ungoverned.stderr
     probe = create_engine(fresh_database_url)
     try:
         assert set(sa_inspect(probe).get_table_names()) == set()
     finally:
         probe.dispose()
+
+
+def test_start_up_a_v1_package_problem_turns_v1_off_only_in_development_with_governance_off(monkeypatch, caplog):
+    # Spec 10.1: the one path besides V1_PIPELINE=off on which the two-pass V1 mode is off (plan 13.6: "No flag ... MAY
+    # disable V1"), and only in development with governance off; the legacy guard keeps running.
+    from app import main as main_module
+    from app.core.config_package import ConfigPackageError
+    from app.services import v1_checks
+    from app.services.v1_checks import legacy_guard, package_check
+
+    problem = "v1.rules_hash differs from the code's rule vocabulary (test)"
+    monkeypatch.setattr(package_check, "check_v1_package", lambda package, *, structural: [problem])
+    assert main_module.settings.environment == "development" and main_module.settings.enforce_corpus_governance is False
+    try:
+        with caplog.at_level(logging.WARNING, logger="qcai.tutor"):
+            main_module._check_v1_package(PACKAGE)
+        assert v1_checks.V1_UNAVAILABLE_REASON == problem
+        lines = _events(caplog, "tutor.v1.unavailable")
+        assert len(lines) == 1 and lines[0]["reason"] == problem
+        assert [r.levelno for r in caplog.records if getattr(r, "json_fields", {}).get("event") == "tutor.v1.unavailable"] == [logging.WARNING]
+        assert v1_checks.mode(Settings(v1_pipeline="enforce"), PACKAGE) == v1_checks.mode(Settings(v1_pipeline="shadow"), PACKAGE) == "off"
+        body = client.get("/ready").json()
+        assert (body["v1_pipeline"], body["v1_pipeline_setting"], body["v1"]["available"]) == ("off", "enforce", False)
+        # The two-pass shadow runs the Phase 3 composition alone (a ledger-entry-v1 record, no V1 verdict) ...
+        result = run(dev_pipeline(), MULTI_CLAIM, legacy_decision="answer")
+        assert result.v1 is None and result.entry.entry_schema == "ledger-entry-v1"
+        # ... while the legacy guard still withholds a forged quotation.
+        store = get_course_store()
+        answered = contain_answer(*_citations_for("Why does routing depth matter on sparse hardware?"), store.span_registry, settings=SETTINGS)
+        assert answered.decision == "answer"
+        claim = answered.claims[0].model_copy(update={"cited_span_ids": ["span-" + "e" * 64]})
+        forged = dataclasses.replace(answered, claims=[claim, *answered.claims[1:]])
+        guarded = legacy_guard.guard_contained(forged, store=store, package=PACKAGE, surface="qa")
+        assert guarded.withheld[0] == ("V1.1", "unresolvable") and guarded.contained.decision == "abstain"
+        # A governed build, and any build outside development whatever its governance setting, stops instead.
+        for settings in (Settings(enforce_corpus_governance=True), Settings(environment="production", enforce_corpus_governance=False),
+                         Settings(environment="staging", enforce_corpus_governance=False)):
+            v1_checks.V1_UNAVAILABLE_REASON = None
+            monkeypatch.setattr(main_module, "settings", settings)
+            with pytest.raises(ConfigPackageError, match="v1 checks: v1.rules_hash differs"):
+                main_module._check_v1_package(PACKAGE)
+            assert v1_checks.V1_UNAVAILABLE_REASON is None
+    finally:
+        v1_checks.V1_UNAVAILABLE_REASON = None
+
+
+def _citations_for(query: str):
+    from app.core.corpus_governance import get_corpus_registry
+    from app.services.provenance import native_citation
+
+    store = get_course_store()
+    retrieval = RetrievalEngine(store, SETTINGS).search(query, top_k=4, surface="qa")
+    return [native_citation(hit, corpus_version=store.corpus_version, settings=SETTINGS) for hit in retrieval.results], get_corpus_registry(SETTINGS)
 
 
 def _startup(extra: dict[str, str]) -> subprocess.CompletedProcess:
@@ -939,6 +1071,30 @@ def _startup(extra: dict[str, str]) -> subprocess.CompletedProcess:
     env.update(extra)
     return subprocess.run([sys.executable, "-c", "from app.main import _initialize_database; _initialize_database()"], cwd=API_ROOT, env=env,
                           capture_output=True, text=True, timeout=240)
+
+
+def test_phase4_docs_quote_plan_m_and_state_the_current_rules():
+    # P2-12-D-03: the authoritative text states the current code, and plan text is quoted exactly.
+    plan_m = "Residual: checker error, paraphrased leakage."
+    adr = (REPO_ROOT / "docs" / "adr" / "ADR-005-abstention-gate.md").read_text(encoding="utf-8")
+    readme = (REPO_ROOT / "docs" / "evaluation" / "phase4" / "README.md").read_text(encoding="utf-8")
+    for name, text in (("ADR-005", adr), ("README", readme), ("spec", SPEC)):
+        assert plan_m in text, name
+        assert "named by plan M (checker error, paraphrased leakage, paraphrased contradiction)" not in text, name
+        assert "it (plan M)" not in text, name
+    # The legacy guard's polarity rule runs claim to span: a quotation never adds a number or a cue, but may omit one.
+    assert "keeps the span's numbers and negations" not in adr
+    assert "holds no number or negation cue that its span lacks" in adr
+    # Spec 12.1 counts the fixture's own synthetic queries: those not taken from the public fixture queries.
+    public = set(IN_DOMAIN) | set(OFF_TOPIC)
+    synthetic = {case["query"] for case in json.loads(FIXTURES_PATH.read_text(encoding="utf-8"))["cases"]
+                 if case.get("query") and case["query"] not in public}
+    words = {3: "three", 4: "four", 5: "five", 6: "six", 7: "seven"}
+    assert f"and {words[len(synthetic)]} short synthetic keyword queries" in SPEC
+    # The runbook names the rollback order and the README the provenance of the committed records.
+    runbook = (REPO_ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8")
+    assert "**Rollback order: the API first, then the frontend**" in runbook and "Auto-score: N / N" in runbook
+    assert "# from a clean tree" not in readme and "**Provenance.**" in readme and "--allow-dirty" in readme
 
 
 def _code_fields(source: str, name: str) -> list[str]:

@@ -15,11 +15,15 @@ two checker configurations:
 A case's own checker (raising, late) replaces either. The fixture overlay (a test-only version family over two
 document items, and a 50 ms checker timeout) is applied to V1Params in memory; no package is ever written.
 
-The report: per check hard-fail counts and rates, the V1.3 flag rate, the resolution of delivered citations, the
-finals, the catch rate of each class with its Wilson 95% interval, the residual classes (plan M: what only V1.3 could
-catch, withheld under production), the V1 p95 latency (measured; compared with the package budget only), the
-in-domain answer rate under V1.5 for each gate against the Phase 2 baseline (AC-4-3) and the composition counts, and
-the readability envelope. It is labelled "fixture measurements, not research results" (plan H).
+The report: per check the hard-fail results, the runs with a hard fail and the hard-fail rate per run (spec 10.3, as
+V1_METRICS counts it), the V1.3 flag rate, the resolution of delivered citations, the finals, the catch rate of each
+class with its Wilson 95% interval, the residual class (paraphrased contradiction, an implementation-defined case of
+plan M's "checker error": only an entailment checker could catch it, so it is withheld under production and delivered
+under deterministic_only), the V1 p95 latency (measured; compared with the package budget only), the in-domain answer
+rate under V1.5 for each gate against the Phase 2 baseline (AC-4-3) and the composition counts, and the readability
+envelope. It is labelled "fixture measurements, not research results" (plan H). `commit` is informational: the HEAD
+the record was written on, + "-dirty" when the tree differed from it (--allow-dirty); `inputs` (the LF sha256 of every
+imported repository module) is the provenance --check compares.
 
 Exit codes: 0 pass; 1 drift (--check: the record differs from a fresh run, created_at, commit and latency values
 aside) or an unrealisable case; 3 a plan L stop (an answer rate below its floor, V1 adding an in-domain abstention under
@@ -79,6 +83,7 @@ from app.services.tutor_pipeline.render import TEMPLATES, TemplateRenderer, layo
 from app.services.tutor_pipeline.resolve import LearnerTurn, resolve_turns  # noqa: E402
 from app.services.tutor_pipeline.text import normalise, sentences  # noqa: E402
 from app.services.v1_checks.lexicon import alignment_terms, knorm, negation_cues, numbers, quantities  # noqa: E402
+from app.services.v1_checks.metrics import checks_run, hard_failed_checks  # noqa: E402
 from app.services.v1_checks.package_check import fixture_set_sha256  # noqa: E402
 from app.services.v1_checks.v1_1_resolution import resolution_problem  # noqa: E402
 from app.services.v1_checks.v1_3_entailment import EntailmentResult, NullChecker, check_v1_3  # noqa: E402
@@ -628,12 +633,16 @@ def load_fixtures(path: Path) -> dict:
 
 
 def _per_check(records) -> dict:
+    """Per check: the runs it ran in, its results by outcome (hard_fail, flag, abstain, mark count results), and the
+    hard-fail rate as V1_METRICS and the runbook define it (spec 10.3): the runs in which it hard-failed at least once
+    (hard_fail_runs) over the runs in which it ran."""
     block = {}
     for check in ("V1.1", "V1.2", "V1.3", "V1.4", "V1.5", "V1.6", "V1.7", "V1.8", "V1.9"):
-        runs = sum(1 for record in records if any(result.check_id == check for result in record.checks))
+        runs = sum(1 for record in records if check in checks_run(record))
+        hard_fail_runs = sum(1 for record in records if check in hard_failed_checks(record))
         outcomes = Counter(result.outcome for record in records for result in record.checks if result.check_id == check)
-        block[check] = {"runs": runs, "hard_fail": outcomes.get("hard_fail", 0),
-                        "hard_fail_rate": round(outcomes.get("hard_fail", 0) / runs, 6) if runs else None,
+        block[check] = {"runs": runs, "hard_fail": outcomes.get("hard_fail", 0), "hard_fail_runs": hard_fail_runs,
+                        "hard_fail_rate": round(hard_fail_runs / runs, 6) if runs else None,
                         "flag": outcomes.get("flag", 0), "abstain": outcomes.get("abstain", 0), "mark": outcomes.get("mark", 0)}
     return block
 
