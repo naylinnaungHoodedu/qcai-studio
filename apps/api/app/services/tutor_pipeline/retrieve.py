@@ -4,7 +4,10 @@ The retrieval request is exactly the resolved text, the lesson scope and the cor
 from the configuration package, never the client. Retrieval is lexical only (RetrievalEngine.evidence), whatever
 SEMANTIC_RETRIEVAL_ENABLED says, so the shadow never sends learner text to a provider (spec conflict 33). The
 sufficiency decision is the active Phase 2 gate's: abstain exactly when the gate returns nothing; near_miss when
-the gate marks the top result near_floor (within the margin above the floor), which proceeds and is recorded.
+the gate marks the top result near_floor (within the margin above the floor), which proceeds and is recorded. Its
+score is the top result's gate score (RetrievalResponse.gate_scores): the score the gate compared with the floor, at
+the gate's precision (bm25f-v1's 9-digit score; p1-floor's P1 floor score), so score, floor and margin are on one
+scale and V1.5 applies its X4 margin to them (Phase 4 spec 4.6, M11). A span's own score stays its display score.
 
 license_class is derived for every span from its record's plane and the manifest (CorpusRegistry.license_class),
 never written as a label: a span that is not public-plane is never emitted (plan H "public-corpus spans only";
@@ -36,13 +39,21 @@ NEAR_MISS_RULE = "gate-near-floor-flag-of-top-result-v1"
 def sufficiency_of(response, *, threshold_version: str) -> Sufficiency:
     """The sufficiency decision of a Phase 2 retrieval response (a RetrievalResponse), by NEAR_MISS_RULE: abstain
     exactly when the gate returned nothing, with the gate's reason; near_miss when the top result is near_floor;
-    answer otherwise. The legacy ledger record uses it for the retrieval behind a contained answer (spec 18.8 F1)."""
+    answer otherwise. The score is the top result's gate score (None when the response carries none). The legacy
+    ledger record uses it for the retrieval behind a contained answer (spec 18.8 F1)."""
     if response.results:
         top = response.results[0]
-        return Sufficiency(score=top.score, gate=response.gate, threshold_version=threshold_version, floor=response.floor,
-                           margin=response.margin, decision="near_miss" if top.near_floor else "answer", reason="evidence")
+        return Sufficiency(score=gate_score_of(response, top), gate=response.gate, threshold_version=threshold_version,
+                           floor=response.floor, margin=response.margin, decision="near_miss" if top.near_floor else "answer",
+                           reason="evidence")
     return Sufficiency(score=None, gate=response.gate, threshold_version=threshold_version, floor=response.floor,
                        margin=response.margin, decision="abstain", reason=response.reason)
+
+
+def gate_score_of(response, result) -> float | None:
+    """The gate score of one result of a RetrievalResponse: the score the active gate compared with its floor."""
+    scores = getattr(response, "gate_scores", None) or {}
+    return scores.get(result.span_id or result.chunk_id)
 
 
 def evidence_span_for(record: "SpanRecord", registry: CorpusRegistry, *, score: float | None, near_floor: bool, surface: str) -> EvidenceSpan | None:
@@ -104,8 +115,9 @@ def retrieve(engine: "RetrievalEngine", request: RetrievalRequest, *, top_k: int
                                   margin=response.margin, decision="abstain", reason=reason)
     else:
         top = next(result for result in response.results if result.span_id == spans[0].span_id)
-        sufficiency = Sufficiency(score=top.score, gate=response.gate, threshold_version=threshold_version, floor=response.floor,
-                                  margin=response.margin, decision="near_miss" if top.near_floor else "answer", reason="evidence")
+        sufficiency = Sufficiency(score=gate_score_of(response, top), gate=response.gate, threshold_version=threshold_version,
+                                  floor=response.floor, margin=response.margin, decision="near_miss" if top.near_floor else "answer",
+                                  reason="evidence")
     return EvidenceBundle(
         corpus_version=store.corpus_version,
         index_version=store.index_version,

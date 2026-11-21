@@ -165,8 +165,9 @@ class Settings(BaseSettings):
     ledger_route_enabled: bool | None = None
     # The evidence panel field on tutor and Q&A responses (task 3.8): None = on in development, off elsewhere (E9). It
     # is also the legacy guard's disclosure_shown (Phase 4 spec 4.15, AC-4-6): off, the guard withholds a contained
-    # answer whose quotations V1.7 finds in conflict (today's abstention); on, the panel labels the conflict, and the
-    # thread and Q&A-history reads label it again on the stored answer.
+    # answer whose quotations V1.7 finds in conflict (today's abstention); on, the panel labels the conflict when the
+    # package's conflict policy (v1.v1_7.on_conflict) is disclose, and the thread, Q&A-history and ledger reads label it
+    # again on the stored answer. Under the policy withhold the guard withholds it whatever this setting says.
     evidence_panel_enabled: bool | None = None
     # Rate limit of the new Phase 3 ledger route: an engineering parameter with no plan value, provisional (PD-11; it
     # copies the existing spans_rate_limit), ratified with the rest of PD-11 (DI-37). POST /tutor/turns has no limit of
@@ -181,7 +182,7 @@ class Settings(BaseSettings):
     # name). "off" is refused outside development (plan 13.6: no flag may disable V1); "enforce" is refused outside
     # development while the package says flag_policy.phase4_exit_passed is false. The legacy guard on every delivery
     # path has no flag: V1.1 and V1.2 always, and V1.7 whenever no evidence panel shows the conflict
-    # (EVIDENCE_PANEL_ENABLED off).
+    # (EVIDENCE_PANEL_ENABLED off) or the package's conflict policy (v1.v1_7.on_conflict) is withhold.
     v1_pipeline: Literal["off", "shadow", "enforce"] | None = None
 
     @field_validator("allowed_origins", mode="before")

@@ -9,14 +9,15 @@ verdict "no-verdict" (the contained answer is not V1-verified: V1 runs in the tw
 also labels which quoted passages disagree (V1.7 over the quotations, Phase 4 spec 4.8). It never says "grounded" and
 never reads the two-pass shadow. EVIDENCE_PANEL_ENABLED gates it (development by default; production rollout is DI-34).
 
-stored_conflicts gives the same labels for a stored answer, from the citations stored with it, so every read that
-shows a stored answer again (GET /assistant/threads/{thread_id}, GET /qa/history) carries its V1.7 disclosure whatever
-EVIDENCE_PANEL_ENABLED says (AC-4-6; Phase 4 spec 4.15).
+stored_conflicts gives the same labels for a stored answer, from the citations stored with it, and record_conflicts
+for a legacy ledger record, from its claims, so every read that shows a stored answer's quotations again
+(GET /assistant/threads/{thread_id}, GET /qa/history, GET /ledger/responses/{response_id}) carries its V1.7 disclosure
+whatever EVIDENCE_PANEL_ENABLED says (AC-4-6; Phase 4 spec 4.15).
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 
 from app.core.config import Settings
@@ -49,7 +50,8 @@ def build_evidence_panel(*, decision: str, citations: list[Citation], retrieval_
 
 def panel_conflicts(contained, package) -> list[EvidenceConflict] | None:
     """V1.7 over a contained answer's quoted passages, for the evidence panel (labels only), or None (Phase 4 spec 4.8).
-    With the panel off the legacy guard withholds such an answer instead (legacy_guard.undisclosed_conflict)."""
+    With the panel off, or under the package's conflict policy withhold, the legacy guard withholds such an answer
+    instead (legacy_guard.may_disclose), so the panel never sees it."""
     if package.v1 is None or contained.decision != "answer" or len(contained.citations) < 2:
         return None
     from app.services.v1_checks.v1_7_conflicts import legacy_conflicts
@@ -81,3 +83,22 @@ def stored_conflicts(stored_citations: Iterable[object], package) -> list[Eviden
     from app.services.v1_checks.v1_7_conflicts import legacy_conflicts
 
     return legacy_conflicts(quotations, v1=package.v1, stopwords=package.retrieval.stopwords) or None
+
+
+def record_conflicts(entry: Mapping[str, object], package, *, item_of: Callable[[str], str | None]) -> list[EvidenceConflict] | None:
+    """panel_conflicts' rule over a legacy ledger record's claims (its delivered quotations, in the record's order), or
+    None. Each claim's item is its first span's: from the record's evidence spans, else item_of(span_id) (the span
+    registry; a span id names one item). Passages are 1-based positions in the record's claims. A shadow record is never
+    delivered: its V1.7 result is its own verification record's."""
+    if entry.get("delivery") != "legacy" or entry.get("decision") != "answer":
+        return None
+    retrieval = entry.get("retrieval")
+    evidence = retrieval.get("evidence") if isinstance(retrieval, dict) else None
+    items = {span.get("span_id"): span.get("item_id") for span in evidence or () if isinstance(span, dict)}
+    quotations = []
+    for claim in entry.get("claims") or ():
+        span_ids = claim.get("span_ids") if isinstance(claim, dict) else None
+        first = span_ids[0] if isinstance(span_ids, list) and span_ids and isinstance(span_ids[0], str) else None
+        item_id = (items.get(first) or item_of(first)) if first is not None else None
+        quotations.append({"item_id": item_id, "excerpt": claim.get("text") if isinstance(claim, dict) else ""})
+    return stored_conflicts(quotations, package)

@@ -411,6 +411,10 @@ class LedgerRecordRead(BaseModel):
     provenance: dict[str, Any] = Field(default_factory=dict)
     versions: dict[str, Any] = Field(default_factory=dict)
     resolved_question: dict[str, Any] | None = None
+    # Phase 4 (V1.7, AC-4-6): on a legacy record whose delivered quotations conflict, their labels (the evidence panel's
+    # rule over the record's claims; passages are 1-based positions in `claims`); omitted otherwise, so the record
+    # keeps its keys.
+    conflicts: list[EvidenceConflict] | None = Field(default=None, exclude_if=lambda value: value is None)
     # Reviewers only (None for owners, so a learner never learns chain position or traffic volume).
     seq: int | None = None
     prev_hash: str | None = None

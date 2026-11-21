@@ -874,8 +874,9 @@ class LegacyPreparationFailed:
 
 def delivered_abstention_reason(contained: Any, retrieval: Any) -> str | None:
     """Why a legacy delivery abstained (plan I "abstention by reason"; spec 18.8 F1), or None for an answer: the
-    retrieval gate's own reason when it returned nothing, else no_approved_span (the gate matched passages but none
-    could be quoted: not approved under D-31, or failed verification)."""
+    retrieval gate's own reason when it returned nothing, else no_approved_span: the gate matched passages but none
+    could be quoted (not approved under D-31, or failed verification), or the Phase 4 legacy guard withheld the
+    contained answer (V1.1, V1.2, or V1.7 conflict_withheld), which its tutor.v1.legacy_guard_withheld line names."""
     if contained.decision == "answer":
         return None
     results = getattr(retrieval, "results", None)

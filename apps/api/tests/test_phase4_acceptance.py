@@ -28,6 +28,7 @@ from sqlalchemy import create_engine, inspect as sa_inspect, select
 from sqlalchemy.orm import sessionmaker
 
 from app.api.routes import assistant as assistant_route
+from app.api.routes import ledger as ledger_route
 from app.api.routes import qa as qa_route
 from app.core.config import Settings
 from app.core.config_package import DEFAULT_PACKAGE_PATH, V2_PACKAGE_PATH, canonical_sha256, get_config_package, load_config_package
@@ -562,11 +563,39 @@ def test_ac_4_6_with_no_disclosure_shown_a_contained_answer_quoting_conflicting_
             assert guard["by_check"]["V1.7"] == 2 and guard["withheld"] == {"tutor": 1, "qa": 1}
 
 
+def test_ac_4_6_under_the_withhold_policy_conflicting_quotations_are_withheld_even_with_the_panel_on(monkeypatch, caplog):
+    # AC-4-6 "a disclosure block is shown or the response withheld": the package's conflict policy v1.v1_7.on_conflict
+    # (an owner value under Q-22) governs the learner path as it governs the two-pass V1.7. Under withhold the legacy
+    # guard withholds the answer on the tutor and the Q&A surface although the evidence panel is on.
+    citations, family = _family_citations()
+    overlay = dataclasses.replace(PACKAGE, v1=dataclasses.replace(V1, version_families={item: "fixture" for item in family},
+                                                                  on_conflict="withhold"))
+    real = contain_answer
+    for module in (tutor_orchestrator, qa_engine):
+        monkeypatch.setattr(module, "contain_answer", lambda _citations, registry, spans, **kwargs: real(citations, registry, spans, **kwargs))
+        monkeypatch.setattr(module, "get_config_package", lambda settings=None: overlay)
+    settings = Settings(evidence_panel_enabled=True)
+    orchestrator = TutorOrchestrator(TeachingAssistantService(get_retrieval_engine(), settings), settings)
+    monkeypatch.setattr(assistant_route, "get_tutor_orchestrator", lambda: orchestrator)
+    monkeypatch.setattr(qa_route, "get_qa_engine", lambda: QAEngine(get_retrieval_engine(), settings))
+    V1_METRICS.reset()
+    with caplog.at_level(logging.WARNING, logger="qcai.tutor"):
+        chat = client.post("/assistant/chat", json={"message": "Why does routing depth matter?"}, headers=demo("p4-withhold")).json()
+        asked = client.post("/qa/ask", json={"question": "Why does routing depth matter?"}, headers=demo("p4-withhold")).json()
+    for body in (chat, asked):
+        assert (body["decision"], body["answer"], body["citations"]) == ("abstain", ABSTENTION, [])
+        assert not (body.get("evidence") or {}).get("conflicts")
+    assert [(line["check_id"], line["reason_code"], line["surface"]) for line in _events(caplog, "tutor.v1.legacy_guard_withheld")] == [
+        ("V1.7", "conflict_withheld", "tutor"), ("V1.7", "conflict_withheld", "qa")]
+    assert V1_METRICS.detail_snapshot()["legacy_guard"]["by_check"]["V1.7"] == 2
+
+
 def test_ac_4_6_a_stored_answer_quoting_conflicting_spans_is_shown_again_with_its_disclosure(monkeypatch):
     # AC-4-6 on every surface that shows a stored answer again: with the panel on, the answer quoting conflicting
-    # passages is delivered with the panel's conflicts and stored; GET /assistant/threads/{id} and GET /qa/history then
-    # return the same labels whatever EVIDENCE_PANEL_ENABLED says at read time. They are the current package's V1.7
-    # labels: under the shipped package (no fixture family) the same stored answer carries none, and no conflicts key.
+    # passages is delivered with the panel's conflicts and stored; GET /assistant/threads/{id}, GET /qa/history and the
+    # owner's and the reviewer's GET /ledger/responses/{turn_id} then return the same labels whatever
+    # EVIDENCE_PANEL_ENABLED says at read time. They are the current package's V1.7 labels: under the shipped package
+    # (no fixture family) the same stored answer carries none, and no conflicts key.
     citations, family = _family_citations()
     overlay = dataclasses.replace(PACKAGE, v1=dataclasses.replace(V1, version_families={item: "fixture" for item in family}))
     real = contain_answer
@@ -575,13 +604,14 @@ def test_ac_4_6_a_stored_answer_quoting_conflicting_spans_is_shown_again_with_it
     expected = [{"kind": "version_of_same_asset", "passages": [1, 2]}]
 
     def use(package, settings):
-        for module in (tutor_orchestrator, qa_engine, qa_route):
+        for module in (tutor_orchestrator, qa_engine, qa_route, ledger_route):
             monkeypatch.setattr(module, "get_config_package", lambda settings=None: package)
         orchestrator = TutorOrchestrator(TeachingAssistantService(get_retrieval_engine(), settings), settings)
         monkeypatch.setattr(assistant_route, "get_tutor_orchestrator", lambda: orchestrator)
         monkeypatch.setattr(qa_route, "get_qa_engine", lambda: QAEngine(get_retrieval_engine(), settings))
 
     headers = demo("p4-reread")
+    reviewer = {**demo("p4-reread-reviewer"), "x-demo-role": "reviewer"}
     use(overlay, Settings(evidence_panel_enabled=True))
     chat = client.post("/assistant/chat", json={"message": "Why does routing depth matter?"}, headers=fresh(headers)).json()
     asked = client.post("/qa/ask", json={"question": "Why does routing depth matter?"}, headers=fresh(headers)).json()
@@ -600,6 +630,12 @@ def test_ac_4_6_a_stored_answer_quoting_conflicting_spans_is_shown_again_with_it
         items = [item for item in history.json() if item["answer"] == chat["answer"]]
         assert len(items) == 2 and asked["answer"] == chat["answer"]
         assert all(item.get("conflicts") == labels and ("conflicts" in item) == (labels is not None) for item in items)
+        for reader in (headers, reviewer):
+            read = client.get(f"/ledger/responses/{chat['turn_id']}", headers=fresh(reader))
+            assert read.status_code == 200
+            record = read.json()["record"]
+            assert record["delivery"] == "legacy" and len(record["claims"]) == 2
+            assert record.get("conflicts") == labels and ("conflicts" in record) == (labels is not None)
 
 
 # ======================================================================================================== AC-4-7
@@ -992,6 +1028,13 @@ def test_plan_i_the_runbook_says_a_delivered_no_approved_span_also_counts_the_le
     assert "`no_approved_span` holds the legacy guard's withholdings too" in row
     guard_row = next(line for line in runbook.splitlines() if line.startswith("| `tutor.v1.legacy_guard_withheld` |"))
     assert "names it `no_approved_span`" in guard_row
+    # The code texts that define the reason say the same (P2-12-D-03 covers comments and docstrings).
+    contracts_source = (API_ROOT / "app" / "services" / "tutor_pipeline" / "contracts.py").read_text(encoding="utf-8")
+    comment = contracts_source.split("# The legacy contained path's own abstention reason", 1)[1].split("LEGACY_ABSTENTION_REASON =", 1)[0]
+    comment = " ".join(comment.replace("#", " ").split())
+    assert "keeps it only for a gate" not in comment and "legacy guard withheld the contained answer" in comment
+    docstring = " ".join((ledger.delivered_abstention_reason.__doc__ or "").split())
+    assert "legacy guard withheld the contained answer" in docstring and "tutor.v1.legacy_guard_withheld" in docstring
 
 
 def test_plan_i_the_v1_3_flag_rate_has_one_definition_in_process_in_the_report_and_in_the_runbook(caplog):
@@ -1232,6 +1275,11 @@ def test_phase4_docs_quote_plan_m_and_state_the_current_rules():
     # The runbook names the rollback order and the README the provenance of the committed records.
     runbook = (REPO_ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8")
     assert "**Rollback order: the API first, then the frontend**" in runbook and "Auto-score: N / N" in runbook
+    # The Phase 3 runbook's package steps name the shipped package, which is v3 from the Phase 4 release.
+    phase3_runbook = runbook.split("## Phase 3: two-channel tutor", 1)[1].split("\n## Phase 4", 1)[0]
+    assert "for v2 (the default)" not in phase3_runbook and "configuration package v2 `tutor_pipeline.budgets`" not in phase3_runbook
+    assert "the shipped package (v2 with the Phase 3 release; v3 from the Phase 4 release" in phase3_runbook
+    assert "the shipped package's `tutor_pipeline.budgets` (PD-11; v2 with the Phase 3 release, v3 from the Phase 4 release" in phase3_runbook
     assert "# from a clean tree" not in readme and "**Provenance.**" in readme and "--allow-dirty" in readme
 
 
@@ -1257,6 +1305,10 @@ def test_phase4_docs_name_every_q_22_value_and_the_package_s_provisional_until()
         assert label in row, value
     until = raw["abstention"]["provisional_until"]
     assert until == "Q-22 (DI-52)" and f"`abstention.provisional_until` `{until}`" in row
+    # Conflict 11 cites the provisional defaults the package's Q-22 record names, and no other.
+    record = set(re.findall(r"PD-\d+", raw["owner_decisions"]["Q-22"]["record"]))
+    conflict_11 = SPEC.split("11. **Precondition \"V1.3, X4 and V1.9 values", 1)[1].split("\n12. ", 1)[0]
+    assert record == {"PD-15", "PD-16", "PD-18"} and set(re.findall(r"PD-\d+", conflict_11)) == record
     main_source = (API_ROOT / "app" / "main.py").read_text(encoding="utf-8")
     comment = " ".join(line.strip().lstrip("# ") for line in main_source.split('"manifest_drift"', 1)[1].split('"threshold_version"', 1)[0].splitlines())
     assert "bm25f-v1's floor and margin" in comment and f"provisional until {until}" in comment
@@ -1280,6 +1332,34 @@ def test_phase4_docs_the_phase3_spec_states_what_phase4_changed():
     for test in ("test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode", "test_the_shipped_package_validates_and_matches_its_hash"):
         line = next(line for line in phase3.splitlines() if f"`{test}`" in line or f"::{test}`" in line)
         assert f"{PACKAGE.package_version} for Phase 4's v3" in line, test
+    # 13.3 item 1 and 13.1 test 25 name the package their tests read; 5.2's parsing names every schema version the
+    # loader accepts; the frontend row quotes the chat's render expression; 4.3 names the sufficiency's score.
+    assert "`RAW` now reads v2" not in phase3 and "`RAW` reads the shipped package (v3 since Phase 4) and `V2_RAW` reads v2" in phase3
+    assert "a copy of `v2.json`" not in phase3
+    accepted = re.search(r"_require\(schema_version in \((\d), (\d), (\d)\)", (API_ROOT / "app" / "core" / "config_package.py").read_text(encoding="utf-8"))
+    assert accepted and accepted.groups() == ("1", "2", "3")
+    assert "accepts `schema_version` 1 or 2. For 1" not in phase3 and "accepts `schema_version` 1 or 2, and 3 since Phase 4" in phase3
+    chat = (REPO_ROOT / "apps" / "frontend" / "src" / "components" / "teaching-assistant-chat.tsx").read_text(encoding="utf-8")
+    render = next(line.strip() for line in chat.splitlines() if "<EvidencePanel evidence={message.evidence} />" in line)
+    assert f"render `{render}`" in phase3
+    sufficiency = next(line for line in phase3.splitlines() if "Decision `near_miss` when `top.near_floor`" in line)
+    assert "`score = top.score`" not in sufficiency and "`score` is the top result's gate score" in sufficiency
+
+
+def test_phase4_docs_13_3_calls_unchanged_no_test_it_names_as_changed():
+    # Spec 13.3 item 11 lists the existing tests that are unchanged since main; no test that another item of 13.3 names
+    # as changed, and no group a change touched, may be listed there wholesale.
+    section = SPEC.split("### 13.3 Existing tests that change", 1)[1].split("\n### 13.4", 1)[0]
+    items = re.split(r"\n(?=\d+[a-z]?\. )", section)
+    item_11 = next(item for item in items if item.startswith("11. "))
+    unchanged = item_11.split("**Expected unchanged and verified**", 1)[1].split(". The package-copy tests changed", 1)[0]
+    changed = {name for item in items if not item.startswith("11. ") for name in re.findall(r"test_[a-z0-9_]+", item)}
+    named = set(re.findall(r"test_[a-z0-9_]+", unchanged))
+    excepted = {"test_d9_ready_reports_the_configuration_package_corpus_gate_and_slis"}  # named as the exception
+    assert changed and (named - excepted) & changed == set()
+    for blanket in ("every Phase 3 doc-text test", "every package-copy test", "AC-3-6 tests;", "the Phase 2 `d9` tests;"):
+        assert blanket not in unchanged, blanket
+    assert "but `test_d9_ready_reports_the_configuration_package_corpus_gate_and_slis` (item 2b)" in unchanged
 
 
 def test_phase4_docs_the_start_up_mode_and_settings_text_states_the_current_rules():
@@ -1305,10 +1385,13 @@ def test_phase4_docs_the_start_up_mode_and_settings_text_states_the_current_rule
     assert "V1.1/V1.2 legacy guard" not in config
     panel = flat(" ".join(line.strip().lstrip("# ") for line in
                           config.split("ledger_route_enabled: bool | None = None", 1)[1].split("evidence_panel_enabled: bool | None = None", 1)[0].splitlines()))
-    assert "the legacy guard's disclosure_shown" in panel and "V1.7 finds in conflict" in panel and "Q&A-history reads label it again" in panel
+    assert "the legacy guard's disclosure_shown" in panel and "V1.7 finds in conflict" in panel
+    assert "the thread, Q&A-history and ledger reads label it again" in panel
+    assert "Under the policy withhold the guard withholds it whatever this setting says" in panel
     pipeline = flat(" ".join(line.strip().lstrip("# ") for line in
                              config.split("ledger_rate_limit: str", 1)[1].split("v1_pipeline: Literal", 1)[0].splitlines()))
     assert "V1.1 and V1.2 always, and V1.7 whenever no evidence panel shows the conflict" in pipeline
+    assert "or the package's conflict policy (v1.v1_7.on_conflict) is withhold" in pipeline
 
 
 def _test_function_names() -> set[str]:

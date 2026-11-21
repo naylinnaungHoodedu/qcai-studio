@@ -16,8 +16,9 @@ over older") is Phase 7's.
 The shipped family is the 2025/2026 lecture video (Q-10, E-21): video spans are never cited and the 2026 item is
 unbound, so in production disclosure can come only from a number or negation disagreement. legacy_conflicts applies
 the same rule to the quotations of a contained answer: the evidence panel labels what it finds, the reads that show a
-stored answer again label it the same way (evidence_panel.stored_conflicts), and while the panel is off (its default
-outside development) the legacy guard withholds the answer instead (AC-4-6).
+stored answer again label it the same way (evidence_panel.stored_conflicts and record_conflicts), and while the panel is
+off (its default outside development), or whenever v1.on_conflict is withhold, the legacy guard withholds the answer
+instead (AC-4-6; legacy_guard.may_disclose), so the policy governs the learner path as it governs this check.
 """
 
 from __future__ import annotations

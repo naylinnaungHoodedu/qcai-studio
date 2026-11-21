@@ -499,13 +499,13 @@
     "provisional": true,
     "phase": "4",
     "authority": "plan Phase 4 D; [PROV] values 'MUST be frozen in versioned configuration before use (Q-22; Decision D-06), never reported as results' (plan L795-800); PD-13..PD-21",
-    "rules_hash": "ec325f1ecc38ef0a6ff44c79f1fc6e957be88f51b2df57f012a9483bba23c6b3",
+    "rules_hash": "4ed598c5e8a3325700c7561cf263b94533e7500d690ab94173b460293ca7a81e",
     "rule_ids": {
       "V1.1": "span-resolution-current-v1",
       "V1.2": "binding-polarity-v1",
       "V1.3": "entailment-interface-v1",
       "V1.4": "segment-exact-whitespace-v3",
-      "V1.5": "gate-decision-margin-v2",
+      "V1.5": "gate-decision-margin-v3",
       "V1.6": "keyed-answer-containment-v1",
       "V1.6-omit": "keyed-answer-socratic-omit-v1",
       "V1.7": "conflict-version-polarity-v1",
@@ -635,12 +635,12 @@
     },
     "v1_5": {
       "provisional": true,
-      "authority": "PD-15 (Q-22: the X4 margin per gate, which V1.5 applies: it marks a response whose top score is below the gate floor plus the margin; V1.5 frozen before E1) over PD-04",
+      "authority": "PD-15 (Q-22: the X4 margin per gate, which V1.5 applies: it marks a response whose top result's gate score, the score the gate compares with its floor, is below the gate floor plus the margin; V1.5 frozen before E1) over PD-04",
       "x4_margin": {
         "bm25f-v1": 2.4,
         "p1-floor": 0.0
       },
-      "rule": "gate-decision-margin-v2"
+      "rule": "gate-decision-margin-v3"
     },
     "v1_6": {
       "provisional": true,

@@ -177,7 +177,7 @@ def test_floor_does_not_lower_in_domain_recall(gate, monkeypatch):
     store = CourseStore(Settings(retrieval_gate=gate))
     gated = _live_recall_at_5(store)
     if gate == "p1-floor":
-        monkeypatch.setattr(lexical_index, "SCORE_FLOOR", 0)  # the name LexicalIndex.p1_score_entry reads
+        monkeypatch.setattr(lexical_index, "SCORE_FLOOR", 0)  # the name LexicalIndex.p1_scores reads
     else:
         store.index = LexicalIndex(store.chunks, store.package.retrieval, replace(store.package.abstention, floor=0.0), gate=gate)
     ungated = _live_recall_at_5(store)

@@ -1,7 +1,7 @@
 """V1.1 and V1.2 on the legacy contained answer (plan Phase 4 L: "V1.1/V1.2 stay enforced with extractive mode or
-abstention [Decision D-19], never the legacy overlap gate alone [Risk R-16]"), and V1.7 where no disclosure is shown
-(AC-4-6: "Given conflicting cited spans, then a disclosure block is shown or the response withheld"; Phase 4 spec
-4.15, conflicts 4, 22, 34).
+abstention [Decision D-19], never the legacy overlap gate alone [Risk R-16]"), and V1.7 where no disclosure is shown or
+the package's conflict policy is withhold (AC-4-6: "Given conflicting cited spans, then a disclosure block is shown or
+the response withheld"; Phase 4 spec 4.15, conflicts 4, 22, 34).
 
 Every delivery path that can deliver a claim (/assistant/chat, /tutor/turns, /qa/ask) passes the D-19 contained answer
 through guard_contained before anything reads it. For each quotation (a GroundedClaim) and each span it cites:
@@ -11,15 +11,19 @@ through guard_contained before anything reads it. For each quotation (a Grounded
   V1.2  polarity, claim to span (E-27; only with a package v1 block): every quantity of the quotation is covered by the
         span (lexicon.quantities_covered, closed units) and every negation cue of the quotation is in the span at
         least as often.
-Then, when the caller shows no disclosure (disclosure_shown False: the evidence panel, whose `conflicts` label the
-conflicting passages, is off) and the package has a v1 block, V1.7 over the answer's quotations
-(v1_7_conflicts.legacy_conflicts, the rule the panel's conflicts use): any conflict withholds the answer
-(V1.7 / conflict_withheld). An answer delivered with the panel's labels is stored, and each read that shows it again
-(GET /assistant/threads/{thread_id}, GET /qa/history) returns the same labels (evidence_panel.stored_conflicts) for
-the chat's stored bubbles and the Q&A history to render, so disclosure_shown holds on every surface.
+Then, when the package has a v1 block, V1.7 over the answer's quotations (v1_7_conflicts.legacy_conflicts, the rule
+the panel's conflicts use): any conflict withholds the answer (V1.7 / conflict_withheld) unless the conflict may be
+disclosed, which needs both the package's policy v1.v1_7.on_conflict "disclose" (an owner value under Q-22; the shipped
+value) and a caller that shows the disclosure (disclosure_shown True: the evidence panel, whose `conflicts` label the
+conflicting passages, is on). Under "withhold" every conflict is withheld whatever the panel shows, as V1.7 withholds
+on the two-pass track. An answer delivered with the panel's labels is stored, and each read that shows it again
+returns the same labels for its stored quotations: GET /assistant/threads/{thread_id} and GET /qa/history for the
+chat's stored bubbles and the Q&A history to render (evidence_panel.stored_conflicts), and the owner's and reviewer's
+GET /ledger/responses/{response_id} for the legacy record's claims (evidence_panel.record_conflicts). So no read
+returns those quotations without their labels.
 Any failure withholds the whole answer: the contained answer becomes today's abstention (the same bytes), the guard
 counts it (V1_METRICS.legacy_guard) and logs tutor.v1.legacy_guard_withheld with the check, the reason and the surface
-(a V1.1 or V1.2 failure is an upstream defect; a V1.7 one is conflicting sources quoted with no disclosure shown). The
+(a V1.1 or V1.2 failure is an upstream defect; a V1.7 one is conflicting sources quoted with no disclosure allowed). The
 guard has no flag and runs in every V1_PIPELINE mode. contain_answer quotes only verified spans, so every current
 quotation passes, no current development answer quotes conflicting passages, and response bytes are unchanged; under
 D-31 nothing is quoted outside development. Without a v1 block (a v1 or v2 package, only in development with
@@ -83,6 +87,12 @@ def quotation_problem(text: str, span_ids, hashes: dict[str, str], resolver: Spa
     return None
 
 
+def may_disclose(package: "ConfigPackage", *, disclosure_shown: bool) -> bool:
+    """Whether a V1.7 conflict on the learner path is disclosed instead of withheld: the package's policy is disclose
+    (v1.v1_7.on_conflict) and the caller shows the disclosure (the evidence panel)."""
+    return disclosure_shown and package.v1 is not None and package.v1.on_conflict == "disclose"
+
+
 def undisclosed_conflict(contained: ContainedAnswer, package: "ConfigPackage") -> bool:
     """Whether V1.7 finds a conflict among an answer's quotations: evidence_panel.panel_conflicts' rule and inputs."""
     if package.v1 is None or contained.decision != "answer" or len(contained.citations) < PAIR:
@@ -93,8 +103,8 @@ def undisclosed_conflict(contained: ContainedAnswer, package: "ConfigPackage") -
 def guard_contained(contained: ContainedAnswer, *, store: "CourseStore", package: "ConfigPackage",
                     surface: Literal["tutor", "qa"], disclosure_shown: bool = False) -> GuardResult:
     """The guarded answer. disclosure_shown: the caller shows V1.7's disclosure (the evidence panel's conflicts, which
-    the reads of the stored answer return again), so a conflict is labelled there instead of withheld; its default is
-    the conservative False."""
+    the reads of the stored answer return again), so under the package's policy disclose a conflict is labelled there
+    instead of withheld; under withhold it is withheld anyway. Its default is the conservative False."""
     if contained.decision != "answer":
         V1_METRICS.guard(surface, withheld_by=None)
         return GuardResult(contained=contained, withheld=())
@@ -107,7 +117,7 @@ def guard_contained(contained: ContainedAnswer, *, store: "CourseStore", package
             withheld.append(problem)
     if not contained.claims:
         withheld.append(("V1.2", "no_bound_claims"))
-    if not withheld and not disclosure_shown and undisclosed_conflict(contained, package):
+    if not withheld and not may_disclose(package, disclosure_shown=disclosure_shown) and undisclosed_conflict(contained, package):
         withheld.append(("V1.7", "conflict_withheld"))
     if not withheld:
         V1_METRICS.guard(surface, withheld_by=None)

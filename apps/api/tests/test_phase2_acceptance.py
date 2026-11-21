@@ -976,7 +976,8 @@ def test_ac_2_9_retrieval_abstention_and_resolver_take_no_learner_state_input():
                "citations", "registry", "spans", "settings", "refresh", "store", "entries", "params", "abstention", "gate", "text"}
     callables = [
         lexical_index.LexicalIndex.__init__, lexical_index.LexicalIndex.evaluate, lexical_index.LexicalIndex.query_terms,
-        lexical_index.LexicalIndex.score_entry, lexical_index.LexicalIndex.p1_score_entry, lexical_index.LexicalIndex.gate_entry,
+        lexical_index.LexicalIndex.score_entry, lexical_index.LexicalIndex.p1_score_entry, lexical_index.LexicalIndex.p1_scores,
+        lexical_index.LexicalIndex.gate_entry,
         lexical_index.LexicalIndex.eligible_unfloored, lexical_index.tokenize, CourseStore.evaluate, CourseStore.search,
         CourseStore.to_search_result, CourseStore.entry, retrieval_engine.RetrievalEngine.search, span_resolver.SpanResolver.__init__,
         span_resolver.SpanResolver.resolve, span_resolver.SpanResolver.resolve_current, span_resolver.SpanResolver.verify,
@@ -1192,10 +1193,31 @@ def test_plan_h_every_hybrid_result_passes_the_active_gate(gate):
     assert engine.sync_semantic_index(refresh=True)
     index = engine._semantic_backend._index
     index.matches = [{"id": entry.span_id, "score": 0.9, "metadata": {"span_scheme": "span-v2"}} for entry in store.chunks[:40]]
+    modes = set()
     for query in ("QUBO logistics", "Why does routing depth matter?"):
         response = engine.search(query, top_k=5)
+        modes.add(response.mode)
         for result in response.results:
-            assert store.index.gate_entry(query, store.entry(result.chunk_id), None) is not None, (gate, query)
+            gated = store.index.gate_entry(query, store.entry(result.chunk_id), None)
+            assert gated is not None, (gate, query)
+            # Every fused result, a semantic-only one included, carries the score the gate compared with its floor
+            # (the sufficiency records it; Phase 4 spec 4.6).
+            assert response.gate_scores[result.chunk_id] == gated.gate_score is not None, (gate, query)
+    assert "hybrid-pinecone" in modes, gate
+    # A semantic-only result (it passes the gate but is outside the lexical results fusion starts from) carries the
+    # gate's score too: semantic matches outside the lexical top rank first in the fusion.
+    query, passing = next((item["query"], decision.results) for item in IN_DOMAIN
+                          if len((decision := store.index.evaluate(item["query"], top_k=len(store.chunks))).results) > 10)
+    lexical_top = {item.entry.span_id for item in passing[:10]}
+    beyond = [item for item in passing if item.entry.span_id not in lexical_top]
+    assert beyond, gate
+    index.matches = [{"id": item.entry.span_id, "score": 0.9, "metadata": {"span_scheme": "span-v2"}} for item in beyond[:5]]
+    response = engine.search(query, top_k=5)
+    semantic_only = [result for result in response.results if result.chunk_id not in lexical_top]
+    assert response.mode == "hybrid-pinecone" and semantic_only, gate
+    for result in response.results:
+        gated = store.index.gate_entry(query, store.entry(result.chunk_id), None)
+        assert response.gate_scores[result.chunk_id] == gated.gate_score is not None, gate
     for query in OOS[:20]:
         response = engine.search(query, top_k=5)
         assert response.results == [] and response.abstained, (gate, query)

@@ -59,8 +59,10 @@ ABSTENTION_REASONS = (
     "budget_exceeded",
 )
 # The legacy contained path's own abstention reason (contained_answers.contain_answer). A legacy ledger record keeps
-# it only for a gate that matched passages none of which could be quoted (not approved under D-31, or not verified);
-# when the gate itself returned nothing, the record carries the gate's reason.
+# it when the gate matched passages none of which could be quoted (not approved under D-31, or not verified), and when
+# the Phase 4 legacy guard withheld the contained answer (V1.1, V1.2, or V1.7 conflict_withheld; its
+# tutor.v1.legacy_guard_withheld line tells the two apart); when the gate itself returned nothing, the record carries
+# the gate's reason.
 LEGACY_ABSTENTION_REASON = "no_approved_span"
 # The Phase 2 retrieval gate's own abstention reasons (lexical_index.Reason without "evidence").
 GATE_ABSTENTION_REASONS = ("no_query_terms", "no_match", "insufficient_coverage", "below_floor")

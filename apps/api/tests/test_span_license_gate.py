@@ -198,7 +198,10 @@ def test_l8_a_bundle_the_license_gate_empties_abstains_at_retrieval_and_top_is_t
     monkeypatch.setattr(registry, "license_class", drop_the_first)
     kept = retrieve(engine, request, top_k=PARAMS.top_k, registry=registry)
     assert [span.span_id for span in kept.spans] == [span.span_id for span in baseline.spans[1:]]
-    assert kept.sufficiency.score == baseline.spans[1].score != baseline.sufficiency.score  # the first kept result, not the top-ranked one
+    # The first kept result's gate score (Phase 4 spec 4.6; its display score is that score rounded), not the top-ranked one's.
+    gate_scores = engine.evidence(request.text, lesson_slug=request.lesson_slug, top_k=PARAMS.top_k).gate_scores
+    assert kept.sufficiency.score == gate_scores[baseline.spans[1].span_id] != baseline.sufficiency.score
+    assert round(kept.sufficiency.score, 4) == baseline.spans[1].score
     monkeypatch.setattr(registry, "license_class", lambda **kwargs: None)
     emptied = retrieve(engine, request, top_k=PARAMS.top_k, registry=registry)
     assert emptied.spans == () and (emptied.sufficiency.decision, emptied.sufficiency.reason) == ("abstain", "no_quotable_evidence")

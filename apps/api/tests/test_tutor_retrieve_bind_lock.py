@@ -99,7 +99,10 @@ def test_sufficiency_abstains_on_no_result_marks_near_miss_from_the_gates_flag_a
         bundle = retrieve(engine, RetrievalRequest(text=query, corpus_version=store.corpus_version), top_k=4, registry=registry)
         expected = "near_miss" if response.results[0].near_floor else "answer"
         assert bundle.sufficiency.decision == expected, query
-        assert bundle.sufficiency.score == response.results[0].score
+        # The top result's score at the gate's own precision (the 9 digits near_floor is computed on); the result's
+        # display score is that score rounded to 4 (Phase 4 spec 4.6).
+        assert bundle.sufficiency.score == response.gate_scores[response.results[0].span_id]
+        assert round(bundle.sufficiency.score, 4) == response.results[0].score
         seen[expected] += 1
     assert seen["answer"] > 100 and seen["near_miss"] >= 1, seen
 

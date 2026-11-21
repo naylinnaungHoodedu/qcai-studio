@@ -305,3 +305,46 @@ def test_stored_labels_keep_the_answer_s_positions():
     assert [conflict.model_dump() for conflict in shifted] == [{"kind": "version_of_same_asset", "passages": [1, 3]}]
     assert stored_conflicts(stored[:1], package) is None and stored_conflicts([], package) is None
     assert stored_conflicts(stored, PACKAGE) is None and stored_conflicts(stored, dataclasses.replace(package, v1=None)) is None
+
+
+def test_the_package_s_withhold_policy_withholds_a_conflict_whatever_the_panel_shows():
+    # v1.v1_7.on_conflict is an owner value under Q-22 and governs the learner path too: under "withhold" a conflict is
+    # withheld although the caller shows the evidence panel; a conflict is disclosed only under "disclose" with the panel
+    # shown (legacy_guard.may_disclose).
+    from app.services.v1_checks.legacy_guard import may_disclose
+
+    store = get_course_store()
+    contained, package = _conflicting()
+    withhold = dataclasses.replace(package, v1=dataclasses.replace(package.v1, on_conflict="withhold"))
+    for disclosure_shown in (True, False):
+        guarded = guard_contained(contained, store=store, package=withhold, surface="qa", disclosure_shown=disclosure_shown)
+        assert guarded.withheld == (("V1.7", "conflict_withheld"),)
+        assert (guarded.contained.answer, guarded.contained.decision) == (ABSTENTION, "abstain")
+    assert guard_contained(contained, store=store, package=package, surface="qa", disclosure_shown=True).contained is contained
+    assert [(may_disclose(p, disclosure_shown=shown)) for p in (package, withhold) for shown in (True, False)] == [True, False, False, False]
+    assert may_disclose(dataclasses.replace(package, v1=None), disclosure_shown=True) is False
+
+
+def test_record_labels_name_the_record_s_claim_positions():
+    # evidence_panel.record_conflicts (GET /ledger/responses/{id}): the panel's rule over a legacy record's claims, each
+    # claim's item from the record's evidence spans or else the span registry; positions are the record's claims. A
+    # shadow record, an abstention, or a package without the family gives none.
+    from app.services.evidence_panel import panel_conflicts, record_conflicts
+
+    contained, package = _conflicting()
+    claims = [{"claim_id": f"claim-{index:032x}", "text": claim.text, "span_ids": list(claim.cited_span_ids)}
+              for index, claim in enumerate(contained.claims)]
+    evidence = [{"span_id": citation.span_id, "item_id": citation.item_id} for citation in contained.citations]
+    entry = {"delivery": "legacy", "decision": "answer", "claims": claims, "retrieval": {"evidence": evidence}}
+    live = [conflict.model_dump() for conflict in panel_conflicts(contained, package)]
+    unknown = lambda span_id: None  # noqa: E731
+    assert [conflict.model_dump() for conflict in record_conflicts(entry, package, item_of=unknown)] == live == [
+        {"kind": "version_of_same_asset", "passages": [1, 2]}]
+    registry = get_course_store().span_registry
+    from_registry = {**entry, "retrieval": {"evidence": []}}
+    assert record_conflicts(from_registry, package, item_of=unknown) is None
+    labelled = record_conflicts(from_registry, package, item_of=lambda span_id: registry.get(span_id).item_id)
+    assert [conflict.model_dump() for conflict in labelled] == live
+    assert record_conflicts({**entry, "delivery": "shadow"}, package, item_of=unknown) is None
+    assert record_conflicts({**entry, "decision": "abstain"}, package, item_of=unknown) is None
+    assert record_conflicts(entry, PACKAGE, item_of=unknown) is None
