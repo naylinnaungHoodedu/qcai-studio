@@ -991,7 +991,7 @@ def test_settings_v1_pipeline_defaults_and_refusals(monkeypatch, fresh_database_
     with pytest.raises(ValidationError, match="shipped, hash-verified"):
         Settings(environment="production", v1_pipeline="enforce")
     monkeypatch.undo()
-    from test_phase3_hardening import _override_details
+    from test_configuration_overrides import _override_details
 
     assert _override_details(monkeypatch, allowed) == {"v1_pipeline_enforce": True}
     env = {"DATABASE_URL": fresh_database_url, "PYTHONUNBUFFERED": "1"}

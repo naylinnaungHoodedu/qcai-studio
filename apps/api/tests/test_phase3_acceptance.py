@@ -1709,7 +1709,7 @@ def test_plan_g_legacy_turns_read_as_no_verdict():
         db.flush()
         # Created by an image that keeps no ledger: ledger_record_expected stays null (spec 18.8 F12; review round 4,
         # 18.7 E6: a turn that expected a record and has none is a missing record, not a legacy turn, which
-        # test_phase3_review4.py covers).
+        # test_response_ledger_delivery.py covers).
         db.add(TutorTurn(id=turn_id, thread_id=thread.id, user_id=headers["x-demo-user"], resolved_query="q", retrieval_mode="lexical", provider="none",
                          model="m", decision="abstain", decision_reason="no_approved_span", citations=[], claims=[], corpus_version="c",
                          policy_version="cs595-v1", created_at=datetime(2026, 1, 1, tzinfo=UTC)))
@@ -1914,7 +1914,7 @@ def test_plan_l_a_held_ledger_lock_never_delays_the_learner_beyond_the_append_bu
         assert LEDGER_METRICS.snapshot()["failed"]["legacy"] == 1
         assert records(response_id=response.json()["turn_id"]) == []
     # Both dialects: an IntegrityError is retried at most three times; a database error without a deadlock (40P01) or
-    # serialization (40001) SQLSTATE is not retried (those two are, spec 18.8 F8; test_phase3_review5.py).
+    # serialization (40001) SQLSTATE is not retried (those two are, spec 18.8 F8; test_response_ledger_chain.py).
     for error, expected_attempts, raised in ((IntegrityError("INSERT", {}, Exception("race")), 3, ledger.LedgerAppendError),
                                              (OperationalError("SELECT", {}, Exception("lock timeout")), 1, OperationalError)):
         attempts = []
