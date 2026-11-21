@@ -83,7 +83,6 @@ from tutor_fakes import FAULT_MODES, FaultyRenderer, _relayout, make_entry
 
 API_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = API_ROOT.parents[1]
-BEP_ROOT = REPO_ROOT.parent / "BEP-2-12"
 SPEC = (REPO_ROOT / "docs" / "architecture" / "phase3-implementation-spec.md").read_text(encoding="utf-8")
 RUNBOOK = (REPO_ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8")
 OBSERVABILITY = (REPO_ROOT / "infra" / "cloudrun" / "observability.md").read_text(encoding="utf-8")
@@ -304,11 +303,7 @@ def test_e4_f2_is_recorded_with_the_method_it_was_taken_by():
     assert "F-2" in di_49 and "AC-3-1" in di_49 and "static check of logged prompts" in di_49
     history = SPEC.split("### 18.4 Review history", 1)[1]
     assert "<br>E4 F-2 recorded: `test_e4_*`" in history
-    register = BEP_ROOT / "00_meta" / "DEFERRED_ITEMS_REGISTER.md"
-    if register.exists():  # the evidence package sits beside the repository on the workstation; CI has the spec only
-        rows = [line for line in register.read_text(encoding="utf-8").splitlines() if line.startswith("| DI-") and "F-2" in line]
-        assert rows and "AC-3-1" in rows[0] and "static check of logged prompts" in rows[0]
-        assert "F-2" in (BEP_ROOT / "phase03" / "PHASE_RECORD.md").read_text(encoding="utf-8")
+    # The register row and the phase record are checked by the evidence package's 00_meta/check_records.py (check_e4_*).
 
 
 # ============================================================================================================ E5

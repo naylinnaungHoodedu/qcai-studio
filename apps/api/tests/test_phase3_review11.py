@@ -17,7 +17,7 @@ L6  spec 5.1 names every owner decision package v2 adds (D-19, D-12, PLAN-3.3, P
     every tutor_pipeline block.
 L7  F-2's stand-in audit exists: package v2 pins the legacy path's ids and containment rule hash (tutor_pipeline.legacy,
     compared with the code and on /ready), ledger_provenance compares every record with the pins, and the worker and
-    the script run it (--check-provenance).
+    the script run it (--check-provenance). The evidence package's own 00_meta/check_records.py checks its records.
 L8  spec 4.3, 4.5, 4.10 and 13.1 item 3 say what the code does: a bundle the license gate empties abstains at
     retrieval and `top` is the first kept result; the budget is checked between render attempts, never after a
     passing or the last one; the ClaimPlan and threshold mutations are test_j2_*'s.
@@ -80,7 +80,6 @@ from tutor_fakes import make_entry
 
 API_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = API_ROOT.parents[1]
-BEP_ROOT = REPO_ROOT.parent / "BEP-2-12"
 SPEC = (REPO_ROOT / "docs" / "architecture" / "phase3-implementation-spec.md").read_text(encoding="utf-8")
 AUTHORITATIVE_SPEC = SPEC.split("## 18. Implementation record", 1)[0]
 RUNBOOK = (REPO_ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8").split("## Phase 3", 1)[1]
@@ -95,11 +94,6 @@ MULTI_CLAIM = "Explain why quantum logistics needs both problem reduction before
 
 def _section(title: str, end: str) -> str:
     return SPEC.split(title, 1)[1].split(end, 1)[0]
-
-
-def _bep(relative: str) -> str | None:
-    path = BEP_ROOT / relative
-    return path.read_text(encoding="utf-8") if path.exists() else None
 
 
 @pytest.fixture
@@ -565,16 +559,8 @@ def test_l7_the_records_say_the_audit_exists_and_what_package_v2_pins():
     assert "--check-provenance" in RUNBOOK and "provenance_mismatch" in RUNBOOK and "provenance_mismatch" in OBSERVABILITY
     assert "**`ledger_provenance(db, package)`**" in _section("### 4.12 Ledger", "### 4.13")
     assert "| legacy |" in _section("### 5.2 Loader", "### 5.3") and "`legacy.containment_rule_hash` against" in _section("### 5.4", "### 5.5")
-    register = _bep("00_meta/DEFERRED_ITEMS_REGISTER.md")
-    if register is None:
-        return  # the evidence package lives beside the repository; CI's checkout has none
-    row = next(line for line in register.splitlines() if line.startswith("| DI-49 |"))
-    assert "--check-provenance" in row and "a production audit checks instead" not in row
-    notes = _bep("phase03/CLOSURE_EVIDENCE_NOTES.md")
-    r46 = notes.split("### R-46", 1)[1].split("\n### ", 1)[0]
-    assert "every rule id and component id the code uses" not in r46 and "tutor_pipeline.legacy" in r46
-    r41 = notes.split("### R-41", 1)[1].split("\n### ", 1)[0]
-    assert "--check-provenance" in r41
+    # The register's DI-49 row and the closure notes are checked by the evidence package's 00_meta/check_records.py
+    # (check_l7_*).
 
 
 # ============================================================================================================ L8

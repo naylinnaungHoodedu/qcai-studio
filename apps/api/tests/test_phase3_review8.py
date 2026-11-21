@@ -9,9 +9,10 @@ I3  spec section 3's EnvelopeSpan.text and LockedClaim.source_order comments, 4.
 I4  spec 3.4's LedgerResponseRead listing and 7.13's no-record rule say what the ledger route does.
 I5  the PD-08 and PD-11 register rows, spec section 6's env-example bullet and section 16's revision notes are current.
 I6  spec section 12 lists every production frontend change (the proxy's span-route patterns included).
-I7  the phase record and the closure notes point at the latest run and the current pin, and list every drop reason.
 I8  the test strategy maps every review round and names only tests that exist.
-The evidence package lives beside the repository, not in it (CI has none): its checks run where it is present.
+I7 (the phase record and the closure notes point at the latest run and the current pin, and list every drop reason)
+and the evidence-package halves of I1 and I5 are checked by the evidence package's own 00_meta/check_records.py: no
+repository test reads outside the repository.
 """
 
 from __future__ import annotations
@@ -58,7 +59,6 @@ from tutor_fakes import FAULT_MODES, FAULT_SIGNATURES, FaultNotPlaced, FaultyRen
 
 API_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = API_ROOT.parents[1]
-BEP_ROOT = REPO_ROOT.parent / "BEP-2-12"
 FRONTEND = REPO_ROOT / "apps" / "frontend"
 SPEC = (REPO_ROOT / "docs" / "architecture" / "phase3-implementation-spec.md").read_text(encoding="utf-8")
 ADR_005 = (REPO_ROOT / "docs" / "adr" / "ADR-005-abstention-gate.md").read_text(encoding="utf-8")
@@ -101,11 +101,6 @@ def _bundle(store, records, *, quotable: bool = True) -> EvidenceBundle:
 def _quotable_documents(store):
     registry = SpanResolver(store).registry
     return [record for record in store.span_registry.records if record.item_kind == "document" and span_is_quotable(record, registry)]
-
-
-def _bep(relative: str) -> str | None:
-    path = BEP_ROOT / relative
-    return path.read_text(encoding="utf-8") if path.exists() else None
 
 
 # ============================================================================================================ I1
@@ -181,11 +176,8 @@ def test_i1_the_records_name_both_reasons():
     for gate, count in (("bm25f-v1", 11), ("p1-floor", 13)):
         reasons = by_name[("all_public_approved", gate)]
         assert reasons.get("no_whole_sentence") == count and "no_quotable_evidence" not in reasons, (gate, reasons)
-    # The superseded counts survive in no current text.
+    # The superseded counts survive in no current text (the evidence package's: check_i1_* in its check_records.py).
     texts = {"spec": SPEC.split("### 18.4 Review history", 1)[0], "README": README}
-    for name in ("phase03/PHASE_RECORD.md", "phase03/CLOSURE_EVIDENCE_NOTES.md"):
-        if (text := _bep(name)) is not None:
-            texts[name] = text.split("## History", 1)[0]
     for name, text in texts.items():
         for line in text.splitlines():
             assert not re.search(r"`no_quotable_evidence` \(?11\b|extra abstentions are `no_quotable_evidence`", line), (name, line[:160])
@@ -334,16 +326,7 @@ def test_i5_the_registers_and_spec_sections_6_and_16_say_what_the_code_does():
     pd_08_copy = next(line for line in section_16.splitlines() if line.startswith("| PD-08 |"))
     assert f"`{BINDING_RULE}`" in pd_08_copy and "resolver-bundle-sentence-v1" not in pd_08_copy
     assert "Revised in" not in section_16
-    register = _bep("00_meta/PROVISIONAL_DEFAULTS_REGISTER.md")
-    if register is None:
-        return
-    pd_08 = next(line for line in register.splitlines() if line.startswith("| PD-08 |"))
-    assert f"bound by `{BINDING_RULE}`" in pd_08 and "`partial_sentence`" in pd_08 and "resolver-bundle-sentence-v1" not in pd_08
-    pd_11 = next(line for line in register.splitlines() if line.startswith("| PD-11 |"))
-    where = pd_11.rstrip(" |").rsplit(" | ", 2)[1]
-    text = pd_11.rstrip(" |").rsplit(" | ", 2)[0]
-    assert "`LEDGER_RATE_LIMIT`" in text and "`ASSISTANT_CHAT_RATE_LIMIT`" in text and "TUTOR_TURNS_RATE_LIMIT" not in pd_11
-    assert "config.py" in where
+    # The register's PD-08 and PD-11 rows are checked by the evidence package's 00_meta/check_records.py (check_i5_*).
 
 
 # ============================================================================================================ I6
@@ -363,37 +346,6 @@ def test_i6_spec_12_lists_every_production_frontend_change():
     assert not any("the privacy row is the only production frontend change" in line for line in SPEC.splitlines())
     second = next(line for line in SPEC.split("### 18.4 Review history", 1)[1].splitlines() if line.startswith("| 2, C1-C12 "))
     assert "C11 a span link never mints a guest session in the proxy" in second
-
-
-# ============================================================================================================ I7
-
-
-def _round_section(text: str, word: str) -> str:
-    return text.split(f"## {word} review round (", 1)[1].split("\n## ", 1)[0]
-
-
-def test_i7_the_phase_record_and_closure_notes_point_at_the_latest_run_and_the_current_pin():
-    record = _bep("phase03/PHASE_RECORD.md")
-    notes = _bep("phase03/CLOSURE_EVIDENCE_NOTES.md")
-    if record is None or notes is None:
-        return
-    current = record.split("## History", 1)[0]
-    # The current-state section holds the latest run; the history table holds one row per round, the latest last.
-    latest = current.split("### Latest verification", 1)[1]
-    assert "SQLite" in latest and "PostgreSQL" in latest and "__SUITE__" not in latest
-    rows = [line for line in record.split("## History", 1)[1].splitlines() if re.match(r"\| \d+, ", line)]
-    # The latest round is the last row, and it holds no placeholder (rows are numbered 1..n, one per round).
-    assert rows[-1].startswith(f"| {len(rows)}, ") and "__" not in rows[-1] and "PENDING" not in rows[-1]
-    r_13 = notes.split("### R-13", 1)[1].split("\n### ", 1)[0]
-    tests = next(line for line in r_13.splitlines() if line.startswith("- **Tests:**"))
-    for reason in contracts.BINDING_FAILURES:
-        assert f"`{reason}`" in tests, reason
-    pin = (API_ROOT / "app" / "config_package" / "v2.json.sha256").read_text(encoding="utf-8").strip()
-    r_46 = notes.split("### R-46", 1)[1].split("\n### ", 1)[0]
-    assert "v2.json.sha256" in r_46
-    for text in (current, notes):
-        for match in re.finditer(r"sha256 `([0-9a-f]{8,64})", text):
-            assert pin.startswith(match.group(1).rstrip("…")), match.group(0)
 
 
 # ============================================================================================================ I8

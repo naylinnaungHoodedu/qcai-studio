@@ -11,7 +11,8 @@ H5  POST /tutor/turns and POST /assistant/chat share one rate-limit window.
 H6, H7  the ledger records (spec 4.12, conflict 29, 7.16, 8.1, 8.2, the model comment, the migration and guard
     comments) say what the code does.
 H8  spec 7.17 says the record names its code by `inputs`, and its report shape has the block.
-H9  STATUS.md's Phase 3 row counts the review rounds the phase record holds (where the evidence package is present).
+H9, STATUS.md's Phase 3 row counting the review rounds the phase record holds, is an evidence-package check: the
+evidence package's own 00_meta/check_records.py makes it (no repository test reads outside the repository).
 """
 
 from __future__ import annotations
@@ -59,7 +60,6 @@ from app.services.turn_idempotency import IDEMPOTENCY_HEADER
 
 API_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = API_ROOT.parents[1]
-BEP_ROOT = REPO_ROOT.parent / "BEP-2-12"
 SPEC = (REPO_ROOT / "docs" / "architecture" / "phase3-implementation-spec.md").read_text(encoding="utf-8")
 ADR = (REPO_ROOT / "docs" / "adr" / "ADR-001-grounding-separation.md").read_text(encoding="utf-8")
 README = (REPO_ROOT / "docs" / "evaluation" / "phase3" / "README.md").read_text(encoding="utf-8")
@@ -455,23 +455,3 @@ def test_h8_spec_7_17_says_the_record_names_its_code_by_inputs():
     assert "**`inputs`**" in section and "**`commit`** is informational" in section
     stale = [line for line in SPEC.splitlines() if "names the commit that holds the code" in line and "Corrected in 18.10 H8" not in line]
     assert stale == [], stale
-
-
-# ============================================================================================================ H9
-
-
-def test_h9_status_counts_the_review_rounds_the_phase_record_holds():
-    # The evidence package lives beside the repository, not in it (CI has none): checked where present.
-    record_path = BEP_ROOT / "phase03" / "PHASE_RECORD.md"
-    if not record_path.exists():
-        return
-    record = record_path.read_text(encoding="utf-8")
-    history = record.split("## History", 1)[1]
-    rounds = len(re.findall(r"^\| \d+, ", history, flags=re.MULTILINE))  # one row per review round
-    assert rounds >= 10
-    status = (BEP_ROOT / "00_meta" / "STATUS.md").read_text(encoding="utf-8")
-    row = next(line for line in status.splitlines() if line.startswith("| 3 |"))
-    words = {"five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
-    stated = re.findall(r"\b(\w+) review rounds\b", row)
-    assert stated, row
-    assert all(words.get(word, -1) == rounds for word in stated), (stated, rounds)

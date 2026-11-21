@@ -68,7 +68,6 @@ from tutor_fakes import FaultyRenderer, make_entry
 API_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = API_ROOT.parents[1]
 DATA = Path(__file__).parent / "data"
-PLAN_PATH = REPO_ROOT.parent / "QC_AI_Studio_Ultimate_Software_Upgrade_Plan.txt"
 SPEC = (REPO_ROOT / "docs" / "architecture" / "phase3-implementation-spec.md").read_text(encoding="utf-8")
 RAW = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
 PACKAGE = get_config_package(Settings())
@@ -190,10 +189,9 @@ def test_d2_the_atomic_claims_reading_is_an_unratified_recorded_deviation():
     decision = RAW["owner_decisions"]["PLAN-3.3"]
     assert decision["ratified"] is False and decision["status"] == "provisional" and "DI-47" in decision["record"]
     (deviation,) = decision["deviations"]
-    quoted = "3.3 Claim plan: atomic claims bound to span ids from a structured envelope; unbound dropped [Risk R-11]."
+    # The plan itself is outside the repository: the evidence package's 00_meta/check_records.py (check_d2_*) finds this
+    # quotation in it.
     assert deviation["plan"] == "3.3: \"Claim plan: atomic claims bound to span ids from a structured envelope; unbound dropped [Risk R-11].\""
-    if PLAN_PATH.exists():  # the plan sits beside the repository on the workstation; CI has the quotation only
-        assert quoted in PLAN_PATH.read_text(encoding="utf-8")
     assert "one verbatim whole sentence" in deviation["applied"] and "Phase 5" in deviation["applied"]
     assert "**34. Task 3.3 \"atomic claims\"" in SPEC
     # The behaviour the reading describes: a clause cut from a sentence never binds (a cut can drop a negation).
@@ -206,10 +204,7 @@ def test_d2_the_atomic_claims_reading_is_an_unratified_recorded_deviation():
 def test_d3_plan_12_8_is_quoted_in_full_with_its_proposed_default_and_why_it_is_not_applied():
     retention = RAW["owner_decisions"]["PLAN-12.8"]
     full = "OPEN DECISION. Retention period (Product Owner; Principal Investigator consulted); proposed default release life plus 24 months."
-    assert retention["text"] == full
-    if PLAN_PATH.exists():
-        plan = " ".join(PLAN_PATH.read_text(encoding="utf-8").split())
-        assert full in plan
+    assert retention["text"] == full  # check_d3_* in the evidence package's 00_meta/check_records.py finds it in the plan
     assert (retention["proposed_default"], retention["proposed_default_applied"], retention["behaviour"]) == ("release life plus 24 months", False, "retain")
     assert "no release life has ended" in retention["why_not_applied"]
     assert "proposed default release life plus 24 months" in SPEC

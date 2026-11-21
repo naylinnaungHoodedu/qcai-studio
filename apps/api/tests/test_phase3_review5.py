@@ -15,8 +15,9 @@ F11 every legacy attempt ends in exactly one terminal log line carrying its atte
 F12 each turn says whether it expects a record, so rollback-window turns are not lost records.
 F13 a request past its Idempotency-Key lease can never make a second turn for its key.
 F14 the runbook's forward Alembic step checks the stamp.
-F15 BEP records (where the evidence package is present).
 F16 repository docs: spec 18.7's exit items, section 16, 8.3, 11.4 and the ratio wording.
+F15, the evidence-package records, and the evidence-package halves of F3, F6, F7 and F13 are checked by the evidence
+package's own 00_meta/check_records.py: no repository test reads outside the repository.
 
 Isolation (spec M17): chain and migration tests use fresh_database_url. Dialect-specific steps branch inside.
 """
@@ -79,7 +80,6 @@ from tutor_fakes import FAULT_MODES, make_entry
 
 API_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = API_ROOT.parents[1]
-BEP_ROOT = REPO_ROOT.parent / "BEP-2-12"
 SPEC = (REPO_ROOT / "docs" / "architecture" / "phase3-implementation-spec.md").read_text(encoding="utf-8")
 RUNBOOK = (REPO_ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8")
 OBSERVABILITY = (REPO_ROOT / "infra" / "cloudrun" / "observability.md").read_text(encoding="utf-8")
@@ -263,10 +263,6 @@ def test_f3_the_qa_answer_carries_the_evidence_panel_in_development_only(monkeyp
     production = Settings(environment="production")
     assert production.evidence_panel_enabled is False
     assert "evidence" not in QAEngine(get_retrieval_engine(), production).ask(IN_DOMAIN).model_dump(mode="json")
-    register = BEP_ROOT / "00_meta" / "DEFERRED_ITEMS_REGISTER.md"
-    if register.exists():
-        row = next(line for line in register.read_text(encoding="utf-8").splitlines() if line.startswith("| DI-34 |"))
-        assert "the Q&A panel" not in row.split("(Revised", 1)[0] and "built in development" in row
 
 
 # ============================================================================================================ F4
@@ -344,12 +340,6 @@ def test_f6_hold_h6_blocks_the_provider_interim_path_and_d19_runs_instead():
     path = RAW["owner_decisions"]["D-12"]["path"]
     assert "hold H6 blocks the provider interim path" in path and "runs D-19 extractive mode instead" in path
     assert "the D-19 extractive generator is the interim path" not in path
-    register = BEP_ROOT / "00_meta" / "PROVISIONAL_DEFAULTS_REGISTER.md"
-    if register.exists():
-        row = next(line for line in register.read_text(encoding="utf-8").splitlines() if line.startswith("| PD-09 |"))
-        current = row.split("(Corrected in 18.8 F6", 1)[0]
-        assert "H6 blocks the provider interim path" in current and "D-19 extractive mode instead" in current
-        assert "is the Phase 3 interim path" not in current
 
 
 # ============================================================================================================ F7
@@ -361,13 +351,6 @@ def test_f7_the_records_say_what_the_code_does():
     assert "the route answers 404 to everyone, owners included" in authorization
     ac33 = next(line for line in TEST_STRATEGY.splitlines() if line.startswith("| AC-3-3"))
     assert f"the {len(FAULT_MODES)} fault modes" in ac33 and len(FAULT_MODES) == 12
-    record = BEP_ROOT / "phase03" / "PHASE_RECORD.md"
-    if record.exists():
-        text_ = record.read_text(encoding="utf-8")
-        current = text_.split("## History", 1)[0]
-        subset = next(line for line in current.splitlines() if line.startswith("- **3.7 Subset check.**"))
-        assert "`segment-exact-whitespace-v3`" in subset and "-v2`" not in subset
-        assert "(11 since the third review round)" not in text_ and "12 fault modes" in current
 
 
 # ============================================================================================================ F8
@@ -781,10 +764,6 @@ def test_f13_the_lease_is_a_liveness_bound_and_the_runbook_records_the_request_t
     source = (API_ROOT / "app" / "services" / "turn_idempotency.py").read_text(encoding="utf-8")
     assert "Safety does not depend on any timeout" in source and "were it still running, its commit would find the claim gone" not in source
     assert "Read the service's request timeout" in RUNBOOK and "timeoutSeconds" in RUNBOOK
-    register = BEP_ROOT / "00_meta" / "PROVISIONAL_DEFAULTS_REGISTER.md"
-    if register.exists():
-        row = next(line for line in register.read_text(encoding="utf-8").splitlines() if line.startswith("| PD-11 |"))
-        assert "min_question_overlap_terms" in row and "claim token" in row
 
 
 # ============================================================================================================ F14
@@ -822,35 +801,6 @@ def test_f14_the_forward_alembic_step_runs_only_on_a_phase2_stamp(fresh_database
     assert "Check the stamp first" in before and "`alembic current`" in before
     assert f"`alembic upgrade {PHASE3_REVISION}`" in before and before.index("`alembic current`") < before.index(f"`alembic upgrade {PHASE3_REVISION}`")
     assert "(`alembic upgrade head`)" not in before
-
-
-# ============================================================================================================ F15
-
-
-def test_f15_the_bep_records_say_what_the_code_does():
-    # The evidence package lives beside the repository, not in it (CI has none): checked where present.
-    if not (BEP_ROOT / "phase03" / "PHASE_RECORD.md").exists():
-        return
-    pin = (API_ROOT / "app" / "config_package" / "v2.json.sha256").read_text(encoding="utf-8").strip()
-    record = (BEP_ROOT / "phase03" / "PHASE_RECORD.md").read_text(encoding="utf-8")
-    current = record.split("## History", 1)[0]
-    # The current-state section names the current pin and where it lives.
-    pointer = next(line for line in current.splitlines() if line.startswith("- **Configuration package v2**"))
-    assert pin[:8] in pointer and "v2.json.sha256" in pointer, pointer
-    built = current.split("### What exists", 1)[1].split("### Acceptance criteria", 1)[0]
-    assert "also trimmed `slis.two_pass_shadow` to fields that describe no single run)" not in built
-    assert "citation_list_mismatch" in built
-    notes = (BEP_ROOT / "phase03" / "CLOSURE_EVIDENCE_NOTES.md").read_text(encoding="utf-8")
-    history = notes.split("## History", 1)[1]
-    assert "| 4 | `65f56d1` |" in history and "| 5 | `feb025f` |" in history
-    assert "the current pin is in the third-round section below" not in notes
-    register = (BEP_ROOT / "00_meta" / "DEFERRED_ITEMS_REGISTER.md").read_text(encoding="utf-8")
-    di40 = next(line for line in register.splitlines() if line.startswith("| DI-40 |"))
-    assert "in_progress_lease_seconds" in di40 and "claim token" in di40
-    status = (BEP_ROOT / "00_meta" / "STATUS.md").read_text(encoding="utf-8")
-    row = next(line for line in status.splitlines() if line.startswith("| 3 |"))
-    assert "phase03/PHASE_RECORD.md" in row and "exit NOT passed" in row
-    assert "Three review lenses" not in status and "four lenses" in status
 
 
 # ============================================================================================================ F16

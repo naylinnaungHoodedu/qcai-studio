@@ -13,7 +13,8 @@ J6  the attempt horizon is derived from the code's own terms (the append queue i
     by CPU allocation.
 J7  spec 4.11, section 9's connection note and 13.1 items 28 and 39 say what the code and the tests do.
 J8  spec sections 14 and 15 mark the CI job, budget setting and Alembic step that later rounds changed.
-The evidence package lives beside the repository, not in it (CI has none): its checks run where it is present.
+The evidence-package halves of J2, J6 and the ninth round's records are checked by the evidence package's own
+00_meta/check_records.py: no repository test reads outside the repository.
 """
 
 from __future__ import annotations
@@ -61,7 +62,6 @@ from tutor_fakes import FaultyRenderer, ScriptedGenerator, SpyGenerator, make_en
 
 API_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = API_ROOT.parents[1]
-BEP_ROOT = REPO_ROOT.parent / "BEP-2-12"
 SPEC = (REPO_ROOT / "docs" / "architecture" / "phase3-implementation-spec.md").read_text(encoding="utf-8")
 RUNBOOK = (REPO_ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8")
 OBSERVABILITY = (REPO_ROOT / "infra" / "cloudrun" / "observability.md").read_text(encoding="utf-8")
@@ -90,11 +90,6 @@ def _run(pipeline: TwoPassPipeline, query: str, plan_id: str = "concise"):
 
 def _events(caplog, name: str) -> list[dict]:
     return [dict(record.json_fields) for record in caplog.records if getattr(record, "json_fields", {}).get("event") == name]
-
-
-def _bep(relative: str) -> str | None:
-    path = BEP_ROOT / relative
-    return path.read_text(encoding="utf-8") if path.exists() else None
 
 
 def _load_replay():
@@ -269,9 +264,6 @@ def test_j2_the_records_name_what_the_invariant_1_fixture_compares():
     assert "ClaimPlans" in sentence and "threshold version" in sentence and "every field of the shadow record but its ids" in sentence
     ac_3_1 = next(line for line in STRATEGY.splitlines() if line.startswith("| AC-3-1"))
     assert "ClaimPlans" in ac_3_1 and "`test_k1_*`" in ac_3_1 and "`test_j2_*`" in ac_3_1
-    if (record := _bep("phase03/PHASE_RECORD.md")) is not None:
-        row = next(line for line in record.splitlines() if line.startswith("| AC-3-1 "))
-        assert "ClaimPlans" in row and "`test_k1_*`" in row and "identical requests, envelopes, bundles, hashes and decisions" not in row
 
 
 # ============================================================================================================ J3
@@ -615,11 +607,6 @@ def test_j6_the_runbook_reads_the_horizon_by_cpu_allocation():
                 line = line.replace(phrase, "")
             assert not (re.search(r"\b60 s\b", line) and "horizon" in line and "60 s for ingestion" not in line and "`HORIZON_MARGIN_S` (60 s)" not in line
                         and "`HORIZON_MARGIN_S` 60 s" not in line), (name, line[:160])
-    for name in ("00_meta/DEFERRED_ITEMS_REGISTER.md",):
-        if (register := _bep(name)) is not None:
-            di_48 = next(line for line in register.splitlines() if line.startswith("| DI-48 |"))
-            di_50 = next(line for line in register.splitlines() if line.startswith("| DI-50 |"))
-            assert "attempt horizon" in di_48 and "360 s" in di_50 and "`pending`" in di_50
 
 
 # ============================================================================================================ J7
@@ -681,9 +668,3 @@ def test_j_the_spec_record_and_the_evidence_package_name_the_ninth_round():
     for name in re.findall(r"^def (test_\w+)\(", source, flags=re.MULTILINE):
         group = re.match(r"(test_j\d*)_", name).group(1)
         assert f"`{group}_*`" in row, name
-    if (phase_record := _bep("phase03/PHASE_RECORD.md")) is not None:
-        ninth_row = next(line for line in phase_record.split("## History", 1)[1].splitlines() if line.startswith("| 9, J1-J8 "))
-        assert "`94aa3e6`" in ninth_row and "44676365093" in ninth_row
-    if (register := _bep("00_meta/PROVISIONAL_DEFAULTS_REGISTER.md")) is not None:
-        pd_11 = next(line for line in register.splitlines() if line.startswith("| PD-11 |"))
-        assert "attempt_horizon_s" in pd_11 and "HORIZON_MARGIN_S" in pd_11

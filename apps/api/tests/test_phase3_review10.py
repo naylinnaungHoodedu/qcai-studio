@@ -7,8 +7,9 @@ K1  the invariant 1 fixture tells learners apart by every field it is meant to c
 K2  a new Cloud SQL connection is bounded by app.core.db (CONNECT_TIMEOUT_S), as the attempt horizon assumes: the
     connector bounds none of it.
 K3  the Phase 3 records state the current code only (P2-12-D-03): no narrative markers in the authoritative text, one
-    review-history row per round in the spec, a test-strategy map of every test_phase3_*.py file, spec section 3
-    listed from the code, and, where the evidence package is present, its current-state sections and register rows.
+    review-history row per round in the spec, a test-strategy map of every test_phase3_*.py file and spec section 3
+    listed from the code. The evidence package's current-state sections and register rows are checked by its own
+    00_meta/check_records.py (check_k3_*): no repository test reads outside the repository.
 """
 
 from __future__ import annotations
@@ -373,7 +374,6 @@ def test_k2_the_production_engine_uses_the_bounded_creator_and_the_horizon_count
 
 SPEC = (REPO_ROOT / "docs" / "architecture" / "phase3-implementation-spec.md").read_text(encoding="utf-8")
 STRATEGY = (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
-BEP_ROOT = REPO_ROOT.parent / "BEP-2-12"
 # Phrases that narrate what an earlier round's text or code said. P2-12-D-03: the authoritative text states the current
 # code only, and each round is one row of the spec's review history (18.4).
 NARRATIVE = re.compile(
@@ -382,11 +382,6 @@ NARRATIVE = re.compile(
     r"|\bthis (?:said|comment said|docstring said|row said|line said|bullet said|listing said)\b|^\s*History:",
     flags=re.MULTILINE,
 )
-
-
-def _bep(relative: str) -> str | None:
-    path = BEP_ROOT / relative
-    return path.read_text(encoding="utf-8") if path.exists() else None
 
 
 def _last_round() -> int:
@@ -463,7 +458,10 @@ def test_k3_the_spec_records_each_round_once_in_the_review_history_table():
         commit = row.split(" | ")[1]
         assert re.search(r"`[0-9a-f]{7,40}`", commit), row[:40]
         findings = row.split(" | ", 2)[2].rstrip(" |").split("<br>")
-        assert findings and all("`" in finding and ("test_" in finding or ".test.ts" in finding) for finding in findings), row[:40]
+        # Each finding names what fails if its defect comes back: a repository test, a frontend test or, for a finding
+        # about the evidence package's own records, a check of the evidence package's 00_meta/check_records.py.
+        assert findings and all("`" in finding and ("test_" in finding or ".test.ts" in finding or "check_records.py" in finding)
+                                for finding in findings), row[:40]
         assert _resolves(row, functions) == [], (row[:30], _resolves(row, functions))
     for name, index in files.items():
         row = rows[index]
@@ -532,26 +530,3 @@ def test_k3_spec_section_3_lists_the_code_s_fields():
     for name in ("ResolvedQuestion", "RetrievalRequest", "EvidenceBundle", "EvidentialEnvelope", "ClaimPlan", "LockedClaimSet", "PresentationPlan",
                  "LedgerEntry", "BudgetStamp", "PresentationRecord"):
         assert f"class {name}(Contract):" in section, name
-
-
-def test_k3_the_evidence_package_states_the_current_phase_3_state():
-    record = _bep("phase03/PHASE_RECORD.md")
-    if record is None:
-        return  # the evidence package lives beside the repository; CI's checkout has none
-    assert record.index("## Current state") < record.index("## History")
-    current = record.split("## History", 1)[0]
-    assert NARRATIVE.findall(current) == []
-    for needed in ("44676365093", "DI-31", "exit gate is NOT passed", "test_ac_3_1_", "test_ac_3_6_"):
-        assert needed in current, needed
-    history = record.split("## History", 1)[1]
-    assert len([line for line in history.splitlines() if re.match(r"\| \d+, ", line)]) == _last_round()
-    notes = _bep("phase03/CLOSURE_EVIDENCE_NOTES.md")
-    assert notes.index("## Current state") < notes.index("## History")
-    assert NARRATIVE.findall(notes.split("## History", 1)[0]) == []
-    status = next(line for line in _bep("00_meta/STATUS.md").splitlines() if line.startswith("| 3 |"))
-    assert "44676365093" in status and "NOT passed" in status and "not pushed" not in status
-    registers = _bep("00_meta/DEFERRED_ITEMS_REGISTER.md") + _bep("00_meta/PROVISIONAL_DEFAULTS_REGISTER.md")
-    rows = [line for line in registers.splitlines() if re.match(r"\| (?:PD-(?:0[89]|1[0-2])|DI-(?:3[1-9]|4\d|5\d)) \|", line)]
-    assert len(rows) >= 26 and [line[:7] for line in rows if NARRATIVE.search(line)] == []
-    di_31 = next(line for line in rows if line.startswith("| DI-31 |"))
-    assert "44676365093" in di_31 and "main" in di_31

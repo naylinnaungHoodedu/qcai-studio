@@ -1185,7 +1185,7 @@ The PostgreSQL matrix jobs, the frontend job and `release-artifacts` are unchang
 5. **`infra/cloudrun/deployment.md`:** `## Phase 4: V1 validation and quiz keys (runbook)` (D-05 cloud writes; shipped defaults; pre-release checks; frontend first, then the API, with the cache windows; `/ready` checks; stop conditions; rollback to `V1_PIPELINE=shadow`; the export before a digest rollback; the rollback order, the API first; the package-version notes of the Phase 2 and Phase 3 sections).
 6. **`infra/cloudrun/observability.md`:** `## Phase 4 SLIs: V1 (plan Phase 4 I)`, the log-based metrics and alerts marked "Not set up yet" (DI-62).
 7. **`infra/cloudrun/api-production.env.example.yaml`:** `V1_PIPELINE: "shadow"`.
-8. **BEP-2-12** (outside the repository): `phase04/PHASE_RECORD.md` (current state first, then `## History`, one row per round); `phase04/CLOSURE_EVIDENCE_NOTES.md` (R-13, R-15, R-16, R-19, R-42, R-46); the register rows (16); `00_meta/STATUS.md` gains a `| 4 |` row.
+8. **BEP-2-12** (outside the repository): `phase04/PHASE_RECORD.md` (current state first, then `## History`, one row per round); `phase04/CLOSURE_EVIDENCE_NOTES.md` (R-13, R-15, R-16, R-19, R-42, R-46); the register rows (16); `00_meta/STATUS.md` gains a `| 4 |` row; `00_meta/check_records.py`, run with the API virtual environment, checks the evidence package's wording (its Phase 3 records and registers, and the plan text the configuration package quotes) and exits 0 on the current records. No repository test reads outside the repository: those checks are the checker's, each named after the finding it guards.
 
 ---
 

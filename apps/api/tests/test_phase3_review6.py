@@ -17,7 +17,6 @@ from app.core.config_package import DEFAULT_PACKAGE_PATH
 
 API_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = API_ROOT.parents[1]
-BEP_ROOT = REPO_ROOT.parent / "BEP-2-12"
 SPEC = (REPO_ROOT / "docs" / "architecture" / "phase3-implementation-spec.md").read_text(encoding="utf-8")
 RAW = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
 SELF = Path(__file__).resolve()
@@ -167,13 +166,12 @@ CORRECTION_MARK = re.compile(r"[Cc]orrected in 18\.8 F6")
 
 
 def _records() -> list[Path]:
-    """The record set: the API code and package, the repository docs and runbooks, the scripts, CI and, where the
-    evidence package is present, its registers and the Phase 3 records. Tests are not records."""
+    """The repository's record set: the API code and package, the repository docs and runbooks, the scripts and CI.
+    Tests are not records. The evidence package's registers and Phase 3 records are outside the repository: its own
+    00_meta/check_records.py scans them with the same pattern (check_g2_*)."""
     paths = [path for path in (API_ROOT / "app").rglob("*") if path.suffix in {".py", ".json"} and "__pycache__" not in path.parts]
     paths += list((REPO_ROOT / "docs").rglob("*.md")) + list((REPO_ROOT / "infra").rglob("*.md"))
     paths += list((REPO_ROOT / "scripts").glob("*.py")) + list(REPO_ROOT.glob("*.md")) + list((REPO_ROOT / ".github").rglob("*.yml"))
-    if BEP_ROOT.exists():
-        paths += list((BEP_ROOT / "00_meta").glob("*.md")) + list((BEP_ROOT / "phase03").glob("*.md"))
     return sorted(paths)
 
 
@@ -213,7 +211,4 @@ def test_g2_the_code_comment_the_spec_listing_and_the_closure_notes_say_h6_block
     # The spec 16.1 PD-09 row states the current wording, as the register does.
     pd09 = next(line for line in SPEC.splitlines() if line.startswith("| PD-09 |"))
     assert "hold H6 blocks the provider interim path" in pd09 and not SUPERSEDED_D12.search(pd09)
-    notes = BEP_ROOT / "phase03" / "CLOSURE_EVIDENCE_NOTES.md"
-    if notes.exists():
-        r11 = notes.read_text(encoding="utf-8").split("## R-11", 1)[1].split("\n### ", 1)[0]
-        assert "hold H6 blocks the provider interim path" in r11 and "D-19 extractive generator instead" in r11
+    # The closure notes' R-11 line is checked by the evidence package's 00_meta/check_records.py (check_g2_*).

@@ -5,7 +5,8 @@ M1  production's pg8000 interface. The Cloud SQL connector connects with pg8000.
     server error as a plain DatabaseError, 23505 included; classify_pg8000_errors gives each mapped SQLSTATE class
     psycopg's PEP 249 class, so the ledger's IntegrityError retry fires on a real duplicate key there. A
     postgresql+pg8000:// URL (CI's pg8000 leg) uses the legacy pg8000.connect, which raises other classes. Spec 7.19,
-    14 and 16, the app.core.db comment, the CI comment, the test strategy and DI-46 say so.
+    14 and 16, the app.core.db comment, the CI comment and the test strategy say so (the register's DI-46 row is
+    checked by the evidence package's own 00_meta/check_records.py).
 M2  spec 0.2 M24 lists v1.json's keys and owner decisions and names every owner decision package v2 adds (D-19, D-12,
     PLAN-3.3, PLAN-12.8), as 5.1 does; every line that says what v2 adds to owner_decisions names all four.
 """
@@ -43,7 +44,6 @@ from tutor_fakes import make_entry
 
 API_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = API_ROOT.parents[1]
-BEP_ROOT = REPO_ROOT.parent / "BEP-2-12"
 SPEC = (REPO_ROOT / "docs" / "architecture" / "phase3-implementation-spec.md").read_text(encoding="utf-8")
 AUTHORITATIVE_SPEC = SPEC.split("## 18. Implementation record", 1)[0]
 STRATEGY = (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
@@ -56,11 +56,6 @@ PG8000_DIALECT = create_engine(URL.create("postgresql+pg8000"), creator=lambda: 
 
 def _section(title: str, end: str) -> str:
     return SPEC.split(title, 1)[1].split(end, 1)[0]
-
-
-def _bep(relative: str) -> str | None:
-    path = BEP_ROOT / relative
-    return path.read_text(encoding="utf-8") if path.exists() else None
 
 
 def _production_shaped_engine(url: str) -> Engine:
@@ -287,18 +282,13 @@ def test_m1_the_records_state_production_s_pg8000_interface_and_ci_s():
     spec_14 = next(line for line in _section("## 14.", "## 15.").splitlines() if line.startswith("- `api-postgres-driver` runs"))
     spec_16 = next(line for line in _section("## 16.", "## 17.").splitlines() if line.startswith("| DI-46 |"))
     strategy = next(line for line in STRATEGY.splitlines() if "once with psycopg and once with pg8000" in line)
+    # The register's DI-46 row and the evidence package's texts are checked by its 00_meta/check_records.py (check_m1_*).
     records = {"ci": ci_comment, "spec 14": spec_14, "spec 16": spec_16, "test strategy": strategy}
-    register = _bep("00_meta/DEFERRED_ITEMS_REGISTER.md")
-    if register is not None:  # the evidence package lives beside the repository; CI's checkout has none
-        records["DI-46"] = next(line for line in register.splitlines() if line.startswith("| DI-46 |"))
     for name, record in records.items():
         assert "pg8000.dbapi.connect" in record and "legacy pg8000.connect" in record.replace("`", "") and "test_m1_*" in record, name
     # No record says pg8000 raises IntegrityError only for 23505, or that pg8000 itself raises ProgrammingError for
     # every other server error, without naming the interface.
     texts = {"spec": SPEC, "test strategy": STRATEGY, "ci": CI, "app/core/db.py": db_source}
-    if register is not None:
-        texts["registers"] = register + (_bep("00_meta/PROVISIONAL_DEFAULTS_REGISTER.md") or "")
-        texts["phase record"] = _bep("phase03/PHASE_RECORD.md") or ""
     for name, body in texts.items():
         assert not re.search(r"IntegrityError`? only for 23505", body), name
         assert "pg8000 (the production driver) raises" not in body, name
@@ -337,10 +327,8 @@ def test_m2_spec_0_2_m24_lists_v1_s_keys_and_names_every_owner_decision_v2_adds(
 
 def test_m2_every_line_that_says_what_v2_adds_to_owner_decisions_names_all_four():
     added = set(V2_RAW["owner_decisions"]) - set(V1_RAW["owner_decisions"])
+    # The phase record's lines are checked by the evidence package's 00_meta/check_records.py (check_m2_*).
     texts = {"spec 0-17": AUTHORITATIVE_SPEC, "test strategy": STRATEGY}
-    record = _bep("phase03/PHASE_RECORD.md")
-    if record is not None:
-        texts["phase record"] = record.split("## History", 1)[0]
     checked = 0
     for name, body in texts.items():
         for line in body.splitlines():
