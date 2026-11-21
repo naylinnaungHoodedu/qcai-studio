@@ -265,6 +265,9 @@ SETTING_RELAXATIONS = {
     "ledger_append_budget_overridden": {"tutor_ledger_append_budget_ms": 1000},
 }
 PACKAGE_RELAXATIONS = {"config_package_path_overridden": {"is_default_path": False}, "config_package_hash_unverified": {"hash_verified": False}}
+# Phase 4: a relaxation Settings refuse outside development before the Phase 4 exit (V1_PIPELINE=enforce). The alert
+# still names it, should a build ever run with it, so it has its own case (built without validation).
+REFUSED_RELAXATIONS = {"v1_pipeline_enforce": {"v1_pipeline": "enforce"}}
 
 
 def _override_details(monkeypatch, settings: Settings, package=None) -> dict | None:
@@ -289,6 +292,13 @@ def test_c2_production_defaults_record_no_override(monkeypatch):
 @pytest.mark.parametrize("key", sorted(SETTING_RELAXATIONS))
 def test_c2_each_settings_relaxation_is_recorded_under_its_own_key(monkeypatch, key):
     assert _override_details(monkeypatch, Settings(**PRODUCTION, **SETTING_RELAXATIONS[key])) == {key: True}
+
+
+@pytest.mark.parametrize("key", sorted(REFUSED_RELAXATIONS))
+def test_c2_each_refused_relaxation_is_refused_and_still_recorded_under_its_own_key(monkeypatch, key):
+    with pytest.raises(ValueError):
+        Settings(**PRODUCTION, **REFUSED_RELAXATIONS[key])
+    assert _override_details(monkeypatch, Settings(**PRODUCTION).model_copy(update=REFUSED_RELAXATIONS[key])) == {key: True}
 
 
 @pytest.mark.parametrize("key", sorted(PACKAGE_RELAXATIONS))
@@ -318,7 +328,7 @@ def test_c2_every_key_the_alert_can_emit_has_a_case_here():
         for node in ast.walk(tree)
         if isinstance(node, ast.Tuple) and len(node.elts) == 2 and isinstance(node.elts[0], ast.Constant) and isinstance(node.elts[0].value, str)
     }
-    assert keys == set(SETTING_RELAXATIONS) | set(PACKAGE_RELAXATIONS)
+    assert keys == set(SETTING_RELAXATIONS) | set(PACKAGE_RELAXATIONS) | set(REFUSED_RELAXATIONS)
 
 
 # ============================================================================================================ C3

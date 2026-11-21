@@ -60,14 +60,22 @@ export type Flashcard = {
   card_type: string;
 };
 
+// A public quiz question carries no answer key and no explanation (plan Phase 4 B; R-42): the model answer and rubric
+// come only from a saved attempt's feedback (QuizAttemptResult.feedback).
 export type QuizQuestion = {
   id: string;
   question_type: string;
   prompt: string;
   choices: string[];
-  answer: string;
-  explanation: string;
   difficulty: string;
+};
+
+export type QuizFeedback = {
+  question_id: string;
+  answered: boolean;
+  correct: boolean | null;
+  answer: string | null;
+  explanation: string | null;
 };
 
 export type LessonDetail = {
@@ -196,6 +204,8 @@ export type EvidencePanelPayload = {
   degraded: Array<"extractive_only" | "retrieval_fallback" | "citations_provisional">;
   spans: Array<{ span_id: string; label: string; resolvable: boolean }>;
   verdict: "no-verdict";
+  // Phase 4 (V1.7): present only when quoted passages disagree; passages are 1-based positions in spans.
+  conflicts?: Array<{ kind: "version_of_same_asset" | "number_disagreement" | "negation_disagreement"; passages: number[] }> | null;
 };
 
 export type TutorThread = {
@@ -240,6 +250,8 @@ export type QuizAttemptResult = {
   status: string;
   attempt_id: number;
   score: number;
+  // Absent from an API older than Phase 4.
+  feedback?: QuizFeedback[];
 };
 
 export type QuizAttemptSummary = {

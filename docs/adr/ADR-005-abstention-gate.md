@@ -1,5 +1,7 @@
 # ADR-005: Abstention gate
 
+**Status 2026-11-20:** the Context, Decision and Consequences sections below (the 2025 overlap gate) are superseded by "Decision 2026-11-20 (Phase 4: V1 deterministic validation)" at the end of this file. The Revision 2026-11-19 (Phase 3) section stays in force as V1.4. All three are left unchanged as the dated record of those decisions.
+
 ## Context
 
 RevB treats weak-evidence abstention as a correct first-class outcome, not a generic error message.
@@ -21,3 +23,28 @@ The overlap `ClaimGate` of the decision above is withdrawn; its fail-closed rule
 - **Abstention reasons** come from the two-pass pipeline vocabulary (`ABSTENTION_REASONS` in `tutor_pipeline/contracts.py`): the gate's retrieval reasons, plus `corpus_version_mismatch`, `no_quotable_evidence`, `no_whole_sentence`, `claim_plan_invalid`, `no_claims`, `no_bound_claims`, `subset_check_failed`, `render_failed` and `budget_exceeded`. `no_quotable_evidence` means the bundle held no quotable span (nothing approved under D-31, or the license gate excluded every result); `no_whole_sentence` means it held quotable spans, none of which holds a whole document sentence. `subset_check_failed` means every rendering that was checked was refused; `render_failed` means every render attempt raised instead, in the renderer or in the subset check on its output, and each such attempt logs `tutor.two_pass.render_failed`. The legacy contained path keeps `no_approved_span`.
 - **Delivery.** Learners still receive only the D-19 contained answer. The two-pass pipeline runs in shadow until the Phase 4 exit.
 - **Next.** The full rewrite of this ADR, with the V1 checks (V1.3-V1.9) and the sufficiency gate V1.5, is Phase 4 (plan Phase 4 F).
+
+## Decision 2026-11-20 (Phase 4: V1 deterministic validation)
+
+Every two-pass response is judged by nine synchronous checks before anything of it could be delivered (plan Phase 4 D; `apps/api/app/services/v1_checks/`; the V1 specification is section 4 of `docs/architecture/phase4-implementation-spec.md`). Thresholds, bands and the lexicon come only from configuration package v3 (`v1`, every value provisional under Q-22 and D-06: frozen before use, never reported as results).
+
+| Check | Rule id | EHMF | Outcome |
+|---|---|---|---|
+| V1.1 | `span-resolution-current-v1`: every cited span id resolves in the current corpus with the bundle's content hash | B | `hard_fail`: regenerate, at most twice, then abstain (`unresolvable_citation`) |
+| V1.2 | `binding-polarity-v1`: the Phase 3 binding `resolver-bundle-sentence-v2`, plus `quantity-negation-polarity-v1`, which keeps every number and negation cue | A, B | the claim is dropped; no claim left abstains (`no_bound_claims`) |
+| V1.3 | `entailment-interface-v1`: an entailment checker; D-21 is open, so the NullChecker (`none`) flags every claim | A, B, C | `flag` only, never hard; an unavailable or late checker abstains (`checker_unavailable`) |
+| V1.4 | `segment-exact-whitespace-v3`: the Phase 3 subset check (the revision above), through the pipeline's one `check_subset` seam | D, E | `hard_fail`: re-render, at most twice, then abstain |
+| V1.5 | `gate-decision-margin-v1`: the active retrieval gate's own decision | A | `abstain` below the floor; `mark` within the X4 margin (labelled `near_floor`, a V3 X4 candidate) |
+| V1.6 | `keyed-answer-containment-v1` with `keyed-answer-socratic-omit-v1` | E | `hard_fail`: re-render with the socratic plan without the keyed claims, or abstain (`keyed_answer_leak`) |
+| V1.7 | `conflict-version-polarity-v1`: version families, and aligned sentences of different items that differ in numbers or negation | D | a disclosure block (`disclose`), or the claims involved withheld |
+| V1.8 | `misconception-all-terms-v1`: the versioned library (v0, empty while Q-14 is unavailable) | C | `flag`, withheld, queued for V3 |
+| V1.9 | `schema-forbid-v1` and `fk-grade-segments-v1` | E | an invalid plan or envelope is hard; outside the readability band re-renders, then abstains (`readability_out_of_band`) |
+
+- **HARD = final, by type.** A run ends in a `V1HardFail` (results only: no claim, no rendering, no consult path), a `V1Abstained`, or a `V1Passed`. Only a `V1Passed` can reach a V2 hook (`consult_v2`), and a `V1Passed` refuses to exist if its accepted candidate holds a hard fail; the one exemption is V1.2's drop of a proposal that never locked. A regeneration is a new candidate judged from the start; no vote, retry or later stage changes a hard fail (plan rule 1, invariant 3).
+- **Modes (`V1_PIPELINE`).** `off` (development only) runs the Phase 3 composition alone; `shadow`, the default outside development, records the Phase 3 decision and V1's verification beside it; `enforce`, the development default, lets V1 decide the shadow record. The overlap gate no longer exists, so the "legacy gate" V1 shadows is the Phase 3 decision path (bind, lock, render, the subset check and its abstention) together with the legacy contained decision the learner received; every disagreement is logged (`tutor.v1.disagreement`) and counted. Enforce is refused outside development until the Phase 4 exit; off is refused outside development (plan 13.6).
+- **The legacy guard has no flag.** Every contained answer delivered on `/assistant/chat`, `/tutor/turns` and `/qa/ask` passes V1.1 and V1.2 first (a quotation resolves, is verbatim in its span, and keeps the span's numbers and negations); any failure withholds the whole answer as today's abstention and logs `tutor.v1.legacy_guard_withheld`. Without a package v1 block a governed build does not start; development skips only the polarity rule.
+- **D-20 interim policy, applied as its own text (PD-13).** Before Phase 5 every flagged claim (V1.3, V1.8, and the claims of a withheld V1.7 conflict) is withheld at every tier. The record names the replacement the learner got: the D-19 contained answer (`extractive_d19`), or its abstention (`abstention`); `unknown` where no legacy decision exists. Withheld claims carry a V3 queue intent. No "under review" delivery exists. With the NullChecker, nothing two-pass is deliverable.
+- **V1.7 in production.** The shipped version family is the 2025/2026 lecture video (Q-10); video spans are never cited and the 2026 item is unbound, so in production a disclosure can come only from a number or negation disagreement between cited document spans.
+- **Abstention reasons.** A V1-enforced record uses `ABSTENTION_REASONS` (above) plus `unresolvable_citation`, `checker_unavailable`, `keyed_answer_leak`, `readability_out_of_band` and `response_envelope_invalid`; a withheld response names `d20_interim_withhold` or `conflict_withheld`.
+- **Residuals.** Checker error (no checker is hosted, D-21); paraphrased leakage of a keyed answer (V1.6 matches the key's text, and keys under three tokens only as choice text); paraphrased contradiction between cited spans (only V1.3 could catch it, and V1.3 withholds every claim while it is `none`); the legacy quotations that a span edge or the display truncation cuts mid-sentence (DI-60).
+- **Delivery.** Learners still receive only the D-19 contained answer. Two-pass delivery waits for the Phase 4 exit (DI-59).

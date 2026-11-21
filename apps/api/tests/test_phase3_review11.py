@@ -70,7 +70,7 @@ from app.services.ledger import (
 from app.services.retrieval_engine import RetrievalEngine
 from app.services.store import get_course_store
 from app.services.tutor_pipeline import pipeline as pipeline_module
-from app.services.tutor_pipeline.contracts import LedgerEntry, PresentationPlan
+from app.services.tutor_pipeline.contracts import ENTRY_SCHEMAS, LedgerEntry, PresentationPlan
 from app.services.tutor_pipeline.package_check import check_tutor_pipeline_package
 from app.services.tutor_pipeline.pipeline import PipelineInput, TwoPassPipeline, render_checked
 from app.services.tutor_pipeline.render import TemplateRenderer
@@ -467,7 +467,8 @@ def _changed(entry: LedgerEntry, *, entry_provenance: dict | None = None, claim_
     for claim in data["claims"]:
         claim["response_id"] = data["response_id"]
         claim["provenance"] = {**data["provenance"], **(claim_provenance or {})} if claim_provenance else dict(data["provenance"])
-    return LedgerEntry.model_validate(data)
+    # Each record validates as its own entry schema (a two-pass record is ledger-entry-v2 since Phase 4).
+    return ENTRY_SCHEMAS[data["entry_schema"]].model_validate(data)
 
 
 def test_l7_the_provenance_audit_passes_on_the_records_the_code_writes_and_names_each_record_that_differs(isolated):
@@ -491,7 +492,7 @@ def test_l7_the_provenance_audit_passes_on_the_records_the_code_writes_and_names
     generator["versions"]["generator_id"] = "contained-answers-v9"
     for claim in generator["claims"]:
         claim["response_id"] = generator["response_id"]
-    append_ledger_entry(LedgerEntry.model_validate(generator), session_factory=factory, budget_ms=budget)
+    append_ledger_entry(ENTRY_SCHEMAS[generator["entry_schema"]].model_validate(generator), session_factory=factory, budget_ms=budget)
     append_ledger_entry(_changed(abstained.entry, entry_provenance={"pedagogical_prompt_hash": "e" * 64}), session_factory=factory, budget_ms=budget)
     append_ledger_entry(_changed(answered.entry, resolver_prompt_hash="f" * 64), session_factory=factory, budget_ms=budget)
     append_ledger_entry(make_entry(), session_factory=factory, budget_ms=budget)  # stamped with another package (b * 64)
@@ -508,14 +509,14 @@ def test_l7_the_provenance_audit_passes_on_the_records_the_code_writes_and_names
     ] and audit["problem_count"] == 4
     # A record naming a pipeline the package does not pin, and one whose generator it does not allow.
     two_pass = json.loads(json.dumps(answered.entry.model_dump(mode="json")))
-    assert ledger._provenance_problems(10, {**two_pass, "pipeline": "two-pass-v9"}, PARAMS) == ["seq 10 names a pipeline the package does not pin"]
+    assert ledger._provenance_problems(10, {**two_pass, "pipeline": "two-pass-v9"}, PARAMS, PACKAGE.v1) == ["seq 10 names a pipeline the package does not pin"]
     two_pass["versions"]["generator_id"] = "gateway-v1"
-    assert ledger._provenance_problems(11, two_pass, PARAMS) == ["seq 11 versions.generator_id is not a generator the package allows"]
+    assert ledger._provenance_problems(11, two_pass, PARAMS, PACKAGE.v1) == ["seq 11 versions.generator_id is not a generator the package allows"]
     # A claim whose provenance differs from its record's: the LedgerEntry contract refuses one, so the audit's check is a
     # second line, shown here on a raw entry.
     legacy = legacy_entry.model_dump(mode="json")
     legacy["claims"][0]["provenance"] = {**legacy["provenance"], "threshold_set_version": "other"}
-    assert ledger._provenance_problems(12, legacy, PARAMS) == ["seq 12 has a claim whose provenance differs from its record's"]
+    assert ledger._provenance_problems(12, legacy, PARAMS, PACKAGE.v1) == ["seq 12 has a claim whose provenance differs from its record's"]
 
 
 def _run_worker(database_url: str, *args: str) -> tuple[int, dict]:

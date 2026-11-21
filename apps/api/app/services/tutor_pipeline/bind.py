@@ -140,7 +140,11 @@ def bind(
     store: "CourseStore",
     registry: CorpusRegistry,
     params: TutorPipelineParams,
+    outcomes: list[str] | None = None,
 ) -> BindResult:
+    """Bind a claim plan. With `outcomes`, one entry per proposed claim is appended, in order: "bound", "merged",
+    "duplicate" or the claim's drop reason (V1.2's per-claim results; Phase 4 spec 4.3). The binding is the same
+    either way."""
     in_bundle = {span.span_id: span for span in bundle.spans}
     # Bound sentences in first-bound order: (normalised, verbatim) -> the union of the spans that cite it, and the
     # earliest (item_id, position) of the sentence among them.
@@ -214,6 +218,8 @@ def bind(
                         reason = MERGED
         if reason is not None:
             dropped[reason] += 1
+        if outcomes is not None:
+            outcomes.append(reason or "bound")
     drafts = tuple(
         LockedClaimDraft(claim_id=claim_id_for(text, spans), text=text, span_ids=tuple(sorted(spans)), source_order=places[(key, text)])
         for (key, text), spans in bound.items()

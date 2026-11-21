@@ -125,13 +125,31 @@ class Flashcard(BaseModel):
 
 
 class QuizQuestion(BaseModel):
+    """A quiz question as every public payload carries it: no answer and no explanation (plan Phase 4 B "keyed
+    answers outside public payloads"; R-42). The keys are server-side only (app.services.quiz_keys)."""
+
     id: str
     question_type: str
     prompt: str
     choices: list[str] = Field(default_factory=list)
-    answer: str
-    explanation: str
     difficulty: str
+
+
+class QuizFeedbackItem(BaseModel):
+    """Per-question feedback of a saved quiz attempt: the key and its explanation only for an answered question."""
+
+    question_id: str
+    answered: bool
+    correct: bool | None = None
+    answer: str | None = None
+    explanation: str | None = None
+
+
+class QuizAttemptResult(BaseModel):
+    status: Literal["saved"] = "saved"
+    attempt_id: int
+    score: int
+    feedback: list[QuizFeedbackItem] = Field(default_factory=list)
 
 
 class LessonDetail(BaseModel):
@@ -297,6 +315,14 @@ class EvidenceSpanLink(BaseModel):
     resolvable: bool
 
 
+class EvidenceConflict(BaseModel):
+    """V1.7 on a contained answer's quotations (Phase 4 spec 4.8): which passages disagree, labelled; no new claim."""
+
+    kind: Literal["version_of_same_asset", "number_disagreement", "negation_disagreement"]
+    # 1-based positions in EvidencePanel.spans.
+    passages: list[int]
+
+
 class EvidencePanel(BaseModel):
     """The evidence panel of a tutor or Q&A answer (plan task 3.8): labels only, for the contained answer the learner
     already receives. Never "grounded"; never anything from the two-pass shadow."""
@@ -307,6 +333,8 @@ class EvidencePanel(BaseModel):
     degraded: list[Literal["extractive_only", "retrieval_fallback", "citations_provisional"]] = Field(default_factory=list)
     spans: list[EvidenceSpanLink] = Field(default_factory=list)
     verdict: Literal["no-verdict"] = "no-verdict"
+    # Phase 4 (V1.7): present only when the quoted passages conflict; omitted otherwise, so the panel keeps its keys.
+    conflicts: list[EvidenceConflict] | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 # QAResponse names EvidencePanel before it is defined.

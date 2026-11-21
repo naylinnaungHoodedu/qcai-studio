@@ -1,5 +1,6 @@
 """Subset checker, rule segment-exact-whitespace-v3 (plan Phase 3 E: "claim_gate becomes the subset checker";
-task 3.7; Phase 3 spec 4.9). Phase 4 V1.4 subsumes it.
+task 3.7; Phase 3 spec 4.9). It is V1.4 (Phase 4 spec 4.5): v1_checks.v1_4_subset maps its result, which
+render_checked computes through the pipeline module's check_subset, and no second implementation exists.
 
 The overlap ClaimGate and evidence_digest are gone (plan 3.4: "overlap rebinding removed", R-13): nothing binds a
 sentence to whichever citation shares its words. Instead every factual segment of a rendered response must name a

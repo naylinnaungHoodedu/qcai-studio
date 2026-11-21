@@ -65,9 +65,11 @@ def _for_one_learner(mutate):
 
 
 def _patch_entry(monkeypatch, mutate) -> None:
-    real = TwoPassPipeline._entry
+    # Both record builders: _entry (ledger-entry-v1) and, with V1 running in the shadow (Phase 4), _entry_v2.
     mutate_one = _for_one_learner(mutate)
-    monkeypatch.setattr(TwoPassPipeline, "_entry", lambda self, *args, **kwargs: mutate_one(real(self, *args, **kwargs)))
+    for name in ("_entry", "_entry_v2"):
+        real = getattr(TwoPassPipeline, name)
+        monkeypatch.setattr(TwoPassPipeline, name, lambda self, *args, _real=real, **kwargs: mutate_one(_real(self, *args, **kwargs)))
 
 
 def _patch_bundle(monkeypatch, mutate) -> None:

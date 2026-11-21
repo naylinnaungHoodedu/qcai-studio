@@ -2,7 +2,8 @@
 
 "two_pass_tutor MUST run shadow-only until the Phase 4 exit; zero outputs reach learners." Three independent locks:
 1. Settings refuse TWO_PASS_TUTOR=on while configuration package flag_policy.phase4_exit_passed is false.
-2. effective_mode downgrades "on" to "shadow" while TWO_PASS_DELIVERY_IMPLEMENTED is False (no V1 module exists).
+2. effective_mode downgrades "on" to "shadow" while TWO_PASS_DELIVERY_IMPLEMENTED is False: V1 runs inside the shadow,
+   and delivery waits for the Phase 4 exit (DI-59).
 3. TwoPassPipeline.run refuses any delivery but "shadow", and LedgerEntry refuses "delivered".
 The shadow runs as a background task after the learner's response is sent: it writes a shadow ledger record and
 returns nothing to the learner. A shadow failure (an exception, the budget, a ledger write) is caught, counted and
@@ -51,6 +52,8 @@ class ShadowJob:
     user_message_id: str
     lesson_slug: str | None
     presentation: PresentationPlan
+    # The decision of the legacy contained answer the learner received (V1's comparison and D-20 replacement).
+    legacy_decision: Literal["answer", "abstain"] | None = None
 
 
 def effective_mode(settings: Settings, package: ConfigPackage) -> Literal["off", "shadow"]:
@@ -63,7 +66,7 @@ def effective_mode(settings: Settings, package: ConfigPackage) -> Literal["off",
         if not _ON_DOWNGRADE_LOGGED:
             _ON_DOWNGRADE_LOGGED = True
             LOGGER.warning(
-                "TWO_PASS_TUTOR=on runs in shadow until two-pass delivery exists (Phase 4)",
+                "TWO_PASS_TUTOR=on runs in shadow until two-pass delivery exists (the Phase 4 exit)",
                 extra={FIELDS: {"event": "tutor.two_pass.on_downgraded"}},
             )
         return "shadow"
@@ -107,6 +110,7 @@ def run_shadow(
                 response_id=job.shadow_response_id,
                 delivery="shadow",
                 shadowed_response_id=job.shadowed_response_id,
+                legacy_decision=job.legacy_decision,
             ),
             budget_ms=shadow_budget_ms(settings, pipeline.package),
         )

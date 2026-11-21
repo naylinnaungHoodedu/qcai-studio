@@ -93,7 +93,7 @@ After both, `verify_response_ledger` reports `ok`. Coverage of real deliveries i
 
 **R-c. AC-3-6** ("Given two_pass_tutor on before Phase 4 exit, then it runs in shadow only and zero of its outputs reach a learner").
 - Settings refuse `on` while `flag_policy.phase4_exit_passed` is false (E1).
-- Independently, Phase 3 code downgrades `on` to `shadow` and the pipeline refuses `delivered`, because no V1 module exists (`TWO_PASS_DELIVERY_IMPLEMENTED = False`).
+- Independently, Phase 3 code downgrades `on` to `shadow` and the pipeline refuses `delivered`, because two-pass delivery waits for the Phase 4 exit while V1 runs in the shadow (`TWO_PASS_DELIVERY_IMPLEMENTED = False`; Phase 4 spec R-a, DI-59).
 - The test forces `on` through a test package that claims the Phase 4 exit, and observes shadow-only behaviour.
 - "Zero outputs reach a learner" means all of the following:
   - the learner's response body, the named header subset, stored messages, Q&A history and thread detail are identical to those of the `off` mode;
@@ -125,7 +125,7 @@ Every resolution is a refinement. None reverses a fixed decision except where pl
 
 **2. AC-3-6 "Given two_pass_tutor on" vs E1 "on is refused".**
 - **Resolution:** independent locks (R-c): settings refusal, a code downgrade, and the pipeline's refusal of `delivered`.
-- Basis, 13.6 (L2373): "No flag, kill switch, setting or governance override MAY disable V1 or deliver text whose verification has not completed". Phase 4 flips `TWO_PASS_DELIVERY_IMPLEMENTED` with its V1 module.
+- Basis, 13.6 (L2373): "No flag, kill switch, setting or governance override MAY disable V1 or deliver text whose verification has not completed". The Phase 4 exit sets `TWO_PASS_DELIVERY_IMPLEMENTED` with the delivered two-pass path (DI-59); until then V1 runs in the shadow.
 
 **3. Plan G "flag two_pass_tutor dual-writes one release".**
 - **Resolution:** every tutor delivery is dual-written: `TutorTurn` (mutable, user-keyed, the learner link) plus a ledger record, whatever `TWO_PASS_TUTOR` is set to, behind the kill switch `TUTOR_LEDGER_ENABLED`. Removing the provenance columns of `TutorTurn` is the later contract step (DI-41). The flag controls only the shadow run.
@@ -617,6 +617,8 @@ class EvidencePanel(BaseModel):
     degraded: list[Literal["extractive_only", "retrieval_fallback", "citations_provisional"]] = Field(default_factory=list)
     spans: list[EvidenceSpanLink] = Field(default_factory=list)
     verdict: Literal["no-verdict"] = "no-verdict"
+    # Phase 4 (V1.7; Phase 4 spec 3.4): present only when the quoted passages conflict.
+    conflicts: list[EvidenceConflict] | None = Field(default=None, exclude_if=lambda value: value is None)
 
 class AssistantChatResponse(BaseModel):  # Phase 3 additions only
     # Phase 3 (task 3.8): present only when EVIDENCE_PANEL_ENABLED (development by default). When absent the key is

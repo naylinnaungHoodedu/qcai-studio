@@ -299,7 +299,7 @@ def test_j3_a_renderer_that_raises_on_every_attempt_abstains_as_render_failed_an
         result = _run(TwoPassPipeline(engine, settings, renderer=_RaisingRenderer([True, True, True])), MULTI_CLAIM)
     assert (result.decision, result.abstention_reason, result.render_attempts) == ("abstain", contracts.RENDER_FAILED, 3)
     assert result.entry.abstention_reason == "render_failed" and result.entry.presentation.subset_check == "failed"
-    LedgerEntry.model_validate(result.entry.model_dump(mode="json"))  # a valid record
+    contracts.ENTRY_SCHEMAS[result.entry.entry_schema].model_validate(result.entry.model_dump(mode="json"))  # a valid record of its own schema
     lines = _events(caplog, "tutor.two_pass.render_failed")
     assert [(line["step"], line["render_attempt"], line["error"]) for line in lines] == [("render", 1, "KeyError"), ("render", 2, "KeyError"),
                                                                                          ("render", 3, "KeyError")]

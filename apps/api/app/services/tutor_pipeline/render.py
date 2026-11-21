@@ -44,6 +44,9 @@ def layout_text(segments) -> str:
 
 
 class Renderer(Protocol):
+    """A renderer may also accept omit_claim_ids (a frozenset of locked claim ids to leave out): V1 passes it only when
+    it is not empty (V1.6's Socratic omission and D-20's withheld claims; Phase 4 spec 4.11)."""
+
     renderer_id: str
 
     def render(self, locked: LockedClaimSet, plan: PresentationPlan, *, attempt: int) -> RenderedResponse: ...
@@ -60,12 +63,17 @@ class TemplateRenderer:
     def __init__(self, package=None) -> None:
         self.package = package
 
-    def render(self, locked: LockedClaimSet, plan: PresentationPlan, *, attempt: int) -> RenderedResponse:
+    def render(self, locked: LockedClaimSet, plan: PresentationPlan, *, attempt: int,
+               omit_claim_ids: frozenset[str] = frozenset()) -> RenderedResponse:
+        """Render the locked claims, leaving out omit_claim_ids; citations are numbered by first appearance among the
+        claims shown."""
         verify_locked(locked)
         if not locked.claims:
             raise ValueError("the renderer is never called for an abstention")
+        claims = [claim for claim in locked.claims if claim.claim_id not in omit_claim_ids]
+        if not claims:
+            raise ValueError("every locked claim is omitted: nothing is left to render")
         layout = PLANS_LAYOUT[plan.plan_id]
-        claims = list(locked.claims)
         if layout["order"] == "source_order":
             claims.sort(key=lambda claim: (tuple(claim.source_order), claim.claim_id))
         segments: list[Segment] = []

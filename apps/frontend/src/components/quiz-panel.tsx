@@ -3,12 +3,15 @@
 import { useMemo, useState } from "react";
 
 import { postAnalyticsEvent, recordQuizAttempt } from "@/lib/api";
-import { QuizQuestion } from "@/lib/types";
+import { feedbackFor } from "@/lib/quiz-feedback";
+import { QuizAttemptResult, QuizQuestion } from "@/lib/types";
 
 function toErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+// Plan Phase 4 B (R-42): the questions carry no answer key, and the panel computes no score. The server scores a saved
+// attempt and returns its feedback; the model answer and rubric of each answered question come from that response.
 export function QuizPanel({
   lessonSlug,
   questions,
@@ -17,16 +20,10 @@ export function QuizPanel({
   questions: QuizQuestion[];
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [showResults, setShowResults] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [savedAttempt, setSavedAttempt] = useState<{ id: number; score: number } | null>(null);
+  const [savedAttempt, setSavedAttempt] = useState<QuizAttemptResult | null>(null);
 
-  const score = useMemo(() => {
-    return questions.reduce((total, question) => {
-      return total + (answers[question.id] === question.answer ? 1 : 0);
-    }, 0);
-  }, [answers, questions]);
   const answeredCount = useMemo(() => {
     return questions.reduce((total, question) => {
       return total + (answers[question.id]?.trim() ? 1 : 0);
@@ -42,7 +39,7 @@ export function QuizPanel({
     setSaveError(null);
     try {
       const result = await recordQuizAttempt(lessonSlug, answers);
-      setSavedAttempt({ id: result.attempt_id, score: result.score });
+      setSavedAttempt(result);
       void postAnalyticsEvent("quiz_attempt_saved", lessonSlug, {
         answered_count: answeredCount,
         question_count: questions.length,
@@ -64,61 +61,67 @@ export function QuizPanel({
         </div>
       </div>
       <div className="stack">
-        {questions.map((question, index) => (
-          <article className="quiz-card" key={question.id}>
-            <p className="quiz-index">
-              Question {index + 1} · {question.difficulty}
-            </p>
-            <h3>{question.prompt}</h3>
-            {question.choices.length ? (
-              <div className="choice-list">
-                {question.choices.map((choice) => (
-                  <label className="choice-item" key={choice}>
-                    <input
-                      checked={answers[question.id] === choice}
-                      name={question.id}
-                      onChange={() =>
-                        setAnswers((current) => ({
-                          ...current,
-                          [question.id]: choice,
-                        }))
-                      }
-                      type="radio"
-                    />
-                    <span>{choice}</span>
-                  </label>
-                ))}
-              </div>
-            ) : (
-              <textarea
-                aria-label={`Answer for question ${index + 1}: ${question.prompt}`}
-                className="note-input"
-                onChange={(event) =>
-                  setAnswers((current) => ({
-                    ...current,
-                    [question.id]: event.target.value,
-                  }))
-                }
-                placeholder="Write your answer"
-                rows={4}
-                value={answers[question.id] ?? ""}
-              />
-            )}
-            {showResults ? (
-              <div className="quiz-result">
-                <p>
-                  <strong>Model answer:</strong> {question.answer}
-                </p>
-                <p className="muted">{question.explanation}</p>
-              </div>
-            ) : null}
-          </article>
-        ))}
+        {questions.map((question, index) => {
+          const feedback = feedbackFor(question.id, savedAttempt);
+          return (
+            <article className="quiz-card" key={question.id}>
+              <p className="quiz-index">
+                Question {index + 1} · {question.difficulty}
+              </p>
+              <h3>{question.prompt}</h3>
+              {question.choices.length ? (
+                <div className="choice-list">
+                  {question.choices.map((choice) => (
+                    <label className="choice-item" key={choice}>
+                      <input
+                        checked={answers[question.id] === choice}
+                        name={question.id}
+                        onChange={() =>
+                          setAnswers((current) => ({
+                            ...current,
+                            [question.id]: choice,
+                          }))
+                        }
+                        type="radio"
+                      />
+                      <span>{choice}</span>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <textarea
+                  aria-label={`Answer for question ${index + 1}: ${question.prompt}`}
+                  className="note-input"
+                  onChange={(event) =>
+                    setAnswers((current) => ({
+                      ...current,
+                      [question.id]: event.target.value,
+                    }))
+                  }
+                  placeholder="Write your answer"
+                  rows={4}
+                  value={answers[question.id] ?? ""}
+                />
+              )}
+              {feedback.state === "correct" || feedback.state === "incorrect" ? (
+                <div className="quiz-result">
+                  <p>
+                    <strong>{feedback.state === "correct" ? "Correct" : "Not correct"}</strong>
+                  </p>
+                  <p>
+                    <strong>Model answer:</strong> {feedback.answer}
+                  </p>
+                  {feedback.explanation ? <p className="muted">{feedback.explanation}</p> : null}
+                </div>
+              ) : null}
+              {feedback.state === "unanswered" ? (
+                <p className="muted">Answer this question and save an attempt to see its rubric.</p>
+              ) : null}
+            </article>
+          );
+        })}
       </div>
       <div className="button-row">
-        <button className="secondary-button" onClick={() => setShowResults((state) => !state)} type="button">
-          {showResults ? "Hide rubric" : "Reveal rubric"}
-        </button>
         <button
           className="primary-button"
           disabled={isSaving || answeredCount === 0}
@@ -127,18 +130,17 @@ export function QuizPanel({
         >
           {isSaving ? "Saving..." : "Save attempt"}
         </button>
-        <div className="score-pill">
-          Auto-score: {score} / {questions.length}
-        </div>
         <div className="score-pill">Answered: {answeredCount} / {questions.length}</div>
       </div>
       {hasFreeResponseQuestion ? (
-        <p className="muted">Short-answer items use an auto-score preview for study flow. Use the rubric for final judgment.</p>
+        <p className="muted">
+          Short answers are scored on the server by exact match; use the model answer shown after saving for final judgment.
+        </p>
       ) : null}
       {saveError ? <p className="muted">{saveError}</p> : null}
       {savedAttempt ? (
         <p className="muted">
-          Saved attempt #{savedAttempt.id}. Recorded score: {savedAttempt.score} / {questions.length}.
+          Saved attempt #{savedAttempt.attempt_id}. Recorded score: {savedAttempt.score} / {questions.length}.
         </p>
       ) : null}
     </section>

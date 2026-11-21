@@ -171,6 +171,14 @@ class Settings(BaseSettings):
     # alternating the two routes never doubles a client's tutor-turn budget. Unknown environment keys are ignored
     # (extra="ignore").
     ledger_rate_limit: str = "30/minute"
+    # Phase 4 (V1 deterministic validation; docs/architecture/phase4-implementation-spec.md section 6). Plan Phase 4 G:
+    # "flag v1_pipeline shadows the legacy gate, logging disagreements, then enforces". It acts on the two-pass shadow
+    # pipeline only, so no learner sees a change. None = "enforce" in development and "shadow" elsewhere
+    # (V1_PIPELINE_DEFAULT_DEVELOPMENT, V1_PIPELINE_DEFAULT_ELSEWHERE, which package v3 flag_policy.v1_pipeline must
+    # name). "off" is refused outside development (plan 13.6: no flag may disable V1); "enforce" is refused outside
+    # development while the package says flag_policy.phase4_exit_passed is false. The V1.1/V1.2 legacy guard on every
+    # delivery path has no flag.
+    v1_pipeline: Literal["off", "shadow", "enforce"] | None = None
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
@@ -214,6 +222,13 @@ class Settings(BaseSettings):
             self.evidence_panel_enabled = development
         if self.two_pass_tutor == "on":
             self._refuse_two_pass_on_before_phase_4_exit(development)
+        if self.v1_pipeline is None:
+            self.v1_pipeline = V1_PIPELINE_DEFAULT_DEVELOPMENT if development else V1_PIPELINE_DEFAULT_ELSEWHERE
+        if not development and self.v1_pipeline == "off":
+            # The package is not read: off is refused whatever it says.
+            raise ValueError("V1_PIPELINE=off is refused outside development (plan 13.6: no flag may disable V1). Use shadow.")
+        if not development and self.v1_pipeline == "enforce":
+            self._refuse_v1_enforce_before_phase_4_exit()
         if self.arena_enabled and self.environment.lower() != "development":
             raise ValueError("ARENA_ENABLED is not permitted outside development (Decision D-03).")
         if self.guest_token_secret is None and self.environment.lower() == "development":
@@ -240,6 +255,22 @@ class Settings(BaseSettings):
             )
         if not development and not (package.is_default_path and package.hash_verified):
             raise ValueError("TWO_PASS_TUTOR=on outside development needs the shipped, hash-verified configuration package.")
+
+    def _refuse_v1_enforce_before_phase_4_exit(self) -> None:
+        # Read lazily, as for TWO_PASS_TUTOR=on: no other construction of Settings depends on the package.
+        from app.core.config_package import ConfigPackageError, get_config_package  # lazy: avoids an import cycle
+
+        try:
+            package = get_config_package(self)
+        except ConfigPackageError as exc:
+            raise ValueError(f"V1_PIPELINE=enforce needs a valid configuration package: {exc}") from exc
+        if not package.flag_policy.phase4_exit_passed:
+            raise ValueError(
+                "V1_PIPELINE=enforce is refused outside development before the Phase 4 exit (configuration package "
+                "flag_policy.phase4_exit_passed is false; plan Phase 4 G). Use shadow."
+            )
+        if not (package.is_default_path and package.hash_verified):
+            raise ValueError("V1_PIPELINE=enforce outside development needs the shipped, hash-verified configuration package.")
 
     @property
     def tutor_turns_route_enabled(self) -> bool:
@@ -306,6 +337,10 @@ class Settings(BaseSettings):
 # package can never say one default while the code applies another (spec 18.8 F4).
 TWO_PASS_DEFAULT_DEVELOPMENT = "shadow"
 TWO_PASS_DEFAULT_ELSEWHERE = "off"
+# The v1_pipeline defaults (PD-19). Configuration package v3 records them as flag_policy.v1_pipeline.
+# default_development and default_elsewhere, and the loader refuses a package whose values differ.
+V1_PIPELINE_DEFAULT_DEVELOPMENT = "enforce"
+V1_PIPELINE_DEFAULT_ELSEWHERE = "shadow"
 
 
 @lru_cache

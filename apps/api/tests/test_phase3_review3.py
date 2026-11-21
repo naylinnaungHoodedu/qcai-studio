@@ -262,10 +262,17 @@ def test_d4_the_ledger_records_which_claims_and_spans_the_answer_showed():
     assert set(partial.entry.presentation.rendered_span_ids) <= set(partial.entry.span_ids)
     # The contract refuses an answer whose rendering showed nothing, or ids outside the record.
     payload = full.entry.model_dump(mode="json")
-    for edit in ({"rendered_claim_ids": []}, {"rendered_span_ids": []}, {"rendered_claim_ids": ["claim-" + "0" * 32]}):
+    # Each edit is refused by the rule it breaks, in the record's own schema (ledger-entry-v2 since Phase 4), so the
+    # refusal is never the schema literal's.
+    model = contracts.ENTRY_SCHEMAS[payload["entry_schema"]]
+    model.model_validate(payload)
+    rules = ("an answer's passing rendering shows at least one claim and one citation",
+             "an answer's passing rendering shows at least one claim and one citation",
+             "presentation.rendered_claim_ids names a claim that is not a recorded claim")
+    for edit, rule in zip(({"rendered_claim_ids": []}, {"rendered_span_ids": []}, {"rendered_claim_ids": ["claim-" + "0" * 32]}), rules):
         changed = {**payload, "presentation": {**payload["presentation"], **edit}}
-        with pytest.raises(ValidationError):
-            contracts.LedgerEntry.model_validate(changed)
+        with pytest.raises(ValidationError, match=rule):
+            model.model_validate(changed)
 
 
 # ============================================================================================================ D5

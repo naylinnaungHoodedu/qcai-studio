@@ -66,3 +66,31 @@ Every `apps/api/tests/test_phase3_*.py` file, with what it proves (`test_k3_the_
 | `test_phase3_review12.py` | `test_m1_*` (production's pg8000 interface: a raw `DatabaseError`, the class `pg8000.dbapi.connect` raises for every server error, takes psycopg's class by SQLSTATE; on PostgreSQL an engine built as production's, with a `pg8000.dbapi.connect` creator, raises plain `DatabaseError` originals that the listener reclassifies, the legacy interface behind a `postgresql+pg8000://` URL raises its own classes, and the ledger retries a real duplicate key; the records state both interfaces), `test_m2_*` (spec 0.2 M24 lists v1.json's keys and owner decisions and names the four v2 adds, as 5.1 does; every authoritative line that lists what v2 adds to the owner decisions names all four) |
 
 **Exit gate.** The Phase 3 exit gate needs AC-3-1 to AC-3-6 green "in a cited CI run", "schemas in configuration package v2" and "ADR-001 revised" (plan Phase 3 P). The branch run 44676365093 at `94aa3e6` passed every job; each later commit needs its own run, and the exit needs a cited green run on `main` (DI-31). The exit is not passed.
+
+## Phase 4 acceptance map (plan Phase 4 K)
+
+Tests are in `apps/api/tests/test_phase4_acceptance.py` unless named otherwise; the fakes are in `apps/api/tests/v1_fakes.py`. Every file runs on SQLite in `api-and-evaluation` and on PostgreSQL 16 under psycopg and pg8000. Checker configuration (a) is production's NullChecker (D-21 none: V1.3 flags every claim and D-20 withholds it); (b) is a fake always-SUPPORTED checker, which isolates the deterministic checks. The adversarial set and its report run in CI as `scripts/run_v1_fixtures.py --check docs/evaluation/phase4/v1_fixture_report_v1.json` (fixture measurements, not research results).
+
+| AC | Tests |
+|---|---|
+| AC-4-1 An unresolvable citation is a hard fail no vote changes | `test_ac_4_1_property_an_unresolvable_span_id_hard_fails_and_no_vote_changes_the_outcome` (200 seeded trials; a SUPPORTED-voting V2 hook is never called), `test_ac_4_1_a_hard_fail_is_typed_final_and_only_a_v1_passed_reaches_the_v2_hook`, `test_ac_4_1_a_regenerated_candidate_is_judged_afresh_and_the_hard_failed_one_never_reaches_v2`; `test_v1_1_resolution.py` |
+| AC-4-2 Every negation, contradiction and fabrication case fails or abstains | `test_ac_4_2_the_adversarial_set_fails_or_abstains_in_both_checker_configurations`, `test_ac_4_2_the_committed_fixture_report_matches_a_fresh_run_and_its_hashes_match_the_package`, `test_ac_4_2_deterministic_checks_alone_catch_negation_number_fabrication_unresolvable_and_conflict_cases`; `test_v1_2_binding.py`, `test_v1_fixtures.py` |
+| AC-4-3 Out-of-scope fixtures abstain under V1.5; the in-domain answer rate holds the Phase 2 baseline | `test_ac_4_3_out_of_scope_fixtures_abstain_under_v1_5_for_both_gates`, `test_ac_4_3_the_in_domain_answer_rate_is_at_least_the_phase_2_baseline_for_the_same_gate` (166/174 and 146/174, as counts), `test_ac_4_3_v1_adds_no_in_domain_abstention_over_the_phase_3_composition`; `test_v1_5_abstention.py` |
+| AC-4-4 After at most two regenerations only locked claims remain | `test_ac_4_4_an_unmapped_sentence_is_re_rendered_at_most_twice_then_only_locked_claims_remain`, `test_ac_4_4_a_renderer_that_never_stops_adding_a_sentence_abstains_after_two_regenerations`; `test_v1_4_subset.py` |
+| AC-4-5 The delivered text never holds the keyed answer | `test_ac_4_5_an_assessment_draft_with_the_keyed_answer_is_re_rendered_socratically_without_it`, `test_ac_4_5_a_draft_whose_every_claim_holds_the_key_abstains`, `test_ac_4_5_no_public_content_payload_carries_a_keyed_answer`, `test_ac_4_5_the_quiz_attempt_returns_feedback_only_after_saving_and_only_for_answered_questions`; `test_v1_6_keyed_answers.py`, `test_quiz_keys.py`; frontend `tests/quiz-keys.integration.test.ts` |
+| AC-4-6 Conflicting cited spans are disclosed or withheld | `test_ac_4_6_conflicting_cited_spans_get_a_disclosure_block_or_are_withheld`, `test_ac_4_6_the_evidence_panel_shows_the_disclosure_for_a_contained_answer`; `test_v1_7_conflicts.py`; frontend `tests/evidence-panel.integration.test.ts` |
+| AC-4-7 An unavailable checker makes the decision abstain | `test_ac_4_7_an_unavailable_or_late_checker_makes_the_decision_abstain` (raising, wrong type, late on an injected clock); `test_v1_3_entailment.py` |
+| Plan G, L, D, E, I, H; invariants; freeze | `test_plan_g_*` (ledger-entry-v2 is additive: a mixed chain verifies, exports and restores; shadow disagreements), `test_plan_l_*` (the legacy guard on every path in every mode; flag back to shadow; the stop conditions), `test_plan_d_*` (no digest or overlap path; typed hard fail; thresholds only from the package), `test_plan_e_*` (no checker: everything withheld), `test_plan_i_*` (/ready; V1 SLIs), `test_plan_h_and_ac_3_1_*` (imports and privacy), `test_invariant_6_*`, `test_freeze_*`, `test_settings_*`, `test_phase4_spec_*`; `test_v1_aggregate_and_runner.py`, `test_v1_legacy_guard.py`, `test_v1_8_misconceptions.py`, `test_v1_9_schema_readability.py`; the v3 tests in `test_config_package.py`; the v2 ledger tests in `test_response_ledger.py` |
+
+### Phase 4 test files
+
+| File | What it proves |
+|---|---|
+| `test_phase4_acceptance.py` | AC-4-1 to AC-4-7 and the plan G, L, D, E, I and H rows above |
+| `test_v1_1_resolution.py` ... `test_v1_9_schema_readability.py` | One file per check: each reason code, outcome and threshold of V1.1 to V1.9 |
+| `test_v1_aggregate_and_runner.py` | The decision types and record rules; the render hook; `render_checked` without a hook equal to Phase 3's over 300 fault schedules |
+| `test_v1_legacy_guard.py` | Every development contained answer passes the guard unchanged; each forged quotation is withheld |
+| `test_v1_fixtures.py` | The fixture runner: Wilson intervals, determinism, exit 1 and exit 5, the `lqs/` refusal, no corpus sentence in the fixtures |
+| `test_quiz_keys.py` | The server-side keys and the attempt feedback |
+
+**Exit gate.** The Phase 4 exit needs AC-4-1 to AC-4-7 green in a cited CI run, the fixture hashes in configuration package v3 (done in code), Finding 4 closed (R-16), the R-13 closure evidence and Finding 3 re-verified by AC-4-3 (plan Phase 4 P). The cited run is DI-58; `phase4_exit_passed` stays false while Q-22, Q-14, D-20 and D-21 are open. The exit is not passed.

@@ -615,8 +615,10 @@ def ledger_coverage(db: Session, since: datetime, *, now: datetime | None = None
     }
 
 
-def _provenance_problems(seq: int, entry: dict[str, Any], params: TutorPipelineParams) -> list[str]:
-    """What in one record's provenance differs from the package's pins (ledger_provenance)."""
+def _provenance_problems(seq: int, entry: dict[str, Any], params: TutorPipelineParams, v1: Any) -> list[str]:
+    """What in one record's provenance differs from the package's pins (ledger_provenance). A two-pass
+    ledger-entry-v2 record must also name the package's V1.3 checker and V1 rules hash (Phase 4 spec 7.9); v1 is the
+    package's v1 block (None for a package without one), passed by every caller so that no call skips the check."""
     provenance = entry.get("provenance") if isinstance(entry.get("provenance"), dict) else {}
     versions = entry.get("versions") if isinstance(entry.get("versions"), dict) else {}
     pipeline = entry.get("pipeline")
@@ -640,6 +642,14 @@ def _provenance_problems(seq: int, entry: dict[str, Any], params: TutorPipelineP
         }
         if versions.get("generator_id") not in params.generators_allowed:
             problems.append(f"seq {seq} versions.generator_id is not a generator the package allows")
+        if entry.get("entry_schema") == "ledger-entry-v2":
+            verification = entry.get("verification") if isinstance(entry.get("verification"), dict) else {}
+            policy = verification.get("policy") if isinstance(verification.get("policy"), dict) else {}
+            if v1 is None:
+                problems.append(f"seq {seq} is a V1-verified record but the package has no v1 block")
+            else:
+                expected["provenance.v1_3_checker_model_id"] = (provenance.get("v1_3_checker_model_id"), v1.checker_model_id)
+                expected["verification.policy.rules_hash"] = (policy.get("rules_hash"), v1.rules_hash)
     else:
         return [f"seq {seq} names a pipeline the package does not pin"]
     for name, (recorded, pinned) in expected.items():
@@ -682,7 +692,7 @@ def ledger_provenance(db: Session, package: ConfigPackage) -> dict[str, Any]:
             other_package += 1
             continue
         checked += 1
-        problems.extend(_provenance_problems(seq, entry, params))
+        problems.extend(_provenance_problems(seq, entry, params, package.v1))
     return {
         "package_version": package.package_version,
         "package_sha256": package.sha256,
@@ -692,6 +702,32 @@ def ledger_provenance(db: Session, package: ConfigPackage) -> dict[str, Any]:
         "problem_count": len(problems),
         "problems": problems[:_MAX_REPORTED_PROBLEMS],
     }
+
+
+def pending_v3_intents(db: Session, *, after_seq: int = 0, limit: int = 1000) -> list[dict[str, Any]]:
+    """The V3 queue intents on ledger-entry-v2 records (Phase 4 spec 7.9, conflict 28): one item per claim verdict with
+    a v3 intent, in seq order, after `after_seq`. Read-only; filtered on entry_schema in SQL and parsed in Python, so it
+    behaves alike on SQLite, psycopg and pg8000. Ids, claim ids and enumerations only, never text. Phase 6 consumes it
+    (DI-56)."""
+    rows = db.execute(
+        select(ResponseLedgerRecord.seq, ResponseLedgerRecord.response_id, ResponseLedgerRecord.entry)
+        .where(ResponseLedgerRecord.entry_schema == "ledger-entry-v2", ResponseLedgerRecord.seq > int(after_seq))
+        .order_by(ResponseLedgerRecord.seq)
+        .limit(int(limit))
+    )
+    intents: list[dict[str, Any]] = []
+    for seq, response_id, raw in rows:
+        try:
+            entry = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        verification = entry.get("verification") if isinstance(entry, dict) else None
+        for verdict in (verification or {}).get("verdicts") or []:
+            intent = verdict.get("v3") if isinstance(verdict, dict) else None
+            if isinstance(intent, dict):
+                intents.append({"seq": int(seq), "response_id": response_id, "claim_id": verdict.get("claim_id"),
+                                "reasons": list(intent.get("reasons") or []), "trigger": intent.get("trigger")})
+    return intents
 
 
 def export_ledger(db: Session, path: Path) -> int:

@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { DECISION_TEXT, DEGRADED_TEXT, LABEL_TEXT, VERDICT_TEXT, evidencePanelView, spanHref } from "../src/lib/evidence-panel";
+import { CONFLICT_TEXT, DECISION_TEXT, DEGRADED_TEXT, LABEL_TEXT, VERDICT_TEXT, evidencePanelView, spanHref } from "../src/lib/evidence-panel";
 import { routeRequiresGuestSession } from "../src/lib/guest-session";
 import type { EvidencePanelPayload } from "../src/lib/types";
 
@@ -107,6 +107,7 @@ test("no panel text says grounded", () => {
     ...Object.values(LABEL_TEXT),
     ...Object.values(DEGRADED_TEXT),
     ...Object.values(VERDICT_TEXT),
+    ...Object.values(CONFLICT_TEXT),
   ];
   for (const text of texts) {
     assert.doesNotMatch(text, /grounded|verified answer/i, text);
@@ -255,4 +256,47 @@ test("the Q&A panel renders the evidence panel only when the API sent one, reada
   const surface = over([8, 17, 35], 0.78, [5, 9, 21]);
   assert.ok(contrast(hexChannels(token(darkRoot[1], "accent")), surface) >= 4.5, "dark theme: Q&A passage links");
   assert.ok(contrast(hexChannels(token(darkRoot[1], "muted")), surface) >= 4.5, "dark theme: Q&A panel labels");
+});
+
+// Phase 4 (V1.7, AC-4-6; spec 11, 13.4): conflicting quoted passages are labelled in the panel; no new claim.
+test("each conflict kind maps to its fixed text, and the panel shows conflicts only when the API sent some", () => {
+  const view = evidencePanelView(
+    payload({
+      conflicts: [
+        { kind: "version_of_same_asset", passages: [1, 2] },
+        { kind: "number_disagreement", passages: [1, 3] },
+        { kind: "negation_disagreement", passages: [2, 3] },
+      ],
+    }),
+  );
+  assert.deepEqual(view.conflicts, [
+    "Passages 1 and 2 come from different versions of one source; they may disagree",
+    "Passages 1 and 3 give different figures for what looks like the same point",
+    "Passages 2 and 3 may say opposite things",
+  ]);
+  assert.deepEqual(evidencePanelView(payload()).conflicts, []);
+  assert.deepEqual(evidencePanelView(payload({ conflicts: null })).conflicts, []);
+  const panel = read("components/evidence-panel.tsx");
+  assert.match(panel, /view\.conflicts\.length \? \(\s*<ul className="assistant-evidence-conflicts">/);
+  for (const text of Object.values(CONFLICT_TEXT)) {
+    assert.doesNotMatch(text, /grounded|verified/i, text);
+  }
+});
+
+test("the conflict notes keep at least 4.5:1 contrast on the panel in both themes", () => {
+  const css = read("app/globals.css");
+  const rule = css.match(/\.assistant-evidence-conflicts \{([^}]*)\}/);
+  assert.ok(rule, "a rule for the conflict notes");
+  assert.match(rule[1], /color: var\(--ink\)/);
+  const bubble = over([42, 48, 61], 0.84, [5, 9, 21]);
+  const darkRoot = css.match(/^:root \{([^}]*)\}/m);
+  const lightChat = css.match(/:root\[data-theme="light"\] \.assistant-panel \.assistant-evidence-panel \{([^}]*)\}/);
+  const lightRoot = css.match(/:root\[data-theme="light"\] \{([^}]*)\}/);
+  assert.ok(darkRoot && lightChat && lightRoot);
+  for (const block of [darkRoot[1], lightChat[1]]) {
+    assert.ok(contrast(hexChannels(token(block, "ink")), bubble) >= 4.5, "conflict notes on the chat bubble");
+  }
+  for (const surface of [[255, 255, 255], [238, 243, 251]] as Array<[number, number, number]>) {
+    assert.ok(contrast(hexChannels(token(lightRoot[1], "ink")), surface) >= 4.5, "light theme: conflict notes on the Q&A panel");
+  }
 });

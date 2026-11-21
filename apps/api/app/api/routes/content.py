@@ -15,30 +15,17 @@ from app.schemas import (
     NoteRead,
     QuizAttemptCreate,
     QuizAttemptRead,
+    QuizAttemptResult,
     LearnerRecordOperationInput,
 )
 from app.services.learner_record import apply_learner_record_operations
 from app.services.learner_progress import build_course_progress
+from app.services.quiz_keys import score_attempt
 from app.services.store import get_course_store
 from app.services.text_utils import sanitize_user_text
 
 router = APIRouter(prefix="/content", tags=["content"])
 PUBLIC_CONTENT_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=60"
-QUIZ_RESPONSE_MAX_LENGTH = 2000
-
-
-def _score_quiz(questions, responses: dict) -> tuple[int, dict[str, str]]:
-    """Score on the server (task 1.2, E-110), by the quiz panel's rule: an exact match of the answer.
-
-    Only answers to this lesson's questions are kept, each bounded, so the stored attempt cannot carry
-    arbitrary data. A client-sent score is never read.
-    """
-    kept = {
-        question.id: responses[question.id][:QUIZ_RESPONSE_MAX_LENGTH]
-        for question in questions
-        if isinstance(responses.get(question.id), str)
-    }
-    return sum(1 for question in questions if kept.get(question.id) == question.answer), kept
 
 
 def _public_content_head_response() -> Response:
@@ -155,16 +142,19 @@ def create_note(
     )
 
 
-@router.post("/quiz-attempts")
+@router.post("/quiz-attempts", response_model=QuizAttemptResult)
 def record_quiz_attempt(
     payload: QuizAttemptCreate,
     db: Session = Depends(get_db),
     user: AuthUser = Depends(get_current_user),
 ):
-    lesson = get_course_store().lessons.get(payload.lesson_slug)
+    store = get_course_store()
+    lesson = store.lessons.get(payload.lesson_slug)
     if lesson is None:
         raise HTTPException(status_code=404, detail="Lesson not found.")
-    score, responses = _score_quiz(lesson.quiz_questions, payload.responses)
+    # Scored on the server (task 1.2, E-110) against the server-side keys; the lesson payload carries none (R-42).
+    keys = store.quiz_keys.for_lesson(payload.lesson_slug)
+    score, responses, feedback = score_attempt(keys, payload.responses)
     record = QuizAttempt(
         user_id=user.user_id,
         lesson_slug=payload.lesson_slug,
@@ -176,7 +166,7 @@ def record_quiz_attempt(
     # Durable identities write the same outcome to the authoritative record.
     # Guest/demo behavior remains a non-cross-device preview surface.
     if user.provider not in {"guest", "demo"}:
-        question_count = len(lesson.quiz_questions)
+        question_count = len(keys)
         mastery = round(min(1.0, score / question_count), 6) if question_count else 0.0
         operations = [
             LearnerRecordOperationInput(
@@ -207,4 +197,5 @@ def record_quiz_attempt(
         apply_learner_record_operations(db, user.user_id, operations)
     db.commit()
     db.refresh(record)
-    return {"status": "saved", "attempt_id": record.id, "score": record.score}
+    # The model answers and rubrics, only after a saved attempt and only for the questions it answered (Phase 4 spec 4.14).
+    return QuizAttemptResult(attempt_id=record.id, score=record.score, feedback=feedback)

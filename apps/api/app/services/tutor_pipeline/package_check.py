@@ -133,10 +133,17 @@ def check_tutor_pipeline_package(package: ConfigPackage, *, structural: bool) ->
     from app.services.claim_gate import SUBSET_CHECK_RULE
     from app.services.ledger import CHAIN, GENESIS_HASH, RECORD_HASH_RULE
     from app.services.tutor_pipeline.bind import BINDING_RULE
-    from app.services.tutor_pipeline.contracts import LedgerEntry
+    from app.services.tutor_pipeline.contracts import ENTRY_SCHEMAS, LedgerEntry, LedgerEntryV2
     from app.services.tutor_pipeline.retrieve import NEAR_MISS_RULE
     from app.services.tutor_pipeline.text import SENTENCE_RULE
 
+    # Package v3 (Phase 4 spec 5.3): the two-pass record is a ledger-entry-v2, and the package names every entry
+    # schema the ledger dispatches on.
+    entry_model = LedgerEntryV2 if package.schema_version >= 3 else LedgerEntry
+    if package.schema_version >= 3:
+        named = list(((package.raw.get("tutor_pipeline") or {}).get("ledger") or {}).get("entry_schemas") or [])
+        if named != sorted(ENTRY_SCHEMAS):
+            problems.append(f"tutor_pipeline.ledger.entry_schemas in the package ({', '.join(named)}) differ from the code's ({', '.join(sorted(ENTRY_SCHEMAS))})")
     # The rule ids and names the package records must be the code's: a rule changed under its old id is a silent
     # change.
     rules = {
@@ -145,7 +152,7 @@ def check_tutor_pipeline_package(package: ConfigPackage, *, structural: bool) ->
         "pedagogical.subset_check": (SUBSET_CHECK_RULE, params.subset_check),
         "retrieval.near_miss_rule": (NEAR_MISS_RULE, params.near_miss_rule),
         "ledger.chain": (CHAIN, params.ledger_chain),
-        "ledger.entry_schema": (LedgerEntry.model_fields["entry_schema"].default, params.ledger_entry_schema),
+        "ledger.entry_schema": (entry_model.model_fields["entry_schema"].default, params.ledger_entry_schema),
         "ledger.record_hash_rule": (RECORD_HASH_RULE, params.record_hash_rule),
         "ledger.genesis": (GENESIS_HASH, params.genesis),
     }

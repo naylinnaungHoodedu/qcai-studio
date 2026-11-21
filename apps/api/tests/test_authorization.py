@@ -417,7 +417,8 @@ def test_no_caller_scoped_read_returns_another_learners_data():
 
 
 def _quiz_questions():
-    return get_course_store().lessons[LESSON_SLUG].quiz_questions
+    # The answer keys are server-side only (Phase 4, R-42): the public lesson carries no key.
+    return get_course_store().quiz_keys.for_lesson(LESSON_SLUG)
 
 
 def test_a_client_sent_score_is_ignored():

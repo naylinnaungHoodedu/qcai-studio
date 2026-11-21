@@ -292,15 +292,16 @@ def test_ac_3_1_the_evidential_pass_takes_no_learner_input_and_imports_no_learne
 
     allowed = {"self", "resolved", "lesson_slug", "corpus_version", "engine", "request", "top_k", "registry", "query", "bundle", "store",
                "params", "envelope", "plan", "resolver", "drafts", "generator", "evidential_prompt_hash", "pedagogical_prompt_hash", "package",
-               "rendered", "locked", "templates"}
+               "rendered", "locked", "templates", "outcomes"}
     callables = [retrieve.build_request, retrieve.retrieve, RetrievalEngine.evidence, evidential.build_envelope, evidential.no_envelope_reason,
                  ExtractiveD19Generator.propose, bind.bind, lock_module.lock, claim_gate.check_subset]
     for function in callables:
         names = set(inspect.signature(function).parameters)
         assert names <= allowed, (function.__qualname__, names - allowed)
         assert "presentation" not in names and not (names & set(LEARNER_STATE_FIELDS)), function.__qualname__
-    # The renderer is the only component that takes a PresentationPlan (plan 3.6).
-    assert set(inspect.signature(TemplateRenderer.render).parameters) == {"self", "locked", "plan", "attempt"}
+    # The renderer is the only component that takes a PresentationPlan (plan 3.6). Phase 4: V1 may name locked claims for
+    # it to leave out (omit_claim_ids; V1.6 and D-20), which is no learner input either.
+    assert set(inspect.signature(TemplateRenderer.render).parameters) == {"self", "locked", "plan", "attempt", "omit_claim_ids"}
     forbidden = {"app.services.learner_record", "app.services.learner_progress", "app.services.learning_intelligence",
                  "app.services.microlearning", "app.core.auth", "app.services.answer_history", "app.services.retrieval_legacy_p1"}
     modules = list((API_ROOT / "app" / "services" / "tutor_pipeline").glob("*.py")) + [API_ROOT / "app" / "services" / "claim_gate.py"]
@@ -486,7 +487,8 @@ def test_ac_3_2_the_replay_finds_no_mismatch_and_is_labelled_not_e3_or_lq1(tmp_p
 
 
 REPLAY_RECORD = Path("docs") / "evaluation" / "phase3" / "three_plan_replay_v1.json"
-PACKAGE_FILE = Path("apps") / "api" / "app" / "config_package" / "v2.json"
+# The package in force, which the replay record names (v3 since Phase 4).
+PACKAGE_FILE = DEFAULT_PACKAGE_PATH.relative_to(REPO_ROOT)
 
 
 def _check_committed_replay_record():
@@ -1626,7 +1628,8 @@ def test_the_chat_response_schemas_keep_every_field_in_openapi():
 def test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode(monkeypatch):
     chat(demo("plani"), "Why does routing depth matter?")
     body = client.get("/ready").json()
-    assert (body["config_package_version"], body["config_package_sha256"]) == ("2.0.0", PACKAGE.sha256)
+    # The package in force (v3 since Phase 4).
+    assert (body["config_package_version"], body["config_package_sha256"]) == (PACKAGE.package_version, PACKAGE.sha256)
     assert (body["two_pass_tutor"], body["two_pass_tutor_setting"], body["phase4_exit_passed"]) == ("shadow", "shadow", False)
     pipeline = body["tutor_pipeline"]
     assert (pipeline["resolver"], pipeline["generator"], pipeline["renderer"]) == (PARAMS.resolver_id, PARAMS.generator_default, PARAMS.renderer_id)
@@ -1843,10 +1846,11 @@ def test_the_ledger_is_outside_erasure_and_guarded_at_start_up():
 def test_a_start_up_pipeline_problem_is_fatal_only_when_the_pipeline_is_requested(fresh_database_url, tmp_path):
     package_dir = tmp_path / "package"
     shutil.copytree(DEFAULT_PACKAGE_PATH.parent / "schemas", package_dir / "schemas")
-    shutil.copyfile(DEFAULT_PACKAGE_PATH, package_dir / "v2.json")
-    shutil.copyfile(DEFAULT_PACKAGE_PATH.with_name("v2.json.sha256"), package_dir / "v2.json.sha256")
+    # The shipped package under its own name, with its own sidecar (v3 since Phase 4).
+    shutil.copyfile(DEFAULT_PACKAGE_PATH, package_dir / DEFAULT_PACKAGE_PATH.name)
+    shutil.copyfile(DEFAULT_PACKAGE_PATH.with_name(DEFAULT_PACKAGE_PATH.name + ".sha256"), package_dir / (DEFAULT_PACKAGE_PATH.name + ".sha256"))
     (package_dir / "schemas" / "claim-plan.v1.schema.json").unlink()
-    governed = {"CONFIG_PACKAGE_PATH": str(package_dir / "v2.json"), "ENFORCE_CORPUS_GOVERNANCE": "true", "CORPUS_MANIFEST_PATH": str(REPO_MANIFEST)}
+    governed = {"CONFIG_PACKAGE_PATH": str(package_dir / DEFAULT_PACKAGE_PATH.name), "ENFORCE_CORPUS_GOVERNANCE": "true", "CORPUS_MANIFEST_PATH": str(REPO_MANIFEST)}
     requested = _startup(fresh_database_url, {**governed, "TWO_PASS_TUTOR": "shadow"})
     assert requested.returncode != 0 and "tutor pipeline" in requested.stderr and "ClaimPlan" in requested.stderr
     probe = create_engine(fresh_database_url)

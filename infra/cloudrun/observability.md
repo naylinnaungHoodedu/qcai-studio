@@ -143,3 +143,23 @@ A legacy delivery's abstention reason (`abstention_reason` on `tutor.ledger.atte
 | Database keepalive not set | `jsonPayload.event="db.connect.keepalive_unset"`, labels `jsonPayload.option` and `jsonPayload.error` | Alert on any match (the dead-peer bound is missing on those connections) |
 | Chain integrity | `resource.type="cloud_run_job" AND jsonPayload.job="response_ledger" AND jsonPayload.status!="ok"` (a job line: its own resource clause, not the API's) | Alert on any match |
 | Phase 3 overrides | `jsonPayload.event_type="config.override"`. The details name `two_pass_tutor_shadow`, `tutor_ledger_disabled`, `ledger_route_enabled`, `evidence_panel_enabled`, `shadow_budget_overridden` or `ledger_append_budget_overridden`. | Alert on any match |
+
+## Phase 4 SLIs: V1 (plan Phase 4 I)
+
+**Not set up yet.** Creating log-based metrics and alerts is a cloud write (Platform Owner approval each time; DI-62). Production runs no V1 track while `TWO_PASS_TUTOR` is off, so the V1 run SLIs have data only where the shadow runs (development today; DI-32).
+
+Plan Phase 4 I: "Citation resolution 100%; hard-fail rate per check; V1.3 flag rate; V1 p95 (95th-percentile) latency."
+- `/ready` reports the V1 values in force, never a run's outcome: `v1_pipeline` (the effective mode) and `v1_pipeline_setting`, and `v1` (the rules version and hash, the checker hosting and model id, the misconception library version, entry count and hash, the fixture set hash, the regeneration limits, the readability band, the X4 margins, the stop floors and p95 budget, `provisional`, `available` and `legacy_guard`). `slis` has no V1 block (AC-3-6).
+- In process (tests only; no route serves it), `V1_METRICS.detail_snapshot()`: runs by mode, finals, outcomes per check, the hard-fail rate per check (runs with a hard fail over runs where the check ran), the resolution of delivered citations, the V1.3 flag rate and unavailable runs, a latency histogram with its nearest-rank p95 over the last 1024 runs against the package budget, disagreements with the Phase 3 decision and with the legacy decision, V3 intents, and the legacy guard's checked and withheld counts per surface.
+
+All Phase 4 events log on the `qcai.tutor` logger with enumerations, counts and hashes only: no question, claim or rendered text, and no response, turn, thread or message id.
+
+| Event | Fields | Log-based metric or alert |
+|---|---|---|
+| `tutor.v1.run` | `mode`, `final`, `final_reason`, `hard_fail`, `generation_attempts`, `render_attempts`, `cycle_count`, `outcomes` (check, outcome, count), `flagged_claims`, `v3_intents`, `disclosure`, `latency_ms`, `gate` | Hard-fail rate per check (`outcomes.<check>.hard_fail` over runs); V1.3 flag rate; a distribution metric on `latency_ms` and an alert when its p95 exceeds the package's `v1.stop.v1_p95_latency_ms` (250 ms; a plan L stop) |
+| `tutor.v1.disagreement` | `with` (`phase3` or `legacy`), `v1_outcome`, `reference` | A counter by `with`; plan G's disagreement log |
+| `tutor.v1.checker_unavailable` | `cause` (`timeout` or `error`), `error` | An alert on any line once a checker is hosted (DI-54) |
+| `tutor.v1.legacy_guard_withheld` | `check_id`, `reason_code`, `surface` | An alert on any line: the guard withheld a contained answer (an upstream defect) |
+| `tutor.v1.unavailable` | `reason` | An alert on any line: the package's v1 block disagrees with the code (development only; a governed build does not start) |
+
+Citation resolution (V-1, "100% of delivered citations resolve") is measured over delivered V1 verdicts; none exists before the Phase 4 exit, so the measure has no production input yet. Operating the answer-rate stop (plan L) on traffic needs labelled in-domain traffic; until then it is the fixture runner's check in CI.

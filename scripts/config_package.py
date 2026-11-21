@@ -1,14 +1,19 @@
-"""Check or re-hash the configuration package (Phase 2 spec 2.5; Phase 3 spec 5.5).
+"""Check or re-hash the configuration package (Phase 2 spec 2.5; Phase 3 spec 5.5; Phase 4 spec 5.4).
 
-Run: python scripts/config_package.py --check [--path P]   (validates the package and its sidecar hash; for package
-                                                             v2 also the tutor-pipeline schema pins, prompt hashes and
-                                                             schema structure; exit 1 on a problem)
-     python scripts/config_package.py --rehash [--path P]  (recomputes the stopword hash and, for v2, the schema pins,
-                                                             the three prompt hashes and the legacy containment rule
-                                                             hash from the code; rewrites the sidecar)
-     python scripts/config_package.py --write-schemas      (writes the eight contract schemas from the pydantic models,
-                                                             then --rehash)
-The default path is the shipped package v2; v1 stays readable for one release (--path .../v1.json, DI-42).
+Run: python scripts/config_package.py --check [--path P]   (validates the package and its sidecar hash; for packages
+                                                             v2 and v3 also the tutor-pipeline schema pins, prompt hashes
+                                                             and schema structure, and for v3 the V1 block: rule ids and
+                                                             their hash, and the adversarial fixture set's pin; exit 1 on
+                                                             a problem)
+     python scripts/config_package.py --rehash [--path P]  (recomputes the stopword hash and, for v2 and v3, the schema
+                                                             pins, the three prompt hashes and the legacy containment
+                                                             rule hash from the code; for v3 also v1.rules_hash, the
+                                                             misconception library sha256 and the fixture set's sha256
+                                                             and case count; rewrites the sidecar)
+     python scripts/config_package.py --write-schemas      (writes the pinned contract schemas from the pydantic models,
+                                                             nine for v3, then --rehash)
+The default path is the shipped package v3; v2 and v1 stay readable for one release (--path .../v2.json, DI-63;
+--path .../v1.json, DI-42).
 """
 
 from __future__ import annotations
@@ -60,7 +65,19 @@ def rehash(path: Path) -> str:
     words = sorted(set(payload["retrieval"]["stopwords"]["words"]))
     payload["retrieval"]["stopwords"]["words"] = words
     payload["retrieval"]["stopwords"]["sha256"] = stopwords_sha256(words)
-    if payload.get("schema_version") == 2:
+    if payload.get("schema_version") == 3:
+        from app.core.config_package import misconception_library_sha256
+        from app.services.v1_checks.package_check import REPO_ROOT as V1_ROOT, fixture_set_sha256
+
+        v1 = payload["v1"]
+        library = v1["v1_8"]["library"]
+        library["sha256"] = misconception_library_sha256(library)
+        fixtures_path = V1_ROOT / v1["fixtures"]["path"]
+        if fixtures_path.exists():
+            cases = json.loads(fixtures_path.read_text(encoding="utf-8"))["cases"]
+            v1["fixtures"]["set_sha256"] = fixture_set_sha256(cases)
+            v1["fixtures"]["cases"] = len(cases)
+    if payload.get("schema_version") in (2, 3):
         from app.services.tutor_pipeline.evidential import evidential_prompt_hash
         from app.services.tutor_pipeline.render import pedagogical_prompt_hash
         from app.services.tutor_pipeline.resolve import resolver_prompt_hash
@@ -76,6 +93,10 @@ def rehash(path: Path) -> str:
         from app.services.ledger import LEGACY_CONTAINMENT_RULE_HASH
 
         tutor["legacy"]["containment_rule_hash"] = LEGACY_CONTAINMENT_RULE_HASH
+    if payload.get("schema_version") == 3:
+        from app.services.v1_checks.rules import v1_rules_hash
+
+        payload["v1"]["rules_hash"] = v1_rules_hash(parse_config_package(payload, path=path, sha256="", hash_verified=False))
     return write_package(path, payload)
 
 
@@ -89,6 +110,10 @@ def check(path: Path) -> int:
         from app.services.tutor_pipeline.package_check import check_tutor_pipeline_package
 
         problems = check_tutor_pipeline_package(package, structural=True)
+        if package.v1 is not None:
+            from app.services.v1_checks.package_check import check_v1_package
+
+            problems.extend(check_v1_package(package, structural=True))
         if problems:
             for problem in problems:
                 print(f"configuration package check failed: {problem}", file=sys.stderr)
@@ -103,6 +128,13 @@ def check(path: Path) -> int:
             f"tutor pipeline {params.version}: resolver {params.resolver_id}, generator {params.generator_default}, renderer "
             f"{params.renderer_id}; {len(params.schemas)} schemas pinned (sha256 {params.schemas_sha256[:16]}); "
             f"phase4_exit_passed {package.flag_policy.phase4_exit_passed}"
+        )
+    if package.v1 is not None:
+        v1 = package.v1
+        print(
+            f"v1 checks {v1.version} (provisional): rules {v1.rules_hash[:16]}; checker {v1.checker_hosting}; misconception library "
+            f"{v1.library_version} ({len(v1.library_entries)} entries); {v1.fixtures_cases} fixture cases (set {v1.fixtures_set_sha256[:16]}); "
+            f"regenerations {v1.max_generation_regenerations}/{v1.max_render_regenerations}; p95 budget {v1.p95_budget_ms} ms"
         )
     return 0
 

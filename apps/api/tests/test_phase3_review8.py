@@ -135,7 +135,8 @@ def test_i1_quotable_spans_with_no_whole_sentence_abstain_as_no_whole_sentence_n
     entry = result.entry
     assert entry.abstention_reason == "no_whole_sentence" and entry.retrieval.sufficiency.decision == "answer"
     assert entry.retrieval.evidence and all(span.quotable for span in entry.retrieval.evidence)
-    assert LedgerEntry.model_validate(entry.model_dump(mode="json")) == entry  # a valid ledger entry
+    # A valid ledger entry of its own schema (a two-pass record is ledger-entry-v2 since Phase 4).
+    assert contracts.ENTRY_SCHEMAS[entry.entry_schema].model_validate(entry.model_dump(mode="json")) == entry
     assert "no_whole_sentence" in contracts.ABSTENTION_REASONS and "no_quotable_evidence" in contracts.ABSTENTION_REASONS
 
 

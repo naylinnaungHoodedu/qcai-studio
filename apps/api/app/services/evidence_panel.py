@@ -5,17 +5,19 @@ citation cards E-46 names.
 Labels only, and only for the contained answer the learner already receives: the decision, the spans quoted
 (links to GET /evidence/spans/{span_id} only when that route is enabled), the "lexically screened" label (task
 1.11: it "MAY accompany only that contained output", so only on an answer), the degraded modes in force, and the
-verdict "no-verdict" (no V1-V3 verification exists before Phase 4). It never says "grounded" and never reads the
-two-pass shadow. EVIDENCE_PANEL_ENABLED gates it (development by default; production rollout is DI-34).
+verdict "no-verdict" (the contained answer is not V1-verified: V1 runs in the two-pass shadow). With conflicts, it
+also labels which quoted passages disagree (V1.7 over the quotations, Phase 4 spec 4.8). It never says "grounded" and
+never reads the two-pass shadow. EVIDENCE_PANEL_ENABLED gates it (development by default; production rollout is DI-34).
 """
 
 from __future__ import annotations
 
 from app.core.config import Settings
-from app.schemas import Citation, EvidencePanel, EvidenceSpanLink
+from app.schemas import Citation, EvidenceConflict, EvidencePanel, EvidenceSpanLink
 
 
-def build_evidence_panel(*, decision: str, citations: list[Citation], retrieval_mode: str, settings: Settings) -> EvidencePanel:
+def build_evidence_panel(*, decision: str, citations: list[Citation], retrieval_mode: str, settings: Settings,
+                         conflicts: list[EvidenceConflict] | None = None) -> EvidencePanel:
     answered = decision == "answer"
     degraded = ["extractive_only"]  # D-19: generation is off; only quotations are shown
     if retrieval_mode.startswith("lexical-fallback"):
@@ -34,4 +36,14 @@ def build_evidence_panel(*, decision: str, citations: list[Citation], retrieval_
             )
             for citation in citations
         ],
+        conflicts=conflicts or None,
     )
+
+
+def panel_conflicts(contained, package) -> list[EvidenceConflict] | None:
+    """V1.7 over a contained answer's quoted passages, for the evidence panel (labels only), or None (Phase 4 spec 4.8)."""
+    if package.v1 is None or contained.decision != "answer" or len(contained.citations) < 2:
+        return None
+    from app.services.v1_checks.v1_7_conflicts import legacy_conflicts
+
+    return legacy_conflicts(contained.citations, v1=package.v1, stopwords=package.retrieval.stopwords) or None

@@ -74,7 +74,7 @@ Before the first digest-pinned rollout, the previous revisions are `qcai-api-000
 1. **Deploy** by digest, as in sections 1-3.
    - Start-up loads and verifies configuration package v1, then the manifest and its drift report. A governed build fails closed before any table is touched.
    - `create_all` adds the `corpus_spans` table, and the schema upgrades add its append-only triggers. No span row is written at start-up.
-   - Check `/ready`. It must report `config_package_version` 1.0.0 (2.0.0 from the Phase 3 release; see the Phase 3 section) and `config_package_sha256`, `span_scheme` span-v2, `retrieval_gate` p1-floor with `threshold_version` score-floor-p1-v1 (floor 6, P1-D-04), `duplicate_span_ids` 0, `manifest_drift` 0, `semantic_enabled` false, and `slis`.
+   - Check `/ready`. It must report `config_package_version` 1.0.0 (2.0.0 from the Phase 3 release, 3.0.0 from the Phase 4 release; see those sections) and `config_package_sha256`, `span_scheme` span-v2, `retrieval_gate` p1-floor with `threshold_version` score-floor-p1-v1 (floor 6, P1-D-04), `duplicate_span_ids` 0, `manifest_drift` 0, `semantic_enabled` false, and `slis`.
    - A governed start-up also stops on the conflict 29 recall stop: a manifest that approves a document while the gate is `p1-floor`.
 2. **Register spans:** `python -m app.workers.register_spans --dry-run`, then `--apply`. This is a job on the API image, and its output is one JSON line. In the image only authored spans register, because the image holds no DOCX. Document spans need an approved workstation run.
 3. **Dry-run the migration:** `python -m app.workers.migrate_citations --dry-run --report migration-report.json`.
@@ -120,7 +120,7 @@ Before the first digest-pinned rollout, the previous revisions are `qcai-api-000
 - `create_all` adds `response_ledger` and `response_ledger_head`, and the schema upgrades add their append-only and chain triggers (checked at each start and re-created only when they differ, tables locked head first; spec 18.8 F8) and the column `tutor_turns.ledger_record_expected`. Start-up writes nothing to the ledger (spec 18.8 F10): a revision deployed with no traffic starts while the earlier image still serves every learner, so a start time says nothing about which deliveries are recorded. The first append creates the chain head.
 - Each tutor turn says whether it expects a record: `ledger_record_expected` is true when a Phase 3 image created it with `TUTOR_LEDGER_ENABLED` on, false under the kill switch, and null when an image that keeps no ledger created it (before this deploy, while the tagged revision had no traffic, or during a rollback window). On the ledger route a turn without a record reads `legacy_turn: true` with `unrecorded_reason: earlier_image`, or `unrecorded_reason: ledger_disabled`, or `missing` (a lost record, a plan L stop), whenever it was created (spec 18.8 F12).
 - `/ready` must report:
-  - `config_package_version` 2.0.0 (with `config_package_sha256`);
+  - `config_package_version` 2.0.0 (3.0.0 from the Phase 4 release; see the Phase 4 section), with `config_package_sha256`;
   - `two_pass_tutor` off and `phase4_exit_passed` false;
   - `tutor_pipeline.available` true;
   - `ledger.status` ok (the head is readable; public `/ready` never shows its sequence number).
@@ -164,3 +164,28 @@ Legacy deliveries continue either way, because every ledger write fails open.
    - Anything else: stop.
 4. **Downgrade** to the absolute target, never `-1` (on an unstamped database `-1` fails, and on a Phase 2 stamp it reverses the Phase 2 revision, dropping `corpus_spans` and keeping the ledger): `alembic -x allow_ledger_drop=true downgrade 20261119_phase2_corpus_spans`. It drops `response_ledger`, `response_ledger_head` and `tutor_turn_idempotency`, and the column `tutor_turns.ledger_record_expected`, only. Without that column every earlier turn reads `earlier_image` after the re-apply, so first run `python -m app.workers.response_ledger --coverage-since <the Phase 3 deploy time>` and keep its counts with the release evidence: a record lost before the downgrade is visible only there. Run it once the Phase 3 revision has served no traffic for the horizon (360 s), so `pending` is 0 (spec 18.12 J5).
 5. **Re-applying.** After `alembic upgrade 20261119_phase3_response_ledger` (the downgrade left the stamp at `20261119_phase2_corpus_spans`, so the absolute target applies; spec 18.8 F14) or a start-up's `create_all`, run `python -m app.workers.response_ledger --restore <path> --expect-head SEQ:HASH` before the revision takes traffic (deploy it with no traffic, restore, then shift traffic). The restored chain is the exported one byte for byte, so every head logged before the drop still verifies. `--restore` refuses a ledger that already holds a record: if deliveries were recorded first, the exported records form a **retired chain**, kept in the export, the heads logged before the drop (`tutor.ledger.appended` lines, job lines) belong to it and no longer verify against the database, and the release evidence records both facts.
+
+## Phase 4: V1 validation and quiz keys (runbook)
+
+Every step below is a D-05 cloud write (Platform Owner approval each time); nothing here has been run.
+
+**What ships, and its defaults outside development.**
+- Configuration package v3 (3.0.0): the V1 checks' rules, thresholds and lexicon, all provisional (Q-22), the checker hosting `none` (D-21), the empty misconception library v0 (Q-14), the D-20 interim rule, the adversarial fixture set's hash and the plan L stop conditions. v2 and v1 stay readable for one release (DI-63, DI-42).
+- `V1_PIPELINE` `shadow` (the env example sets it). V1 runs only inside the two-pass shadow, and `TWO_PASS_TUTOR` stays `off`, so production runs no V1 track at all; `off` and `enforce` are refused by settings outside development (plan 13.6; enforce until the Phase 4 exit).
+- The V1.1/V1.2 legacy guard on every contained answer (`/assistant/chat`, `/tutor/turns`, `/qa/ask`). It has no flag; under D-31 nothing is quoted, so it sees no quotation in production today.
+- Quiz keys leave every public payload: lessons and modules carry `QuizQuestion` without `answer` and `explanation`, and `POST /content/quiz-attempts` returns per-question feedback (the key and explanation only for answered questions). This is strictly less disclosure, and it is learner-visible: it ships only with a D-05 release (DI-61).
+
+**Before the release.**
+- `python scripts/config_package.py --check` (v3), `--check --path apps/api/app/config_package/v2.json` and `--path …/v1.json`.
+- `python scripts/run_v1_fixtures.py --check docs/evaluation/phase4/v1_fixture_report_v1.json` exits 0 (1 drift, 3 a stop, 5 an adversarial case delivered).
+- The ledger export (`python -m app.workers.response_ledger --export PATH`, the Phase 3 section's handling rule): an image older than Phase 4 cannot validate a `ledger-entry-v2` row, so a digest rollback after any v2 row exists needs the export first. Production writes none while `TWO_PASS_TUTOR` is off.
+
+**Order: the frontend first, then the API.**
+- The frontend strips quiz fields before any client component sees them (`publicQuestions`), so from its deploy no key reaches page HTML. Lesson JSON from the old API still carries keys until the API deploys and the caches expire: the API's `Cache-Control: public, max-age=300, stale-while-revalidate=60` and the frontend's Next revalidate window.
+- Then the API: keys leave every public payload. The frontend's `feedbackFor` tolerates the older API (no feedback, no rubric).
+
+**After the deploy, `/ready` must report** `config_package_version` 3.0.0 with its `config_package_sha256`, `v1_pipeline` `shadow`, `v1.available` true, `v1.checker.hosting` `none`, `v1.legacy_guard` `on`, `two_pass_tutor` off and `phase4_exit_passed` false.
+
+**Stop conditions.** A `run_v1_fixtures.py` exit 3 (the answer-rate floor, V1 adding in-domain abstentions, or the p95 budget); any `tutor.v1.legacy_guard_withheld` line (a guard withholding is an upstream defect: a quotation that does not resolve or is not verbatim); any delivered V1 hard failure (refused by the record rules; a refusal is a defect).
+
+**Rollback.** The plan L flag back is `V1_PIPELINE=shadow` (already the default outside development): the Phase 3 decision is recorded and V1's verdict kept beside it. The legacy guard has no flag. A digest rollback to an image older than Phase 4 needs the ledger export above first, and that image serves the quiz keys again (a D-05 decision).

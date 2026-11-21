@@ -171,6 +171,7 @@ def _check_tutor_pipeline_package(package) -> None:
 
     A problem stops a governed build only when the pipeline is requested (TWO_PASS_TUTOR not off); otherwise the
     pipeline is reported unavailable (/ready tutor_pipeline.available false) and its effective mode stays off."""
+    _check_v1_package(package)
     if package.tutor_pipeline is None:
         tutor_shadow.PIPELINE_UNAVAILABLE_REASON = None
         return
@@ -188,6 +189,29 @@ def _check_tutor_pipeline_package(package) -> None:
         "The two-pass tutor pipeline is unavailable; it stays off",
         extra={FIELDS: {"event": "tutor.two_pass.unavailable", "reason": reason}},
     )
+
+
+def _check_v1_package(package) -> None:
+    """Package v3's v1 block against the V1 code (Phase 4 spec 10.1). The legacy guard runs on every delivery path,
+    so a governed build stops on any problem, and on a package without a v1 block (the guard needs its lexicon). In
+    development the two-pass V1 mode becomes off and the guard runs without its polarity rule. Reads only the package
+    and in-memory code values; writes nothing."""
+    from app.services import v1_checks
+
+    if package.v1 is None:
+        problems = ["the configuration package has no v1 block (package v3 is required: the legacy guard needs its lexicon)"]
+    else:
+        from app.services.v1_checks.package_check import check_v1_package
+
+        problems = check_v1_package(package, structural=False)
+    if not problems:
+        v1_checks.V1_UNAVAILABLE_REASON = None
+        return
+    reason = "; ".join(problems)[:500]
+    if settings.enforce_corpus_governance:
+        raise ConfigPackageError(f"v1 checks: {reason}")
+    v1_checks.V1_UNAVAILABLE_REASON = reason
+    TUTOR_LOGGER.warning("The V1 checks are unavailable; the two-pass V1 mode stays off", extra={FIELDS: {"event": "tutor.v1.unavailable", "reason": reason}})
 
 
 def _initialize_database() -> None:
@@ -269,6 +293,8 @@ def _record_configuration_overrides() -> None:
             # deferred appends) under the same package hash, so it is alerted on and stamped on every record (D5).
             ("shadow_budget_overridden", settings.two_pass_shadow_budget_ms is not None),
             ("ledger_append_budget_overridden", settings.tutor_ledger_append_budget_ms is not None),
+            # Phase 4: V1 enforcing the shadow record outside development (refused before the Phase 4 exit).
+            ("v1_pipeline_enforce", settings.v1_pipeline == "enforce"),
         )
         if active
     }
@@ -477,6 +503,42 @@ def _build_fields() -> dict:
         "ledger_route_enabled": bool(settings.ledger_route_enabled),
         "evidence_panel_enabled": bool(settings.evidence_panel_enabled),
         "tutor_turns_route_enabled": bool(settings.tutor_turns_route_enabled),
+        # Phase 4 (plan I; spec 10.2): the V1 mode in force and the package's static V1 values. No per-run V1 outcome
+        # and no legacy-guard count is public (AC-3-6).
+        "v1_pipeline": _v1_mode(package),
+        "v1_pipeline_setting": settings.v1_pipeline,
+        "v1": _v1_fields(package),
+    }
+
+
+def _v1_mode(package) -> str:
+    from app.services import v1_checks
+
+    return v1_checks.mode(settings, package)
+
+
+def _v1_fields(package) -> dict | None:
+    v1 = package.v1
+    if v1 is None:
+        return None
+    from app.services import v1_checks
+
+    return {
+        "version": v1.version,
+        "rules_hash": v1.rules_hash,
+        "checker": {"hosting": v1.checker_hosting, "model_id": v1.checker_model_id},
+        "misconception_library": {"version": v1.library_version, "entries": len(v1.library_entries), "sha256": v1.library_sha256},
+        "fixtures_set_sha256": v1.fixtures_set_sha256,
+        "regeneration": {"generation": v1.max_generation_regenerations, "render": v1.max_render_regenerations},
+        "readability_band": [v1.readability_min, v1.readability_max],
+        "x4_margin": dict(v1.x4_margin),
+        "stop": {
+            "answer_rate_floor": {gate: f"{answered}/{in_domain}" for gate, (answered, in_domain) in v1.answer_rate_floor.items()},
+            "v1_p95_latency_ms": v1.p95_budget_ms,
+        },
+        "provisional": True,
+        "available": v1_checks.V1_UNAVAILABLE_REASON is None,
+        "legacy_guard": "on",
     }
 
 
