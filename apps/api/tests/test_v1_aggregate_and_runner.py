@@ -283,3 +283,32 @@ def test_the_unmapped_fault_of_tutor_fakes_is_v1_4_s_unmapped_sentence():
     result = run(dev_pipeline(checker=AlwaysSupportedChecker(), renderer=UnmappedRenderer(TemplateRenderer(), [1], sentence=INVENTED)), MULTI_CLAIM)
     assert [r.reason_code for r in result.entry.verification.checks if r.check_id == "V1.4"] == ["unmapped_factual_sentence", "mapped"]
     assert pipeline_module.check_subset is check_subset
+
+
+def test_an_abstained_run_keeps_each_claim_s_v3_intent():
+    # Plan 7.2 "--V1.8 match--> V3" and D-20 "queued for V3": a claim V1.3 flagged or V1.8 matched carries its V3 intent
+    # whatever the final decision, so an abstained run (here every rendering adds an unmapped sentence: V1HardFail,
+    # subset_check_failed) queues it too; a V1.5 mark adds x4_margin (trigger X4) to every claim. A claim with none of
+    # them carries no intent.
+    import dataclasses
+
+    from v1_fakes import fixture_library
+
+    unmapped = UnmappedRenderer(TemplateRenderer(), None)
+    production = run(dev_pipeline(renderer=unmapped), MULTI_CLAIM).entry.verification
+    assert (production.final, production.final_reason, production.hard_fail) == ("abstain", "subset_check_failed", True)
+    assert production.verdicts and all(v.final == "abstain" and v.v3 is not None and v.v3.reasons == ("v1_3_flag",) and v.v3.trigger is None
+                                       for v in production.verdicts)
+    locked = run(dev_pipeline(), MULTI_CLAIM).locked
+    words = sorted({word.lower().strip(".,;:") for word in locked.claims[0].text.split() if len(word) > 5})[:2]
+    matched = run(dev_pipeline(checker=AlwaysSupportedChecker(), misconceptions=fixture_library([("MC-1", words)]),
+                               renderer=UnmappedRenderer(TemplateRenderer(), None)), MULTI_CLAIM).entry.verification
+    assert matched.final == "abstain"
+    intents = {v.claim_id: v.v3 for v in matched.verdicts}
+    assert intents[locked.claims[0].claim_id].reasons == ("v1_8_misconception",)
+    assert all(intent is None for claim_id, intent in intents.items() if claim_id != locked.claims[0].claim_id)
+    marking = dev_pipeline(checker=AlwaysSupportedChecker(), renderer=UnmappedRenderer(TemplateRenderer(), None))
+    marking.v1_params = dataclasses.replace(marking.v1_params, x4_margin={"bm25f-v1": 1000.0, "p1-floor": 0.0})
+    marked = run(marking, MULTI_CLAIM).entry.verification
+    assert marked.final == "abstain" and "near_floor" in marked.labels
+    assert all(v.v3 is not None and v.v3.reasons == ("x4_margin",) and v.v3.trigger == "X4" for v in marked.verdicts)

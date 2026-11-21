@@ -22,7 +22,7 @@ RULE_IDS: dict[str, str] = {
     "V1.2": "binding-polarity-v1",
     "V1.3": "entailment-interface-v1",
     "V1.4": SUBSET_CHECK_RULE,
-    "V1.5": "gate-decision-margin-v1",
+    "V1.5": "gate-decision-margin-v2",
     "V1.6": "keyed-answer-containment-v1",
     "V1.6-omit": "keyed-answer-socratic-omit-v1",
     "V1.7": "conflict-version-polarity-v1",

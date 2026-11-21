@@ -21,9 +21,10 @@ pipeline is recorded with delivery "shadow" and a shadow- id naming the turn it 
 
 A legacy record's abstention_reason says why the delivery abstained (plan I "abstention by reason"; spec 18.8 F1):
 the retrieval gate's own reason when the gate returned nothing (no_query_terms, no_match, insufficient_coverage,
-below_floor), and no_approved_span only when the gate matched passages none of which could be quoted (not approved
-under D-31, or not verified). Its retrieval.sufficiency is the gate's decision (retrieve.sufficiency_of). The
-learner's response and the turn's decision_reason are unchanged.
+below_floor), and otherwise no_approved_span: the gate matched passages none of which could be quoted (not approved
+under D-31, or not verified), or the Phase 4 legacy guard withheld the contained answer (V1.1, V1.2, or V1.7
+conflict_withheld), which its tutor.v1.legacy_guard_withheld line names. Its retrieval.sufficiency is the gate's
+decision (retrieve.sufficiency_of). The learner's response and the turn's decision_reason are unchanged.
 
 Each delivery's attempt logs one tutor.ledger.attempted line with its decision, its abstention reason and an
 attempt id, and ends in exactly one terminal line with the same attempt id once its append ends:

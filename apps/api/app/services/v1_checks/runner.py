@@ -260,7 +260,7 @@ class V1Track:
         v1 = self.v1
         pipeline = self.pipeline
         results = state.results
-        sufficiency = check_v1_5(bundle.sufficiency)
+        sufficiency = check_v1_5(bundle.sufficiency, x4_margin=v1.x4_margin[bundle.sufficiency.gate])
         results.append(sufficiency)
         if sufficiency.outcome == "abstain":
             return V1Abstained(results=tuple(results), generation_attempts=0, render_attempts=0, abstention_reason=bundle.sufficiency.reason)
@@ -378,7 +378,9 @@ class V1Track:
                 "render_attempts": record.render_attempts,
                 "cycle_count": record.cycle_count,
                 "outcomes": {check: dict(counts) for check, counts in sorted(outcomes.items())},
-                "flagged_claims": sum(1 for verdict in record.verdicts if verdict.final == "withhold"),
+                # Claims whose verdict is withhold, for any reason (V1.3, V1.8, a withheld V1.7 conflict, V1.6 omission).
+                # The V1.3 flag rate is outcomes["V1.3"]["flag"] over its flag plus pass results (spec 10.3).
+                "withheld_claims": sum(1 for verdict in record.verdicts if verdict.final == "withhold"),
                 "v3_intents": sum(1 for verdict in record.verdicts if verdict.v3 is not None),
                 "disclosure": record.disclosure is not None,
                 "latency_ms": round(latency_ms, SCORE_DIGITS),

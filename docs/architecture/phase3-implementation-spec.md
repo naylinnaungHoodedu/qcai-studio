@@ -595,8 +595,10 @@ LEARNER_STATE_FIELDS = ("mastery", "mastery_band", "band", "preference", "prefer
 SCHEMA_MODELS = {"ResolvedQuestion": ResolvedQuestion, "RetrievalRequest": RetrievalRequest, "EvidenceBundle": EvidenceBundle,
                  "EvidentialEnvelope": EvidentialEnvelope, "ClaimPlan": ClaimPlan, "LockedClaimSet": LockedClaimSet,
                  "PresentationPlan": PresentationPlan, "LedgerEntry": LedgerEntry}
-# verify_response_ledger dispatches on a row's entry_schema; Phase 4 adds ledger-entry-v2.
-ENTRY_SCHEMAS: dict[str, type[LedgerEntry]] = {"ledger-entry-v1": LedgerEntry}
+# Phase 4 (its spec 3.2) defines LedgerEntryV2 below LedgerEntry and adds it to both maps:
+# SCHEMA_MODELS["LedgerEntryV2"] = LedgerEntryV2
+# verify_response_ledger, export and restore dispatch on a row's entry_schema.
+ENTRY_SCHEMAS: dict[str, type[LedgerEntry]] = {"ledger-entry-v1": LedgerEntry, "ledger-entry-v2": LedgerEntryV2}
 ```
 
 (`ledger_write_failed` is not an abstention reason in Phase 3: there is no delivered two-pass path; a failed shadow append is a counted failure, a failed legacy append a counted coverage gap.)
@@ -1090,7 +1092,7 @@ def build_evidence_panel(*, decision: str, citations: list[Citation], retrieval_
 
 ### 5.2 Loader (`app/core/config_package.py`)
 
-**Constants:** `DEFAULT_PACKAGE_PATH` becomes `.../v2.json`; add `V1_PACKAGE_PATH`; `WIRED_GENERATORS = frozenset({"extractive-d19-v1"})` ("D-12 open: no provider generator is wired (hold H6)"); `TUTOR_SCHEMA_NAMES` (the 8 names in 5.1).
+**Constants:** `DEFAULT_PACKAGE_PATH` names the shipped package: `.../v2.json` with Phase 3, `.../v3.json` with Phase 4 (its spec 5.2, which adds `V2_PACKAGE_PATH`); add `V1_PACKAGE_PATH`; `WIRED_GENERATORS = frozenset({"extractive-d19-v1"})` ("D-12 open: no provider generator is wired (hold H6)"); `TUTOR_SCHEMA_NAMES` (the 8 names in 5.1).
 
 **Parsing.** `parse_config_package` accepts `schema_version` 1 or 2. For 1: `tutor_pipeline=None`, `flag_policy=FlagPolicy(False, None)`. For 2, any failure raises `ConfigPackageError`, governed or not:
 - `supersedes` is an object with `package_version` and a 64-hex `sha256`;
@@ -1684,7 +1686,7 @@ def downgrade():
 28. `test_plan_l_a_shadow_or_ledger_failure_never_changes_the_learner_response_and_is_counted`: parametrised: the pipeline raises; the shadow append raises; the budget is exceeded (a slow fake generator, `TWO_PASS_SHADOW_BUDGET_MS=100`); the legacy append raises; follow-up preparation raises. The response equals that of `off`; each case increments its counter in the in-process snapshots (`TWO_PASS_METRICS.snapshot()`, `LEDGER_METRICS.snapshot()`) and emits its event; `write_stop` is true for the ledger cases; public `/ready` `slis.two_pass_shadow` holds only `scheduled` and `phase2_bound_claim_ratio_baseline`.
 29. `test_plan_l_flag_off_restores_the_labelled_legacy_path`: with `off`, no shadow record; legacy records still exist; the panel labels are present.
 30. `test_plan_l_the_bound_claim_ratio_is_reported_and_a_drop_below_phase_2_is_a_stop`: the extractive generator gives 1.0 and no stop; a `ScriptedGenerator` with 1 unbound claim in 4 gives 0.75, `bound_claim_ratio_stop` true, and replay `compute(...)` gives `result == "stop"` and exit 3; a null ratio is not a stop.
-31. `test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode`: `config_package_version == "2.0.0"`; `tutor_pipeline` ids and hashes equal the package's; `two_pass_tutor == "shadow"`; `ledger == {"chain": "tutor-responses", "status": "ok"}`, with no sequence number; both SLI blocks present; `_build_fields()` makes no DB call.
+31. `test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode`: `config_package_version` and `config_package_sha256` are the shipped package's (`PACKAGE.package_version`: 2.0.0 for Phase 3's v2, 3.0.0 for Phase 4's v3); `tutor_pipeline` ids and hashes equal the package's; `two_pass_tutor == "shadow"`; `ledger == {"chain": "tutor-responses", "status": "ok"}`, with no sequence number; both SLI blocks present; `_build_fields()` makes no DB call.
 32. `test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_empty_ledger` (SQLite and PostgreSQL via `fresh_database_url`): `create_all` on every table except the three Phase 3 tables, `tutor_turns.ledger_record_expected` dropped (a Phase 2 database), `alembic stamp 20261119_phase2_corpus_spans`, `alembic upgrade head`, `run_schema_upgrades`: `compare_metadata == []`; append one row; `alembic downgrade -1` (one step from this Phase 3 stamp) fails with "export first"; with `-x allow_ledger_drop=true` it succeeds, the three tables and the column are gone; `SCHEMA_REVISION` equals the single head. The runbook's absolute-target rollback over every stamp state is `test_e10_*`.
 33. `test_plan_g_legacy_turns_read_as_no_verdict`: a turn an image that keeps no ledger created (`ledger_record_expected` null), with no record, gives `recorded == False`, `legacy_turn == True`, `unrecorded_reason == "earlier_image"`, `verdict == "no-verdict"`; row counts unchanged.
 34. `test_plan_h_private_plane_spans_never_reach_the_bundle_the_envelope_or_the_alias_route`: a temporary manifest moves one document item to the private plane (as AC-2-7 does); for queries that retrieved it before, no bundle or envelope span names it, the shadow record has none of its span ids, and `/evidence/spans/{id}` is 404; every envelope span is quotable; `governed_empty` abstains with `no_quotable_evidence` or a retrieval reason on all 298 fixture items.
@@ -1708,7 +1710,7 @@ def downgrade():
 
 ### 13.3 Existing tests expected to change (intent kept; the commit message gives the reason)
 
-1. **`test_config_package.py::test_the_shipped_package_validates_and_matches_its_hash`** asserts `package_version == "2.0.0"` for `DEFAULT_PACKAGE_PATH`; the v1 assertions move to `test_v1_stays_readable_for_one_release` (loads `V1_PACKAGE_PATH`, 1.0.0, hash verified). Reason: plan P "schemas in configuration package v2". `RAW` now reads v2; the parametrised structural edits still apply.
+1. **`test_config_package.py::test_the_shipped_package_validates_and_matches_its_hash`** asserts the shipped package's version for `DEFAULT_PACKAGE_PATH` (2.0.0 for Phase 3's v2; 3.0.0 for Phase 4's v3, whose spec 13.3 moves the 2.0.0 assertions to `test_v2_stays_readable_for_one_release`); the v1 assertions move to `test_v1_stays_readable_for_one_release` (loads `V1_PACKAGE_PATH`, 1.0.0, hash verified). Reason: plan P "schemas in configuration package v2". `RAW` now reads v2; the parametrised structural edits still apply.
 2. **`test_phase2_acceptance.py::test_d9_ready_reports_the_configuration_package_corpus_gate_and_slis`**: `"1.0.0"` becomes `package.package_version` (intent: "reports the package in force"); `set(slis) == {4 keys}` becomes `set(slis) == {4 keys} | {"tutor_ledger", "two_pass_shadow"}` (still exact).
 3. **`test_authorization.py`**: `OWNERSHIP_TESTED` adds `("POST", "/tutor/turns")` and `("GET", "/ledger/responses/{response_id}")`; `_concrete` adds `"response_id": "turn-00000000-0000-0000-0000-000000000000"`; two new ownership tests: `test_another_learners_thread_cannot_be_continued_through_tutor_turns` (404, no message written) and `test_another_learners_ledger_record_reads_as_missing` (owner 200; intruder response equals the missing-id response; shadow id 404 for the owner). Strengthens the matrix rule.
 4. **`apps/frontend/tests/answer-wording.integration.test.ts`:** `ANSWER_SURFACES` adds `components/evidence-panel.tsx` and `lib/evidence-panel.ts`. Stricter.

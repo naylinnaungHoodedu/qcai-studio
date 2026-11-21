@@ -14,7 +14,9 @@ through guard_contained before anything reads it. For each quotation (a Grounded
 Then, when the caller shows no disclosure (disclosure_shown False: the evidence panel, whose `conflicts` label the
 conflicting passages, is off) and the package has a v1 block, V1.7 over the answer's quotations
 (v1_7_conflicts.legacy_conflicts, the rule the panel's conflicts use): any conflict withholds the answer
-(V1.7 / conflict_withheld).
+(V1.7 / conflict_withheld). An answer delivered with the panel's labels is stored, and each read that shows it again
+(GET /assistant/threads/{thread_id}, GET /qa/history) returns the same labels (evidence_panel.stored_conflicts) for
+the chat's stored bubbles and the Q&A history to render, so disclosure_shown holds on every surface.
 Any failure withholds the whole answer: the contained answer becomes today's abstention (the same bytes), the guard
 counts it (V1_METRICS.legacy_guard) and logs tutor.v1.legacy_guard_withheld with the check, the reason and the surface
 (a V1.1 or V1.2 failure is an upstream defect; a V1.7 one is conflicting sources quoted with no disclosure shown). The
@@ -90,8 +92,9 @@ def undisclosed_conflict(contained: ContainedAnswer, package: "ConfigPackage") -
 
 def guard_contained(contained: ContainedAnswer, *, store: "CourseStore", package: "ConfigPackage",
                     surface: Literal["tutor", "qa"], disclosure_shown: bool = False) -> GuardResult:
-    """The guarded answer. disclosure_shown: the caller shows V1.7's disclosure (the evidence panel's conflicts), so a
-    conflict is labelled there instead of withheld; its default is the conservative False."""
+    """The guarded answer. disclosure_shown: the caller shows V1.7's disclosure (the evidence panel's conflicts, which
+    the reads of the stored answer return again), so a conflict is labelled there instead of withheld; its default is
+    the conservative False."""
     if contained.decision != "answer":
         V1_METRICS.guard(surface, withheld_by=None)
         return GuardResult(contained=contained, withheld=())

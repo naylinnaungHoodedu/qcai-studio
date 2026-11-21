@@ -18,7 +18,9 @@ Per locked claim of a V1Passed, final is deliver iff the passing rendering shows
 flag, no withheld V1.7 conflict and was not left out for V1.6; otherwise withhold. Before Phase 5 there is no V2, so
 D-20's interim text applies (PD-13): every flagged claim is withheld, and the response's replacement is the D-19
 contained answer the learner received (extractive_d19, or abstention), "unknown" when no legacy decision exists (replay
-and fixture runs). No "under review" label exists. A V1HardFail or V1Abstained abstains on every claim.
+and fixture runs). No "under review" label exists. A V1HardFail or V1Abstained abstains on every claim. Whatever the
+decision, a claim V1.3 flagged or V1.8 matched in the accepted candidate carries a V3 queue intent, and every claim does
+when V1.5 marked the response (X4).
 """
 
 from __future__ import annotations
@@ -165,18 +167,13 @@ def passed_verdicts(
     shown = {segment.claim_id for segment in rendered.segments if segment.kind == "claim" and segment.claim_id}
     v1_3, v1_8 = _flagged(accepted, "V1.3"), _flagged(accepted, "V1.8")
     conflict = withheld_claim_ids((), disclosure)
-    marked = any(result.check_id == "V1.5" and result.outcome == "mark" for result in accepted)
+    intent_of = _v3_intents(accepted)
     cycles = cycle_count(generation_attempts, render_attempts)
     verdicts = []
     for claim in locked.claims:
         claim_id = claim.claim_id
         deliver = claim_id in shown and claim_id not in v1_3 | v1_8 | conflict | keyed_omitted
-        reasons = sorted(
-            {*(["v1_3_flag"] if claim_id in v1_3 else []), *(["v1_8_misconception"] if claim_id in v1_8 else []),
-             *(["x4_margin"] if marked else [])}
-        )
-        intent = V3Intent(reasons=tuple(reasons), trigger="X4" if marked else None) if reasons else None
-        verdicts.append(ClaimVerdict(claim_id=claim_id, v1=_claim_results(claim_id, accepted), v3=intent,
+        verdicts.append(ClaimVerdict(claim_id=claim_id, v1=_claim_results(claim_id, accepted), v3=intent_of(claim_id),
                                      final="deliver" if deliver else "withhold", cycle_count=cycles))
     if any(verdict.final == "deliver" for verdict in verdicts):
         return tuple(verdicts), "deliver", None
@@ -189,10 +186,28 @@ def passed_verdicts(
 
 def abstained_verdicts(locked: LockedClaimSet, results: tuple[CheckResult, ...], generation_attempts: int,
                        render_attempts: int) -> tuple[ClaimVerdict, ...]:
+    """Every locked claim of an abstained run abstains, and keeps the V3 intent its accepted candidate's results give
+    it (plan 7.2 "--V1.8 match--> V3"; D-20 "queued for V3"), as a delivered or withheld claim does."""
     accepted = accepted_results(results, generation_attempts, render_attempts)
+    intent_of = _v3_intents(accepted)
     cycles = cycle_count(generation_attempts, render_attempts)
-    return tuple(ClaimVerdict(claim_id=claim.claim_id, v1=_claim_results(claim.claim_id, accepted), final="abstain", cycle_count=cycles)
+    return tuple(ClaimVerdict(claim_id=claim.claim_id, v1=_claim_results(claim.claim_id, accepted), v3=intent_of(claim.claim_id),
+                              final="abstain", cycle_count=cycles)
                  for claim in locked.claims)
+
+
+def _v3_intents(accepted: tuple[CheckResult, ...]):
+    """claim_id -> its V3 queue intent, or None: v1_3_flag when V1.3 flagged the claim, v1_8_misconception when V1.8
+    matched it, x4_margin (trigger X4) on every claim when V1.5 marked the response (spec 4.12)."""
+    v1_3, v1_8 = _flagged(accepted, "V1.3"), _flagged(accepted, "V1.8")
+    marked = any(result.check_id == "V1.5" and result.outcome == "mark" for result in accepted)
+
+    def intent(claim_id: str) -> V3Intent | None:
+        reasons = sorted({*(["v1_3_flag"] if claim_id in v1_3 else []), *(["v1_8_misconception"] if claim_id in v1_8 else []),
+                          *(["x4_margin"] if marked else [])})
+        return V3Intent(reasons=tuple(reasons), trigger="X4" if marked else None) if reasons else None
+
+    return intent
 
 
 def replacement_for(legacy_decision: str | None) -> str:

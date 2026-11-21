@@ -255,6 +255,9 @@ class QAHistoryItem(BaseModel):
     created_at: datetime
     # True when the stored answer predates containment and is withheld (R-16; app/services/answer_history.py).
     withdrawn: bool = False
+    # Phase 4 (V1.7, AC-4-6): the conflict labels of the stored answer's quotations, the rule the evidence panel uses;
+    # present only when its quoted passages conflict, so the item otherwise keeps its keys.
+    conflicts: "list[EvidenceConflict] | None" = Field(default=None, exclude_if=lambda value: value is None)
 
 
 ASSISTANT_HISTORY_MAX_MESSAGES = 8
@@ -319,7 +322,7 @@ class EvidenceConflict(BaseModel):
     """V1.7 on a contained answer's quotations (Phase 4 spec 4.8): which passages disagree, labelled; no new claim."""
 
     kind: Literal["version_of_same_asset", "number_disagreement", "negation_disagreement"]
-    # 1-based positions in EvidencePanel.spans.
+    # 1-based positions of the answer's quotations ([1], [2], ... in its text; EvidencePanel.spans on a live answer).
     passages: list[int]
 
 
@@ -337,8 +340,9 @@ class EvidencePanel(BaseModel):
     conflicts: list[EvidenceConflict] | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
-# QAResponse names EvidencePanel before it is defined.
+# QAResponse names EvidencePanel, and QAHistoryItem EvidenceConflict, before they are defined.
 QAResponse.model_rebuild()
+QAHistoryItem.model_rebuild()
 
 
 class AssistantChatResponse(BaseModel):
@@ -453,6 +457,9 @@ class TutorMessageRead(BaseModel):
     created_at: datetime
     # True when a stored tutor reply predates containment and is withheld (R-16).
     withdrawn: bool = False
+    # Phase 4 (V1.7, AC-4-6): on a stored reply whose quoted passages conflict, their labels (the evidence panel's
+    # rule over the reply's turn's citations); omitted otherwise, so the message keeps its keys.
+    conflicts: list[EvidenceConflict] | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class TutorThreadDetail(TutorThreadRead):

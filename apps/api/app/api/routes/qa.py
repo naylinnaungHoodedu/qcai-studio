@@ -7,11 +7,13 @@ from sqlalchemy.orm import Session
 from app.core.auth import AuthUser, get_current_user
 from app.core.db import get_db
 from app.core.config import get_settings
+from app.core.config_package import get_config_package
 from app.core.rate_limit import limiter
 from app.db_models import QAInteraction
 from app.core.corpus_governance import get_corpus_registry
 from app.schemas import QAHistoryItem, QARequest, QAResponse
 from app.services.answer_history import WITHDRAWN_ANSWER, stored_before_containment
+from app.services.evidence_panel import stored_conflicts
 from app.services.ledger import LegacyDelivery, LegacyPreparationFailed, record_legacy_delivery
 from app.services.provenance import is_withheld_unapproved, label_stored_citation
 from app.services.retrieval_metrics import record_citations
@@ -79,6 +81,7 @@ def _history_item(record: QAInteraction, db: Session) -> QAHistoryItem:
     # An answer the uncontained build stored is withheld with its citations; the question stays (R-16).
     withdrawn = stored_before_containment(record.created_at)
     citations = []
+    conflicts = None
     if not withdrawn:
         # Dual-read (plan Phase 2 G): v0/v1 citations come back labelled legacy_unresolved, never as resolved
         # (AC-2-3), and a governed build withholds citations of items the manifest does not approve ([R13]).
@@ -91,6 +94,9 @@ def _history_item(record: QAInteraction, db: Session) -> QAHistoryItem:
         withheld = sum(1 for raw in stored if is_withheld_unapproved(raw, settings=settings, registry=registry))
         if withheld:
             record_citations("qa_history", 0, 0, withheld)
+        # AC-4-6 where the answer is shown again: the V1.7 labels of its quotations (positions in the stored order,
+        # which the answer's [n] numbering follows), whatever EVIDENCE_PANEL_ENABLED says (Phase 4 spec 4.15).
+        conflicts = stored_conflicts(stored, get_config_package(settings))
     return QAHistoryItem(
         id=record.id,
         lesson_slug=record.lesson_slug,
@@ -99,4 +105,5 @@ def _history_item(record: QAInteraction, db: Session) -> QAHistoryItem:
         citations=citations,
         created_at=record.created_at,
         withdrawn=withdrawn,
+        conflicts=conflicts,
     )

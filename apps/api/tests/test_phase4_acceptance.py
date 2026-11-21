@@ -562,6 +562,46 @@ def test_ac_4_6_with_no_disclosure_shown_a_contained_answer_quoting_conflicting_
             assert guard["by_check"]["V1.7"] == 2 and guard["withheld"] == {"tutor": 1, "qa": 1}
 
 
+def test_ac_4_6_a_stored_answer_quoting_conflicting_spans_is_shown_again_with_its_disclosure(monkeypatch):
+    # AC-4-6 on every surface that shows a stored answer again: with the panel on, the answer quoting conflicting
+    # passages is delivered with the panel's conflicts and stored; GET /assistant/threads/{id} and GET /qa/history then
+    # return the same labels whatever EVIDENCE_PANEL_ENABLED says at read time. They are the current package's V1.7
+    # labels: under the shipped package (no fixture family) the same stored answer carries none, and no conflicts key.
+    citations, family = _family_citations()
+    overlay = dataclasses.replace(PACKAGE, v1=dataclasses.replace(V1, version_families={item: "fixture" for item in family}))
+    real = contain_answer
+    for module in (tutor_orchestrator, qa_engine):
+        monkeypatch.setattr(module, "contain_answer", lambda _citations, registry, spans, **kwargs: real(citations, registry, spans, **kwargs))
+    expected = [{"kind": "version_of_same_asset", "passages": [1, 2]}]
+
+    def use(package, settings):
+        for module in (tutor_orchestrator, qa_engine, qa_route):
+            monkeypatch.setattr(module, "get_config_package", lambda settings=None: package)
+        orchestrator = TutorOrchestrator(TeachingAssistantService(get_retrieval_engine(), settings), settings)
+        monkeypatch.setattr(assistant_route, "get_tutor_orchestrator", lambda: orchestrator)
+        monkeypatch.setattr(qa_route, "get_qa_engine", lambda: QAEngine(get_retrieval_engine(), settings))
+
+    headers = demo("p4-reread")
+    use(overlay, Settings(evidence_panel_enabled=True))
+    chat = client.post("/assistant/chat", json={"message": "Why does routing depth matter?"}, headers=fresh(headers)).json()
+    asked = client.post("/qa/ask", json={"question": "Why does routing depth matter?"}, headers=fresh(headers)).json()
+    assert (chat["decision"], asked["decision"]) == ("answer", "answer")
+    assert chat["evidence"]["conflicts"] == asked["evidence"]["conflicts"] == expected
+    for package, panel, labels in ((overlay, True, expected), (overlay, False, expected), (PACKAGE, True, None)):
+        use(package, Settings(evidence_panel_enabled=panel))
+        thread = client.get(f"/assistant/threads/{chat['thread_id']}", headers=fresh(headers))
+        assert thread.status_code == 200
+        question, reply = thread.json()["messages"]
+        assert (question["role"], reply["role"], reply["content"]) == ("user", "assistant", chat["answer"])
+        assert "conflicts" not in question and reply.get("conflicts") == labels and ("conflicts" in reply) == (labels is not None)
+        history = client.get("/qa/history", headers=fresh(headers))
+        assert history.status_code == 200
+        # Both stored answers: the /qa/ask row and the tutor turn's own Q&A row.
+        items = [item for item in history.json() if item["answer"] == chat["answer"]]
+        assert len(items) == 2 and asked["answer"] == chat["answer"]
+        assert all(item.get("conflicts") == labels and ("conflicts" in item) == (labels is not None) for item in items)
+
+
 # ======================================================================================================== AC-4-7
 
 
@@ -932,6 +972,63 @@ def test_plan_i_the_hard_fail_rate_per_check_has_one_definition_in_process_in_th
     assert "(`outcomes.<check>.hard_fail` over runs)" not in runbook
 
 
+def test_plan_i_the_runbook_says_a_delivered_no_approved_span_also_counts_the_legacy_guard_s_withholdings(caplog):
+    # A guard withholding (V1.1, V1.2, or V1.7 conflict_withheld) delivers today's abstention, whose reason is
+    # no_approved_span, so the delivered-abstention SLI folds it in with the approval and verification gaps; the runbook
+    # says so and names the line that tells them apart.
+    contained, registry = _citations_for("Why does routing depth matter on sparse hardware?")
+    answered = contain_answer(contained, registry, get_course_store().span_registry, settings=SETTINGS)
+    claim = answered.claims[0].model_copy(update={"cited_span_ids": ["span-" + "e" * 64]})
+    forged = dataclasses.replace(answered, claims=[claim, *answered.claims[1:]])
+    from app.services.v1_checks import legacy_guard
+
+    guarded = legacy_guard.guard_contained(forged, store=get_course_store(), package=PACKAGE, surface="qa")
+    assert (guarded.contained.decision, guarded.contained.reason) == ("abstain", "no_approved_span") and guarded.withheld
+    runbook = (REPO_ROOT / "infra" / "cloudrun" / "observability.md").read_text(encoding="utf-8")
+    paragraph = next(line for line in runbook.splitlines() if line.startswith("A legacy delivery's abstention reason"))
+    assert "`no_approved_span` only when" not in paragraph
+    assert "the Phase 4 legacy guard withheld a contained answer" in paragraph and "`tutor.v1.legacy_guard_withheld`" in paragraph
+    row = next(line for line in runbook.splitlines() if line.startswith("| Delivered abstention by reason |"))
+    assert "`no_approved_span` holds the legacy guard's withholdings too" in row
+    guard_row = next(line for line in runbook.splitlines() if line.startswith("| `tutor.v1.legacy_guard_withheld` |"))
+    assert "names it `no_approved_span`" in guard_row
+
+
+def test_plan_i_the_v1_3_flag_rate_has_one_definition_in_process_in_the_report_and_in_the_runbook(caplog):
+    # Plan I "V1.3 flag rate": V1.3's claim-level results with outcome flag over its claim-level results (flag plus
+    # pass), in process (V1_METRICS v1_3), in the fixture report (v1_3_flag_rate) and from the run log's outcomes (the
+    # runbook's log-based metric). The run log's withheld_claims counts withheld verdicts for any reason: a claim V1.8
+    # withholds is one, though V1.3 flagged nothing.
+    from v1_fakes import fixture_library
+
+    locked = run(dev_pipeline(), MULTI_CLAIM).locked
+    words = sorted({word.lower().strip(".,;:") for word in locked.claims[0].text.split() if len(word) > 5})[:2]
+    pipelines = (dev_pipeline(), dev_pipeline(checker=AlwaysSupportedChecker()),
+                 dev_pipeline(checker=AlwaysSupportedChecker(), misconceptions=fixture_library([("MC-1", words)])))
+    V1_METRICS.reset()
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="qcai.tutor"):
+        records = [run(pipeline, MULTI_CLAIM).entry.verification for pipeline in pipelines]
+    lines = _events(caplog, "tutor.v1.run")
+    assert len(lines) == 3
+    flags = sum(line["outcomes"]["V1.3"].get("flag", 0) for line in lines)
+    passes = sum(line["outcomes"]["V1.3"].get("pass", 0) for line in lines)
+    claim_level = [result for record in records for result in record.checks if result.check_id == "V1.3" and result.claim_id is not None]
+    assert flags == sum(1 for result in claim_level if result.outcome == "flag") > 0 and flags + passes == len(claim_level) > flags
+    snapshot = V1_METRICS.detail_snapshot()["v1_3"]
+    assert (snapshot["flagged"], snapshot["claims_checked"], snapshot["flag_rate"]) == (flags, flags + passes, round(flags / (flags + passes), 6))
+    misconception = lines[2]
+    assert misconception["outcomes"]["V1.3"].get("flag", 0) == 0 and misconception["withheld_claims"] >= 1 and "flagged_claims" not in misconception
+    report = json.loads(REPORT_PATH.read_text(encoding="utf-8"))
+    for configuration in report["configurations"]:
+        block = configuration["v1_3_flag_rate"]
+        assert block["rate"] == (round(block["flagged"] / block["checked"], 6) if block["checked"] else None)
+    runbook = (REPO_ROOT / "infra" / "cloudrun" / "observability.md").read_text(encoding="utf-8")
+    row = next(line for line in runbook.splitlines() if line.startswith("| `tutor.v1.run` |"))
+    assert "V1.3 flag rate: the sum of `outcomes.V1.3.flag` over the sum of `outcomes.V1.3.flag` and `outcomes.V1.3.pass`" in row
+    assert "`withheld_claims`" in row and "flagged_claims" not in runbook
+
+
 def test_plan_i_the_runbook_names_every_configuration_override_the_api_records():
     # "Alert on overrides" (plan Phase 1 I): every detail main._record_configuration_overrides can emit is named on a
     # config.override line of the runbook, the Phase 4 v1_pipeline_enforce included.
@@ -1126,6 +1223,12 @@ def test_phase4_docs_quote_plan_m_and_state_the_current_rules():
                  if case.get("query") and case["query"] not in public}
     words = {3: "three", 4: "four", 5: "five", 6: "six", 7: "seven"}
     assert f"and {words[len(synthetic)]} short synthetic keyword queries" in SPEC
+    # M2 counts the synthetic queries whose envelope holds spans of both fixture-family items: the conflict_version
+    # cases' queries, all synthetic (the unit_swap query retrieves neither item).
+    family_queries = {case["query"] for case in json.loads(FIXTURES_PATH.read_text(encoding="utf-8"))["cases"] if case["class"] == "conflict_version"}
+    assert family_queries <= synthetic and len(family_queries) < len(synthetic)
+    assert f"{words[len(family_queries)]} synthetic keyword queries put spans of both in one envelope (the `conflict_version` cases, 12.1)" in SPEC
+    assert f"{words[len(synthetic)]} synthetic keyword queries put spans of both" not in SPEC
     # The runbook names the rollback order and the README the provenance of the committed records.
     runbook = (REPO_ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8")
     assert "**Rollback order: the API first, then the frontend**" in runbook and "Auto-score: N / N" in runbook
@@ -1136,9 +1239,19 @@ def test_phase4_docs_name_every_q_22_value_and_the_package_s_provisional_until()
     # The spec's DI-52 row names every value package v3 lists under owner_decisions.Q-22, and main.py's comment on
     # bm25f-v1's floor and margin states the package's abstention.provisional_until.
     raw = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
-    labels = {"v1.v1_5.x4_margin": "X4 margin", "v1.v1_3.support_threshold": "V1.3 threshold", "v1.v1_7": "V1.7 alignment rule",
-              "v1.v1_9.readability": "V1.9 band", "v1.stop": "stop values"}
-    assert sorted(raw["owner_decisions"]["Q-22"]["provisional_values"]) == sorted(labels)
+    labels = {"v1.v1_5.x4_margin": "X4 margin", "abstention": "V1.5 floor and margin", "v1.v1_3.support_threshold": "V1.3 threshold",
+              "v1.v1_7": "V1.7 alignment rule", "v1.v1_9.readability": "V1.9 band", "v1.stop": "stop values"}
+    values = raw["owner_decisions"]["Q-22"]["provisional_values"]
+    assert sorted(values) == sorted(labels)
+
+    # Every block the package keeps provisional until Q-22 is one of them (the loader refuses a package otherwise).
+    def until_q22(node, path):
+        if not isinstance(node, dict):
+            return []
+        own = [path] if "Q-22" in str(node.get("provisional_until", "")) else []
+        return own + [inner for key, value in node.items() for inner in until_q22(value, f"{path}.{key}" if path else key)]
+
+    assert until_q22(raw, "") == ["abstention"] and set(until_q22(raw, "")) <= set(values)
     row = next(line for line in SPEC.splitlines() if line.startswith("| DI-52 |"))
     for value, label in labels.items():
         assert label in row, value
@@ -1148,6 +1261,54 @@ def test_phase4_docs_name_every_q_22_value_and_the_package_s_provisional_until()
     comment = " ".join(line.strip().lstrip("# ") for line in main_source.split('"manifest_drift"', 1)[1].split('"threshold_version"', 1)[0].splitlines())
     assert "bm25f-v1's floor and margin" in comment and f"provisional until {until}" in comment
     assert "provisional until Phase 4" not in main_source
+
+
+def test_phase4_docs_the_phase3_spec_states_what_phase4_changed():
+    # Spec 7.14 (conflict 36): Phase 3 text that Phase 4 made false is edited in place. Its contracts listing holds the
+    # code's ENTRY_SCHEMAS line, 5.2 names the shipped DEFAULT_PACKAGE_PATH, and no test description still asserts the
+    # 2.0.0 package as the shipped one.
+    phase3 = (REPO_ROOT / "docs" / "architecture" / "phase3-implementation-spec.md").read_text(encoding="utf-8")
+    contracts_source = (API_ROOT / "app" / "services" / "tutor_pipeline" / "contracts.py").read_text(encoding="utf-8")
+    entry_schemas = next(line for line in contracts_source.splitlines() if line.startswith("ENTRY_SCHEMAS"))
+    assert entry_schemas in phase3 and '# SCHEMA_MODELS["LedgerEntryV2"] = LedgerEntryV2' in phase3
+    assert "Phase 4 adds ledger-entry-v2." not in phase3
+    shipped = re.search(r'^DEFAULT_PACKAGE_PATH = .*?"(v\d+\.json)"', (API_ROOT / "app" / "core" / "config_package.py").read_text(encoding="utf-8"),
+                        flags=re.MULTILINE).group(1)
+    assert shipped == DEFAULT_PACKAGE_PATH.name and f"`.../{shipped}` with Phase 4" in phase3
+    assert "`DEFAULT_PACKAGE_PATH` becomes `.../v2.json`" not in phase3
+    assert '`config_package_version == "2.0.0"`' not in phase3 and 'asserts `package_version == "2.0.0"`' not in phase3
+    for test in ("test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode", "test_the_shipped_package_validates_and_matches_its_hash"):
+        line = next(line for line in phase3.splitlines() if f"`{test}`" in line or f"::{test}`" in line)
+        assert f"{PACKAGE.package_version} for Phase 4's v3" in line, test
+
+
+def test_phase4_docs_the_start_up_mode_and_settings_text_states_the_current_rules():
+    # P2-12-D-03: docstrings and comments describe the current code. _check_tutor_pipeline_package runs the V1 package
+    # check first, which stops every governed build and every build outside development whatever TWO_PASS_TUTOR says;
+    # v1_checks.mode names enforce as refused only outside development (it is the development default); the settings
+    # comments state EVIDENCE_PANEL_ENABLED's part in the legacy guard (V1.7) and name the guard by all its checks.
+    import inspect
+
+    from app import main as main_module
+    from app.services import v1_checks
+
+    def flat(text: str) -> str:
+        return " ".join(text.split())
+
+    start_up = flat(inspect.getdoc(main_module._check_tutor_pipeline_package))
+    assert start_up.startswith("The package's V1 block, then its tutor-pipeline schema pins")
+    assert "First _check_v1_package" in start_up and "every build outside development, whatever TWO_PASS_TUTOR says" in start_up
+    mode_doc = flat(inspect.getdoc(v1_checks.mode))
+    assert "enforce in development by default; outside development Settings refuse off, and refuse enforce before the Phase 4 exit" in mode_doc
+    assert "Settings refuse off outside development and enforce before" not in mode_doc
+    config = (API_ROOT / "app" / "core" / "config.py").read_text(encoding="utf-8")
+    assert "V1.1/V1.2 legacy guard" not in config
+    panel = flat(" ".join(line.strip().lstrip("# ") for line in
+                          config.split("ledger_route_enabled: bool | None = None", 1)[1].split("evidence_panel_enabled: bool | None = None", 1)[0].splitlines()))
+    assert "the legacy guard's disclosure_shown" in panel and "V1.7 finds in conflict" in panel and "Q&A-history reads label it again" in panel
+    pipeline = flat(" ".join(line.strip().lstrip("# ") for line in
+                             config.split("ledger_rate_limit: str", 1)[1].split("v1_pipeline: Literal", 1)[0].splitlines()))
+    assert "V1.1 and V1.2 always, and V1.7 whenever no evidence panel shows the conflict" in pipeline
 
 
 def _test_function_names() -> set[str]:

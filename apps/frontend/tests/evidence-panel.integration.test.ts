@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { CONFLICT_TEXT, DECISION_TEXT, DEGRADED_TEXT, LABEL_TEXT, VERDICT_TEXT, evidencePanelView, spanHref } from "../src/lib/evidence-panel";
+import { CONFLICT_TEXT, DECISION_TEXT, DEGRADED_TEXT, LABEL_TEXT, VERDICT_TEXT, conflictNotes, evidencePanelView, spanHref } from "../src/lib/evidence-panel";
 import { routeRequiresGuestSession } from "../src/lib/guest-session";
 import type { EvidencePanelPayload } from "../src/lib/types";
 
@@ -298,5 +298,29 @@ test("the conflict notes keep at least 4.5:1 contrast on the panel in both theme
   }
   for (const surface of [[255, 255, 255], [238, 243, 251]] as Array<[number, number, number]>) {
     assert.ok(contrast(hexChannels(token(lightRoot[1], "ink")), surface) >= 4.5, "light theme: conflict notes on the Q&A panel");
+  }
+});
+
+// AC-4-6 wherever an answer is shown again (Phase 4 spec 4.15, 11): the API returns a stored answer's conflict labels
+// with the tutor thread and the Q&A history, and both render them as that answer's disclosure.
+test("a stored answer shown again in the chat or the Q&A history carries its conflict disclosure", () => {
+  assert.deepEqual(conflictNotes([{ kind: "version_of_same_asset", passages: [1, 2] }]), [
+    "Passages 1 and 2 come from different versions of one source; they may disagree",
+  ]);
+  assert.deepEqual(conflictNotes(null), []);
+  assert.deepEqual(conflictNotes(undefined), []);
+  const component = read("components/evidence-panel.tsx");
+  assert.match(component, /export function ConflictDisclosure\(/);
+  assert.match(component, /if \(!notes\.length\) \{\s*return null;/);
+  assert.match(component, /className="assistant-evidence-panel">\s*<ul className="assistant-evidence-conflicts">/);
+  const chat = read("components/teaching-assistant-chat.tsx");
+  assert.match(chat, /conflicts: message\.conflicts \?\? null,/);
+  assert.match(chat, /message\.evidence \? <EvidencePanel evidence=\{message\.evidence\} \/> : <ConflictDisclosure conflicts=\{message\.conflicts\} \/>/);
+  const history = read("components/qa-panel.tsx").match(/function renderHistoryItem[\s\S]*?\r?\n  \}/);
+  assert.ok(history && /<ConflictDisclosure conflicts=\{item\.conflicts\} \/>/.test(history[0]), "a Q&A history item renders its disclosure");
+  const types = read("lib/types.ts");
+  for (const name of ["QAHistoryItem", "TutorThreadDetail"]) {
+    const block = types.match(new RegExp(`export type ${name} = [\\s\\S]*?\\r?\\n\\};`));
+    assert.ok(block && /conflicts\?: EvidenceConflictPayload\[\] \| null;/.test(block[0]), name);
   }
 });

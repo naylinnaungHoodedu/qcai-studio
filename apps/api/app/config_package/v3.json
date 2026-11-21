@@ -499,13 +499,13 @@
     "provisional": true,
     "phase": "4",
     "authority": "plan Phase 4 D; [PROV] values 'MUST be frozen in versioned configuration before use (Q-22; Decision D-06), never reported as results' (plan L795-800); PD-13..PD-21",
-    "rules_hash": "882d6df95056a4d5058cf8641973317cb7fc9233ee0d312ac41e6c28f41f7a37",
+    "rules_hash": "ec325f1ecc38ef0a6ff44c79f1fc6e957be88f51b2df57f012a9483bba23c6b3",
     "rule_ids": {
       "V1.1": "span-resolution-current-v1",
       "V1.2": "binding-polarity-v1",
       "V1.3": "entailment-interface-v1",
       "V1.4": "segment-exact-whitespace-v3",
-      "V1.5": "gate-decision-margin-v1",
+      "V1.5": "gate-decision-margin-v2",
       "V1.6": "keyed-answer-containment-v1",
       "V1.6-omit": "keyed-answer-socratic-omit-v1",
       "V1.7": "conflict-version-polarity-v1",
@@ -635,12 +635,12 @@
     },
     "v1_5": {
       "provisional": true,
-      "authority": "PD-15 (Q-22: X4 margin; V1.5 frozen before E1) over PD-04",
+      "authority": "PD-15 (Q-22: the X4 margin per gate, which V1.5 applies: it marks a response whose top score is below the gate floor plus the margin; V1.5 frozen before E1) over PD-04",
       "x4_margin": {
         "bm25f-v1": 2.4,
         "p1-floor": 0.0
       },
-      "rule": "gate-decision-margin-v1"
+      "rule": "gate-decision-margin-v2"
     },
     "v1_6": {
       "provisional": true,
@@ -732,7 +732,7 @@
   },
   "flag_policy": {
     "provisional": true,
-    "authority": "PD-10: the Phase 3 switches outside development (plan Phase 3 G; AC-3-6; 13.6); the values are plan MUST text or a fact (phase4_exit_passed), recorded provisional with PD-10 and ratified with it (DI-37)",
+    "authority": "PD-10 for two_pass_tutor and phase4_exit_passed: the Phase 3 switch outside development (plan Phase 3 G; AC-3-6; 13.6), whose values are plan MUST text or a fact, recorded provisional with PD-10 and ratified with it (DI-37); PD-19 for v1_pipeline: the Phase 4 switch (plan Phase 4 G; 13.6), an engineering default recorded provisional with PD-19 and ratified with it (DI-55)",
     "two_pass_tutor": {
       "values": [
         "off",
@@ -795,7 +795,7 @@
         },
         {
           "plan": "11.3: \"a sufficiency gate (floor plus runner-up margin) before any generator call\"",
-          "applied": "the margin labels near_floor results (floor <= score < floor + margin, D6 and V1.5) and drops none; no runner-up test (spec conflict 4; Phase 4, DI-28)"
+          "applied": "the margin labels near_floor results (floor <= score < floor + margin, D6 and V1.5) and drops none; no runner-up test (Phase 2 spec conflict 4; DI-28, carried as DI-67)"
         }
       ],
       "record": "docs/adr/ADR-002-retrieval-architecture.md (Revision 2026-11-19)"
@@ -858,6 +858,7 @@
       "state": "unresolved",
       "provisional_values": [
         "v1.v1_5.x4_margin",
+        "abstention",
         "v1.v1_3.support_threshold",
         "v1.v1_7",
         "v1.v1_9.readability",

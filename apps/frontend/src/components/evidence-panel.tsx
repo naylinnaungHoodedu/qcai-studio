@@ -1,5 +1,25 @@
-import { evidencePanelView } from "@/lib/evidence-panel";
-import type { EvidencePanelPayload } from "@/lib/types";
+import { conflictNotes, evidencePanelView } from "@/lib/evidence-panel";
+import type { EvidenceConflictPayload, EvidencePanelPayload } from "@/lib/types";
+
+// Phase 4 (V1.7, AC-4-6): the disclosure of a stored answer whose quoted passages may disagree, shown wherever the
+// answer is shown again (a reopened tutor thread, the Q&A history); the API returns the labels with the stored answer.
+// The same notes and styling as the live panel's conflicts, inside the panel's own box (its tokens keep the notes'
+// contrast on the chat bubble in both themes); nothing when the answer has none.
+export function ConflictDisclosure({ conflicts }: { conflicts?: EvidenceConflictPayload[] | null }) {
+  const notes = conflictNotes(conflicts);
+  if (!notes.length) {
+    return null;
+  }
+  return (
+    <div role="group" aria-label="Passages in this answer that may disagree" className="assistant-evidence-panel">
+      <ul className="assistant-evidence-conflicts">
+        {notes.map((note) => (
+          <li key={note}>{note}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 // The evidence behind a tutor answer the learner already received (plan Phase 3 task 3.8): the decision, the quoted
 // passages (links only when the span route is enabled), the "lexically screened" label, any reduced mode, the

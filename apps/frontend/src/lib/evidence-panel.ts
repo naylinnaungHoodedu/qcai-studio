@@ -1,4 +1,4 @@
-import type { EvidencePanelPayload } from "@/lib/types";
+import type { EvidenceConflictPayload, EvidencePanelPayload } from "@/lib/types";
 
 // Fixed, conservative copy for the evidence panel (plan Phase 3 task 3.8). Contained answers are quotations matched
 // on words, never verified for meaning, so nothing here may describe them as verified or as an explanation.
@@ -38,6 +38,12 @@ export function conflictText(kind: ConflictKind, passages: number[]): string {
   return CONFLICT_TEXT[kind].replace("{a}", String(a)).replace("{b}", String(b));
 }
 
+// The notes for an answer's conflicts: the live panel's, and a stored answer's that the API returns with the thread or
+// the Q&A history (AC-4-6 wherever an answer is shown again). No conflicts, no notes.
+export function conflictNotes(conflicts: EvidenceConflictPayload[] | null | undefined): string[] {
+  return (conflicts ?? []).map((conflict) => conflictText(conflict.kind, conflict.passages));
+}
+
 export function spanHref(spanId: string): string {
   return `/api/backend/evidence/spans/${encodeURIComponent(spanId)}`;
 }
@@ -62,6 +68,6 @@ export function evidencePanelView(payload: EvidencePanelPayload): EvidencePanelV
       label: `Passage ${index + 1}: ${span.label}`,
       href: span.resolvable ? spanHref(span.span_id) : null,
     })),
-    conflicts: (payload.conflicts ?? []).map((conflict) => conflictText(conflict.kind, conflict.passages)),
+    conflicts: conflictNotes(payload.conflicts),
   };
 }

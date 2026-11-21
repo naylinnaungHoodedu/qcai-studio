@@ -8,9 +8,16 @@ Labels only, and only for the contained answer the learner already receives: the
 verdict "no-verdict" (the contained answer is not V1-verified: V1 runs in the two-pass shadow). With conflicts, it
 also labels which quoted passages disagree (V1.7 over the quotations, Phase 4 spec 4.8). It never says "grounded" and
 never reads the two-pass shadow. EVIDENCE_PANEL_ENABLED gates it (development by default; production rollout is DI-34).
+
+stored_conflicts gives the same labels for a stored answer, from the citations stored with it, so every read that
+shows a stored answer again (GET /assistant/threads/{thread_id}, GET /qa/history) carries its V1.7 disclosure whatever
+EVIDENCE_PANEL_ENABLED says (AC-4-6; Phase 4 spec 4.15).
 """
 
 from __future__ import annotations
+
+from collections.abc import Iterable
+from dataclasses import dataclass
 
 from app.core.config import Settings
 from app.schemas import Citation, EvidenceConflict, EvidencePanel, EvidenceSpanLink
@@ -48,3 +55,29 @@ def panel_conflicts(contained, package) -> list[EvidenceConflict] | None:
     from app.services.v1_checks.v1_7_conflicts import legacy_conflicts
 
     return legacy_conflicts(contained.citations, v1=package.v1, stopwords=package.retrieval.stopwords) or None
+
+
+@dataclass(frozen=True)
+class _StoredQuotation:
+    """What V1.7 reads of a stored citation: its item and its quoted text."""
+
+    item_id: str | None
+    excerpt: str
+
+
+def stored_conflicts(stored_citations: Iterable[object], package) -> list[EvidenceConflict] | None:
+    """panel_conflicts' rule over the citations stored with an answer (Citation dumps, in the answer's quotation order),
+    or None. An entry that is not a citation dict keeps its position and conflicts with nothing."""
+    if package.v1 is None:
+        return None
+    quotations = [
+        _StoredQuotation(item_id=raw.get("item_id") if isinstance(raw.get("item_id"), str) else None,
+                         excerpt=raw.get("excerpt") if isinstance(raw.get("excerpt"), str) else "")
+        if isinstance(raw, dict) else _StoredQuotation(item_id=None, excerpt="")
+        for raw in stored_citations or ()
+    ]
+    if len(quotations) < 2:
+        return None
+    from app.services.v1_checks.v1_7_conflicts import legacy_conflicts
+
+    return legacy_conflicts(quotations, v1=package.v1, stopwords=package.retrieval.stopwords) or None

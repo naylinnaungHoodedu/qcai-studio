@@ -12,7 +12,8 @@ erasure or guest retention deletes the row (spec 18.6 D10).
 
 Phase 4 (spec 7.5; plan Phase 4 L): the contained answer passes the legacy guard (V1.1 and V1.2; no flag) before the
 answer, its Q&A row and its ledger record read it. Conflicting quotations (V1.7) are labelled by the evidence panel
-when it is shown, and otherwise withheld by the guard (AC-4-6).
+when it is shown, and otherwise withheld by the guard (AC-4-6); GET /qa/history shows a stored answer again with the
+same labels, from its stored citations, whether or not the panel is on.
 """
 
 from uuid import uuid4
@@ -47,7 +48,7 @@ class QAEngine:
         registry = get_corpus_registry(self.settings)
         contained = contain_answer(citations, registry, store.span_registry, settings=self.settings)
         # Plan Phase 4 L: V1.1 and V1.2 stay enforced on every delivery path (no flag). AC-4-6: conflicting quotations
-        # are labelled by the evidence panel when it is shown, else withheld (V1.7).
+        # are labelled by the evidence panel when it is shown, else withheld (V1.7); the Q&A history labels them too.
         package = get_config_package(self.settings)
         contained = guard_contained(contained, store=store, package=package, surface="qa",
                                     disclosure_shown=self.settings.evidence_panel_enabled).contained

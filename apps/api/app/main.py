@@ -167,10 +167,14 @@ def _check_corpus_before_any_table() -> None:
 
 
 def _check_tutor_pipeline_package(package) -> None:
-    """Package v2's schema pins and prompt hashes against the code (Phase 3 spec 5.4, conflict 30).
+    """The package's V1 block, then its tutor-pipeline schema pins and prompt hashes, against the code.
 
-    A problem stops a governed build only when the pipeline is requested (TWO_PASS_TUTOR not off); otherwise the
-    pipeline is reported unavailable (/ready tutor_pipeline.available false) and its effective mode stays off."""
+    First _check_v1_package (Phase 4 spec 10.1): any problem with the v1 block, a package without one included, stops
+    every governed build and every build outside development, whatever TWO_PASS_TUTOR says; only a development build
+    with governance off goes on, with the two-pass V1 mode off. Then the tutor pipeline (Phase 3 spec 5.4, conflict
+    30): one of its problems stops a governed build only when the pipeline is requested (TWO_PASS_TUTOR not off);
+    otherwise the pipeline is reported unavailable (/ready tutor_pipeline.available false) and its effective mode
+    stays off."""
     _check_v1_package(package)
     if package.tutor_pipeline is None:
         tutor_shadow.PIPELINE_UNAVAILABLE_REASON = None

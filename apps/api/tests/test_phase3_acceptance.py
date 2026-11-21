@@ -1290,7 +1290,8 @@ def test_ac_3_6_a_learner_never_reads_a_shadow_record_and_a_reviewer_read_is_log
     assert (record["delivery"], record["shadowed_response_id"], record["seq"], record["record_hash"]) == (
         "shadow", body["turn_id"], shadow.seq, shadow.record_hash)
     with SessionLocal() as db:
-        events = db.scalars(select(SecurityEvent).where(SecurityEvent.seq > start, SecurityEvent.event_type == "ledger.reviewer_read")).all()
+        events = db.scalars(select(SecurityEvent).where(SecurityEvent.seq > start, SecurityEvent.event_type == "ledger.reviewer_read")
+                            .order_by(SecurityEvent.seq)).all()
     assert len(events) == 1 and events[0].details == {"route": "/ledger/responses/{response_id}", "delivery": "shadow"}
     assert events[0].actor_role == "reviewer" and events[0].subject_digest and reviewer["x-demo-user"] not in json.dumps(events[0].details)
     # A guest owner reads their own record; a guest who is not the owner gets the missing-id 404.
@@ -1602,7 +1603,8 @@ def test_ac_3_6_the_ledger_readers_are_the_plans_reviewer_role_only():
     assert own.status_code == 200 and own.json()["record"]["delivery"] == "legacy"
     assert all(own.json()["record"][field] is None for field in ("seq", "prev_hash", "record_hash", "entry_sha256", "shadowed_response_id"))
     with SessionLocal() as db:
-        reads = db.scalars(select(SecurityEvent).where(SecurityEvent.seq > start, SecurityEvent.event_type == "ledger.reviewer_read")).all()
+        reads = db.scalars(select(SecurityEvent).where(SecurityEvent.seq > start, SecurityEvent.event_type == "ledger.reviewer_read")
+                            .order_by(SecurityEvent.seq)).all()
     assert reads == []
 
 

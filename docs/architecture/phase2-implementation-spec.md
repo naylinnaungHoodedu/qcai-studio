@@ -199,7 +199,7 @@ Each item gives the conflict and the resolution this spec implements. Every reso
 4. **Margin semantics.**
    - Plan 11.3: "a sufficiency gate (floor plus runner-up margin)".
    - D6 and plan V1.5: "within margin X4 mark".
-   - **Resolution:** a result with `floor ≤ score < floor + margin` gets `near_floor = true`. There is no runner-up test (Phase 4).
+   - **Resolution:** a result with `floor ≤ score < floor + margin` gets `near_floor = true`. There is no runner-up test; Phase 4 did not add one (its spec conflict 38), and the reading is DI-67.
    - **Status:** a provisional deviation from plan text. It needs Principal Investigator or Research Lead ratification (configuration package `owner_decisions.PLAN-11.3`; BEP-2-12 PD-07).
 5. **Stemming.**
    - Plan 11.3: "a stemmed, stopword-filtered BM25-style index".
@@ -1982,7 +1982,7 @@ cd D:\QC_AI_Studio\Codex_Webapp_QC_AI_Studio
 - The citation-migration dry-run report, which also answers Q-19 row counts.
 - Registering document spans.
 
-**Plan gaps carried into Phase 4**
+**Plan gaps carried into Phase 4** (DI-28; Phase 4 took up none of them, and DI-67 carries them on, Phase 4 spec conflict 38)
 - ULQS calibration and confirmation splits with a contamination check.
 - The runner-up margin reading of 11.3, and stemming (conflicts 4 and 5): provisional deviations awaiting PI or Research Lead ratification.
 - Re-deriving coverage-v1 and the framing stopwords on data not used for design.

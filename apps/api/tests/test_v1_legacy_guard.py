@@ -228,3 +228,80 @@ def test_conflicting_quotations_are_withheld_unless_a_disclosure_is_shown(caplog
     assert shown.withheld == () and shown.contained is contained
     no_v1 = dataclasses.replace(package, v1=None)
     assert guard_contained(contained, store=store, package=no_v1, surface="tutor").contained is contained
+
+
+def test_a_stored_reply_is_linked_to_its_turn_by_time_and_carries_its_conflict_labels():
+    # AC-4-6 where a stored reply is shown again (GET /assistant/threads/{id}): the reply carries the V1.7 labels of its
+    # turn's citations. Its turn is the one stamped MESSAGE_TICK before it (chat() sets the times), or the one stamped
+    # at the same instant (a database clock stamped turn and reply); an instant two turns share, an abstaining turn, a
+    # withdrawn reply and a package without a v1 block give none.
+    from datetime import datetime, timezone
+    from uuid import uuid4
+
+    from app.core.db import SessionLocal
+    from app.db_models import TutorMessage, TutorThread, TutorTurn
+    from app.services.tutor_orchestrator import MESSAGE_TICK, _message_read, _reply_conflicts
+
+    contained, package = _conflicting()
+    conflicting = [citation.model_dump() for citation in contained.citations]
+    single = conflicting[:1]
+    thread_id, user_id = f"thread-{uuid4()}", f"p4-link-{uuid4().hex[:12]}"
+    base = datetime(2026, 11, 21, 10, 0, 0, 123456, tzinfo=timezone.utc)
+    minute = 60_000_000 * MESSAGE_TICK
+    old = datetime(2026, 11, 10, 9, 0, 0, tzinfo=timezone.utc)  # before containment: the reply is withdrawn (R-16)
+
+    def turn(at, decision, citations):
+        return TutorTurn(id=f"turn-{uuid4()}", thread_id=thread_id, user_id=user_id, resolved_query="q", retrieval_mode="lexical",
+                         provider="none", model="extractive", decision=decision, decision_reason="evidence", citations=citations,
+                         claims=[], corpus_version="c", policy_version="p", created_at=at)
+
+    def reply(at):
+        return TutorMessage(id=f"message-{uuid4()}", thread_id=thread_id, role="assistant", content="quoted", created_at=at)
+
+    linked, same_instant = reply(base + MESSAGE_TICK), reply(base + minute)
+    shared, abstained, unconflicted, withdrawn = reply(base + 2 * minute), reply(base + 3 * minute + MESSAGE_TICK), \
+        reply(base + 4 * minute + MESSAGE_TICK), reply(old + MESSAGE_TICK)
+    question = TutorMessage(id=f"message-{uuid4()}", thread_id=thread_id, role="user", content="q", created_at=base)
+    with SessionLocal() as db:
+        db.add(TutorThread(id=thread_id, user_id=user_id, title="t"))
+        db.flush()
+        db.add_all([turn(base, "answer", conflicting), turn(base + minute, "answer", conflicting),
+                    turn(base + 2 * minute, "answer", conflicting), turn(base + 2 * minute, "answer", conflicting),
+                    turn(base + 3 * minute, "abstain", conflicting), turn(base + 4 * minute, "answer", single),
+                    turn(old, "answer", conflicting)])
+        db.add_all([question, linked, same_instant, shared, abstained, unconflicted, withdrawn])
+        db.commit()
+        try:
+            messages = list(db.query(TutorMessage).filter(TutorMessage.thread_id == thread_id).order_by(TutorMessage.created_at, TutorMessage.id))
+            expected = [{"kind": "version_of_same_asset", "passages": [1, 2]}]
+            found = _reply_conflicts(db, thread_id, messages, package)
+            assert {message_id: [conflict.model_dump() for conflict in labels] for message_id, labels in found.items()} == {
+                linked.id: expected, same_instant.id: expected}
+            assert _reply_conflicts(db, thread_id, messages, PACKAGE) == {}  # the shipped package: no family, no conflict
+            assert _reply_conflicts(db, thread_id, messages, dataclasses.replace(package, v1=None)) == {}
+            by_id = {message.id: message for message in messages}
+            read = _message_read(by_id[withdrawn.id], found.get(linked.id))
+            assert read.withdrawn and read.conflicts is None and "conflicts" not in read.model_dump()
+            assert _message_read(by_id[linked.id], found[linked.id]).model_dump()["conflicts"] == expected
+        finally:
+            db.query(TutorMessage).filter(TutorMessage.thread_id == thread_id).delete()
+            db.query(TutorTurn).filter(TutorTurn.thread_id == thread_id).delete()
+            db.query(TutorThread).filter(TutorThread.id == thread_id).delete()
+            db.commit()
+
+
+def test_stored_labels_keep_the_answer_s_positions():
+    # evidence_panel.stored_conflicts: the panel's rule over stored citation dumps, in the stored order the answer's [n]
+    # numbering follows; an entry that is not a citation keeps its position and conflicts with nothing; fewer than two
+    # entries, or no v1 block, give none.
+    from app.services.evidence_panel import panel_conflicts, stored_conflicts
+
+    contained, package = _conflicting()
+    stored = [citation.model_dump() for citation in contained.citations]
+    live = [conflict.model_dump() for conflict in panel_conflicts(contained, package)]
+    assert [conflict.model_dump() for conflict in stored_conflicts(stored, package)] == live == [
+        {"kind": "version_of_same_asset", "passages": [1, 2]}]
+    shifted = stored_conflicts([stored[0], "not a citation", stored[1]], package)
+    assert [conflict.model_dump() for conflict in shifted] == [{"kind": "version_of_same_asset", "passages": [1, 3]}]
+    assert stored_conflicts(stored[:1], package) is None and stored_conflicts([], package) is None
+    assert stored_conflicts(stored, PACKAGE) is None and stored_conflicts(stored, dataclasses.replace(package, v1=None)) is None

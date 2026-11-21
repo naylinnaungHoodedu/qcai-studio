@@ -600,7 +600,7 @@ def _parse_library(raw: Any) -> tuple[str, str, tuple[MisconceptionEntryParams, 
     return version, digest, tuple(entries)
 
 
-def _parse_v1(raw: Mapping[str, Any], *, tutor: TutorPipelineParams, abstention: AbstentionParams) -> V1Params:
+def _parse_v1(raw: Mapping[str, Any], *, tutor: TutorPipelineParams) -> V1Params:
     """Package v3 v1 (Phase 4 spec 5.2). Every refusal is structural: a malformed block always stops the load."""
     from app.services.v1_checks.rules import WIRED_CHECKERS  # lazy: v1_checks imports this module
 
@@ -640,9 +640,9 @@ def _parse_v1(raw: Mapping[str, Any], *, tutor: TutorPipelineParams, abstention:
     v1_5 = _mapping(v1, "v1_5")
     margin_raw = _mapping(v1_5, "x4_margin")
     _require(set(margin_raw) == set(GATE_IDS), "v1.v1_5.x4_margin must name bm25f-v1 and p1-floor")
+    # The X4 margin is an operator value per gate (Q-22): V1.5 marks a response whose top score lies below the gate's
+    # floor plus it (spec 4.6, conflict 19). Any non-negative number loads; the shipped values are PD-15's.
     x4 = {gate: _number(margin_raw, gate, minimum=0.0) for gate in GATE_IDS}
-    _require(x4 == {"bm25f-v1": abstention.margin, "p1-floor": 0.0},
-             "v1.v1_5.x4_margin must be the bm25f-v1 gate's abstention.margin and 0.0 for p1-floor (V1.5 maps the gate, spec conflict 19)")
     v1_6 = _mapping(v1, "v1_6")
     assessment = _number(v1_6, "assessment_threshold", maximum=1.0)
     _require(assessment > 0, "v1.v1_6.assessment_threshold must be in (0, 1]")
@@ -747,12 +747,40 @@ def _v1_owner_decisions(decisions: Mapping[str, Any], v1: V1Params) -> None:
         _require(v1.d20_rule == V1_D20_RULE, f"owner_decisions.D-20 is open, so v1.d20_interim.rule must be '{V1_D20_RULE}' (its own text)")
 
 
+def _q22_provisional_values(raw: Mapping[str, Any], decisions: Mapping[str, Any]) -> None:
+    """owner_decisions.Q-22.provisional_values names every value Q-22 sets (Phase 4 spec 5.2): each listed path is a
+    value the package holds, and every block whose provisional_until names Q-22 is listed."""
+    values = decisions["Q-22"].get("provisional_values")
+    _require(isinstance(values, list) and bool(values) and all(isinstance(value, str) and value for value in values),
+             "owner_decisions.Q-22.provisional_values must be a non-empty list of package paths")
+    for path in values:
+        node: Any = raw
+        for part in path.split("."):
+            _require(isinstance(node, dict) and part in node, f"owner_decisions.Q-22.provisional_values names {path}, which the package does not hold")
+            node = node[part]
+
+    def until_q22(node: Any, path: str) -> list[str]:
+        if not isinstance(node, dict):
+            return []
+        found = [path] if isinstance(node.get("provisional_until"), str) and "Q-22" in node["provisional_until"] else []
+        return found + [inner for key, value in node.items() for inner in until_q22(value, f"{path}.{key}" if path else key)]
+
+    missing = [path for path in until_q22(raw, "") if path not in values]
+    _require(not missing, f"owner_decisions.Q-22.provisional_values must name every block provisional until Q-22 (missing {missing})")
+
+
 def _parse_flag_policy(raw: Mapping[str, Any], *, schema_version: int = 2) -> FlagPolicy:
     policy = _mapping(raw, "flag_policy")
     if schema_version >= 3:
         _parse_v1_pipeline_policy(policy)
-    # PD-10 names flag_policy as where its value lives; like every provisional block it says so (DI-37).
-    _require(policy.get("provisional") is True, "flag_policy must be marked provisional: true (PD-10)")
+    # PD-10 names flag_policy as where its two_pass_tutor values live (ratified under DI-37), and from schema 3 PD-19
+    # its v1_pipeline values (ratified under DI-55); like every provisional block it says so.
+    _require(policy.get("provisional") is True,
+             "flag_policy must be marked provisional: true (PD-10" + ("; PD-19 for v1_pipeline)" if schema_version >= 3 else ")"))
+    if schema_version >= 3:
+        authority = policy.get("authority")
+        _require(isinstance(authority, str) and all(name in authority for name in ("PD-10", "DI-37", "PD-19", "DI-55")),
+                 "flag_policy.authority must name PD-10 (DI-37) and PD-19 (DI-55): it holds the v1_pipeline defaults")
     two_pass = _mapping(policy, "two_pass_tutor")
     _require(two_pass.get("values") == ["off", "shadow", "on"], "flag_policy.two_pass_tutor.values must be [off, shadow, on]")
     _require(two_pass.get("default_elsewhere") == "off", "flag_policy.two_pass_tutor.default_elsewhere must be 'off' (freeze, D-05)")
@@ -898,8 +926,9 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
         tutor_pipeline = _parse_tutor_pipeline(raw, schema_version=int(schema_version))
         flag_policy = _parse_flag_policy(raw, schema_version=int(schema_version))
         if schema_version >= 3:
-            v1_params = _parse_v1(raw, tutor=tutor_pipeline, abstention=abstention)
+            v1_params = _parse_v1(raw, tutor=tutor_pipeline)
             _v1_owner_decisions(decisions, v1_params)
+            _q22_provisional_values(raw, decisions)
         d12 = decisions.get("D-12")
         _require(isinstance(d12, dict), "owner_decisions.D-12 must be an object in package v2")
         if d12.get("state") == "open":

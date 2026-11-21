@@ -41,7 +41,8 @@ __all__ = sorted([*_EXPORTS, "mode", "V1_UNAVAILABLE_REASON"])
 
 def mode(settings: "Settings", package: "ConfigPackage") -> Literal["off", "shadow", "enforce"]:
     """The V1 mode of the two-pass pipeline: off without a v1 block or when the start-up check found a problem,
-    otherwise V1_PIPELINE (Settings refuse off outside development and enforce before the Phase 4 exit)."""
+    otherwise V1_PIPELINE (enforce in development by default; outside development Settings refuse off, and refuse
+    enforce before the Phase 4 exit)."""
     if package.v1 is None or V1_UNAVAILABLE_REASON is not None:
         return "off"
     return settings.v1_pipeline or "off"

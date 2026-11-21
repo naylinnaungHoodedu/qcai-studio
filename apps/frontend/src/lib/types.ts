@@ -157,6 +157,8 @@ export type QAHistoryItem = {
   created_at: string;
   // The stored answer predates containment and is withheld (R-16).
   withdrawn?: boolean;
+  // Phase 4 (V1.7, AC-4-6): present only when the stored answer's quoted passages disagree.
+  conflicts?: EvidenceConflictPayload[] | null;
 };
 
 export type AssistantChatMessage = {
@@ -205,7 +207,14 @@ export type EvidencePanelPayload = {
   spans: Array<{ span_id: string; label: string; resolvable: boolean }>;
   verdict: "no-verdict";
   // Phase 4 (V1.7): present only when quoted passages disagree; passages are 1-based positions in spans.
-  conflicts?: Array<{ kind: "version_of_same_asset" | "number_disagreement" | "negation_disagreement"; passages: number[] }> | null;
+  conflicts?: EvidenceConflictPayload[] | null;
+};
+
+// Phase 4 (V1.7): two quoted passages of one answer that may disagree; passages are the answer's 1-based quotation
+// positions ([1], [2], ... in its text, and the panel's spans).
+export type EvidenceConflictPayload = {
+  kind: "version_of_same_asset" | "number_disagreement" | "negation_disagreement";
+  passages: number[];
 };
 
 export type TutorThread = {
@@ -223,6 +232,8 @@ export type TutorThreadDetail = TutorThread & {
     created_at: string;
     // A stored tutor reply that predates containment is withheld (R-16).
     withdrawn?: boolean;
+    // Phase 4 (V1.7, AC-4-6): present only on a stored reply whose quoted passages disagree.
+    conflicts?: EvidenceConflictPayload[] | null;
   }>;
 };
 

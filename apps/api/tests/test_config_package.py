@@ -277,13 +277,29 @@ def test_v3_keeps_every_v2_value_but_the_listed_changes():
     assert policy.pop("v1_pipeline") == {"values": ["off", "shadow", "enforce"], "default_development": "enforce", "default_elsewhere": "shadow",
                                          "enforce_requires": "phase4_exit_passed", "off_outside_development": "refused",
                                          "authority": "plan Phase 4 G; 13.6; PD-19"}
-    assert policy == V2_RAW["flag_policy"] and policy["phase4_exit_passed"] is False and policy["phase4_exit_evidence"] is None
+    # The block-level authority names both provisional defaults the block holds: PD-10 (two_pass_tutor, ratified under
+    # DI-37) and PD-19 (v1_pipeline, ratified under DI-55); every other v2 value is unchanged.
+    authority = policy.pop("authority")
+    assert all(name in authority for name in ("PD-10", "DI-37", "PD-19", "DI-55")) and "v1_pipeline" in authority
+    assert policy == {key: value for key, value in V2_RAW["flag_policy"].items() if key != "authority"}
+    assert policy["phase4_exit_passed"] is False and policy["phase4_exit_evidence"] is None
     assert set(RAW["owner_decisions"]) == set(V2_RAW["owner_decisions"]) | {"D-20", "D-21", "Q-22", "Q-14", "D-06"}
-    # Q-22 names every value PD-15, PD-16 and PD-18 apply as operator policy, V1.7's alignment rule included.
-    assert RAW["owner_decisions"]["Q-22"]["provisional_values"] == ["v1.v1_5.x4_margin", "v1.v1_3.support_threshold", "v1.v1_7",
-                                                                     "v1.v1_9.readability", "v1.stop"]
+    # Q-22 names every value PD-15, PD-16 and PD-18 apply as operator policy: V1.7's alignment rule, and the V1.5 floor
+    # and margin (abstention, provisional until Q-22), included.
+    assert RAW["owner_decisions"]["Q-22"]["provisional_values"] == ["v1.v1_5.x4_margin", "abstention", "v1.v1_3.support_threshold",
+                                                                     "v1.v1_7", "v1.v1_9.readability", "v1.stop"]
     for name, decision in V2_RAW["owner_decisions"].items():
+        if name == "PLAN-11.3":
+            continue
         assert RAW["owner_decisions"][name] == decision, name
+    # PLAN-11.3's runner-up deviation names the item that carries it now (DI-67); nothing else of it changed.
+    plan_11_3, v2_plan_11_3 = json.loads(json.dumps(RAW["owner_decisions"]["PLAN-11.3"])), V2_RAW["owner_decisions"]["PLAN-11.3"]
+    runner_up = plan_11_3["deviations"][1]
+    assert runner_up.pop("applied").endswith("no runner-up test (Phase 2 spec conflict 4; DI-28, carried as DI-67)")
+    assert v2_plan_11_3["deviations"][1]["applied"].endswith("no runner-up test (spec conflict 4; Phase 4, DI-28)")
+    assert runner_up == {key: value for key, value in v2_plan_11_3["deviations"][1].items() if key != "applied"}
+    plan_11_3["deviations"][1] = v2_plan_11_3["deviations"][1]
+    assert plan_11_3 == v2_plan_11_3
     # Every prompt hash is v2's, and the eight v1 schema files are unchanged.
     for block in ("resolver", "evidential", "pedagogical"):
         assert RAW["tutor_pipeline"][block]["prompt_hash"] == V2_RAW["tutor_pipeline"][block]["prompt_hash"]
@@ -324,8 +340,14 @@ def _v3(edit):
         lambda p: p["v1"]["v1_3"].update(timeout_ms=5),
         lambda p: p["v1"]["v1_3"].update(timeout_ms=5000),
         lambda p: p["v1"]["v1_3"].update(unavailable="deliver"),
-        lambda p: p["v1"]["v1_5"]["x4_margin"].update({"bm25f-v1": 1.0}),
-        lambda p: p["v1"]["v1_5"]["x4_margin"].update({"p1-floor": 0.5}),
+        lambda p: p["v1"]["v1_5"]["x4_margin"].update({"bm25f-v1": -1.0}),
+        lambda p: p["v1"]["v1_5"]["x4_margin"].update({"p1-floor": "0.5"}),
+        lambda p: p["v1"]["v1_5"]["x4_margin"].pop("p1-floor"),
+        lambda p: p["owner_decisions"]["Q-22"]["provisional_values"].remove("abstention"),
+        lambda p: p["owner_decisions"]["Q-22"]["provisional_values"].append("v1.v1_5.no_such_value"),
+        lambda p: p["owner_decisions"]["Q-22"].update(provisional_values=[]),
+        lambda p: p["v1"]["v1_9"].update(provisional_until="Q-22 (DI-52)"),
+        lambda p: p["flag_policy"].update(authority="PD-10: the Phase 3 switches outside development (DI-37)"),
         lambda p: p["v1"]["v1_6"].update(assessment_threshold=0),
         lambda p: p["v1"]["v1_6"].update(short_key_min_tokens=0),
         lambda p: p["v1"]["v1_6"].update(socratic_plan="lecture"),
