@@ -163,7 +163,11 @@ def _run_retention_job(database_url: str) -> subprocess.CompletedProcess:
 
 def test_retention_job_logs_counts_and_exits_zero(tmp_path: Path):
     database_url = f"sqlite:///{(tmp_path / 'retention.db').as_posix()}"
-    Base.metadata.create_all(create_engine(database_url))
+    schema = create_engine(database_url)
+    try:
+        Base.metadata.create_all(schema)
+    finally:
+        schema.dispose()
 
     completed = _run_retention_job(database_url)
 

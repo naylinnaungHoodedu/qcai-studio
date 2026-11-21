@@ -12,6 +12,9 @@ checks its own records (its 00_meta/check_records.py).
 A test that reads one row of the append-only security-event table (.first(), or Session.scalar of a select of its
 rows) from a select with no ORDER BY gets an undefined row: PostgreSQL returns rows in physical order, and the suite
 under psycopg read two lockout events out of order.
+
+A test that creates a SQLAlchemy engine and never disposes it leaves its pooled database connection for the garbage
+collector to close at an arbitrary point in a later test (a ResourceWarning run of the suite found such leaks).
 """
 
 from __future__ import annotations
@@ -144,3 +147,69 @@ def test_the_event_order_scan_catches_an_unordered_read_and_accepts_an_ordered_o
     )
     for source in ordered:
         assert _unordered_event_reads(source, "sample.py") == [], source
+
+
+def _undisposed_engines(source: str, name: str) -> list[str]:
+    """Where a test module creates a SQLAlchemy engine it never disposes. An engine bound to a name in a function must be
+    disposed in that function (a fixture's teardown counts); one a helper returns must be disposed by the module (which
+    then holds a .dispose() call); a module-level engine may only lend its dialect (it never connects). Any other use,
+    such as an engine passed straight to create_all, leaves its pooled connection for the garbage collector to close at
+    an arbitrary later point, in whatever test is running then."""
+    tree = ast.parse(source)
+    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    module_disposes = ".dispose()" in source
+    found = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and getattr(node.func, "id", getattr(node.func, "attr", None)) == "create_engine"):
+            continue
+        parent, function = parents[node], parents.get(node)
+        while function is not None and not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            function = parents.get(function)
+        if function is None:
+            if not (isinstance(parent, ast.Attribute) and parent.attr == "dialect"):
+                found.append(f"{name}:{node.lineno}: a module-level engine")
+            continue
+        if isinstance(parent, ast.Assign) and len(parent.targets) == 1 and isinstance(parent.targets[0], ast.Name):
+            bound = parent.targets[0].id
+            disposed = any(isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == "dispose"
+                           and isinstance(call.func.value, ast.Name) and call.func.value.id == bound for call in ast.walk(function))
+            returned = any(isinstance(ret, ast.Return) and ret.value is not None
+                           and any(isinstance(item, ast.Name) and item.id == bound for item in ast.walk(ret.value))
+                           for ret in ast.walk(function))
+            if not disposed and not (returned and module_disposes):
+                found.append(f"{name}:{node.lineno}: {bound} is never disposed in {function.name}")
+        elif isinstance(parent, ast.Return):
+            if not module_disposes:
+                found.append(f"{name}:{node.lineno}: {function.name} returns an engine the module never disposes")
+        else:
+            found.append(f"{name}:{node.lineno}: an engine used without a name in {function.name}")
+    return found
+
+
+def test_every_engine_a_test_creates_is_disposed():
+    found, scanned = [], 0
+    for root in TEST_ROOTS:
+        for path in sorted(root.rglob("*.py")):
+            if "__pycache__" in path.parts:
+                continue
+            scanned += 1
+            found += _undisposed_engines(path.read_text(encoding="utf-8"), path.relative_to(REPO_ROOT).as_posix())
+    assert scanned > 50 and found == []
+
+
+def test_the_engine_scan_catches_an_undisposed_engine_and_accepts_a_disposed_one():
+    leaking = (
+        "def test_a(url):\n    Base.metadata.create_all(create_engine(url))\n",
+        "def test_b(url):\n    engine = create_engine(url)\n    engine.connect()\n",
+        "def _helper(url):\n    return create_engine(url)\n",
+        "ENGINE = create_engine('sqlite://')\n",
+    )
+    for source in leaking:
+        assert _undisposed_engines(source, "sample.py"), source
+    disposed = (
+        "def test_a(url):\n    engine = create_engine(url)\n    try:\n        engine.connect()\n    finally:\n        engine.dispose()\n",
+        "def _helper(url):\n    return create_engine(url)\n\ndef test_b(url):\n    engine = _helper(url)\n    engine.dispose()\n",
+        "DIALECT = create_engine('postgresql+pg8000://', creator=lambda: None).dialect\n",
+    )
+    for source in disposed:
+        assert _undisposed_engines(source, "sample.py") == [], source

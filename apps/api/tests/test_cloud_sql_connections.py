@@ -249,6 +249,7 @@ class _SocketConnector:
 
 def test_l3_each_cloud_sql_connection_gets_tcp_keepalive_on_its_pg8000_socket():
     server = _SilentPostgres()
+    connection = None
     try:
         creator = cloud_sql_creator(_SocketConnector(server), "project:region:instance", user="app", password="pw", db="qcai",
                                     ip_type=IPTypes.PRIVATE, timeout_s=10)
@@ -283,6 +284,10 @@ def test_l3_each_cloud_sql_connection_gets_tcp_keepalive_on_its_pg8000_socket():
         assert not worker.is_alive() and isinstance(outcome.get("error"), (pg8000.dbapi.InterfaceError, OSError))
     finally:
         server.close()
+        if connection is not None:
+            # The client end, which the server closing does not close: pg8000's file over the socket, then the socket.
+            connection._sock.close()
+            connection._usock.close()
 
 
 class _RefusingSocket(socket.socket):
