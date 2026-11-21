@@ -14,7 +14,7 @@ Provider failure cannot remove the evidence path. Semantic retrieval is an optim
 
 ## Revision 2026-11-19 (Phase 2: corpus, span identity and retrieval integrity)
 
-Status: accepted for Phase 2 engineering; the thresholds are **provisional until Phase 4** and "no threshold is final before the E1 freeze" (plan Phase 2 H). Implements plan tasks 2.1 and 2.5-2.7. The full design is `docs/architecture/phase2-implementation-spec.md`; the original decision above stays as history.
+Status: accepted for Phase 2 engineering; the thresholds are **provisional** (until Phase 4 in configuration packages v1 and v2; package v3, the shipped one, keeps them provisional until Q-22 sets them, `abstention.provisional_until` `Q-22 (DI-52)`) and "no threshold is final before the E1 freeze" (plan Phase 2 H). Implements plan tasks 2.1 and 2.5-2.7. The full design is `docs/architecture/phase2-implementation-spec.md`; the original decision above stays as history.
 
 ### Context
 - **E-25:** 459 chunks shared 215 chunk ids, and those ids keyed fusion and vectors.

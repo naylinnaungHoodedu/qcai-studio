@@ -37,7 +37,8 @@ Phase 3 replay record (`docs/evaluation/phase3/three_plan_replay_v1.json`) is wr
   sentences an attack changes are taken from the store at run time, and every sentence in the file is synthetic. Its
   queries are the project's fixture queries and a few synthetic keyword queries.
 - **Two checker configurations.** `production` is the NullChecker (D-21 none): V1.3 flags every claim, D-20 withholds
-  it, and nothing is delivered. `deterministic_only` is a fake always-SUPPORTED checker: what the deterministic checks
+  it, and nothing is delivered (0 of the 57 pipeline-level runs), so `production` alone cannot tell a detection from
+  the withholding. `deterministic_only` is a fake always-SUPPORTED checker: what the deterministic checks
   (V1.1, V1.2, V1.4-V1.9) catch alone. A case's own checker (raising, late) replaces either.
 - **The fixture overlay.** A test-only version family over two document items and a 50 ms checker timeout, applied
   in memory; the shipped package is unchanged and no package is written.

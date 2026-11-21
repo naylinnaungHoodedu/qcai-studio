@@ -1150,6 +1150,66 @@ def test_phase4_docs_name_every_q_22_value_and_the_package_s_provisional_until()
     assert "provisional until Phase 4" not in main_source
 
 
+def _test_function_names() -> set[str]:
+    names = set()
+    for path in (API_ROOT / "tests").glob("test_*.py"):
+        names |= set(re.findall(r"^(?:async )?def (test_\w+)\(", path.read_text(encoding="utf-8"), flags=re.MULTILINE))
+    return names
+
+
+def _unresolved(text: str, functions: set[str]) -> list[str]:
+    """The backticked test names, `prefix_*` groups and test files in text that do not exist."""
+    missing = [name for name in re.findall(r"`(test_[a-z0-9_]+)`", text) if name not in functions]
+    missing += [group for group in re.findall(r"`(test_[a-z0-9_]+?)_?\*`", text) if not any(name.startswith(group) for name in functions)]
+    missing += [name for name in re.findall(r"`((?:test_[a-z0-9_]+|v1_fakes)\.py)`", text) if not (API_ROOT / "tests" / name).exists()]
+    for path in re.findall(r"`((?:apps/frontend/)?tests/[\w.-]+\.test\.ts)`", text):
+        if not (REPO_ROOT / "apps" / "frontend" / path.removeprefix("apps/frontend/")).exists():
+            missing.append(path)
+    return missing
+
+
+def test_phase4_docs_the_test_strategy_maps_every_test_module_the_phase_added():
+    # Every test module this phase added has a row saying what it proves, and every row names a file that exists.
+    strategy = (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
+    phase_4 = strategy.split("## Phase 4 acceptance map", 1)[1].split("\n## ", 1)[0]
+    table = phase_4.split("### Phase 4 test files", 1)[1].split("**Exit gate.**", 1)[0]
+    rows = {match.group(1): match.group(2) for line in table.splitlines() if (match := re.match(r"\| `([^`]+)` \| (.+) \|$", line))}
+    tests = API_ROOT / "tests"
+    expected = {path.name for pattern in ("test_phase4_*.py", "test_v1_*.py", "v1_fakes.py", "test_quiz_keys.py", "test_python_sources.py")
+                for path in tests.glob(pattern)}
+    expected |= {f"apps/frontend/tests/{path.name}" for path in (REPO_ROOT / "apps" / "frontend" / "tests").glob("*.test.ts")
+                 if "Phase 4" in path.read_text(encoding="utf-8")}
+    assert {"test_phase4_acceptance.py", "v1_fakes.py", "test_quiz_keys.py", "apps/frontend/tests/quiz-keys.integration.test.ts"} <= expected
+    assert len([name for name in expected if name.startswith("test_v1_")]) == 12
+    assert sorted(rows) == sorted(expected), sorted(set(rows) ^ expected)
+    for name, text in rows.items():
+        assert len(text) > 100, name  # it says what the file proves, not only its name
+    assert _unresolved(phase_4, _test_function_names()) == []
+
+
+def test_phase4_docs_the_spec_ends_in_one_review_history_table():
+    # P2-12-D-03: sections 0-17 state the current code and carry no review-round narrative; section 18, the last, is one
+    # history table whose every finding is one line naming the tests that fail if its defect comes back.
+    head, history = SPEC.split("\n## 18. Review history\n", 1)
+    assert re.findall(r"^## (\d+)\. ", head, flags=re.MULTILINE) == [str(number) for number in range(18)]
+    assert "\n## " not in history and "\n### " not in history
+    intro = history.split("\n| Round |", 1)[0]
+    assert "may describe behaviour that a later round superseded" in intro and "sections 0-17 are authoritative" in intro
+    assert history.count("\n| Round |") == 1
+    rows = [line for line in history.splitlines() if line.startswith("| ") and not line.startswith(("| Round |", "|---"))]
+    assert [row.split(" | ", 1)[0] for row in rows[:5]] == ["| Spec review 1 (pre-code)", "| Build", "| Review 1", "| Housekeeping H1-H3", "| Review 2"]
+    for row in rows:
+        round_name, commit, findings = row.split(" | ", 2)
+        assert round_name == "| Spec review 1 (pre-code)" or re.search(r"`[0-9a-f]{7,40}`", commit), round_name
+        for finding in findings.rstrip(" |").split("<br>"):
+            assert re.search(r"`test_[a-z0-9_]+\*?`|\.test\.ts`", finding), (round_name, finding[:60])
+    assert _unresolved(history, _test_function_names()) == []
+    from test_phase3_docs import NARRATIVE
+
+    assert NARRATIVE.findall(head) == []
+    assert re.findall(r"\b[Rr]eview \d+\b|\bround \d+\b|[Ss]ection 18 records", head) == []
+
+
 def _code_fields(source: str, name: str) -> list[str]:
     node = next(node for node in ast.parse(source).body if isinstance(node, ast.ClassDef) and node.name == name)
     return [ast.unparse(item) for item in node.body if isinstance(item, (ast.AnnAssign, ast.Assign))]

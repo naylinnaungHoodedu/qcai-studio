@@ -1,4 +1,5 @@
-"""The V1.1/V1.2 legacy guard on contained answers (plan Phase 4 L; Phase 4 spec 4.15, conflicts 4, 22, 34)."""
+"""The legacy guard on contained answers: V1.1 and V1.2, and V1.7 when no disclosure is shown (plan Phase 4 L; AC-4-6;
+Phase 4 spec 4.15, conflicts 4, 22, 34)."""
 
 from __future__ import annotations
 

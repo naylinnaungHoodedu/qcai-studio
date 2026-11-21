@@ -212,7 +212,7 @@ Each item gives the conflict and the resolution this spec implements. Every reso
      - Select on the cal fold only. Confirm on the conf fold and hold-out B. Report `oos_lexical`, `near_miss` and `in_multi` against P1, as reported strata that do not gate the choice.
      - The answer rate is compared with the pre-floor proxy (174/174, BEP-1 PROPOSAL §3).
      - Limitation: coverage-v1 and the framing stopwords were designed with the whole repo fixture in view (both folds). AC-2-4 on that fixture is therefore design-set evidence. The near_miss and oos_lexical strata were not used in design, and they show a regression against P1 (0.2b).
-     - The values stay provisional until Phase 4, where ULQS calibration splits are used.
+     - The values stay provisional: packages v1 and v2 say until Phase 4 (the Phase 2 reading named ULQS calibration splits there); Phase 4 uses public-corpus fixtures only (plan Phase 4 H), so package v3 keeps them provisional until Q-22 sets them (`abstention.provisional_until` `Q-22 (DI-52)`).
 7. **Lifting the provisional marker [R14].**
    - Plan G: "provisional marker lifted for resolved citations". Task 1.11: "citations marked provisional until Phase 2". AC-1-13: "Every citation returned before Phase 2 is marked provisional". Action 26: "citations provisional (AC-1-13) until V-1 holds", where Phase 2 A defines V-1 as "100% of delivered citations resolve".
    - **Resolution:**

@@ -5,9 +5,10 @@ contained answer (D-19, unchanged). Each turn also prepares its follow-ups, whic
 a legacy ledger record (TUTOR_LEDGER_ENABLED) and, when two_pass_tutor is in shadow, a two-pass shadow run whose
 output reaches no learner (AC-3-6). The evidence panel (task 3.8) is added only when EVIDENCE_PANEL_ENABLED.
 
-Phase 4 (spec 7.4; plan Phase 4 L): the contained answer passes the V1.1/V1.2 legacy guard before anything reads it
-(no flag; every current quotation passes, so the body is unchanged), the shadow job carries the learner's decision for
-V1's comparison, and the evidence panel labels conflicting quotations (V1.7) when there are any.
+Phase 4 (spec 7.4; plan Phase 4 L): the contained answer passes the legacy guard (V1.1 and V1.2; no flag) before
+anything reads it (every current quotation passes, so the body is unchanged), and the shadow job carries the learner's
+decision for V1's comparison. Conflicting quotations (V1.7) are labelled by the evidence panel when it is shown, and
+otherwise withheld by the guard (AC-4-6).
 """
 
 from __future__ import annotations
