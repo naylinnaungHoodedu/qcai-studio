@@ -3,22 +3,26 @@ Phase 6 spec 4.1; PD-32).
 
 Pure functions over one validated ledger entry (ENTRY_SCHEMAS[entry_schema]) and explicit counts and events; nothing
 here reads a database, a learner record or a clock.
-  X1 x1_claims      a claim the record marks critical (v2.critical, from the environment's registry, D-25) at tier 1 that
-                    drew a family objection in the response: an objection on its final V2 verdict, or a claim-loop
-                    correction cycle that listed it (a cycle numbered at most its verdict's cycle; an alignment item's
-                    re-render lists shown claims, not objections). It is withheld (holds.withheld_claim_ids).
+  X1 x1_claims      a claim the record marks critical (v2.critical, from the environment's registry, D-25), at any tier
+                    (plan AC-5-4 "critical claims follow X1 from Phase 6"), that drew a family objection in the response:
+                    an objection on its final V2 verdict, or a claim-loop correction cycle that listed it (a cycle numbered
+                    at most its verdict's cycle; an alignment item's re-render lists shown claims, not objections). It is
+                    queued and counted; x1_held_claims, the X1 claims at tier 1 ("withheld at tier 1"), are withheld
+                    (holds.withheld_claim_ids; the runner's sticky hold keeps them undelivered under MODEL_GATEWAY=on).
   X2 x2_claims      a claim the record escalates X2 (V2 correction exhausted) whose final verdict has an objecting family
                     verdict of EHMF type A or B ("Type A/B unresolved after two cycles"); every other exhausted claim is
                     queued with reason v2_correction_exhausted and no trigger.
-  X3 x3_fires       a learner flag (feedback.record_flag; F_i = 0, never a verdict).
+  X3 x3_fires       the record's learner flags (feedback.record_flag asks it once a flag is stored; F_i = 0, never a verdict).
   X4 x4_fires       the record's V1.5 mark (a verified record), or V1.5's rule over a legacy or v1 record's sufficiency with
                     the package's X4 margin for its gate (v1.v1_5.x4_margin).
   X5 x5_model_changes, x5_active
-                    a model-version change of a known model key (registry or record sightings) or a CUSUM alarm event
-                    (events.record_cusum_alarm) opens a window of raised audit rate (draw.draw_trigger).
+                    a model-version change of a known model key (registry or record sightings, which scan._sightings
+                    passes through x5_model_changes) or a CUSUM alarm event (events.record_cusum_alarm) opens a window of
+                    raised audit rate (draw.draw_trigger).
   X6 the seeded audit draw (draw.draw_trigger).
-Queue reasons without a trigger (queue_reasons): v1_3_flag (only without a completed V2 vote: "after Phase 5, flags route
-to V2"), v1_8_misconception, v2_degraded_withheld, and v2_correction_exhausted. The EHMF types an item's severity reads
+Queue reasons without a trigger (queue_reasons): v1_3_flag whenever the record's intent carries it (under MODEL_GATEWAY=on
+the V2 aggregate drops it once a vote completes, so a flag routes to V2 there; a V2-shadow record keeps Phase 4's finals
+and intents, D-20), v1_8_misconception, v2_degraded_withheld, and v2_correction_exhausted. The EHMF types an item's severity reads
 are claim_types and response_types; a disclosed V1.7 conflict weighs nothing (plan Phase 7 A "D 0.6 (0 when disclosed)").
 """
 
@@ -30,6 +34,7 @@ from fractions import Fraction
 from typing import Any, Literal
 
 from app.services.v3.priority import response_k, support_share
+from app.services.v3.rules import X1_WITHHOLD_TIER
 
 DISCLOSED = ("V1.7", "conflict_disclosed")
 
@@ -42,7 +47,7 @@ class ItemSpec:
     reasons: frozenset[str]
     ehmf_types: frozenset[str]          # the types severity reads (4.3)
     k: Fraction
-    held: bool                          # "X1" in triggers
+    held: bool                          # an X1 claim at tier 1 (x1_held_claims)
 
 
 @dataclass(frozen=True)
@@ -84,19 +89,29 @@ def family_objection_types(v2: Any) -> tuple[str, ...]:
 # ----------------------------------------------------------------------------------------------------- X1 to X4
 
 
-def x1_claims(entry: Any) -> frozenset[str]:
+def _x1_tiers(entry: Any) -> dict[str, int]:
+    """Each X1 claim's id with its tier."""
     block = _v2_block(entry)
     if block is None:
-        return frozenset()
+        return {}
     judged = [verdict for verdict in _verdicts(entry) if getattr(verdict, "v2", None) is not None]
     loop_cycles = max((verdict.v2.cycle for verdict in judged), default=0)
     listed = {claim_id for correction in block.corrections if correction.cycle <= loop_cycles for claim_id in correction.failed_claim_ids}
-    fired = set()
+    fired = {}
     for verdict in judged:
         v2 = verdict.v2
-        if v2.critical is True and v2.tier == 1 and (v2.objections >= 1 or verdict.claim_id in listed):
-            fired.add(verdict.claim_id)
-    return frozenset(fired)
+        if v2.critical is True and (v2.objections >= 1 or verdict.claim_id in listed):
+            fired[verdict.claim_id] = int(v2.tier)
+    return fired
+
+
+def x1_claims(entry: Any) -> frozenset[str]:
+    return frozenset(_x1_tiers(entry))
+
+
+def x1_held_claims(entry: Any) -> frozenset[str]:
+    """The X1 claims at the withhold tier (tier 1): plan task 1 "withheld at tier 1"."""
+    return frozenset(claim_id for claim_id, tier in _x1_tiers(entry).items() if tier == X1_WITHHOLD_TIER)
 
 
 def x2_claims(entry: Any) -> frozenset[str]:
@@ -171,15 +186,13 @@ def x5_active(windows: Iterable[tuple[int, int]], seq: int) -> bool:
 
 
 def queue_reasons(verdict: Any) -> frozenset[str]:
+    """The record's own V3 intent reasons that queue a claim with no X trigger (x4_margin is the X4 response item)."""
+    from app.services.v3.rules import QUEUE_REASONS
+
     intent = getattr(verdict, "v3", None)
     if intent is None:
         return frozenset()
-    reasons = set(intent.reasons)
-    kept = {reason for reason in reasons if reason in ("v1_8_misconception", "v2_degraded_withheld", "v2_correction_exhausted")}
-    v2 = getattr(verdict, "v2", None)
-    if "v1_3_flag" in reasons and (v2 is None or v2.outcome == "withheld"):
-        kept.add("v1_3_flag")
-    return frozenset(kept)
+    return frozenset(reason for reason in intent.reasons if reason in QUEUE_REASONS)
 
 
 def _result_types(results: Iterable[Any]) -> set[str]:
@@ -209,14 +222,14 @@ def response_types(entry: Any) -> frozenset[str]:
 
 def evaluate(entry: Any, *, x4_margin: Mapping[str, float]) -> RecordTriggers:
     kind: Literal["delivery", "shadow"] = "shadow" if entry.delivery == "shadow" else "delivery"
-    x1, x2 = x1_claims(entry), x2_claims(entry)
+    x1, x2, held = x1_claims(entry), x2_claims(entry), x1_held_claims(entry)
     items = []
     for verdict in _verdicts(entry):
         triggers = frozenset(({"X1"} if verdict.claim_id in x1 else set()) | ({"X2"} if verdict.claim_id in x2 else set()))
         reasons = queue_reasons(verdict)
         if triggers or reasons:
             items.append(ItemSpec(claim_key=verdict.claim_id, subject="claim", triggers=triggers, reasons=reasons,
-                                  ehmf_types=claim_types(verdict), k=support_share(getattr(verdict, "v2", None)), held="X1" in triggers))
+                                  ehmf_types=claim_types(verdict), k=support_share(getattr(verdict, "v2", None)), held=verdict.claim_id in held))
     if x4_fires(entry, x4_margin=x4_margin):
         items.append(ItemSpec(claim_key="", subject="response", triggers=frozenset({"X4"}), reasons=frozenset(),
                               ehmf_types=response_types(entry) | {"A"}, k=response_k(entry), held=False))

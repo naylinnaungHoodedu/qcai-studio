@@ -152,6 +152,61 @@ def test_a_window_closes_after_its_deliveries():
     assert [seq for seq, value in sorted(seen.items()) if value[1]] == list(range(1, 21))
 
 
+def test_a_model_version_change_between_scans_records_one_x5_event_and_raises_the_next_deliveries_to_1_5(monkeypatch):
+    # Plan task 1 "X5 CUSUM alarm or model change (audit 20%)"; 6.3 L746 "version change -> X5 audit 20%". The scan names
+    # each change through triggers.x5_model_changes: a registry verifier's new version, and a record's new generator version.
+    import json
+
+    from app.gateway import registry as gateway_registry
+    from v2_fakes import make_registry
+
+    first = make_registry(("fake-alpha", "fake-beta"))
+    second = dataclasses.replace(first, members=tuple(dataclasses.replace(member, model_version="2099-01-01") if member.family == "fake-beta"
+                                                      else member for member in first.members))
+    current = {"registry": first}
+    monkeypatch.setattr(gateway_registry, "registry_for", lambda package, settings: current["registry"])
+    entries = v3_fakes.synthetic_deliveries(40)
+    with v3_fakes.fresh_v3_sessions() as (factory, _engine):
+        v3_fakes.append_all(factory, entries[:10])
+        baseline = run_scan(settings=SETTINGS, package=PACKAGE, session_factory=factory, now=v3_fakes.FIXED_NOW)
+        current["registry"] = second
+        v3_fakes.append_all(factory, entries[10:])
+        changed = run_scan(settings=SETTINGS, package=PACKAGE, session_factory=factory, now=v3_fakes.FIXED_NOW)
+        again = run_scan(settings=SETTINGS, package=PACKAGE, session_factory=factory, now=v3_fakes.FIXED_NOW)
+        with factory() as db:
+            events = [(row.kind, json.loads(row.payload), row.from_ledger_seq) for row in db.execute(select(V3Event.__table__))]
+        seen = _draws(factory)
+    assert (baseline.model_changes, changed.model_changes, again.model_changes) == (0, 1, 0)
+    assert events == [("model_change", {"model_key": "verifier:fake-beta-verifier", "from_version": first.members[1].model_version,
+                                        "to_version": "2099-01-01", "source": "registry"}, 10)]
+    assert all(value[1] is False and value[2:] == (1, 20) for seq, value in seen.items() if seq <= 10)
+    assert all(value[1] is True and value[2:] == (1, 5) for seq, value in seen.items() if seq > 10)
+    # A record whose verifier votes name another version than an earlier record's is a change from that record on (the
+    # registry the scan compares stays the first one).
+    from v1_fakes import run
+    from v2_fakes import adapters_of, fresh_gateway, v2_pipeline
+
+    def shadow_record(registry):
+        return run(v2_pipeline(None, gateway=fresh_gateway(adapters=adapters_of(registry)), registry=registry), v3_fakes.CRITICAL_QUERY).entry
+
+    three = make_registry(("fake-alpha", "fake-beta", "fake-gamma"))
+    moved = dataclasses.replace(three, members=tuple(dataclasses.replace(member, model_version="2099-01-01") if member.family == "fake-beta"
+                                                     else member for member in three.members))
+    current["registry"] = three
+    with v3_fakes.fresh_v3_sessions() as (factory, _engine):
+        v3_fakes.append_all(factory, entries[:20] + [shadow_record(three), shadow_record(moved)] + v3_fakes.synthetic_deliveries(10, start=41))
+        result = run_scan(settings=SETTINGS, package=PACKAGE, session_factory=factory, now=v3_fakes.FIXED_NOW)
+        with factory() as db:
+            events = [(row.kind, json.loads(row.payload), row.from_ledger_seq) for row in db.execute(select(V3Event.__table__))]
+        seen = _draws(factory)
+    assert result.model_changes == 1 and events == [("model_change", {"model_key": "verifier:fake-beta-verifier",
+                                                                       "from_version": three.members[1].model_version,
+                                                                       "to_version": "2099-01-01", "source": "record"}, 22)]
+    assert sorted(seen) == list(range(1, 21)) + list(range(23, 33))                     # shadow records are never drawn
+    assert all(value[1] is False and value[2:] == (1, 20) for seq, value in seen.items() if seq <= 20)
+    assert all(value[1] is True and value[2:] == (1, 5) for seq, value in seen.items() if seq > 22)
+
+
 def test_shadow_records_are_never_drawn_and_unparsed_deliveries_still_are(monkeypatch):
     from app.services.tutor_pipeline import contracts
 

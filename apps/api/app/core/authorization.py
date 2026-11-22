@@ -74,9 +74,10 @@ def _p(access: str, ownership: str = NONE, note: str = "") -> RoutePolicy:
 
 
 V3_REVIEWER_NOTE = (
-    "404 unless V3_QUEUE is shadow or on (development only by default). Reviewer role only; outside development no caller "
-    "is admitted while the reviewer pool (D-18) is unstaffed. Claim text, public quotable span text, span ids and keyed "
-    "digests only, never a learner identifier; every call is a security event."
+    "Reviewer role only (403 and authz.denied for any other role, in every environment); outside development every caller "
+    "gets 403 and authz.denied while the reviewer pool (D-18) is unstaffed. An admitted reviewer gets 404 unless V3_QUEUE "
+    "is shadow or on (development only by default). Claim text, public quotable span text, span ids and keyed digests "
+    "only, never a learner identifier; a successful call is a v3.* security event."
 )
 
 

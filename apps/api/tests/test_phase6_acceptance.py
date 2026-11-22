@@ -85,14 +85,14 @@ def _demo(role: str = "learner") -> dict[str, str]:
     return {"x-demo-user": f"p6-{role}-{uuid4().hex[:10]}", "x-demo-role": role, "x-forwarded-for": f"phase6-{uuid4().hex}"}
 
 
-def _guest() -> tuple[TestClient, dict[str, str]]:
+def _guest(secret: str = DEVELOPMENT_GUEST_TOKEN_SECRET, origin: str = TRUSTED_ORIGIN) -> tuple[TestClient, dict[str, str]]:
     import time
 
     guest_id = f"guest-{uuid4().hex}"
     issued = int(time.time())
     browser = TestClient(app)
-    browser.cookies.set(GUEST_TOKEN_COOKIE, issue_guest_token(DEVELOPMENT_GUEST_TOKEN_SECRET, guest_id, issued))
-    return browser, {"origin": TRUSTED_ORIGIN, "x-qcai-csrf": guest_csrf_for(DEVELOPMENT_GUEST_TOKEN_SECRET, guest_id, issued)}
+    browser.cookies.set(GUEST_TOKEN_COOKIE, issue_guest_token(secret, guest_id, issued))
+    return browser, {"origin": origin, "x-qcai-csrf": guest_csrf_for(secret, guest_id, issued)}
 
 
 def _head_seq() -> int:
@@ -397,14 +397,24 @@ def test_ac_6_6_a_learner_flag_sets_f_i_to_zero_and_changes_no_verdict_or_ledger
 # ==================================================================================================== AC-6-7
 
 
-@pytest.mark.parametrize("setting", ["shadow", "off"])
-def test_ac_6_7_a_guest_on_every_reviewer_route_gets_403_and_one_access_log_entry(setting, monkeypatch):
+@pytest.mark.parametrize("environment,setting", [("development", "shadow"), ("development", "off"), ("staging", "off"), ("staging", "shadow")])
+def test_ac_6_7_a_guest_on_every_reviewer_route_gets_403_and_one_access_log_entry(environment, setting, monkeypatch):
+    # The role check comes first in every environment: outside development too, where no reviewer is admitted (D-18), a
+    # guest's refusal names the role, never the pool.
+    from app import main as main_module
+
     monkeypatch.setattr(security_log, "_caps", security_log._Caps())
-    app.dependency_overrides[get_settings] = lambda: Settings(environment="development", v3_queue=setting)
+    if environment == "development":
+        configured, secret, origin = Settings(environment="development", v3_queue=setting), DEVELOPMENT_GUEST_TOKEN_SECRET, TRUSTED_ORIGIN
+    else:
+        configured = v3_fakes.staging_settings(v3_queue=setting)
+        secret, origin = configured.guest_token_secret, configured.allowed_origins[0]
+        monkeypatch.setattr(main_module, "settings", configured)       # the CSRF and origin guard reads the process settings
+    app.dependency_overrides[get_settings] = lambda: configured
     try:
         assert len(REVIEWER_ROUTES) == 7
         for method, path in REVIEWER_ROUTES:
-            browser, headers = _guest()
+            browser, headers = _guest(secret, origin)
             start = _head_seq()
             response = browser.request(method, _concrete(path), headers=headers, json={} if method == "POST" else None)
             assert response.status_code == 403, (path, response.text)
@@ -756,7 +766,7 @@ def test_plan_g_pre_ledger_deliveries_are_reported_as_non_auditable():
             counts = non_auditable(db)
             considered = db.scalar(select(func.count()).select_from(V3Draw))
             body = slis(db, PACKAGE, now=NOW)
-    assert counts == {"tutor_turns": 1, "qa_before_ledger": 1} and considered == 3
+    assert counts == {"tutor_turns": 1, "qa_before_ledger": 1, "ledger_disabled": 0, "lost_records": 0, "pending": 0} and considered == 3
     assert body["draws"]["non_auditable"] == counts
 
 
@@ -883,6 +893,9 @@ def test_plan_f_the_trigger_registry_document_matches_the_package():
         row = next(line for line in document.splitlines() if line.startswith(f"| {trigger} |"))
         assert f"`{rule}`" in row, trigger
         assert ("| counted |" in row) is (trigger in v3_raw["triggers"]["counted"]), trigger
+    x1, x1_row = v3_raw["triggers"]["x1"], next(line for line in document.splitlines() if line.startswith("| X1 |"))
+    tiers = [str(tier) for tier in x1["tiers"]]
+    assert f"at tiers {', '.join(tiers[:-1])} and {tiers[-1]}" in x1_row and f"at tier {x1['withhold_tier']} only" in x1_row
     for reason in v3_raw["triggers"]["queue_reasons"]:
         assert f"`{reason}`" in document
     for name, weight in v3_raw["priority"]["severity"].items():
@@ -1109,7 +1122,7 @@ def test_phase6_docs_quote_the_plan_and_state_the_current_rules():
     assert all(sentence in flat for sentence in plan_l) and plan_k in flat and plan_d in flat and task3 in flat
     for number in range(32, 40):
         assert f"| PD-{number} |" in head, number
-    for number in range(89, 103):
+    for number in range(89, 104):
         assert f"| DI-{number} |" in head, number
     runbook = (REPO_ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8").split("## Phase 6: V3 audit and adjudication (runbook)", 1)[1]
     example = (REPO_ROOT / "infra" / "cloudrun" / "api-production.env.example.yaml").read_text(encoding="utf-8")
@@ -1137,6 +1150,16 @@ def test_phase6_docs_name_the_logger_each_phase6_event_logs_on():
     observability = (REPO_ROOT / "infra" / "cloudrun" / "observability.md").read_text(encoding="utf-8").split("## Phase 6 SLIs: V3 (plan Phase 6 I)", 1)[1]
     for name in ("v3.scan", "v3.stop", "v3.x5_event", "tutor.v2.v3_stop", "v3_queue_shadow", "v3_queue_on"):
         assert name in observability, name
+    # Every v3.* event the code logs, and each field it gives the worker's status and gold lines, is listed in 10.3 and
+    # in the observability runbook (a table that names only some cannot pass).
+    logged = set(re.findall(r'"(v3\.[a-z0-9_]+)"', sources)) - {"v3.json"}
+    listed = set(re.findall(r"`(v3\.[a-z0-9_]+)`", table))
+    assert logged and logged <= listed, sorted(logged - listed)
+    named = set(re.findall(r'(?:`|event=")(v3\.[a-z0-9_]+)(?:`|")', observability))   # `v3.x` or jsonPayload.event="v3.x"
+    assert logged <= named, sorted(logged - named)
+    worker = next(line for line in table.splitlines() if "`v3.status`" in line)
+    for field in ("`mode`", "`problems`", "`problem_count`", "`scans`", "`last`", "`applied_only`"):
+        assert field in worker, field
 
 
 PHASE6_EXTENDED_MODULES = (
@@ -1193,6 +1216,22 @@ def test_phase6_docs_the_texts_phase6_made_false_state_the_current_code():
     assert "reviewer_admitted" in ledger_paragraph
     phase4 = (REPO_ROOT / "docs" / "architecture" / "phase4-implementation-spec.md").read_text(encoding="utf-8")
     assert "`v5.json` with Phase 6" in phase4 and "5 since Phase 6" in phase4
+
+
+def test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_head():
+    # The Phase 3 rollback's "Check the stamp" step names alembic's current head (`ledger.SCHEMA_REVISION`, which alembic
+    # current prints with "(head)") and takes the Phase 6, then the Phase 5 downgrade step from it; no other revision is
+    # called the head.
+    from app.services.ledger import SCHEMA_REVISION
+
+    runbook = (REPO_ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8")
+    step = runbook.split("3. **Check the stamp:** `alembic current`.", 1)[1].split("\n4. ", 1)[0]
+    assert re.findall(r"`([0-9a-z_]+) \(head\)`", step) == [SCHEMA_REVISION] == ["20261122_phase6_v3_audit"]
+    head_bullet = next(line for line in step.splitlines() if f"`{SCHEMA_REVISION} (head)`" in line)
+    assert "allow_v3_drop=true downgrade 20261122_phase5_gateway_controls" in head_bullet and "export-gold --all" in head_bullet
+    assert "alembic downgrade 20261119_phase3_response_ledger" in head_bullet
+    assert any(line.strip().startswith("- `20261122_phase5_gateway_controls`:") for line in step.splitlines())
+    assert step.rstrip().splitlines()[-1].strip() == "- Anything else: stop."
 
 
 def test_phase6_docs_the_spec_ends_in_one_review_history_table():

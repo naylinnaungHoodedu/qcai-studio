@@ -10,7 +10,11 @@ or v3_flags holds rows (append-only evidence, R-22; the queue and the flags carr
 as
     alembic -x allow_v3_drop=true downgrade 20261122_phase5_gateway_controls
 (an absolute target, never -1; check `alembic current` first) after
-`python -m app.workers.v3_queue export-gold --all --path <path outside the application tree>`. The image before
+`python -m app.workers.v3_queue export-gold --all --path <path outside the application tree and the repository checkout>`.
+The export keeps the gold rows only, and no path restores them: the downgrade loses, beyond any export, the queue (each
+item's state, rounds and F_i on its X3 item), the learner flags, the draws and with them the record that each delivery
+was considered once (a re-applied revision scans from seq 0 and draws every delivery again), the X5 events and their
+open windows, the model versions seen and the scan log (infra/cloudrun/deployment.md, Phase 6 rollback). The image before
 Phase 6 reads none of these tables, so a digest rollback needs no downgrade. The chain still cannot build an empty
 database (test_alembic_head_builds_the_orm_schema stays a strict xfail until the production baseline lands).
 
@@ -171,7 +175,7 @@ def downgrade() -> None:
         held = ", ".join(f"{table} holds {count} rows" for table, count in counts.items())
         raise RuntimeError(
             f"{held} (append-only evidence, R-22; the queue and learner flags carry F_i and the holds' queue); export first with "
-            "python -m app.workers.v3_queue export-gold --all --path <path outside the application tree>, then: "
+            "python -m app.workers.v3_queue export-gold --all --path <path outside the application tree and the repository checkout>, then: "
             "alembic -x allow_v3_drop=true downgrade 20261122_phase5_gateway_controls"
         )
     if bind.dialect.name == "postgresql":

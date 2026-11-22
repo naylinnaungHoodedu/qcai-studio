@@ -4,8 +4,10 @@ monthly Wilson bound from the 5% draw [Evidence E-85]"; Phase 6 spec 4.11).
 The population is every X6-drawn learner delivery that was an answer and whose item has a final gold label; an error is
 one whose final label has residual_error (a claim labelled other than SUPPORTED). The bound is the 95% Wilson upper bound
 (app.services.citation_migration.wilson_interval, the API image's copy of evaluation/qcai_eval/statistics.wilson_interval,
-which test_citation_migration keeps equal), overall and per UTC month of delivery. Report only: audit counts are
-telemetry, not research results (plan Phase 6 H); HR-3's study form is Phase 10's.
+which test_citation_migration keeps equal), overall and per UTC month of delivery. With nothing audited there is no
+evidence, so the bound is null and no_audited_answers is true, never an upper bound of 0 (the codebase's rule for an
+empty population: citation_migration._totals). Report only: audit counts are telemetry, not research results (plan
+Phase 6 H); HR-3's study form is Phase 10's.
 """
 
 from __future__ import annotations
@@ -21,8 +23,18 @@ from app.services.citation_migration import wilson_interval
 EVIDENCE_CLASS = "telemetry, not research results (plan Phase 6 H)"
 
 
-def wilson_upper(errors: int, audited: int) -> float:
+def wilson_upper(errors: int, audited: int) -> float | None:
+    """The 95% Wilson upper bound, or None for an empty population."""
+    if int(audited) <= 0:
+        return None
     return wilson_interval(int(errors), int(audited))["upper"]
+
+
+def wilson95(errors: int, audited: int) -> dict | None:
+    if int(audited) <= 0:
+        return None
+    interval = wilson_interval(int(errors), int(audited))
+    return {"lower": interval["lower"], "upper": interval["upper"]}
 
 
 def residual(db: Session, package: Any) -> dict:
@@ -48,9 +60,8 @@ def residual(db: Session, package: Any) -> dict:
         bucket = months.setdefault(month, [0, 0])
         bucket[0] += 1
         bucket[1] += int(error)
-    interval = wilson_interval(errors, audited)
     return {
-        "audited": audited, "errors": errors, "wilson95": {"lower": interval["lower"], "upper": interval["upper"]},
+        "audited": audited, "errors": errors, "wilson95": wilson95(errors, audited), "no_audited_answers": audited == 0,
         "by_month": [{"month": month, "audited": count, "errors": wrong, "upper": wilson_upper(wrong, count)}
                      for month, (count, wrong) in sorted(months.items())],
         "report_only": True, "evidence_class": EVIDENCE_CLASS,

@@ -4,7 +4,8 @@
 record_flag is the intake behind POST /v3/flags, in development only until DI-97 adds the learner-facing control and its
 privacy disclosure: the caller's own tutor turn (anyone else's, or a missing one, is the same V3NotFound), its legacy
 ledger record (a pre-ledger turn is not auditable), one flag per learner and record (v3_flags, user-keyed, so erasure
-and guest retention delete it), and the record's response item with trigger X3. It writes no ledger row and changes no
+and guest retention delete it), and, once triggers.x3_fires holds for the record's stored flags, the record's response
+item with trigger X3. It writes no ledger row and changes no
 verdict. f_i reads the queue: 0.0 for a record with an X3 item, None otherwise, so F_i outlives the learner's erasure
 and never names a learner. No ledger schema holds a learner rating or flag (invariant 5's schema test).
 """
@@ -15,7 +16,7 @@ from datetime import datetime
 import logging
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.structured_logging import FIELDS
@@ -47,9 +48,11 @@ def record_flag(db: Session, *, user_id: str, response_id: str, settings: Any, p
             index_elements=["user_id", "ledger_seq"]).returning(V3Flag.id)
         if db.execute(statement).first() is None:
             return int(seq), True
-        row = record_row(db, int(seq))
-        entry = parse_entry(row)
-        upsert_item(db, record_row=row, spec=trig.response_spec(entry, "X3"), entry=entry, package=package, now=now)
+        flags = db.scalar(select(func.count()).select_from(V3Flag).where(V3Flag.ledger_seq == int(seq))) or 0
+        if trig.x3_fires(int(flags)):
+            row = record_row(db, int(seq))
+            entry = parse_entry(row)
+            upsert_item(db, record_row=row, spec=trig.response_spec(entry, "X3"), entry=entry, package=package, now=now)
         return int(seq), False
 
     seq, duplicate = _retrying(db, body)

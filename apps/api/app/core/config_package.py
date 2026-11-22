@@ -1222,7 +1222,8 @@ class V3Params:
     trigger_rules: Mapping[str, str]
     counted: tuple[str, ...]
     queue_reasons: tuple[str, ...]
-    x1_tier: int
+    x1_tiers: tuple[int, ...]
+    x1_withhold_tier: int
     x2_types: tuple[str, ...]
     x5_rate: Fraction
     x5_window_deliveries: int
@@ -1293,6 +1294,8 @@ def _parse_v3(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], v2: "V2Pa
         V3_COUNTED,
         V3_VERSION,
         WORKFLOW_STATES,
+        X1_TIERS,
+        X1_WITHHOLD_TIER,
         X2_TYPES,
     )
 
@@ -1311,8 +1314,10 @@ def _parse_v3(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], v2: "V2Pa
     _require(triggers.get("version") == TRIGGER_REGISTRY_VERSION and triggers.get("rules") == TRIGGER_RULES,
              f"v3.triggers must be the code's trigger registry {TRIGGER_REGISTRY_VERSION} and its rules")
     x1 = _mapping(triggers, "x1")
-    _require(x1 == {"tier": 1, "min_objections": 1, "withholds": True, "revision": "never", "hold": "sticky_for_the_response"},
-             "v3.triggers.x1 must be tier 1, min_objections 1, withholds true, revision never, hold sticky_for_the_response (AC-6-1)")
+    _require(x1 == {"tiers": list(X1_TIERS), "min_objections": 1, "withhold_tier": X1_WITHHOLD_TIER, "withholds": True, "revision": "never",
+                    "hold": "sticky_for_the_response"},
+             "v3.triggers.x1 must fire at tiers [1, 2, 3] with min_objections 1 (AC-5-4: critical claims follow X1) and withhold at tier 1:"
+             " withhold_tier 1, withholds true, revision never, hold sticky_for_the_response (task 1 \"withheld at tier 1\"; AC-6-1)")
     _require(_mapping(triggers, "x2").get("ehmf_types") == list(X2_TYPES), "v3.triggers.x2.ehmf_types must be [A, B] (plan task 1 \"Type A/B\")")
     _require(_mapping(triggers, "x4").get("margin_source") == "v1.v1_5.x4_margin", "v3.triggers.x4.margin_source must be v1.v1_5.x4_margin")
     x5 = _mapping(triggers, "x5")
@@ -1434,7 +1439,7 @@ def _parse_v3(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], v2: "V2Pa
         schemas[name] = SchemaPin(version=_text(pin, "version"), path=_schema_path(pin.get("path"), name), sha256=_hex64(pin, "sha256"))
     return V3Params(
         version=V3_VERSION, trigger_registry_version=TRIGGER_REGISTRY_VERSION, trigger_rules=dict(TRIGGER_RULES), counted=counted,
-        queue_reasons=QUEUE_REASONS, x1_tier=1, x2_types=X2_TYPES, x5_rate=x5_rate, x5_window_deliveries=window, severity=severity,
+        queue_reasons=QUEUE_REASONS, x1_tiers=X1_TIERS, x1_withhold_tier=X1_WITHHOLD_TIER, x2_types=X2_TYPES, x5_rate=x5_rate, x5_window_deliveries=window, severity=severity,
         priority_rule=PRIORITY_RULE, exposure_rule=EXPOSURE_RULE, claim_set_key_rule=CLAIM_SET_KEY_RULE, k_rule=K_RULE, tie_break=TIE_BREAK,
         draw_rule=DRAW_RULE, draw_seed=seed, draw_rate=draw_rate, population=("delivered", "legacy"), lease_s=lease_s,
         double_review_rate=double_rate, max_rounds=MAX_ROUNDS, gold_chain=GOLD_CHAIN, gold_schema=GOLD_SCHEMA,

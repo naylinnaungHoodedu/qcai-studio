@@ -9,11 +9,15 @@ import {
   TRIGGER_TEXT,
   VERDICT_TEXT,
   adjudicationPayload,
+  adjudicationReady,
   reviewerHeaders,
+  type DraftLabel,
 } from "@/lib/v3-review";
 
 // The development reviewer console (Phase 6 spec section 11): the queue in the API's order, an item's claim text and its
-// shown spans only, and Claim, Adjudicate and Apply for reviewable items. It keeps nothing in browser storage.
+// shown spans only, and Claim, Adjudicate and Apply for reviewable items. Every select has a label naming its claim, the
+// status line is a live region that is always mounted, and nothing is pre-filled: Adjudicate is enabled only once every
+// claim (and an abstention item's label) is chosen. It keeps nothing in browser storage.
 const BASE = "/api/backend/v3";
 
 async function call<T>(path: string, reviewer: string, init?: { method?: string; body?: unknown }): Promise<T> {
@@ -30,7 +34,7 @@ async function call<T>(path: string, reviewer: string, init?: { method?: string;
   return payload as T;
 }
 
-type Draft = Record<string, V3ClaimLabel>;
+type Draft = Record<string, DraftLabel>;
 
 export function V3ReviewConsole() {
   const [reviewer, setReviewer] = useState<string>(SYNTHETIC_REVIEWERS[0]);
@@ -38,13 +42,13 @@ export function V3ReviewConsole() {
   const [selected, setSelected] = useState<V3QueueItem | null>(null);
   const [draft, setDraft] = useState<Draft>({});
   const [abstention, setAbstention] = useState<"correct" | "missed_answer" | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<string>("");
 
   const refresh = useCallback(async () => {
     try {
       const queue = await call<{ items: V3QueueItem[] }>("/queue?limit=50", reviewer);
       setItems(queue.items);
-      setMessage(null);
+      setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "The queue could not be read.");
     }
@@ -60,13 +64,33 @@ export function V3ReviewConsole() {
     }
   }
 
+  // Every claim starts with no verdict and no EHMF type, and an abstention item with no abstention label: the reviewer
+  // chooses each one explicitly before Adjudicate is enabled.
   async function open(item: V3QueueItem) {
-    const detail = await call<V3QueueItem>(`/items/${item.item_id}`, reviewer);
-    setSelected(detail);
-    setDraft(
-      Object.fromEntries(detail.claims.map((claim) => [claim.claim_id, { claim_id: claim.claim_id, verdict: "SUPPORTED", ehmf_type: null }])),
+    try {
+      const detail = await call<V3QueueItem>(`/items/${item.item_id}`, reviewer);
+      setSelected(detail);
+      setDraft(Object.fromEntries(detail.claims.map((claim) => [claim.claim_id, { claim_id: claim.claim_id, verdict: null, ehmf_type: null }])));
+      setAbstention(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "The item could not be read.");
+    }
+  }
+
+  const needsAbstention = selected !== null && selected.subject === "response" && selected.decision === "abstain";
+  const ready =
+    selected !== null &&
+    adjudicationReady(
+      Object.values(draft),
+      selected.claims.map((claim) => claim.claim_id),
+      abstention,
+      needsAbstention,
     );
-    setAbstention(detail.decision === "abstain" && detail.subject === "response" ? "correct" : null);
+
+  function setLabel(claimId: string, change: Partial<DraftLabel>) {
+    const current = draft[claimId] ?? { claim_id: claimId, verdict: null, ehmf_type: null };
+    const next = { ...current, ...change };
+    setDraft({ ...draft, [claimId]: next.verdict === "SUPPORTED" ? { ...next, ehmf_type: null } : next });
   }
 
   async function act(action: "claim" | "adjudicate" | "apply") {
@@ -76,7 +100,7 @@ export function V3ReviewConsole() {
     try {
       const body =
         action === "adjudicate"
-          ? adjudicationPayload(Object.values(draft), abstention, crypto.randomUUID())
+          ? adjudicationPayload(Object.values(draft) as V3ClaimLabel[], abstention, crypto.randomUUID())
           : action === "apply"
             ? { client_key: crypto.randomUUID() }
             : undefined;
@@ -109,7 +133,9 @@ export function V3ReviewConsole() {
           Refresh
         </button>
       </div>
-      {message ? <p className="text-sm" role="status">{message}</p> : null}
+      <p className="min-h-5 text-sm" role="status" aria-live="polite">
+        {message}
+      </p>
       <ol className="space-y-2">
         {items.map((item, rank) => (
           <li key={item.item_id} className="rounded border p-2 text-sm">
@@ -127,7 +153,7 @@ export function V3ReviewConsole() {
           <p>
             {selected.subject} item, round {selected.review_round}, {selected.state}
           </p>
-          {selected.claims.map((claim) => (
+          {selected.claims.map((claim, index) => (
             <div key={claim.claim_id} className="mt-3">
               <p>{claim.text ?? "This claim cites a span that is not shown, so it cannot be reviewed."}</p>
               <ul className="ml-4 list-disc">
@@ -138,60 +164,68 @@ export function V3ReviewConsole() {
                   ))}
               </ul>
               {selected.reviewable ? (
-                <div className="mt-1 flex gap-2">
-                  <select
-                    value={draft[claim.claim_id]?.verdict ?? "SUPPORTED"}
-                    onChange={(event) =>
-                      setDraft({
-                        ...draft,
-                        [claim.claim_id]: {
-                          claim_id: claim.claim_id,
-                          verdict: event.target.value as V3ClaimLabel["verdict"],
-                          ehmf_type: draft[claim.claim_id]?.ehmf_type ?? "A",
-                        },
-                      })
-                    }
-                  >
-                    {Object.entries(VERDICT_TEXT).map(([value, text]) => (
-                      <option key={value} value={value}>
-                        {text}
+                <div className="mt-1 flex flex-wrap gap-2">
+                  <label className="flex flex-col text-xs" htmlFor={`verdict-${claim.claim_id}`}>
+                    Verdict for claim {index + 1}
+                    <select
+                      id={`verdict-${claim.claim_id}`}
+                      value={draft[claim.claim_id]?.verdict ?? ""}
+                      onChange={(event) => setLabel(claim.claim_id, { verdict: event.target.value as V3ClaimLabel["verdict"] })}
+                    >
+                      <option value="" disabled>
+                        Choose a verdict
                       </option>
-                    ))}
-                  </select>
-                  <select
-                    value={draft[claim.claim_id]?.ehmf_type ?? "A"}
-                    onChange={(event) =>
-                      setDraft({
-                        ...draft,
-                        [claim.claim_id]: {
-                          ...(draft[claim.claim_id] ?? { claim_id: claim.claim_id, verdict: "CONTRADICTED" }),
-                          ehmf_type: event.target.value as V3ClaimLabel["ehmf_type"],
-                        },
-                      })
-                    }
-                  >
-                    {Object.entries(EHMF_TEXT).map(([value, text]) => (
-                      <option key={value} value={value}>
-                        {text}
+                      {Object.entries(VERDICT_TEXT).map(([value, text]) => (
+                        <option key={value} value={value}>
+                          {text}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col text-xs" htmlFor={`ehmf-${claim.claim_id}`}>
+                    Error type for claim {index + 1}
+                    <select
+                      id={`ehmf-${claim.claim_id}`}
+                      value={draft[claim.claim_id]?.ehmf_type ?? ""}
+                      disabled={!draft[claim.claim_id]?.verdict || draft[claim.claim_id]?.verdict === "SUPPORTED"}
+                      onChange={(event) => setLabel(claim.claim_id, { ehmf_type: event.target.value as V3ClaimLabel["ehmf_type"] })}
+                    >
+                      <option value="" disabled>
+                        Choose an error type
                       </option>
-                    ))}
-                  </select>
+                      {Object.entries(EHMF_TEXT).map(([value, text]) => (
+                        <option key={value} value={value}>
+                          {text}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
               ) : null}
             </div>
           ))}
-          {selected.reviewable && selected.subject === "response" && selected.decision === "abstain" ? (
-            <select value={abstention ?? "correct"} onChange={(event) => setAbstention(event.target.value as "correct" | "missed_answer")}>
-              <option value="correct">The abstention was correct</option>
-              <option value="missed_answer">An answer was missed</option>
-            </select>
+          {selected.reviewable && needsAbstention ? (
+            <label className="mt-3 flex flex-col text-xs" htmlFor="abstention-label">
+              Abstention label
+              <select
+                id="abstention-label"
+                value={abstention ?? ""}
+                onChange={(event) => setAbstention(event.target.value as "correct" | "missed_answer")}
+              >
+                <option value="" disabled>
+                  Choose an abstention label
+                </option>
+                <option value="correct">The abstention was correct</option>
+                <option value="missed_answer">An answer was missed</option>
+              </select>
+            </label>
           ) : null}
           {selected.reviewable ? (
             <div className="mt-3 flex gap-2">
               <button type="button" onClick={() => void act("claim")} className="rounded border px-3 py-1">
                 Claim
               </button>
-              <button type="button" onClick={() => void act("adjudicate")} className="rounded border px-3 py-1">
+              <button type="button" onClick={() => void act("adjudicate")} disabled={!ready} className="rounded border px-3 py-1">
                 Adjudicate
               </button>
               <button type="button" onClick={() => void act("apply")} className="rounded border px-3 py-1">

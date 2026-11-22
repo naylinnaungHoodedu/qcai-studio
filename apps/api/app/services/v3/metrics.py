@@ -9,12 +9,17 @@ slis(db, package, now) reports, from the stored queue, draws, gold rows and ledg
                     time, never by a digest); at most 1/10, report only
   queue             open and claimed items, the open items' age p90 (nearest rank; the alert's measure) and oldest age
   draws             deliveries considered, drawn X6 and X5, the X6 rate, and the deliveries that are not auditable
+                    (non_auditable: the pre-ledger deliveries of plan G apart from the kill-switch turns and the lost
+                    records)
   double_review     the round-2 pairs and how many agreed with round 1
-  residual          the Wilson bound over X6-audited answer deliveries (residual.residual)
+  residual          the Wilson bound over X6-audited answer deliveries (residual.residual; null, with
+                    no_audited_answers true, while none is audited)
   gold              rows, the head, the claims labelled (toward Dawid-Skene's 200, a non-goal before then, DI-102)
   stop, x5          the stop (stop.stop_state) and the X5 windows
 Ratios are "k/n" strings, so no float rounding is published. Counts only: no id, no digest, no text. Served on the
-reviewer-only GET /v3/metrics and the worker's status line, never on the public /ready (DI-95 for the alerts).
+reviewer-only GET /v3/metrics (development only while D-18 is open: outside development it refuses every caller) and the
+worker's status line (python -m app.workers.v3_queue status), the only source outside development; never on the public
+/ready. The alerts and the scheduled status job are DI-95.
 """
 
 from __future__ import annotations
@@ -41,19 +46,27 @@ def nearest_rank(values: list[int], share: float) -> int | None:
     return ordered[max(0, math.ceil(share * len(ordered)) - 1)]
 
 
-def non_auditable(db: Session) -> dict:
-    """Deliveries before the ledger, never drawn (plan Phase 6 G): tutor turns without a ledger record that expected
-    none or came from an image that keeps no ledger, and the Q&A answers created before the ledger began."""
+def non_auditable(db: Session, *, now: datetime | None = None) -> dict:
+    """Learner deliveries without a ledger record, which the scan can never draw, each class apart (ledger_coverage at its
+    default horizon):
+      tutor_turns       pre-ledger tutor turns (plan Phase 6 G): an image that keeps no ledger created them
+                        (ledger_record_expected null: before Phase 3, or a rollback window)
+      qa_before_ledger  pre-ledger Q&A answers: created before the ledger began (all of them while it holds no record)
+      ledger_disabled   tutor turns created while the ledger kill switch was off (they expected no record)
+      lost_records      tutor turns that expected a record and have none past the coverage horizon: lost appends (a
+                        Phase 3 plan L stop), not pre-ledger deliveries
+      pending           tutor turns inside the horizon whose append may still be running; a later read settles them"""
     from app.db_models import QAInteraction
     from app.services.ledger import ledger_coverage, ledger_started_at
 
-    coverage = ledger_coverage(db, datetime(1970, 1, 1, tzinfo=UTC), horizon_s=0)
+    coverage = ledger_coverage(db, datetime(1970, 1, 1, tzinfo=UTC), now=now)
     started = ledger_started_at(db)
     query = select(func.count()).select_from(QAInteraction)
     if started is not None:
         query = query.where(QAInteraction.created_at < started)
-    return {"tutor_turns": int(coverage["unrecorded"] + coverage["not_expected_earlier_image"] + coverage["ledger_disabled"]),
-            "qa_before_ledger": int(db.scalar(query) or 0)}
+    return {"tutor_turns": int(coverage["not_expected_earlier_image"]), "qa_before_ledger": int(db.scalar(query) or 0),
+            "ledger_disabled": int(coverage["ledger_disabled"]), "lost_records": int(coverage["unrecorded"]),
+            "pending": int(coverage["pending"])}
 
 
 def _delivery_seqs(db: Session, items: list[tuple[int, str]]) -> set[int]:
@@ -117,7 +130,7 @@ def slis(db: Session, package: Any, *, now: datetime) -> dict:
         "queue": {"open": len(open_rows), "claimed": sum(1 for row in open_rows if (row.item_id, int(row.review_round)) in live),
                   "age_p90_s": p90, "age_max_s": max(ages) if ages else None, "slo_s": int(v3.queue_age_slo_s),
                   "above_slo": p90 is not None and p90 > int(v3.queue_age_slo_s)},
-        "draws": {"considered": considered, "x6": x6, "x5": x5, "x6_rate": _ratio(x6, considered), "non_auditable": non_auditable(db)},
+        "draws": {"considered": considered, "x6": x6, "x5": x5, "x6_rate": _ratio(x6, considered), "non_auditable": non_auditable(db, now=now)},
         "double_review": {"pairs": len(pairs), "agreeing": agreeing, "agreement": _ratio(agreeing, len(pairs))},
         "residual": residual(db, package),
         "gold": {"rows": int(db.scalar(select(func.count()).select_from(V3GoldLabelRecord)) or 0), "head_seq": int(head[0]) if head else 0,

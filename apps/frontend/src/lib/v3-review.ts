@@ -32,6 +32,30 @@ export type AdjudicationPayload = {
   abstention_label: "correct" | "missed_answer" | null;
 };
 
+// A claim's label while the reviewer drafts it: no verdict until the reviewer chooses one (nothing is pre-filled, so an
+// adjudication never records a default as a label).
+export type DraftLabel = {
+  claim_id: string;
+  verdict: V3ClaimLabel["verdict"] | null;
+  ehmf_type: V3ClaimLabel["ehmf_type"];
+};
+
+// Ready when every claim of the item has an explicit verdict, each verdict other than SUPPORTED names its EHMF type, and
+// an abstention item has an explicit abstention label.
+export function adjudicationReady(
+  labels: DraftLabel[],
+  claimIds: string[],
+  abstention: "correct" | "missed_answer" | null,
+  needsAbstention: boolean,
+): boolean {
+  const byClaim = new Map(labels.map((label) => [label.claim_id, label]));
+  const claimsReady = claimIds.every((claimId) => {
+    const label = byClaim.get(claimId);
+    return label !== undefined && label.verdict !== null && (label.verdict === "SUPPORTED" || label.ehmf_type !== null);
+  });
+  return claimsReady && (!needsAbstention || abstention !== null);
+}
+
 export function adjudicationPayload(
   labels: V3ClaimLabel[],
   abstention: "correct" | "missed_answer" | null,
@@ -61,9 +85,11 @@ export const EHMF_TEXT: Record<string, string> = {
   E: "E: presentation",
 };
 
+// Neutral trigger labels: they say why an item is queued, never which family objected or which EHMF type it named
+// (the review is blind to the panel's votes and objection types).
 export const TRIGGER_TEXT: Record<string, string> = {
-  X1: "X1 critical claim objected at tier 1",
-  X2: "X2 type A or B unresolved after two cycles",
+  X1: "X1 critical claim escalated",
+  X2: "X2 unresolved after two correction cycles",
   X3: "X3 learner flag",
   X4: "X4 abstention margin",
   X5: "X5 model change or drift alarm audit",

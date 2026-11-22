@@ -86,8 +86,9 @@ def test_adjudication_needs_a_live_lease_and_labels_that_match_the_subject(seede
         _conflict("already_adjudicated", lambda: queue.claim_item(db, ids[0], user_id=B, now=NOW, package=PACKAGE))
 
 
-def test_adjudicate_and_apply_are_idempotent_by_client_key(seeded):
+def test_adjudicate_and_apply_are_idempotent_by_client_key(seeded, caplog):
     factory, ids, request = seeded
+    caplog.set_level("INFO", logger="qcai.v3")
     with factory() as db:
         queue.claim_item(db, ids[0], user_id=A, now=NOW, package=PACKAGE)
         first = queue.adjudicate(db, ids[0], request("key-1111a"), user_id=A, now=NOW, package=PACKAGE)
@@ -96,9 +97,15 @@ def test_adjudicate_and_apply_are_idempotent_by_client_key(seeded):
         _conflict("already_adjudicated", lambda: queue.adjudicate(db, ids[0], request("key-1111b"), user_id=A, now=NOW, package=PACKAGE))
         assert db.scalar(select(func.count()).select_from(V3GoldLabelRecord)) == 1
         final = queue.apply_item(db, ids[0], ApplyRequest(client_key="apply-0001"), user_id=B, now=NOW)
-        assert final == first.gold_seq == queue.apply_item(db, ids[0], ApplyRequest(client_key="apply-0001"), user_id=B, now=NOW)
+        repeat = queue.apply_item(db, ids[0], ApplyRequest(client_key="apply-0001"), user_id=B, now=NOW)
+        assert (final, repeat) == ((first.gold_seq, False), (first.gold_seq, True))
         _conflict("not_adjudicated", lambda: queue.apply_item(db, ids[0], ApplyRequest(client_key="apply-0002"), user_id=C, now=NOW))
         assert db.scalar(select(func.count()).select_from(V3GoldLabelRecord)) == 1
+    # A repeat writes nothing and logs nothing: v3.applied and v3.adjudicated count distinct actions only.
+    from app.core.structured_logging import FIELDS
+
+    events = [getattr(record, FIELDS, {}).get("event") for record in caplog.records]
+    assert events.count("v3.applied") == 1 and events.count("v3.adjudicated") == 1
 
 
 def test_the_same_reviewer_never_reviews_twice_and_an_adjudicator_never_applies():
@@ -119,7 +126,7 @@ def test_the_same_reviewer_never_reviews_twice_and_an_adjudicator_never_applies(
             for reviewer in (A, B):
                 _conflict("adjudicator_cannot_apply", lambda reviewer=reviewer: queue.apply_item(
                     db, ids[0], ApplyRequest(client_key="apply-2222"), user_id=reviewer, now=NOW))
-            assert queue.apply_item(db, ids[0], ApplyRequest(client_key="apply-2222"), user_id=C, now=NOW) == closed.gold_seq
+            assert queue.apply_item(db, ids[0], ApplyRequest(client_key="apply-2222"), user_id=C, now=NOW).final_gold_seq == closed.gold_seq
 
 
 def test_a_disagreeing_second_review_goes_to_a_third_reviewer_whose_label_is_final():
@@ -219,9 +226,60 @@ def test_two_concurrent_claims_leave_exactly_one_lease(fresh_database_url):
         assert leases == 1
         refusals = [outcome for outcome in outcomes if not isinstance(outcome, queue.Lease)]
         assert len(outcomes) == 2 and len(refusals) == 1
-        assert refusals[0] == "claimed_by_another" or (engine.dialect.name == "sqlite" and "locked" in refusals[0])
+        # A file SQLite's "database is locked" (both claims began deferred transactions) is retried, so the loser sees the
+        # winner's lease on every database.
+        assert refusals == ["claimed_by_another"], refusals
     finally:
         engine.dispose()
+
+
+def test_a_sqlite_lock_is_retried_and_one_that_outlasts_the_attempts_is_busy(seeded, monkeypatch):
+    import sqlite3
+
+    from sqlalchemy.exc import OperationalError
+
+    factory, ids, _request = seeded
+    locked = OperationalError("INSERT INTO v3_claims", {}, sqlite3.OperationalError("database is locked"))
+    assert queue.sqlite_busy(locked) and not queue.sqlite_busy(OperationalError("x", {}, sqlite3.OperationalError("no such table: v3")))
+    real, calls = queue._item, []
+
+    def flaky(db, item_id, *, lock=False, failures):
+        calls.append(item_id)
+        if len(calls) <= failures:
+            raise locked
+        return real(db, item_id, lock=lock)
+
+    with factory() as db:
+        monkeypatch.setattr(queue, "_item", lambda db, item_id, lock=False: flaky(db, item_id, lock=lock, failures=2))
+        lease = queue.claim_item(db, ids[0], user_id=A, now=NOW, package=PACKAGE)
+        assert lease.item_id == ids[0] and len(calls) == 3
+        calls.clear()
+        monkeypatch.setattr(queue, "_item", lambda db, item_id, lock=False: flaky(db, item_id, lock=lock, failures=99))
+        with pytest.raises(queue.V3Busy):
+            queue.claim_item(db, ids[1], user_id=A, now=NOW, package=PACKAGE)
+        assert len(calls) == queue.ATTEMPTS
+        # Any other operational error is not retried.
+        monkeypatch.setattr(queue, "_item", lambda db, item_id, lock=False: (_ for _ in ()).throw(
+            OperationalError("SELECT", {}, sqlite3.OperationalError("no such table: v3_queue_items"))))
+        with pytest.raises(OperationalError):
+            queue.claim_item(db, ids[1], user_id=A, now=NOW, package=PACKAGE)
+    # The scan retries its whole transaction the same way.
+    from app.services.v3 import scan as scan_module
+
+    real_once, tries = scan_module._scan_once, []
+
+    def once(**kwargs):
+        tries.append(1)
+        if len(tries) == 1:
+            raise locked
+        return real_once(**kwargs)
+
+    monkeypatch.setattr(scan_module, "_scan_once", once)
+    result = scan_module.run_scan(settings=Settings(environment="development", v3_queue="shadow"), package=PACKAGE, session_factory=factory, now=NOW)
+    assert len(tries) == 2 and result.records == 3
+    monkeypatch.setattr(scan_module, "_scan_once", lambda **kwargs: (_ for _ in ()).throw(locked))
+    with pytest.raises(queue.V3Busy):
+        scan_module.run_scan(settings=Settings(environment="development", v3_queue="shadow"), package=PACKAGE, session_factory=factory, now=NOW)
 
 
 def test_erasing_a_reviewer_deletes_their_lease_and_round_records(seeded):

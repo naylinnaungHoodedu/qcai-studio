@@ -6,16 +6,16 @@ Registry `x-triggers-v1`. V-3 counts X1-X4 only; X5 and X6 audits are proof test
 
 | Trigger | Rule id | Source in the ledger record | Subject | Holds | V-3 |
 |---|---|---|---|---|---|
-| X1 | `critical-claim-objection-tier1-v1` | a claim whose V2 verdict marks it `critical` (the environment's registry, D-25) at `tier` 1 and that drew a family objection: on its final verdict, or a claim-loop correction cycle that listed it | claim | yes: never delivered (the runner's sticky hold), withheld until Phase 7 change control | counted |
+| X1 | `critical-claim-objection-v1` | a claim whose V2 verdict marks it `critical` (the environment's registry, D-25), at tiers 1, 2 and 3 (plan AC-5-4 "critical claims follow X1 from Phase 6"), that drew a family objection: on its final verdict, or a claim-loop correction cycle that listed it | claim | at tier 1 only (plan task 1 "withheld at tier 1"): never delivered (the runner's sticky hold), withheld until Phase 7 change control; at tier 2 or 3 queued, not held | counted |
 | X2 | `v2-exhausted-type-a-b-v1` | a claim escalated `X2` (V2 correction exhausted) whose final verdict has an objecting family verdict of EHMF type A or B | claim | no (the record already abstains it) | counted |
 | X3 | `learner-flag-f0-v1` | a learner flag on their own tutor turn (`POST /v3/flags`, development only); F_i = 0, never a verdict | response | no | counted |
 | X4 | `v1-5-margin-mark-v1` | the record's V1.5 `near_miss` mark, or V1.5's rule over a legacy record's sufficiency with the package's `v1.v1_5.x4_margin` for its gate | response | no | counted |
 | X5 | `model-version-change-or-cusum-alarm-v1` | a model-version change of a known model key (the registry's verifiers, a record's verifier, generator or V1.3 checker) or a CUSUM alarm (`cusum-alarm-v1`, Phase 9's statistic): the next 1500 learner deliveries are drawn at 1/5 | response (the drawn delivery) | no | proof test |
 | X6 | `seeded-sha256-bernoulli-v1` | the seeded audit draw at 1/20 over learner deliveries | response | no | proof test |
 
-**Queue reasons without a trigger** (queued, not counted in V-3): `v1_3_flag` (only when the claim has no completed V2 vote), `v1_8_misconception`, `v2_correction_exhausted` (an exhausted claim without an A or B objection) and `v2_degraded_withheld`. A record's X4 mark is its response item, never a claim reason.
+**Queue reasons without a trigger** (queued, not counted in V-3), each read from the record's own V3 intent: `v1_3_flag` (under `MODEL_GATEWAY=on` the V2 aggregate drops it once a vote completes; a V2-shadow record keeps Phase 4's D-20 intent, so its V1.3-withheld claims are queued), `v1_8_misconception`, `v2_correction_exhausted` (an exhausted claim without an A or B objection) and `v2_degraded_withheld`. A record's X4 mark is its response item, never a claim reason.
 
-**Items.** One item per (ledger record, claim) or per record. A later trigger merges into an open item; on a closed item it is recorded and the item is not reopened.
+**Items.** One item per (ledger record, claim) or per record. A later trigger merges into an open item; on a closed item it is recorded and the item is not reopened. An item's exposure is its record's: an item created before the scan drew its record (an X3 flag) is raised to the record's full count when the scan draws it.
 
 ## Priority
 

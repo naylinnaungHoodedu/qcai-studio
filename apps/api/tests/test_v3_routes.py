@@ -84,13 +84,46 @@ def test_the_reviewer_routes_shape_and_their_security_events():
         assert client.post(f"/v3/items/{ids[0]}/apply", headers=reviewer, json={"client_key": "apply-key-01"}).json() == {
             "detail": "adjudicator_cannot_apply"}
         applied = client.post(f"/v3/items/{ids[0]}/apply", headers=second, json={"client_key": "apply-key-01"})
-        assert applied.json() == {"item_id": ids[0], "state": "applied", "final_gold_seq": result["gold_seq"]}
+        assert applied.json() == {"item_id": ids[0], "state": "applied", "final_gold_seq": result["gold_seq"], "duplicate": False}
+        repeat = client.post(f"/v3/items/{ids[0]}/apply", headers=second, json={"client_key": "apply-key-01"})
+        assert repeat.json() == {"item_id": ids[0], "state": "applied", "final_gold_seq": result["gold_seq"], "duplicate": True}
+        assert [event.details["duplicate"] for event in _events_since(start, "v3.item_applied")] == [False, True]
         metrics = client.get("/v3/metrics", headers=reviewer).json()
         assert metrics["gold"]["rows"] == 1 and metrics["escalation_share"]["counted"] == ["X1", "X2", "X3", "X4"]
         for name in ("v3.queue_read", "v3.item_read", "v3.item_claimed", "v3.item_adjudicated", "v3.item_applied", "v3.metrics_read"):
             events = _events_since(start, name)
             assert events and all(event.details["route"].startswith("/v3/") and event.actor_role == "reviewer" for event in events), name
         assert _events_since(start, "v3.queue_read")[0].details["count"] == 2
+
+
+def test_a_locked_database_is_retried_and_a_lock_that_outlasts_the_retries_answers_503(monkeypatch):
+    # SQLite (development) refuses a writer with "database is locked" when two deferred transactions both write: a claim
+    # retries the whole transaction, and a lock that outlasts the attempts answers 503, never 500.
+    import sqlite3
+
+    from sqlalchemy.exc import OperationalError
+
+    from app.services.v3 import queue as queue_module
+
+    reviewer = v3_fakes.reviewer("a")
+    locked = OperationalError("INSERT INTO v3_claims", {}, sqlite3.OperationalError("database is locked"))
+    with fresh_routes(2) as (_factory, ids, _entries):
+        real, calls = queue_module._item, []
+
+        def flaky(db, item_id, lock=False):
+            calls.append(item_id)
+            if len(calls) == 1:
+                raise locked
+            return real(db, item_id, lock=lock)
+
+        monkeypatch.setattr(queue_module, "_item", flaky)
+        claimed = client.post(f"/v3/items/{ids[0]}/claim", headers=reviewer)
+        assert claimed.status_code == 200 and claimed.json()["state"] == "claimed" and len(calls) == 2
+        monkeypatch.setattr(queue_module, "_item", lambda db, item_id, lock=False: (_ for _ in ()).throw(locked))
+        start = _head()
+        busy = client.post(f"/v3/items/{ids[1]}/claim", headers=reviewer)
+        assert (busy.status_code, busy.json(), busy.headers["retry-after"], busy.headers["cache-control"]) == (503, {"detail": "busy"}, "1", "no-store")
+        assert _events_since(start, "v3.item_claimed") == []
 
 
 def test_an_unreviewable_item_cannot_be_claimed_or_adjudicated(monkeypatch):

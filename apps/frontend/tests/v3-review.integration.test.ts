@@ -10,6 +10,7 @@ import {
   TRIGGER_TEXT,
   VERDICT_TEXT,
   adjudicationPayload,
+  adjudicationReady,
   reviewerHeaders,
   reviewerUiEnabled,
   v3ModeFromReady,
@@ -71,6 +72,48 @@ test("an adjudication payload sorts the labels and nulls a SUPPORTED label's EHM
     ],
     abstention_label: null,
   });
+});
+
+test("an adjudication is ready only once every claim and an abstention item's label are chosen explicitly", () => {
+  const claims = ["claim-a", "claim-b"];
+  const unset = claims.map((claim_id) => ({ claim_id, verdict: null, ehmf_type: null }));
+  assert.equal(adjudicationReady(unset, claims, null, false), false);
+  const supported = claims.map((claim_id) => ({ claim_id, verdict: "SUPPORTED" as const, ehmf_type: null }));
+  assert.equal(adjudicationReady(supported, claims, null, false), true);
+  assert.equal(adjudicationReady(supported.slice(0, 1), claims, null, false), false);
+  const untyped = [supported[0], { claim_id: "claim-b", verdict: "CONTRADICTED" as const, ehmf_type: null }];
+  assert.equal(adjudicationReady(untyped, claims, null, false), false);
+  const typed = [supported[0], { claim_id: "claim-b", verdict: "CONTRADICTED" as const, ehmf_type: "A" as const }];
+  assert.equal(adjudicationReady(typed, claims, null, false), true);
+  assert.equal(adjudicationReady([], [], null, true), false);
+  assert.equal(adjudicationReady([], [], "correct", true), true);
+});
+
+test("the console pre-fills no label, names every select and keeps one mounted status region", () => {
+  const consoleSource = read("components/v3-review-console.tsx");
+  assert.doesNotMatch(consoleSource, /verdict: "SUPPORTED"/);
+  assert.doesNotMatch(consoleSource, /\? "correct" : null/);
+  assert.match(consoleSource, /verdict: null, ehmf_type: null/);
+  assert.match(consoleSource, /disabled=\{!ready\}/);
+  const selects = consoleSource.match(/<select\b/g) ?? [];
+  const labelled = consoleSource.match(/<label\b[^>]*>\s*(Synthetic reviewer|Verdict for claim|Error type for claim|Abstention label)/g) ?? [];
+  assert.equal(selects.length, 4);
+  assert.equal(labelled.length, selects.length);
+  assert.match(consoleSource, /<p className="[^"]*" role="status" aria-live="polite">\s*\{message\}/);
+  assert.doesNotMatch(consoleSource, /\{message \? <p/);
+  assert.match(consoleSource, /async function open\(item: V3QueueItem\) \{\s*try \{/);
+  assert.match(consoleSource, /disabled=\{!draft\[claim\.claim_id\]\?\.verdict \|\| draft\[claim\.claim_id\]\?\.verdict === "SUPPORTED"\}/);
+});
+
+test("the review page renders no second main landmark inside the app shell's", () => {
+  assert.match(read("components/app-shell.tsx"), /<main id="main-content">/);
+  assert.doesNotMatch(read("app/review/page.tsx"), /<main\b/);
+});
+
+test("trigger labels say why an item is queued, never which objection type it drew", () => {
+  for (const text of Object.values(TRIGGER_TEXT)) {
+    assert.doesNotMatch(text, /\btype [A-E]\b|\b[A-E] or [A-E]\b|objected|tier \d/i);
+  }
 });
 
 test("no label says verified or grounded", () => {

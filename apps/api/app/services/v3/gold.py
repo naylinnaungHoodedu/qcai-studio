@@ -123,15 +123,27 @@ def verify_gold_store(db: Session, *, expected_head: tuple[int, str] | None = No
                      problems=tuple(problems[:_MAX_PROBLEMS]))
 
 
+def refused_export_roots(module: Path | None = None) -> tuple[Path, ...]:
+    """The trees an export may not enter (plan L627-628: gold labels "MUST NOT enter the public repository, CI artifacts,
+    logs or releases"): the application tree, and the repository checkout holding it (the first parent of this module
+    with a .git entry; the image has none). `module` stands in for this file's path (a test seam)."""
+    here = Path(module or __file__).resolve()
+    roots = [here.parents[2]]
+    checkout = next((parent for parent in here.parents if (parent / ".git").exists()), None)
+    if checkout is not None:
+        roots.append(checkout)
+    return tuple(roots)
+
+
 def export_gold(db: Session, path: Path, *, applied_only: bool = True) -> int:
     """One JSON line per row (seq, record_hash, entry, created_at): the applied items' final rows, or every row with
-    applied_only False. The path must lie outside the application tree. Returns the line count."""
+    applied_only False. The path must lie outside the application tree and the repository checkout
+    (refused_export_roots); a refusal writes nothing. Returns the line count."""
     from app.db_models import V3GoldLabelRecord, V3QueueItem
 
     target = Path(path).resolve()
-    application = Path(__file__).resolve().parents[2]
-    if target.is_relative_to(application):
-        raise ValueError("the export path must lie outside the application tree")
+    if any(target.is_relative_to(root) for root in refused_export_roots()):
+        raise ValueError("the export path must lie outside the application tree and the repository checkout")
     query = select(V3GoldLabelRecord).order_by(V3GoldLabelRecord.seq)
     if applied_only:
         finals = select(V3QueueItem.final_gold_seq).where(V3QueueItem.state == "applied", V3QueueItem.final_gold_seq.is_not(None))

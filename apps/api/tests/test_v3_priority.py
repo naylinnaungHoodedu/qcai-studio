@@ -43,7 +43,8 @@ def test_exposure_counts_the_claim_set_s_deliveries_up_to_the_record_and_is_at_l
     other = v3_fakes.synthetic_deliveries(1, start=10, text="Another claim of the corpus.", span_id="span-" + "2" * 64)
     with v3_fakes.fresh_v3_sessions() as (factory, _engine):
         v3_fakes.append_all(factory, [same[0], other[0], same[1], same[2], make_entry(delivery="shadow"), make_entry(decision="abstain")])
-        # An item created before its record's draw (an X3 flag before the scan) counts the earlier deliveries only.
+        # Before the scan has drawn a record, exposure_for counts the deliveries considered so far (none here); the scan's
+        # refresh_exposure raises an item created then (test_an_item_s_exposure_and_priority_do_not_depend_on_...).
         with factory() as db:
             early = queue.record_row(db, 3)
             assert priority.exposure_for(db, early, "missing-key") == 1
@@ -55,6 +56,34 @@ def test_exposure_counts_the_claim_set_s_deliveries_up_to_the_record_and_is_at_l
 
             exposures = [priority.exposure_for(db, row, claim_set_key(entry)) for row, entry in zip(rows, entries)]
     assert exposures == [1, 1, 2, 3, 1, 1]
+
+
+def test_an_item_s_exposure_and_priority_do_not_depend_on_whether_a_flag_or_the_scan_came_first():
+    # Twenty learner deliveries of one claim set; an X3 response item on the twentieth, created by the flag path
+    # (queue.upsert_item with the X3 spec, as feedback.record_flag does) before or after the scan reaches the record.
+    from app.services.v3.triggers import response_spec
+
+    def flag(factory, seq):
+        with factory() as db:
+            row = queue.record_row(db, seq)
+            entry = queue.parse_entry(row)
+            queue.upsert_item(db, record_row=row, spec=response_spec(entry, "X3"), entry=entry, package=PACKAGE, now=v3_fakes.FIXED_NOW)
+            db.commit()
+
+    outcomes = {}
+    for order in ("flag_then_scan", "scan_then_flag", "flag_scan_flag"):
+        with v3_fakes.fresh_v3_sessions() as (factory, _engine):
+            v3_fakes.append_all(factory, v3_fakes.synthetic_deliveries(20))
+            if order != "scan_then_flag":
+                flag(factory, 20)
+            run_scan(settings=SETTINGS, package=PACKAGE, session_factory=factory, now=v3_fakes.FIXED_NOW)
+            if order != "flag_then_scan":
+                flag(factory, 20)
+            with factory() as db:
+                item = queue.get_item(db, queue.item_id_for(20, ""))
+                outcomes[order] = (item.exposure, item.priority, "X3" in queue.split(item.triggers))
+    # The record's exposure is its 20 deliveries of the claim set; K is 0 and the unknown type weighs 1.
+    assert set(outcomes.values()) == {(20, 20.0, True)}, outcomes
 
 
 def test_priority_orders_an_exhaustive_grid_as_the_exact_products_do():

@@ -4,15 +4,19 @@ run_scan reads up to `limit` response_ledger rows past the cursor (the largest v
 transaction (on PostgreSQL under a transaction-scoped advisory lock), and for each:
   1. validates it with ENTRY_SCHEMAS[entry_schema]; an unknown schema or a failure is counted unparsed and skips the
      triggers, and a delivery is still drawn (with no claim-set key);
-  2. records its model sightings (v3_model_versions): a known model key seen with another version is an X5 model_change
-     event (v3_events), a first sighting is a baseline; the registry's verifiers are compared once per scan;
+  2. records its model sightings (v3_model_versions): triggers.x5_model_changes names each known model key seen with
+     another version, an X5 model_change event (v3_events); a first sighting is a baseline; the registry's verifiers are
+     compared once per scan;
   3. evaluates the triggers (triggers.evaluate);
   4. for a learner delivery (legacy or delivered) inserts its v3_draws row (primary key: its seq, so each delivery is
      considered exactly once) at 1/20, or 1/5 while an X5 window is open, and a drawn delivery gets an X6 or X5 response
-     item;
+     item; then it raises the exposure of any item already on the record (an X3 flag that came first) to the record's
+     full count (queue.refresh_exposure), so an item's exposure never depends on which path created it;
   5. upserts each item (queue.upsert_item).
 Then it appends the v3_scans row and logs v3.scan. Write order: model versions and events, then draws, then queue
-items, then the scan row (the guard's lock order). The ledger is read only: no ledger row changes.
+items, then the scan row (the guard's lock order). The ledger is read only: no ledger row changes. On SQLite a
+"database is locked" error (two writers that both began deferred transactions) retries the whole scan, at most
+queue.ATTEMPTS times; then queue.V3Busy.
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ import logging
 from typing import Any
 
 from sqlalchemy import func, insert, select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal
@@ -32,7 +37,7 @@ from app.core.structured_logging import FIELDS
 from app.services import v3
 from app.services.v3 import triggers as trig
 from app.services.v3.draw import claim_set_key, draw_trigger
-from app.services.v3.queue import _dialect, parse_entry, upsert_item, utc
+from app.services.v3.queue import ATTEMPTS, V3Busy, _dialect, parse_entry, refresh_exposure, sqlite_busy, upsert_item, utc
 from app.services.v3.rules import DELIVERIES, DRAW_RULE
 
 LOGGER = logging.getLogger("qcai.v3")
@@ -94,9 +99,8 @@ def _sightings(db: Session, known: dict[str, str], sightings, *, source: str, se
     for key, version in sightings:
         if known.get(key) == version:
             continue
-        if key in known:
-            record_model_change(db, trig.ModelChange(model_key=key, from_version=known[key], to_version=version), source=source,
-                                from_ledger_seq=seq, window=window, now=now)
+        for change in trig.x5_model_changes(known, ((key, version),)):
+            record_model_change(db, change, source=source, from_ledger_seq=seq, window=window, now=now)
             windows.append([int(seq), int(window)])
             changes += 1
         db.execute(insert(V3ModelVersion).values(model_key=key, model_version=version, first_seen_seq=int(seq), source=source, seen_at=utc(now)))
@@ -106,12 +110,29 @@ def _sightings(db: Session, known: dict[str, str], sightings, *, source: str, se
 
 def run_scan(*, settings: Any, package: Any, session_factory: Callable[[], Session] = SessionLocal, now: datetime | None = None,
              limit: int = 500) -> ScanResult:
+    v3.require_on(settings, package)
+    now = utc(now or datetime.now(UTC))
+    last: Exception | None = None
+    for _ in range(ATTEMPTS):
+        try:
+            result = _scan_once(settings=settings, package=package, session_factory=session_factory, now=now, limit=limit)
+            break
+        except OperationalError as exc:
+            if not sqlite_busy(exc):
+                raise
+            last = exc
+    else:
+        raise V3Busy("the V3 scan could not complete within its attempts: the database stayed locked") from last
+    LOGGER.info("V3 scan", extra={FIELDS: {"event": "v3.scan", **{key: getattr(result, key) for key in (
+        "from_seq", "to_seq", "records", "deliveries", "drawn_x6", "drawn_x5", "items_created", "items_updated", "model_changes", "unparsed", "done")}}})
+    return result
+
+
+def _scan_once(*, settings: Any, package: Any, session_factory: Callable[[], Session], now: datetime, limit: int) -> ScanResult:
     from app.db_models import ResponseLedgerRecord, V3Draw, V3Scan
     from app.gateway.registry import registry_for
 
-    v3.require_on(settings, package)
     params = package.v3
-    now = utc(now or datetime.now(UTC))
     margins = dict(package.v1.x4_margin) if package.v1 is not None else {}
     with session_factory() as db:
         if db.get_bind().dialect.name == "postgresql":
@@ -152,6 +173,7 @@ def run_scan(*, settings: Any, package: Any, session_factory: Callable[[], Sessi
                 if inserted and drawn is not None:
                     counts["drawn_x6" if drawn == "X6" else "drawn_x5"] += 1
                     specs.append(trig.response_spec(entry, drawn))
+                refresh_exposure(db, record_row=row, entry=entry, package=package)
             for spec in specs:
                 _, created = upsert_item(db, record_row=row, spec=spec, entry=entry, package=package, now=now)
                 counts["items_created" if created else "items_updated"] += 1
@@ -162,8 +184,6 @@ def run_scan(*, settings: Any, package: Any, session_factory: Callable[[], Sessi
                                          items_updated=counts["items_updated"], model_changes=changes, unparsed=counts["unparsed"],
                                          package_version=package.package_version, package_sha256=package.sha256, created_at=now))
         db.commit()
-    LOGGER.info("V3 scan", extra={FIELDS: {"event": "v3.scan", **{key: getattr(result, key) for key in (
-        "from_seq", "to_seq", "records", "deliveries", "drawn_x6", "drawn_x5", "items_created", "items_updated", "model_changes", "unparsed", "done")}}})
     return result
 
 

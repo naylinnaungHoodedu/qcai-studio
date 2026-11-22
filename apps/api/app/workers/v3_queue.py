@@ -6,10 +6,12 @@ JSON lines on the qcai.worker logger (counts, seq numbers and hashes only).
   status                                v3.status with the SLIs (metrics.slis) and the stop
   verify-gold [--expect-head SEQ:HASH]  walks the gold chain; v3.gold_verified with the count, the head and the problems
   export-gold --path P [--all]          the applied items' final gold rows (every row with --all) as JSON lines, to a
-                                        path outside the application tree: the archive before a downgrade and the
-                                        recalibration input Phase 7 consumes (DI-93)
+                                        path outside the application tree and the repository checkout: the archive
+                                        before a downgrade and the recalibration input Phase 7 consumes (DI-93)
 Exit codes: 0 ok, 1 a check failed (a gold chain problem), 2 a usage error or a refusal (V3 off, an export path inside the
-application tree). Run as: python -m app.workers.v3_queue <command> ...
+application tree or the repository checkout). Run as: python -m app.workers.v3_queue <command> ...
+Events: v3.scan_finished (scans, last), v3.scan_refused (reason), v3.status (mode and the SLIs), v3.gold_verified (count,
+head_seq, head_hash, problem_count, problems), v3.gold_exported (count, applied_only), v3.gold_export_refused.
 """
 
 from __future__ import annotations
@@ -90,7 +92,8 @@ def main(argv: list[str] | None = None) -> int:
         with SessionLocal() as db:
             count = export_gold(db, args.path, applied_only=not args.all)
     except ValueError:
-        LOGGER.warning("V3 gold export refused: the path lies inside the application tree", extra={FIELDS: {"event": "v3.gold_export_refused"}})
+        LOGGER.warning("V3 gold export refused: the path lies inside the application tree or the repository checkout",
+                       extra={FIELDS: {"event": "v3.gold_export_refused"}})
         return EXIT_USAGE
     LOGGER.info("V3 gold rows exported", extra={FIELDS: {"event": "v3.gold_exported", "count": count, "applied_only": not args.all}})
     return EXIT_OK

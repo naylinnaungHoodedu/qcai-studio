@@ -107,12 +107,61 @@ def test_non_auditable_counts_turns_without_a_record_and_qa_before_the_ledger():
             db.execute(insert(QAInteraction).values(user_id="guest-synthetic", lesson_slug=None, question="q", answer="a", citations=[],
                                                     created_at=NOW - timedelta(days=30)))
             db.commit()
-            assert non_auditable(db) == {"tutor_turns": 0, "qa_before_ledger": 1}   # no ledger yet: every Q&A answer is before it
+            # No ledger yet: every Q&A answer is before it.
+            assert non_auditable(db, now=NOW) == {"tutor_turns": 0, "qa_before_ledger": 1, "ledger_disabled": 0, "lost_records": 0, "pending": 0}
         v3_fakes.append_all(factory, v3_fakes.synthetic_deliveries(1), now=NOW - timedelta(days=1))
         with factory() as db:
             db.execute(insert(QAInteraction).values(user_id="guest-synthetic", lesson_slug=None, question="q", answer="a", citations=[], created_at=NOW))
             db.commit()
-            assert non_auditable(db)["qa_before_ledger"] == 1
+            assert non_auditable(db, now=NOW)["qa_before_ledger"] == 1
+
+
+def test_non_auditable_reports_pre_ledger_turns_apart_from_kill_switch_turns_lost_records_and_pending_appends():
+    # Plan Phase 6 G "pre-ledger deliveries reported as non-auditable": a tutor turn from an image that keeps no ledger is
+    # pre-ledger; a turn created while the ledger kill switch was off, a lost append (it expected a record and has none
+    # past the coverage horizon: a Phase 3 plan L stop) and an append still inside the horizon are reported apart.
+    from app.db_models import TutorThread, TutorTurn
+
+    with v3_fakes.fresh_v3_sessions() as (factory, _engine):
+        with factory() as db:
+            db.add(TutorThread(id="thread-synthetic", user_id="guest-synthetic", title="t"))
+            db.flush()
+            for index, (expected, created) in enumerate(((None, NOW - timedelta(days=9)), (False, NOW - timedelta(days=8)),
+                                                         (True, NOW - timedelta(days=7)), (True, NOW - timedelta(days=6)),
+                                                         (True, NOW - timedelta(seconds=5)))):
+                db.add(TutorTurn(id=v3_fakes.synthetic_id(9000 + index), thread_id="thread-synthetic", user_id="guest-synthetic",
+                                 resolved_query="q", retrieval_mode="lexical", provider="p", model="m", decision="answer", decision_reason="r",
+                                 citations=[], claims=[], corpus_version="c", policy_version="p", ledger_record_expected=expected,
+                                 created_at=created))
+            db.commit()
+            counts = non_auditable(db, now=NOW)
+    assert counts == {"tutor_turns": 1, "qa_before_ledger": 0, "ledger_disabled": 1, "lost_records": 2, "pending": 1}
+
+
+def test_the_residual_bound_is_null_while_nothing_is_audited():
+    # An empty population is no evidence: the bound is null and no_audited_answers true, never an upper bound of 0 that
+    # would read as a perfect residual (the deployment form of HR-3).
+    from app.services.v3.residual import residual, wilson95, wilson_upper
+
+    assert wilson_upper(0, 0) is None and wilson95(0, 0) is None and wilson_upper(0, 300) < 0.013
+    with v3_fakes.fresh_v3_sessions() as (factory, _engine):
+        with factory() as db:
+            empty = residual(db, PACKAGE)
+            body = slis(db, PACKAGE, now=NOW)
+        # An audited abstention is not an answer: the population stays empty.
+        entries = v3_fakes.reviewable_deliveries(1, decision="abstain")
+        (item_id,) = v3_fakes.seed_items(factory, entries, package=PACKAGE, now=NOW, trigger="X6", double_review=False)
+        from app.services.v3 import queue
+        from app.services.v3.scan import run_scan
+
+        run_scan(settings=SETTINGS, package=PACKAGE, session_factory=factory, now=NOW)
+        with factory() as db:
+            queue.claim_item(db, item_id, user_id="synthetic-reviewer-a", now=NOW, package=PACKAGE)
+            queue.adjudicate(db, item_id, v3_fakes.supported_labels(entries[0])("key-empty01"), user_id="synthetic-reviewer-a", now=NOW,
+                             package=PACKAGE)
+            abstained = residual(db, PACKAGE)
+    for block in (empty, body["residual"], abstained):
+        assert (block["audited"], block["errors"], block["wilson95"], block["no_audited_answers"], block["by_month"]) == (0, 0, None, True, [])
 
 
 def test_a_cusum_alarm_is_recorded_whatever_the_mode_and_a_synthetic_one_is_refused_outside_development():

@@ -1048,7 +1048,7 @@
       "provisional": true,
       "record": "PD-32",
       "rules": {
-        "X1": "critical-claim-objection-tier1-v1",
+        "X1": "critical-claim-objection-v1",
         "X2": "v2-exhausted-type-a-b-v1",
         "X3": "learner-flag-f0-v1",
         "X4": "v1-5-margin-mark-v1",
@@ -1056,8 +1056,13 @@
         "X6": "seeded-sha256-bernoulli-v1"
       },
       "x1": {
-        "tier": 1,
+        "tiers": [
+          1,
+          2,
+          3
+        ],
         "min_objections": 1,
+        "withhold_tier": 1,
         "withholds": true,
         "revision": "never",
         "hold": "sticky_for_the_response"

@@ -7,6 +7,10 @@ upsert_item inserts a new item (state queued, round 1, the double-review draw on
 priority) or merges a later trigger into it under a row lock: the unions of triggers, reasons, types and held, severity
 and priority recomputed; it never writes state, review_round, closed_at or final_gold_seq, so a concurrent adjudication
 is never undone, and a trigger on a closed item is recorded and the item is not reopened (v3.trigger_after_close).
+Exposure is the record's (priority.exposure_for): an item created before the scan considered its record (an X3 flag)
+counts the deliveries considered so far, and refresh_exposure, which the scan runs once it has drawn the record (every
+earlier delivery considered), raises it to the full count, so the final exposure and priority never depend on which
+path created the item.
 
 Workflow. "claimed" is derived: a queued item whose current round has a live lease (v3_claims, user-keyed). claim_item
 takes a 30-minute lease (idempotent for its holder; an expired lease is replaced). adjudicate appends exactly one gold row
@@ -17,7 +21,9 @@ item, edits no ledger row and no verdict and releases nothing (DI-93). Independe
 user-keyed round records in v3_claims, never on a keyed digest, which rotates with the guest secret (conflict 28). An
 item whose claims cannot all be shown (a span that is not public and quotable, or a record that does not parse) is not
 reviewable: it cannot be claimed or adjudicated and stays queued and held (plan J). Every mutation that retries does so
-as a whole transaction on an IntegrityError, a serialization failure or a deadlock (at most 5 attempts).
+as a whole transaction on an IntegrityError, a serialization failure or a deadlock, or on SQLite (development) a
+"database is locked" error from two writers that both began deferred transactions (at most 5 attempts; then V3Busy,
+which the routes answer 503).
 """
 
 from __future__ import annotations
@@ -32,7 +38,7 @@ from typing import Any, NamedTuple
 
 from sqlalchemy import delete, insert, select, update
 from sqlalchemy.dialects import postgresql, sqlite
-from sqlalchemy.exc import DBAPIError, IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.client_identity import keyed_digest
@@ -47,11 +53,16 @@ LOGGER = logging.getLogger("qcai.v3")
 CONFLICTS = ("claimed_by_another", "not_claimed", "lease_expired", "independent_review_required", "already_adjudicated", "not_adjudicated",
              "adjudicator_cannot_apply", "labels_do_not_match_subject", "not_recorded_yet", "not_reviewable")
 RETRYABLE_SQLSTATES = frozenset({"40001", "40P01"})
+BUSY_MESSAGES = ("database is locked", "database is busy", "database table is locked")
 ATTEMPTS = 5
 
 
 class V3NotFound(LookupError):
     """A missing item, or a flag's turn that is missing or someone else's."""
+
+
+class V3Busy(RuntimeError):
+    """A V3 write that could not complete within its attempts (a database that stayed locked or kept conflicting)."""
 
 
 class V3Conflict(RuntimeError):
@@ -60,6 +71,11 @@ class V3Conflict(RuntimeError):
             raise ValueError(f"unknown V3 conflict {reason!r}")
         super().__init__(reason)
         self.reason = reason
+
+
+class Applied(NamedTuple):
+    final_gold_seq: int
+    duplicate: bool                     # the same client key again: nothing written
 
 
 class Adjudicated(NamedTuple):
@@ -119,8 +135,21 @@ def _sqlstate(exc: BaseException) -> str | None:
     return sqlstate(exc)
 
 
+def sqlite_busy(exc: BaseException) -> bool:
+    """A SQLite "database is locked" or "busy" error: it carries no SQLSTATE, and a retry of the whole transaction waits
+    for the other writer through the busy timeout."""
+    import sqlite3
+
+    if not isinstance(exc, OperationalError):
+        return False
+    original = getattr(exc, "orig", None)
+    text = str(original).lower()
+    return isinstance(original, sqlite3.OperationalError) and any(word in text for word in BUSY_MESSAGES)
+
+
 def _retrying(db: Session, body):
-    """Run body() as one transaction, retried on an IntegrityError, a serialization failure or a deadlock."""
+    """Run body() as one transaction, retried on an IntegrityError, a serialization failure, a deadlock or a SQLite
+    busy error; V3Busy once the attempts are spent."""
     last: Exception | None = None
     for _ in range(ATTEMPTS):
         try:
@@ -133,14 +162,14 @@ def _retrying(db: Session, body):
             continue
         except DBAPIError as exc:
             db.rollback()
-            if _sqlstate(exc) in RETRYABLE_SQLSTATES:
+            if _sqlstate(exc) in RETRYABLE_SQLSTATES or sqlite_busy(exc):
                 last = exc
                 continue
             raise
         except Exception:
             db.rollback()
             raise
-    raise RuntimeError("the V3 queue write could not complete within its attempts") from last
+    raise V3Busy("the V3 queue write could not complete within its attempts") from last
 
 
 def _item(db: Session, item_id: str, *, lock: bool = False) -> Any:
@@ -217,6 +246,24 @@ def upsert_item(db: Session, *, record_row: Any, spec: Any, entry: Any, package:
             _log(logging.INFO, "A trigger reached a closed V3 item; it is recorded and not reopened", "v3.trigger_after_close",
                  item_id=item_id, triggers=sorted(triggers))
     return item_id, False
+
+
+def refresh_exposure(db: Session, *, record_row: Any, entry: Any, package: Any) -> int:
+    """Raise every item of the record whose stored exposure is below the record's (priority.exposure_for) to it, with its
+    priority recomputed; inside the caller's transaction. The scan runs it once it has drawn the record, when every
+    earlier delivery has been considered, so the count is final. Returns the items raised."""
+    from app.db_models import V3QueueItem
+
+    exposure = exposure_for(db, record_row, claim_set_key(entry))
+    query = select(V3QueueItem.__table__).where(V3QueueItem.ledger_seq == int(record_row.seq), V3QueueItem.exposure < exposure)
+    raised = 0
+    for item in db.execute(query.with_for_update()).all():
+        sev = severity(split(item.ehmf_types), package.v3.severity)
+        k = Fraction(item.k).limit_denominator(10**6)
+        db.execute(update(V3QueueItem).where(V3QueueItem.item_id == item.item_id).values(exposure=int(exposure),
+                                                                                         priority=float(priority(sev, exposure, k))))
+        raised += 1
+    return raised
 
 
 def live_lease(db: Session, item: Any, *, now: datetime) -> Any:
@@ -437,15 +484,15 @@ def adjudicate(db: Session, item_id: str, request: AdjudicationRequest, *, user_
     return result
 
 
-def apply_item(db: Session, item_id: str, request: ApplyRequest, *, user_id: str, now: datetime) -> int:
+def apply_item(db: Session, item_id: str, request: ApplyRequest, *, user_id: str, now: datetime) -> Applied:
     from app.db_models import V3Claim, V3QueueItem
 
-    def body() -> int:
+    def body() -> Applied:
         item = _item(db, item_id, lock=True)
         if item is None:
             raise V3NotFound(item_id)
         if item.state == "applied" and item.applied_client_key == request.client_key:
-            return int(item.final_gold_seq)
+            return Applied(int(item.final_gold_seq), True)
         if item.state != "adjudicated":
             raise V3Conflict("not_adjudicated")
         adjudicator = db.execute(select(V3Claim.id).where(V3Claim.item_id == item_id, V3Claim.user_id == user_id,
@@ -454,9 +501,10 @@ def apply_item(db: Session, item_id: str, request: ApplyRequest, *, user_id: str
             raise V3Conflict("adjudicator_cannot_apply")
         db.execute(update(V3QueueItem).where(V3QueueItem.item_id == item_id, V3QueueItem.state == "adjudicated").values(
             state="applied", applied_at=utc(now), applied_by_digest=reviewer_digest(user_id), applied_client_key=request.client_key))
-        return int(item.final_gold_seq)
+        return Applied(int(item.final_gold_seq), False)
 
-    final = _retrying(db, body)
-    _log(logging.INFO, "V3 item applied", "v3.applied", item_id=item_id, final_gold_seq=final)
-    return final
+    result = _retrying(db, body)
+    if not result.duplicate:
+        _log(logging.INFO, "V3 item applied", "v3.applied", item_id=item_id, final_gold_seq=result.final_gold_seq)
+    return result
 

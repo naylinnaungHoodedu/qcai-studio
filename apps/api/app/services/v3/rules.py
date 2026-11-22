@@ -13,8 +13,12 @@ from __future__ import annotations
 V3_VERSION = "v3-audit-v1"
 TRIGGERS = ("X1", "X2", "X3", "X4", "X5", "X6")
 TRIGGER_REGISTRY_VERSION = "x-triggers-v1"
-TRIGGER_RULES = {"X1": "critical-claim-objection-tier1-v1", "X2": "v2-exhausted-type-a-b-v1", "X3": "learner-flag-f0-v1",
+TRIGGER_RULES = {"X1": "critical-claim-objection-v1", "X2": "v2-exhausted-type-a-b-v1", "X3": "learner-flag-f0-v1",
                  "X4": "v1-5-margin-mark-v1", "X5": "model-version-change-or-cusum-alarm-v1", "X6": "seeded-sha256-bernoulli-v1"}
+# X1 fires on a critical claim's objection at any tier (plan AC-5-4 "critical claims follow X1 from Phase 6"); the claim
+# is withheld at tier 1 only (plan task 1 "withheld at tier 1"; the runner's sticky hold). Phase 6 spec conflict 1.
+X1_TIERS = (1, 2, 3)
+X1_WITHHOLD_TIER = 1
 V3_COUNTED = ("X1", "X2", "X3", "X4")            # plan 15.3 "V-3 numerator counts X1-X4 only; audits are proof tests" (PD-37)
 QUEUE_REASONS = ("v1_3_flag", "v1_8_misconception", "v2_correction_exhausted", "v2_degraded_withheld")
 X2_TYPES = ("A", "B")

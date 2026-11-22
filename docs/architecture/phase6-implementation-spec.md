@@ -195,7 +195,7 @@ Sections 0-17 describe the behaviour the code has. They are authoritative and ar
 
 | `V3_QUEUE` effective | What runs | Learner effect |
 |---|---|---|
-| `off` (default outside development) | Nothing: no scan, no draw, no item, no flag intake; reviewer routes 404 after the role and pool checks. The holds (pure, 4.9) and the stop (computed from the stored queue, 4.10) are unchanged. | none |
+| `off` (default outside development) | Nothing: no scan, no draw, no item, no flag intake (the flag route answers 404). The reviewer routes answer 404 only to an admitted reviewer (development), after the role and pool checks, which refuse every other caller with 403 and `authz.denied` (outside development every caller while D-18 is open). The holds (pure, 4.9) and the stop (computed from the stored queue, 4.10) are unchanged. | none |
 | `shadow` (default in development) | Scan, triggers, queue, draw, gold store, workflow, reviewer routes, metrics; the flag intake in development only | none (shadow pipeline only) |
 | `on` (development only before the Phase 6 exit) | The same as `shadow`; delivery-path consumption is DI-97 | none |
 
@@ -216,10 +216,13 @@ Each resolution is a refinement. None reverses a fixed decision.
      - after the last cycle it ends `abstain` with X2, or `withhold` when its last outcome is V2-withheld.
    - Its verdict, objection (in `corrections[i].failed_claim_ids`) and `critical: true` stay in the record.
    - No ledger schema changes and no Phase 5 record rule changes. `critical_for` reads package v5's per-environment registry (4.13).
+   - **The tier-2 and tier-3 case.** Plan AC-5-4 reads "Given one objection, then a tier-1 claim fails and a tier-2 claim passes (non-critical claims; critical claims follow X1 from Phase 6 [Decision D-25])", and task 1 "X1 critical-claim objection (registry [Decision D-25]; withheld at tier 1)". So the tier-2 pass rule covers non-critical claims only, a critical claim with an objection follows X1 at any tier, and the claim is withheld at tier 1. **Resolution:** X1 fires on a critical claim's objection at tiers 1, 2 and 3 (`v3.triggers.x1.tiers`), so the item is queued and counted in V-3; it is held (`held`, `holds.withheld_claim_ids`, the runner's sticky hold) at tier 1 only (`withhold_tier` 1). A critical tier-2 claim with one objection still passes 2oo3 under `on` (Phase 5's tier rule is unchanged), so its record may deliver it while its X1 item waits for a reviewer. This is dormant today: development's synthetic registry holds tier-1 claims only, and every other registry is empty while D-25 is open (PD-33).
 2. **The gold store's plane.**
-   - Plan text: 6.3 L719-720 "reviewer UI, RBAC, private-plane gold store -> 6 (D-18, R-49)" (the cell joined across its two lines), and 7.5 "research (licensed extractions, ULQS, gold labels [Assumption A-13])".
+   - Plan text: 6.1 L627-628 "Private plane: ULQS, E1-E4, HR-*, LQ-*, UE-* and the V3 gold store run only in the private research data plane [Decision D-14] [Assumption A-13]; fixtures, gold labels and licensed spans MUST NOT enter the public repository, CI artifacts, logs or releases (invariant 8)"; 6.3 L719-720 "reviewer UI, RBAC, private-plane gold store -> 6 (D-18, R-49)" (the cell joined across its two lines); and 7.5 "research (licensed extractions, ULQS, gold labels [Assumption A-13])".
+   - Against them, 15 L2593-2594: "(a) F-1 to F-3, V-1, V-3 and deployment-form HR-3 are measured in staging and production ("Prod") on the public 12 DOCX + 12 MP4 corpus only". The deployment form of HR-3 is "monthly Wilson bound from the 5% draw" (15.3), which needs production-plane labels of the 5% draw. The plan contradicts itself: the gold store that L627-628 places in the research plane is the one deployment-form HR-3 needs in production.
    - E10 limits the production plane to labels about public-corpus spans.
-   - **Resolution:** the Phase 6 gold store is access-restricted ("private": reviewer routes and workers only, no public route) in the production database, and holds labels about public-corpus deliveries only.
+   - **Resolution:** the two forms get two stores. The Phase 6 gold store is the deployment form's: access-restricted ("private": reviewer routes and workers only, no public route) in the production database, holding labels about public-corpus deliveries only (a reviewer sees public, quotable spans only, 4.14; under D-31 none is quotable, so nothing is reviewable there today). L627-628's research-plane gold store (study-form HR-3, E1-E4) is not built: it waits for D-14 (DI-94).
+   - L627-628's "MUST NOT enter the public repository, CI artifacts, logs or releases" holds for the production-plane labels too: no public route returns one, the logs carry seq numbers and hashes only (10.3), the export refuses the application tree and the repository checkout (4.6), and the committed residual report holds counts only (12.1).
    - Research-plane labelling is a plan non-goal ("Non-goals: Dawid-Skene before 200 gold claims [Evidence E-84]; research labelling.") and waits for D-14 and D-08 (DI-94).
 3. **Plan 15.3 "X6 draws or X5-elevated audits in the 10%?"** **Resolution:** the plan's RECOMMENDATION "V-3 numerator counts X1-X4 only; audits are proof tests [Evidence E-85]." applies provisionally (PD-37); ratification is DI-98.
 4. **13.6 "a sustained CUSUM alarm (X5) also stops the line"** against E1, which gives the CUSUM statistic to Phase 9. **Resolution:**
@@ -230,6 +233,7 @@ Each resolution is a refinement. None reverses a fixed decision.
    - The 60-per-minute cap (M6) applies in production. The AC test uses a fresh cap and a guest that passes the CSRF guard (M5), so the refusal is the reviewer gate's.
 6. **Exposure and K** have no plan definition (E2), and legacy records carry no claim-set hash (M2). **Resolution:** PD-34.
    - Exposure is the number of considered learner deliveries (v3_draws rows) whose claim-set key equals the record's, up to its seq, and at least 1. The key is the sha256 of the record's sorted claim ids (`sorted-claim-ids-sha256-v1`). Exposure is 1 for a shadow or abstention record.
+   - Exposure belongs to the record: an item created before the scan drew its record (an X3 flag) is raised to the record's full count when the scan draws it (4.3), so the order in which a flag and the scan reach a record never changes an item's priority.
    - K is the V2 panel's support share, 0 without a panel vote.
 7. **E4 "the role grant is refused there"**, against the code base, which has no in-app role grant (M5). **Resolution:** the refusal acts at use.
    - `reviewer_admitted(settings)` (4.12) is false outside development while D-18 is open, whatever role a token or header carries.
@@ -252,7 +256,7 @@ Each resolution is a refinement. None reverses a fixed decision.
     - Adjudication and apply carry a `client_key`.
     - A flag is idempotent per learner and turn.
     - A claim is idempotent for its lease holder (4.5).
-14. **Plan G "pre-ledger deliveries reported as non-auditable"** with no per-delivery id for Q&A before the ledger. **Resolution:** counts only (4.11). These are the tutor turns without a ledger record (from `ledger_coverage`) and the Q&A interactions created before `ledger_started_at`. Neither is ever drawn.
+14. **Plan G "pre-ledger deliveries reported as non-auditable"** with no per-delivery id for Q&A before the ledger. **Resolution:** counts only (4.11). The pre-ledger deliveries are the tutor turns an image that keeps no ledger created (`ledger_record_expected` null) and the Q&A interactions created before `ledger_started_at`. The other deliveries without a record are reported apart, because they are not pre-ledger: turns created while the ledger kill switch was off, lost appends (a Phase 3 plan L stop) and appends still inside the coverage horizon. None is ever drawn.
 15. **E5 "Use evaluation/qcai_eval/statistics.py wilson_interval"** against the image layout (M8). **Resolution:**
     - The API computes the bound with `citation_migration.wilson_interval`, which an existing test keeps equal to the harness.
     - The residual report script imports the harness itself and records `harness_equal: true`.
@@ -304,6 +308,7 @@ ledger rows (append-only, Phase 3) ──► V3 scan (worker `scan`, or POST /v3
      model sightings (votes, generator, checker; registry members once per scan) ─► x5_model_changes ─► v3_events, v3_model_versions
      triggers.evaluate(entry):  X1 claims, X2 claims, X4 response, queue reasons per claim  ─► ItemSpecs
      delivery? ─► draw_trigger(seed, response_id, x5_active) ─► v3_draws (PK ledger_seq: exactly once; claim-set key) ─► X6 | X5 response ItemSpec
+               ─► refresh_exposure (an item already on the record, an X3 flag's, gets the record's full exposure)
      ItemSpecs ─► queue.upsert_item (row locked; merge into the item of (ledger_seq, claim_key); priority = severity × exposure × (1 − K))
    append v3_scans row
 learner flag (POST /v3/flags, own tutor turn; development only) ─► v3_flags (user_id) ─► X3 response item on the turn's legacy record (F_i = 0)
@@ -312,7 +317,7 @@ reviewer (role `reviewer`; admitted in development only while D-18 is open)
    GET /v3/queue ─► claim a reviewable item (30-min lease; v3_claims row per round) ─► adjudicate (one gold row, hash-chained; no ledger row changes)
         └─ double review (1/10 of items): a second round by another reviewer; disagreement: a third round by a third ─► adjudicated
    apply (a reviewer with no round on the item) ─► applied (recalibration input export; releases nothing; Phase 7 decides, DI-93)
-holds.withheld_claim_ids(entry)   pure: X1 claims ∪ claims the record withholds with a V3 intent; nothing releases them
+holds.withheld_claim_ids(entry)   pure: tier-1 X1 claims ∪ claims the record withholds with a V3 intent; nothing releases them
 stop.stop_state(queue history)    the oldest open item older than the SLO at every hourly sample of the last 48 h
    └─ V2 track (shadow pipeline; read through the pipeline's own database): tier-1 response ─► pre_verified_only path (no call; withheld; abstain and queue under `on`)
 ```
@@ -321,7 +326,7 @@ stop.stop_state(queue history)    the oldest open item older than the SLO at eve
 
 | AC | Mechanism | Primary tests (13.1) |
 |---|---|---|
-| AC-6-1 | `triggers.x1_claims`; `critical_for` over v5 `v3.critical_claims`; the runner's sticky hold of a critical tier-1 claim; `holds.withheld_claim_ids`; item `held` | 1, 2, 23 |
+| AC-6-1 | `triggers.x1_claims` and `x1_held_claims`; `critical_for` over v5 `v3.critical_claims`; the runner's sticky hold of a critical tier-1 claim; `holds.withheld_claim_ids`; item `held` | 1, 2, 23 |
 | AC-6-2 | `draw.draw_trigger` (seeded, deterministic); `v3_draws` PK `ledger_seq` and its append-only trigger | 3; `test_v3_draw.py` |
 | AC-6-3 | `priority.priority` (exact rationals); `priority.exposure_for` (claim-set key); `queue.list_queue` order | 4; `test_v3_priority.py` |
 | AC-6-4 | `queue.adjudicate` (one transaction: one gold row, no ledger write); the gold chain triggers; `UNIQUE (item_id, review_round)` | 5; `test_v3_gold_store.py` |
@@ -463,7 +468,7 @@ class ItemSpec:
     reasons: frozenset[str]
     ehmf_types: frozenset[str]          # the types severity reads (4.3)
     k: Fraction
-    held: bool                          # "X1" in triggers
+    held: bool                          # an X1 claim at tier 1 (x1_held_claims)
 
 
 @dataclass(frozen=True)
@@ -506,7 +511,7 @@ class StopState:
     oldest_age_s: int
 ```
 
-`queue.py` raises `V3NotFound` (a missing item, or a flag's turn that is missing or someone else's) and `V3Conflict(reason)`. The reason is one of `CONFLICTS = ("claimed_by_another", "not_claimed", "lease_expired", "independent_review_required", "already_adjudicated", "not_adjudicated", "adjudicator_cannot_apply", "labels_do_not_match_subject", "not_recorded_yet", "not_reviewable")`. `queue.Lease(item_id, review_round, lease_expires_at)` is a claim's result and `queue.Adjudicated(gold_seq, record_hash, duplicate, review_round, state)` an adjudication's. `__init__.V3Off` is raised when the mode is off (`v3.require_on`).
+`queue.py` raises `V3NotFound` (a missing item, or a flag's turn that is missing or someone else's), `V3Busy` (a write the database kept refusing within the attempts, HTTP 503) and `V3Conflict(reason)`. The reason is one of `CONFLICTS = ("claimed_by_another", "not_claimed", "lease_expired", "independent_review_required", "already_adjudicated", "not_adjudicated", "adjudicator_cannot_apply", "labels_do_not_match_subject", "not_recorded_yet", "not_reviewable")`. `queue.Lease(item_id, review_round, lease_expires_at)` is a claim's result, `queue.Adjudicated(gold_seq, record_hash, duplicate, review_round, state)` an adjudication's and `queue.Applied(final_gold_seq, duplicate)` an apply's. `__init__.V3Off` is raised when the mode is off (`v3.require_on`).
 
 ### 3.3 The vocabulary (`apps/api/app/services/v3/rules.py`, standard library only)
 
@@ -514,8 +519,10 @@ class StopState:
 V3_VERSION = "v3-audit-v1"
 TRIGGERS = ("X1", "X2", "X3", "X4", "X5", "X6")
 TRIGGER_REGISTRY_VERSION = "x-triggers-v1"
-TRIGGER_RULES = {"X1": "critical-claim-objection-tier1-v1", "X2": "v2-exhausted-type-a-b-v1", "X3": "learner-flag-f0-v1",
+TRIGGER_RULES = {"X1": "critical-claim-objection-v1", "X2": "v2-exhausted-type-a-b-v1", "X3": "learner-flag-f0-v1",
                  "X4": "v1-5-margin-mark-v1", "X5": "model-version-change-or-cusum-alarm-v1", "X6": "seeded-sha256-bernoulli-v1"}
+X1_TIERS = (1, 2, 3)                              # X1 fires at every tier (AC-5-4; conflict 1)
+X1_WITHHOLD_TIER = 1                              # and holds at tier 1 only (task 1 "withheld at tier 1")
 V3_COUNTED = ("X1", "X2", "X3", "X4")            # plan 15.3 (PD-37)
 QUEUE_REASONS = ("v1_3_flag", "v1_8_misconception", "v2_correction_exhausted", "v2_degraded_withheld")
 X2_TYPES = ("A", "B")
@@ -548,10 +555,11 @@ REVIEWER_ROLE = "reviewer"
 ### 4.1 Triggers (`v3/triggers.py`; pure over a validated ledger entry; one unit test per trigger, plan J)
 
 - **X1 `x1_claims(entry) -> frozenset[str]`.**
-  - A claim fires when its recorded `v2` is set with `critical is True` and `tier == 1`, and it drew at least one objection in the response: `v2.objections >= 1` on its final verdict, or its id is in `verification.v2.corrections[i].failed_claim_ids` for a claim-loop cycle `i` (a correction whose `cycle` is at most the judged verdicts' `cycle`; conflict 29).
+  - A claim fires when its recorded `v2` is set with `critical is True`, at any tier (`X1_TIERS`, conflict 1), and it drew at least one objection in the response: `v2.objections >= 1` on its final verdict, or its id is in `verification.v2.corrections[i].failed_claim_ids` for a claim-loop cycle `i` (a correction whose `cycle` is at most the judged verdicts' `cycle`; conflict 29).
+  - `x1_held_claims(entry)` is the X1 claims whose `v2.tier == X1_WITHHOLD_TIER` (1): the claims X1 withholds ("withheld at tier 1"). An X1 claim at tier 2 or 3 is queued and counted, not held.
   - Records with no V2 verdict (v1 and v2 records, legacy) never fire. A V1.3 flag is not a verifier objection. A record that ends in a V1 decision after a correction cycle carries no V2 verdict (Phase 5 rule 1). No claim of such a record is delivered, so X1 does not fire there.
 - **X2 `x2_claims(entry)`.** A claim fires when its `v3.escalation == "X2"` and the EHMF types of its final verdict's objecting family verdicts (`voting.objection_types` over `v2.votes`, imported inside the function) include A or B.
-- **X3 `x3_fires(flags: int) -> bool`** is `flags >= 1`. The flag store is 4.7.
+- **X3 `x3_fires(flags: int) -> bool`** is `flags >= 1`, over the record's stored flags: `feedback.record_flag` asks it after storing a flag (4.7).
 - **X4 `x4_fires(entry, *, x4_margin: Mapping[str, float]) -> bool`.**
   - With `entry.verification` (v2 or v3): any `verification.checks` entry with `check_id == "V1.5"` and `reason_code == "near_miss"`. This is the V1.5 mark, and is exactly when the record's intents carry `x4_margin` (a test asserts the agreement).
   - Otherwise (legacy and v1 records): `sufficiency = entry.retrieval.sufficiency`. The trigger fires when it is not `None`, its gate is in `x4_margin`, and `check_v1_5(sufficiency, x4_margin=x4_margin[gate]).reason_code == "near_miss"`, reusing Phase 4's function.
@@ -562,16 +570,15 @@ REVIEWER_ROLE = "reviewer"
     - `("generator:" + versions.generator_id, provenance.generator_model_id)` when `generator_id` is set;
     - `("checker:V1.3", provenance.v1_3_checker_model_id)` when that field exists and is set.
   - `registry_sightings(registry)` is `("verifier:" + spec.model_id, spec.model_version)` for `registry.verifiers()`.
-  - `x5_model_changes(known: Mapping[str, str], sightings) -> tuple[ModelChange, ...]` returns a change for each sighting whose key is known with another version. An unknown key is a first sighting, not a change. While the store holds no row at all, every sighting is a baseline. Versions that alternate (two registries during a rolling deploy) give one change per alternation: more audits, never fewer.
+  - `x5_model_changes(known: Mapping[str, str], sightings) -> tuple[ModelChange, ...]` returns a change for each sighting whose key is known with another version. An unknown key is a first sighting, not a change. While the store holds no row at all, every sighting is a baseline. Versions that alternate (two registries during a rolling deploy) give one change per alternation: more audits, never fewer. The scan passes each sighting through it (`scan._sightings`, 4.4), so this function is the rule the scan runs.
   - `x5_active(windows, seq) -> bool` is true when any open window `(from_seq, remaining)` has `from_seq < seq` and `remaining > 0`.
 - **X6 (4.2).**
-- **Queue reasons `queue_reasons(verdict) -> frozenset[str]`** reads the verdict's `v3` intent:
-  - `v1_8_misconception`, `v2_degraded_withheld` and `v2_correction_exhausted` when present;
-  - `v1_3_flag` only when the claim has no completed V2 vote (`verdict.v2 is None` or `verdict.v2.outcome == "withheld"`), Phase 5's "after Phase 5, flags route to V2".
+- **Queue reasons `queue_reasons(verdict) -> frozenset[str]`** reads the verdict's own `v3` intent and keeps each reason in `QUEUE_REASONS` that it carries: `v1_3_flag`, `v1_8_misconception`, `v2_degraded_withheld` and `v2_correction_exhausted`.
+  - Phase 5's "after Phase 5, flags route to V2" holds under `MODEL_GATEWAY=on`, where the V2 aggregate drops `v1_3_flag` from the intent once a vote completes, so such a claim is not queued for it. A V2-shadow record keeps Phase 4's finals and intents (Phase 5 4.10), so a V1.3-flagged claim it withholds (D-20: "withheld ... and queued for V3") is queued, as `holds.withheld_claim_ids` says it is held.
   - `x4_margin` is the X4 response item, not a claim reason.
 - **`evaluate(entry, *, x4_margin) -> RecordTriggers`.**
   - `record_kind` is `"shadow"` for a shadow record, else `"delivery"`.
-  - For each verdict, it emits a claim `ItemSpec` when `triggers := ({"X1"} if in x1) | ({"X2"} if in x2)` or `reasons` is non-empty. Its `ehmf_types` are `claim_types(verdict)`, its `k` is `support_share(verdict.v2)` and `held = "X1" in triggers`.
+  - For each verdict, it emits a claim `ItemSpec` when `triggers := ({"X1"} if in x1) | ({"X2"} if in x2)` or `reasons` is non-empty. Its `ehmf_types` are `claim_types(verdict)`, its `k` is `support_share(verdict.v2)` and `held` is whether the claim is in `x1_held_claims(entry)`.
   - When `x4_fires`, it emits a response `ItemSpec` with `triggers {"X4"}`, `ehmf_types = response_types(entry) | {"A"}` (V1.5's EHMF) and `k = response_k(entry)`.
   - X3, X5 and X6 response items come from 4.7 and 4.2 (`response_spec(entry, trigger)`) and merge into the same `(ledger_seq, "")` item.
 - **Type helpers.**
@@ -618,10 +625,10 @@ def priority(severity: Fraction, exposure: int, k: Fraction) -> Fraction: ...   
 
 - `exposure_for` is 1 for a shadow record, an abstention and a record whose key is None.
 - Otherwise it is `max(1, COUNT(*))` of `v3_draws` rows with `claim_set_key = key` and `ledger_seq <= record.seq` (index `ix_v3_draws_claim_set_key`).
-- The scan inserts a record's draw before its items, so the count includes the record itself.
-- Exposure is computed once, when the item is created. An X3 item created before the scan reached its record therefore counts the earlier deliveries only (at least 1).
+- The scan inserts a record's draw before its items, so the count includes the record itself. The scan considers records in seq order, so once it has drawn a record every earlier delivery has been considered and the count is final.
+- An item is created with `exposure_for` at that moment. An X3 item created before the scan drew its record counts only the deliveries considered so far (at least 1), so the scan, right after it inserts the record's draw, calls `queue.refresh_exposure(db, record_row=, entry=, package=)`: every item of the record whose stored exposure is below the record's count is raised to it, with its priority recomputed from its types and K. The final exposure and priority are therefore the record's, whichever path created the item first.
 - Items store `float(priority)`, `float(severity)` and `float(k)`. With the small denominators these rules give (weights in fifths, a share's members at most 3, a mean over at most 20 claims), distinct exact priorities never collide as floats; a merge recovers K exactly (`Fraction(k).limit_denominator(10**6)`).
-- `list_queue` orders by `priority DESC, enqueued_at ASC, item_id ASC` (`TIE_BREAK`). A merge recomputes severity from the union of types; K and exposure belong to the record and do not change.
+- `list_queue` orders by `priority DESC, enqueued_at ASC, item_id ASC` (`TIE_BREAK`). A merge recomputes severity from the union of types; K and exposure belong to the record (exposure changes only through `refresh_exposure`).
 
 ### 4.4 The scan (`v3/scan.py`)
 
@@ -630,12 +637,12 @@ def run_scan(*, settings: Settings, package: ConfigPackage, session_factory=Sess
     ...
 ```
 
-The scan raises `V3Off` when `v3.mode(...) == "off"`. One transaction does the following:
+The scan raises `V3Off` when `v3.mode(...) == "off"`. One transaction (`_scan_once`) does the following; on SQLite a "database is locked" error (two writers that both began deferred transactions) retries the whole transaction, at most `queue.ATTEMPTS` (5) times, then raises `V3Busy`:
 1. On PostgreSQL, `SELECT pg_advisory_xact_lock(V3_SCAN_LOCK_KEY)` (`7_401_206`).
 2. Read `cursor = COALESCE(MAX(v3_scans.to_seq), 0)` and up to `limit` `response_ledger` rows with `seq > cursor`, ordered by seq.
 3. Load `known`: the latest `v3_model_versions` row per `model_key`, by id.
 4. Load the open X5 windows: each `v3_events` row gives `remaining = window_deliveries - (number of v3_draws rows with ledger_seq > from_ledger_seq)`.
-5. Compare the registry's sightings (`registry_for(package, settings)`). Each change inserts a `model_change` event with `from_ledger_seq = cursor` and the package's window, plus a `v3_model_versions` row (source `registry`). An unknown key inserts a row with no event.
+5. Compare the registry's sightings (`registry_for(package, settings)`). `_sightings` passes each sighting whose version differs from the known one through `triggers.x5_model_changes`: each change inserts a `model_change` event with `from_ledger_seq = cursor` and the package's window, plus a `v3_model_versions` row (source `registry`). An unknown key inserts a row with no event.
 6. For each row, in seq order:
    1. Validate it with `ENTRY_SCHEMAS[row.entry_schema].model_validate_json(row.entry)`. An unknown `entry_schema` or a validation failure counts `unparsed`, skips the triggers, and still draws a delivery (with a null claim-set key).
    2. Record the sightings (`from_ledger_seq = row.seq`; source `record`).
@@ -644,7 +651,8 @@ The scan raises `V3Off` when `v3.mode(...) == "off"`. One transaction does the f
       - `x5 = x5_active(windows, row.seq)`, and the rate is `x5_rate if x5 else base`;
       - insert the `v3_draws` row;
       - if it was inserted and `x5` is true, decrement every window counted for it (in memory);
-      - when it is drawn, add a response `ItemSpec` for `"X6"`/`"X5"` (`k = response_k`, types `response_types`).
+      - when it is drawn, add a response `ItemSpec` for `"X6"`/`"X5"` (`k = response_k`, types `response_types`);
+      - `queue.refresh_exposure` raises any item already on the record to the record's exposure (4.3).
    5. Upsert each spec (4.5).
 7. Insert the `v3_scans` row (`from_seq`, `to_seq` = the last row read or the cursor, the counts, and the package version and sha256), commit, and log `v3.scan`.
 
@@ -702,10 +710,10 @@ An item that is not reviewable cannot be claimed or adjudicated (`not_reviewable
    - When the item becomes `adjudicated`, `closed_at = now` and `final_gold_seq` = this row.
 6. The transaction commits, and `v3.gold_appended` and `v3.adjudicated` are logged.
 
-An IntegrityError, a serialization failure or a deadlock (40001, 40P01) retries the whole transaction, at most 5 attempts. `UNIQUE (item_id, review_round)` on the gold store refuses a second row for a round.
+An IntegrityError, a serialization failure or a deadlock (40001, 40P01), or a SQLite "database is locked" or "busy" error (`queue.sqlite_busy`: no SQLSTATE; two writers that both began deferred transactions, as two reviewers claiming at once do), retries the whole transaction, at most 5 attempts (`ATTEMPTS`). Every V3 mutation retries this way (claim, adjudicate, apply, the flag). When the attempts are spent it raises `V3Busy`, which the routes answer 503 (`{"detail": "busy"}`, `Retry-After: 1`). `UNIQUE (item_id, review_round)` on the gold store refuses a second row for a round.
 
-**Apply.** `apply_item(db, item_id, request: ApplyRequest, *, user_id, now) -> final_gold_seq`, with the item row locked:
-- Already applied with the same `client_key`: idempotent.
+**Apply.** `apply_item(db, item_id, request: ApplyRequest, *, user_id, now) -> Applied(final_gold_seq, duplicate)`, with the item row locked:
+- Already applied with the same `client_key`: idempotent, `duplicate` true; it writes nothing and logs no `v3.applied` (as a duplicate adjudication logs no `v3.adjudicated`), so the counters count distinct actions.
 - The state must be `adjudicated` (`not_adjudicated`).
 - A user with an adjudicated `v3_claims` row on the item gets `adjudicator_cannot_apply`.
 - Otherwise: `state = "applied"`, `applied_at = now`, `applied_by_digest`, `applied_client_key = request.client_key`. It writes no gold row and no ledger row, and changes no hold.
@@ -714,7 +722,7 @@ An IntegrityError, a serialization failure or a deadlock (40001, 40P01) retries 
 
 **Independence never reads a digest.** Keyed digests rotate with the guest secret (M6). The rules above compare `user_id` values in `v3_claims`, so a rotation readmits no one. Erasing a reviewer removes their rows. Their live leases free their items, and their adjudicated rounds leave the gold rows' digests as the record (DI-99).
 
-**Blind review.** Item views never show votes, objection types, support shares, severities, priorities, finals or another round's labels (4.14).
+**Blind review.** Item views never show votes, objection types, support shares, severities, priorities, finals or another round's labels (4.14). They do show the item's triggers and reasons, which say why it is queued and so disclose that an objection exists (X1, X2, `v2_correction_exhausted`) or that V1 flagged it, but never which family objected, a vote's verdict or the EHMF type it named. X2's rule implies only that some objection was of type A or B; the console's trigger labels do not spell even that out (11).
 
 ### 4.6 Gold store (`v3/gold.py`; E3, R-22, AuditEvent)
 
@@ -742,7 +750,7 @@ def export_gold(db: Session, path: Path, *, applied_only: bool = True) -> int: .
 - a non-canonical entry, or one that fails `GoldLabel`, or columns that disagree with it;
 - the expected head is not reached.
 
-**Export.** One JSON line per row (`seq`, `record_hash`, `entry`, `created_at`), the applied items' final rows only unless `--all`. The path must lie outside `apps/api/app`. No import or restore path exists: gold rows are written by adjudication only.
+**Export.** One JSON line per row (`seq`, `record_hash`, `entry`, `created_at`), the applied items' final rows only unless `--all`. The path must lie outside the application tree (`apps/api/app`) and outside the repository checkout (`refused_export_roots`: the first parent of `gold.py` holding a `.git` entry; the image has none), so a gold label cannot be written where it could be committed (plan L627-628, conflict 2); a refusal writes nothing. No import or restore path exists: gold rows are written by adjudication only. The export holds `ledger_seq` and keyed digests of response ids (pseudonymous, learner-linked), so it is kept under the runbook's handling rule (15).
 
 ### 4.7 Learner flags and F_i (`v3/feedback.py`; AC-6-6, invariant 5, PD-39)
 
@@ -756,7 +764,7 @@ def f_i(db: Session, ledger_seq: int) -> float | None: ...   # 0.0 when an item 
 - The `TutorTurn` must exist and have `user_id == user_id`; otherwise `V3NotFound` (404, the same for missing and other).
 - Its legacy ledger record (`response_id` = the turn id) must exist. Without one, `not_recorded_yet` (409) when `turn.ledger_record_expected is True`, else `V3NotFound` (a pre-ledger turn is not auditable).
 - An insert into `v3_flags (user_id, ledger_seq, created_at)` hitting `UNIQUE (user_id, ledger_seq)` is a duplicate (no new item trigger).
-- Otherwise it upserts the record's response item with trigger `X3` (types from `response_types`, `k = response_k`).
+- Otherwise, once `triggers.x3_fires` holds for the record's stored flags (their count), it upserts the record's response item with trigger `X3` (types from `response_types`, `k = response_k`).
 - It writes no ledger row and changes no verdict, and logs `v3.flag_recorded` (`duplicate`; no id).
 - F_i survives the learner's erasure, because it lives on the X3 item, which holds no learner id.
 
@@ -775,11 +783,11 @@ def record_cusum_alarm(alarm: CusumAlarm, *, settings: Settings, package: Config
 ### 4.9 Holds (`v3/holds.py`; R-b, plan J, plan L)
 
 ```python
-def withheld_claim_ids(entry: Any) -> frozenset[str]: ...   # x1_claims(entry) ∪ {verdict.claim_id | verdict.final == "withhold" and verdict.v3 is not None}
+def withheld_claim_ids(entry: Any) -> frozenset[str]: ...   # x1_held_claims(entry) ∪ {verdict.claim_id | verdict.final == "withhold" and verdict.v3 is not None}
 def released(item: Any) -> bool: ...                        # always False in Phase 6 (release is Phase 7 change control, DI-93)
 ```
 
-Both are pure over the immutable record and independent of the V3 mode and of the queue table. Disabling V3, deleting a queue row (refused by its trigger), an applied label or the passing of time never shrinks the set. They are the API the delivered path must consult (DI-97). Under `on`, the sticky hold (4.13) keeps every X1 claim's final away from `deliver`, so the set and the record's finals agree.
+Both are pure over the immutable record and independent of the V3 mode and of the queue table. Disabling V3, deleting a queue row (refused by its trigger), an applied label or the passing of time never shrinks the set. They are the API the delivered path must consult (DI-97). Under `on`, the sticky hold (4.13) keeps every tier-1 X1 claim's final away from `deliver`, so the set and the record's finals agree. The holds and the queue agree too: the scan queues every claim the set names (its tier-1 X1 item, or its intent's queue reasons, 4.1), and a test checks it over V2-shadow records.
 
 ### 4.10 The stop (`v3/stop.py`; plan L, PD-37)
 
@@ -805,28 +813,37 @@ def reset_stop_cache() -> None: ...
 
 **Development.** With V3 in shadow and no adjudication, the stop trips 120 h after the first item nobody closes (72 h SLO plus 48 h). From then on Phase 5's tier-1 V2 shadow runs pre-verified-only. Items cannot be deleted and `V3_QUEUE=off` does not clear the stop. Adjudicating the open items (the synthetic reviewers) or a fresh database clears it (runbook, 15).
 
+**Outside development** under the `V3_QUEUE=shadow` override (which DI-92's staging audit cycle needs), the scan creates items that nobody can close while D-18 is open: no reviewer is admitted (4.12), and an item citing a span that is not quotable (D-31) is not reviewable. The stop therefore trips 120 h after the first such item and stays; only adjudication by an admitted reviewer clears it, and no operator clear or acknowledge path exists (the stop is "operator policy, set under Decision D-06"; DI-103). It acts on the shadow pipeline's tier 1 only. The runbook warns before the override is set.
+
 ### 4.11 Metrics and residual (`v3/metrics.py`, `v3/residual.py`; plan I, AC-6-5; E9)
 
 ```python
-def wilson_upper(errors: int, audited: int) -> float: ...        # citation_migration.wilson_interval(errors, audited)["upper"]
+def wilson_upper(errors: int, audited: int) -> float | None: ...   # citation_migration.wilson_interval(errors, audited)["upper"]; None when audited is 0
+def wilson95(errors: int, audited: int) -> dict | None: ...         # {"lower", "upper"}; None when audited is 0
 def residual(db: Session, package: ConfigPackage) -> dict: ...
-def non_auditable(db: Session) -> dict: ...
+def non_auditable(db: Session, *, now: datetime | None = None) -> dict: ...
 def slis(db: Session, package: ConfigPackage, *, now: datetime) -> dict: ...
 ```
 
 **`residual`** (in `residual.py`, with `wilson_upper`).
 - Population: items with `"X6" in triggers` whose `final_gold_seq` entry has `delivered_answer` true.
 - `errors` is the count of those whose final label has `residual_error`.
-- Result: `{"audited", "errors", "wilson95": {"lower", "upper"}, "by_month": [{"month": "YYYY-MM", "audited", "errors", "upper"}], "report_only": true, "evidence_class": "telemetry, not research results (plan Phase 6 H)"}`. The month is the delivery's `v3_draws.delivered_at` (UTC).
+- Result: `{"audited", "errors", "wilson95": {"lower", "upper"} | null, "no_audited_answers", "by_month": [{"month": "YYYY-MM", "audited", "errors", "upper"}], "report_only": true, "evidence_class": "telemetry, not research results (plan Phase 6 H)"}`. The month is the delivery's `v3_draws.delivered_at` (UTC).
+- **An empty population is no evidence.** With no audited answer (every deployment today: V3 off, no reviewer, and nothing reviewable under D-31; an audited abstention is not an answer), `wilson95` is null and `no_audited_answers` true, never an upper bound of 0 that would read as a perfect residual. A month bucket exists only with an audited answer, and `wilson_upper` of an empty bucket would be null too. This is the codebase's rule for an empty population (`citation_migration._totals`).
 
-**`non_auditable`.** `{"tutor_turns": ledger_coverage(db, since=1970-01-01, horizon_s=0)` (`unrecorded + not_expected_earlier_image + ledger_disabled`), `"qa_before_ledger"`: the `qa_interactions` count with `created_at < ledger_started_at(db)` (all when null)}.
+**`non_auditable`.** The learner deliveries without a ledger record, which the scan can never draw, each class apart, from `ledger_coverage(db, since=1970-01-01, now=now)` at its default horizon (conflict 14):
+- `tutor_turns`: the pre-ledger tutor turns (plan G), `not_expected_earlier_image`: an image that keeps no ledger created them;
+- `qa_before_ledger`: the pre-ledger Q&A answers, the `qa_interactions` count with `created_at < ledger_started_at(db)` (all while the ledger holds no record);
+- `ledger_disabled`: turns created while the ledger kill switch was off;
+- `lost_records`: `unrecorded`, turns that expected a record and have none past the horizon (lost appends, a Phase 3 plan L stop), which are not pre-ledger deliveries;
+- `pending`: turns inside the horizon whose append may still be running; a later read settles them.
 
 **`slis`** reports the following (window = `slo.window_days`):
 - `escalation_share {"deliveries", "escalated", "share": "m/n", "max": "1/10", "above_max", "counted": ["X1","X2","X3","X4"], "window_days"}`.
   - Deliveries are the `v3_draws` rows with `delivered_at` in the window: the deliveries the scan has considered.
   - Escalated are the distinct ones of those whose `ledger_seq` is the delivery seq of some item with a counted trigger. An item's delivery seq is its record's seq for a delivery. For a shadow record it is the seq of the record whose `response_id` is its `shadowed_response_id` (unique index), skipped when that record is absent. It is resolved at read time from ledger seqs, never from a digest.
 - `queue {"open", "claimed", "age_p90_s", "age_max_s", "slo_s", "above_slo"}` (nearest-rank p90; `above_slo` compares the p90).
-- `draws {"considered", "x6", "x5", "x6_rate": "k/n", "non_auditable": non_auditable(db)}`.
+- `draws {"considered", "x6", "x5", "x6_rate": "k/n", "non_auditable": non_auditable(db, now=now)}`.
 - `double_review {"pairs", "agreeing", "agreement": "k/n"}`.
 - `residual` (the block above).
 - `gold {"rows", "head_seq", "claims_labelled", "dawid_skene_minimum": 200}`.
@@ -887,7 +904,7 @@ def item_view(db: Session, row: Any, *, store: Any, corpus_registry: Any, now: d
 - The view reads the subject record's claims. A record that does not parse gives no claims and `reviewable: false`.
 - For each span: `record = store.span_registry.get(span_id)`. It is `shown` iff `record is not None and record.plane == "public" and contained_answers.span_is_quotable(record, corpus_registry)`, and then `text` is the record's text (`queue.span_shown`).
 - A claim's `text` is set iff all its spans are shown. `reviewable` follows 4.5.
-- The view carries no response, turn, thread, message or user id, no email, no learner text, no rendered text, no vote, objection type, severity, exposure, support share, priority, final, other-round label or `ledger_seq`.
+- The view carries no response, turn, thread, message or user id, no email, no learner text, no rendered text, no vote, objection type, severity, exposure, support share, priority, final, other-round label or `ledger_seq`. It carries the item's `triggers` and `reasons`, which disclose why the item is queued (4.5, "Blind review").
 - `state` is `"claimed"` when the current round has a live lease.
 - `record_kind` and `decision` come from the record.
 
@@ -907,10 +924,10 @@ def item_view(db: Session, row: Any, *, store: Any, corpus_registry: Any, now: d
   - each committed schema equals `model_json_schema()` of its model.
 
 **`python -m app.workers.v3_queue`** (in-image; logger `qcai.worker`). Exit 0 on success, 1 when a check fails, 2 on usage or a refusal.
-- `scan [--limit N] [--until-done]` (refused when the mode is off).
-- `status`: logs `v3.status` with `slis` and the stop.
-- `verify-gold [--expect-head SEQ:HASH]`: logs `v3.gold_verified` with the head.
-- `export-gold --path P [--all]`.
+- `scan [--limit N] [--until-done]` (refused when the mode is off): logs `v3.scan_finished` (`scans`, `last`), or `v3.scan_refused` (`reason`) with exit 2.
+- `status`: logs `v3.status` with the mode, `slis` and the stop. Outside development it is the only SLI source while D-18 is open (`GET /v3/metrics` refuses every caller there); its schedule is DI-95.
+- `verify-gold [--expect-head SEQ:HASH]`: logs `v3.gold_verified` with the count, the head and the problems.
+- `export-gold --path P [--all]`: logs `v3.gold_exported` (`count`, `applied_only`), or `v3.gold_export_refused` with exit 2 for a path inside the application tree or the repository checkout.
 
 ---
 
@@ -924,15 +941,17 @@ def item_view(db: Session, row: Any, *, store: Any, corpus_registry: Any, now: d
 - Every v4 block is unchanged except `flag_policy`, `owner_decisions` and the new `v3` block.
 - `v2.correction.critical_registry` stays `[]`, and for schema 5 the loader requires it empty: `v3.critical_claims` supersedes it, and `critical_for` reads `v3.critical_claims`.
 - No `tutor_pipeline` schema changes and no ledger change.
+- `x1`: X1 fires at `tiers` 1, 2 and 3 (conflict 1); `withholds`, `revision` "never" and the sticky `hold` apply at `withhold_tier` 1 only.
 
 ```json
 "v3": {
   "version": "v3-audit-v1", "provisional": true, "status": "provisional",
   "authority": "PD-32, PD-33, PD-34, PD-35, PD-36, PD-37, PD-38, PD-39 (ratified under DI-98); plan Phase 6 (L1439-1498)",
   "triggers": {"version": "x-triggers-v1", "provisional": true, "record": "PD-32",
-               "rules": {"X1": "critical-claim-objection-tier1-v1", "X2": "v2-exhausted-type-a-b-v1", "X3": "learner-flag-f0-v1",
+               "rules": {"X1": "critical-claim-objection-v1", "X2": "v2-exhausted-type-a-b-v1", "X3": "learner-flag-f0-v1",
                          "X4": "v1-5-margin-mark-v1", "X5": "model-version-change-or-cusum-alarm-v1", "X6": "seeded-sha256-bernoulli-v1"},
-               "x1": {"tier": 1, "min_objections": 1, "withholds": true, "revision": "never", "hold": "sticky_for_the_response"},
+               "x1": {"tiers": [1, 2, 3], "min_objections": 1, "withhold_tier": 1, "withholds": true, "revision": "never",
+                      "hold": "sticky_for_the_response"},
                "x2": {"ehmf_types": ["A", "B"]}, "x4": {"margin_source": "v1.v1_5.x4_margin"},
                "x5": {"audit_rate": {"numerator": 1, "denominator": 5}, "window_deliveries": 1500, "sources": ["cusum_alarm", "model_change"]},
                "counted": ["X1", "X2", "X3", "X4"],
@@ -997,7 +1016,7 @@ def item_view(db: Session, row: Any, *, store: Any, corpus_registry: Any, now: d
 - `FlagPolicy` gains `phase6_exit_passed: bool = False` and `phase6_exit_evidence: str | None = None`.
 
 **`V3Params`** (frozen dataclass):
-- `version`, `trigger_registry_version`, `trigger_rules`, `counted`, `queue_reasons`, `x1_tier`, `x2_types`;
+- `version`, `trigger_registry_version`, `trigger_rules`, `counted`, `queue_reasons`, `x1_tiers`, `x1_withhold_tier`, `x2_types`;
 - `x5_rate: Fraction`, `x5_window_deliveries`, `severity: Mapping[str, Fraction]`;
 - `priority_rule`, `exposure_rule`, `claim_set_key_rule`, `k_rule`, `tie_break`;
 - `draw_rule`, `draw_seed`, `draw_rate: Fraction`, `population`;
@@ -1014,7 +1033,7 @@ def item_view(db: Session, row: Any, *, store: Any, corpus_registry: Any, now: d
 - A `version` other than `V3_VERSION`.
 - Triggers:
   - a trigger version or rule map other than the code's (`TRIGGER_REGISTRY_VERSION`, `TRIGGER_RULES`);
-  - `x1` other than tier 1, `min_objections` 1, `withholds` true, `revision` "never", `hold` "sticky_for_the_response";
+  - `x1` other than `tiers` [1, 2, 3], `min_objections` 1, `withhold_tier` 1, `withholds` true, `revision` "never", `hold` "sticky_for_the_response";
   - `x2.ehmf_types` other than `["A","B"]`;
   - `x4.margin_source` other than `v1.v1_5.x4_margin`;
   - an `x5.audit_rate` other than 1/5 (plan "audit 20%"), or a `window_deliveries` outside 1..1000000;
@@ -1080,7 +1099,7 @@ def item_view(db: Session, row: Any, *, store: Any, corpus_registry: Any, now: d
 
 | Setting (env) | Type / default | Freeze rationale |
 |---|---|---|
-| `V3_QUEUE` | `Literal["off", "shadow", "on"] \| None = None`; `None` means `V3_QUEUE_DEFAULT_DEVELOPMENT` ("shadow") in development and `V3_QUEUE_DEFAULT_ELSEWHERE` ("off") elsewhere; v5 `flag_policy.v3_queue` must name both | E6, plan L. Off outside development: no scan, no draw, no item, reviewer routes 404 after the role and pool checks. Shadow outside development is a configuration override (`config.override` key `v3_queue_shadow`) that changes no learner path: the flag route stays 404 there and no reviewer is admitted (D-18). |
+| `V3_QUEUE` | `Literal["off", "shadow", "on"] \| None = None`; `None` means `V3_QUEUE_DEFAULT_DEVELOPMENT` ("shadow") in development and `V3_QUEUE_DEFAULT_ELSEWHERE` ("off") elsewhere; v5 `flag_policy.v3_queue` must name both | E6, plan L. Off outside development: no scan, no draw, no item; the reviewer routes refuse every caller there with 403 (the role, then the D-18 pool), and answer 404 only to an admitted reviewer in development. Shadow outside development is a configuration override (`config.override` key `v3_queue_shadow`) that changes no learner path: the flag route stays 404 there and no reviewer is admitted (D-18). |
 | `V3_FLAG_RATE_LIMIT` | `str = "10/minute"` | PD-38 (an engineering parameter like PD-11's rate limits); the flag route exists only in development where `V3_QUEUE` is not off |
 
 **Validator additions** (after the `model_gateway` block):
@@ -1239,20 +1258,21 @@ SQLite uses `BEFORE UPDATE`/`BEFORE DELETE ... RAISE(ABORT, ...)` per table (`<t
 
 | Method, path | Access, ownership (matrix) | Behaviour |
 |---|---|---|
-| `POST /v3/flags` | `principal`, `owner` | 404 unless `flag_intake_open(settings)` (development, and the mode not off). Body `FlagRequest`. 200 `{"status": "recorded", "f_i": 0.0, "duplicate": bool}`; 404 for a missing, another learner's or a pre-ledger turn; 409 `not_recorded_yet`; rate limit `V3_FLAG_RATE_LIMIT` (scope `v3-flag`). Changes no verdict and no ledger row. |
+| `POST /v3/flags` | `principal`, `owner` | 404 unless `flag_intake_open(settings)` (development, and the mode not off). Body `FlagRequest`. 200 `{"status": "recorded", "f_i": 0.0, "duplicate": bool}`; 404 for a missing, another learner's or a pre-ledger turn; 409 `not_recorded_yet`; 503 `busy`; rate limit `V3_FLAG_RATE_LIMIT` (scope `v3-flag`). Changes no verdict and no ledger row. |
 | `GET /v3/queue?state=&limit=` | `reviewer`, `none` | 404 when off. `{"items": [QueueItemView], "order": ["priority desc", "enqueued_at", "item_id"]}` (limit 1-100, default 50; state one of `WORKFLOW_STATES`, default `queued` with `claimed`). Security event `v3.queue_read` (success; `route`, `count`). |
-| `POST /v3/scan` | `reviewer`, `none` | 404 when off. One `run_scan` (limit 500); `ScanResult` as JSON. Security event `v3.scan_run` (counts). |
+| `POST /v3/scan` | `reviewer`, `none` | 404 when off. One `run_scan` (limit 500); `ScanResult` as JSON; 503 `busy`. Security event `v3.scan_run` (counts). |
 | `GET /v3/items/{item_id}` | `reviewer`, `none` | 404 when off or missing (an id not matching `ITEM_ID` is 404). `QueueItemView`, plus `"final_gold_seq"` (the gold label id, conflict 25). Security event `v3.item_read`. |
-| `POST /v3/items/{item_id}/claim` | `reviewer`, `none` | `{"item_id", "state": "claimed", "review_round", "lease_expires_at"}`; 409 with the conflict reason (`not_reviewable` included). Security event `v3.item_claimed`. |
-| `POST /v3/items/{item_id}/adjudicate` | `reviewer`, `none` | Body `AdjudicationRequest`. `{"item_id", "gold_seq", "record_hash", "review_round", "state", "duplicate"}`; 409 or 422. Security event `v3.item_adjudicated` (`item_id`, `review_round`, `duplicate`). |
-| `POST /v3/items/{item_id}/apply` | `reviewer`, `none` | Body `ApplyRequest`. `{"item_id", "state": "applied", "final_gold_seq"}`; 409. Security event `v3.item_applied`. |
+| `POST /v3/items/{item_id}/claim` | `reviewer`, `none` | `{"item_id", "state": "claimed", "review_round", "lease_expires_at"}`; 409 with the conflict reason (`not_reviewable` included); 503 `busy`. Security event `v3.item_claimed`. |
+| `POST /v3/items/{item_id}/adjudicate` | `reviewer`, `none` | Body `AdjudicationRequest`. `{"item_id", "gold_seq", "record_hash", "review_round", "state", "duplicate"}`; 409 or 422; 503 `busy`. Security event `v3.item_adjudicated` (`item_id`, `review_round`, `duplicate`). |
+| `POST /v3/items/{item_id}/apply` | `reviewer`, `none` | Body `ApplyRequest`. `{"item_id", "state": "applied", "final_gold_seq", "duplicate"}`; 409; 503 `busy`. Security event `v3.item_applied` (`item_id`, `duplicate`). |
 | `GET /v3/metrics` | `reviewer`, `none` | `slis(db, package, now)`. Security event `v3.metrics_read`. |
 
 **Policy notes** (matrix text):
-- Each reviewer route's note reads: "404 unless V3_QUEUE is shadow or on (development only by default). Reviewer role only; outside development no caller is admitted while the reviewer pool (D-18) is unstaffed. Claim text, public quotable span text, span ids and keyed digests only, never a learner identifier; every call is a security event."
+- Each reviewer route's note (`authorization.V3_REVIEWER_NOTE`) reads: "Reviewer role only (403 and authz.denied for any other role, in every environment); outside development every caller gets 403 and authz.denied while the reviewer pool (D-18) is unstaffed. An admitted reviewer gets 404 unless V3_QUEUE is shadow or on (development only by default). Claim text, public quotable span text, span ids and keyed digests only, never a learner identifier; a successful call is a v3.* security event."
+- `require_reviewer` is a dependency, so it runs before the body's `_off(settings)` check: with `V3_QUEUE=off` a non-reviewer still gets 403 and `authz.denied` in every environment, and outside development every caller does. Only an admitted reviewer (development) sees the 404.
 - The flag route's note reads: "404 outside development, and unless V3_QUEUE is shadow or on. The caller's own tutor turn only: another learner's, a missing and a pre-ledger turn get the same 404. Sets F_i = 0 and queues the response (X3); changes no verdict and no ledger row. Rate-limited."
 
-Every security event carries `actor_role` (the user's role), `subject = user.user_id` (stored as a keyed digest) and `route` (the template). `GET /ledger/responses/{response_id}` keeps its shape. Only its reviewer branch gains the D-18 gate (4.12).
+A successful reviewer call records one `v3.*` security event and a refusal by the role or pool gate one `authz.denied`; a 404, 409, 422 or 503 outcome records none. Every security event carries `actor_role` (the user's role), `subject = user.user_id` (stored as a keyed digest) and `route` (the template). `GET /ledger/responses/{response_id}` keeps its shape. Only its reviewer branch gains the D-18 gate (4.12).
 
 ---
 
@@ -1283,8 +1303,8 @@ The check order is `_check_v1_package`, `_check_gateway_package`, `_check_v3_pac
 |---|---|---|---|
 | `v3.scan` | `qcai.v3` | `from_seq`, `to_seq`, `records`, `deliveries`, `drawn_x6`, `drawn_x5`, `items_created`, `items_updated`, `model_changes`, `unparsed`, `done` | INFO |
 | `v3.trigger_after_close` | `qcai.v3` | `item_id`, `triggers` | INFO |
-| `v3.adjudicated` | `qcai.v3` | `item_id`, `review_round`, `subject`, `state`, `agreement` (second round only) | INFO |
-| `v3.applied` | `qcai.v3` | `item_id`, `final_gold_seq` | INFO |
+| `v3.adjudicated` | `qcai.v3` | `item_id`, `review_round`, `subject`, `state`, `agreement` (second round only); not for a duplicate | INFO |
+| `v3.applied` | `qcai.v3` | `item_id`, `final_gold_seq`; not for a duplicate | INFO |
 | `v3.gold_appended` | `qcai.v3` | `seq`, `record_hash` | INFO |
 | `v3.x5_event` | `qcai.v3` | `kind`, `model_key`, `from_version`, `to_version` or `stream` | WARNING |
 | `v3.flag_recorded` | `qcai.v3` | `duplicate` | INFO |
@@ -1292,7 +1312,8 @@ The check order is `_check_v1_package`, `_check_gateway_package`, `_check_v3_pac
 | `v3.stop_unread` | `qcai.v3` | — | WARNING |
 | `v3.unavailable` | `qcai.v3` | `reason` (start-up) | WARNING |
 | `tutor.v2.v3_stop` | `qcai.tutor` | `tier`, `policy` | WARNING |
-| `v3.status`, `v3.gold_verified` | `qcai.worker` | the SLIs; `count`, `head_seq`, `head_hash`, `problem_count` | INFO |
+| `v3.status`, `v3.gold_verified`, `v3.scan_finished`, `v3.gold_exported` | `qcai.worker` | `mode` and the SLIs; `count`, `head_seq`, `head_hash`, `problem_count`, `problems`; `scans`, `last` (the last `ScanResult`); `count`, `applied_only` | INFO |
+| `v3.scan_refused`, `v3.gold_export_refused` | `qcai.worker` | `reason` (`v3_off`); — (a path inside the application tree or the repository checkout) | WARNING |
 
 The security events `v3.queue_read`, `v3.scan_run`, `v3.item_read`, `v3.item_claimed`, `v3.item_adjudicated`, `v3.item_applied`, `v3.metrics_read` and `authz.denied` log on `qcai.security`.
 
@@ -1308,7 +1329,7 @@ The security events `v3.queue_read`, `v3.scan_run`, `v3.item_read`, `v3.item_cla
 - the stop;
 - X5 windows.
 
-No alert policy or dashboard is created (DI-95).
+`GET /v3/metrics` is reviewer-only, so outside development, while D-18 is open, it refuses every caller (4.12) and the worker's `status` line is the only SLI source. That line is logged only when `python -m app.workers.v3_queue status` runs, so the queue-age p90 alert (plan I, R-40) needs a scheduled job: DI-95 defines it (a Cloud Run job running `status` hourly, the stop's sample interval, and `scan --until-done` before it wherever `V3_QUEUE` is not off). No alert policy, dashboard or schedule is created (a cloud write under D-05; DI-95).
 
 ---
 
@@ -1320,17 +1341,20 @@ No alert policy or dashboard is created (DI-95).
   - `SYNTHETIC_REVIEWERS = ["reviewer-a", "reviewer-b", "reviewer-c"]`;
   - `reviewerHeaders(name)` returns `{"x-demo-user": "synthetic-" + name, "x-demo-role": "reviewer"}` and throws for a name outside the list;
   - `adjudicationPayload(labels, abstention, clientKey)` sorts the labels and nulls the EHMF type of a SUPPORTED label;
-  - `VERDICT_TEXT`, `EHMF_TEXT` and `TRIGGER_TEXT` hold fixed labels. No label says "verified" or "grounded".
+  - `adjudicationReady(labels, claimIds, abstention, needsAbstention)` is true iff every claim has an explicit verdict, each verdict other than SUPPORTED names its EHMF type, and an abstention item has an explicit abstention label (`DraftLabel` allows a null verdict while drafting);
+  - `VERDICT_TEXT`, `EHMF_TEXT` and `TRIGGER_TEXT` hold fixed labels. No label says "verified" or "grounded", and the trigger labels are neutral ("X1 critical claim escalated", "X2 unresolved after two correction cycles"): none names an objection type or a tier.
 - **`src/app/review/page.tsx`** (server component, `dynamic = "force-dynamic"`, `buildPageMetadata({..., index: false})`):
   - `notFound()` unless `reviewerUiEnabled(process.env)`;
   - and unless the API's `/ready` (`getApiBaseUrl()`, a 2 s timeout, any failure meaning off) gives `v3ModeFromReady(...) !== "off"`;
-  - then it renders `<V3ReviewConsole />`.
+  - then it renders `<V3ReviewConsole />` inside a labelled `<section>`: the root layout's app shell renders the page's one `<main>` landmark.
 - **`src/components/v3-review-console.tsx`** (client):
   - a synthetic reviewer selector;
   - Scan and Refresh buttons (Refresh loads the queue);
   - the queue list, in the API's order (rank, triggers, held, age, state, reviewable);
   - the item detail (claim text and shown spans only).
-  - It offers Claim and Adjudicate only for reviewable items. The adjudication form gives each claim a verdict select and an EHMF select, plus the abstention select and a `crypto.randomUUID()` client key. Apply follows.
+  - It offers Claim and Adjudicate only for reviewable items. The adjudication form gives each claim a verdict select and an EHMF select, each with a visible label naming the claim ("Verdict for claim N", "Error type for claim N"), plus the labelled abstention select and a `crypto.randomUUID()` client key. Apply follows.
+  - Nothing is pre-filled: every adjudication select (verdict, EHMF type, abstention) starts on a disabled placeholder, the EHMF select is disabled until a verdict other than SUPPORTED is chosen, and Adjudicate is disabled until `adjudicationReady`, so a default never becomes an append-only label.
+  - The status line is a `role="status"` live region that is always mounted; a failed item read shows its message there.
   - It calls `/api/backend/v3/...` with `reviewerHeaders`.
   - It never shows a vote, severity, support share, priority, final or other round, and it uses no browser storage.
 - **`src/lib/types.ts`** adds `V3QueueItem`, `V3ClaimView`, `V3SpanView`, `V3ClaimLabel`, `V3ScanResult` and `V3Metrics`.
@@ -1498,8 +1522,9 @@ Security events are read ordered by `seq`. A test that counts denials uses `monk
 
 **AC-6-7**
 
-8. **`test_ac_6_7_a_guest_on_every_reviewer_route_gets_403_and_one_access_log_entry`** (parametrized: `V3_QUEUE` off and shadow).
-   - The guest carries a signed guest token, a trusted Origin and the CSRF header (as `test_authorization._guest()`), so the request reaches the route.
+8. **`test_ac_6_7_a_guest_on_every_reviewer_route_gets_403_and_one_access_log_entry`** (parametrized: development with `V3_QUEUE` off and shadow, and staging with `V3_QUEUE` off and shadow).
+   - The guest carries a signed guest token, a trusted Origin and the CSRF header (as `test_authorization._guest()`), so the request reaches the route. In staging the token is signed with the staging secret and the process settings the CSRF guard reads are the staging ones.
+   - In staging no reviewer is admitted (D-18), so a guest's refusal naming the role, never the pool, proves the role check comes first.
    - For every route whose policy access is `reviewer`, the guest gets 403 and exactly one new `authz.denied` event, `{"route": <template>, "required": "role:reviewer", "provider": "guest"}`. No `request.forbidden` event is recorded.
 
 **Plan J, L, B, H, G, I, F, E; invariants; freeze; 13.6**
@@ -1547,7 +1572,7 @@ Security events are read ordered by `seq`. A test that counts denials uses `monk
     - From a Phase 5 stamp, `alembic upgrade head`, then `alembic check`; `SCHEMA_REVISION` is the single head.
     - With a flag, a queue item or a gold row present, `downgrade 20261122_phase5_gateway_controls` fails with "export first" and names the counts.
     - With `-x allow_v3_drop=true` it succeeds: the eight tables are gone and every other table is intact.
-16. **`test_plan_g_pre_ledger_deliveries_are_reported_as_non_auditable`.** A tutor turn with `ledger_record_expected` null and no record is counted in `non_auditable.tutor_turns` and never drawn. Q&A interactions created before `ledger_started_at` are counted.
+16. **`test_plan_g_pre_ledger_deliveries_are_reported_as_non_auditable`.** A tutor turn with `ledger_record_expected` null and no record is counted in `non_auditable.tutor_turns` and never drawn. Q&A interactions created before `ledger_started_at` are counted. The kill-switch turns, lost records and pending appends are counted apart (`test_non_auditable_reports_pre_ledger_turns_apart_from_kill_switch_turns_lost_records_and_pending_appends`).
 17. **`test_plan_i_ready_reports_package_v5_and_the_v3_fields_and_no_count`.**
     - The 10.2 fields equal the package's.
     - `_build_fields()` is unchanged after a chat, a flag and a scan, and makes no statement beyond the shared gateway stop's.
@@ -1584,8 +1609,9 @@ Security events are read ordered by `seq`. A test that counts denials uses `monk
 26. **`test_plan_c_the_metrics_count_gold_claims_toward_the_dawid_skene_minimum`.** `gold.claims_labelled` and `dawid_skene_minimum 200`; no tier-3 weight changes.
 27. **Doc tests:**
     - `test_phase6_spec_section_3_lists_the_code_s_fields`;
-    - `test_phase6_docs_quote_the_plan_and_state_the_current_rules`: plan L, K and D task 1 and 3 quoted exactly; PD-32..PD-39 and DI-89..DI-102 in this spec; `V3_QUEUE` in the spec, the runbook and the env example;
-    - `test_phase6_docs_name_the_logger_each_phase6_event_logs_on`: 10.3, read from the source;
+    - `test_phase6_docs_quote_the_plan_and_state_the_current_rules`: plan L, K and D task 1 and 3 quoted exactly; PD-32..PD-39 and DI-89..DI-103 in this spec; `V3_QUEUE` in the spec, the runbook and the env example;
+    - `test_phase6_docs_name_the_logger_each_phase6_event_logs_on`: 10.3, read from the source; every `"v3.*"` event the code logs is listed in 10.3 and in the observability runbook, and the worker row names its fields;
+    - `test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_head`: the Phase 3 rollback's stamp list names `ledger.SCHEMA_REVISION` as the only head, with the Phase 6 and Phase 5 downgrade steps;
     - `test_phase6_docs_the_test_strategy_maps_every_test_module_the_phase_added` (with `PHASE6_EXTENDED_MODULES`);
     - `test_phase6_docs_the_texts_phase6_made_false_state_the_current_code`: 7.4, `tiers.py`, `v1_5_abstention.py`, `ledger.pending_v3_intents`, the ledger route's docstring, Phase 5 R-e and 4.8;
     - `test_phase6_docs_the_spec_ends_in_one_review_history_table`.
@@ -1598,13 +1624,13 @@ Security events are read ordered by `seq`. A test that counts denials uses `monk
 
 | File | Proves |
 |---|---|
-| `test_v3_triggers.py` | One test per trigger (plan J).<br>X1: final objection; a claim-loop correction-cycle listing (an alignment re-render is not one); not critical; tier 2; no V2.<br>X2: A or B required, as family-level types; C-D queued as a reason.<br>X3.<br>X4: the V1.5 mark on verified records equals the `x4_margin` intent (query 139 is the development fixture's near miss); the sufficiency rule on legacy records; p1-floor with a score never marks; a missing score marks; a sufficiency abstain never marks.<br>X5: a known key with a new version; an unknown key is no change; baseline when empty; `x5_active` windows.<br>Queue reasons: `v1_3_flag` only without a completed vote.<br>Type helpers: a disclosed conflict weighs nothing.<br>An unknown `entry_schema` is unparsed. |
-| `test_v3_draw.py` | `u64` and `bernoulli` exact integer rule, at the boundary where a float comparison differs; monotone rates.<br>Each delivery considered exactly once under 200 random splits of scan batches (seeded `random.Random`, 40 deliveries copied by sqlite3's backup API) with X5 events arriving mid-stream.<br>An X5 window covers the next learner deliveries, and its draws are X5 only between 1/20 and 1/5; a window closes after its deliveries.<br>Shadow records are never drawn; `unparsed` deliveries are still drawn.<br>`claim_set_key` is order-free and null for an abstention. |
-| `test_v3_priority.py` | Severity: max weight; unknown 1.0; the plan weights exact.<br>K: support share; mean; 0 without a vote; withheld 0.<br>Exposure: claim-set key count up to the record; 1 for shadow, abstention and no key; at least 1 for an item created before its draw.<br>Ordering over an exhaustive grid of severity × exposure (1-3) × K (0, 1/3, 1/2, 2/3, 1) against a reference sort; the tie-break. |
-| `test_v3_workflow.py` | States and derived `claimed`; lease expiry returns to queued; idempotent claim.<br>The conflicts; independent review refused; double-review selection is the seeded rule; agreement closes; disagreement goes to a third reviewer; apply by an adjudicator refused.<br>`test_independence_survives_a_guest_secret_rotation`: the same reviewer is refused the second round and apply after `guest_token_secret` changes.<br>Idempotent adjudicate and apply by client key.<br>A late trigger on a closed item is recorded and not reopened (a scan's merge after an adjudication).<br>Two concurrent claims leave exactly one lease row, and the other call is refused: `claimed_by_another`, or on file SQLite a database-locked error; on PostgreSQL two sessions give `claimed_by_another`.<br>Erasing a reviewer deletes the lease and round records. |
-| `test_v3_gold_store.py` | The chain and its hash rule.<br>UPDATE, DELETE and TRUNCATE refused, and an insert that does not extend the chain refused, on SQLite and PostgreSQL (psycopg, pg8000).<br>`verify_gold_store` finds an edited entry, a gap and a broken link (triggers dropped on a fresh database).<br>Export and `--all`.<br>The other append-only V3 tables refuse UPDATE and DELETE; `v3_queue_items` refuses DELETE. |
-| `test_v3_stop_and_metrics.py` | `stop_state` sampling, the oldest-age measure, empty samples, the cache (per session factory) and its seam, transition logs, the fail-closed unreadable queue.<br>Nearest-rank p90; non-auditable counts.<br>X5 alarms through `record_cusum_alarm`: synthetic alarms; `synthetic-test` refused outside development; the contract's `statistic >= h` and `p0 < p1`. |
-| `test_v3_routes.py` | Each route's 200 shape on seeded items and its security event (seq-ordered); 404 when off; item ids outside the pattern 404.<br>409 and 422 reasons, `not_reviewable` included (`test_an_unreviewable_item_cannot_be_claimed_or_adjudicated`).<br>The scan route.<br>The flag route's ownership (also in `test_authorization.py`), its 409, its rate limit and its 404 outside development (`flag_intake_open`).<br>`Cache-Control: no-store`. |
+| `test_v3_triggers.py` | One test per trigger (plan J), each over the function the scan or the flag path runs.<br>X1: final objection; a claim-loop correction-cycle listing (an alignment re-render is not one); not critical; no V2; at tiers 2 and 3 it fires and is not held (`test_x1_fires_at_every_tier_and_holds_at_tier_1_only`); a registry claim at tier 2 with one objection passes 2oo3, is delivered, and is queued and counted in V-3 without a hold (`test_x1_fires_on_a_critical_tier_2_claim_that_passes_2oo3_and_queues_and_counts_it_without_a_hold`).<br>X2: A or B required, as family-level types; C-D queued as a reason.<br>X3 (`x3_fires`, which `record_flag` asks; AC-6-6 covers the path).<br>X4: the V1.5 mark on verified records equals the `x4_margin` intent (query 139 is the development fixture's near miss); the sufficiency rule on legacy records; p1-floor with a score never marks; a missing score marks; a sufficiency abstain never marks; the scan enqueues the X4 response item with severity 1, its exposure and its priority (`test_the_scan_enqueues_an_x4_response_item_with_its_severity_and_priority`).<br>X5: a known key with a new version; an unknown key is no change; baseline when empty; `x5_active` windows.<br>Queue reasons: the record's own intent; under `on` a completed vote drops `v1_3_flag`; a V2-shadow record's V1.3-withheld claims are queued, so the holds and the queue agree (`test_a_v2_shadow_record_s_v1_3_withheld_claims_are_queued_so_the_holds_and_the_queue_agree`).<br>Type helpers: a disclosed conflict weighs nothing.<br>An unknown `entry_schema` is unparsed. |
+| `test_v3_draw.py` | `u64` and `bernoulli` exact integer rule, at the boundary where a float comparison differs; monotone rates.<br>Each delivery considered exactly once under 200 random splits of scan batches (seeded `random.Random`, 40 deliveries copied by sqlite3's backup API) with X5 events arriving mid-stream.<br>An X5 window covers the next learner deliveries, and its draws are X5 only between 1/20 and 1/5; a window closes after its deliveries.<br>A model-version change between scans (a registry verifier's, and a record's verifier vote's) is one `model_change` event and raises the next deliveries to 1/5 (`test_a_model_version_change_between_scans_records_one_x5_event_and_raises_the_next_deliveries_to_1_5`).<br>Shadow records are never drawn; `unparsed` deliveries are still drawn.<br>`claim_set_key` is order-free and null for an abstention. |
+| `test_v3_priority.py` | Severity: max weight; unknown 1.0; the plan weights exact.<br>K: support share; mean; 0 without a vote; withheld 0.<br>Exposure: claim-set key count up to the record; 1 for shadow, abstention and no key; at least 1 before the record's draw; an X3 item's exposure and priority are the same whether the flag or the scan came first (`test_an_item_s_exposure_and_priority_do_not_depend_on_whether_a_flag_or_the_scan_came_first`).<br>Ordering over an exhaustive grid of severity × exposure (1-3) × K (0, 1/3, 1/2, 2/3, 1) against a reference sort; the tie-break. |
+| `test_v3_workflow.py` | States and derived `claimed`; lease expiry returns to queued; idempotent claim.<br>The conflicts; independent review refused; double-review selection is the seeded rule; agreement closes; disagreement goes to a third reviewer; apply by an adjudicator refused.<br>`test_independence_survives_a_guest_secret_rotation`: the same reviewer is refused the second round and apply after `guest_token_secret` changes.<br>Idempotent adjudicate and apply by client key; a repeat logs no `v3.adjudicated` or `v3.applied`.<br>A late trigger on a closed item is recorded and not reopened (a scan's merge after an adjudication).<br>Two concurrent claims leave exactly one lease row, and the other call is refused with `claimed_by_another` on file SQLite and on PostgreSQL (a SQLite lock is retried).<br>A SQLite "database is locked" error is retried by every mutation and by the scan, and one that outlasts the attempts is `V3Busy` (`test_a_sqlite_lock_is_retried_and_one_that_outlasts_the_attempts_is_busy`).<br>Erasing a reviewer deletes the lease and round records. |
+| `test_v3_gold_store.py` | The chain and its hash rule.<br>UPDATE, DELETE and TRUNCATE refused, and an insert that does not extend the chain refused, on SQLite and PostgreSQL (psycopg, pg8000).<br>`verify_gold_store` finds an edited entry, a gap and a broken link (triggers dropped on a fresh database).<br>Export and `--all`; an export into the application tree or the repository checkout is refused and writes nothing (`refused_export_roots` over a checkout and an image layout).<br>The other append-only V3 tables refuse UPDATE and DELETE; `v3_queue_items` refuses DELETE. |
+| `test_v3_stop_and_metrics.py` | `stop_state` sampling, the oldest-age measure, empty samples, the cache (per session factory) and its seam, transition logs, the fail-closed unreadable queue.<br>Nearest-rank p90; non-auditable counts, the pre-ledger turns apart from kill-switch turns, lost records and pending appends.<br>The residual bound is null with `no_audited_answers` while nothing (or only an abstention) is audited (`test_the_residual_bound_is_null_while_nothing_is_audited`).<br>X5 alarms through `record_cusum_alarm`: synthetic alarms; `synthetic-test` refused outside development; the contract's `statistic >= h` and `p0 < p1`. |
+| `test_v3_routes.py` | Each route's 200 shape on seeded items and its security event (seq-ordered), a repeated apply's `duplicate` included; 404 when off; item ids outside the pattern 404.<br>A locked database is retried and a lock that outlasts the retries answers 503 with no security event (`test_a_locked_database_is_retried_and_a_lock_that_outlasts_the_retries_answers_503`).<br>409 and 422 reasons, `not_reviewable` included (`test_an_unreviewable_item_cannot_be_claimed_or_adjudicated`).<br>The scan route.<br>The flag route's ownership (also in `test_authorization.py`), its 409, its rate limit and its 404 outside development (`flag_intake_open`).<br>`Cache-Control: no-store`. |
 | `test_config_package.py` (additions) | `test_v4_stays_readable_for_one_release`; `test_v5_keeps_every_v4_value_but_the_listed_changes`; `test_v5_structural_errors_always_stop_the_load` (each 5.2 refusal, the v2 critical registry included); `test_v3_package_check_problems`; `test_the_v3_start_up_check_runs_from_the_image_layout` (the module executed as the image holds it: no problem with `structural=False`) |
 | `v3_fakes.py` | Not a test module (13.1) |
 | `conftest.py` (addition) | The autouse fixture also calls `v3.stop.reset_stop_cache()` before and after each test, and fails a test that leaves a shared-database queue item enqueued before the session start |
@@ -1673,27 +1699,36 @@ Security events are read ordered by `seq`. A test that counts denials uses `monk
 - `adjudicationPayload` sorts the labels and nulls a SUPPORTED label's EHMF type.
 - No label text matches `/verified|grounded/i`.
 - The console renders span text only for `shown` spans, offers Claim and Adjudicate only for reviewable items, and names no severity, support share, priority or browser storage (source match).
-- Lint, typecheck and `test:integration` run with the new test (161 tests).
+- `adjudicationReady` refuses an unset verdict, a non-SUPPORTED verdict without a type and an abstention item without its label; the console pre-fills no label, gives each of its four selects a label, keeps one mounted `role="status"` region, catches a failed item read, and disables the EHMF select for SUPPORTED (source match).
+- The review page renders no second `<main>` inside the app shell's; no trigger label names an objection type or a tier.
+- Lint, typecheck and `test:integration` run with the new tests (165 tests).
 
 ### 13.5 Mutation checks (each must fail its tests when reverted; recorded in the BEP phase record)
 
-The build performs and records these:
+Every row below has been performed: a run reverts the rule, runs the tests named, which must fail, and restores the file byte for byte. The BEP phase record lists each run (the build's, then each review round's) and any first run that was not caught, whose tests were then strengthened.
 
 | Mutation | Tests that must fail |
 |---|---|
 | E15: the Phase 5 spec's pre-merge DI-74 and exit text restored | `test_phase5_docs_the_records_name_the_merge_and_the_cited_main_run`; `check_p5_merge_the_records_name_the_merge_and_the_cited_main_run` |
 | X1 ignoring correction-cycle failures | tests 1 and 23 |
 | X1 firing without `critical` | `test_v3_triggers.py` |
+| X1 at tier 1 only again | `test_x1_fires_at_every_tier_and_holds_at_tier_1_only`, `test_x1_fires_on_a_critical_tier_2_claim_that_passes_2oo3_and_queues_and_counts_it_without_a_hold` |
+| X1 held at every tier (`held` from the trigger, `withheld_claim_ids` from `x1_claims`) | `test_x1_fires_at_every_tier_and_holds_at_tier_1_only`, `test_x1_fires_on_a_critical_tier_2_claim_that_passes_2oo3_and_queues_and_counts_it_without_a_hold` |
 | The runner revising a critical claim | `test_a_critical_tier_1_claim_is_never_revised_and_ends_with_x2`, test 1 |
 | The hold not sticky (a held claim leaves `pending` once it passes) | `test_a_critical_tier_1_claim_stays_held_when_its_objector_leaves_the_panel`, tests 1 and 23 |
 | `critical_for` ignoring the environment | test 1 (the staging case) |
 | X2 counting C-E | `test_v3_triggers.py` |
-| `v1_3_flag` queued after a completed vote | `test_v3_triggers.py` |
+| `v1_3_flag` dropped once a vote completes (the V3-side rule; a V2-shadow record's V1.3-withheld claims unqueued) | `test_a_v2_shadow_record_s_v1_3_withheld_claims_are_queued_so_the_holds_and_the_queue_agree`, `test_queue_reasons_keep_the_record_s_own_intent_and_x4_is_the_response_item` |
+| The scan recording baselines but never a model change (its sightings not through `x5_model_changes`) | `test_a_model_version_change_between_scans_records_one_x5_event_and_raises_the_next_deliveries_to_1_5` |
+| `x5_model_changes` naming no change | `test_a_model_version_change_between_scans_records_one_x5_event_and_raises_the_next_deliveries_to_1_5`, `test_x5_a_known_key_with_a_new_version_is_a_change_and_an_unknown_key_a_first_sighting` |
+| The scan dropping X4 items, or scanning with no X4 margins | `test_the_scan_enqueues_an_x4_response_item_with_its_severity_and_priority` |
+| `record_flag` not asking `x3_fires` (no X3 item) | test 7 |
 | The draw redrawing on a re-scan | test 3, `test_v3_draw.py` |
 | X5 windows ignored | `test_v3_draw.py` |
 | A float draw | `test_v3_draw.py` (exact boundary) |
 | Priority ignoring K | test 4, `test_v3_priority.py` |
 | Exposure ignoring the claim-set key (always 1) | test 4, `test_v3_priority.py` |
+| The scan not raising an earlier item's exposure (`refresh_exposure` skipped) | `test_an_item_s_exposure_and_priority_do_not_depend_on_whether_a_flag_or_the_scan_came_first` |
 | The tie-break reversed | `test_v3_priority.py` |
 | The adjudication writing a ledger row | test 5 |
 | A second gold row per round allowed | test 5 |
@@ -1704,11 +1739,14 @@ The build performs and records these:
 | Adjudicator applying | `test_v3_workflow.py` |
 | Lease expiry ignored | `test_v3_workflow.py` |
 | Client keys ignored | test 5, `test_v3_workflow.py` |
+| A repeated apply logging `v3.applied` | `test_adjudicate_and_apply_are_idempotent_by_client_key` |
+| A SQLite lock not retried | `test_a_sqlite_lock_is_retried_and_one_that_outlasts_the_attempts_is_busy`, `test_a_locked_database_is_retried_and_a_lock_that_outlasts_the_retries_answers_503` |
+| An export into the repository checkout allowed (the application tree only) | `test_export_writes_the_applied_finals_or_every_row_and_refuses_the_application_tree_and_the_repository` |
 | An unreviewable item claimable | test 14, `test_an_unreviewable_item_cannot_be_claimed_or_adjudicated` |
 | The flag changing a ledger row | test 7 |
 | The flag route open outside development | tests 24, 25 |
 | F_i read from the flag table | test 21 |
-| `require_reviewer` checking D-18 before the role | test 8 |
+| `require_reviewer` checking D-18 before the role | test 8 (its staging cases) |
 | The D-18 gate removed | test 13 |
 | The ledger route's reviewer branch without `reviewer_admitted` | test 13 |
 | Views showing an unquotable span | test 14 |
@@ -1724,9 +1762,14 @@ The build performs and records these:
 | `/ready` reporting a count | test 17 |
 | V-3 counting X6 | test 18 |
 | The residual counting X5 or abstentions | test 18 |
+| The residual's empty bound reported as 0 | `test_the_residual_bound_is_null_while_nothing_is_audited` |
+| The non-auditable tutor turns counting lost records and kill-switch turns | `test_non_auditable_reports_pre_ledger_turns_apart_from_kill_switch_turns_lost_records_and_pending_appends` |
 | The report's stale module hash | test 20 |
 | The loader accepting a non-empty staging registry, a rate other than 1/20, unplanned weights, an unmarked `v3` sub-block, or a non-empty v2 critical registry | `test_v5_structural_errors_always_stop_the_load` |
 | The frontend page without `notFound` | the frontend test |
+| The console pre-filling SUPPORTED, or the page rendering a second `<main>` | the frontend tests (13.4) |
+| The Phase 3 rollback's stamp list without the Phase 6 head | `test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_head` |
+| 10.3 or the observability runbook without a worker event | `test_phase6_docs_name_the_logger_each_phase6_event_logs_on` |
 
 ---
 
@@ -1771,25 +1814,28 @@ The v1, v2 and v3 checks stay. The PostgreSQL matrix, the frontend job, `api-ima
    - the D-05 cloud writes (none made);
    - what ships and its defaults;
    - the pre-release checks: check the stamp first (`alembic current`), then `alembic upgrade 20261122_phase6_v3_audit`;
+   - what ships says the reviewer routes answer 403 (and `authz.denied`) to every caller outside development, the flag route 404, and that legacy ledger records stamp package 5.0.0 and `schema_revision_expected` `20261122_phase6_v3_audit`;
    - the `/ready` checks (`v3_queue` off, `v3.reviewer_pool` unstaffed);
-   - the worker commands;
-   - the stop and what it does, and its development behaviour (4.10: it trips 120 h after the first item nobody closes; adjudicate or use a fresh database);
+   - the worker commands, and that outside development the worker's `status` is the only SLI source (its schedule is DI-95);
+   - the stop and what it does, and its development behaviour (4.10: it trips 120 h after the first item nobody closes; adjudicate or use a fresh database), and the warning that under the shadow override outside development nothing can clear it while D-18 is open (DI-103);
    - rollback: `V3_QUEUE=off` releases nothing;
-   - `export-gold --all` before a downgrade past the revision, with `-x allow_v3_drop=true`;
+   - `export-gold --all` before a downgrade past the revision, with `-x allow_v3_drop=true`; what the downgrade loses that no export keeps (the queue with F_i, the flags, the draws and the once-only record, the X5 windows); that no path restores the gold rows; and the export's handling and retention rule;
+   - the Phase 3 rollback's stamp check names the Phase 6 head (`20261122_phase6_v3_audit (head)`: the Phase 6 downgrade step, then the Phase 5 step);
    - a digest rollback needs no downgrade;
    - a guest-secret rotation changes new digests only and readmits no reviewer.
 8. **`infra/cloudrun/observability.md`** gets `## Phase 6 SLIs: V3 (plan Phase 6 I)`:
-   - each SLI's log-based metric (V-3, queue age p90 and oldest age, draws, agreement, residual), all "Not set up yet" (DI-95);
-   - the 10.3 events and their loggers;
+   - each SLI's log-based metric (V-3, queue age p90 and oldest age, draws, agreement, residual), all "Not set up yet" (DI-95), and that the residual bound is null while nothing is audited;
+   - the SLI source outside development (the worker's `status` line only, while D-18 is open) and the scheduled job DI-95 defines;
+   - every 10.3 event and its logger;
    - the two override keys.
 9. **`docs/testing/test-strategy.md`:**
    - the E15 exit edit (17);
    - `## Phase 6 acceptance map (plan Phase 6 K)`, with `### Phase 6 test files`, `### Phase 6 changes to existing test modules` and an `**Exit gate.**` paragraph.
 10. **The Phase 3, 4 and 5 specs:** the 7.4 edits.
 11. **BEP-2-12** (outside the repository):
-    - `phase06/PHASE_RECORD.md` (current state first, with "The exit gate is NOT passed (DI-89)." and `### Open items` listing DI-89..DI-102, then `## History`, one row per round);
+    - `phase06/PHASE_RECORD.md` (current state first, with "The exit gate is NOT passed (DI-89)." and `### Open items` listing DI-89..DI-103, then `## History`, one row per round);
     - `phase06/CLOSURE_EVIDENCE_NOTES.md` (R-22, R-35, R-40, R-49);
-    - PD-32..PD-39 and DI-89..DI-102 under `## Phase 6` in the registers (the PD rows add `| 6 |`);
+    - PD-32..PD-39 and DI-89..DI-103 under `## Phase 6` in the registers (the PD rows add `| 6 |`), and the provisional defaults register's header naming the Phase 6 engineering parameters;
     - STATUS row 6;
     - `check_records.py` `check_p6_*` checks mirroring `check_p5_build_*`:
       - the registers hold the spec's rows;
@@ -1806,14 +1852,14 @@ The v1, v2 and v3 checks stay. The PostgreSQL matrix, the frontend job, `api-ima
 
 | # | Decision | Plan text | Default applied | Where |
 |---|---|---|---|---|
-| PD-32 | Trigger registry v1 and the queue (no owner decision names the rules; engineering parameters like PD-27) | Phase 6 D task 1: "X1 critical-claim objection (registry [Decision D-25]; withheld at tier 1); X2 Type A/B unresolved after two cycles; X3 learner flag (F_i = 0, never a verdict); X4 abstention margin [Decision D-06]; X5 CUSUM alarm or model change (audit 20%); X6 audit draw." | `x-triggers-v1`.<br>X1: a claim the record marks critical at tier 1 that drew a family objection (its final verdict, or a claim-loop correction cycle that listed it).<br>X2: a claim the record escalates X2 with an objecting family verdict of EHMF type A or B.<br>X3: a learner flag on the learner's own tutor turn.<br>X4: the record's V1.5 mark, or the V1.5 rule over a record's sufficiency with the package's X4 margin.<br>X5: a model-version change of a known model key (registry or record) or a CUSUM alarm event.<br>X6: the seeded draw.<br>Queued with no X trigger: `v1_3_flag` without a completed V2 vote, `v1_8_misconception`, `v2_degraded_withheld`, and `v2_correction_exhausted` without an A or B objection.<br>One item per record and claim, or per record. A later trigger merges into an open item and is recorded on a closed one. | v5 `v3.triggers`; `app/services/v3/triggers.py` |
-| PD-33 | D-25 critical-claim registry (PI) and X1 | 18.4: "D-25 OPEN DECISION: critical-claim registry triggering X1 [Evidence E-86]. PI." | Every non-development registry is empty, so no claim is critical outside development and X1 never fires there. Development holds three synthetic entries: the claims the development pipeline locks for in-domain fixture query 30, an assessment context (tier 1) whose claims no other fixture query locks. A critical tier-1 claim is never revised by the generator. With an objection it is held for the rest of the response, ends abstained (X2) or withheld and is never delivered, and nothing in Phase 6 releases it (DI-93). | v5 `v3.critical_claims`, `owner_decisions.D-25`; `v2_panel/tiers.py`, `v1_checks/runner.py` |
-| PD-34 | Queue priority (the plan's formula; weights pending elicitation) | 6.3: "EHMF weights A=1.0, B=1.0, C=0.6, D=0.6, E=0.4 await expert elicitation [VBT RevB: p. 11, Sec. VI-C]; they MUST be versioned configuration, never constants (invariant 10)."; task 2: "Queue by severity x exposure x (1 - K); seeded 5% draw over ledger deliveries." | Priority = severity × exposure × (1 − K) in exact rationals, ties by enqueue time then item id.<br>Severity: the largest weight among the item's EHMF types (V2 objections and non-pass V1 results; a disclosed V1.7 conflict weighs 0, plan Phase 7 A "D 0.6 (0 when disclosed)"), 1.0 when no type is known.<br>Exposure: the learner deliveries the scan considered whose sorted claim ids hash to the record's claim-set key, up to its record, at least 1; 1 for a shadow or abstention record.<br>K: the support share of the claim's V2 panel (families voting SUPPORTED over members), the mean over a response's claims, 0 without a panel vote. | v5 `v3.priority`; `app/services/v3/priority.py`, `draw.py` |
-| PD-35 | The audit draw (X6, X5) | Task 2: "seeded 5% draw over ledger deliveries"; 6.3: "version change -> X5 audit 20%, promotions held"; 15.3: "HR-3 deployment form: monthly Wilson bound from the 5% draw [Evidence E-85]." | Rule `seeded-sha256-bernoulli-v1`, seed `qcai-x6-v1`: a delivery is drawn when the first 8 bytes of sha256("x6-draw-v1\|seed\|response_id"), as an integer u, satisfy u·den < num·2^64.<br>X6 at 1/20. While an X5 window is open, 1/5: below 1/20 is X6, between 1/20 and 1/5 is X5. A window covers the 1500 learner deliveries after its event.<br>Population: every learner delivery (legacy or delivered, answers and abstentions), each considered once, at its first scan. Deliveries before the ledger are non-auditable.<br>The residual counts X6-audited answer deliveries, per UTC month. | v5 `v3.draw`, `v3.triggers.x5`, `v3.residual` |
-| PD-36 | The adjudication workflow and D-06's double review (operator policy) | Task 3: "Workflow queued -> claimed -> adjudicated -> applied; append-only gold store; 10% double review (operator policy, set under Decision D-06)."; 16.1: "the X6 auditor MUST NOT audit their own change [Risk R-35]" | A claim is a 30-minute lease; an expired lease returns the item to queued.<br>1/10 of items, drawn by `double-review-v1` on the item id, need a second independent review. A disagreeing pair goes to a third reviewer, whose label is final.<br>No reviewer reviews an item twice, and no adjudicator applies it, judged on erasable per-round records, never on a rotating digest.<br>Reviewers see the triggers, the claim texts and public, quotable spans only. They are blind to the panel's votes, objection types and support share, the severity and priority, the finals and other rounds. An item whose claims cannot all be shown is not reviewable and stays queued.<br>Every adjudication appends one gold row; no restore path exists.<br>Applied exports the final label as recalibration input, changes no ledger row and releases nothing.<br>A trigger on a closed item is recorded, not reopened. | v5 `v3.workflow`; `app/services/v3/queue.py`, `gold.py` |
-| PD-37 | D-06's V3 SLOs and the stop (plan 13.7 OPERATIONAL TARGET rows) | L: "Stop (operator policy, set under Decision D-06): queue age above SLO for two days limits tier 1 to pre-verified content."; 15.3: "V-3 numerator counts X1-X4 only; audits are proof tests [Evidence E-85]." | Queue-age SLO 72 hours.<br>The stop holds when, at every hourly sample of the last 48 hours, the oldest open item is older than the SLO. That measure is strictly more conservative than the p90 and cannot be diluted by new items. The p90 is the alert's measure (plan I).<br>It applies the pre-verified-only policy to tier-1 responses. With no pre-verified source (PD-30), tier 1 is withheld (abstain and queue under `on`).<br>A queue that cannot be read counts as a stop.<br>V-3: deliveries with an X1-X4 item over learner deliveries, over a rolling 7-day window, at most 1/10, report only. | v5 `v3.slo`; `app/services/v3/stop.py`, `metrics.py` |
-| PD-38 | `V3_QUEUE` and the reviewer gate (freeze, D-05; D-18 OPEN) | L: "Disabling V3 MUST NOT release withheld items."; B: "OPEN DECISION: reviewer staffing [Decision D-18]; production adjudication MAY start once staffed;" | Development `shadow`, elsewhere `off`; `on` refused outside development before `phase6_exit_passed`.<br>Shadow and on run alike, and nothing reaches a learner (DI-97). Off stops the scan, the draw, the flag intake and the reviewer routes, and releases nothing.<br>Reviewer routes need the closed role `reviewer`. Outside development every caller is refused while the pool is unstaffed (D-18), on the V3 routes and in the ledger route's reviewer branch. Development reviewers are synthetic demo identities.<br>The learner flag route exists in development only and allows 10 flags a minute. | `config.py`; v5 `flag_policy.v3_queue`, `v3.reviewers`; `app/core/reviewer_access.py`, `app/api/routes/ledger.py` |
-| PD-39 | X3, F_i and the gold label (no plan values) | Invariant 5: "Ratings never certify truth -> F_i feeds quality only; X3 feeds the V3 queue"; task 1: "X3 learner flag (F_i = 0, never a verdict)" | One flag per learner and tutor turn. F_i is 0 for a response with an X3 item and null otherwise.<br>A gold label (`v3-gold-label-v1`) holds, per claim, SUPPORTED, CONTRADICTED or NOT_ENOUGH_INFO with an EHMF type when not supported, and for an abstention `correct` or `missed_answer`. It holds no free text and no learner identifier.<br>A residual error is an audited answer delivery with a claim labelled other than SUPPORTED. | v5 `v3.schemas`; `app/services/v3/feedback.py`, `contracts.py` |
+| PD-32 | Trigger registry v1 and the queue (no owner decision names the rules; engineering parameters like PD-27) | Phase 6 D task 1: "X1 critical-claim objection (registry [Decision D-25]; withheld at tier 1); X2 Type A/B unresolved after two cycles; X3 learner flag (F_i = 0, never a verdict); X4 abstention margin [Decision D-06]; X5 CUSUM alarm or model change (audit 20%); X6 audit draw." | `x-triggers-v1`.<br>X1: a claim the record marks critical, at any tier, that drew a family objection (its final verdict, or a claim-loop correction cycle that listed it); it is withheld at tier 1 only (AC-5-4: "critical claims follow X1 from Phase 6"; task 1: "withheld at tier 1").<br>X2: a claim the record escalates X2 with an objecting family verdict of EHMF type A or B.<br>X3: a learner flag on the learner's own tutor turn.<br>X4: the record's V1.5 mark, or the V1.5 rule over a record's sufficiency with the package's X4 margin.<br>X5: a model-version change of a known model key (registry or record) or a CUSUM alarm event.<br>X6: the seeded draw.<br>Queued with no X trigger, from the record's own V3 intent: `v1_3_flag` (under `on` the V2 aggregate drops it once a vote completes; a V2-shadow record keeps it, D-20), `v1_8_misconception`, `v2_degraded_withheld`, and `v2_correction_exhausted` without an A or B objection.<br>One item per record and claim, or per record. A later trigger merges into an open item and is recorded on a closed one. | v5 `v3.triggers`; `app/services/v3/triggers.py` |
+| PD-33 | D-25 critical-claim registry (PI) and X1 | 18.4: "D-25 OPEN DECISION: critical-claim registry triggering X1 [Evidence E-86]. PI." | Every non-development registry is empty, so no claim is critical outside development and X1 never fires there. Development holds three synthetic entries: the claims the development pipeline locks for in-domain fixture query 30, an assessment context (tier 1) whose claims no other fixture query locks. A critical tier-1 claim is never revised by the generator. With an objection it is held for the rest of the response, ends abstained (X2) or withheld and is never delivered, and nothing in Phase 6 releases it (DI-93).<br>Engineering parameters (no plan value; Claude's, ratified under DI-98): the three synthetic development entries. | v5 `v3.critical_claims`, `owner_decisions.D-25`; `v2_panel/tiers.py`, `v1_checks/runner.py` |
+| PD-34 | Queue priority (the plan's formula; weights pending elicitation) | 6.3: "EHMF weights A=1.0, B=1.0, C=0.6, D=0.6, E=0.4 await expert elicitation [VBT RevB: p. 11, Sec. VI-C]; they MUST be versioned configuration, never constants (invariant 10)."; task 2: "Queue by severity x exposure x (1 - K); seeded 5% draw over ledger deliveries." | Priority = severity × exposure × (1 − K) in exact rationals, ties by enqueue time then item id.<br>Severity: the largest weight among the item's EHMF types (V2 objections and non-pass V1 results; a disclosed V1.7 conflict weighs 0, plan Phase 7 A "D 0.6 (0 when disclosed)"), 1.0 when no type is known.<br>Exposure: the learner deliveries the scan considered whose sorted claim ids hash to the record's claim-set key, up to its record, at least 1; 1 for a shadow or abstention record.<br>K: the support share of the claim's V2 panel (families voting SUPPORTED over members), the mean over a response's claims, 0 without a panel vote.<br>An item's exposure is its record's: an item created before the scan drew its record (an X3 flag) is raised to the record's count when the scan draws it.<br>Engineering parameters (no plan value; Claude's, ratified under DI-98): the exposure and K rules, the claim-set key and the tie-break; the plan's values are the formula and the 6.3 weights. | v5 `v3.priority`; `app/services/v3/priority.py`, `draw.py` |
+| PD-35 | The audit draw (X6, X5) | Task 2: "seeded 5% draw over ledger deliveries"; 6.3: "version change -> X5 audit 20%, promotions held"; 15.3: "HR-3 deployment form: monthly Wilson bound from the 5% draw [Evidence E-85]." | Rule `seeded-sha256-bernoulli-v1`, seed `qcai-x6-v1`: a delivery is drawn when the first 8 bytes of sha256("x6-draw-v1\|seed\|response_id"), as an integer u, satisfy u·den < num·2^64.<br>X6 at 1/20. While an X5 window is open, 1/5: below 1/20 is X6, between 1/20 and 1/5 is X5. A window covers the 1500 learner deliveries after its event.<br>Population: every learner delivery (legacy or delivered, answers and abstentions), each considered once, at its first scan. Deliveries before the ledger are non-auditable.<br>The residual counts X6-audited answer deliveries, per UTC month; with none audited the bound is null, never 0.<br>Engineering parameters (no plan value; Claude's, ratified under DI-98): the rule `seeded-sha256-bernoulli-v1`, the seed `qcai-x6-v1` and the 1500-delivery X5 window; the plan's values are the rates (5%, 20%) and the monthly Wilson bound. | v5 `v3.draw`, `v3.triggers.x5`, `v3.residual` |
+| PD-36 | The adjudication workflow and D-06's double review (operator policy) | Task 3: "Workflow queued -> claimed -> adjudicated -> applied; append-only gold store; 10% double review (operator policy, set under Decision D-06)."; 16.1: "the X6 auditor MUST NOT audit their own change [Risk R-35]" | A claim is a 30-minute lease; an expired lease returns the item to queued.<br>1/10 of items, drawn by `double-review-v1` on the item id, need a second independent review. A disagreeing pair goes to a third reviewer, whose label is final.<br>No reviewer reviews an item twice, and no adjudicator applies it, judged on erasable per-round records, never on a rotating digest.<br>Reviewers see the triggers and reasons, the claim texts and public, quotable spans only. The triggers and reasons say why an item is queued, so they disclose that an objection exists (X2's rule implies that one was of type A or B), never which family objected, a vote or the EHMF type it named. Reviewers are blind to the panel's votes and their objection types, the support share, the severity and priority, the finals and other rounds. An item whose claims cannot all be shown is not reviewable and stays queued.<br>Every adjudication appends one gold row; no restore path exists.<br>Applied exports the final label as recalibration input, changes no ledger row and releases nothing.<br>A trigger on a closed item is recorded, not reopened.<br>Engineering parameters (no plan value; Claude's, ratified under DI-98): the 30-minute lease, the third reviewer on disagreement, the three rounds and the double-review draw rule; the plan's value is the 10% double review. | v5 `v3.workflow`; `app/services/v3/queue.py`, `gold.py` |
+| PD-37 | D-06's V3 SLOs and the stop (plan 13.7 OPERATIONAL TARGET rows) | L: "Stop (operator policy, set under Decision D-06): queue age above SLO for two days limits tier 1 to pre-verified content."; 15.3: "V-3 numerator counts X1-X4 only; audits are proof tests [Evidence E-85]." | Queue-age SLO 72 hours.<br>The stop holds when, at every hourly sample of the last 48 hours, the oldest open item is older than the SLO. That measure is strictly more conservative than the p90 and cannot be diluted by new items. The p90 is the alert's measure (plan I).<br>It applies the pre-verified-only policy to tier-1 responses. With no pre-verified source (PD-30), tier 1 is withheld (abstain and queue under `on`).<br>A queue that cannot be read counts as a stop.<br>V-3: deliveries with an X1-X4 item over learner deliveries, over a rolling 7-day window, at most 1/10, report only.<br>Engineering parameters (no plan value; Claude's, ratified under DI-98): the 72-hour queue-age SLO (plan 13.7 marks V3 queue age an OPERATIONAL TARGET, and "OPERATIONAL TARGET rows are the Product Owner's"), the hourly samples, the oldest-item measure and the rolling 7-day V-3 window (15.3 gives that window for F-1 and V-1 only); the plan's values are the two days, the tier-1 pre-verified limit, V-3 at most 10% and its X1-X4 numerator. | v5 `v3.slo`; `app/services/v3/stop.py`, `metrics.py` |
+| PD-38 | `V3_QUEUE` and the reviewer gate (freeze, D-05; D-18 OPEN) | L: "Disabling V3 MUST NOT release withheld items."; B: "OPEN DECISION: reviewer staffing [Decision D-18]; production adjudication MAY start once staffed;" | Development `shadow`, elsewhere `off`; `on` refused outside development before `phase6_exit_passed`.<br>Shadow and on run alike, and nothing reaches a learner (DI-97). Off stops the scan, the draw, the flag intake and the reviewer routes, and releases nothing.<br>Reviewer routes need the closed role `reviewer`. Outside development every caller is refused while the pool is unstaffed (D-18), on the V3 routes and in the ledger route's reviewer branch. Development reviewers are synthetic demo identities.<br>The learner flag route exists in development only and allows 10 flags a minute.<br>Engineering parameters (no plan value; Claude's, ratified under DI-98): the 10-a-minute flag rate limit. | `config.py`; v5 `flag_policy.v3_queue`, `v3.reviewers`; `app/core/reviewer_access.py`, `app/api/routes/ledger.py` |
+| PD-39 | X3, F_i and the gold label (no plan values) | Invariant 5: "Ratings never certify truth -> F_i feeds quality only; X3 feeds the V3 queue"; task 1: "X3 learner flag (F_i = 0, never a verdict)" | One flag per learner and tutor turn. F_i is 0 for a response with an X3 item and null otherwise.<br>A gold label (`v3-gold-label-v1`) holds, per claim, SUPPORTED, CONTRADICTED or NOT_ENOUGH_INFO with an EHMF type when not supported, and for an abstention `correct` or `missed_answer`. It holds no free text and no learner identifier.<br>A residual error is an audited answer delivery with a claim labelled other than SUPPORTED.<br>Engineering parameters (no plan value; Claude's, ratified under DI-98): every value in this row. | v5 `v3.schemas`; `app/services/v3/feedback.py`, `contracts.py` |
 
 ### 16.2 Deferred items
 
@@ -1824,8 +1870,8 @@ The v1, v2 and v3 checks stay. The PostgreSQL matrix, the frontend job, `api-ima
 | DI-91 | Hold H4 (D-18; blocks "P6 pool; P11 start"; release evidence "Capacity statement"): the reviewer pool, its capacity statement and reviewer provisioning outside development (with DI-38). Until then `reviewer_admitted` is false outside development: every V3 route refuses every caller there, the ledger route reads a reviewer as an owner, no item is adjudicated there and every withheld item stays withheld (plan J). Production adjudication may start once staffed (plan Phase 6 B). Blocked by: the OPEN owner decision D-18 (PO, PI) and hold H4. | PO / PI, then Eng | Open |
 | DI-92 | Plan P "one staging audit cycle": a scan, draw, adjudication, double review and apply cycle on staging. Blocked by: a staging deployment (a cloud write under D-05), `V3_QUEUE` outside development (on is refused before the exit; shadow is an override), and a staffed pool (DI-91). | PfO / PO, then Eng | Not started |
 | DI-93 | Plan task 4 "recalibration via Phase 7 change control (Loop 4) [Evidence E-74]": applying gold labels to thresholds, weights or the critical registry, and releasing any withheld item. Phase 6 exports the applied labels (`python -m app.workers.v3_queue export-gold`) and applies nothing. Blocked by: Phase 7 change control. | MLE (Phase 7) | Deferred |
-| DI-94 | Hold H10 (D-08; blocks "P6 experts; P10, P12 cohorts") and research labelling (plan Phase 6 C non-goal; D-14, D-15): expert reviewers for research use, a research-plane gold store and any labelling of the licensed corpus or ULQS. Phase 6's gold store holds production-plane labels about public-corpus spans only. Blocked by: the OPEN owner decisions D-08 and D-14 (PI) and hold H10. | PI | Deferred |
-| DI-95 | The Phase 6 log-based metrics and alerts (plan I: the escalation share, the queue-age p90 alert [Risk R-40], the draw rate, double-review agreement and the residual bound). Blocked by: a cloud write under D-05. | PfO | Defined, not created |
+| DI-94 | Hold H10 (D-08; blocks "P6 experts; P10, P12 cohorts") and research labelling (plan Phase 6 C non-goal; D-14, D-15): expert reviewers for research use, a research-plane gold store and any labelling of the licensed corpus or ULQS. Plan L627-628 places "the V3 gold store" in "the private research data plane [Decision D-14] [Assumption A-13]", while L2593-2594 measures deployment-form HR-3 in production from the 5% draw (spec conflict 2). Phase 6's gold store is the deployment form's: production-plane labels about public-corpus spans only, kept out of the public repository, CI artifacts, logs and releases; the research-plane store waits for D-14. Blocked by: the OPEN owner decisions D-08 and D-14 (PI) and hold H10. | PI | Deferred |
+| DI-95 | The Phase 6 log-based metrics and alerts (plan I: the escalation share, the queue-age p90 alert [Risk R-40], the draw rate, double-review agreement and the residual bound), and the scheduled job that emits their source. Outside development, while D-18 is open, `GET /v3/metrics` refuses every caller, so the worker's `v3.status` line is the only SLI source, and it is logged only when `python -m app.workers.v3_queue status` runs. Proposed: a Cloud Run job running `status` hourly (the stop's sample interval) and, wherever `V3_QUEUE` is not off, `scan --until-done` before it, owned by the Platform Owner. Blocked by: a cloud write under D-05. | PfO | Defined, not created |
 | DI-96 | The CUSUM statistic and its alarm (6.3 "CUSUM p0/p1/h (11)", "0.05/0.15/4.0 [PROV]"), the sustained-alarm stop-the-line (13.6) and "promotions held" (6.3): Phase 9 computes the statistic and delivers each alarm through `app.services.v3.events.record_cusum_alarm` (contract `cusum-alarm-v1`); Phase 6 tests the interface with synthetic alarms only. Blocked by: Phase 9 (drift control). | MLE (Phase 9) | Deferred |
 | DI-97 | The delivered path's V3 behaviour: a learner-facing "looks wrong" control with its privacy disclosure (the flag record is a new personal-data class), the flag intake outside development, and the X1 hold and the V3 stop on delivered two-pass content (with DI-59 and DI-85). The flag intake is an API route behind `V3_QUEUE` in development only, and no frontend control exists. A legacy delivery that quotes a held claim's span text is not checked against the holds (development only, where the registry is synthetic). Blocked by: learner-facing capability outside development (D-05), the Phase 5 exit (DI-74) and the delivered two-pass path (DI-59). | PO, then Eng | Deferred |
 | DI-98 | Ratify PD-32..PD-39, including D-06's operator values (the 10% double review, the queue-age SLO, the stop and its measure) and the 15.3 counting rule. Blocked by: owner decisions (PI, PO; D-06 OPEN). | PI / PO | Open |
@@ -1833,6 +1879,7 @@ The v1, v2 and v3 checks stay. The PostgreSQL matrix, the frontend job, `api-ima
 | DI-100 | Remove configuration package v4 after one release, with its CI step. Blocked by: a production release under D-05 (v4 stays readable for the release after the Phase 6 merge). | Eng | Deferred |
 | DI-101 | X3 for `/qa/ask` answers: a qa- record names no learner by design (Phase 3 spec R-a), so no owner check can admit a flag on it; X3 covers tutor turns only. Blocked by: an owner decision on linking Q&A answers to their askers (a privacy change; the Phase 8 learner record, D-27 OPEN). | PO, then Eng (P8) | Deferred |
 | DI-102 | Dawid-Skene weights (plan Phase 6 C: "Dawid-Skene before 200 gold claims [Evidence E-84]" is a non-goal; arbitration rule 5): `/v3/metrics` reports the labelled claims; tier-3 reliability weights wait for at least 200 gold claims. Blocked by: 200 gold claims (needs the staffed pool, DI-91). | MLE / PI | Deferred |
+| DI-103 | An operator path to clear or acknowledge a tripped V3 stop outside development. Under the `V3_QUEUE=shadow` override (which DI-92's staging audit cycle needs), the scan creates items that nobody can close while D-18 is open: no reviewer is admitted, and an item citing a span that is not quotable (D-31) is not reviewable. The stop then trips 120 h after the first such item and stays: only adjudication by an admitted reviewer clears it, and nothing short of the Phase 6 downgrade, which drops the gold evidence, resets it. It acts on the shadow pipeline's tier 1 only, and the runbook warns before the override is set. Plan L makes the stop "operator policy, set under Decision D-06", so a clear path is the owner's to define. Blocked by: the OPEN owner decisions D-06 (operator policy) and D-18 (DI-91). | PO / PI, then Eng | Open |
 
 ### 16.3 Rows of other phases that Phase 6 advances
 
@@ -1882,6 +1929,7 @@ These rows are unchanged; the registers' rule is never to edit other phases' row
 <py> scripts/scan_boundary.py --repo --docker-context apps/api/Dockerfile:. --docker-context apps/frontend/Dockerfile:apps/frontend --report <scratchpad>/boundary.json
 <py> D:\QC_AI_Studio\BEP-2-12\00_meta\check_records.py
 cd apps/frontend && npm run lint && npm run typecheck && npm run test:integration
+(CI only: pip-audit and npm audit --omit=dev --audit-level=high need the network and are not run locally)
 git status --short   (no stray files; nothing in the repository root)
 ```
 
@@ -1908,3 +1956,4 @@ The rows below record what each round fixed, in order. They may describe behavio
 | Spec (pre-code) | — (sections 0-17) | The design: `test_ac_6_1_a_critical_tier_1_claim_with_one_objection_fires_x1_and_is_withheld`, `test_ac_6_2_one_thousand_synthetic_deliveries_draw_33_to_69_and_a_same_seed_replay_draws_identical_ids`, `test_ac_6_4_an_adjudication_appends_one_gold_row_and_changes_no_ledger_row`, `test_plan_l_disabling_v3_releases_no_withheld_item` |
 | Spec review 1 (pre-code) | — (sections 0-17) | A Wilson closed form asserted bit-exact: `test_ac_6_5_zero_errors_in_300_audited_items_bound_the_residual_below_1_3_percent`. A schema ban on the verifier's `rating`: `test_ac_6_6_a_learner_flag_sets_f_i_to_zero_and_changes_no_verdict_or_ledger_row`. An X1 claim delivered once its objector left the panel (the sticky hold): `test_a_critical_tier_1_claim_stays_held_when_its_objector_leaves_the_panel`, `test_invariant_6_no_x1_claim_is_delivered_under_any_fault_schedule`. The stop read through the global database: `test_the_v3_stop_reads_the_pipeline_s_own_database`. Backdated shared-database items: the `conftest.py` guard. The start-up fixture-path check: `test_the_v3_start_up_check_runs_from_the_image_layout`. Independence on rotating digests: `test_independence_survives_a_guest_secret_rotation`. An inert exposure factor and an unbuildable AC-6-3 case: `test_ac_6_3_the_higher_severity_times_exposure_times_one_minus_k_ranks_first`. A non-blind view and blind labels of hidden claims: `test_plan_h_reviewers_see_public_quotable_spans_only_and_no_learner_identifier`, `test_an_unreviewable_item_cannot_be_claimed_or_adjudicated`. A dilutable p90 stop: `test_plan_l_queue_age_above_the_slo_for_two_days_withholds_tier_1`. A downgrade that dropped flags: `test_plan_g_the_phase_6_revision_is_additive_reversible_and_keeps_its_rows`. The flag intake and the ledger route outside development: `test_freeze_outside_development_v3_is_off_and_no_learner_path_changes`, `test_plan_b_no_reviewer_is_admitted_outside_development_while_d_18_is_open`. The guest CSRF in AC-6-7: `test_ac_6_7_a_guest_on_every_reviewer_route_gets_403_and_one_access_log_entry`. A key-dependent report head: `test_plan_f_the_committed_residual_report_matches_a_fresh_run_and_names_its_evidence_class`. A missed Phase 4 doc assertion, a scan merge reopening a closed item, and the restore path cut |
 | Build | the commit after `8ff17a6` | X1 reads only the claim-loop corrections, never an alignment re-render's list of shown claims (conflict 29): `test_x1_fires_when_a_correction_cycle_listed_the_claim_though_its_final_tally_passed`<br>Claim and adjudication read the corpus in force for reviewability (conflict 30): `test_an_unreviewable_item_cannot_be_claimed_or_adjudicated`<br>The AC-6-3 route check reads a fresh database (conflict 31): `test_ac_6_3_the_higher_severity_times_exposure_times_one_minus_k_ranks_first`<br>The role-denial test counts against its own denial cap once the reviewer negatives exceed a minute's: `test_a_role_denial_is_a_security_event`<br>The draw is exact at the 1/20 boundary where a float comparison is not: `test_the_draw_is_exact_at_the_rate_boundary_where_a_float_comparison_is_not`<br>A first flag read as a duplicate on PostgreSQL under psycopg, whose rowcount for the flag insert is -1; the V3 inserts read RETURNING: `test_the_flag_route_flags_the_callers_own_turn_once_and_says_when_its_record_is_not_written_yet`, `test_ac_6_6_a_learner_flag_sets_f_i_to_zero_and_changes_no_verdict_or_ledger_row` (PostgreSQL)<br>The runbook's Phase 6 table has the runbook's two-column shape: `test_phase5_docs_the_runbooks_and_registers_state_the_gateway_s_operations_exactly` |
+| Code review 1 | the commit after `6c94032` | X5 model changes ran through a copy of the rule, not `x5_model_changes`, and no test changed a version between scans: `test_a_model_version_change_between_scans_records_one_x5_event_and_raises_the_next_deliveries_to_1_5`<br>No test scanned an X4-marked record: `test_the_scan_enqueues_an_x4_response_item_with_its_severity_and_priority`<br>`x3_fires` was unused; `record_flag` asks it: `test_ac_6_6_a_learner_flag_sets_f_i_to_zero_and_changes_no_verdict_or_ledger_row`<br>X1 fired at tier 1 only, against AC-5-4 "critical claims follow X1 from Phase 6"; it fires at every tier and holds at tier 1 (conflict 1): `test_x1_fires_at_every_tier_and_holds_at_tier_1_only`, `test_x1_fires_on_a_critical_tier_2_claim_that_passes_2oo3_and_queues_and_counts_it_without_a_hold`<br>A V2-shadow record's V1.3-withheld claims were held but never queued: `test_a_v2_shadow_record_s_v1_3_withheld_claims_are_queued_so_the_holds_and_the_queue_agree`<br>An X3 item's exposure depended on whether the flag or the scan came first: `test_an_item_s_exposure_and_priority_do_not_depend_on_whether_a_flag_or_the_scan_came_first`<br>The residual reported an upper bound of 0 with nothing audited: `test_the_residual_bound_is_null_while_nothing_is_audited`<br>The non-auditable tutor turns mixed lost records and kill-switch turns into the pre-ledger count: `test_non_auditable_reports_pre_ledger_turns_apart_from_kill_switch_turns_lost_records_and_pending_appends`<br>A gold export could be written into the repository: `test_export_writes_the_applied_finals_or_every_row_and_refuses_the_application_tree_and_the_repository`<br>A SQLite lock in a V3 mutation or the scan became HTTP 500: `test_a_sqlite_lock_is_retried_and_one_that_outlasts_the_attempts_is_busy`, `test_a_locked_database_is_retried_and_a_lock_that_outlasts_the_retries_answers_503`, `test_two_concurrent_claims_leave_exactly_one_lease`<br>A repeated apply logged `v3.applied` again: `test_adjudicate_and_apply_are_idempotent_by_client_key`, `test_the_reviewer_routes_shape_and_their_security_events`<br>The role-first gate was untested outside development: `test_ac_6_7_a_guest_on_every_reviewer_route_gets_403_and_one_access_log_entry` (staging cases)<br>Texts said every `/v3` route answers 404 while V3 is off; 10.3 and the observability runbook omitted four worker events and two fields; the Phase 3 rollback had no branch for the Phase 6 head: `test_phase6_docs_name_the_logger_each_phase6_event_logs_on`, `test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_head`, `test_the_committed_matrix_is_current`<br>Conflict 2 now quotes plan L627-628 and resolves it against L2593-2594 (DI-94); PD-32..PD-39 name their engineering parameters; DI-95 defines the status schedule; DI-103 records the missing stop clear path; the runbook states what a downgrade loses and the gold export's handling rule; the reviewer docs state what the triggers disclose: `test_plan_f_the_trigger_registry_document_matches_the_package`, `test_phase6_docs_quote_the_plan_and_state_the_current_rules`<br>The reviewer console: one main landmark, labelled selects, a mounted status region, no pre-filled label, neutral trigger labels: the frontend tests (13.4) |

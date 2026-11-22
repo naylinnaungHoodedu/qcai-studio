@@ -162,7 +162,7 @@ def test_verify_finds_an_edited_entry_a_gap_and_a_broken_link():
         engine.dispose()
 
 
-def test_export_writes_the_applied_finals_or_every_row_and_refuses_the_application_tree(tmp_path):
+def test_export_writes_the_applied_finals_or_every_row_and_refuses_the_application_tree_and_the_repository(tmp_path):
     from sqlalchemy.pool import StaticPool
 
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
@@ -188,5 +188,25 @@ def test_export_writes_the_applied_finals_or_every_row_and_refuses_the_applicati
 
             with pytest.raises(ValueError):
                 export_gold(db, Path(application.__file__).resolve().parent / "gold.jsonl")
+            # Plan L627-628: gold labels "MUST NOT enter the public repository": no path inside the checkout is written.
+            from app.services.v3.gold import refused_export_roots
+
+            repository = Path(__file__).resolve().parents[3]
+            if (repository / ".git").exists():                  # a checkout (CI and the workstation); an archive has none
+                for target in (repository / "gold.jsonl", repository / "apps" / "api" / "gold.jsonl", repository / "docs" / "gold" / "gold.jsonl"):
+                    try:
+                        with pytest.raises(ValueError, match="repository checkout"):
+                            export_gold(db, target, applied_only=False)
+                        assert not target.exists(), target
+                    finally:                                    # an export that was let through never stays in the checkout
+                        target.unlink(missing_ok=True)
+                        if target.parent.name == "gold" and target.parent.exists():
+                            target.parent.rmdir()
+                assert not (repository / "docs" / "gold").exists()
+            checkout = tmp_path / "checkout"
+            (checkout / ".git").mkdir(parents=True)
+            module = checkout / "apps" / "api" / "app" / "services" / "v3" / "gold.py"
+            assert refused_export_roots(module) == (checkout / "apps" / "api" / "app", checkout)
+            assert refused_export_roots(tmp_path / "image" / "app" / "services" / "v3" / "gold.py") == (tmp_path / "image" / "app",)
     finally:
         engine.dispose()
