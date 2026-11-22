@@ -1,10 +1,13 @@
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.core.auth import AuthUser, get_current_user
+from app.core.auth import AuthUser, get_current_user, require_durable_learner
 from app.core.config import Settings, get_settings
 from app.core.db import get_db
 from app.core.rate_limit import limiter
+from app.core.guest_tokens import GUEST_TOKEN_COOKIE
+from app.core.request_protection import validate_request_origin
 from app.schemas import (
     AuthActionRead,
     AuthSessionRead,
@@ -13,6 +16,8 @@ from app.schemas import (
     LocalAccountDeleteRequest,
     LocalAccountLoginRequest,
     LocalAccountRegisterRequest,
+    LearnerConsentUpdate,
+    LearnerPrivacyErasureRequest,
     UserProfile,
 )
 from app.services import sign_in_lockout
@@ -26,11 +31,97 @@ from app.services.local_accounts import (
     delete_local_account,
     register_local_account,
     revoke_local_session,
+    verify_password,
 )
 from app.services.guest_sessions import upgrade_legacy_guest
+from app.services.learner_record_identity import claim_guest
+from app.services.learner_record_privacy import CONSENT_VERSION, erase_subject, iter_export, read_consent, set_consent
+from app.db_models import UserAccount
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def require_privacy_enabled() -> None:
+    if get_settings().learner_privacy != "on":
+        raise HTTPException(404, "Not found.")
+
+
+@router.get("/learner-consent", dependencies=[Depends(require_privacy_enabled)])
+def get_learner_consent(user: AuthUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    return {"consent_version": CONSENT_VERSION, "consent": read_consent(db, user.provider, user.user_id)}
+
+
+@router.put("/learner-consent", dependencies=[Depends(require_privacy_enabled)])
+def put_learner_consent(
+    payload: LearnerConsentUpdate, user: AuthUser = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    states = set_consent(db, user.provider, user.user_id, payload.consent_class, payload.granted, get_settings())
+    db.commit()
+    return {"consent_version": CONSENT_VERSION, "consent": states}
+
+
+@router.get("/learner-export", dependencies=[Depends(require_privacy_enabled)])
+def get_learner_export(
+    request: Request, user: AuthUser = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    record_security_event(
+        "learner.export", "success", connection=request, actor_role=user.role, subject=user.user_id,
+    )
+    return StreamingResponse(
+        iter_export(db, user.provider, user.user_id), media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-store", "Content-Disposition": 'attachment; filename="learner-export.ndjson"'},
+    )
+
+
+@router.post("/learner-erasure", dependencies=[Depends(require_privacy_enabled)])
+def post_learner_erasure(
+    payload: LearnerPrivacyErasureRequest, response: Response,
+    user: AuthUser = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    if user.provider == "local":
+        account = db.get(UserAccount, user.user_id)
+        if account is None or not payload.password or not verify_password(payload.password, account.password_hash):
+            raise HTTPException(401, "Password confirmation failed.")
+    receipt = erase_subject(db, user.provider, user.user_id, get_settings())
+    db.commit()
+    _clear_auth_cookies(response)
+    response.delete_cookie(GUEST_TOKEN_COOKIE, path="/")
+    response.headers["Cache-Control"] = "no-store"
+    return receipt
+
+
+def require_identity_enabled() -> None:
+    if get_settings().learner_identity != "on":
+        raise HTTPException(404, "Not found.")
+
+
+@router.post("/guest-claim", response_model=AuthActionRead, dependencies=[Depends(require_identity_enabled)])
+@limiter.limit(lambda: get_settings().guest_legacy_upgrade_rate_limit)
+def claim_guest_record(
+    request: Request,
+    response: Response,
+    user: AuthUser = Depends(require_durable_learner),
+    db: Session = Depends(get_db),
+):
+    settings = get_settings()
+    validate_request_origin(request, settings)
+    try:
+        moved = claim_guest(
+            db, user.provider, user.user_id, request.cookies.get(GUEST_TOKEN_COOKIE),
+            request.headers.get("x-guest-claim-csrf"), settings,
+        )
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        record_security_event("subject.claim_refused", "denied", connection=request, actor_role=user.role)
+        raise
+    record_security_event(
+        "subject.claimed", "success", connection=request, actor_role=user.role,
+        details={"rows": sum(moved.values())},
+    )
+    response.delete_cookie(GUEST_TOKEN_COOKIE, path="/")
+    return AuthActionRead(status="claimed")
 
 
 def _is_secure_cookie_request(request: Request, settings: Settings) -> bool:

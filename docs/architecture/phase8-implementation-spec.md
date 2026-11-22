@@ -22,7 +22,7 @@ Separate credential verification from subject resolution. An account and a valid
 
 ## 3. Data shapes
 
-The subject mapping binds a provider principal to a random subject identifier. The synchronization command includes an issued replica, operation identifiers and clocks, and an expected record version. Its result contains operation receipts and the resulting version. Consent records and change history carry version, class, state, time, and source. The planner returns a plan ID, ordered lesson IDs, and a planner version. Erasure receipts carry a random ID, timestamp, consent version, table coverage and zero counts, configuration digest, and scope statements. Concrete models and their field listings will be pinned as the interfaces are implemented.
+The subject mapping binds a provider principal to a random subject identifier. The synchronization command includes an issued replica, operation identifiers and clocks, and an expected record version. Its result contains operation receipts and the resulting version. Consent records and change history carry version, class, state, time, and source. The planner returns a plan ID, ordered lesson IDs, and a planner version. Erasure receipts carry a random ID, timestamp, consent version, table coverage and zero counts, configuration digest, and scope statements.
 
 The first build adds the following shapes:
 
@@ -30,6 +30,14 @@ The first build adds the following shapes:
 |---|---|
 | `LearnerIssuedReplica` | `replica_id` (random server-issued string, primary key), `user_id` (indexed erasure key), `created_at` (database timestamp). |
 | `LearnerPresentation` | `plan_id` (`concise`, `stepwise`, or `socratic`), `lesson_order` (ordered tuple of lesson identifiers), `planner_version` (`learner-planner-v1`). |
+| `LearnerSubject` | `principal_digest` (provider-scoped primary key), `user_id` (random erasure key), `provider`, `created_at`. |
+| `LearnerGuestRevocation` | `credential_digest` (primary key), `revoked_at`. |
+| `LearnerClaimAudit` | `id`, `subject_digest`, `guest_digest`, `transferred` table counts, `created_at`. |
+| `LearnerConsent` | `user_id` and `consent_class` (composite primary key), `consent_version`, `granted`, `updated_at`, `source`. |
+| `LearnerConsentChange` | `id`, `user_id`, `consent_class`, `consent_version`, `granted`, `created_at`, `source`. |
+| `LearnerErasureAudit` | `id`, `receipt_digest`, `table_set_digest`, `deleted_total`, `created_at`. |
+| `LearnerAdaptationStop` | `control_id` (`planner`), `reason`, `stopped_at`. |
+| `LearnerAssessmentFact` | `attempt_id` (primary key), `user_id`, `lesson_slug`, `mastery`, `created_at`. |
 
 The client operations service accepts a subject, expected version, and existing operation input models. With synchronization enabled, authenticated GET uses the no-write reader and POST requires an integer `expected_record_version`. Replica issuance returns the random issued identifier. The off mode retains the baseline read and merge behavior.
 
@@ -44,7 +52,11 @@ In `learner_record_sync.py`, a conflict-tolerant insert creates the record when 
 
 The planner maps the mean finite course-local server mastery below 0.4 to stepwise, from 0.4 through values below 0.75 to concise, and from 0.75 to socratic. It keeps unfinished lessons in course order and applies PD-204 to the review order. With adaptation disabled or no valid course mastery, it returns the configured default plan and static order. Any eventual caller must source mastery from trusted assessment evidence.
 
-For a durable quiz writer with synchronization enabled, acquire the record lock before inserting the attempt. Count the subject's attempts on that lesson over the preceding 15 minutes and refuse the thirteenth. Allocate the assessment operation clocks from the locked server replica and keep the attempt and learner record in the same transaction. The preview and synchronization-off paths retain their existing behavior. Historical mastery remains present in the original materialized record and must be kept out of planner inputs until trusted evidence can be reconstructed.
+With synchronization enabled, acquire the record lock before inserting the attempt. Count the subject's attempts on that lesson over the preceding 15 minutes and refuse the thirteenth. For a durable writer, allocate assessment clocks from the locked server replica and keep the attempt, learner record, and assessment fact in the same transaction. Preview identities record the attempt and take the quota lock without writing mastery. The synchronization-off path retains its baseline behavior. The planner reads mastery from the dedicated assessment-fact table. Legacy materialized mastery and operation identifiers alone are insufficient evidence of provenance.
+
+The one-shot guest claim retains the account's unique profile, public handle, and duplicate receipt records. It joins convergent learner state before transferring remaining study rows. The guest's consent does not transfer. Transactional claim audit and the stable revocation digest support retry and credential-key rotation without retaining a raw guest credential in the tombstone.
+
+The consent service stores a current row and erasable change history. Analytics grant is checked before writing when privacy is enabled. Scoped NDJSON export omits credential data and counterpart identity fields. Erasure locks both identifiers, deletes their local rows and dependencies, verifies zero counts, and appends the receipt digest in the same transaction. The receipt reports the active package and its registry. Backup, support, historical processing, and external identity-provider scope stay explicit.
 
 ## 5. Configuration package
 
@@ -59,7 +71,7 @@ Defer the package bump until after Phase 6 is merged into this branch and the Ph
 | `LEARNER_IDENTITY` | `off` or `on` / `off` | Isolates subject mapping and claim behavior. Preserve compatibility with the baseline demo fixtures. |
 | `LEARNER_PRIVACY` | `off` or `on` / `on` | Gates consent, retention additions, export, and erasure receipts. |
 
-All default to off outside development. Settings reject every non-off value outside development until the shipped, hash-verified configuration package reports the Phase 8 exit. A missing exit value is false. D-27 independently precludes adaptation outside development. Planner on is refused everywhere pending DI-312. The shared adaptation stop is pending. Plan L: "Flags for planner and sync. Stop: any harness violation blocks adaptation (never evidence)."
+All default to off outside development. Settings reject every non-off value outside development until the shipped, hash-verified configuration package reports the Phase 8 exit. A missing exit value is false. D-27 independently precludes adaptation outside development. Planner on is refused everywhere pending DI-312. The planner consults the shared adaptation-stop row and uses static ordering while it is set. Plan L: "Flags for planner and sync. Stop: any harness violation blocks adaptation (never evidence)."
 
 ## 7. File-by-file changes
 
@@ -71,11 +83,11 @@ Introduce additive ORM models for new Phase 8 tables and preserve discoverabilit
 
 ## 9. Routes and request-path behaviour
 
-Use existing routers for claim, replica issuance, synchronization, consent, export, and erasure. Apply caller or resource-owner authorization as appropriate. An identifier belonging to a different subject resolves as missing. Reject an unapproved grant. Disable new routes under the release freeze and keep enabled development processing within the relevant flag and authorization checks.
+The existing routers serve replica issuance and synchronization under `/learner-record`, and claim, consent, export, and erasure under `/auth`. Claim requires a durable credential, a verified guest token, matching guest CSRF proof, and a trusted origin. The other privacy operations are caller-scoped. Local erasure confirms the password and clears cookies after commit. Guest erasure revokes the credential. Federated erasure covers local application data. Each new endpoint refuses requests when its feature flag is off.
 
 ## 10. Start-up, /ready, logs and SLIs
 
-Validate settings and fail startup on refused values. Count sync conflicts and invariance violations. Capture interaction start and record commit timing without learner identifiers. Add readiness fields after the integration. Production F-3 and cloud metrics remain deferred under DI-300 and DI-305.
+Settings fail startup on refused values. Durable assessment updates emit an identifier-free event with interaction start, commit time, and record version. Planner shadow choices and degraded outcomes emit identifier-free events. Readiness fields and final observability wiring follow Phase 6. Production F-3 and cloud metrics remain deferred under DI-300 and DI-305.
 
 ## 11. Frontend
 
@@ -83,7 +95,7 @@ The dormant synchronization helper obtains a replica from the server, advances i
 
 ## 12. Fixtures and records
 
-Generate the erasure proof and the invariance report from synthetic or approved public data. The harness compares query, evidence, claim plan, threshold state, delivered claims, cited spans, and answer decision at three mastery levels. Require variation in at least one presentation and fail on any evidential difference. The harness fulfills the plan section 15.2 engineering prerequisite. E3 and LQ-1 require separate research evidence.
+The erasure proof seeds every user-keyed table and its dependent rows for local, guest, federated, and demo synthetic cases. Its stable comparisons cover the control rows, zero-count report, and persisted receipt digest. The separate invariance tool uses the approved public fixtures, three mastery levels, and a fresh evidential cache per level under the Phase 5 shadow gateway. It compares resolved question, retrieval, evidence and thresholds, claim plan, locked and delivered claims, citations, and final outcomes. The typed alignment payload's band is accepted only when it equals the pinned V1 readability constants. The harness fulfills the plan section 15.2 engineering prerequisite. E3 and LQ-1 require separate research evidence.
 
 ## 13. Tests
 
@@ -144,6 +156,7 @@ The following defaults are provisional. Implementation locations in this section
 | DI-313 | Build the learner-facing consent UI after class approval. Blocked by: open D-27 and D-05. | Product Owner, Principal Investigator | Deferred |
 | DI-314 | Publish approved consent-class disclosure. AC-8-7 covers the cookie and storage inventory. Blocked by: open D-27 and D-05. | Product Owner, Principal Investigator | Deferred |
 | DI-315 | Re-review R-51 at the Phase 8 exit. Production carries the existing client mastery path until `LEARNER_SYNC` is enabled. Blocked by: open D-24, D-05, and DI-300. | Product Owner | Open |
+| DI-316 | Determine whether independently submitted support requests should be deleted as part of learner erasure. They currently follow their separate retention schedule and carry no learner subject key. Blocked by: owner decision. | Product Owner | Open |
 
 Plan M: "[Risk R-01][Risk R-08][Risk R-41][Risk R-42][Risk R-51]; residual: backups keep erased rows for a window."
 

@@ -497,6 +497,22 @@ class LearnerReplicaIssued(BaseModel):
     replica_id: str
 
 
+class LearnerConsentUpdate(BaseModel):
+    consent_class: Literal["adaptation", "analytics", "research"]
+    granted: bool = Field(strict=True)
+
+
+class LearnerConsentRecord(LearnerConsentUpdate):
+    user_id: str
+    consent_version: Literal["d27-unresolved-v1"]
+    updated_at: datetime
+    source: Literal["self-service"]
+
+
+class LearnerPrivacyErasureRequest(BaseModel):
+    password: str | None = Field(default=None, max_length=256)
+
+
 class LearnerRecordOperationReceipt(BaseModel):
     operation_id: str
     status: Literal["applied", "duplicate"]

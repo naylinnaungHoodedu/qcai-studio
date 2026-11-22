@@ -57,7 +57,7 @@ def _seed_everything(db, user_id: str, created_at: datetime = NOW, existing: dic
             continue
         values = {}
         for column in table.columns:
-            if column.primary_key and isinstance(column.type, Integer):
+            if column.primary_key and isinstance(column.type, Integer) and not column.foreign_keys:
                 continue
             if column.name in USER_KEY_COLUMNS:
                 values[column.name] = user_id
@@ -143,7 +143,8 @@ def test_retention_removes_stale_guest_rows_in_every_table_and_keeps_the_rest():
 
         timestamped = {table.name for table in _covered_tables() if "created_at" in table.c}
         everything = {table.name for table in _covered_tables()}
-        assert _surviving(db, stale_rows) == everything - timestamped
+        # Stable subject bindings live until explicit erasure, even after aged rows expire.
+        assert _surviving(db, stale_rows) == (everything - timestamped) | {"learner_subjects"}
         assert _surviving(db, fresh_rows) == everything
         assert _surviving(db, account_rows) == everything
     assert {"tutor_threads", "tutor_messages", "notes"} <= set(counts)

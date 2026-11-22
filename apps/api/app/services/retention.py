@@ -3,7 +3,8 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.db_models import PublicWebVital, RateLimitCounter, SecurityEvent, SupportRequest, UserSession
+from app.core.config import get_settings
+from app.db_models import GuestLegacyUpgrade, LearnerSubject, PublicWebVital, RateLimitCounter, SecurityEvent, SupportRequest, UserSession
 from app.services.erasure import erase_stale_guest_rows
 
 
@@ -34,8 +35,13 @@ def run_retention_cleanup(db: Session, now: datetime | None = None) -> dict[str,
         db.execute(delete(RateLimitCounter).where(RateLimitCounter.expires_at < now.timestamp())).rowcount,
     )
     # Guest study rows in every user-keyed table, with the rows that depend on them.
-    for table, deleted in erase_stale_guest_rows(db, now - timedelta(days=GUEST_STUDY_RETENTION_DAYS)).items():
+    cutoff = now - timedelta(days=GUEST_STUDY_RETENTION_DAYS)
+    privacy_on = get_settings().learner_privacy == "on"
+    bound_guests = tuple(db.scalars(select(LearnerSubject.user_id).where(LearnerSubject.provider == "guest"))) if privacy_on else ()
+    for table, deleted in erase_stale_guest_rows(db, cutoff, bound_guest_subjects=bound_guests).items():
         record(table, deleted)
+    if privacy_on:
+        record("guest_legacy_upgrades", db.execute(delete(GuestLegacyUpgrade).where(GuestLegacyUpgrade.upgraded_at < cutoff)).rowcount)
     record(
         "public_web_vitals",
         db.execute(

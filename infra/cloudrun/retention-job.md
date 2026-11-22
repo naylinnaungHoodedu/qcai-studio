@@ -40,3 +40,9 @@ These commands are a runbook, not something CI runs. Each is a cloud write that 
 4. Alert on failure: create a Cloud Monitoring alert on Cloud Run job executions with a failed status for `qcai-retention`. A failed run must page someone; it must not just leave a log line.
 
 Evidence for the plan's "job log" requirement: the JSON line of the first scheduled execution, filed in BEP-1 together with the execution id.
+
+## Phase 8
+
+The scheduled retention worker uses the same cleanup service as API startup. With `LEARNER_PRIVACY` enabled, retention applies the existing guest-study period to bound guest subjects and guest legacy-upgrade records. The worker leaves credential-protection tombstones in place. `LEARNER_SYNC`, `LEARNER_PLANNER`, and `LEARNER_IDENTITY` are independent of the retention pass. All four switches default to off outside development pending the Phase 8 exit.
+
+Plan L: "Flags for planner and sync. Stop: any harness violation blocks adaptation (never evidence)." The lifecycle worker leaves the shared adaptation-stop row alone.

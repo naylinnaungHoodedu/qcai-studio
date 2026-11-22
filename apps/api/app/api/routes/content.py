@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -7,7 +9,8 @@ from sqlalchemy.orm import Session
 from app.core.auth import AuthUser, get_current_user
 from app.core.config import get_settings
 from app.core.db import get_db
-from app.db_models import Note, QuizAttempt
+from app.core.structured_logging import FIELDS
+from app.db_models import LearnerAssessmentFact, Note, QuizAttempt
 from app.schemas import (
     CourseOverview,
     CourseProgress,
@@ -20,6 +23,7 @@ from app.schemas import (
     LearnerRecordOperationInput,
 )
 from app.services.learner_record import apply_learner_record_operations
+from app.services.learner_record_identity import bind_subject
 from app.services.learner_record_sync import SERVER_REPLICA, begin_server_assessment
 from app.services.learner_progress import build_course_progress
 from app.services.quiz_keys import score_attempt
@@ -27,6 +31,7 @@ from app.services.store import get_course_store
 from app.services.text_utils import sanitize_user_text
 
 router = APIRouter(prefix="/content", tags=["content"])
+logger = logging.getLogger(__name__)
 PUBLIC_CONTENT_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=60"
 
 
@@ -150,6 +155,7 @@ def record_quiz_attempt(
     db: Session = Depends(get_db),
     user: AuthUser = Depends(get_current_user),
 ):
+    started_at = datetime.now(UTC)
     store = get_course_store()
     lesson = store.lessons.get(payload.lesson_slug)
     if lesson is None:
@@ -158,9 +164,14 @@ def record_quiz_attempt(
     keys = store.quiz_keys.for_lesson(payload.lesson_slug)
     score, responses, feedback = score_attempt(keys, payload.responses)
     durable = user.provider not in {"guest", "demo"}
+    sync_enabled = get_settings().learner_sync == "on"
+    subject = (
+        bind_subject(db, user.provider, user.user_id)
+        if durable and sync_enabled and get_settings().learner_identity == "on" else user.user_id
+    )
     server_clock = (
-        begin_server_assessment(db, user.user_id, payload.lesson_slug)
-        if durable and get_settings().learner_sync == "on" else None
+        begin_server_assessment(db, subject, payload.lesson_slug, attempt_owner=user.user_id)
+        if sync_enabled else None
     )
     record = QuizAttempt(
         user_id=user.user_id,
@@ -175,6 +186,10 @@ def record_quiz_attempt(
     if durable:
         question_count = len(keys)
         mastery = round(min(1.0, score / question_count), 6) if question_count else 0.0
+        if sync_enabled:
+            db.add(LearnerAssessmentFact(
+                attempt_id=record.id, user_id=subject, lesson_slug=payload.lesson_slug, mastery=mastery,
+            ))
         base_counter = record.id * 2 if server_clock is None else server_clock
         operation_prefix = "quiz" if server_clock is None else "quiz-v2"
         operations = [
@@ -203,8 +218,13 @@ def record_quiz_attempt(
                     payload={"item_id": f"lesson:{payload.lesson_slug}"},
                 )
             )
-        apply_learner_record_operations(db, user.user_id, operations)
+        _, updated_record = apply_learner_record_operations(db, subject, operations)
     db.commit()
+    if durable and sync_enabled:
+        logger.info("Learner record updated", extra={FIELDS: {
+            "event": "learner.record.updated", "interaction_started_at": started_at.isoformat(),
+            "record_committed_at": datetime.now(UTC).isoformat(), "record_version": updated_record.record_version,
+        }})
     db.refresh(record)
     # The model answers and rubrics, only after a saved attempt and only for the questions it answered (Phase 4 spec 4.14).
     return QuizAttemptResult(attempt_id=record.id, score=record.score, feedback=feedback)

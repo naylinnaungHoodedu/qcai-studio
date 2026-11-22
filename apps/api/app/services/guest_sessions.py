@@ -18,6 +18,7 @@ from app.db_models import (
     BuilderShare,
     GuestLegacyUpgrade,
     GuestRevocation,
+    LearnerGuestRevocation,
     ProjectSubmission,
 )
 
@@ -31,8 +32,14 @@ def guest_log_ref(guest_id: str) -> str:
     return hashlib.sha256(guest_id.encode("utf-8")).hexdigest()[:12]
 
 
-def is_guest_revoked(db: Session, guest_id: str) -> bool:
-    return db.get(GuestRevocation, guest_id) is not None
+def guest_credential_digest(guest_id: str) -> str:
+    return hashlib.sha256(("qcai-guest-revocation-v1:" + guest_id).encode("utf-8")).hexdigest()
+
+
+def is_guest_revoked(db: Session, guest_id: str, *, include_phase8: bool = True) -> bool:
+    return db.get(GuestRevocation, guest_id) is not None or (
+        include_phase8 and db.get(LearnerGuestRevocation, guest_credential_digest(guest_id)) is not None
+    )
 
 
 def revoke_guest(db: Session, guest_id: str, reason: str) -> GuestRevocation:

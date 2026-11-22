@@ -43,6 +43,10 @@ def _decode_auth0_token(token: str, settings: Settings) -> AuthUser:
         # A malformed, expired or wrongly signed token: a refusal, not a 500.
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid bearer token.") from exc
     roles = payload.get("https://qcai.dev/roles") or payload.get("roles") or ["learner"]
+    if settings.learner_identity == "on" and (
+        not isinstance(payload.get("sub"), str) or not payload["sub"].strip()
+    ):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid bearer token.")
     return AuthUser(
         user_id=payload.get("sub", "unknown"),
         email=payload.get("email"),

@@ -25,12 +25,12 @@ ASSESSMENT_LIMIT = 12
 ASSESSMENT_WINDOW = timedelta(minutes=15)
 
 
-def begin_server_assessment(db: Session, user_id: str, lesson_slug: str) -> int:
+def begin_server_assessment(db: Session, user_id: str, lesson_slug: str, *, attempt_owner: str | None = None) -> int:
     """Hold the record lock while checking the quota and reserving the next clock base."""
     lock_learner_record(db, user_id)
     count = db.scalar(
         select(func.count()).select_from(QuizAttempt).where(
-            QuizAttempt.user_id == user_id,
+            QuizAttempt.user_id == (attempt_owner or user_id),
             QuizAttempt.lesson_slug == lesson_slug,
             QuizAttempt.created_at >= datetime.now(UTC) - ASSESSMENT_WINDOW,
         )

@@ -76,13 +76,17 @@ def erase_user(db: Session, user_id: str) -> dict[str, int]:
     return _delete_children_first(db, _deletion_conditions(_rows_of(user_id)))
 
 
-def erase_stale_guest_rows(db: Session, cutoff) -> dict[str, int]:
+def erase_stale_guest_rows(db: Session, cutoff, *, bound_guest_subjects: tuple[str, ...] = ()) -> dict[str, int]:
     """Delete guest rows created before `cutoff`, with the rows that depend on them. The caller commits."""
 
     def leaf(table: Table) -> ColumnElement[bool] | None:
         columns = [table.c[name] for name in USER_KEY_COLUMNS if name in table.c]
-        if not columns or "created_at" not in table.c:
+        time_column = "updated_at" if table.name == "learner_consents" else "created_at"
+        if not columns or time_column not in table.c or table.name == "learner_subjects":
             return None
-        return or_(*(column.like("guest-%") for column in columns)) & (table.c.created_at < cutoff)
+        predicates = [column.like("guest-%") for column in columns]
+        if bound_guest_subjects:
+            predicates.extend(column.in_(bound_guest_subjects) for column in columns)
+        return or_(*predicates) & (table.c[time_column] < cutoff)
 
     return _delete_children_first(db, _deletion_conditions(leaf))

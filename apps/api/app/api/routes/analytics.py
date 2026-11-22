@@ -1,3 +1,4 @@
+import logging
 from statistics import mean
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -9,6 +10,7 @@ from app.core.db import get_db
 from app.core.rate_limit import limiter
 from app.core.request_protection import validate_request_origin
 from app.db_models import AnalyticsEvent, PublicWebVital
+from app.services.learner_record_privacy import read_consent
 from app.schemas import (
     AnalyticsEventCreate,
     PublicWebVitalCreate,
@@ -18,6 +20,7 @@ from app.schemas import (
 )
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
+logger = logging.getLogger(__name__)
 
 
 def _p75(values: list[float]) -> float:
@@ -34,6 +37,9 @@ def record_event(
     db: Session = Depends(get_db),
     user: AuthUser = Depends(get_current_user),
 ):
+    if get_settings().learner_privacy == "on" and not read_consent(db, user.provider, user.user_id)["analytics"]:
+        logger.info("analytics.consent_withheld")
+        return {"status": "ok"}
     event = AnalyticsEvent(
         user_id=user.user_id,
         event_type=payload.event_type,

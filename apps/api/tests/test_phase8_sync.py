@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db_models import Base, LearnerIssuedReplica, LearnerRecord, LearnerRecordOperation, LearnerReplica, QuizAttempt
 from app.schemas import LearnerRecordOperationInput
+from app.services.learner_record import apply_learner_record_operations
 from app.services.learner_record_sync import (
     MAX_ISSUED_REPLICAS,
     ASSESSMENT_LIMIT,
@@ -185,3 +186,27 @@ def test_phase8_assessment_quota_and_server_clock_are_subject_scoped(sync_engine
         db.rollback()
         assert begin_server_assessment(db, other, "lesson") == 0
         assert begin_server_assessment(db, subject, "other-lesson") == ASSESSMENT_LIMIT
+
+
+def test_ac_8_1_concurrent_trusted_updates_preserve_each_mastery_value(sync_engine):
+    subject = f"subj-{uuid4().hex}"
+    barrier = Barrier(2, timeout=10)
+
+    def apply(item):
+        lesson, mastery = item
+        with Session(sync_engine, autoflush=False) as db:
+            barrier.wait()
+            counter = begin_server_assessment(db, subject, lesson) + 1
+            operation = LearnerRecordOperationInput(
+                operation_id=f"quiz-v2-{uuid4().hex}", replica_id=SERVER_REPLICA,
+                logical_counter=counter, operation_type="mastery_set",
+                payload={"skill_id": f"lesson:{lesson}", "value": mastery},
+            )
+            apply_learner_record_operations(db, subject, [operation])
+            db.commit()
+            return counter
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(apply, [("first", 0.2), ("second", 0.9)])) == [1, 2]
+    with Session(sync_engine) as db:
+        assert read_existing_learner_record(db, subject).mastery == {"lesson:first": 0.2, "lesson:second": 0.9}

@@ -184,3 +184,30 @@ Every test module Phase 5 added, with what it proves, then every existing module
 | `v1_fakes.py` | Not a test module: `dev_pipeline()` builds `MODEL_GATEWAY=off` settings when none are given, and `temp_package` writes the copy under the shipped package's name. |
 
 **Exit gate.** The Phase 5 exit needs AC-5-1 to AC-5-11 green in a cited CI run, D-07 closed and ledger verdicts for 100% of test responses (F-1) (plan Phase 5 P). The AC tests and F-1 over the fixture responses are done in code. The branch's push run 44998840311 (at `3498b52`) passed every job; each later commit needs its own run, and the cited run must be on `main` (DI-74); D-07 is an owner decision (DI-69); holds H6, H8, H9 and H14 stay held. `phase5_exit_passed` stays false in the package. The exit is not passed.
+
+## Phase 8 acceptance map (plan Phase 8 K)
+
+Phase 8 uses synthetic principals, local databases, and public engineering fixtures.
+
+| AC | Tests |
+|---|---|
+| AC-8-1 | `test_phase8_sync_parallel_replicas_conflict_and_retry_without_losing_updates`, `test_ac_8_1_concurrent_trusted_updates_preserve_each_mastery_value` |
+| AC-8-2 | `test_phase8_sync_duplicate_receipts_and_monotonic_clock`, `test_phase8_sync_rejects_other_subjects_and_server_operations` |
+| AC-8-3 | `test_ac_8_3_three_mastery_levels_yield_identical_claim_set_cited_spans_and_decision` |
+| AC-8-4 | `test_ac_8_4_no_evidential_or_verifier_module_imports_a_phase8_module` and the harness's F-2 scan |
+| AC-8-5 | `test_plan_f_the_committed_erasure_proof_matches_a_fresh_run`, `test_phase8_export_and_erasure_cover_bound_subject_and_legacy_rows` |
+| AC-8-6 | `test_a_client_sent_score_is_ignored`, `test_durable_mastery_follows_the_server_score` |
+| AC-8-7 | `test_ac_8_7_the_privacy_inventory_equals_the_cookies_and_storage_keys_in_code` |
+
+### Phase 8 test files
+
+| File | What it proves |
+|---|---|
+| `test_phase8_settings.py` | Environment defaults and signed-package requirements reject learner-facing feature activation before the Phase 8 exit. |
+| `test_phase8_sync.py` | Separate clients serialize their updates, recover duplicate receipts, reject stale versions, and retain both records after a conflict retry. |
+| `test_phase8_planner.py` | The planner uses deterministic bands and a stable review order, with a static fallback when consent or valid assessment data is absent. |
+| `test_phase8_identity.py` | Provider-scoped principal bindings persist and a claimed guest record leaves an atomic revocation and identifier-free audit. |
+| `test_phase8_privacy.py` | Scoped export and verified erasure cover both the authenticated principal and learner subject while preserving the control subject. |
+| `test_phase8_evidence.py` | The public-fixture replay checks invariance and import isolation, and the synthetic erasure proof verifies record coverage. |
+
+**Exit gate.** `phase8_exit_passed` stays false. See DI-300 for the main CI, owner decisions, and production evidence.

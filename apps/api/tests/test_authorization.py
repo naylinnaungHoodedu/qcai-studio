@@ -161,7 +161,9 @@ DENIED = [
 
 
 @pytest.mark.parametrize(("method", "path", "kind"), DENIED, ids=[f"{m} {p} as {k}" for m, p, k in DENIED])
-def test_a_refused_caller_is_refused(method, path, kind, local_learner):
+def test_a_refused_caller_is_refused(method, path, kind, local_learner, monkeypatch):
+    if path == "/auth/guest-claim":
+        monkeypatch.setattr(get_settings(), "learner_identity", "on")
     body = {"json": {}} if method in {"POST", "PUT", "DELETE"} else {}
     if kind == "anonymous":
         app.dependency_overrides[get_settings] = lambda: Settings(

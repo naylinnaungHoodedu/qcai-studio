@@ -269,7 +269,7 @@ class TutorOrchestrator:
         response._followups = TurnFollowups(
             legacy=self._legacy_followup(turn_id, candidate, contained, registry),
             shadow=self._shadow_followup(turn_id, thread.id, user_message_id, payload.lesson_slug, presentation_plan,
-                                         legacy_decision=contained.decision),
+                                         legacy_decision=contained.decision, db=db, learner=user),
         )
         return response
 
@@ -306,12 +306,28 @@ class TutorOrchestrator:
 
     def _shadow_followup(
         self, turn_id: str, thread_id: str, user_message_id: str, lesson_slug: str | None, presentation_plan: str | None,
-        *, legacy_decision: str | None = None,
+        *, legacy_decision: str | None = None, db: Session | None = None, learner: AuthUser | None = None,
     ) -> ShadowJob | None:
         try:
             package = get_config_package(self.settings)
             if effective_mode(self.settings, package) != "shadow" or package.tutor_pipeline is None:
                 return None
+            if self.settings.learner_planner == "shadow" and db is not None and learner is not None:
+                from app.services.learner_record_shadow import shadow_presentation
+
+                try:
+                    with db.begin_nested():
+                        proposed = shadow_presentation(
+                            db, learner.provider, learner.user_id, tuple(self._store().lessons),
+                            package.tutor_pipeline.default_plan,
+                        )
+                    TUTOR_LOGGER.info("Learner planner shadow", extra={FIELDS: {
+                        "event": "learner.planner.shadow", "plan_id": proposed.plan_id,
+                    }})
+                except Exception as exc:  # A planner fault cannot alter the evidence job.
+                    TUTOR_LOGGER.warning("Learner planner degraded", extra={FIELDS: {
+                        "event": "learner.planner.degraded", "error": type(exc).__name__,
+                    }})
             plan_id = presentation_plan or package.tutor_pipeline.default_plan
             return ShadowJob(
                 shadow_response_id=f"shadow-{uuid4()}",

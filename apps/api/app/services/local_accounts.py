@@ -155,5 +155,11 @@ def delete_local_account(db: Session, user_id: str, password: str) -> AccountEra
     # had missed the learner-record and tutor tables.
     started = time.monotonic()
     counts = erase_user(db, user_id)
+    from app.services.learner_record_identity import find_subject
+
+    subject = find_subject(db, "local", user_id)
+    if subject and subject != user_id:
+        for table, count in erase_user(db, subject).items():
+            counts[table] = counts.get(table, 0) + count
     db.commit()
     return AccountErasure(rows=counts, duration_ms=round((time.monotonic() - started) * 1000))

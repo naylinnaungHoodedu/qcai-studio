@@ -31,6 +31,11 @@ that each policy matches the route's real dependencies, and that this file is cu
 
 | Method | Path | Access | Ownership | Note |
 |---|---|---|---|---|
+| GET | `/auth/learner-consent` | `principal` | `caller` | Phase 8 provisional consent. |
+| PUT | `/auth/learner-consent` | `principal` | `caller` | Phase 8 provisional consent. |
+| GET | `/auth/learner-export` | `principal` | `caller` | Phase 8 local learner data. |
+| POST | `/auth/learner-erasure` | `principal` | `caller` | Phase 8 local erasure and receipt. |
+| POST | `/auth/guest-claim` | `durable_learner` | `caller` | Phase 8. Also requires a verified guest session. |
 | GET | `/auth/me` | `principal` | `caller` |  |
 | POST | `/auth/register` | `public` | `none` | Creates a learner account; rate-limited. |
 | POST | `/auth/login` | `public` | `none` | Rate-limited; failures are security events. |
