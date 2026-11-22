@@ -1,12 +1,17 @@
 """Retrieval over the Phase 2 span index (plan Phase 2 task 2.5; Phase 2 spec 4.14).
 
 Lexical retrieval is the evidence path: CourseStore.evaluate with the active gate (p1-floor or bm25f-v1). The
-semantic (Pinecone) backend is OFF unless SEMANTIC_RETRIEVAL_ENABLED, whatever keys are set; it also needs the D-23
-opt-in, openai-embeddings in MODEL_EGRESS_PROVIDERS (PD-22; a refusal logs gateway.egress_refused once per process,
-consumer semantic-retrieval), and even then it runs only once it is aligned: its vector ids are span ids and the
-namespace holds exactly one vector per index entry. RetrievalEngine.semantic_inactive_reason names why it is off.
-Every semantic result is re-gated with the active gate before fusion, so hybrid fusion can never bypass the
-abstention floor (the latent hybrid bypass found on 2026-11-17). Nothing here takes a learner input.
+semantic (Pinecone) backend is OFF unless SEMANTIC_RETRIEVAL_ENABLED, whatever keys are set. It embeds only through the
+gateway (app.gateway.embeddings, the sole holder of the embedding key; plan 7.1), which gives it an embedder only when
+the environment opts in (D-23: openai-embeddings in MODEL_EGRESS_PROVIDERS, PD-22; a refusal logs
+gateway.egress_refused once per process, consumer semantic-retrieval), the provider decisions are closed (D-07, D-12,
+Q-09) and the Q-15 payload review is done, the model is pinned, the registry has a budget, the gateway is open and the
+key is set; with the shipped package no embedder is given anywhere. Even then it runs only once it is aligned: its
+vector ids are span ids and the namespace holds exactly one vector per index entry. RetrievalEngine.
+semantic_inactive_reason names why it is off. Every semantic result is re-gated with the active gate before fusion, so
+hybrid fusion can never bypass the abstention floor (the latent hybrid bypass found on 2026-11-17). The vector index
+client (Pinecone) is the one egress import outside the gateway: it receives span-id vectors and the query's vector,
+and is reached only with an embedder.
 """
 
 from __future__ import annotations
@@ -17,8 +22,6 @@ from functools import cached_property
 import logging
 import time
 from typing import Any
-
-from langchain_openai import OpenAIEmbeddings
 
 from app.core.config import Settings
 from app.core.structured_logging import FIELDS
@@ -39,8 +42,6 @@ else:  # pragma: no cover - exercised through mocked backends in tests.
 
 LOGGER = logging.getLogger(__name__)
 DECISION_LOGGER = logging.getLogger("qcai.retrieval")
-# The D-23 egress provider name the semantic backend needs in MODEL_EGRESS_PROVIDERS (PD-22).
-EMBEDDINGS_PROVIDER = "openai-embeddings"
 RRF_K = 60
 SEMANTIC_WEIGHT = 1.35
 LEXICAL_WEIGHT = 1.0
@@ -64,43 +65,50 @@ class RetrievalResponse:
 
 
 class PineconeSemanticBackend:
-    def __init__(self, store: CourseStore, settings: Settings):
+    def __init__(self, store: CourseStore, settings: Settings, *, embedder: Any = None):
         self.store = store
         self.settings = settings
         self.namespace = settings.pinecone_namespace
         self._sync_checked = False
         # True only after sync_semantic_index saw one span-id vector per index entry ([R18]).
         self.aligned = False
+        # A test's in-process embedder (no egress); otherwise the gateway's, when it gives one (app.gateway.embeddings).
+        self._embedder = embedder
+
+    def embedding_problem(self) -> str | None:
+        """Why the gateway gives this backend no embedder (app.gateway.embeddings.EMBEDDING_PROBLEMS), or None; a test's
+        in-process embedder needs no egress check."""
+        if self._embedder is not None:
+            return None
+        from app.core.config_package import get_config_package
+        from app.gateway.embeddings import embedding_problem
+
+        return embedding_problem(self.settings, get_config_package(self.settings))
 
     @property
     def egress_refused(self) -> bool:
         """The setting is on but the environment has not opted in to the embedding egress (D-23, PD-22)."""
-        from app.gateway.egress import egress_allowed
+        return bool(self.settings.semantic_retrieval_enabled) and self.embedding_problem() == "egress_not_opted_in"
 
-        return bool(self.settings.semantic_retrieval_enabled) and not egress_allowed(self.settings, EMBEDDINGS_PROVIDER)
+    @property
+    def index_configured(self) -> bool:
+        return bool(Pinecone and self.settings.pinecone_api_key and self.settings.pinecone_index)
 
     @property
     def enabled(self) -> bool:
-        # D-23 (PD-22): the embedding egress also needs the environment's opt-in, openai-embeddings in
-        # MODEL_EGRESS_PROVIDERS (Phase 5 spec conflict 10); moving it behind the gateway is DI-77.
-        from app.gateway.egress import egress_allowed
-
-        return bool(
-            self.settings.semantic_retrieval_enabled
-            and egress_allowed(self.settings, "openai-embeddings")
-            and Pinecone
-            and self.settings.openai_api_key
-            and self.settings.openai_embedding_model
-            and self.settings.pinecone_api_key
-            and self.settings.pinecone_index
-        )
+        return bool(self.settings.semantic_retrieval_enabled and self.index_configured and self.embedding_problem() is None)
 
     @cached_property
-    def _embeddings(self) -> OpenAIEmbeddings:
-        return OpenAIEmbeddings(
-            api_key=self.settings.openai_api_key,
-            model=self.settings.openai_embedding_model,
-        )
+    def _embeddings(self):
+        if self._embedder is not None:
+            return self._embedder
+        from app.core.config_package import get_config_package
+        from app.gateway.embeddings import embedder_for
+
+        embedder = embedder_for(self.settings, get_config_package(self.settings))
+        if embedder is None:
+            raise RuntimeError("the gateway gives the semantic backend no embedder")
+        return embedder
 
     @cached_property
     def _client(self):
@@ -204,10 +212,10 @@ def _gate_scores(scored: "Iterable[ScoredEntry]") -> dict[str, float]:
 
 
 class RetrievalEngine:
-    def __init__(self, store: CourseStore, settings: Settings):
+    def __init__(self, store: CourseStore, settings: Settings, *, embedder: Any = None):
         self.store = store
         self.settings = settings
-        self._semantic_backend = PineconeSemanticBackend(store, settings)
+        self._semantic_backend = PineconeSemanticBackend(store, settings, embedder=embedder)
 
     @property
     def semantic_enabled(self) -> bool:
@@ -216,20 +224,26 @@ class RetrievalEngine:
 
     @property
     def semantic_inactive_reason(self) -> str | None:
-        """Why semantic retrieval is off although its setting is on: egress_not_opted_in (D-23), not_configured (a key,
-        the SDK or the index is missing) or not_aligned; None when the setting is off or retrieval is hybrid."""
+        """Why semantic retrieval is off although its setting is on: the gateway's reason for giving no embedder
+        (egress_not_opted_in, provider_open, unpinned, no_budget, gateway_stopped or not_configured; app.gateway.
+        embeddings), not_configured when the vector index's SDK, key or name is missing, else not_aligned; None when the
+        setting is off or retrieval is hybrid."""
         backend = self._semantic_backend
         if not self.settings.semantic_retrieval_enabled or self.semantic_enabled:
             return None
-        if getattr(backend, "egress_refused", False):
-            return "egress_not_opted_in"
-        return "not_aligned" if backend.enabled else "not_configured"
+        problem = backend.embedding_problem() if hasattr(backend, "embedding_problem") else None
+        if problem is not None:
+            return problem
+        if not getattr(backend, "index_configured", True):
+            return "not_configured"
+        return "not_aligned"
 
     def sync_semantic_index(self, refresh: bool = False) -> bool:
         """The one place that computes alignment ([R18]); True when hybrid retrieval may run. A setting that is on
         without the D-23 opt-in logs gateway.egress_refused (once per process) and stays lexical."""
         backend = self._semantic_backend
         if getattr(backend, "egress_refused", False):
+            from app.gateway.embeddings import EMBEDDINGS_PROVIDER
             from app.gateway.egress import log_refusal
 
             log_refusal(EMBEDDINGS_PROVIDER, consumer="semantic-retrieval")

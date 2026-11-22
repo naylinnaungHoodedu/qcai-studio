@@ -498,8 +498,10 @@ def _parse_tutor_pipeline(raw: Mapping[str, Any], *, schema_version: int = 2) ->
     _require(ratio > 0, "tutor_pipeline.stop.phase2_bound_claim_ratio must be in (0, 1]")
     unused = tuple(tutor.get("unused_provenance_fields") or ())
     if schema_version >= 4:
-        # Package v4 fills every provenance field (plan 7.4), and names the v3 ledger entry too.
-        _require(unused == (), "tutor_pipeline.unused_provenance_fields must be empty in package v4 (every provenance field is filled)")
+        # The list describes the package's entry schema (tutor_pipeline.ledger.entry_schema), as in v1 to v3: package v4's,
+        # ledger-entry-v3, fills every provenance field (plan 7.4). A ledger-entry-v2 record written under v4 with
+        # MODEL_GATEWAY off keeps the three Phase 5 fields null, as a v1 record under v3 kept v1_3_checker_model_id null.
+        _require(unused == (), "tutor_pipeline.unused_provenance_fields must be empty in package v4 (its entry schema, ledger-entry-v3, fills every provenance field)")
         _require(ledger.get("legacy_entry_schema") == "ledger-entry-v1", "tutor_pipeline.ledger.legacy_entry_schema must be 'ledger-entry-v1'")
         _require(ledger.get("entry_schemas") == list(LEDGER_ENTRY_SCHEMAS_V4),
                  "tutor_pipeline.ledger.entry_schemas must be [ledger-entry-v1, ledger-entry-v2, ledger-entry-v3]")
@@ -869,6 +871,11 @@ class GatewayParams:
     payload_rule: str
     stop_on: tuple[str, ...]
     retired_settings: tuple[str, ...]
+    # Where the daily budget, the stop and the evidential cache live: "database", shared by every instance
+    # (app.gateway.controls, v2_panel.cache.DatabaseEvidentialCache; plan 5.7, 5.10, L, 7.5).
+    budget_scope: str = "database"
+    stop_scope: str = "database"
+    cache_scope: str = "database"
 
 
 @dataclass(frozen=True)
@@ -1015,13 +1022,18 @@ def _parse_gateway(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], tuto
                  "gateway.budgets.daily_units outside development must be 0 while A-15 is open (hold H9)")
     share = _mapping(budgets, "alert_share")
     _require(share.get("numerator") == 4 and share.get("denominator") == 5, "gateway.budgets.alert_share must be 4/5 (plan Phase 5 I: alert at 80%)")
+    _require(budgets.get("scope") == "database",
+             "gateway.budgets.scope must be 'database': every instance spends from one daily budget (plan Phase 5 task 5.10, a hard stop)")
     cache = _mapping(gateway, "cache")
-    _require(cache.get("provisional") is True and cache.get("scope") == "process", "gateway.cache is per process and provisional (PD-27)")
+    _require(cache.get("provisional") is True and cache.get("scope") == "database",
+             "gateway.cache is shared through the application database and provisional (plan 5.7, 7.5; PD-27)")
     bounds = _mapping(cache, "max_entries")
     policy = _mapping(gateway, "payload_policy")
     _require(policy.get("on_violation") == "stop", "gateway.payload_policy.on_violation must be 'stop' (plan Phase 5 L)")
     stop = _mapping(gateway, "stop")
     _require(sorted(stop.get("on") or []) == list(GATEWAY_STOPS), "gateway.stop.on must name budget_breach, payload_violation and secret_in_logs")
+    _require(stop.get("scope") == "database" and stop.get("clear") == "operator",
+             "gateway.stop is shared through the application database and cleared by an operator only (plan Phase 5 L; PD-28)")
     retired = tuple(gateway.get("retired_settings") or ())
     _require(retired == RETIRED_PROVIDER_SETTINGS, "gateway.retired_settings must be the code's RETIRED_PROVIDER_SETTINGS")
     if _bool_state(decisions, "Q-09", ("unresolved",)):
@@ -1031,6 +1043,7 @@ def _parse_gateway(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], tuto
         daily_units=daily_units, alert_share=(4, 5), cache_key_rule=_text(cache, "key_rule"),
         cache_max_plans=_integer_in(bounds, "claim_plan", 1, 100000), cache_max_verdicts=_integer_in(bounds, "verdict", 1, 100000),
         payload_rule=_text(policy, "rule"), stop_on=GATEWAY_STOPS, retired_settings=retired,
+        budget_scope="database", stop_scope="database", cache_scope="database",
     )
 
 
@@ -1083,6 +1096,7 @@ def _parse_v2(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], gateway: 
         _require((numerator, denominator) == TIER3_THRESHOLD,
                  f"v2.voting.tier3_threshold must be {TIER3_THRESHOLD[0]}/{TIER3_THRESHOLD[1]} while Q-22 is unresolved (PD-25)")
     correction = _mapping(v2, "correction")
+    _require(correction.get("provisional") is True, "v2.correction must be marked provisional: true (PD-29)")
     _require(correction.get("max_cycles") == MAX_CORRECTION_CYCLES, f"v2.correction.max_cycles must be {MAX_CORRECTION_CYCLES} (plan 5.8)")
     for name, rule in CORRECTION_RULES.items():
         _require(correction.get(name) == rule, f"v2.correction.{name} must be '{rule}', the code's correction rule (plan 5.8)")
@@ -1090,11 +1104,13 @@ def _parse_v2(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], gateway: 
     if _bool_state(decisions, "D-25", ("open",)):
         _require(not critical, "v2.correction.critical_registry must be empty while D-25 is open (PD-29)")
     degraded = _mapping(v2, "degraded")
+    _require(degraded.get("provisional") is True, "v2.degraded must be marked provisional: true (PD-30)")
     _require(degraded.get("pre_verified_source", "missing") is None, "v2.degraded.pre_verified_source must be null: no pre-verified store exists (DI-83)")
     banners = _mapping(degraded, "banners")
     _require(tuple(sorted(banners)) == tuple(sorted(BANNER_IDS)) and all(isinstance(text, str) and text.strip() for text in banners.values()),
              "v2.degraded.banners must hold a text for each banner id")
     alignment = _mapping(v2, "alignment")
+    _require(alignment.get("provisional") is True, "v2.alignment must be marked provisional: true (PD-25)")
     return V2Params(
         version=_text(v2, "version"), max_members=MAX_MEMBERS, generator_families=dict(families_raw),
         verifier_prompt_id=_text(prompt, "verifier_prompt_id"), verifier_prompt_hash=_hex64(prompt, "verifier_prompt_hash"),

@@ -2,8 +2,10 @@
 
 The dead Vertex path and the unused chat-model setting are gone, with their Settings fields. Settings ignore unknown
 environment keys (extra="ignore"), so a deployment that still sets one starts unchanged; start-up logs the names it
-finds (gateway.retired_setting, upper-case names only, never a value). A retired key's value is still masked in every
-log line (retired_secret_values feeds the redaction). No file is opened: only the process environment is read.
+finds (gateway.retired_setting, upper-case names only, never a value). A retired key set in the process environment is
+still masked in every log line (retired_secret_values feeds the redaction). No file is opened: only the process
+environment is read, so a retired key kept only in a .env file is neither named nor masked, and no code reads it (the
+Settings field is gone, and Settings ignore unknown keys).
 """
 
 from __future__ import annotations

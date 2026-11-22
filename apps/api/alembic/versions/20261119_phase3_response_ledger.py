@@ -1,7 +1,7 @@
 """Phase 3 tutor response ledger: the append-only, hash-chained response_ledger and its chain head (plan Phase 3
 task 3.8, G; R-22), and tutor_turn_idempotency, the Idempotency-Key records of POST /tutor/turns (plan 7.3
 "mutations carry client keys"; DI-40). This revision had not been applied anywhere when the second table was added
-(Phase 3 is unmerged), so the head stays 20261119_phase3_response_ledger (ledger.SCHEMA_REVISION).
+(Phase 3 was unmerged), so it holds both; 20261122_phase5_gateway_controls follows it (ledger.SCHEMA_REVISION).
 
 Additive and reversible (expand step, plan 13.3). The append-only and chain triggers come from app.core.schema_upgrades,
 which checks them at each API start and re-creates them only when they are not current, so the downgrade drops

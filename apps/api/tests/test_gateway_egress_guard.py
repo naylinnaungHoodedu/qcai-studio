@@ -3,10 +3,12 @@ holder of provider credentials"; R-06; Phase 5 spec 13.2, conflicts 1, 10 and 29
 
 Two AST rules over the repository's code:
   import rule      no module of the API image (apps/api/app) outside app/gateway/ imports a provider SDK or an HTTP client,
-                   with one recorded allow-list entry: the Phase 2 semantic backend (app/services/retrieval_engine.py:
-                   langchain_openai and pinecone), behind the D-23 opt-in, whose move behind the gateway is DI-77
-  host-string rule no string literal in apps/api/app, scripts, evaluation or tools outside app/gateway/ names a model
-                   provider's host
+                   with one recorded allow-list entry: the vector index client of the Phase 2 semantic backend
+                   (app/services/retrieval_engine.py: pinecone), reached only with an embedder the gateway gives (its
+                   embedding egress and key are app/gateway/embeddings.py's)
+  host-string rule in the Python files under apps/api/app, scripts, evaluation (its tests included) and tools outside
+                   app/gateway/, no string literal names a model provider's host; apps/api/tests, apps/frontend, infra
+                   and every non-Python file are not scanned
 Each rule is shown catching a sample, and passing urllib.parse, langchain_text_splitters, the scripts' non-model
 urllib.request and the word "coherence".
 """
@@ -22,7 +24,7 @@ GATEWAY_ROOT = APP_ROOT / "gateway"
 EGRESS_MODULES = ("httpx", "requests", "aiohttp", "urllib.request", "urllib3", "http.client", "google.auth", "openai", "anthropic",
                   "google.generativeai", "google.genai", "vertexai", "langchain_openai", "langchain_anthropic", "langchain_google",
                   "cohere", "mistralai", "pinecone")
-ALLOWED_IMPORTS = {"app/services/retrieval_engine.py": {"langchain_openai", "pinecone"}}
+ALLOWED_IMPORTS = {"app/services/retrieval_engine.py": {"pinecone"}}
 PROVIDER_HOSTS = ("generativelanguage.googleapis.com", "aiplatform.googleapis.com", "api.openai.com", "openai.azure.com",
                   "api.anthropic.com", "api.cohere.ai", "api.cohere.com", "api.mistral.ai", "api-inference.huggingface.co", "bedrock-runtime")
 HOST_ROOTS = (APP_ROOT, REPO_ROOT / "scripts", REPO_ROOT / "evaluation", REPO_ROOT / "tools")
@@ -91,7 +93,8 @@ def test_the_scanner_catches_each_rule_s_sample_and_passes_what_is_not_egress():
     assert import_problems("import google.genai", "app/services/x.py")
     for passing in ("from urllib.parse import urlsplit", "import langchain_text_splitters", "import socket", "import json"):
         assert import_problems(passing, "app/services/x.py") == [], passing
-    assert import_problems("from langchain_openai import OpenAIEmbeddings\nfrom pinecone import Pinecone", "app/services/retrieval_engine.py") == []
+    assert import_problems("from pinecone import Pinecone", "app/services/retrieval_engine.py") == []
+    assert import_problems("from langchain_openai import OpenAIEmbeddings", "app/services/retrieval_engine.py")
     assert import_problems("import httpx", "app/services/retrieval_engine.py")
     for host in PROVIDER_HOSTS:
         assert host_problems(f"URL = 'https://{host}/v1'", "scripts/x.py"), host
@@ -102,7 +105,8 @@ def test_the_scanner_catches_each_rule_s_sample_and_passes_what_is_not_egress():
 
 
 def test_the_allow_list_is_the_one_recorded_exception():
-    assert ALLOWED_IMPORTS == {"app/services/retrieval_engine.py": {"langchain_openai", "pinecone"}}
+    # The vector index client only: the embedding egress, its key and its D-23 opt-in are the gateway's (spec 4.19).
+    assert ALLOWED_IMPORTS == {"app/services/retrieval_engine.py": {"pinecone"}}
     source = (APP_ROOT / "services" / "retrieval_engine.py").read_text(encoding="utf-8")
-    assert {name for name in ("langchain_openai", "pinecone") if name in source} == {"langchain_openai", "pinecone"}
-    assert 'egress_allowed(self.settings, "openai-embeddings")' in source
+    assert "from pinecone import Pinecone" in source and "langchain_openai" not in source and "openai_api_key" not in source
+    assert "from app.gateway.embeddings import embedding_problem" in source and "embedder_for" in source

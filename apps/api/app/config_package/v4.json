@@ -859,6 +859,7 @@
     },
     "budgets": {
       "provisional": true,
+      "scope": "database",
       "unit": "cost-unit",
       "daily_units": {
         "development": 100000,
@@ -874,7 +875,7 @@
     },
     "cache": {
       "provisional": true,
-      "scope": "process",
+      "scope": "database",
       "key_rule": "plan-5.7-envelope-union-7.3-v1",
       "max_entries": {
         "claim_plan": 1024,
@@ -892,7 +893,9 @@
         "payload_violation",
         "secret_in_logs"
       ],
-      "action": "gateway_stopped_then_off_security_event"
+      "action": "gateway_stopped_then_off_security_event",
+      "scope": "database",
+      "clear": "operator"
     },
     "retired_settings": [
       "OPENAI_CHAT_MODEL",
@@ -990,15 +993,17 @@
       "banners": {
         "degraded-reduced-2-v1": "Fewer independent checks than usual verified this answer.",
         "degraded-reduced-1-v1": "Parts of this answer are held back until more checks are available.",
-        "degraded-zero-v1": "Verification is unavailable right now, so only checked course material or no answer is shown."
+        "degraded-zero-v1": "Verification is unavailable right now, so only quoted course passages or no answer is shown."
       },
       "record": "PD-30"
     },
     "alignment": {
+      "provisional": true,
       "rule": "1ooN-leakage-v1",
       "objective_source": "lesson_summary",
       "band_source": "v1.v1_9.readability",
-      "rating_gates": false
+      "rating_gates": false,
+      "record": "PD-25"
     }
   },
   "tools": {
@@ -1055,7 +1060,7 @@
       "on_requires": "phase5_exit_passed",
       "on_outside_development": "refused_before_exit",
       "on_requires_v1": "enforce",
-      "stop": "off_until_restart",
+      "stop": "off_until_cleared",
       "authority": "plan Phase 5 G, L; 13.6; PD-28"
     },
     "phase5_exit_passed": false,

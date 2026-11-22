@@ -573,6 +573,15 @@ def test_v4_keeps_every_v3_value_but_the_listed_changes():
         lambda p: p["gateway"]["pinning"].update(version_pattern="^.+$"),
         lambda p: p["gateway"]["registries"]["development"][0].update(model_id="fakealpha3preview"),
         lambda p: p["gateway"]["registries"]["development"][0].update(model_version="2026-02-30"),
+        # Every provisional sub-block of v2 carries its own mark (PD-25, PD-29, PD-30).
+        lambda p: p["v2"]["correction"].pop("provisional"),
+        lambda p: p["v2"]["degraded"].update(provisional=False),
+        lambda p: p["v2"]["alignment"].pop("provisional"),
+        # The budget, the stop and the cache are shared by every instance, and only an operator clears a stop.
+        lambda p: p["gateway"]["budgets"].update(scope="process"),
+        lambda p: p["gateway"]["cache"].update(scope="process"),
+        lambda p: p["gateway"]["stop"].update(scope="process"),
+        lambda p: p["gateway"]["stop"].update(clear="restart"),
     ],
 )
 def test_v4_structural_errors_always_stop_the_load(tmp_path, edit):
@@ -582,6 +591,19 @@ def test_v4_structural_errors_always_stop_the_load(tmp_path, edit):
     for governed in (True, False):
         with pytest.raises(ConfigPackageError):
             load_config_package(path, governed=governed)
+
+
+def test_v4_names_the_entry_schema_whose_provenance_fields_it_fills(tmp_path):
+    # unused_provenance_fields describes the package's entry schema (ledger-entry-v3 in v4), as in v1 to v3; a v2 record
+    # written under v4 with MODEL_GATEWAY off keeps the three Phase 5 fields null.
+    payload = json.loads(json.dumps(RAW))
+    payload["tutor_pipeline"]["unused_provenance_fields"] = ["tool_contract_version"]
+    with pytest.raises(ConfigPackageError, match="its entry schema, ledger-entry-v3, fills every provenance field"):
+        load_config_package(_write(tmp_path, payload), governed=True)
+    assert RAW["tutor_pipeline"]["ledger"]["entry_schema"] == "ledger-entry-v3"
+    assert {RAW["gateway"][block]["scope"] for block in ("budgets", "cache", "stop")} == {"database"} and RAW["gateway"]["stop"]["clear"] == "operator"
+    assert RAW["flag_policy"]["model_gateway"]["stop"] == "off_until_cleared"
+    assert all(RAW["v2"][block]["provisional"] is True for block in ("tiers", "voting", "correction", "degraded", "alignment"))
 
 
 def test_gateway_package_check_problems():

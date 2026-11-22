@@ -1,8 +1,9 @@
 """The daily budget (plan Phase 5 task 5.10 "daily budget hard stop"; plan I "alert at 80% of budget"; A-15 open, hold
 H9; PD-26; Phase 5 spec 4.4).
 
-One instance per process gateway. remaining() is what is left today; eligibility drops an adapter whose cost per call
-exceeds it, and a budget of 0 makes every adapter ineligible (staging, production and default are 0 while A-15 is
+DailyBudget keeps the day's spend in one process: the budget a test or the fixture runner passes. The process gateway's
+budget is app.gateway.controls.DatabaseBudget, the same rule over one row per registry and UTC day that every instance
+spends from. remaining() is what is left today; eligibility drops an adapter whose cost per call exceeds it, and a budget of 0 makes every adapter ineligible (staging, production and default are 0 while A-15 is
 open). reserve(cost) refuses a call that would cross the budget (the gateway then stops with budget_breach) and logs
 gateway.budget_alert once per UTC day when spending reaches 4/5 of it. A cache hit costs nothing.
 """

@@ -1,4 +1,5 @@
-"""Phase 5 evidential cache (plan Phase 5 task 5.7; AC-5-8, AC-5-11; R-47; PD-27; Phase 5 spec 4.15)."""
+"""Phase 5 evidential cache (plan Phase 5 task 5.7; AC-5-8, AC-5-11; R-47; PD-27; Phase 5 spec 4.15): the key rules, the
+per-process cache and the shared DatabaseEvidentialCache."""
 
 from __future__ import annotations
 
@@ -9,7 +10,7 @@ import pytest
 from app.core.config import Settings
 from app.gateway.contracts import AdapterVerdict
 from app.services.tutor_pipeline.contracts import ClaimPlan, ProposedClaim
-from app.services.v2_panel.cache import ProcessEvidentialCache, claim_plan_key, verdict_key
+from app.services.v2_panel.cache import DatabaseEvidentialCache, ProcessEvidentialCache, claim_plan_key, get_cache, verdict_key
 from v1_fakes import MULTI_CLAIM, run
 from v2_fakes import adapters_of, fake_spec, fresh_gateway, make_registry, v2_pipeline
 
@@ -67,6 +68,50 @@ def test_hits_bounds_and_types():
     plan = ClaimPlan(generator=v2_pipeline().generator.ref, claims=(ProposedClaim(text="x", span_ids=(SPAN,)),))
     cache.put("claim_plan", "p", plan)
     assert cache.get("claim_plan", "p") == plan
+
+
+def test_the_shared_cache_is_one_cache_for_every_instance_under_keyed_digests():
+    # Plan 5.7 "Shared cache", 7.5 "shared verdict cache": two DatabaseEvidentialCache objects are two instances over one
+    # table. A key is stored only as a keyed digest, a value as its contract's JSON; a hit refreshes the entry, and a put
+    # beyond the kind's bound evicts the least recently used one.
+    class Clock:
+        now = 100.0
+
+        def __call__(self) -> float:
+            self.now += 1.0
+            return self.now
+
+    clock = Clock()
+    first = DatabaseEvidentialCache(max_plans=2, max_verdicts=2, clock=clock)
+    second = DatabaseEvidentialCache(max_plans=2, max_verdicts=2, clock=clock)
+    verdict = AdapterVerdict(verdict="NOT_ENOUGH_INFO", ehmf_type="B", span_id=SPAN)
+    first.put("verdict", "a", verdict)
+    first.put("verdict", "b", verdict)
+    assert second.get("verdict", "a") == verdict  # another instance hits, and the hit refreshes "a"
+    second.put("verdict", "c", verdict)          # the bound evicts "b", the least recently used
+    assert first.get("verdict", "b") is None and first.get("verdict", "c") == verdict
+    assert first.keys("verdict") == second.keys("verdict") and len(first.keys("verdict")) == 2
+    assert {"a", "b", "c"}.isdisjoint(first.keys("verdict")) and DatabaseEvidentialCache.stored_key("a") in first.keys("verdict")
+    assert all(len(key) == 32 and set(key) <= set("0123456789abcdef") for key in first.keys("verdict"))
+    assert first.snapshot()["verdict"] == {"hits": 1, "misses": 1, "entries": 2} and second.snapshot()["verdict"]["hits"] == 1
+    for kind, value in (("verdict", "rendered text"), ("claim_plan", verdict), ("verdict", {"verdict": "SUPPORTED"}), ("alignment", verdict)):
+        with pytest.raises(TypeError):
+            first.put(kind, "k", value)
+    plan = ClaimPlan(generator=v2_pipeline().generator.ref, claims=(ProposedClaim(text="x", span_ids=(SPAN,)),))
+    first.put("claim_plan", "p", plan)
+    assert second.get("claim_plan", "p") == plan and second.values("claim_plan") == [plan]
+    first.evict("claim_plan", "p")
+    assert second.get("claim_plan", "p") is None
+
+
+def test_the_process_cache_is_the_shared_cache_and_the_seam_empties_it():
+    from app.services.v2_panel.cache import reset_process_cache
+
+    cache = get_cache()
+    assert isinstance(cache, DatabaseEvidentialCache) and cache._limits == {"claim_plan": 1024, "verdict": 8192}
+    cache.put("verdict", "k", AdapterVerdict(verdict="SUPPORTED", ehmf_type=None, span_id=SPAN))
+    reset_process_cache()
+    assert get_cache() is not cache and get_cache().get("verdict", "k") is None
 
 
 def test_generation_1_reads_the_cache_and_a_cached_plan_that_hard_fails_v1_1_is_evicted():

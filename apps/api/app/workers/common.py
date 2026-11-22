@@ -8,10 +8,11 @@ from app.core.db import Base, engine
 from app.core.log_redaction import install_log_redaction
 from app.core.structured_logging import configure_logging
 from app.gateway.retired import retired_secret_values
+from app.gateway.secrets import provider_secret_values
 
 LOGGER = logging.getLogger("qcai.worker")
 _settings = get_settings()
-install_log_redaction([*retired_secret_values(), _settings.openai_api_key, _settings.pinecone_api_key])
+install_log_redaction([*retired_secret_values(), *provider_secret_values(), _settings.pinecone_api_key])
 configure_logging()
 
 _running = True

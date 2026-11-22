@@ -21,6 +21,7 @@ from app.core.corpus_governance import CorpusGovernanceError, DriftReport, get_c
 from app.core.config import get_settings
 from app.core.db import Base, SessionLocal, engine
 from app.gateway.retired import retired_secret_values, retired_settings_present
+from app.gateway.secrets import provider_secret_values
 from app.core.rate_limit import limiter
 from app.core.guest_tokens import require_guest_token_secret
 from app.core.log_redaction import install_log_redaction
@@ -39,9 +40,10 @@ settings = get_settings()
 IS_PRODUCTION = settings.environment.lower() != "development"
 install_log_redaction(
     [
-        # A retired provider key (VERTEX_AI_API_KEY) that a deployment still sets stays masked (Phase 5 spec 4.18).
+        # A retired provider key (VERTEX_AI_API_KEY) that a deployment still sets in the process environment stays masked
+        # (Phase 5 spec 4.18), and so does the embedding key the gateway reads (OPENAI_API_KEY; spec 4.19).
         *retired_secret_values(),
-        settings.openai_api_key,
+        *provider_secret_values(),
         settings.pinecone_api_key,
         settings.guest_token_secret,
         settings.guest_token_previous_secret,
@@ -286,9 +288,24 @@ def _initialize_database() -> None:
 # Why SEMANTIC_RETRIEVAL_ENABLED is on and retrieval still lexical (RetrievalEngine.semantic_inactive_reason).
 SEMANTIC_INACTIVE_MESSAGES = {
     "egress_not_opted_in": "Semantic retrieval is enabled by setting but its embedding egress is not opted in (openai-embeddings in MODEL_EGRESS_PROVIDERS, D-23); retrieval stays lexical",
+    "provider_open": "Semantic retrieval is enabled by setting but the gateway gives no embedder while D-07, D-12 or Q-09 is open or the Q-15 payload review is pending; retrieval stays lexical",
+    "unpinned": "Semantic retrieval is enabled by setting but its embedding model is not pinned (OPENAI_EMBEDDING_MODEL_VERSION, pinned-version-v1); retrieval stays lexical",
+    "no_budget": "Semantic retrieval is enabled by setting but the gateway's daily budget for this environment is 0; retrieval stays lexical",
+    "gateway_stopped": "Semantic retrieval is enabled by setting but the model gateway is stopped; retrieval stays lexical",
     "not_configured": "Semantic retrieval is enabled by setting but its keys, SDK or index are missing; retrieval stays lexical",
     "not_aligned": "Semantic retrieval is enabled by setting but not aligned in this process; retrieval stays lexical",
 }
+
+
+def _warn_semantic_inactive() -> str | None:
+    """The start-up semantic.inactive warning: the setting alone never enables hybrid retrieval. It also needs an embedder
+    from the gateway (the D-23 opt-in, closed provider decisions and the Q-15 review, a pinned model, a budget, an open
+    gateway and the key), the vector index's key and name, and a process that aligned the span-id vectors
+    (workers/rag.py). The API process stays lexical, and /ready reports semantic_enabled false. Returns the reason."""
+    inactive = get_retrieval_engine().semantic_inactive_reason
+    if inactive is not None:
+        LOGGER.warning(SEMANTIC_INACTIVE_MESSAGES[inactive], extra={FIELDS: {"event": "semantic.inactive", "reason": inactive}})
+    return inactive
 
 
 @asynccontextmanager
@@ -299,15 +316,7 @@ async def lifespan(_: FastAPI):
     _warn_retired_provider_settings()
     _record_configuration_overrides()
     get_course_store()
-    inactive = get_retrieval_engine().semantic_inactive_reason
-    if inactive is not None:
-        # The setting alone never enables hybrid retrieval: it also needs the D-23 opt-in (openai-embeddings in
-        # MODEL_EGRESS_PROVIDERS), its keys and index, and a process that aligned the span-id vectors (workers/rag.py).
-        # The API process stays lexical, and /ready reports semantic_enabled false.
-        LOGGER.warning(
-            SEMANTIC_INACTIVE_MESSAGES[inactive],
-            extra={FIELDS: {"event": "semantic.inactive", "reason": inactive}},
-        )
+    _warn_semantic_inactive()
     # The governance_enforced SLI (plan Phase 1, item I): each instance says what it started with.
     LOGGER.info("API started", extra={FIELDS: {"event": "startup", "environment": settings.environment, **_build_fields()}})
     yield

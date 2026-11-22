@@ -1680,10 +1680,12 @@ def test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_emp
                     parents.add(node.value.value)
     assert revisions - parents == {SCHEMA_REVISION} and len(SCHEMA_REVISION) <= 32  # the single head; fits alembic_version
     engine = create_engine(fresh_database_url)
-    # Every table the Phase 3 revision creates (the Idempotency-Key records of POST /tutor/turns joined it, DI-40).
+    # Every table the Phase 3 revision creates (the Idempotency-Key records of POST /tutor/turns joined it, DI-40), and
+    # the Phase 5 revision's, which follows it (the gateway's shared controls).
     ledger_tables = {"response_ledger", "response_ledger_head", "tutor_turn_idempotency"}
+    phase5_tables = {"gateway_budget_days", "gateway_stops", "evidential_cache_entries"}
     try:
-        Base.metadata.create_all(engine, tables=[table for table in Base.metadata.sorted_tables if table.name not in ledger_tables])
+        Base.metadata.create_all(engine, tables=[table for table in Base.metadata.sorted_tables if table.name not in ledger_tables | phase5_tables])
         # A Phase 2 database: tutor_turns has no ledger_record_expected yet (the revision adds it; spec 18.8 F12).
         with engine.begin() as connection:
             connection.exec_driver_sql("ALTER TABLE tutor_turns DROP COLUMN ledger_record_expected")
@@ -1694,6 +1696,11 @@ def test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_emp
         with engine.connect() as connection:
             assert compare_metadata(MigrationContext.configure(connection, opts={"compare_type": True}), Base.metadata) == []
         append_ledger_entry(make_entry(), session_factory=sessionmaker(bind=engine), budget_ms=5000)
+        engine.dispose()
+        # One revision at a time: the Phase 5 step drops its own tables only, then the Phase 3 revision is the current one.
+        down = _alembic(fresh_database_url, "downgrade", "20261119_phase3_response_ledger")
+        assert down.returncode == 0, down.stderr[-2000:]
+        assert not phase5_tables & set(sa_inspect(engine).get_table_names()) and ledger_tables <= set(sa_inspect(engine).get_table_names())
         engine.dispose()
         refused = _alembic(fresh_database_url, "downgrade", "-1")
         assert refused.returncode != 0 and "export first" in refused.stderr

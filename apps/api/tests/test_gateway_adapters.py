@@ -1,5 +1,6 @@
-"""Phase 5 model adapters (plan Phase 5 E1, tasks 5.10 and 5.12; AC-5-9; R-06; Phase 5 spec 3.1, 4.3). The HTTP adapter
-runs only over httpx.MockTransport: no test touches the network."""
+"""Phase 5 model adapters (plan Phase 5 E1, tasks 5.10 and 5.12; AC-5-9; R-06; plan 7.1; Phase 5 spec 3.1, 4.3, 4.19): the
+fakes, the provider-neutral HTTP adapter and the gateway's embedding adapter. The HTTP adapters run only over
+httpx.MockTransport: no test touches the network."""
 
 from __future__ import annotations
 
@@ -189,6 +190,97 @@ def test_an_adapter_that_raises_anything_else_is_only_unavailable_at_the_gateway
     events = [record.json_fields for record in caplog.records if getattr(record, "json_fields", {}).get("event") in ("gateway.call", "gateway.call_failed")]
     assert [(line["event"], line.get("outcome"), line.get("kind")) for line in events] == [("gateway.call", "error", None), ("gateway.call_failed", None, "error")]
     assert all(KEY not in record.getMessage() for record in caplog.records)
+
+
+EMBED_KEY = "test-embedding-key-0123456789"
+
+
+def _embedding_reply(http_request: httpx.Request) -> httpx.Response:
+    inputs = json.loads(http_request.content)["input"]
+    return httpx.Response(200, json={"data": [{"index": index, "embedding": [0.5, float(index)]} for index in reversed(range(len(inputs)))]})
+
+
+def embedder(responses=None, seen=None, *, gateway=None, key=EMBED_KEY):
+    from app.gateway.embeddings import EMBEDDINGS_SECRET_REF, OpenAIEmbeddingAdapter
+
+    seen = seen if seen is not None else []
+    transport = _transport(responses, seen) if responses is not None else httpx.MockTransport(lambda r: seen.append(r) or _embedding_reply(r))
+    return OpenAIEmbeddingAdapter("text-embedding-3-small", "2024-01-25", secret_store=FakeSecretStore({EMBEDDINGS_SECRET_REF: key} if key else {}),
+                                  gateway=gateway if gateway is not None else fresh_gateway(10), transport=transport, sleep=lambda seconds: None)
+
+
+def test_the_embedding_adapter_sends_its_key_in_a_header_and_spends_from_the_gateway_s_budget():
+    # Plan 7.1: the gateway is the sole holder of the embedding key. It is read per call from the secret store, sent only
+    # as a Bearer header (never in the URL or the body), and each request reserves one unit of the gateway's budget.
+    from app.gateway.embeddings import EMBEDDINGS_ENDPOINT
+
+    seen: list = []
+    gateway = fresh_gateway(10)
+    adapter = embedder(seen=seen, gateway=gateway)
+    assert adapter.embed_query("a span") == [0.5, 0.0]
+    assert adapter.embed_documents(["a", "b", "c"]) == [[0.5, 0.0], [0.5, 1.0], [0.5, 2.0]]  # in input order
+    first = seen[0]
+    assert str(first.url) == EMBEDDINGS_ENDPOINT and first.url.query == b"" and first.headers["authorization"] == f"Bearer {EMBED_KEY}"
+    assert json.loads(first.content) == {"model": "text-embedding-3-small", "input": ["a span"], "encoding_format": "float"}
+    assert all(EMBED_KEY not in request.content.decode() and EMBED_KEY not in str(request.url) for request in seen)
+    assert gateway.budget.spent == 2 and not any(EMBED_KEY in repr(value) for value in vars(adapter).values())
+    assert adapter.embed_documents([]) == [] and gateway.budget.spent == 2
+
+
+@pytest.mark.parametrize("responses, kind, attempts", [
+    ([httpx.Response(401, text=f"invalid key {EMBED_KEY}")] * 5, "http_status", 1),
+    ([httpx.Response(500)] * 5, "http_status", 3),
+    ([httpx.ReadTimeout("slow")] * 5, "timeout", 3),
+    ([httpx.ConnectError("refused")] * 5, "transport", 3),
+    ([httpx.Response(200, content=b"not json")] * 5, "invalid_output", 1),
+    ([httpx.Response(200, json={"data": []})] * 5, "invalid_output", 1),
+    ([httpx.Response(200, json={"data": [{"index": 0, "embedding": ["x"]}]})] * 5, "invalid_output", 1),
+    ([lambda: httpx.Response(200, headers={"content-encoding": "gzip"}, content=b"not gzip at all")] * 5, "invalid_output", 1),
+])
+def test_every_embedding_failure_is_bounded_and_raised_with_no_cause_context_or_key(responses, kind, attempts):
+    import traceback
+
+    from app.gateway.embeddings import EmbeddingError
+
+    seen: list = []
+    adapter = embedder(responses, seen)
+    with pytest.raises(EmbeddingError) as excinfo:
+        adapter.embed_query("a span")
+    error = excinfo.value
+    assert error.kind == kind and error.__cause__ is None and error.__context__ is None and len(seen) == attempts
+    text = str(error) + repr(error) + "".join(traceback.format_exception(error))
+    assert EMBED_KEY not in text and "Bearer" not in text and "api.openai.com" not in text
+
+
+def test_a_retried_embedding_call_succeeds_within_its_bound():
+    replies = iter([httpx.Response(429), httpx.Response(503)])
+    seen: list = []
+
+    def reply(http_request: httpx.Request) -> httpx.Response:
+        seen.append(http_request)
+        return next(replies, None) or _embedding_reply(http_request)
+
+    adapter = embedder()
+    adapter._transport = httpx.MockTransport(reply)
+    assert adapter.embed_query("a span") == [0.5, 0.0] and len(seen) == 3
+
+
+def test_an_embedding_call_needs_a_key_an_open_gateway_and_budget_and_a_breach_stops_the_gateway():
+    from app.gateway.embeddings import EmbeddingError
+
+    for adapter, kind in ((embedder(key=None), "no_key"),):
+        with pytest.raises(EmbeddingError) as excinfo:
+            adapter.embed_query("a span")
+        assert excinfo.value.kind == kind
+    gateway = fresh_gateway(1)
+    adapter = embedder(gateway=gateway)
+    assert adapter.embed_query("a span") == [0.5, 0.0]
+    with pytest.raises(EmbeddingError) as excinfo:
+        adapter.embed_query("another span")
+    assert excinfo.value.kind == "budget" and (gateway.state, gateway.stop_reason) == ("stopped", "budget_breach")
+    with pytest.raises(EmbeddingError) as excinfo:
+        embedder(gateway=gateway).embed_query("a span")
+    assert excinfo.value.kind == "stopped"
 
 
 def test_no_key_and_an_endpoint_with_a_query_userinfo_fragment_or_plain_http_are_refused():

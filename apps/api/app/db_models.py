@@ -526,3 +526,39 @@ class ResponseLedgerHead(Base):
     # the turn's own ledger_record_expected (ledger.ledger_started_at). Null only on a head written before the column
     # existed (a development database).
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class GatewayBudgetDay(Base):
+    # The model gateway's spend per registry and UTC day, shared by every API instance and worker (plan Phase 5 task
+    # 5.10 "daily budget hard stop"; app.gateway.controls.DatabaseBudget). No learner data: a registry name, a date and
+    # counts.
+    __tablename__ = "gateway_budget_days"
+
+    registry: Mapped[str] = mapped_column(String(32), primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)
+    spent: Mapped[int] = mapped_column(Integer)
+    alerted: Mapped[bool] = mapped_column(Boolean)
+
+
+class GatewayStop(Base):
+    # The model gateway's durable stop per registry, shared by every instance (plan Phase 5 L "Stop on a payload
+    # violation, secret in logs or budget breach."; app.gateway.controls.DatabaseStopStore): the first stop guard to
+    # fire writes its reason, and only an operator clears it (python -m app.workers.gateway_stop --clear).
+    __tablename__ = "gateway_stops"
+
+    registry: Mapped[str] = mapped_column(String(32), primary_key=True)
+    reason: Mapped[str] = mapped_column(String(32))
+    stopped_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EvidentialCacheEntry(Base):
+    # The evidential cache shared by every API instance (plan 5.7 "Shared cache holds evidential outputs only", 7.5;
+    # app.services.v2_panel.cache.DatabaseEvidentialCache): claim plans and verdicts only. The key is a keyed digest of
+    # the cache key (itself a hash of hashes), the value the canonical JSON of a ClaimPlan or an AdapterVerdict. No
+    # learner identifier, thread, turn or response id, rendered text or learner text; used_at orders the eviction.
+    __tablename__ = "evidential_cache_entries"
+
+    kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+    used_at: Mapped[float] = mapped_column(Float, index=True)

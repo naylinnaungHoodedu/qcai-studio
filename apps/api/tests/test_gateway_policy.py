@@ -48,6 +48,25 @@ def reason_of(request, context) -> str | None:
     return None
 
 
+def test_a_span_record_outside_the_public_plane_is_refused_as_non_public(answered):
+    # Control row "No private span in production provider payloads" (plan L2049; invariant 8): the policy's own plane
+    # check names a non-public span record before the D-19 quotable rule, which refuses it too (defence in depth).
+    import dataclasses
+    from types import SimpleNamespace
+
+    from app.services.contained_answers import span_is_quotable
+
+    pipeline, result = answered
+    claim = result.locked.claims[0]
+    record = pipeline.store.span_registry.get(claim.span_ids[0])
+    private = dataclasses.replace(record, plane="private")
+    store = SimpleNamespace(span_registry={record.span_id: private}, lessons=pipeline.store.lessons)
+    context = PolicyContext(store=store, corpus_registry=pipeline.registry)
+    assert reason_of(claim_item(claim.text, record.span_id, record.text), context) == "non_public_span"
+    assert span_is_quotable(private, pipeline.registry) is False
+    assert reason_of(claim_item(claim.text, record.span_id, record.text), PolicyContext(store=pipeline.store, corpus_registry=pipeline.registry)) is None
+
+
 def test_a_claim_item_passes_only_with_a_public_quotable_span_and_its_own_text(answered):
     pipeline, result = answered
     claim = result.locked.claims[0]

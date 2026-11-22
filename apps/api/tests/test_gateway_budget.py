@@ -1,5 +1,6 @@
 """Phase 5 daily budget (plan Phase 5 task 5.10 "daily budget hard stop"; plan I "alert at 80% of budget"; AC-5-9; A-15,
-hold H9; PD-26; Phase 5 spec 4.4)."""
+hold H9; PD-26; Phase 5 spec 4.4): the per-process DailyBudget a test passes, and the shared DatabaseBudget every
+instance of a registry spends from."""
 
 from __future__ import annotations
 
@@ -45,6 +46,39 @@ def test_the_budget_resets_at_the_utc_day(caplog):
     today.value = date(2026, 11, 22)
     assert budget.remaining() == 5 and budget.reserve(4) and budget.alerted
     assert len(_alerts(caplog)) == 2
+
+
+def test_the_shared_budget_is_one_budget_for_every_instance_with_one_alert_a_day(caplog):
+    # Two DatabaseBudget objects over one registry are two instances: they spend from one row, so the hard stop holds
+    # however many instances run (task 5.10), and the 4/5 alert is logged once a day across them.
+    from app.gateway.controls import DatabaseBudget
+
+    caplog.set_level(logging.WARNING, logger="qcai.gateway")
+    today = Today()
+    first, second = DatabaseBudget("development", 10, today=today), DatabaseBudget("development", 10, today=today)
+    assert [first.reserve(1) for _ in range(4)] + [second.reserve(1) for _ in range(3)] == [True] * 7 and _alerts(caplog) == []
+    assert second.reserve(1) and _alerts(caplog) == [{"event": "gateway.budget_alert", "share": "4/5", "daily_units": 10, "spent": 8}]
+    assert first.reserve(2) and first.remaining() == second.remaining() == 0
+    assert not second.reserve(1) and not first.reserve(1) and not first.reserve(11)
+    assert len(_alerts(caplog)) == 1
+    assert first.snapshot() == second.snapshot() == {"daily_units": 10, "spent_today": 10, "alerted": True}
+    assert DatabaseBudget("staging", 10, today=today).remaining() == 10  # each registry spends from its own row
+    today.value = date(2026, 11, 22)
+    assert first.remaining() == 10 and second.reserve(8) and len(_alerts(caplog)) == 2
+    zero = DatabaseBudget("default", 0, today=today)  # a budget of 0 (every registry outside development) refuses any cost
+    assert zero.reserve(0) and not zero.reserve(1) and zero.remaining() == 0
+
+
+def test_the_process_gateway_spends_from_the_shared_budget_and_keeps_the_shared_stop():
+    from app.gateway.controls import DatabaseBudget, DatabaseStopStore
+    from app.gateway.gateway import get_gateway, reset_process_gateway
+
+    gateway = get_gateway()
+    assert isinstance(gateway.budget, DatabaseBudget) and isinstance(gateway.stop_store, DatabaseStopStore)
+    assert (gateway.budget.registry, gateway.budget.daily_units, gateway.stop_store.registry) == ("development", 100000, "development")
+    assert gateway.budget.reserve(3)
+    reset_process_gateway()  # a new process: the spend stays
+    assert get_gateway().budget.snapshot()["spent_today"] == 3
 
 
 def test_a_zero_budget_makes_every_adapter_ineligible_and_a_low_one_drops_a_costly_adapter():

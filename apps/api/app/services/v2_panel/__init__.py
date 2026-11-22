@@ -7,9 +7,10 @@ learner. No module here imports a learner module, the auth layer, a route, the a
 retrieval. Names are re-exported lazily.
 
 mode() is the V2 mode of a pipeline:
-  off     the package has no gateway or v2 block, the start-up check found a gateway problem, the gateway is stopped,
-          the two-pass shadow is off (outside development), V1 is off, or MODEL_GATEWAY is off (the default outside
-          development): every path is Phase 4's
+  off     the package has no gateway or v2 block, the start-up check found a gateway problem, the two-pass shadow is
+          off (outside development), V1 is off, MODEL_GATEWAY is off (the default outside development), or the gateway
+          is stopped (this process's stop, or the registry's shared stop that another instance wrote): every path is
+          Phase 4's
   shadow  Phase 4 decides every final; the panel votes once beside it and the record carries its verdicts (development
           default); MODEL_GATEWAY=on with V1 in shadow runs as shadow (Settings refuse that combination)
   on      V2 decides each V1-passed claim, with correction cycles, the final rendering, the alignment item and the
@@ -51,19 +52,19 @@ def mode(settings: "Settings", package: "ConfigPackage", *, gateway: Any = None)
         return "off"
     if gateway_package.GATEWAY_UNAVAILABLE_REASON is not None:
         return "off"
-    if gateway is not None:
-        if gateway.state == "stopped":
-            return "off"
-    else:
-        from app.gateway.gateway import process_gateway_stopped
-
-        if process_gateway_stopped():
-            return "off"
     if tutor_shadow.effective_mode(settings, package) == "off":
         return "off"
     v1 = v1_checks.mode(settings, package)
     setting = settings.model_gateway or "off"
     if v1 == "off" or setting == "off":
+        return "off"
+    # Only now, so a build whose V2 mode is off by its settings (production) never builds a gateway or reads its stop.
+    if gateway is None:
+        from app.gateway.gateway import get_gateway
+
+        gateway = get_gateway()
+    gateway.refresh()
+    if gateway.state == "stopped":
         return "off"
     if setting == "on" and v1 != "enforce":
         if not _ON_DOWNGRADE_LOGGED:

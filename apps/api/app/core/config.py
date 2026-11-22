@@ -73,11 +73,13 @@ class Settings(BaseSettings):
     enable_demo_auth: bool | None = None
     cloud_sql_connection_name: str | None = None
     cloud_sql_ip_type: str = "PUBLIC"
-    # The Phase 2 semantic backend's embedding key and model (retrieval_engine.PineconeSemanticBackend; task 2.5). The
-    # backend also needs MODEL_EGRESS_PROVIDERS to name openai-embeddings (D-23). No chat provider setting exists: the
-    # retired ones (app.gateway.retired.RETIRED_PROVIDER_SETTINGS) are ignored and named at start-up.
-    openai_api_key: str | None = None
+    # The Phase 2 semantic backend's embedding model and its pinned version (D-07's rule, pinned-version-v1), used only
+    # through the gateway (app.gateway.embeddings; Phase 5 spec 4.19). Its key, OPENAI_API_KEY, is no setting: the
+    # gateway's secret store reads it from the process environment per call (plan 7.1: the gateway is the sole holder of
+    # provider credentials). No chat provider setting exists: the retired ones
+    # (app.gateway.retired.RETIRED_PROVIDER_SETTINGS) are ignored and named at start-up.
     openai_embedding_model: str = "text-embedding-3-small"
+    openai_embedding_model_version: str | None = None
     auth0_domain: str | None = None
     auth0_audience: str | None = None
     pinecone_api_key: str | None = None
@@ -124,9 +126,11 @@ class Settings(BaseSettings):
     # the p1-floor gate loses in-domain recall@5, so start-up and validate_corpus --check-recall-stop refuse it.
     # Setting this lets it start anyway (an owner decision); it logs a config.override event.
     allow_p1_floor_with_documents: bool = False
-    # Task 2.5: the semantic backend stays off, whatever keys are set, until its vector ids are span ids. It also needs
-    # the D-23 opt-in, openai-embeddings in MODEL_EGRESS_PROVIDERS (PD-22), and runs only in a process that has aligned
-    # the index (sync_semantic_index); /ready reports the effective state.
+    # Task 2.5: the semantic backend stays off, whatever keys are set, until its vector ids are span ids. It embeds only
+    # through the gateway, which also needs the D-23 opt-in (openai-embeddings in MODEL_EGRESS_PROVIDERS, PD-22), closed
+    # provider decisions (D-07, D-12, Q-09) and the Q-15 payload review, a pinned embedding model and a budget (Phase 5
+    # spec 4.19), and it runs only in a process that has aligned the index (sync_semantic_index); /ready reports the
+    # effective state.
     semantic_retrieval_enabled: bool = False
     # GET /spans/{span_id}: None = on in development, off elsewhere (it is a new public route under the freeze).
     span_resolver_route_enabled: bool | None = None
@@ -188,7 +192,8 @@ class Settings(BaseSettings):
     # shadow pipeline only, so no learner sees a change. None = "shadow" in development and "off" elsewhere
     # (MODEL_GATEWAY_DEFAULT_DEVELOPMENT, MODEL_GATEWAY_DEFAULT_ELSEWHERE, which package v4 flag_policy.model_gateway
     # must name). "on" needs V1_PIPELINE=enforce, and outside development is refused while the package says
-    # flag_policy.phase5_exit_passed is false. A runtime stop of the gateway turns the effective mode off until restart.
+    # flag_policy.phase5_exit_passed is false. A runtime stop of the gateway turns the effective mode off until an
+    # operator clears the registry's shared stop (python -m app.workers.gateway_stop --clear).
     model_gateway: Literal["off", "shadow", "on"] | None = None
     # D-23 (PD-22): the providers this environment opts in to model egress, a comma or JSON list. Empty everywhere,
     # development included: the development fakes need none, and no non-fake provider is registered anywhere.

@@ -37,15 +37,19 @@ def _no_network_attempt():
 
 @pytest.fixture(autouse=True)
 def _fresh_process_gateway_and_cache():
-    """Each test starts with a new process gateway (open, a fresh budget) and a cold evidential cache (Phase 5 spec 4.5,
-    4.15): a stop or a cached verdict never leaks from one test into the next."""
+    """Each test starts with a new process gateway (open, a fresh budget), no shared budget day or stop, and a cold
+    evidential cache, process and shared (Phase 5 spec 4.4, 4.5, 4.15): a stop, a spend or a cached verdict never leaks
+    from one test into the next."""
+    from app.gateway.controls import clear_shared_controls
     from app.gateway.gateway import reset_process_gateway
     from app.services.v2_panel.cache import reset_process_cache
 
     reset_process_gateway()
+    clear_shared_controls()
     reset_process_cache()
     yield
     reset_process_gateway()
+    clear_shared_controls()
     reset_process_cache()
 
 

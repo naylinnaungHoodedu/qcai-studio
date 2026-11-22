@@ -10,18 +10,21 @@ Eligibility (before any panel is built; R-b): an adapter is dropped when the gat
 is not opted in (egress_allowed), the remaining daily budget is below one call's cost (a budget of 0 drops every
 adapter), or it reports itself down. Each drop is counted by reason.
 
-A call: the secret flag, then the stop, the payload policy, the budget, the capture hook, then the adapter; a fake
-call whose measured duration (an injectable clock) exceeds its caps.timeout_ms is a timeout, and an adapter exception
+A call: the shared stop, the secret flag, then the stop, the payload policy, the budget, the capture hook, then the
+adapter; a fake call whose measured duration (an injectable clock) exceeds its caps.timeout_ms is a timeout, and an adapter exception
 other than AdapterError becomes AdapterError(kind="error"), so a misbehaving member is only unavailable. Every call
 logs gateway.call (outcome ok, error, timeout, or refused for a call the gateway refused before the adapter), and a
 failed one gateway.call_failed. Three runtime guards stop the gateway (plan L "Stop on a payload violation, secret in
 logs or budget breach"): PayloadPolicy refused a request, a gateway-owned secret reached a log record (the redaction
 listener only sets a flag; the gateway stops at its next eligibility decision or call, outside the logging call), or
 a call would cross the daily budget or reported a cost above its reservation (cost_overrun). A stop logs
-gateway.stopped, writes the security event gateway.stopped and refuses every later call; the V2 track's effective
-mode is off from the next response on (v2_panel.mode). The stop belongs to this process gateway: another instance
-does not see it, and a new process (a restart, an instance replacement, a new revision) starts open, so a durable
-stop is MODEL_GATEWAY=off (the runbook; DI-87).
+gateway.stopped (origin instance), writes the security event gateway.stopped, refuses every later call and writes the
+registry's shared stop (app.gateway.controls.DatabaseStopStore); every other instance's gateway, and every new process,
+reads that stop before its next eligibility decision or call and stops too (gateway.stopped, origin shared, no second
+security event). The stop lasts until an operator clears it (python -m app.workers.gateway_stop --clear), and the V2
+track's effective mode is off from the next response on (v2_panel.mode). The process gateway's daily budget is the
+registry's shared DatabaseBudget, so every instance spends from one budget (package v4 gateway.budgets.scope and
+gateway.stop.scope "database"; a test or the fixture runner passes its own budget and no stop store).
 """
 
 from __future__ import annotations
@@ -54,13 +57,16 @@ class GatewayRefused(RuntimeError):
 
 
 class GatewayStopped(GatewayRefused):
-    """The gateway is stopped: every call is refused until the process restarts."""
+    """The gateway is stopped: every call is refused until an operator clears the stop."""
 
 
 class ModelGateway:
     def __init__(self, *, budget: DailyBudget, secret_store=None, adapters: dict[str, ModelAdapter] | None = None,
-                 clock: Callable[[], float] = time.monotonic, policy: PayloadPolicy | None = None, transport=None) -> None:
+                 clock: Callable[[], float] = time.monotonic, policy: PayloadPolicy | None = None, transport=None,
+                 stop_store=None) -> None:
         self.budget = budget
+        # The registry's shared, durable stop (DatabaseStopStore), or None: this gateway's stop is then its own only.
+        self.stop_store = stop_store
         self.secret_store = secret_store if secret_store is not None else EnvironmentSecretStore()
         self._adapters: dict[str, ModelAdapter] = dict(adapters or {})
         self.clock = clock
@@ -85,6 +91,25 @@ class ModelGateway:
         if self._secret_seen and self.state == "open":
             self.stop("secret_in_logs")
 
+    def refresh(self) -> None:
+        """Adopt the registry's shared stop, written by this or another instance (no second security event). A store
+        that cannot be read leaves the state as it is: the next read tries again."""
+        if self.state == "stopped" or self.stop_store is None:
+            return
+        try:
+            reason = self.stop_store.read()
+        except Exception:  # noqa: BLE001 - an unreadable store never opens a stopped gateway and never raises into a call
+            LOGGER.warning("The shared gateway stop could not be read", extra={FIELDS: {"event": "gateway.stop_unread"}})
+            return
+        if reason is None:
+            return
+        with self._lock:
+            if self.state == "stopped":
+                return
+            self.state, self.stop_reason = "stopped", reason
+        LOGGER.error("The model gateway stopped; every later call is refused",
+                     extra={FIELDS: {"event": "gateway.stopped", "reason": self.stop_reason, "origin": "shared"}})
+
     def stop(self, reason: str) -> None:
         if reason not in STOP_REASONS:
             raise ValueError(f"unknown stop reason {reason!r}")
@@ -93,10 +118,17 @@ class ModelGateway:
                 return
             self.state, self.stop_reason = "stopped", reason
         GATEWAY_METRICS.refusal(reason)
-        LOGGER.error("The model gateway stopped; every later call is refused", extra={FIELDS: {"event": "gateway.stopped", "reason": reason}})
+        LOGGER.error("The model gateway stopped; every later call is refused",
+                     extra={FIELDS: {"event": "gateway.stopped", "reason": reason, "origin": "instance"}})
         from app.services.security_log import record_security_event
 
         record_security_event("gateway.stopped", "denied", actor_role="system", details={"reason": reason})
+        if self.stop_store is not None:
+            try:
+                self.stop_store.write(reason)
+            except Exception:  # noqa: BLE001 - this instance stays stopped; the others read the store on their next call
+                LOGGER.error("The gateway stop could not be shared; this instance stays stopped",
+                             extra={FIELDS: {"event": "gateway.stop_unshared", "reason": reason}})
 
     # --------------------------------------------------------------------------------------- eligibility
 
@@ -118,6 +150,7 @@ class ModelGateway:
         return None
 
     def eligible(self, specs, *, settings) -> list[AdapterSpec]:
+        self.refresh()
         self.check_secret_flag()
         kept = []
         for spec in specs:
@@ -161,6 +194,7 @@ class ModelGateway:
                                                      "item": item, "outcome": "refused", "latency_ms": 0.0, "cost_units": 0}})
 
     def _call(self, spec: AdapterSpec, request, context: PolicyContext, item: str):
+        self.refresh()
         self.check_secret_flag()
         if self.state == "stopped":
             self._refused(spec, item)
@@ -222,7 +256,9 @@ _PROCESS_LOCK = threading.Lock()
 
 
 def get_gateway() -> ModelGateway:
-    """The process gateway; its budget is the package's daily units for this process's registry."""
+    """The process gateway. Its budget is the package's daily units for this process's registry, kept in the shared
+    store (DatabaseBudget), and its stop is the registry's shared stop (DatabaseStopStore), as package v4 names them
+    (gateway.budgets.scope, gateway.stop.scope); it adopts a recorded stop at once."""
     global _PROCESS
     with _PROCESS_LOCK:
         if _PROCESS is None:
@@ -232,25 +268,42 @@ def get_gateway() -> ModelGateway:
 
             settings = get_settings()
             package = get_config_package(settings)
-            units = 0
-            if package.gateway is not None:
-                units = package.gateway.daily_units.get(registry_name(settings, package.gateway.registries), 0)
-            _PROCESS = ModelGateway(budget=DailyBudget(units, alert=package.gateway.alert_share if package.gateway else (4, 5)))
+            gateway = package.gateway
+            if gateway is None:
+                _PROCESS = ModelGateway(budget=DailyBudget(0))
+            else:
+                from app.gateway.controls import DatabaseBudget, DatabaseStopStore
+
+                name = registry_name(settings, gateway.registries)
+                units = gateway.daily_units.get(name, 0)
+                budget = (DatabaseBudget(name, units, alert=gateway.alert_share) if gateway.budget_scope == "database"
+                          else DailyBudget(units, alert=gateway.alert_share))
+                stops = DatabaseStopStore(name) if gateway.stop_scope == "database" else None
+                _PROCESS = ModelGateway(budget=budget, stop_store=stops)
+                _PROCESS.refresh()
         return _PROCESS
 
 
 def process_gateway_stopped() -> bool:
     gateway = _PROCESS
-    return gateway is not None and gateway.state == "stopped"
+    if gateway is None:
+        return False
+    gateway.refresh()
+    return gateway.state == "stopped"
 
 
 def process_gateway_state() -> tuple[str, str | None]:
+    """The process gateway's state (the shared stop adopted), or open when this process has built none."""
     gateway = _PROCESS
-    return ("open", None) if gateway is None else (gateway.state, gateway.stop_reason)
+    if gateway is None:
+        return ("open", None)
+    gateway.refresh()
+    return (gateway.state, gateway.stop_reason)
 
 
 def reset_process_gateway() -> None:
-    """The test seam (conftest's autouse fixture): a new process gateway on next use."""
+    """The test seam (conftest's autouse fixture, with app.gateway.controls.clear_shared_controls): a new process
+    gateway on next use."""
     global _PROCESS
     with _PROCESS_LOCK:
         _PROCESS = None

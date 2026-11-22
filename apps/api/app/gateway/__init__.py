@@ -1,15 +1,18 @@
 """The provider-neutral model gateway (plan Phase 5; docs/architecture/phase5-implementation-spec.md; ADR-008).
 
-The only package that may make model egress or read a model-provider credential (plan 7.1; R-06): the AST guard of
-test_gateway_egress_guard.py refuses a provider SDK or HTTP client import anywhere else in the API image (one recorded
-exception: the Phase 2 semantic embedding backend, behind the D-23 opt-in; DI-77) and a provider host name in a
-string literal of the Python code under apps/api/app, scripts, evaluation and tools outside this package (the
-frontend, infra and the tests are not scanned). D-12 (provider and terms), D-07 (pinned models) and Q-09 (terms)
-are open, so no real provider is registered: the staging, production and default registries are empty, and
-development registers four deterministic fake families that make no network call. Modules: contracts (the payloads), pinning, registry,
-adapters, secrets, egress (D-23), budget, policy (the payload policy), gateway (the process gateway and its stop
-guards), tools (the five tool servers' contracts), retired (the retired provider settings), metrics and
-package_check. Names are re-exported lazily.
+The only package that may make model egress or read a model-provider credential (plan 7.1; R-06), the embedding key
+of the Phase 2 semantic backend included (embeddings). The AST guard of test_gateway_egress_guard.py refuses a
+provider SDK or HTTP client import anywhere else in the API image, with one recorded allow-list entry: the vector index
+client (pinecone) of app/services/retrieval_engine.py, reached only with an embedder this package gives. Its
+host-string rule refuses a provider host name in a string literal of the Python files under apps/api/app, scripts,
+evaluation (its tests included) and tools outside this package; apps/api/tests, apps/frontend, infra and every
+non-Python file are not scanned. D-12 (provider and terms), D-07 (pinned models) and Q-09 (terms) are open, so no real
+provider is registered: the staging, production and default registries are empty, development registers four
+deterministic fake families that make no network call, and no embedder is given anywhere. Modules: contracts (the
+payloads), pinning, registry, adapters, embeddings (the embedding egress), secrets, egress (D-23), budget, controls
+(the shared budget and stop), policy (the payload policy), gateway (the process gateway and its stop guards), tools
+(the five tool servers' contracts), retired (the retired provider settings), metrics and package_check. Names are
+re-exported lazily.
 """
 
 from __future__ import annotations

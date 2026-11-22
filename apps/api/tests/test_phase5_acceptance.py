@@ -36,6 +36,7 @@ from app.db_models import ResponseLedgerRecord, SecurityEvent
 from app.gateway.adapters import AdapterError, HttpJsonAdapter
 from app.gateway.budget import DailyBudget
 from app.gateway.contracts import AlignmentInstructions, AlignmentRequest, ReadabilityBand, VerdictInstructions, VerdictRequest, VerdictSpan
+from app.gateway.embeddings import EMBEDDING_PROBLEMS
 from app.gateway.gateway import GatewayStopped, ModelGateway, get_gateway
 from app.gateway.policy import PolicyContext
 from app.gateway.registry import AdapterRegistry, registry_for
@@ -358,11 +359,32 @@ def test_ac_5_6_a_mid_response_loss_and_each_kill_switch():
     entry = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters), registry=THREE), TIER2).entry
     assert [verdict.mode for verdict in judged(entry).values()] == ["REDUCED-2"] * 3
     assert all(not vote.cached for verdict in judged(entry).values() for vote in verdict.votes)
+    outcomes = {}
     for switch in ("abstain_only", "pre_verified_only"):
         adapters = adapters_of(THREE)
         settings = Settings(model_gateway="on", model_gateway_kill_switch=switch)
-        entry = run(v2_pipeline(settings, gateway=fresh_gateway(adapters=adapters), registry=THREE), TIER2).entry
-        assert entry.verification.final_reason == "v2_kill_switch" and all(adapter.calls == 0 for adapter in adapters.values())
+        entry = run(v2_pipeline(settings, gateway=fresh_gateway(adapters=adapters), registry=THREE), TIER2, legacy_decision="answer").entry
+        verification = entry.verification
+        assert verification.final_reason == "v2_kill_switch" and all(adapter.calls == 0 for adapter in adapters.values())
+        assert (verification.v2.kill_switch, verification.v2.degraded_mode, verification.v2.calls) == (switch, "ZERO", 0)
+        outcomes[switch] = (verification.final, verification.replacement, verification.v2.banner, entry.decision,
+                            sorted((verdict.final, verdict.v2.outcome if verdict.v2 else None) for verdict in verification.verdicts))
+    # No pre-verified store exists (v4 v2.degraded.pre_verified_source is null, DI-83), so pre-verified-only takes plan
+    # 5.11's other branch, "abstain and queue", as abstain-only does: the two records differ only in the switch they name,
+    # and the replacement is the D-19 answer the learner received from the unchanged legacy path (spec 4.10).
+    assert PACKAGE.v2.pre_verified_source is None
+    assert outcomes["abstain_only"] == outcomes["pre_verified_only"] and outcomes["abstain_only"][:3] == ("withhold", "extractive_d19", "degraded-zero-v1")
+
+
+def test_ac_5_6_the_degraded_banners_claim_no_check_the_learner_does_not_get():
+    # Plan 5.9 "with visible banner": a banner names what the learner gets. With no pre-verified source the ZERO path
+    # withholds and queues, and the learner gets the D-19 answer (verbatim approved passages) or an abstention, never
+    # checked content; no banner says grounded (D-19: grounded is always false).
+    banners = PACKAGE.v2.banners
+    assert set(banners) == set(rules.BANNER_IDS) and PACKAGE.v2.pre_verified_source is None
+    zero = set(re.findall(r"[a-z]+", banners["degraded-zero-v1"].lower()))
+    assert "quoted course passages or no answer" in banners["degraded-zero-v1"] and not ({"checked", "verified", "grounded"} & zero)
+    assert all("grounded" not in text.lower() for text in banners.values())
 
 
 # ======================================================================================================== AC-5-7
@@ -810,6 +832,43 @@ def test_plan_l_a_secret_reaching_a_log_stops_the_gateway():
     assert (gateway.state, gateway.stop_reason) == ("stopped", "secret_in_logs") and len(security_events("gateway.stopped", start)) == 1
 
 
+def test_plan_l_a_stop_is_shared_by_every_instance_and_lasts_until_an_operator_clears_it(caplog):
+    # Plan L "Stop on a payload violation, secret in logs or budget breach.": a stop on one instance is written to the
+    # registry's shared stop; another instance, and a new process, adopts it (no second security event) and its V2 mode
+    # and /ready say off and stopped; only the operator's command clears it, with its own security event.
+    from app.gateway.controls import DatabaseStopStore
+    from app.gateway.gateway import process_gateway_state, reset_process_gateway
+    from app.services import v2_panel
+    from app.workers import gateway_stop
+
+    caplog.set_level(logging.INFO)
+    start = last_security_seq()
+    one = ModelGateway(budget=DailyBudget(10), adapters=adapters_of(THREE), stop_store=DatabaseStopStore("development"))
+    other = ModelGateway(budget=DailyBudget(10), adapters=adapters_of(THREE), stop_store=DatabaseStopStore("development"))
+    one.stop("payload_violation")
+    assert len(security_events("gateway.stopped", start)) == 1 and other.state == "open"
+    assert other.eligible(THREE.verifiers(), settings=Settings()) == [] and (other.state, other.stop_reason) == ("stopped", "payload_violation")
+    assert v2_panel.mode(Settings(model_gateway="on"), PACKAGE, gateway=ModelGateway(budget=DailyBudget(10), stop_store=DatabaseStopStore("development"))) == "off"
+    assert len(security_events("gateway.stopped", start)) == 1  # adopted, not recorded again
+    origins = [record.json_fields.get("origin") for record in caplog.records if getattr(record, "json_fields", {}).get("event") == "gateway.stopped"]
+    assert origins == ["instance", "shared", "shared"]
+    reset_process_gateway()  # a new process, as a restart or a new revision starts one: its gateway adopts the stop at once
+    assert process_gateway_state() == ("open", None)  # none built yet: no read
+    assert (get_gateway().state, get_gateway().stop_reason) == ("stopped", "payload_violation")
+    reset_process_gateway()
+    body = client.get("/ready").json()  # the V2 mode builds the process gateway, which reads the stop
+    assert (body["gateway"]["state"], body["gateway"]["stop_reason"], body["model_gateway"]) == ("stopped", "payload_violation", "off")
+    assert DatabaseStopStore("staging").read() is None  # each registry's stop is its own
+    assert gateway_stop.main([]) == 0 and DatabaseStopStore("development").read() == "payload_violation"  # a status read clears nothing
+    assert gateway_stop.main(["--clear", "development"]) == 0 and DatabaseStopStore("development").read() is None
+    cleared = security_events("gateway.stop_cleared", start)
+    assert [(event.actor_role, event.details) for event in cleared] == [("operator", {"registry": "development", "reason": "payload_violation"})]
+    reset_process_gateway()
+    assert process_gateway_state() == ("open", None) and client.get("/ready").json()["model_gateway"] == "shadow"
+    with pytest.raises(SystemExit):
+        gateway_stop.main(["--clear", "elsewhere"])
+
+
 def test_plan_h_only_public_quotable_spans_leave_and_gateway_and_v2_import_no_learner_module():
     from app.core.corpus_governance import get_corpus_registry
     from app.gateway.policy import PayloadPolicy, PayloadViolation
@@ -906,12 +965,18 @@ def test_plan_e_a_retired_setting_is_named_at_start_up_and_its_value_never_logge
     assert events and set(events[0]["names"]) >= {"VERTEX_AI_API_KEY", "VERTEX_AI_CHAT_MODEL"}
     logging.getLogger("qcai.test.retired").warning("echo %s", value)
     assert value not in caplog.text and REDACTED in caplog.text
+    # Only the process environment is read: the module says so, and that a key kept only in a .env file is neither named
+    # nor masked (no code reads one: the Settings field is gone and Settings ignore unknown keys).
+    from app.gateway import retired
+
+    assert "kept only in a .env file is neither named nor masked" in " ".join(retired.__doc__.split())
 
 
 def test_plan_e_only_the_gateway_makes_model_egress():
     from test_gateway_egress_guard import ALLOWED_IMPORTS, scan
 
-    assert scan() == [] and ALLOWED_IMPORTS == {"app/services/retrieval_engine.py": {"langchain_openai", "pinecone"}}
+    # The one allow-list entry is the vector index client; the embedding egress and its key are the gateway's (spec 4.19).
+    assert scan() == [] and ALLOWED_IMPORTS == {"app/services/retrieval_engine.py": {"pinecone"}}
 
 
 def test_plan_e_d_23_provider_egress_needs_a_per_environment_per_provider_opt_in():
@@ -926,10 +991,51 @@ def test_plan_e_d_23_provider_egress_needs_a_per_environment_per_provider_opt_in
     assert gateway.ineligible_reason(paid, settings=Settings(model_egress_providers='["other-provider"]')) == "egress_refused"
     with pytest.raises(ValidationError):
         Settings(model_egress_providers=["Not A Name"])
-    keys = dict(openai_api_key="k" * 12, pinecone_api_key="p" * 12, pinecone_index="i", semantic_retrieval_enabled=True)
-    assert RetrievalEngine(get_course_store(), Settings(**keys))._semantic_backend.enabled is False
+    keys = dict(pinecone_api_key="p" * 12, pinecone_index="i", semantic_retrieval_enabled=True)
+    refused = RetrievalEngine(get_course_store(), Settings(**keys))._semantic_backend
+    assert refused.enabled is False and refused.embedding_problem() == "egress_not_opted_in"
+    # Opted in, the gateway still gives no embedder while the provider decisions are open (the shipped package).
     opted = RetrievalEngine(get_course_store(), Settings(**keys, model_egress_providers=["openai-embeddings"]))._semantic_backend
-    assert opted.enabled is bool(__import__("app.services.retrieval_engine", fromlist=["Pinecone"]).Pinecone)
+    assert opted.enabled is False and opted.embedding_problem() == "provider_open"
+
+
+def test_plan_e_the_gateway_holds_the_embedding_key_and_gives_an_embedder_only_when_every_check_passes(monkeypatch):
+    # Plan 7.1 "The gateway MUST be the sole holder of provider credentials": no Settings field holds OPENAI_API_KEY; the
+    # gateway's secret store reads it, and app.gateway.embeddings gives the semantic backend an embedder only when the
+    # environment opts in (D-23), the provider decisions are closed and the Q-15 review is done, the model is pinned, the
+    # registry has a budget, the gateway is open and the key is set (spec 4.19).
+    from app.gateway.embeddings import EMBEDDINGS_SECRET_REF, OpenAIEmbeddingAdapter, embedder_for, embedding_problem
+    from app.gateway.secrets import PROVIDER_SECRET_REFS, provider_secret_values
+
+    assert EMBEDDINGS_SECRET_REF in PROVIDER_SECRET_REFS and "openai_api_key" not in Settings.model_fields
+    store = FakeSecretStore({EMBEDDINGS_SECRET_REF: "k" * 16})
+    decided = {**PACKAGE.owner_decisions, "D-07": {"state": "decided"}, "D-12": {"state": "decided"}, "Q-09": {"state": "resolved"},
+               "Q-15": {"state": "reviewed"}}
+    closed = dataclasses.replace(PACKAGE, owner_decisions=decided)
+    review_pending = dataclasses.replace(PACKAGE, owner_decisions={**decided, "Q-15": PACKAGE.owner_decisions["Q-15"]})
+    opted = {"model_egress_providers": ["openai-embeddings"]}
+    pinned = {**opted, "openai_embedding_model_version": "2024-01-25"}
+    gateway = fresh_gateway(10)
+    cases = [
+        (Settings(), PACKAGE, "egress_not_opted_in"),
+        (Settings(**opted), PACKAGE, "provider_open"),
+        (Settings(**opted), review_pending, "provider_open"),
+        (Settings(**opted), closed, "unpinned"),
+        (Settings(**opted, openai_embedding_model_version="latest"), closed, "unpinned"),
+        (Settings(**pinned, environment="production", allowed_origins=["https://qantumlearn.academy"]), closed, "no_budget"),
+        (Settings(**pinned), closed, None),
+    ]
+    for settings, package, expected in cases:
+        assert embedding_problem(settings, package, secret_store=store, gateway=gateway) == expected, (expected, settings.model_egress_providers)
+    assert embedding_problem(Settings(**pinned), closed, secret_store=FakeSecretStore(), gateway=gateway) == "not_configured"
+    assert isinstance(embedder_for(Settings(**pinned), closed, secret_store=store, gateway=gateway), OpenAIEmbeddingAdapter)
+    assert embedder_for(Settings(**opted), PACKAGE, secret_store=store, gateway=gateway) is None
+    gateway.stop("payload_violation")
+    assert embedding_problem(Settings(**pinned), closed, secret_store=store, gateway=gateway) == "gateway_stopped"
+    monkeypatch.setenv(EMBEDDINGS_SECRET_REF, "env-embedding-key-0123456789")
+    assert provider_secret_values() == ["env-embedding-key-0123456789"]
+    for path in (API_ROOT / "app" / "main.py", API_ROOT / "app" / "workers" / "common.py"):
+        assert "*provider_secret_values()" in path.read_text(encoding="utf-8"), path.name
 
 
 def test_plan_e_a_semantic_setting_without_the_d_23_opt_in_names_its_refusal(caplog):
@@ -940,19 +1046,53 @@ def test_plan_e_a_semantic_setting_without_the_d_23_opt_in_names_its_refusal(cap
 
     reset_refusal_log()
     caplog.set_level(logging.WARNING, logger="qcai.gateway")
-    keys = dict(openai_api_key="k" * 12, pinecone_api_key="p" * 12, pinecone_index="i", semantic_retrieval_enabled=True)
+    keys = dict(pinecone_api_key="p" * 12, pinecone_index="i", semantic_retrieval_enabled=True)
     refused = RetrievalEngine(get_course_store(), Settings(**keys))
     assert refused.semantic_inactive_reason == "egress_not_opted_in"
     assert refused.sync_semantic_index() is False and refused.sync_semantic_index() is False
     lines = [record.json_fields for record in caplog.records if getattr(record, "json_fields", {}).get("event") == "gateway.egress_refused"]
     assert lines == [{"event": "gateway.egress_refused", "provider": "openai-embeddings", "adapter_id": None, "consumer": "semantic-retrieval"}]
     assert "openai-embeddings in MODEL_EGRESS_PROVIDERS" in SEMANTIC_INACTIVE_MESSAGES["egress_not_opted_in"]
-    # Opted in, but without its keys, the backend is not configured; with the setting off, nothing is inactive.
-    unconfigured = RetrievalEngine(get_course_store(), Settings(semantic_retrieval_enabled=True, model_egress_providers=["openai-embeddings"],
-                                                                openai_api_key="", pinecone_api_key=""))
+    # Opted in, the shipped package's open decisions give no embedder; with a test's embedder and no index key, the
+    # index is not configured; with the setting off, nothing is inactive.
+    opted = RetrievalEngine(get_course_store(), Settings(**keys, model_egress_providers=["openai-embeddings"]))
+    assert opted.semantic_inactive_reason == "provider_open" and "Q-15" in SEMANTIC_INACTIVE_MESSAGES["provider_open"]
+    unconfigured = RetrievalEngine(get_course_store(), Settings(semantic_retrieval_enabled=True, pinecone_api_key=""), embedder=object())
     assert unconfigured.semantic_inactive_reason == "not_configured"
     assert RetrievalEngine(get_course_store(), Settings()).semantic_inactive_reason is None
+    assert set(SEMANTIC_INACTIVE_MESSAGES) == {*EMBEDDING_PROBLEMS, "not_aligned"}
     reset_refusal_log()
+
+
+@pytest.mark.parametrize("settings, reason", [
+    ({"semantic_retrieval_enabled": True}, "egress_not_opted_in"),
+    ({"semantic_retrieval_enabled": True, "model_egress_providers": ["openai-embeddings"]}, "provider_open"),
+    ({}, None),
+])
+def test_plan_e_the_start_up_semantic_warning_names_its_reason(caplog, monkeypatch, settings, reason):
+    # The lifespan's semantic.inactive line (main._warn_semantic_inactive) names why the setting is on and retrieval
+    # stays lexical, with that reason's message; the lifespan runs it after the course store is built.
+    import asyncio
+
+    from app import main as main_module
+    from app.main import SEMANTIC_INACTIVE_MESSAGES
+    from app.services.retrieval_engine import RetrievalEngine
+    from app.services.store import get_course_store
+
+    engine = RetrievalEngine(get_course_store(), Settings(**settings))
+    monkeypatch.setattr(main_module, "get_retrieval_engine", lambda: engine)
+    for name in ("require_guest_token_secret", "_initialize_database", "_warn_retired_provider_settings", "_record_configuration_overrides"):
+        monkeypatch.setattr(main_module, name, lambda *args, **kwargs: None)
+    caplog.set_level(logging.WARNING, logger="qcai.api")
+
+    async def start() -> None:
+        async with main_module.lifespan(main_module.app):
+            pass
+
+    asyncio.run(start())
+    lines = [(record.getMessage(), record.json_fields) for record in caplog.records
+             if getattr(record, "json_fields", {}).get("event") == "semantic.inactive"]
+    assert lines == ([] if reason is None else [(SEMANTIC_INACTIVE_MESSAGES[reason], {"event": "semantic.inactive", "reason": reason})])
 
 
 def test_plan_e_no_real_provider_is_registered_in_any_shipped_registry():
@@ -1221,7 +1361,7 @@ def test_phase5_docs_quote_the_plan_and_state_the_current_rules():
     head = spec.split("\n## 18. Review history\n", 1)[0]
     for number in range(22, 32):
         assert f"| PD-{number} |" in head, number
-    for number in range(69, 88):
+    for number in range(69, 89):
         assert f"| DI-{number} |" in head, number
     values = PACKAGE.owner_decisions["Q-22"]["provisional_values"]
     assert "v2.voting" in values and "PD-25" in PACKAGE.owner_decisions["Q-22"]["record"]
@@ -1246,22 +1386,45 @@ def test_phase5_docs_the_runbooks_and_registers_state_the_gateway_s_operations_e
     named = [event for event in events if re.search(rf"(?<![\w.]){re.escape(event)}(?![\w.])", slis)]
     assert len(events) >= 13 and named == events, sorted(set(events) - set(named))
     assert "`model_gateway` (the effective mode) turns `off`" in slis and "Only `state` and `stop_reason` can change" not in slis
-    # The deployment runbook: a stop is per instance and made durable by the flag; the ledger export names its path.
+    # The deployment runbook: a stop is shared until the operator's command clears it, the flag stays the fallback, the
+    # Phase 5 revision has its gated step, and the ledger export names its path.
     runbook = (infra / "deployment.md").read_text(encoding="utf-8").split("## Phase 5: gateway and V2 (runbook)", 1)[1]
-    assert "it covers that one instance only" in runbook and "set `MODEL_GATEWAY=off` on the service" in runbook and "DI-87" in runbook
+    assert "every other instance adopts it" in runbook and "python -m app.workers.gateway_stop --clear REGISTRY" in runbook
+    assert "set `MODEL_GATEWAY=off` on the service" in runbook and "it covers that one instance only" not in runbook and "DI-87" not in runbook
+    assert "alembic upgrade 20261122_phase5_gateway_controls" in runbook and "alembic downgrade 20261119_phase3_response_ledger" in runbook
     assert "--export PATH" in runbook and "--export`" not in runbook
     adr8 = (REPO_ROOT / "docs" / "adr" / "ADR-008-model-gateway-and-v2-panel.md").read_text(encoding="utf-8")
-    assert "The cache, the budget and the stop are per process" in adr8 and "DI-86" in adr8
+    assert "The cache, the budget and the stop are per process" not in adr8 and "DI-77" not in adr8 and "DI-86" in adr8
+    assert "shared by every instance through the application database" in adr8
+    # The start-up semantic.inactive line: the Phase 2 spec's event row and the observability runbook's row give its
+    # reason, and the deployment runbook's bullet names the opt-in, the refusal line and the start-up line.
+    phase2 = (REPO_ROOT / "docs" / "architecture" / "phase2-implementation-spec.md").read_text(encoding="utf-8")
+    row = next(line for line in phase2.splitlines() if line.startswith("| `semantic.inactive` |"))
+    assert row.startswith("| `semantic.inactive` | `reason`") and "provider_open" in row and "not_aligned" in row
+    observed = next(line for line in (infra / "observability.md").read_text(encoding="utf-8").splitlines() if '`event: "semantic.inactive"`' in line)
+    assert "| `reason`" in observed and "| none |" not in observed and "provider_open" in observed
+    bullet = next(line for line in runbook.splitlines() if line.startswith("- Semantic retrieval (`SEMANTIC_RETRIEVAL_ENABLED`"))
+    assert "`openai-embeddings` in `MODEL_EGRESS_PROVIDERS`" in bullet and "`gateway.egress_refused`" in bullet and "`semantic.inactive` with its `reason`" in bullet
     # The payload register (Q-15, the owner's review input) states each field as the code sends it.
     register = (REPO_ROOT / "docs" / "security" / "payload-register.md").read_text(encoding="utf-8")
     assert "other claims of the response in a claim item (the alignment item's `rendered_text` is the whole rendering" in register
     assert "`{model, model_version, max_tokens, instructions, input}`" in register and "stops the gateway on anything else" not in register
-    # The egress guard's host-string scope, as test_gateway_egress_guard.py scans it.
+    # The egress guard's host-string scope, as test_gateway_egress_guard.py scans it (HOST_ROOTS: .py files only; the
+    # evaluation root holds evaluation/tests). Each text is compared with its line breaks and code marks folded, so a
+    # phrase wrapped across lines cannot hide.
+    from test_gateway_egress_guard import HOST_ROOTS
+
+    assert [root.relative_to(REPO_ROOT).as_posix() for root in HOST_ROOTS] == ["apps/api/app", "scripts", "evaluation", "tools"]
+    scope = "the Python files under apps/api/app, scripts, evaluation (its tests included) and tools"
+    unscanned = "apps/api/tests, apps/frontend, infra and every non-Python file are not scanned"
     adr6 = (REPO_ROOT / "docs" / "adr" / "ADR-006-security-model.md").read_text(encoding="utf-8")
     gateway_doc = (API_ROOT / "app" / "gateway" / "__init__.py").read_text(encoding="utf-8")
-    for text in (adr6, gateway_doc):
-        assert "anywhere else in the repository's code" not in text
-    assert "the Python code under `apps/api/app`, `scripts`, `evaluation` and `tools`" in adr6
+    guard_doc = (API_ROOT / "tests" / "test_gateway_egress_guard.py").read_text(encoding="utf-8").split('"""', 2)[1]
+    for text in (adr6, gateway_doc, guard_doc):
+        flat = " ".join(text.split()).replace("`", "")
+        for stale in ("anywhere else in the repository's code", "the frontend, infra and the tests are not scanned"):
+            assert stale not in flat, stale
+        assert scope in flat and unscanned in flat, text[:80]
     # Texts Phase 5 made false, edited in place (spec 7.6).
     phase3 = (REPO_ROOT / "docs" / "architecture" / "phase3-implementation-spec.md").read_text(encoding="utf-8")
     assert "Phase 5 wires one through the gateway" not in phase3 and "The Vertex helpers are unchanged; the provider path is Phase 5." not in phase3
@@ -1281,17 +1444,35 @@ def _test_function_names() -> set[str]:
     return names
 
 
+# The modules that existed before Phase 5 and that Phase 5 changed (spec 13.2 additions, 13.3 changes): each has a row
+# in the test strategy's second Phase 5 table, saying what the phase's change to it proves.
+PHASE5_EXTENDED_MODULES = (
+    "conftest.py", "test_api.py", "test_config_package.py", "test_configuration_overrides.py", "test_phase2_acceptance.py",
+    "test_phase3_acceptance.py", "test_phase4_acceptance.py", "test_python_sources.py", "test_response_ledger.py",
+    "test_response_ledger_migrations.py", "test_response_ledger_provenance.py", "test_tutor_retrieve_bind_lock.py",
+    "test_v1_5_abstention.py", "test_v1_aggregate_and_runner.py", "v1_fakes.py",
+)
+
+
 def test_phase5_docs_the_test_strategy_maps_every_test_module_the_phase_added():
     strategy = (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
     phase_5 = strategy.split("## Phase 5 acceptance map", 1)[1].split("\n## ", 1)[0]
-    table = phase_5.split("### Phase 5 test files", 1)[1].split("**Exit gate.**", 1)[0]
-    rows = {match.group(1): match.group(2) for line in table.splitlines() if (match := re.match(r"\| `([^`]+)` \| (.+) \|$", line))}
+    files = phase_5.split("### Phase 5 test files", 1)[1]
+    added_table, changed_table = files.split("### Phase 5 changes to existing test modules", 1)
+    changed_table = changed_table.split("**Exit gate.**", 1)[0]
+
+    def rows_of(table: str) -> dict[str, str]:
+        return {match.group(1): match.group(2) for line in table.splitlines() if (match := re.match(r"\| `([^`]+)` \| (.+) \|$", line))}
+
+    rows, changed = rows_of(added_table), rows_of(changed_table)
     tests = API_ROOT / "tests"
     expected = {path.name for pattern in ("test_phase5_*.py", "test_gateway_*.py", "test_v2_*.py", "v2_fakes.py", "network_guard.py")
                 for path in tests.glob(pattern)}
     assert len([name for name in expected if name.startswith("test_gateway_")]) == 7 and len([name for name in expected if name.startswith("test_v2_")]) == 5
     assert sorted(rows) == sorted(expected), sorted(set(rows) ^ expected)
-    for name, text in rows.items():
+    assert sorted(changed) == sorted(PHASE5_EXTENDED_MODULES), sorted(set(changed) ^ set(PHASE5_EXTENDED_MODULES))
+    assert all((tests / name).exists() for name in PHASE5_EXTENDED_MODULES)
+    for name, text in {**rows, **changed}.items():
         assert len(text) > 80, name
     functions = _test_function_names()
     missing = [name for name in re.findall(r"`(test_[a-z0-9_]+)`", phase_5) if name not in functions]

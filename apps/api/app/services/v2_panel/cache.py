@@ -14,15 +14,25 @@ alignment verdicts and ledger entries are never cached, so nothing a learner was
                   model id
 So a configuration bump (config_package_sha256) or a model change (verifier_model_version) misses. No key or value
 holds a learner identifier, a thread or response id or any text: keys are hashes, values are ClaimPlan or
-AdapterVerdict (put refuses any other type). The hashes live only in process memory, bounded by the LRU, and are
-never logged, persisted or exported. The cache is per process (no shared store exists; DI-79) and starts cold
-(plan G). get_cache() is the process cache; reset_process_cache() is the test seam.
+AdapterVerdict (put refuses any other type).
+Two implementations:
+  DatabaseEvidentialCache  shared by every API instance through the application database (evidential_cache_entries;
+                           plan 5.7 "Shared cache", 7.5 "shared verdict cache"): each key is stored as a keyed digest
+                           (HMAC with the guest-token secret, so a stored key cannot be matched against a guessed
+                           question), each value as the canonical JSON of its ClaimPlan or AdapterVerdict; a hit
+                           refreshes used_at, and a put evicts the least recently used entries beyond the kind's bound.
+                           The table starts empty with its migration (plan G "cold cache"); the keys are never logged
+                           or exported. Package v4 gateway.cache.scope "database" makes it the process cache.
+  ProcessEvidentialCache   one LRU per kind in process memory: a test's, or the fixture runner's, own cache.
+get_cache() is the process's cache; reset_process_cache() is the test seam (a new object and an empty shared table).
 """
 
 from __future__ import annotations
 
 from collections import Counter, OrderedDict
+import json
 import threading
+import time
 from typing import Any, Literal, Protocol
 
 from app.core.config_package import canonical_sha256
@@ -88,6 +98,107 @@ class ProcessEvidentialCache:   # thread-safe; one LRU per kind, max_entries fro
                     for kind, entries in self._entries.items()}
 
 
+def _table():
+    from app.db_models import EvidentialCacheEntry
+
+    return EvidentialCacheEntry.__table__
+
+
+def _engine():
+    from app.core.db import engine
+
+    return engine
+
+
+class DatabaseEvidentialCache:   # shared by every instance (evidential_cache_entries); bounds from v4 gateway.cache
+    def __init__(self, *, max_plans: int = 1024, max_verdicts: int = 8192, clock=time.time) -> None:
+        self._limits = {"claim_plan": int(max_plans), "verdict": int(max_verdicts)}
+        self._clock = clock
+        self._lock = threading.Lock()
+        self.hits: Counter = Counter()
+        self.misses: Counter = Counter()
+
+    @staticmethod
+    def stored_key(key: str) -> str:
+        from app.core.client_identity import keyed_digest
+
+        return keyed_digest(key, "evidential-cache")
+
+    def get(self, kind: Kind, key: str):
+        from sqlalchemy import select, update
+
+        if kind not in VALUE_TYPES:
+            raise KeyError(kind)
+        table, stored = _table(), self.stored_key(key)
+        where = (table.c.kind == kind, table.c.key == stored)
+        with _engine().begin() as connection:
+            value = connection.execute(select(table.c.value).where(*where)).scalar_one_or_none()
+            if value is not None:
+                connection.execute(update(table).where(*where).values(used_at=self._clock()))
+        with self._lock:
+            (self.misses if value is None else self.hits)[kind] += 1
+        return None if value is None else VALUE_TYPES[kind].model_validate_json(value)
+
+    def put(self, kind: Kind, key: str, value) -> None:
+        from sqlalchemy import delete, func, select
+        from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+        expected = VALUE_TYPES.get(kind)
+        if expected is None or not isinstance(value, expected):
+            raise TypeError(f"the evidential cache holds only {expected.__name__ if expected else 'evidential'} values for {kind}")
+        table, engine = _table(), _engine()
+        text = json.dumps(value.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        insert = postgresql_insert if engine.dialect.name == "postgresql" else sqlite_insert
+        now = self._clock()
+        statement = insert(table).values(kind=kind, key=self.stored_key(key), value=text, used_at=now)
+        statement = statement.on_conflict_do_update(index_elements=[table.c.kind, table.c.key], set_={"value": text, "used_at": now})
+        with engine.begin() as connection:
+            connection.execute(statement)
+            count = int(connection.execute(select(func.count()).select_from(table).where(table.c.kind == kind)).scalar_one())
+            excess = count - self._limits[kind]
+            if excess > 0:
+                oldest = select(table.c.key).where(table.c.kind == kind).order_by(table.c.used_at, table.c.key).limit(excess)
+                connection.execute(delete(table).where(table.c.kind == kind, table.c.key.in_([row.key for row in connection.execute(oldest)])))
+
+    def evict(self, kind: Kind, key: str) -> None:
+        from sqlalchemy import delete
+
+        table = _table()
+        with _engine().begin() as connection:
+            connection.execute(delete(table).where(table.c.kind == kind, table.c.key == self.stored_key(key)))
+
+    def _rows(self, kind: Kind) -> list:
+        from sqlalchemy import select
+
+        table = _table()
+        with _engine().connect() as connection:
+            return list(connection.execute(select(table.c.key, table.c.value).where(table.c.kind == kind).order_by(table.c.used_at, table.c.key)))
+
+    def values(self, kind: Kind) -> list:
+        return [VALUE_TYPES[kind].model_validate_json(row.value) for row in self._rows(kind)]
+
+    def keys(self, kind: Kind) -> list[str]:
+        """The stored keys (keyed digests), least recently used first."""
+        return [row.key for row in self._rows(kind)]
+
+    def snapshot(self) -> dict:
+        from sqlalchemy import func, select
+
+        table = _table()
+        with _engine().connect() as connection:
+            counts = dict(connection.execute(select(table.c.kind, func.count()).group_by(table.c.kind)).all())
+        with self._lock:
+            return {kind: {"hits": self.hits[kind], "misses": self.misses[kind], "entries": int(counts.get(kind, 0))} for kind in VALUE_TYPES}
+
+
+def clear_shared_cache() -> None:
+    from sqlalchemy import delete
+
+    with _engine().begin() as connection:
+        connection.execute(delete(_table()))
+
+
 def plan_cacheable(generator: Any) -> bool:
     """Only a wired generator's proposals are cached (tutor_pipeline.evidential.GENERATORS): its plan is a function of its
     ref and the envelope. Any other generator (a test double that shares a wired ref, a reviser) is never read from or
@@ -133,11 +244,13 @@ def verdict_key(*, claim_text: str, span_id: str, span_content_hash: str, spec: 
     })
 
 
-_PROCESS: ProcessEvidentialCache | None = None
+_PROCESS: DatabaseEvidentialCache | ProcessEvidentialCache | None = None
 _LOCK = threading.Lock()
 
 
-def get_cache() -> ProcessEvidentialCache:
+def get_cache() -> DatabaseEvidentialCache | ProcessEvidentialCache:
+    """The process's cache: the shared DatabaseEvidentialCache when package v4 names the database scope, else (a package
+    without a gateway block) a per-process one."""
     global _PROCESS
     with _LOCK:
         if _PROCESS is None:
@@ -146,12 +259,18 @@ def get_cache() -> ProcessEvidentialCache:
 
             package = get_config_package(get_settings())
             gateway = package.gateway
-            _PROCESS = (ProcessEvidentialCache(max_plans=gateway.cache_max_plans, max_verdicts=gateway.cache_max_verdicts)
-                        if gateway is not None else ProcessEvidentialCache())
+            if gateway is None:
+                _PROCESS = ProcessEvidentialCache()
+            elif gateway.cache_scope == "database":
+                _PROCESS = DatabaseEvidentialCache(max_plans=gateway.cache_max_plans, max_verdicts=gateway.cache_max_verdicts)
+            else:
+                _PROCESS = ProcessEvidentialCache(max_plans=gateway.cache_max_plans, max_verdicts=gateway.cache_max_verdicts)
         return _PROCESS
 
 
 def reset_process_cache() -> None:
+    """The test seam (conftest's autouse fixture; the invariant-1 fixture): a new cache object and an empty shared table."""
     global _PROCESS
     with _LOCK:
         _PROCESS = None
+    clear_shared_cache()
