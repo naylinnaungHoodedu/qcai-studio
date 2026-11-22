@@ -145,6 +145,7 @@ ROUTE_POLICIES: dict[tuple[str, str], RoutePolicy] = {
     # Learner record
     ("GET", "/learner-record"): _p(DURABLE_LEARNER, CALLER),
     ("POST", "/learner-record/operations"): _p(DURABLE_LEARNER, CALLER),
+    ("POST", "/learner-record/replicas"): _p(DURABLE_LEARNER, CALLER),
     # Projects
     ("GET", "/projects/catalog"): _p(PUBLIC),
     ("GET", "/projects/my-submissions"): _p(PRINCIPAL, CALLER),

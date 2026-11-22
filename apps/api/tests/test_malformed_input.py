@@ -228,7 +228,14 @@ def _learner_record_write(payload: dict, operation_type: str):
         "payload": payload,
     }
     headers = {"origin": TRUSTED_ORIGIN, "x-qcai-csrf": client.cookies.get("qcai_auth_csrf"), "content-type": "application/json", **_source()}
-    written = client.post("/learner-record/operations", content=json.dumps({"operations": [operation]}), headers=headers)
+    issued = client.post("/learner-record/replicas", headers=headers)
+    assert issued.status_code == 201
+    operation["replica_id"] = issued.json()["replica_id"]
+    written = client.post(
+        "/learner-record/operations",
+        content=json.dumps({"expected_record_version": 0, "operations": [operation]}),
+        headers=headers,
+    )
     return written, client.get("/learner-record", headers=_source())
 
 
@@ -307,7 +314,7 @@ def test_an_over_long_user_agent_is_stored_truncated():
 
 def test_a_non_finite_preference_is_refused_on_postgres_and_never_a_500():
     written, read = _learner_record_write({"key": "k", "value": float("nan")}, "set_preference")
-    assert written.status_code == (422 if ON_POSTGRES else 200), written.text
+    assert written.status_code == 422, written.text
     assert read.status_code == 200
 
 

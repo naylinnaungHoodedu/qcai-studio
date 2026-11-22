@@ -85,6 +85,7 @@ that each policy matches the route's real dependencies, and that this file is cu
 | GET | `/insights/skill-gap` | `principal` | `caller` |  |
 | POST | `/insights/realtime-feedback` | `principal` | `caller` |  |
 | GET | `/learner-record` | `durable_learner` | `caller` |  |
+| POST | `/learner-record/replicas` | `durable_learner` | `caller` |  |
 | POST | `/learner-record/operations` | `durable_learner` | `caller` |  |
 | GET | `/projects/catalog` | `public` | `none` |  |
 | GET | `/projects/my-submissions` | `principal` | `caller` |  |

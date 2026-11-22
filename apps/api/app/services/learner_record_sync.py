@@ -2,6 +2,7 @@
 
 import json
 from uuid import uuid4
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException
 from sqlalchemy import func, select, update
@@ -9,7 +10,7 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
-from app.db_models import LearnerIssuedReplica, LearnerRecord, LearnerRecordOperation, LearnerReplica
+from app.db_models import LearnerIssuedReplica, LearnerRecord, LearnerRecordOperation, LearnerReplica, QuizAttempt
 from app.schemas import LearnerRecordOperationInput, LearnerRecordRead
 from app.services.learner_record import (
     _payload_hash,
@@ -20,6 +21,27 @@ from app.services.learner_record import (
 
 MAX_ISSUED_REPLICAS = 16
 SERVER_REPLICA = "server-content-v1"
+ASSESSMENT_LIMIT = 12
+ASSESSMENT_WINDOW = timedelta(minutes=15)
+
+
+def begin_server_assessment(db: Session, user_id: str, lesson_slug: str) -> int:
+    """Hold the record lock while checking the quota and reserving the next clock base."""
+    lock_learner_record(db, user_id)
+    count = db.scalar(
+        select(func.count()).select_from(QuizAttempt).where(
+            QuizAttempt.user_id == user_id,
+            QuizAttempt.lesson_slug == lesson_slug,
+            QuizAttempt.created_at >= datetime.now(UTC) - ASSESSMENT_WINDOW,
+        )
+    )
+    if count is not None and count >= ASSESSMENT_LIMIT:
+        raise HTTPException(429, "Assessment attempt limit reached.", headers={"Retry-After": "900"})
+    return db.scalar(
+        select(LearnerReplica.last_logical_counter).where(
+            LearnerReplica.user_id == user_id, LearnerReplica.replica_id == SERVER_REPLICA
+        )
+    ) or 0
 
 
 def lock_learner_record(db: Session, user_id: str) -> LearnerRecord:

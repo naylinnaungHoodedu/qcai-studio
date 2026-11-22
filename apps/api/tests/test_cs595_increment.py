@@ -176,14 +176,19 @@ def test_learner_record_api_requires_a_durable_session_and_accepts_idempotent_op
     registered = account_client.post("/auth/register", json={"email": email, "password": "correct-horse-battery-staple"})
     assert registered.status_code == 201
     csrf = account_client.cookies.get("qcai_auth_csrf")
+    headers = {"origin": "http://localhost:3000", "x-qcai-csrf": csrf}
+    issued = account_client.post("/learner-record/replicas", headers=headers)
+    assert issued.status_code == 201
+    replica_id = issued.json()["replica_id"]
     response = account_client.post(
         "/learner-record/operations",
-        headers={"origin": "http://localhost:3000", "x-qcai-csrf": csrf},
+        headers=headers,
         json={
+            "expected_record_version": 0,
             "operations": [
                 {
                     "operation_id": "op-api-route-1",
-                    "replica_id": "replica-api-route",
+                    "replica_id": replica_id,
                     "logical_counter": 1,
                     "operation_type": "complete_item",
                     "payload": {"item_id": "lesson:routing"},

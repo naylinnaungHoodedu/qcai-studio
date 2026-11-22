@@ -358,6 +358,9 @@ def _local_account() -> tuple[TestClient, dict[str, str]]:
 
 
 def _write_everything(browser: TestClient, headers: dict[str, str], marker: str) -> None:
+    issued = browser.post("/learner-record/replicas", headers={**headers, **_source()})
+    assert issued.status_code == 201
+    replica_id = issued.json()["replica_id"]
     writes = [
         ("POST", f"/content/lessons/{LESSON_SLUG}/notes", {"body": f"Note {marker}"}),
         ("POST", "/assistant/threads", {"title": f"Thread {marker}"}),
@@ -370,10 +373,11 @@ def _write_everything(browser: TestClient, headers: dict[str, str], marker: str)
             "POST",
             "/learner-record/operations",
             {
+                "expected_record_version": 0,
                 "operations": [
                     {
                         "operation_id": f"op-{uuid4().hex[:12]}",
-                        "replica_id": f"replica-{uuid4().hex[:8]}",
+                        "replica_id": replica_id,
                         "logical_counter": 1,
                         "operation_type": "set_cursor",
                         "payload": {"value": f"cursor {marker}"},

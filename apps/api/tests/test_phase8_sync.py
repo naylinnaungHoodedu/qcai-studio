@@ -9,10 +9,13 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 
-from app.db_models import Base, LearnerIssuedReplica, LearnerRecord, LearnerRecordOperation, LearnerReplica
+from app.db_models import Base, LearnerIssuedReplica, LearnerRecord, LearnerRecordOperation, LearnerReplica, QuizAttempt
 from app.schemas import LearnerRecordOperationInput
 from app.services.learner_record_sync import (
     MAX_ISSUED_REPLICAS,
+    ASSESSMENT_LIMIT,
+    SERVER_REPLICA,
+    begin_server_assessment,
     issue_learner_replica,
     lock_learner_record,
     read_existing_learner_record,
@@ -23,7 +26,10 @@ from app.services.learner_record_sync import (
 @pytest.fixture()
 def sync_engine(fresh_database_url):
     engine = create_engine(fresh_database_url)
-    tables = [model.__table__ for model in (LearnerRecord, LearnerReplica, LearnerRecordOperation, LearnerIssuedReplica)]
+    tables = [
+        model.__table__
+        for model in (LearnerRecord, LearnerReplica, LearnerRecordOperation, LearnerIssuedReplica, QuizAttempt)
+    ]
     try:
         Base.metadata.create_all(engine, tables=tables)
         yield engine
@@ -159,3 +165,23 @@ def test_phase8_sync_limits_replica_issuance_per_subject(sync_engine):
             issue_learner_replica(db, subject)
         db.rollback()
         assert issue_learner_replica(db, other) not in issued
+
+
+def test_phase8_assessment_quota_and_server_clock_are_subject_scoped(sync_engine):
+    subject, other = (f"subj-{uuid4().hex}" for _ in range(2))
+    with Session(sync_engine, autoflush=False) as db:
+        for index in range(ASSESSMENT_LIMIT):
+            assert begin_server_assessment(db, subject, "lesson") == index
+            replica = db.query(LearnerReplica).filter_by(user_id=subject, replica_id=SERVER_REPLICA).one_or_none()
+            if replica is None:
+                replica = LearnerReplica(user_id=subject, replica_id=SERVER_REPLICA)
+                db.add(replica)
+            replica.last_logical_counter = index + 1
+            db.add(QuizAttempt(user_id=subject, lesson_slug="lesson", score=0, responses={}))
+            db.commit()
+        with pytest.raises(HTTPException, match="attempt limit") as refused:
+            begin_server_assessment(db, subject, "lesson")
+        assert refused.value.status_code == 429
+        db.rollback()
+        assert begin_server_assessment(db, other, "lesson") == 0
+        assert begin_server_assessment(db, subject, "other-lesson") == ASSESSMENT_LIMIT

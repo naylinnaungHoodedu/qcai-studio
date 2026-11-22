@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.auth import AuthUser, get_current_user
+from app.core.config import get_settings
 from app.core.db import get_db
 from app.db_models import Note, QuizAttempt
 from app.schemas import (
@@ -19,6 +20,7 @@ from app.schemas import (
     LearnerRecordOperationInput,
 )
 from app.services.learner_record import apply_learner_record_operations
+from app.services.learner_record_sync import SERVER_REPLICA, begin_server_assessment
 from app.services.learner_progress import build_course_progress
 from app.services.quiz_keys import score_attempt
 from app.services.store import get_course_store
@@ -155,6 +157,11 @@ def record_quiz_attempt(
     # Scored on the server (task 1.2, E-110) against the server-side keys; the lesson payload carries none (R-42).
     keys = store.quiz_keys.for_lesson(payload.lesson_slug)
     score, responses, feedback = score_attempt(keys, payload.responses)
+    durable = user.provider not in {"guest", "demo"}
+    server_clock = (
+        begin_server_assessment(db, user.user_id, payload.lesson_slug)
+        if durable and get_settings().learner_sync == "on" else None
+    )
     record = QuizAttempt(
         user_id=user.user_id,
         lesson_slug=payload.lesson_slug,
@@ -165,21 +172,23 @@ def record_quiz_attempt(
     db.flush()
     # Durable identities write the same outcome to the authoritative record.
     # Guest/demo behavior remains a non-cross-device preview surface.
-    if user.provider not in {"guest", "demo"}:
+    if durable:
         question_count = len(keys)
         mastery = round(min(1.0, score / question_count), 6) if question_count else 0.0
+        base_counter = record.id * 2 if server_clock is None else server_clock
+        operation_prefix = "quiz" if server_clock is None else "quiz-v2"
         operations = [
             LearnerRecordOperationInput(
-                operation_id=f"quiz-{record.id}-mastery",
-                replica_id="server-content-v1",
-                logical_counter=(record.id * 2) + 1,
+                operation_id=f"{operation_prefix}-{record.id}-mastery",
+                replica_id=SERVER_REPLICA,
+                logical_counter=base_counter + 1,
                 operation_type="mastery_set",
                 payload={"skill_id": f"lesson:{payload.lesson_slug}", "value": mastery},
             ),
             LearnerRecordOperationInput(
-                operation_id=f"quiz-{record.id}-attempt",
-                replica_id="server-content-v1",
-                logical_counter=(record.id * 2) + 2,
+                operation_id=f"{operation_prefix}-{record.id}-attempt",
+                replica_id=SERVER_REPLICA,
+                logical_counter=base_counter + 2,
                 operation_type="increment_attempt",
                 payload={"item_id": f"lesson:{payload.lesson_slug}", "delta": 1},
             ),
@@ -187,9 +196,9 @@ def record_quiz_attempt(
         if mastery >= 0.7:
             operations.append(
                 LearnerRecordOperationInput(
-                    operation_id=f"quiz-{record.id}-complete",
-                    replica_id="server-content-v1",
-                    logical_counter=(record.id * 2) + 3,
+                    operation_id=f"{operation_prefix}-{record.id}-complete",
+                    replica_id=SERVER_REPLICA,
+                    logical_counter=base_counter + 3,
                     operation_type="complete_item",
                     payload={"item_id": f"lesson:{payload.lesson_slug}"},
                 )

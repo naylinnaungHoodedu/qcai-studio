@@ -490,6 +490,11 @@ class LearnerRecordOperationInput(BaseModel):
 
 class LearnerRecordOperationsRequest(BaseModel):
     operations: list[LearnerRecordOperationInput] = Field(min_length=1, max_length=100)
+    expected_record_version: Any = None
+
+
+class LearnerReplicaIssued(BaseModel):
+    replica_id: str
 
 
 class LearnerRecordOperationReceipt(BaseModel):

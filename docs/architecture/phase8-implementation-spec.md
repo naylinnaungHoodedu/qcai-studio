@@ -31,7 +31,7 @@ The first build adds the following shapes:
 | `LearnerIssuedReplica` | `replica_id` (random server-issued string, primary key), `user_id` (indexed erasure key), `created_at` (database timestamp). |
 | `LearnerPresentation` | `plan_id` (`concise`, `stepwise`, or `socratic`), `lesson_order` (ordered tuple of lesson identifiers), `planner_version` (`learner-planner-v1`). |
 
-The client operations service accepts a subject, expected version, and existing operation input models. The authenticated GET uses the no-write reader when synchronization is enabled. The API write route uses the baseline merge pending coordinated wiring of the trusted writer and authorization policy.
+The client operations service accepts a subject, expected version, and existing operation input models. With synchronization enabled, authenticated GET uses the no-write reader and POST requires an integer `expected_record_version`. Replica issuance returns the random issued identifier. The off mode retains the baseline read and merge behavior.
 
 ## 4. Algorithms
 
@@ -43,6 +43,8 @@ The client operations service accepts a subject, expected version, and existing 
 In `learner_record_sync.py`, a conflict-tolerant insert creates the record when needed. A version-preserving row update acquires the transaction's write lock, then the service checks the expected version and reads the subject's issued replicas. All new operations have strictly increasing clocks and known causal counters. Identical operations in the same batch generate one applied receipt followed by duplicate receipts. A replay containing only known operations can recover its receipts after the record advances. The read-only entry point returns a version-zero record for a missing subject without issuing an insert.
 
 The planner maps the mean finite course-local server mastery below 0.4 to stepwise, from 0.4 through values below 0.75 to concise, and from 0.75 to socratic. It keeps unfinished lessons in course order and applies PD-204 to the review order. With adaptation disabled or no valid course mastery, it returns the configured default plan and static order. Any eventual caller must source mastery from trusted assessment evidence.
+
+For a durable quiz writer with synchronization enabled, acquire the record lock before inserting the attempt. Count the subject's attempts on that lesson over the preceding 15 minutes and refuse the thirteenth. Allocate the assessment operation clocks from the locked server replica and keep the attempt and learner record in the same transaction. The preview and synchronization-off paths retain their existing behavior. Historical mastery remains present in the original materialized record and must be kept out of planner inputs until trusted evidence can be reconstructed.
 
 ## 5. Configuration package
 
@@ -77,7 +79,7 @@ Validate settings and fail startup on refused values. Count sync conflicts and i
 
 ## 11. Frontend
 
-Update the existing dormant synchronization helper for issued replicas, version conflicts, and retry. Keep its storage-key inventory. Production consent UI and learner-facing privacy-copy changes are tracked separately.
+The dormant synchronization helper obtains a replica from the server, advances its local clock from the observed server clock, and sends the expected record version. On a failed request it re-reads the record and retries once when the version advanced, preserving the batch's operation IDs. It uses the existing two storage keys. Production consent UI and learner-facing privacy-copy changes are tracked separately.
 
 ## 12. Fixtures and records
 
@@ -152,6 +154,19 @@ Start with the baseline, then implement identity and synchronization, the privac
 The Phase 5 merged baseline passed 8 separately isolated template tests, 1,593 SQLite tests (2 skipped, 9 deselected, 3 xfailed), and 1,591 tests per PostgreSQL driver (9 deselected, 3 xfailed each). Frontend lint, type checking, and 154 integration tests passed. The existing validators passed, including package v1 through v4, the V2 fixture report, and all 1,192 frozen public payload bodies. The path boundary scan passed. Licensed-passage scanning requires the fingerprint input. The Phase 8 invariance harness and erasure-proof scripts are pending.
 
 The first build passed 43 targeted tests on each database backend, including the Phase 8 modules and existing learner-record, erasure, and gateway egress tests. The freeze, planner threshold, and version-conflict tests failed under their respective in-process mutations. The setup install reported 11 moderate npm advisories. Package and lock files retain the integrated versions.
+
+The merged SQLite leg ran `apps/api/tests evaluation/tests`. Both PostgreSQL legs ran `apps/api/tests` only, matching the workflow's path. Each leg excluded the eight template-reading cases below and the release-job-only `test_deployment_artifacts.py::test_release_artifacts_exist_and_describe_seeded_demo_transparency`. The template cases were separately run on SQLite with `--tb=no -rN -q` and all eight passed. Thus SQLite reconciles to 1,601 and the API-only PostgreSQL inventory reconciles to 1,599 per driver. Including the four cases in `evaluation/tests/test_evaluators.py` would produce 1,603. The reported main PostgreSQL total matches that combined inventory, although the checked-in workflow uses the API-only path.
+
+- `test_deployment_artifacts.py::test_k8s_database_url_moves_to_secret_example`
+- `test_deployment_artifacts.py::test_api_cloud_run_example_disables_demo_auth_and_documents_secret_injection`
+- `test_phase3_docs.py::test_i5_the_registers_and_spec_sections_6_and_16_say_what_the_code_does`
+- `test_phase3_docs.py::test_k3_the_authoritative_text_states_the_current_code_only`
+- `test_phase4_acceptance.py::test_phase4_docs_state_the_learner_path_v1_7_rule_wherever_they_name_it`
+- `test_phase4_acceptance.py::test_phase4_docs_the_code_texts_name_the_shipped_package`
+- `test_phase5_acceptance.py::test_plan_e_the_legacy_provider_code_is_retired_and_no_production_path_reached_it`
+- `test_phase5_acceptance.py::test_phase5_docs_the_runbooks_and_registers_state_the_gateway_s_operations_exactly`
+
+Sync wiring verification ran four API modules, `test_phase8_sync.py`, `test_cs595_increment.py`, `test_authorization.py`, and `test_malformed_input.py`, with 154 passed per SQLite, psycopg, and pg8000. This targeted selection has no template or release-artifact tests. Frontend lint, type checking and all 154 integration tests passed.
 
 The Phase 3 replay and Phase 4 and 5 fixture records were regenerated from the clean build commit. Their input digests are `b5f54f43c1f9390461374456266312cd060be61498d8976d468918a2dd155792`, `79d312a15ee9430edcfc93624fe2fe8ffc75cab547275de934dc3bfd28ed2a99`, and `9a8bdcab76826f6d0cd7a1fbaa2a939523fd88485da271bf6f52ddbd77afa6f5`, respectively. Fresh record checks passed and the frozen public payload check matched all 1,192 bodies again.
 
