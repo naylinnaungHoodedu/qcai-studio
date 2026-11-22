@@ -1,8 +1,8 @@
 {
  "report": "qcai-v2-fixture-report",
  "format_version": 1,
- "created_at": "2026-11-22T18:33:48+00:00",
- "commit": "9d1417cea334be3b9052eb70588946ac0556b8e8",
+ "created_at": "2026-11-22T23:43:13+00:00",
+ "commit": "546670646894258858600e619fbb407833a873ea",
  "evidence_class": "fixture measurements, not research results (plan Phase 5 H: V-2, V-4 are E2 results, never claimed from fixtures)",
  "public_corpus_only": true,
  "config_package": {
@@ -226,8 +226,8 @@
  },
  "latency": {
   "p95_ms": {
-   "gateway_call": 0.014,
-   "panel": 2.365
+   "gateway_call": 0.017,
+   "panel": 2.65
   }
  },
  "result": "pass",
@@ -262,7 +262,7 @@
    "apps/api/app/gateway/retired.py": "e5744df75d606a0d80cbf2ad51f13cbe9c6fd4684532df8ea917d83dc968b015",
    "apps/api/app/gateway/secrets.py": "a173c7fd21226b1e4d28d5abc1349986502be8e873a32bae0ec14ca350161f5e",
    "apps/api/app/gateway/tools.py": "391ad72fcfe11684811684d7d0e19134bf6a9f8ffac41edfb0af164928a460a4",
-   "apps/api/app/schemas.py": "dd4318765e3928f76aa533a77cfcc91678e84c7531f07875e057594a1cc94f4e",
+   "apps/api/app/schemas.py": "7bc0589e1fc6a14fc37d8472e96466369ece19512200718d1e91ca16c654e0a3",
    "apps/api/app/services/claim_gate.py": "dd3fa79d6a39f3cf30141471622e0f487059eaa80669332c1eab7d5adbe6ca28",
    "apps/api/app/services/contained_answers.py": "b32a28b65f294fb7de09229679ca2503666de9c45e8179f1f4f52c0302c96e99",
    "apps/api/app/services/content_assembler.py": "0ec184c9f538361ac85040a864ee32aa6536f4be0222c519b0431e1ca3450d68",
@@ -319,6 +319,6 @@
    "apps/api/app/services/v2_panel/voting.py": "369859a4c5808e23c4a84306d14b7b594693d4755e4bb23132f14292905bff78",
    "scripts/run_v2_fixtures.py": "3cf0ba9977a90f890f9e5b4f716217bc4711041f6525c6f95c76529358a7ff44"
   },
-  "sha256": "9a8bdcab76826f6d0cd7a1fbaa2a939523fd88485da271bf6f52ddbd77afa6f5"
+  "sha256": "c4e31e147608da6fad98ce15f6eb82f89e60f65745b75e451a4fde9769010f24"
  }
 }

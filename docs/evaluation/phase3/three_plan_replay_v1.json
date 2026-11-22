@@ -1,8 +1,8 @@
 {
  "report": "qcai-three-plan-replay",
  "format_version": 1,
- "created_at": "2026-11-22T18:33:26+00:00",
- "commit": "9d1417cea334be3b9052eb70588946ac0556b8e8",
+ "created_at": "2026-11-22T23:42:47+00:00",
+ "commit": "546670646894258858600e619fbb407833a873ea",
  "evidence_class": "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 evidence (plan Phase 3 H)",
  "public_corpus_only": true,
  "excluded_sources": [
@@ -188,7 +188,7 @@
    "apps/api/app/gateway/pinning.py": "287551250014af40b3655c83a02e57998515422fd05f55b112351b9bbe2b4594",
    "apps/api/app/gateway/registry.py": "c7ebbbb02cebe0977afa9e3235b01cb9af9775ce1d810cb0f64fba685292bed4",
    "apps/api/app/gateway/retired.py": "e5744df75d606a0d80cbf2ad51f13cbe9c6fd4684532df8ea917d83dc968b015",
-   "apps/api/app/schemas.py": "dd4318765e3928f76aa533a77cfcc91678e84c7531f07875e057594a1cc94f4e",
+   "apps/api/app/schemas.py": "7bc0589e1fc6a14fc37d8472e96466369ece19512200718d1e91ca16c654e0a3",
    "apps/api/app/services/claim_gate.py": "dd3fa79d6a39f3cf30141471622e0f487059eaa80669332c1eab7d5adbe6ca28",
    "apps/api/app/services/contained_answers.py": "b32a28b65f294fb7de09229679ca2503666de9c45e8179f1f4f52c0302c96e99",
    "apps/api/app/services/content_assembler.py": "0ec184c9f538361ac85040a864ee32aa6536f4be0222c519b0431e1ca3450d68",
@@ -238,6 +238,6 @@
    "apps/api/app/services/v2_panel/voting.py": "369859a4c5808e23c4a84306d14b7b594693d4755e4bb23132f14292905bff78",
    "scripts/replay_tutor_plans.py": "287a264cea97c41d4e59c958c817c00d6a84e5b8f4d47dd76a867584cc11191a"
   },
-  "sha256": "b5f54f43c1f9390461374456266312cd060be61498d8976d468918a2dd155792"
+  "sha256": "6029c8cec97c131c948da8ba6651cd84e4666cfd6f54ed1b75961b459baec38a"
  }
 }

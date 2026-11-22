@@ -168,7 +168,7 @@ The merged SQLite leg ran `apps/api/tests evaluation/tests`. Both PostgreSQL leg
 
 Sync wiring verification ran four API modules, `test_phase8_sync.py`, `test_cs595_increment.py`, `test_authorization.py`, and `test_malformed_input.py`, with 154 passed per SQLite, psycopg, and pg8000. This targeted selection has no template or release-artifact tests. Frontend lint, type checking and all 154 integration tests passed.
 
-The Phase 3 replay and Phase 4 and 5 fixture records were regenerated from the clean build commit. Their input digests are `b5f54f43c1f9390461374456266312cd060be61498d8976d468918a2dd155792`, `79d312a15ee9430edcfc93624fe2fe8ffc75cab547275de934dc3bfd28ed2a99`, and `9a8bdcab76826f6d0cd7a1fbaa2a939523fd88485da271bf6f52ddbd77afa6f5`, respectively. Fresh record checks passed and the frozen public payload check matched all 1,192 bodies again.
+The Phase 3 replay and Phase 4 and 5 fixture records were regenerated from the clean sync wiring commit. Their respective input digests are `6029c8cec97c131c948da8ba6651cd84e4666cfd6f54ed1b75961b459baec38a`, `4a3d343a6686d56769b672a2581aa6798a9d2a70912d8719e8de882275af975e`, and `c4e31e147608da6fad98ce15f6eb82f89e60f65745b75e451a4fde9769010f24`. Fresh record checks passed and the frozen public payload check matched all 1,192 bodies again.
 
 ## 18. Review history
 

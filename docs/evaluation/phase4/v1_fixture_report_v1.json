@@ -1,8 +1,8 @@
 {
  "report": "qcai-v1-fixture-report",
  "format_version": 1,
- "created_at": "2026-11-22T18:33:37+00:00",
- "commit": "9d1417cea334be3b9052eb70588946ac0556b8e8",
+ "created_at": "2026-11-22T23:42:59+00:00",
+ "commit": "546670646894258858600e619fbb407833a873ea",
  "evidence_class": "fixture measurements, not research results (plan Phase 4 H)",
  "public_corpus_only": true,
  "fixtures": {
@@ -1258,7 +1258,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 3.417,
+    "p95_ms": 3.896,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2485,7 +2485,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 3.175,
+    "p95_ms": 3.437,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2539,7 +2539,7 @@
   "contained": true
  },
  "latency": {
-  "p95_ms": 2.71,
+  "p95_ms": 3.024,
   "budget_ms": 250,
   "within_budget": true
  },
@@ -2568,7 +2568,7 @@
    "apps/api/app/gateway/pinning.py": "287551250014af40b3655c83a02e57998515422fd05f55b112351b9bbe2b4594",
    "apps/api/app/gateway/registry.py": "c7ebbbb02cebe0977afa9e3235b01cb9af9775ce1d810cb0f64fba685292bed4",
    "apps/api/app/gateway/retired.py": "e5744df75d606a0d80cbf2ad51f13cbe9c6fd4684532df8ea917d83dc968b015",
-   "apps/api/app/schemas.py": "dd4318765e3928f76aa533a77cfcc91678e84c7531f07875e057594a1cc94f4e",
+   "apps/api/app/schemas.py": "7bc0589e1fc6a14fc37d8472e96466369ece19512200718d1e91ca16c654e0a3",
    "apps/api/app/services/claim_gate.py": "dd3fa79d6a39f3cf30141471622e0f487059eaa80669332c1eab7d5adbe6ca28",
    "apps/api/app/services/contained_answers.py": "b32a28b65f294fb7de09229679ca2503666de9c45e8179f1f4f52c0302c96e99",
    "apps/api/app/services/content_assembler.py": "0ec184c9f538361ac85040a864ee32aa6536f4be0222c519b0431e1ca3450d68",
@@ -2619,6 +2619,6 @@
    "apps/api/app/services/v2_panel/voting.py": "369859a4c5808e23c4a84306d14b7b594693d4755e4bb23132f14292905bff78",
    "scripts/run_v1_fixtures.py": "512aaa185045f1ef87d503178029351eafa311e4ce9c0c3542b402f6930760e1"
   },
-  "sha256": "79d312a15ee9430edcfc93624fe2fe8ffc75cab547275de934dc3bfd28ed2a99"
+  "sha256": "4a3d343a6686d56769b672a2581aa6798a9d2a70912d8719e8de882275af975e"
  }
 }
