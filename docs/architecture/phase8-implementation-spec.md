@@ -1,12 +1,16 @@
 # QC+AI Studio: Phase 8 implementation spec
 
-Learner adaptation and privacy-preserving record, upgrade plan lines 1557-1614. The working branch starts at `98f7cc4`.
+Learner adaptation and privacy-preserving record, upgrade plan lines 1557-1614. The branch was cut at `98f7cc4` and its current integration base is `c34a8c1`.
 
 Sections 0-17 describe the behaviour the code has once implemented. During the pre-code stage they specify the proposed behavior and identify pending checks. Section 18 holds one history-table row per review round. This file is LF in every checkout (`.gitattributes`).
 
 ## 0. Ground rules, measured facts, readings
 
-Apply the branch rules and the Phase 8 handoff's shared-file restrictions. Keep the development fixtures synthetic and the tests offline. Verify implementation details against the branch baseline. At `98f7cc4`, `read_learner_record` uses the get-or-create path, operation receipts reject a changed payload, and the merge increments `record_version` independently of any expected version. The retention worker calls the existing retention service. The acceptance readings are in section 13.
+Apply the branch rules and the Phase 8 handoff's shared-file restrictions. Keep smoke and acceptance fixtures synthetic and run verification offline. The verified Phase 5 integration base is `c34a8c1033e86072b8c0129440e42afea64285ee` (PR #37, main CI run 45044415408, reported green by the owner). The shipped package is v4. The current Alembic head is `20261122_phase5_gateway_controls`.
+
+Phase 5 added `gateway_budget_days`, `gateway_stops`, and `evidential_cache_entries` to the shared ORM and updated the migration chain. The retrieval engine delegates embedding egress to `app/gateway/embeddings.py`. Its import guard allows only the Pinecone index SDK exception in the retrieval engine. The handoff's Phase 5 snapshot of untouched database files and its earlier embedding exception no longer describe the integrated code. Phase 8 uses the existing shared-file ownership limits and treats the added gateway tables and embedding implementation as Phase 5-owned.
+
+The learner-record baseline uses the get-or-create path for reads, rejects changed-payload receipt replays, and advances `record_version` independently of an expected version. The retention worker uses the existing retention service. The acceptance readings are in section 13.
 
 ## 1. Conflicts between plan text and fixed decisions
 
@@ -29,7 +33,7 @@ The subject mapping binds a provider principal to a random subject identifier. T
 
 ## 5. Configuration package
 
-After the Phase 5 integration, extend the shipped package at the next available version with the learner settings, an exit flag set to false, and the decision entries. Preserve the hash chain and prior-version readability. The existing evidence and gateway contract pins continue to control their respective paths.
+Defer the package bump until after Phase 6 is merged into this branch and the Phase 8 implementation is ready for hand-back. Extend the then-current shipped package at the next free version with the learner settings, an exit flag set to false, and the decision entries. Preserve the hash chain and prior-version readability. The existing evidence and gateway contract pins continue to control their respective paths.
 
 ## 6. Settings
 
@@ -48,7 +52,7 @@ Use the existing learner-record and auth routers, a separate `learner_record_*` 
 
 ## 8. Database
 
-Introduce additive ORM and startup schema changes for the subject, consent, receipt support, and durable adaptation stop as required by the selected models. Preserve discoverability of every subject-keyed table by erasure. Add one reversible Alembic revision after the integration, choosing its parent from the actual merged head. Verify fresh and existing-row paths on SQLite and PostgreSQL, including both PostgreSQL drivers.
+Introduce additive ORM models for new Phase 8 tables and preserve discoverability of every subject-keyed table by erasure. Add any required startup registration for columns on existing tables. Defer the one reversible Alembic revision until after Phase 6 lands and the implementation is ready for hand-back. Select its parent from the actual merged head. Verify fresh and existing-row paths on SQLite and PostgreSQL, including both PostgreSQL drivers.
 
 ## 9. Routes and request-path behaviour
 
@@ -90,7 +94,37 @@ Document subject linking and consent, generate the consent schema and authorizat
 
 ## 16. Provisional defaults and deferred items
 
-Reserve PD-200 through PD-205 for consent, compare-and-set, research refusal, freeze settings, engineering parameters, and existing retention classes. Use the handoff's DI-300 through DI-315 assignments for the exit, owner decisions, production evidence and enablement, external providers, backup exposure, human review, assessment limits, planner wiring, and consent UI and disclosures. Populate the complete rows when their implementation and evidence references are available. Plan M: "[Risk R-01][Risk R-08][Risk R-41][Risk R-42][Risk R-51]; residual: backups keep erased rows for a window."
+The following defaults are provisional. Implementation locations in this section refer to the code or artifact responsible for enforcing each default when it lands.
+
+| # | Decision | Plan text | Default applied | Where |
+|---|---|---|---|---|
+| PD-200 | D-27, consent classes and H13 (Product Owner and Principal Investigator) | Plan 18.4 requires consent classes before Phase 8. Plan 9.4 requires the classes as H13 release evidence. | H13 remains held. Version `d27-unresolved-v1` classifies existing processing as unclassified and permits synthetic development grants for adaptation and analytics. Outside development those grants are refused, the planner uses the static order, and the analytics gate is off. Research is refused everywhere. The default establishes no legal basis or toggle-free status. | Consent schema and service, settings, and the future package's `learner` and `owner_decisions.D-27` entries. |
+| PD-201 | D-26 compare-and-set (Security Lead) | Plan task 2 requires server-issued replica clocks, monotonic counters, and compare-and-set on `record_version`. | Check the expected version and serialize writes to the learner record. An out-of-date client re-reads and retries. Identical receipts remain idempotent. | Learner-record sync and trusted assessment write path. |
+| PD-202 | D-08 research timing and D-14 research data plane (Principal Investigator) | Plan 18.3 offers IRB and OSF before research use. Plan H makes research contingent on IRB. | Apply D-08 option (a). Refuse research grants and research export everywhere. Use synthetic learners and the public fixture for engineering evidence. D-14 remains with DI-09. | Consent service and invariance harness. |
+| PD-203 | D-05 feature freeze | Plan L requires planner and sync switches and an adaptation stop on harness violation. | Keep all Phase 8 switches off outside development and refuse non-off values before the verified Phase 8 exit. Development defaults are sync on, planner shadow, identity off, and privacy on. Refuse planner on pending DI-312. | Phase 8 settings and future package flag policy. |
+| PD-204 | Engineering parameters (Engineering) | Plan tasks 2, 3, and 6 require clocks, server mastery, a planner, and three synthetic learner levels. | Use planner thresholds 0.4 and 0.75 and fixture levels 0.1, 0.5, and 0.9. Preserve unfinished course order. Sort completed review lessons by ascending mastery, then descending attempts, then course order. Resolve the replica cap, retry budget, attempt limits, and export and receipt encoding with their implementation. | Planner constants and the future sync, assessment, export, and harness implementation. |
+| PD-205 | Retention classes (Engineering and Data Steward) | Plan task 5 requires scheduled retention. P1-D-09 records the 365-day security-event period. | Reuse the existing retention constants and provider-independent account and session rules. Keep the response ledger outside the expiry schedule pending PLAN-12.8. | Retention class register, shared cleanup service, and scheduled worker. |
+
+| # | Item | Who | State |
+|---|---|---|---|
+| DI-300 | Phase 8 exit. Require AC-8-1 through AC-8-7 and the harness check in a cited green main CI run. Hold `phase8_exit_passed` false pending D-27 and H13, defaults ratification, evidence for A-17, acceptance of the Phase 1 and Phase 3 precondition deviations, and F-3 measured over a production log window. Blocked by: open D-27, owner ratification and acceptance, and production evidence under D-05. | Engineering, Product Owner, Principal Investigator | Open |
+| DI-301 | Decide D-27 consent classes and file H13 release evidence. Blocked by: open D-27. | Product Owner, Principal Investigator | Open |
+| DI-302 | Ratify PD-200 through PD-205 and any additional Phase 8 provisional defaults. Blocked by: owner ratification. | Owners of the respective decisions | Open |
+| DI-303 | Confirm A-17 and Q-19 with authorized table names and row counts before cutover. Blocked by: production access and unresolved Q-19. | Platform Owner, Data Steward | Deferred |
+| DI-304 | Enable Phase 8 switches and hardening outside development, including replica enforcement, reserved operation namespace, server counter correction, authenticated subject requirements, and retention coverage. Blocked by: D-05 and DI-300. | Platform Owner | Deferred |
+| DI-305 | Add production F-3, conflict, and invariance metrics and alerts. Blocked by: cloud writes and production F-3 evidence under DI-300. | Platform Owner | Deferred |
+| DI-306 | Delete the federated account at the identity provider. Platform erasure covers locally managed rows. Blocked by: a credentialed external write and the Phase 5 egress and shared-file boundaries. | Security Lead | Deferred |
+| DI-307 | Establish provider-side erasure and retention for approved model providers. Blocked by: open D-07 and D-12 and unresolved Q-09. | Product Owner, Principal Investigator | Deferred |
+| DI-308 | Determine whether historical processors received learner text. Blocked by: open D-12, unresolved Q-09, and production access. | Security Lead | Deferred |
+| DI-309 | Verify and disclose the backup retention window. Blocked by: unresolved Q-03, authorized cloud evidence, and D-05 for learner-facing disclosure. | Platform Owner | Deferred |
+| DI-310 | Obtain role reviews and two-person consent and configuration review with recorded access. Blocked by: open D-18 and the single-maintainer assumption A-9. | Security Lead, ML Engineer, Data Steward | Deferred |
+| DI-311 | Apply the assessment attempt limit in production and address DI-65's outstanding rubric and assessment changes. Blocked by: D-05 and ratification of the PD-21 feedback rule. | Content Owner, Product Owner | Deferred |
+| DI-312 | Connect the planner to the renderer under a new versioned tool contract and package pin. Until then `LEARNER_PLANNER=on` is refused. Blocked by: the shared-file boundary for tool schema, gateway output, and package pin. | Engineering (main track) | Handed over |
+| DI-313 | Build the learner-facing consent UI after class approval. Blocked by: open D-27 and D-05. | Product Owner, Principal Investigator | Deferred |
+| DI-314 | Publish approved consent-class disclosure. AC-8-7 covers the cookie and storage inventory. Blocked by: open D-27 and D-05. | Product Owner, Principal Investigator | Deferred |
+| DI-315 | Re-review R-51 at the Phase 8 exit. Production carries the existing client mastery path until `LEARNER_SYNC` is enabled. Blocked by: open D-24, D-05, and DI-300. | Product Owner | Open |
+
+Plan M: "[Risk R-01][Risk R-08][Risk R-41][Risk R-42][Risk R-51]; residual: backups keep erased rows for a window."
 
 ## 17. Verification, work order and exit
 
