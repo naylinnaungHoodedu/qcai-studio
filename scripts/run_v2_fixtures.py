@@ -13,7 +13,9 @@ and runs every query in five passes:
   one_down    fake-gamma and fake-delta disabled (REDUCED-2; eligibility precedes the panel, so fake-delta is the spare)
   two_down    fake-beta to fake-delta disabled (REDUCED-1)
   three_down  all four disabled (ZERO)
-  cache_pass  the all_up queries again on the all_up gateway and cache (claim-plan and verdict hits)
+  cache_pass  the all_up queries again on the all_up gateway and cache (claim-plan and verdict hits; verdict_calls
+              counts the claim items that missed the cache, alignment_calls the alignment items, never cached)
+Each scenario's calls_by_item splits its calls into claim and alignment items.
 F-1 per response: the record verifies in its chain, every recorded claim has a verdict with at least one V1 result, every
 V2-eligible claim of a final V1-passed candidate carries a v2 verdict, and no V2 verdict follows a V1 hard fail or a V1
 abstention. The report is labelled "fixture measurements, not research results" (plan Phase 5 H: V-2 and V-4 are E2
@@ -240,8 +242,10 @@ def _scenario(env: Environment, name: str, down, expected_mode: str, items, payl
         per_response_cost.append(block.cost_units)
         if result.v1 is not None and result.v1.v2 is not None:
             latencies.setdefault("panel", []).append(result.v1.v2.latency_ms)
+    calls_by_item = Counter()
     for request in gateway.captured:
         payload_fields.setdefault(request.item, set()).update(request.model_dump().keys())
+        calls_by_item[request.item] += 1
     latencies.setdefault("gateway_call", []).extend(value for values in GATEWAY_METRICS.latency.values() for value in values)
     responses = len(items)
     block = {"name": name, "down": sorted(down), "responses": responses, "f1": {"complete": complete, "rate": f"{complete}/{responses}"},
@@ -249,6 +253,7 @@ def _scenario(env: Environment, name: str, down, expected_mode: str, items, payl
              "finals": {final: finals.get(final, 0) for final in ("deliver", "withhold", "abstain")},
              "tiers": {tier: tiers.get(tier, 0) for tier in ("1", "2", "3")},
              "outcomes": {outcome: outcomes.get(outcome, 0) for outcome in ("pass", "fail", "withheld")}, "x2": x2, "calls": calls,
+             "calls_by_item": {item: calls_by_item.get(item, 0) for item in ("claim", "alignment")},
              "cost_units": {"total": cost, "per_response_mean": round(cost / responses, 3) if responses else 0.0},
              "v2_after_v1_fail": after_fail, "deliver_without_pass": without_pass}
     return block, contradictions, gateway, cache
@@ -289,7 +294,9 @@ def compute(*, items: list[str] | None = None, commit_source=None) -> dict:
         finally:
             env.close()
     cache_pass = {"claim_plan_hits": after["claim_plan"]["hits"] - before["claim_plan"]["hits"],
-                  "verdict_hits": after["verdict"]["hits"] - before["verdict"]["hits"], "verdict_calls": again["calls"],
+                  "verdict_hits": after["verdict"]["hits"] - before["verdict"]["hits"],
+                  # Claim items that missed the cache, and alignment items (never cached: they judge rendered text).
+                  "verdict_calls": again["calls_by_item"]["claim"], "alignment_calls": again["calls_by_item"]["alignment"],
                   "first_pass_calls": first_calls, "f1": again["f1"]}
     for block in scenarios + [dict(again, name="cache_pass")]:
         if block["f1"]["complete"] != block["responses"]:

@@ -1,8 +1,10 @@
 """Retrieval over the Phase 2 span index (plan Phase 2 task 2.5; Phase 2 spec 4.14).
 
 Lexical retrieval is the evidence path: CourseStore.evaluate with the active gate (p1-floor or bm25f-v1). The
-semantic (Pinecone) backend is OFF unless SEMANTIC_RETRIEVAL_ENABLED, whatever keys are set, and even then only
-once it is aligned: its vector ids are span ids and the namespace holds exactly one vector per index entry.
+semantic (Pinecone) backend is OFF unless SEMANTIC_RETRIEVAL_ENABLED, whatever keys are set; it also needs the D-23
+opt-in, openai-embeddings in MODEL_EGRESS_PROVIDERS (PD-22; a refusal logs gateway.egress_refused once per process,
+consumer semantic-retrieval), and even then it runs only once it is aligned: its vector ids are span ids and the
+namespace holds exactly one vector per index entry. RetrievalEngine.semantic_inactive_reason names why it is off.
 Every semantic result is re-gated with the active gate before fusion, so hybrid fusion can never bypass the
 abstention floor (the latent hybrid bypass found on 2026-11-17). Nothing here takes a learner input.
 """
@@ -37,6 +39,8 @@ else:  # pragma: no cover - exercised through mocked backends in tests.
 
 LOGGER = logging.getLogger(__name__)
 DECISION_LOGGER = logging.getLogger("qcai.retrieval")
+# The D-23 egress provider name the semantic backend needs in MODEL_EGRESS_PROVIDERS (PD-22).
+EMBEDDINGS_PROVIDER = "openai-embeddings"
 RRF_K = 60
 SEMANTIC_WEIGHT = 1.35
 LEXICAL_WEIGHT = 1.0
@@ -67,6 +71,13 @@ class PineconeSemanticBackend:
         self._sync_checked = False
         # True only after sync_semantic_index saw one span-id vector per index entry ([R18]).
         self.aligned = False
+
+    @property
+    def egress_refused(self) -> bool:
+        """The setting is on but the environment has not opted in to the embedding egress (D-23, PD-22)."""
+        from app.gateway.egress import egress_allowed
+
+        return bool(self.settings.semantic_retrieval_enabled) and not egress_allowed(self.settings, EMBEDDINGS_PROVIDER)
 
     @property
     def enabled(self) -> bool:
@@ -203,9 +214,25 @@ class RetrievalEngine:
         backend = self._semantic_backend
         return bool(self.settings.semantic_retrieval_enabled and backend.enabled and getattr(backend, "aligned", False))
 
-    def sync_semantic_index(self, refresh: bool = False) -> bool:
-        """The one place that computes alignment ([R18]); True when hybrid retrieval may run."""
+    @property
+    def semantic_inactive_reason(self) -> str | None:
+        """Why semantic retrieval is off although its setting is on: egress_not_opted_in (D-23), not_configured (a key,
+        the SDK or the index is missing) or not_aligned; None when the setting is off or retrieval is hybrid."""
         backend = self._semantic_backend
+        if not self.settings.semantic_retrieval_enabled or self.semantic_enabled:
+            return None
+        if getattr(backend, "egress_refused", False):
+            return "egress_not_opted_in"
+        return "not_aligned" if backend.enabled else "not_configured"
+
+    def sync_semantic_index(self, refresh: bool = False) -> bool:
+        """The one place that computes alignment ([R18]); True when hybrid retrieval may run. A setting that is on
+        without the D-23 opt-in logs gateway.egress_refused (once per process) and stays lexical."""
+        backend = self._semantic_backend
+        if getattr(backend, "egress_refused", False):
+            from app.gateway.egress import log_refusal
+
+            log_refusal(EMBEDDINGS_PROVIDER, consumer="semantic-retrieval")
         if not (self.settings.semantic_retrieval_enabled and backend.enabled):
             return False
         backend.ensure_index_synced(refresh=refresh)

@@ -32,10 +32,12 @@ class GatewayMetrics:
             self.ineligible: Counter = Counter()
             self.refused: Counter = Counter()
 
-    def call(self, adapter_id: str, outcome: str, latency_ms: float, cost_units: int) -> None:
+    def call(self, adapter_id: str, outcome: str, latency_ms: float | None, cost_units: int) -> None:
+        """Count one call; a refused call (latency_ms None) never reached the adapter and adds no latency sample."""
         with self._lock:
             self.calls[(adapter_id, outcome)] += 1
-            self.latency.setdefault(adapter_id, deque(maxlen=WINDOW)).append(float(latency_ms))
+            if latency_ms is not None:
+                self.latency.setdefault(adapter_id, deque(maxlen=WINDOW)).append(float(latency_ms))
             self.cost_units += int(cost_units)
 
     def ineligible_for(self, reason: str) -> None:

@@ -120,3 +120,21 @@ def test_with_no_member_left_for_the_alignment_item_the_claims_are_withheld():
     assert {verdict.outcome for verdict in judged(entry).values()} == {"pass"} and verification.v2.alignment is None
     assert (verification.final, verification.final_reason, verification.replacement) == ("withhold", "v2_degraded_withheld", "extractive_d19")
     assert all(verdict.final == "withhold" and "v2_degraded_withheld" in verdict.v3.reasons for verdict in verification.verdicts)
+
+
+def test_each_shadow_budget_stop_logs_its_own_event_and_message(caplog):
+    # The V2 track's budget stop (step "verify") is the V2 panel's, not the V1 track's (Phase 5 spec 4.12, 10.4).
+    import logging
+
+    from v1_fakes import dev_pipeline
+
+    pipeline = dev_pipeline()
+    started = pipeline.clock() - 10.0
+    with caplog.at_level(logging.WARNING, logger="qcai.tutor"):
+        for event, step in (("tutor.two_pass.budget_exceeded", "render"), ("tutor.v1.budget_exceeded", "bind"), ("tutor.v2.budget_exceeded", "verify")):
+            assert pipeline._over(started, 1000, step, event=event) is True
+        assert pipeline._over(pipeline.clock(), 1000, "verify", event="tutor.v2.budget_exceeded") is False
+    lines = [(record.getMessage(), record.json_fields["event"], record.json_fields["step"]) for record in caplog.records]
+    assert lines == [("Two-pass shadow exceeded its budget", "tutor.two_pass.budget_exceeded", "render"),
+                     ("The shadow V1 track exceeded its budget", "tutor.v1.budget_exceeded", "bind"),
+                     ("The V2 panel exceeded the shadow budget", "tutor.v2.budget_exceeded", "verify")]

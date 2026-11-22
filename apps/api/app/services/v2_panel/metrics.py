@@ -1,12 +1,20 @@
 """In-process V2 metrics (plan Phase 5 I: verification completion, time degraded, p95 per stage, cost per response,
 the 80% budget event; Phase 5 spec 10.3). Not public: /ready reports none of it, and no per-run outcome, spend or cache
-count is public (AC-3-6 rule). Verification completion is a V1-passed response whose every eligible claim got a
-completed vote (pass or fail) or a typed withheld outcome.
+count is public (AC-3-6 rule).
+
+Verification completion: a V1-passed response is completed when every V2-eligible claim got a completed vote (pass or
+fail) and, when a claim passed, the alignment item was judged; one with a claim withheld (REDUCED-1 tiers 1-2, ZERO, a
+kill switch, a stop, the shadow budget) or an unjudged alignment item is counted as withheld, never as completed, so an
+outage shows. Time in each mode: the clock moves only on a response whose panel was reached, which attributes the time
+since the previous such response to that one's mode, and its panel mode (the worst mode its panel ran in, ZERO with no
+member) is the mode in force from then on; a response that never reached the panel (a V1 hard fail or abstention)
+leaves the clock and the mode unchanged. The snapshot adds the time since the last such response to the mode in force.
 """
 
 from __future__ import annotations
 
 from collections import Counter, deque
+from collections.abc import Callable
 import threading
 import time
 
@@ -14,8 +22,9 @@ from app.gateway.metrics import GATEWAY_METRICS, WINDOW, nearest_rank_p95
 
 
 class V2Metrics:
-    def __init__(self) -> None:
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._lock = threading.Lock()
+        self.clock = clock
         self.reset()
 
     def reset(self) -> None:
@@ -23,11 +32,12 @@ class V2Metrics:
             self.runs: Counter = Counter()
             self.passed_v1 = 0
             self.completed = 0
+            self.withheld = 0
             self.modes: Counter = Counter()
             self.budget_exceeded = 0
             self.time_in_mode_s: Counter = Counter()
             self._current_mode: str | None = None
-            self._mode_since = time.monotonic()
+            self._mode_since = self.clock()
             self.panel_latency: deque = deque(maxlen=WINDOW)
             self.correction_latency: deque = deque(maxlen=WINDOW)
             self.cost: deque = deque(maxlen=WINDOW)
@@ -37,18 +47,21 @@ class V2Metrics:
             self.disagreements = 0
             self.outcomes: Counter = Counter()
 
-    def run(self, *, mode: str, degraded_mode: str, passed_v1: bool, completed: bool, latency_ms: float, cost_units: int,
+    def run(self, *, mode: str, panel_mode: str | None, passed_v1: bool, completed: bool, latency_ms: float, cost_units: int,
             x2: int, degraded_withheld: int, budget_exceeded: bool) -> None:
+        """Count one response. panel_mode is None when the response never reached the panel (V2Track.panel_mode)."""
         with self._lock:
             self.runs[mode] += 1
-            now = time.monotonic()
-            if self._current_mode is not None:
-                self.time_in_mode_s[self._current_mode] += now - self._mode_since
-            self._current_mode, self._mode_since = degraded_mode, now
+            if panel_mode is not None:
+                now = self.clock()
+                if self._current_mode is not None:
+                    self.time_in_mode_s[self._current_mode] += now - self._mode_since
+                self._current_mode, self._mode_since = panel_mode, now
             if passed_v1:
                 self.passed_v1 += 1
                 self.completed += int(completed)
-                self.modes[degraded_mode] += 1
+                self.withheld += int(not completed)
+                self.modes[panel_mode] += 1
                 self.panel_latency.append(float(latency_ms))
                 self.cost.append(int(cost_units))
             self.cost_total += int(cost_units)
@@ -71,11 +84,15 @@ class V2Metrics:
     def detail_snapshot(self, *, budget: dict | None = None, cache: dict | None = None, gateway: dict | None = None) -> dict:
         with self._lock:
             costs = list(self.cost)
+            time_in_mode = Counter(self.time_in_mode_s)
+            if self._current_mode is not None:
+                time_in_mode[self._current_mode] += self.clock() - self._mode_since
             snapshot = {
                 "runs": dict(self.runs),
-                "completion": {"passed_v1": self.passed_v1, "completed": self.completed, "rate": f"{self.completed}/{self.passed_v1}"},
+                "completion": {"passed_v1": self.passed_v1, "completed": self.completed, "withheld": self.withheld,
+                               "rate": f"{self.completed}/{self.passed_v1}"},
                 "modes": {**dict(self.modes), "budget_exceeded": self.budget_exceeded},
-                "time_in_mode_s": {mode: round(seconds, 3) for mode, seconds in self.time_in_mode_s.items()},
+                "time_in_mode_s": {mode: round(seconds, 3) for mode, seconds in time_in_mode.items()},
                 "latency_ms": {"panel": nearest_rank_p95(self.panel_latency), "correction": nearest_rank_p95(self.correction_latency)},
                 "cost_units": {"total": self.cost_total, "per_response_mean": round(sum(costs) / len(costs), 3) if costs else 0.0,
                                "per_response_p95": nearest_rank_p95(costs)},

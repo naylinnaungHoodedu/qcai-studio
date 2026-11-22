@@ -968,7 +968,7 @@ def _parse_adapter(raw: Any, registry: str, *, providers_open: bool) -> Any:
 def _parse_gateway(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], tutor: TutorPipelineParams) -> GatewayParams:
     """Package v4 gateway (Phase 5 spec 5.2). Every refusal is structural: an unpinned identifier always stops the load,
     and with it start-up (AC-5-10)."""
-    from app.gateway.pinning import PIN_RULE
+    from app.gateway.pinning import PIN_RULE, PINNED_VERSION_TEXT, REFUSED_TOKENS_TEXT, REFUSED_WITHIN_TOKEN_TEXT
     from app.gateway.registry import REGISTRY_NAMES
     from app.gateway.retired import RETIRED_PROVIDER_SETTINGS
 
@@ -976,6 +976,9 @@ def _parse_gateway(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], tuto
     _require(gateway.get("provisional") is True, "gateway must be marked provisional: true (PD-22, PD-24, PD-26, PD-27)")
     pinning = _mapping(gateway, "pinning")
     _require(pinning.get("rule") == PIN_RULE, f"gateway.pinning.rule must be '{PIN_RULE}'")
+    for name, code in (("refused_tokens", REFUSED_TOKENS_TEXT), ("refused_within_token", REFUSED_WITHIN_TOKEN_TEXT),
+                       ("version_pattern", PINNED_VERSION_TEXT)):
+        _require(pinning.get(name) == code, f"gateway.pinning.{name} must be the code's pinning rule text (pinned-version-v1)")
     egress = _mapping(gateway, "egress")
     _require(egress.get("setting") == "MODEL_EGRESS_PROVIDERS" and egress.get("default") == [] and egress.get("provisional") is True,
              "gateway.egress names MODEL_EGRESS_PROVIDERS with default [] and is provisional (D-23, PD-22)")
@@ -1033,7 +1036,16 @@ def _parse_gateway(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], tuto
 
 def _parse_v2(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], gateway: GatewayParams) -> V2Params:
     """Package v4 v2 (Phase 5 spec 5.2). Every refusal is structural."""
-    from app.services.v2_panel.rules import BANNER_IDS, MAX_CORRECTION_CYCLES, MAX_MEMBERS, ROUTING_TABLE_VERSION, ROUTING_TABLES, matrix_from_package
+    from app.services.v2_panel.rules import (
+        BANNER_IDS,
+        CORRECTION_RULES,
+        MAX_CORRECTION_CYCLES,
+        MAX_MEMBERS,
+        ROUTING_TABLE_VERSION,
+        ROUTING_TABLES,
+        TIER3_THRESHOLD,
+        matrix_from_package,
+    )
 
     v2 = _mapping(raw, "v2")
     _require(v2.get("provisional") is True, "v2 must be marked provisional: true (PD-23, PD-25, PD-29, PD-30)")
@@ -1066,8 +1078,14 @@ def _parse_v2(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], gateway: 
     numerator, denominator = threshold.get("numerator"), threshold.get("denominator")
     _require(all(isinstance(value, int) and not isinstance(value, bool) for value in (numerator, denominator)) and 0 < numerator <= denominator,
              "v2.voting.tier3_threshold must hold integers with 0 < numerator <= denominator")
+    if _bool_state(decisions, "Q-22", ("unresolved",)):
+        # The record rule re-tallies every recorded claim with this value (PD-25), so the package cannot hold another.
+        _require((numerator, denominator) == TIER3_THRESHOLD,
+                 f"v2.voting.tier3_threshold must be {TIER3_THRESHOLD[0]}/{TIER3_THRESHOLD[1]} while Q-22 is unresolved (PD-25)")
     correction = _mapping(v2, "correction")
     _require(correction.get("max_cycles") == MAX_CORRECTION_CYCLES, f"v2.correction.max_cycles must be {MAX_CORRECTION_CYCLES} (plan 5.8)")
+    for name, rule in CORRECTION_RULES.items():
+        _require(correction.get(name) == rule, f"v2.correction.{name} must be '{rule}', the code's correction rule (plan 5.8)")
     critical = tuple(correction.get("critical_registry") or ())
     if _bool_state(decisions, "D-25", ("open",)):
         _require(not critical, "v2.correction.critical_registry must be empty while D-25 is open (PD-29)")
@@ -1090,6 +1108,9 @@ def _parse_v2(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], gateway: 
 
 def _parse_tools(raw: Mapping[str, Any]) -> ToolParams:
     tools = _mapping(raw, "tools")
+    # Plan 7.4: "tool names are UNVERIFIED / REQUIRES ACCESS [Assumption A-18]": the names and the transport are this
+    # phase's own (PD-31; the paper's names are DI-86).
+    _require(tools.get("provisional") is True, "tools must be marked provisional: true (A-18: the tool names are UNVERIFIED; PD-31)")
     _require(tools.get("version") == "mcp-tools-v1", "tools.version must be 'mcp-tools-v1'")
     _require(tuple(tools.get("servers") or ()) == TOOL_SERVERS, f"tools.servers must be {', '.join(TOOL_SERVERS)}")
     _require(tools.get("transport") == "in-process", "tools.transport must be 'in-process'")

@@ -57,6 +57,9 @@ def test_a_claim_item_passes_only_with_a_public_quotable_span_and_its_own_text(a
     assert reason_of(claim_item(claim.text, record.span_id, "  ".join(record.text.split(" "))), context) is None  # whitespace collapsed
     assert reason_of(claim_item(claim.text, "span-" + "f" * 64, record.text), context) == "unknown_span"
     assert reason_of(claim_item(claim.text, record.span_id, record.text + " An added sentence."), context) == "span_text_differs"
+    # The claim text is public corpus text: it lies inside its span (V1.2 binds whole verbatim sentences), folded.
+    assert reason_of(claim_item(claim.text.upper(), record.span_id, record.text), context) is None
+    assert reason_of(claim_item("Every learner question is answered here.", record.span_id, record.text), context) == "claim_not_in_span"
     from app.core.corpus_governance import get_corpus_registry
     from app.services.content_assembler import CourseStore
 

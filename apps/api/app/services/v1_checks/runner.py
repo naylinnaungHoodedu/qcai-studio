@@ -15,11 +15,14 @@ With the Phase 5 V2 track as its hook (v2_panel.track.V2Track; Phase 5 spec 4.13
     every candidate has its own run state (no earlier candidate's results reach accepted_results), and only a
     V1Passed reaches the track (aggregate.v2_outcome; plan rule 1, invariant 3)
     shadow  one V2 vote per candidate beside the Phase 4 decision, which decides every final
-    on      failing claims are corrected at most MAX_CORRECTION_CYCLES times (revised through the generator's optional
-            revise(), else re-verified unchanged, every pair a cache hit); a changed plan is a new candidate that every
-            V1 check judges from the start, with fresh state; still failing after two cycles, a claim abstains with
-            escalation X2. Then the final rendering of the deliverable claims (fresh post-render hook), and the
-            alignment item, whose Type E failure re-renders only (sharing the two cycles)
+    on      failing claims are corrected at most MAX_CORRECTION_CYCLES times (rules.CORRECTION_RULES, plan 5.8): a claim
+            whose objections are all EHMF type E is re-rendered only (the same candidate, Socratic, a fresh post-render
+            hook; a "re_render" cycle when every failing claim is such a claim); any other failing claim is revised
+            through the generator's optional revise(), else re-verified unchanged, every pair a cache hit (a "revise"
+            cycle); a changed plan is a new candidate that every V1 check judges from the start, with fresh state;
+            still failing after two cycles, a claim abstains with escalation X2. Then the final rendering of the
+            deliverable claims (fresh post-render hook), and the alignment item, whose failure is type E and
+            re-renders only (sharing the two cycles)
     -> build_record_v2 -> VerificationRecordV2
 The generation-1 claim plan is read from and written to the evidential cache (v2_panel.cache) when a V2 track runs in
 enforce; a regeneration and a correction candidate bypass it, and a cached plan whose candidate hard-fails V1.9 or
@@ -412,6 +415,7 @@ class V1Track:
         from app.services.v2_panel.aggregate import build_record_v2
         from app.services.v2_panel.metrics import V2_METRICS
         from app.services.v2_panel.rules import MAX_CORRECTION_CYCLES
+        from app.services.v2_panel.voting import presentation_only
 
         track = self.v2_hook
         started = time.perf_counter()
@@ -431,13 +435,22 @@ class V1Track:
                 break
             cycles += 1
             correction_started = time.perf_counter()
-            plan, revised = self._correction_plan(decision, failing, outcome)
-            corrections.append(V2Correction(cycle=cycles, kind="revise", failed_claim_ids=tuple(sorted(failing)), revised_claim_ids=tuple(sorted(revised))))
+            # Plan 5.8 "Type E re-renders only": a claim whose objections are all type E (presentation) is never revised.
+            presentation = frozenset(claim_id for claim_id in failing if presentation_only(outcome.objection_types(claim_id)))
+            content = tuple(claim_id for claim_id in failing if claim_id not in presentation)
+            plan, revised = self._correction_plan(decision, content, outcome) if content else (None, [])
+            corrections.append(V2Correction(cycle=cycles, kind="revise" if content else "re_render", failed_claim_ids=tuple(sorted(failing)),
+                                            revised_claim_ids=tuple(sorted(revised))))
             if revised:
                 # A new candidate, judged by every V1 check from the start with fresh state (Phase 4 R-d); a hard fail
-                # or an abstention ends the loop with no further V2 call.
+                # or an abstention ends the loop with no further V2 call. Its rendering re-renders the type E claims too.
                 state = _RunState(empty=self._lock((), bundle, ctx, has_plan=False))
                 decision = self._decide(ctx, bundle, envelope, None, plan, budget_over, state, regenerate=False)
+            elif presentation:
+                # The same candidate rendered again (Socratic, a fresh post-render hook); a V1 failure of the rendering
+                # ends the loop with no further V2 call.
+                socratic = PresentationPlan(plan_id=self.v1.socratic_plan, source=ctx.presentation.source)
+                decision = self._render(ctx, state, state.generation, budget_over, self.pipeline.package.retrieval.stopwords, presentation=socratic)
             V2_METRICS.correction((time.perf_counter() - correction_started) * MS_PER_S)
         alignment, alignment_failed, alignment_missing = None, False, False
         if isinstance(decision, V1Passed) and outcome is not None and outcome.mode == "on":
@@ -467,8 +480,9 @@ class V1Track:
         )
 
     def _correction_plan(self, decision: V1Passed, failing, outcome) -> tuple[ClaimPlan, list[str]]:
-        """The next candidate's claim plan: each failing claim revised against its cited spans when the generator can
-        revise (an optional revise(claim_text, span_texts, ehmf_type)), else unchanged; every other claim unchanged."""
+        """The next candidate's claim plan: each failing claim given here (those with an objection of a type other than
+        E) revised against its cited spans when the generator can revise (an optional revise(claim_text, span_texts,
+        ehmf_type), given the first such type in family order), else unchanged; every other claim unchanged."""
         from app.services.tutor_pipeline.contracts import ProposedClaim
 
         generator = self.pipeline.generator
@@ -478,8 +492,7 @@ class V1Track:
         for claim in decision.locked.claims:
             text = claim.text
             if claim.claim_id in failing and callable(revise):
-                verdict = outcome.claims[claim.claim_id]
-                ehmf = next((vote.ehmf_type for vote in verdict.votes if vote.ehmf_type), "A")
+                ehmf = next(ehmf for ehmf in outcome.objection_types(claim.claim_id) if ehmf != "E")
                 spans = tuple(record.text for span_id in claim.span_ids if (record := registry.get(span_id)) is not None)
                 proposal = revise(claim.text, spans, ehmf)
                 if proposal and proposal != claim.text:

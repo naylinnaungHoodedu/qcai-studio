@@ -28,6 +28,14 @@ ROUTING_TABLE_VERSION = "degraded-matrix-v1"
 ROUTING_TABLES = {ROUTING_TABLE_VERSION: RULE_MATRIX}
 MAX_MEMBERS = 3  # E-81 "M-out-of-N, N = 3"
 MAX_CORRECTION_CYCLES = 2  # plan 5.8 "two cycles"
+# Plan 5.8 "Correction: two cycles, then abstain and mark X2 when critical; Type E re-renders only." Package v4's
+# v2.correction names these rules and the loader refuses any other; V1Track._run_v2 implements them: a failing claim
+# whose objections are all type E is re-rendered (the same candidate, no revision), any other is revised through the
+# generator's optional revise() or re-verified unchanged, and a claim still failing after the cycles abstains with X2.
+CORRECTION_RULES = {"type_e": "re_render_only", "other": "revise_or_reverify_unchanged", "exhausted": "abstain_mark_x2"}
+# The tier-3 share (equal-weights-share-v1), provisional until Q-22 (PD-25). The loader refuses another package value
+# while Q-22 is unresolved, so the track and the record rule (which re-tallies every recorded claim) use one value.
+TIER3_THRESHOLD = (2, 3)
 PANEL_WEIGHTS_VERSION = "equal-weights-v1"  # arbitration rule 5: Dawid-Skene weights are a non-goal
 TIER_RULE_ID = "context-tier-v1"
 ALIGNMENT_RULE_ID = "1ooN-leakage-v1"

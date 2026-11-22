@@ -36,7 +36,7 @@ Status: accepted for Phase 2 engineering; the thresholds are **provisional** (un
      - All-approved configuration: it answers 166/174 in-domain questions against 146/174 for P1.
      - It returns results for 10/15 `near_miss` questions against 7/15 for P1, and for 3/16 `oos_lexical` against 2/16 (calibration record v1, `reported_strata_vs_p1`).
    - The D-05 freeze allows only conservative learner-visible defaults. Switching production to `bm25f-v1` is therefore a separate D-05 remediation release that closes R-15 (Section 5.3). It logs a `config.override` event.
-5. **Semantic retrieval stays off.** It is disabled unless `SEMANTIC_RETRIEVAL_ENABLED` is set, whatever keys are present.
+5. **Semantic retrieval stays off.** It is disabled unless `SEMANTIC_RETRIEVAL_ENABLED` is set, whatever keys are present, and since Phase 5 it also needs the D-23 opt-in, `openai-embeddings` in `MODEL_EGRESS_PROVIDERS` (PD-22); without it the setting leaves retrieval lexical and the refusal is logged (`gateway.egress_refused`, `semantic.inactive` with `reason` `egress_not_opted_in`).
    - It is used only when aligned: vector ids are span ids (metadata `span_scheme: span-v2`) and the namespace count equals the entry count.
    - Every semantic result is re-gated with the active gate before fusion, so fusion cannot bypass the floor (task 2.5; plan 11.3, "hybrid fusion needs its own floor").
 6. **Calibration** follows task 2.6 and `docs/evaluation/phase2/README.md`.

@@ -11,12 +11,17 @@ is not opted in (egress_allowed), the remaining daily budget is below one call's
 adapter), or it reports itself down. Each drop is counted by reason.
 
 A call: the secret flag, then the stop, the payload policy, the budget, the capture hook, then the adapter; a fake
-call whose measured duration (an injectable clock) exceeds its caps.timeout_ms is a timeout. Three runtime guards
-stop the gateway (plan L "Stop on a payload violation, secret in logs or budget breach"): PayloadPolicy refused a
-request, a gateway-owned secret reached a log record (the redaction listener only sets a flag; the gateway stops at
-its next eligibility decision or call, outside the logging call), or a call would cross the daily budget. A stop logs
+call whose measured duration (an injectable clock) exceeds its caps.timeout_ms is a timeout, and an adapter exception
+other than AdapterError becomes AdapterError(kind="error"), so a misbehaving member is only unavailable. Every call
+logs gateway.call (outcome ok, error, timeout, or refused for a call the gateway refused before the adapter), and a
+failed one gateway.call_failed. Three runtime guards stop the gateway (plan L "Stop on a payload violation, secret in
+logs or budget breach"): PayloadPolicy refused a request, a gateway-owned secret reached a log record (the redaction
+listener only sets a flag; the gateway stops at its next eligibility decision or call, outside the logging call), or
+a call would cross the daily budget or reported a cost above its reservation (cost_overrun). A stop logs
 gateway.stopped, writes the security event gateway.stopped and refuses every later call; the V2 track's effective
-mode is off from the next response on (v2_panel.mode), and only a new process clears it.
+mode is off from the next response on (v2_panel.mode). The stop belongs to this process gateway: another instance
+does not see it, and a new process (a restart, an instance replacement, a new revision) starts open, so a durable
+stop is MODEL_GATEWAY=off (the runbook; DI-87).
 """
 
 from __future__ import annotations
@@ -148,28 +153,46 @@ class ModelGateway:
         raw = self._call(spec, request, context, "alignment")
         return project_alignment(raw, spec.adapter_id)
 
+    def _refused(self, spec: AdapterSpec, item: str) -> None:
+        """A call the gateway refused before the adapter (stopped, a payload violation, a budget breach): counted and
+        logged as gateway.call with outcome refused, no latency and no cost."""
+        GATEWAY_METRICS.call(spec.adapter_id, "refused", None, 0)
+        LOGGER.info("Gateway call", extra={FIELDS: {"event": "gateway.call", "adapter_id": spec.adapter_id, "family": spec.family,
+                                                     "item": item, "outcome": "refused", "latency_ms": 0.0, "cost_units": 0}})
+
     def _call(self, spec: AdapterSpec, request, context: PolicyContext, item: str):
         self.check_secret_flag()
         if self.state == "stopped":
-            GATEWAY_METRICS.call(spec.adapter_id, "refused", 0.0, 0)
+            self._refused(spec, item)
             raise GatewayStopped("the model gateway is stopped")
         try:
             self.policy.check(request, context)
         except PayloadViolation:
+            violation = True
+        else:
+            violation = False
+        if violation:
             self.stop("payload_violation")
-            raise GatewayStopped("the payload policy refused a request") from None
+            self._refused(spec, item)
+            raise GatewayStopped("the payload policy refused a request")
         if not self.budget.reserve(spec.cost_units_per_call):
             self.stop("budget_breach")
+            self._refused(spec, item)
             raise GatewayStopped("the daily budget is spent")
         self.capture(request)
         adapter = self.adapter_for(spec)
         started = self.clock()
         error: AdapterError | None = None
+        misbehaved = False
         raw = None
         try:
             raw = adapter.verify(request) if item == "claim" else adapter.align(request)
         except AdapterError as exc:
             error = exc
+        except Exception:  # noqa: BLE001 - any other adapter exception makes the member unavailable; nothing of it is kept
+            misbehaved = True
+        if misbehaved:
+            error = AdapterError(spec.adapter_id, "error")
         latency_ms = (self.clock() - started) * 1000.0
         if error is None and spec.provider == "fake" and latency_ms > spec.caps.timeout_ms:
             error = AdapterError(spec.adapter_id, "timeout")
@@ -179,9 +202,15 @@ class ModelGateway:
                                                      "item": item, "outcome": outcome, "latency_ms": round(latency_ms, 3),
                                                      "cost_units": spec.cost_units_per_call}})
         if error is not None:
+            kind, status = error.kind, error.status
+            error = None
             LOGGER.warning("Gateway call failed", extra={FIELDS: {"event": "gateway.call_failed", "adapter_id": spec.adapter_id,
-                                                                  "kind": error.kind, "status": error.status}})
-            raise AdapterError(error.adapter_id, error.kind, error.status) from None
+                                                                  "kind": kind, "status": status}})
+            if kind == "cost_overrun":
+                # The provider reported a cost above the call's reservation: the daily budget no longer bounds the spend.
+                self.stop("budget_breach")
+                raise GatewayStopped("a call cost more than its reservation")
+            raise AdapterError(spec.adapter_id, kind, status)
         return raw
 
     def summary(self) -> dict:

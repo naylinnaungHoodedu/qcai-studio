@@ -6,8 +6,10 @@ violation"). The context is built per call by the V2 track from its own pipeline
 gateway serves pipelines over different stores and manifests without binding either.
   claim item      the span id resolves in the store's span registry; its record is public-plane and quotable under
                   D-19 (contained_answers.span_is_quotable: under D-31 nothing is quotable outside development, so
-                  nothing could leave); the request's span text is the record's text (whitespace collapsed); no string
-                  holds a learner identifier, an email or a bearer credential.
+                  nothing could leave); the request's span text is the record's text (whitespace collapsed); the claim
+                  text lies inside that span (NFKC-casefolded and whitespace-collapsed, as V1.2's verbatim binding makes
+                  every locked claim), so a claim item carries public corpus text only; no string holds a learner
+                  identifier, an email or a bearer credential.
   alignment item  the rendered text is the layout of the context's rendering; each claim segment is a locked claim of
                   the context, whose every span passes the claim-item span checks; every other segment is its
                   template's output; the objective is null or the lesson's summary; no string holds an identifier.
@@ -18,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from app.gateway.adapters import fold
 from app.gateway.contracts import AlignmentRequest, VerdictRequest, identifier_in
 
 POLICY_RULE = "public-quotable-spans-and-templates-only-v1"
@@ -73,6 +76,8 @@ class PayloadPolicy:
             raise PayloadViolation("unknown_item")
         if identifier_in(request.model_dump(mode="json")):
             raise PayloadViolation("identifier_in_payload")
+        if isinstance(request, VerdictRequest) and fold(request.claim_text) not in fold(request.span.text):
+            raise PayloadViolation("claim_not_in_span")
 
     def _alignment(self, request: AlignmentRequest, context: PolicyContext) -> None:
         from app.services.tutor_pipeline.render import TEMPLATES, layout_text

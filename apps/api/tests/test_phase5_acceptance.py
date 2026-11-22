@@ -401,6 +401,43 @@ def test_ac_5_7_a_type_e_objection_re_renders_only():
     assert result.entry.presentation.plan_id == "socratic"
 
 
+def test_ac_5_7_a_claim_level_type_e_objection_is_re_rendered_and_never_revised():
+    # Plan 5.8 "Type E re-renders only": every member objects to one claim with EHMF type E (presentation).
+    claims = run(dev_pipeline(), TIER2).locked.claims
+    assert len(claims) >= 3
+
+    def scripted(claim, verdict, ehmf):
+        return {claim_key(claim.text, span_id): (verdict, ehmf) for span_id in claim.span_ids}
+
+    generator = RevisingGenerator(ExtractiveD19Generator(PACKAGE))
+    adapters = adapters_of(THREE, **{spec.adapter_id: {"script": scripted(claims[1], "NOT_ENOUGH_INFO", "E")} for spec in THREE.members})
+    result = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters), registry=THREE, generator=generator), TIER2)
+    verification = result.entry.verification
+    assert [(item.kind, item.failed_claim_ids, item.revised_claim_ids) for item in verification.v2.corrections] == [
+        ("re_render", (claims[1].claim_id,), ())] * 2
+    assert generator.revised == [] and generator.proposals == 1  # re-rendered twice, never revised, no new plan
+    by_id = {item.claim_id: item for item in verification.verdicts}
+    assert by_id[claims[1].claim_id].final == "abstain" and by_id[claims[1].claim_id].v3.escalation == "X2"
+    assert verification.final == "deliver" and result.entry.presentation.plan_id == "socratic"
+    # A type E objection beside a type A one is a content fault: the claim is revised, given the type A (family order).
+    generator = RevisingGenerator(ExtractiveD19Generator(PACKAGE))
+    mixed = {"fake-alpha-v1": {"script": scripted(claims[1], "NOT_ENOUGH_INFO", "E")},
+             "fake-beta-v1": {"script": scripted(claims[1], "CONTRADICTED", "A")},
+             "fake-gamma-v1": {"script": scripted(claims[1], "NOT_ENOUGH_INFO", "E")}}
+    result = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters_of(THREE, **mixed)), registry=THREE, generator=generator), TIER2)
+    assert [item.kind for item in result.entry.verification.v2.corrections] == ["revise", "revise"]
+    assert generator.revised == [(claims[1].text, "A")] * 2
+    # One cycle with a presentation-only claim and a content claim revises the content claim only.
+    generator = RevisingGenerator(ExtractiveD19Generator(PACKAGE))
+    both = {spec.adapter_id: {"script": {**scripted(claims[1], "NOT_ENOUGH_INFO", "E"), **scripted(claims[2], "CONTRADICTED", "B")}}
+            for spec in THREE.members}
+    result = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters_of(THREE, **both)), registry=THREE, generator=generator), TIER2)
+    corrections = result.entry.verification.v2.corrections
+    assert [item.kind for item in corrections] == ["revise", "revise"]
+    assert all(set(item.failed_claim_ids) == {claims[1].claim_id, claims[2].claim_id} for item in corrections)
+    assert generator.revised == [(claims[2].text, "B")] * 2
+
+
 # ======================================================================================================== AC-5-8
 
 
@@ -437,7 +474,7 @@ def _http_gateway(responses):
         item = responses[min(len(seen) - 1, len(responses) - 1)]
         if isinstance(item, Exception):
             raise item
-        return item
+        return item() if callable(item) else item  # a factory builds a response the client decodes only on receipt
 
     spec = fake_spec("test-family", provider="test-provider", endpoint="https://verifier.invalid/v1/verdicts", auth_header="authorization-bearer",
                      secret_ref="TEST_PROVIDER_KEY", max_retries=1)
@@ -451,6 +488,8 @@ def _http_gateway(responses):
     [httpx.Response(500)],
     [httpx.ReadTimeout("slow")],
     [httpx.Response(200, content=b"<html>not json</html>")],
+    # A body the client cannot decode: httpx.DecodingError is a RequestError but no TransportError.
+    [lambda: httpx.Response(200, headers={"content-encoding": "gzip"}, content=b"not gzip at all")],
 ])
 def test_ac_5_9_a_provider_error_leaves_no_key_authorization_header_or_query_in_logs_or_exceptions(responses, caplog):
     pipeline = dev_pipeline()
@@ -506,6 +545,10 @@ UNPINNED = {
     "exp": lambda member: member.update(model_id="fake-alpha-exp"),
     "alias": lambda member: member.update(model_version="alias"),
     "non-pinned form": lambda member: member.update(model_version="stable-1"),
+    "glued preview": lambda member: member.update(model_id="fakealpha3preview"),
+    "glued latest": lambda member: member.update(model_id="fakealpha4latest"),
+    "impossible date": lambda member: member.update(model_version="2026-13-45"),
+    "unstripped version": lambda member: member.update(model_version=" 001 "),
 }
 
 
@@ -601,6 +644,15 @@ def test_plan_p_f_1_every_fixture_response_carries_ledger_verdicts(fixture_repor
         assert set(key for key, count in block["modes"].items() if count) == {mode}, block["name"]
     assert fixture_report["cache_pass"]["f1"]["rate"] == "298/298" and fixture_report["cache_pass"]["verdict_hits"] > 0
     assert fixture_report["cache_pass"]["claim_plan_hits"] > 0
+    # Each scenario's calls are its claim items plus its alignment items (one per member and FULL-delivered response).
+    for block in fixture_report["scenarios"]:
+        assert block["calls"] == block["calls_by_item"]["claim"] + block["calls_by_item"]["alignment"], block["name"]
+    all_up = fixture_report["scenarios"][0]
+    assert all_up["calls_by_item"]["alignment"] == 3 * all_up["modes"]["FULL"]
+    # The repeat pass casts every verdict from the cache: its only calls are the alignment items, which are never cached.
+    cache_pass = fixture_report["cache_pass"]
+    assert cache_pass["verdict_calls"] == 0 and cache_pass["alignment_calls"] == all_up["calls_by_item"]["alignment"]
+    assert cache_pass["verdict_hits"] == all_up["calls_by_item"]["claim"]
     assert fixture_report["payload_fields"]["claim"] == ["claim_text", "instructions", "item", "request_schema", "span"]
 
 
@@ -814,6 +866,27 @@ def test_plan_e_the_legacy_provider_code_is_retired_and_no_production_path_reach
     assert service.chat("Why does routing depth matter?").provider == "none"
     body = client.post("/assistant/chat", json={"message": "Why does routing depth matter?"}, headers=demo("p5-retired")).json()
     assert body["provider"] == "none" and network_guard.take_blocked() == []
+    # No tracked environment template still assigns a retired setting (a comment may name one).
+    assert _templates_assigning(RETIRED_SETTINGS) == []
+
+
+def _templates_assigning(names) -> list[str]:
+    """`<template>: <name>` for each tracked env template line assigning one of names. Names only, never a value."""
+    from app.gateway.retired import RETIRED_PROVIDER_SETTINGS
+
+    assert set(names) == set(RETIRED_PROVIDER_SETTINGS)
+    templates = [API_ROOT / ".env.example", REPO_ROOT / "apps" / "frontend" / ".env.example",
+                 *sorted((REPO_ROOT / "infra" / "cloudrun").glob("*.env.example.yaml"))]
+    found = []
+    for path in templates:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            assigned = re.match(r"\s*([A-Z][A-Z0-9_]*)\s*[=:]", line)
+            if assigned and assigned.group(1) in names:
+                found.append(f"{path.relative_to(REPO_ROOT).as_posix()}: {assigned.group(1)}")
+    return found
+
+
+RETIRED_SETTINGS = ("OPENAI_CHAT_MODEL", "VERTEX_AI_API_KEY", "VERTEX_AI_CHAT_MODEL", "VERTEX_AI_LOCATION", "VERTEX_AI_PROJECT_ID")
 
 
 def test_plan_e_a_retired_setting_is_named_at_start_up_and_its_value_never_logged(monkeypatch, caplog):
@@ -857,6 +930,29 @@ def test_plan_e_d_23_provider_egress_needs_a_per_environment_per_provider_opt_in
     assert RetrievalEngine(get_course_store(), Settings(**keys))._semantic_backend.enabled is False
     opted = RetrievalEngine(get_course_store(), Settings(**keys, model_egress_providers=["openai-embeddings"]))._semantic_backend
     assert opted.enabled is bool(__import__("app.services.retrieval_engine", fromlist=["Pinecone"]).Pinecone)
+
+
+def test_plan_e_a_semantic_setting_without_the_d_23_opt_in_names_its_refusal(caplog):
+    from app.gateway.egress import reset_refusal_log
+    from app.main import SEMANTIC_INACTIVE_MESSAGES
+    from app.services.retrieval_engine import RetrievalEngine
+    from app.services.store import get_course_store
+
+    reset_refusal_log()
+    caplog.set_level(logging.WARNING, logger="qcai.gateway")
+    keys = dict(openai_api_key="k" * 12, pinecone_api_key="p" * 12, pinecone_index="i", semantic_retrieval_enabled=True)
+    refused = RetrievalEngine(get_course_store(), Settings(**keys))
+    assert refused.semantic_inactive_reason == "egress_not_opted_in"
+    assert refused.sync_semantic_index() is False and refused.sync_semantic_index() is False
+    lines = [record.json_fields for record in caplog.records if getattr(record, "json_fields", {}).get("event") == "gateway.egress_refused"]
+    assert lines == [{"event": "gateway.egress_refused", "provider": "openai-embeddings", "adapter_id": None, "consumer": "semantic-retrieval"}]
+    assert "openai-embeddings in MODEL_EGRESS_PROVIDERS" in SEMANTIC_INACTIVE_MESSAGES["egress_not_opted_in"]
+    # Opted in, but without its keys, the backend is not configured; with the setting off, nothing is inactive.
+    unconfigured = RetrievalEngine(get_course_store(), Settings(semantic_retrieval_enabled=True, model_egress_providers=["openai-embeddings"],
+                                                                openai_api_key="", pinecone_api_key=""))
+    assert unconfigured.semantic_inactive_reason == "not_configured"
+    assert RetrievalEngine(get_course_store(), Settings()).semantic_inactive_reason is None
+    reset_refusal_log()
 
 
 def test_plan_e_no_real_provider_is_registered_in_any_shipped_registry():
@@ -906,21 +1002,52 @@ def test_plan_i_ready_reports_package_v4_and_the_gateway_state_and_no_per_run_ou
     assert (stopped["gateway"]["state"], stopped["gateway"]["stop_reason"], stopped["model_gateway"]) == ("stopped", "budget_breach", "off")
 
 
-def test_plan_i_v2_metrics_report_completion_time_degraded_p95_cost_and_the_budget_event(caplog):
+def test_plan_i_v2_metrics_report_completion_time_degraded_p95_cost_and_the_budget_event(caplog, monkeypatch):
     from app.services.v2_panel.metrics import V2_METRICS
 
+    class Clock:
+        now = 1000.0
+
+        def __call__(self) -> float:
+            return self.now
+
+    clock = Clock()
+    monkeypatch.setattr(V2_METRICS, "clock", clock)
     V2_METRICS.reset()
+    caplog.set_level(logging.INFO)
+    # An outage: every member down for the whole sequence, with a V1-abstained response in the middle. Completion is
+    # 0 of 3 (each V1-passed response withheld its claims), and all of the time is ZERO's: the V1-abstained response,
+    # which never reached the panel, neither moves the clock nor resets the mode.
+    outage = v2_pipeline(gateway=fresh_gateway(adapters=adapters_of(THREE, **{spec.adapter_id: {"down": True} for spec in THREE.members})),
+                         registry=THREE)
+    run(outage, TIER2)
+    clock.now += 0.3
+    run(outage, OFF_TOPIC[0])
+    clock.now += 0.6
+    run(outage, TIER2)
+    run(outage, TIER2)
+    snapshot = V2_METRICS.detail_snapshot()
+    assert snapshot["completion"] == {"passed_v1": 3, "completed": 0, "withheld": 3, "rate": "0/3"}
+    assert snapshot["time_in_mode_s"] == {"ZERO": 0.9} and snapshot["modes"]["ZERO"] == 3
+    lines = [record.json_fields for record in caplog.records if getattr(record, "json_fields", {}).get("event") == "tutor.v2.run"]
+    assert [(line["passed_v1"], line["panel_reached"], line["panel_mode"], line["completed"]) for line in lines] == [
+        (True, True, "ZERO", False), (False, False, None, False), (True, True, "ZERO", False), (True, True, "ZERO", False)]
+    clock.now += 0.25
+    assert V2_METRICS.detail_snapshot()["time_in_mode_s"] == {"ZERO": 1.15}  # the mode in force runs on to the snapshot
+    V2_METRICS.reset()
+    caplog.clear()
     caplog.set_level(logging.WARNING, logger="qcai.gateway")
     gateway = ModelGateway(budget=DailyBudget(30), adapters=adapters_of(THREE))
     pipeline = v2_pipeline(gateway=gateway, registry=THREE)
     for query in (TIER2, MULTI_CLAIM, OFF_TOPIC[0]):
         run(pipeline, query)
+        clock.now += 1.0
     down = v2_pipeline(gateway=fresh_gateway(adapters=adapters_of(THREE, **{"fake-gamma-v1": {"down": True}})), registry=THREE)
     run(down, TIER2)
     snapshot = V2_METRICS.detail_snapshot(budget=gateway.budget.snapshot())
-    assert snapshot["completion"] == {"passed_v1": 3, "completed": 3, "rate": "3/3"}
+    assert snapshot["completion"] == {"passed_v1": 3, "completed": 3, "withheld": 0, "rate": "3/3"}
     assert snapshot["modes"]["FULL"] == 2 and snapshot["modes"]["REDUCED-2"] == 1 and snapshot["runs"]["on"] == 4
-    assert set(snapshot["time_in_mode_s"]) >= {"FULL"} and snapshot["latency_ms"]["panel"] is not None
+    assert snapshot["time_in_mode_s"] == {"FULL": 3.0, "REDUCED-2": 0.0} and snapshot["latency_ms"]["panel"] is not None
     assert snapshot["latency_ms"]["gateway_call"] and snapshot["cost_units"]["total"] > 0 and snapshot["cost_units"]["per_response_p95"] > 0
     assert snapshot["budget"]["daily_units"] == 30 and snapshot["budget"]["alerted"] is True
     assert any(getattr(record, "json_fields", {}).get("event") == "gateway.budget_alert" for record in caplog.records)
@@ -1025,10 +1152,21 @@ def test_freeze_v1_3_flags_route_to_v2_only_under_model_gateway_on():
 
 def test_plan_f_the_registry_matrix_payload_register_and_terms_record_match_the_package():
     registry_doc = (REPO_ROOT / "docs" / "architecture" / "gateway-registry.md").read_text(encoding="utf-8")
-    for spec in PACKAGE.gateway.registries["development"]:
-        assert f"`{spec.adapter_id}`" in registry_doc and spec.model_version in registry_doc
+    assert "Generated from" not in registry_doc  # hand-maintained, and compared value by value below
+    members = PACKAGE.gateway.registries["development"]
+    assert f"| development | {', '.join(f'`{spec.adapter_id}`' for spec in members)} |" in registry_doc
+    for spec in members:
+        caps = spec.caps
+        assert (f"| `{spec.adapter_id}` | `{spec.family}` | `{spec.model_id}` | {spec.model_version} | {', '.join(spec.capabilities)} | "
+                f"{caps.max_tokens} tokens, {caps.timeout_ms} ms, {caps.max_retries} retr{'y' if caps.max_retries == 1 else 'ies'} | "
+                f"{spec.cost_units_per_call} unit{'' if spec.cost_units_per_call == 1 else 's'} |") in registry_doc, spec.adapter_id
+    units = PACKAGE.gateway.daily_units
+    assert units["staging"] == units["production"] == units["default"] == 0
+    assert f"development {units['development']} units; staging, production and default 0" in registry_doc
+    numerator, denominator = PACKAGE.gateway.alert_share
+    assert f"Alert at {numerator}/{denominator}." in registry_doc
     for name in ("staging", "production", "default"):
-        assert f"| {name} | none |" in registry_doc
+        assert f"| {name} | none |" in registry_doc and PACKAGE.gateway.registries[name] == ()
     adr = (REPO_ROOT / "docs" / "adr" / "ADR-008-model-gateway-and-v2-panel.md").read_text(encoding="utf-8")
     for text in (registry_doc, adr, spec_text()):
         for mode, row in rules.RULE_MATRIX.items():
@@ -1081,9 +1219,9 @@ def test_phase5_docs_quote_the_plan_and_state_the_current_rules():
     spec = spec_text()
     assert plan_m in adr and plan_m in spec and plan_l in spec and "Flag off returns to Phase 4" in runbook
     head = spec.split("\n## 18. Review history\n", 1)[0]
-    for number in range(22, 31):
+    for number in range(22, 32):
         assert f"| PD-{number} |" in head, number
-    for number in range(69, 86):
+    for number in range(69, 88):
         assert f"| DI-{number} |" in head, number
     values = PACKAGE.owner_decisions["Q-22"]["provisional_values"]
     assert "v2.voting" in values and "PD-25" in PACKAGE.owner_decisions["Q-22"]["record"]
@@ -1093,6 +1231,47 @@ def test_phase5_docs_quote_the_plan_and_state_the_current_rules():
     from test_phase3_docs import NARRATIVE
 
     assert NARRATIVE.findall(head) == []
+
+
+def test_phase5_docs_the_runbooks_and_registers_state_the_gateway_s_operations_exactly():
+    spec = spec_text()
+    infra = REPO_ROOT / "infra" / "cloudrun"
+    # The observability runbook's Phase 5 table: every row has the header's two cells, and every event of spec 10.4 is named.
+    slis = (infra / "observability.md").read_text(encoding="utf-8").split("## Phase 5 SLIs: gateway and V2 (plan Phase 5 I)", 1)[1]
+    rows = [line for line in slis.splitlines() if line.startswith("|")]
+    assert rows[0] == "| SLI or event | Log-based metric or alert |"
+    cells = [len(re.findall(r"(?<!\\)\|", line)) for line in rows]
+    assert set(cells) == {3}, [line[:60] for line, count in zip(rows, cells) if count != 3]
+    events = re.findall(r"^\| `([a-z0-9_.]+)`", spec.split("### 10.4 Log events", 1)[1].split("\n## 11.", 1)[0], flags=re.MULTILINE)
+    named = [event for event in events if re.search(rf"(?<![\w.]){re.escape(event)}(?![\w.])", slis)]
+    assert len(events) >= 13 and named == events, sorted(set(events) - set(named))
+    assert "`model_gateway` (the effective mode) turns `off`" in slis and "Only `state` and `stop_reason` can change" not in slis
+    # The deployment runbook: a stop is per instance and made durable by the flag; the ledger export names its path.
+    runbook = (infra / "deployment.md").read_text(encoding="utf-8").split("## Phase 5: gateway and V2 (runbook)", 1)[1]
+    assert "it covers that one instance only" in runbook and "set `MODEL_GATEWAY=off` on the service" in runbook and "DI-87" in runbook
+    assert "--export PATH" in runbook and "--export`" not in runbook
+    adr8 = (REPO_ROOT / "docs" / "adr" / "ADR-008-model-gateway-and-v2-panel.md").read_text(encoding="utf-8")
+    assert "The cache, the budget and the stop are per process" in adr8 and "DI-86" in adr8
+    # The payload register (Q-15, the owner's review input) states each field as the code sends it.
+    register = (REPO_ROOT / "docs" / "security" / "payload-register.md").read_text(encoding="utf-8")
+    assert "other claims of the response in a claim item (the alignment item's `rendered_text` is the whole rendering" in register
+    assert "`{model, model_version, max_tokens, instructions, input}`" in register and "stops the gateway on anything else" not in register
+    # The egress guard's host-string scope, as test_gateway_egress_guard.py scans it.
+    adr6 = (REPO_ROOT / "docs" / "adr" / "ADR-006-security-model.md").read_text(encoding="utf-8")
+    gateway_doc = (API_ROOT / "app" / "gateway" / "__init__.py").read_text(encoding="utf-8")
+    for text in (adr6, gateway_doc):
+        assert "anywhere else in the repository's code" not in text
+    assert "the Python code under `apps/api/app`, `scripts`, `evaluation` and `tools`" in adr6
+    # Texts Phase 5 made false, edited in place (spec 7.6).
+    phase3 = (REPO_ROOT / "docs" / "architecture" / "phase3-implementation-spec.md").read_text(encoding="utf-8")
+    assert "Phase 5 wires one through the gateway" not in phase3 and "The Vertex helpers are unchanged; the provider path is Phase 5." not in phase3
+    for path in (REPO_ROOT / "docs" / "adr" / "ADR-002-retrieval-architecture.md", REPO_ROOT / "docs" / "architecture" / "phase2-implementation-spec.md",
+                 API_ROOT / "app" / "services" / "retrieval_engine.py", infra / "api-production.env.example.yaml"):
+        assert "openai-embeddings" in path.read_text(encoding="utf-8"), path.name
+    # The mutation-check record claims only the checks the commit messages and the phase record name (spec 13.5).
+    mutation = spec.split("### 13.5 Mutation checks", 1)[1].split("\n## 14.", 1)[0]
+    assert "The record of each check is in the commit messages and the BEP phase record." not in mutation
+    assert "not yet mutation-checked" in mutation
 
 
 def _test_function_names() -> set[str]:

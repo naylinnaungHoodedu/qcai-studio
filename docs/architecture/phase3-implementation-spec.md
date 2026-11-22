@@ -786,7 +786,7 @@ def span_is_quotable(record: SpanRecord, registry: CorpusRegistry) -> bool:
 
 ```python
 def build_envelope(request: RetrievalRequest, bundle: EvidenceBundle, *, store: CourseStore, params) -> EvidentialEnvelope | None
-class ClaimGenerator(Protocol):        # the provider-generator interface (E2); Phase 5 wires one through the gateway
+class ClaimGenerator(Protocol):        # the provider-generator interface (E2); none is wired while D-12 is open (Phase 5: the gateway's generate capability, DI-70)
     ref: GeneratorRef
     def propose(self, envelope: EvidentialEnvelope) -> ClaimPlan: ...
 class ExtractiveD19Generator:          # id "extractive-d19-v1", model_id "extractive-d19-v1", kind "extractive"
@@ -1244,7 +1244,7 @@ if self.two_pass_tutor == "on":
       from app.services.tutor_pipeline import TwoPassPipeline
       return TwoPassPipeline(self.retrieval_engine, self.settings)
   ```
-- The Vertex helpers are unchanged; the provider path is Phase 5.
+- The Vertex helpers were unchanged here; Phase 5 retired them with their settings (Phase 5 spec 4.18), and model egress belongs only to `app.gateway`.
 
 ### 7.11 MOD `app/services/tutor_orchestrator.py`
 - `chat(self, db, user, payload, *, presentation_plan: str | None = None) -> AssistantChatResponse`. The legacy logic and `_resolve_query` are unchanged, with these additions:

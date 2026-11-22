@@ -760,7 +760,10 @@
     "pinning": {
       "rule": "pinned-version-v1",
       "refused_tokens": "alias|auto|current|default|exp\\d*|experimental|latest|nightly|preview\\d*",
+      "refused_within_token": "preview|latest|nightly|experimental|exp\\d*$",
       "version_pattern": "^(?:\\d{4}-\\d{2}-\\d{2}|\\d{8}|\\d{3}|v?\\d+(?:\\.\\d+){1,3})$",
+      "dates": "calendar-valid",
+      "canonical_form": "no surrounding whitespace in the model id or the version",
       "applies_to": "every member of every registry; an unpinned identifier stops the load and start-up (AC-5-10)"
     },
     "egress": {
@@ -1010,7 +1013,8 @@
     ],
     "path": "schemas/tool-contracts.v1.json",
     "sha256": "fb703c329877de5f2d3868a0796f7e834fbe61855b7807a81042f26179a3f04c",
-    "provisional": true
+    "provisional": true,
+    "record": "PD-31 (the tool names and the in-process transport; plan 7.4 A-18 \"tool names are UNVERIFIED / REQUIRES ACCESS\"); DI-86"
   },
   "flag_policy": {
     "provisional": true,

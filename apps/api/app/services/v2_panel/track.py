@@ -48,7 +48,7 @@ from app.services.v2_panel.cache import verdict_key
 from app.services.v2_panel.panel import Panel
 from app.services.v2_panel.rules import DEGRADED_MODES, matrix_from_package
 from app.services.v2_panel.tiers import critical_for, tier_for
-from app.services.v2_panel.voting import family_verdict, is_split, mode_for, objections, tally
+from app.services.v2_panel.voting import family_verdict, is_split, mode_for, objection_types, objections, tally
 
 if TYPE_CHECKING:  # pragma: no cover
     from app.services.v1_checks.aggregate import V1Passed
@@ -80,6 +80,13 @@ class V2Outcome:
 
     def failing(self) -> tuple[str, ...]:
         return tuple(claim_id for claim_id, verdict in self.claims.items() if verdict.outcome == "fail")
+
+    def objection_types(self, claim_id: str) -> tuple[str, ...]:
+        """The EHMF types of one judged claim's objecting family verdicts, in family order (voting.objection_types)."""
+        by_family: dict[str, list] = {}
+        for vote in sorted(self.claims[claim_id].votes, key=lambda item: (item.family, item.span_id)):
+            by_family.setdefault(vote.family, []).append((vote.verdict, vote.ehmf_type))
+        return objection_types(by_family)
 
 
 def worst_mode(modes) -> str:
@@ -264,6 +271,21 @@ class V2Track:
 
     # ---------------------------------------------------------------------------------------------- finish
 
+    def panel_mode(self) -> str | None:
+        """The worst mode this response's panel ran in: members only leave a panel within a response, so it is the mode
+        of the members left at the end (ZERO with none); None when the panel was never reached."""
+        return mode_for(len(self.members)) if self.panel_reached else None
+
+    @staticmethod
+    def completed(record: Any, *, passed: bool) -> bool:
+        """Verification completion (plan Phase 5 I; spec 10.3): a V1-passed response whose every V2-eligible claim got a
+        completed vote (pass or fail) and whose alignment item was judged when a claim passed. A withheld claim (REDUCED-1
+        tiers 1-2, ZERO, a kill switch, a stop, the shadow budget) or an unjudged alignment item is not completed."""
+        judged = [verdict.v2.outcome for verdict in record.verdicts if verdict.v2 is not None]
+        if not passed or any(outcome == "withheld" for outcome in judged):
+            return False
+        return "pass" not in judged or record.v2.alignment is not None
+
     def finish(self, record: Any, *, passed: bool) -> None:
         """Log tutor.v2.run and count the response (enumerations and counts only)."""
         from collections import Counter
@@ -278,8 +300,9 @@ class V2Track:
             outcomes.setdefault(str(verdict.v2.tier), Counter())[verdict.v2.outcome] += 1
         x2 = sum(1 for verdict in record.verdicts if verdict.v3 is not None and verdict.v3.escalation == "X2")
         withheld = sum(1 for verdict in record.verdicts if verdict.v3 is not None and "v2_degraded_withheld" in verdict.v3.reasons)
-        completed = passed and self.panel_reached
-        V2_METRICS.run(mode=self.mode, degraded_mode=block.degraded_mode, passed_v1=passed, completed=completed, latency_ms=self.latency_ms,
+        completed = self.completed(record, passed=passed)
+        panel_mode = self.panel_mode()
+        V2_METRICS.run(mode=self.mode, panel_mode=panel_mode, passed_v1=passed, completed=completed, latency_ms=self.latency_ms,
                        cost_units=block.cost_units, x2=x2, degraded_withheld=withheld, budget_exceeded=self.budget_exceeded)
         if self.mode == "shadow" and block.shadow is not None and passed:
             summary = block.shadow
@@ -294,7 +317,7 @@ class V2Track:
             "members": list(self.start_members), "claims": len(judged), "outcomes": {tier: dict(counts) for tier, counts in sorted(outcomes.items())},
             "cycles": block.cycles, "x2": x2, "calls": block.calls, "cache_hits": block.cache_hits, "cost_units": block.cost_units,
             "latency_ms": round(self.latency_ms, 3), "alignment": block.alignment.outcome if block.alignment is not None else None,
-            "completed": completed,
+            "passed_v1": passed, "panel_reached": self.panel_reached, "panel_mode": panel_mode, "completed": completed,
         }})
         if record.final in ("deliver", "withhold", "abstain"):
             try:

@@ -1,6 +1,6 @@
 # Model gateway adapter registry (plan Phase 5 F)
 
-Generated from configuration package v4 (`apps/api/app/config_package/v4.json`, `gateway.registries`); `scripts/config_package.py --check` prints the same counts, and `test_plan_f_the_registry_matrix_payload_register_and_terms_record_match_the_package` compares this file with the package. Every identifier is pinned (`pinned-version-v1`, D-07 option (a)'s rule, PD-24). No real provider is registered while D-12, D-07 and Q-09 are open.
+Hand-maintained from configuration package v4 (`apps/api/app/config_package/v4.json`, `gateway.registries` and `gateway.budgets`); `scripts/config_package.py --check` prints the same counts, and `test_plan_f_the_registry_matrix_payload_register_and_terms_record_match_the_package` compares every adapter, family, model id, version, capability, cap, cost per call and daily budget stated here, and the matrix, with the package. Every identifier is pinned (`pinned-version-v1`, D-07 option (a)'s rule, PD-24). No real provider is registered while D-12, D-07 and Q-09 are open.
 
 | Registry | Members |
 |---|---|

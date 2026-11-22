@@ -8,15 +8,21 @@ is AdapterError(kind="invalid_output").
 FakeAdapter is the development and test family (rule verbatim-support-v1): a claim is SUPPORTED iff its NFKC-casefolded,
 whitespace-collapsed text lies inside the same fold of the span text, else NOT_ENOUGH_INFO with EHMF B; an alignment
 item gets rating 4 and no leakage. It makes no network call. down, script (claim text sha256 and span id, or "*", to a
-verdict and EHMF type, or "error"), late_ms (advancing an injected clock) and calls serve fault injection.
+verdict and EHMF type, or "error"), late_ms (advancing an injected clock) and calls serve fault injection; it keeps
+the requests it was given only when built with record=True (a test's choice), so a long-running process holds none.
 
 HttpJsonAdapter is provider-neutral and exercised only through httpx.MockTransport; no shipped registry can hold it (the
 loader refuses a non-fake member while D-12 is open). Its endpoint is https with no query, userinfo or fragment (keys
 and parameters never travel in the URL); the key is read from the secret store per call and travels only in a header
-(Authorization: Bearer or x-api-key); timeouts, transport errors and 429/500/502/503/504 are retried at most
-caps.max_retries times, a 4xx other than 429 never. Every failure raises AdapterError(adapter_id, kind, status) after
-its except block, so the error's __cause__ and __context__ are None and no httpx object (whose request holds the
-headers) is reachable from it; its text names the adapter, the kind and the status only. The adapter never logs.
+(Authorization: Bearer or x-api-key). The body is {model, model_version, max_tokens, instructions, input}: the fixed
+instruction text of the request's prompt id (the text whose hash the request carries; a request naming another hash
+is refused, invalid_request) and the request contract. Timeouts, transport errors and 429/500/502/503/504 are retried
+at most caps.max_retries times, a 4xx other than 429 never; a body the client cannot decode is invalid_output and any
+other httpx error is transport. The reply's usage.cost_units must be a non-negative integer no larger than the call's
+reservation (spec.cost_units_per_call), else cost_overrun, on which the gateway stops (budget_breach). Every failure
+raises AdapterError(adapter_id, kind, status) after its except block, so the error's __cause__ and __context__ are None
+and no httpx object (whose request holds the headers) is reachable from it; its text names the adapter, the kind and
+the status only. The adapter never logs.
 """
 
 from __future__ import annotations
@@ -32,10 +38,17 @@ from pydantic import ValidationError
 
 from app.gateway.contracts import ALIGNMENT_KEYS, VERDICT_KEYS, AdapterVerdict, AlignmentRequest, AlignmentVerdict, VerdictRequest
 from app.gateway.registry import AdapterSpec
+from app.services.v2_panel import rules
 
 WIRED_FAKE_RULES = frozenset({"verbatim-support-v1"})
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
-ERROR_KINDS = ("http_status", "timeout", "transport", "invalid_output", "no_key", "down", "scripted")
+# "error" is the gateway's kind for an adapter that raised anything but an AdapterError.
+ERROR_KINDS = ("http_status", "timeout", "transport", "invalid_output", "invalid_request", "cost_overrun", "no_key", "down", "scripted", "error")
+# The fixed instruction text of each prompt id and the hash that names it (Phase 5 spec 4.7; E-97).
+INSTRUCTIONS = {
+    rules.VERIFIER_PROMPT_ID: (rules.VERIFIER_INSTRUCTIONS, rules.verifier_prompt_hash),
+    rules.ALIGNMENT_PROMPT_ID: (rules.ALIGNMENT_INSTRUCTIONS, rules.alignment_prompt_hash),
+}
 
 
 class AdapterError(RuntimeError):
@@ -90,7 +103,7 @@ class FakeAdapter:
     """A deterministic fake family member; no network call."""
 
     def __init__(self, spec: AdapterSpec, *, script: dict | None = None, down: bool = False, late_ms: float = 0.0,
-                 clock: Any = None, alignment: dict | None = None) -> None:
+                 clock: Any = None, alignment: dict | None = None, record: bool = False) -> None:
         if spec.provider != "fake" or spec.fake_rule not in WIRED_FAKE_RULES:
             raise ValueError(f"adapter {spec.adapter_id} is not a wired fake")
         self.spec = spec
@@ -100,7 +113,13 @@ class FakeAdapter:
         self.clock = clock
         self.alignment = dict(alignment or {"rating": 4, "leakage": False})
         self.calls = 0
+        # The process gateway caches one adapter per id for the life of the process: it keeps no request unless asked.
+        self.record = record
         self.requests: list = []
+
+    def _keep(self, request: Any) -> None:
+        if self.record:
+            self.requests.append(request)
 
     def available(self) -> bool:
         return not self.down
@@ -114,7 +133,7 @@ class FakeAdapter:
 
     def verify(self, request: VerdictRequest) -> dict:
         self._tick()
-        self.requests.append(request)
+        self._keep(request)
         key = (claim_text_sha256(request.claim_text), request.span.span_id)
         scripted = self.script.get(key, self.script.get("*"))
         if scripted == "error":
@@ -128,7 +147,7 @@ class FakeAdapter:
 
     def align(self, request: AlignmentRequest) -> dict:
         self._tick()
-        self.requests.append(request)
+        self._keep(request)
         return dict(self.alignment)
 
 
@@ -172,8 +191,11 @@ class HttpJsonAdapter:
         import httpx
 
         spec = self.spec
+        text, hashed = INSTRUCTIONS[request.instructions.prompt_id]
+        if request.instructions.prompt_hash != hashed():
+            raise AdapterError(spec.adapter_id, "invalid_request")
         body = {"model": spec.model_id, "model_version": spec.model_version, "max_tokens": spec.caps.max_tokens,
-                "input": request.model_dump(mode="json")}
+                "instructions": text, "input": request.model_dump(mode="json")}
         attempts = 1 + spec.caps.max_retries
         failure: tuple[str, int | None] = ("transport", None)
         for attempt in range(attempts):
@@ -197,12 +219,19 @@ class HttpJsonAdapter:
                 kind = "timeout"
             except httpx.TransportError:
                 kind = "transport"
+            except httpx.DecodingError:
+                kind = "invalid_output"  # a body the client cannot decode (a bad content encoding)
+            except httpx.HTTPError:
+                kind = "transport"       # any other client error (too many redirects, ...)
             del headers
             if kind is None:
                 output = payload.get("output") if isinstance(payload, dict) else None
                 usage = payload.get("usage") if isinstance(payload, dict) else None
-                if not isinstance(output, dict) or not isinstance(usage, dict) or not isinstance(usage.get("cost_units"), int):
+                cost = usage.get("cost_units") if isinstance(usage, dict) else None
+                if not isinstance(output, dict) or type(cost) is not int or cost < 0:
                     raise AdapterError(spec.adapter_id, "invalid_output")
+                if cost > spec.cost_units_per_call:
+                    raise AdapterError(spec.adapter_id, "cost_overrun")
                 return output
             failure = (kind, status)
             retryable = kind in ("timeout", "transport") or (kind == "http_status" and status in RETRY_STATUSES)

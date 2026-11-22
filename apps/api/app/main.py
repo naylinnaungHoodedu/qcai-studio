@@ -283,6 +283,14 @@ def _initialize_database() -> None:
         raise last_error
 
 
+# Why SEMANTIC_RETRIEVAL_ENABLED is on and retrieval still lexical (RetrievalEngine.semantic_inactive_reason).
+SEMANTIC_INACTIVE_MESSAGES = {
+    "egress_not_opted_in": "Semantic retrieval is enabled by setting but its embedding egress is not opted in (openai-embeddings in MODEL_EGRESS_PROVIDERS, D-23); retrieval stays lexical",
+    "not_configured": "Semantic retrieval is enabled by setting but its keys, SDK or index are missing; retrieval stays lexical",
+    "not_aligned": "Semantic retrieval is enabled by setting but not aligned in this process; retrieval stays lexical",
+}
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     # Before the database step, so a missing secret stops start-up without touching the schema.
@@ -291,12 +299,14 @@ async def lifespan(_: FastAPI):
     _warn_retired_provider_settings()
     _record_configuration_overrides()
     get_course_store()
-    if settings.semantic_retrieval_enabled and not get_retrieval_engine().semantic_enabled:
-        # The setting alone never enables hybrid retrieval: only a process that aligned the span-id vectors does
-        # (workers/rag.py). The API process stays lexical, and /ready reports semantic_enabled false.
+    inactive = get_retrieval_engine().semantic_inactive_reason
+    if inactive is not None:
+        # The setting alone never enables hybrid retrieval: it also needs the D-23 opt-in (openai-embeddings in
+        # MODEL_EGRESS_PROVIDERS), its keys and index, and a process that aligned the span-id vectors (workers/rag.py).
+        # The API process stays lexical, and /ready reports semantic_enabled false.
         LOGGER.warning(
-            "Semantic retrieval is enabled by setting but not aligned in this process; retrieval stays lexical",
-            extra={FIELDS: {"event": "semantic.inactive"}},
+            SEMANTIC_INACTIVE_MESSAGES[inactive],
+            extra={FIELDS: {"event": "semantic.inactive", "reason": inactive}},
         )
     # The governance_enforced SLI (plan Phase 1, item I): each instance says what it started with.
     LOGGER.info("API started", extra={FIELDS: {"event": "startup", "environment": settings.environment, **_build_fields()}})

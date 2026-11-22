@@ -85,6 +85,13 @@ from app.services.tutor_pipeline.render import Renderer, TemplateRenderer
 from app.services.tutor_pipeline.retrieve import build_request, retrieve
 
 LOGGER = logging.getLogger("qcai.tutor")
+# The shadow-budget events and their messages (spec 10.4): the record's own composition, a shadow-mode V1 track and the
+# V2 panel each name their own stop.
+BUDGET_EVENTS = {
+    "tutor.two_pass.budget_exceeded": "Two-pass shadow exceeded its budget",
+    "tutor.v1.budget_exceeded": "The shadow V1 track exceeded its budget",
+    "tutor.v2.budget_exceeded": "The V2 panel exceeded the shadow budget",
+}
 PIPELINE_VERSION = "two-pass-v1"
 
 
@@ -327,13 +334,14 @@ class TwoPassPipeline:
     def _over(self, started: float, budget_ms: int | None, step: str, *, event: str = "tutor.two_pass.budget_exceeded") -> bool:
         """Whether the shadow budget is spent at `step`, logging `event` when it is. The record's own composition logs
         tutor.two_pass.budget_exceeded; a shadow-mode V1 track, which runs after the Phase 3 decision is fixed, logs
-        tutor.v1.budget_exceeded, so the Phase 3 signal still means the record itself overran (spec 4.13, 10.4)."""
+        tutor.v1.budget_exceeded, so the Phase 3 signal still means the record itself overran; the V2 track's step
+        "verify" logs tutor.v2.budget_exceeded. Each event has its own message (BUDGET_EVENTS; spec 4.12, 4.13, 10.4)."""
         if budget_ms is None:
             return False
         elapsed_ms = (self.clock() - started) * 1000
         if elapsed_ms <= budget_ms:
             return False
-        message = "Two-pass shadow exceeded its budget" if event == "tutor.two_pass.budget_exceeded" else "The shadow V1 track exceeded its budget"
+        message = BUDGET_EVENTS[event]
         LOGGER.warning(
             message,
             extra={FIELDS: {"event": event, "step": step, "elapsed_ms": round(elapsed_ms, 3), "budget_ms": budget_ms}},

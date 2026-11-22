@@ -559,6 +559,20 @@ def test_v4_keeps_every_v3_value_but_the_listed_changes():
         lambda p: p.pop("gateway"),
         lambda p: p["gateway"]["registries"]["development"][0].update(model_version="preview"),
         lambda p: p["owner_decisions"].pop("D-29"),
+        # The tier-3 share is 2/3 while Q-22 is unresolved: the record rule re-tallies with it (PD-25).
+        lambda p: p["v2"]["voting"]["tier3_threshold"].update(numerator=1, denominator=2),
+        # Plan 5.8's correction rules are the code's (type E re-renders only).
+        lambda p: p["v2"]["correction"].update(type_e="revise_or_reverify_unchanged"),
+        lambda p: p["v2"]["correction"].update(other="re_render_only"),
+        lambda p: p["v2"]["correction"].pop("exhausted"),
+        # The tool names are provisional (A-18; PD-31).
+        lambda p: p["tools"].update(provisional=False),
+        # The pinning texts are the code's, and a glued alias is unpinned.
+        lambda p: p["gateway"]["pinning"].update(refused_tokens="alias|latest"),
+        lambda p: p["gateway"]["pinning"].pop("refused_within_token"),
+        lambda p: p["gateway"]["pinning"].update(version_pattern="^.+$"),
+        lambda p: p["gateway"]["registries"]["development"][0].update(model_id="fakealpha3preview"),
+        lambda p: p["gateway"]["registries"]["development"][0].update(model_version="2026-02-30"),
     ],
 )
 def test_v4_structural_errors_always_stop_the_load(tmp_path, edit):

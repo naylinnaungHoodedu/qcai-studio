@@ -3,7 +3,8 @@ invariant 8; R-10; PD-22; Phase 5 spec 4.3).
 
 A non-fake provider may be called only when the environment's MODEL_EGRESS_PROVIDERS names it; the setting is empty in
 every environment, development included. The development fakes make no network call and need none. A refused member
-is ineligible and logs gateway.egress_refused once per process and provider (names only).
+is ineligible, and a refused semantic backend (SEMANTIC_RETRIEVAL_ENABLED without openai-embeddings) stays lexical; each
+logs gateway.egress_refused once per process and provider (names only: provider, adapter_id, consumer).
 """
 
 from __future__ import annotations
@@ -27,13 +28,15 @@ def egress_allowed(settings: "Settings", provider: str) -> bool:
     return provider == FAKE_PROVIDER or provider in (settings.model_egress_providers or [])
 
 
-def log_refusal(provider: str, adapter_id: str) -> None:
+def log_refusal(provider: str, adapter_id: str | None = None, *, consumer: str = "gateway") -> None:
+    """Log gateway.egress_refused once per process and provider: consumer gateway for a registry member (its
+    adapter_id), semantic-retrieval for the Phase 2 embedding backend (no adapter)."""
     with _lock:
         if provider in _refused:
             return
         _refused.add(provider)
-    LOGGER.warning("Model egress refused: the provider is not opted in for this environment",
-                   extra={FIELDS: {"event": "gateway.egress_refused", "provider": provider, "adapter_id": adapter_id}})
+    LOGGER.warning("Model egress refused: the provider is not opted in for this environment (MODEL_EGRESS_PROVIDERS)",
+                   extra={FIELDS: {"event": "gateway.egress_refused", "provider": provider, "adapter_id": adapter_id, "consumer": consumer}})
 
 
 def reset_refusal_log() -> None:

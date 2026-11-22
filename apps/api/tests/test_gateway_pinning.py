@@ -23,6 +23,22 @@ from app.gateway.pinning import pin_problem
     ("default", "2026-01-01", "moving alias (default)"),
     ("model-x", "current", "moving alias (current)"),
     ("model-x-nightly", "1.2", "moving alias (nightly)"),
+    # An alias glued to the name (task 5.1 "preview ids rejected" whatever the separator).
+    ("gemini3preview", "2026-01-01", "moving alias (preview)"),
+    ("gpt4latest", "2026-01-01", "moving alias (latest)"),
+    ("modelnightly", "1.2", "moving alias (nightly)"),
+    ("gpt4experimental", "1.2", "moving alias (experimental)"),
+    ("gemini3exp", "2026-01-01", "moving alias (exp)"),
+    ("gemini3exp0827", "2026-01-01", "moving alias (exp0827)"),
+    ("model-x", "1.2latest", "moving alias (latest)"),
+    # A date form that names no calendar day, and an identifier that is not in its canonical form.
+    ("model-x", "2026-13-45", "not a pinned form"),
+    ("model-x", "2026-02-29", "not a pinned form"),
+    ("model-x", "00000000", "not a pinned form"),
+    ("model-x", "20261340", "not a pinned form"),
+    ("model-x", " 001 ", "not in its canonical form"),
+    ("model-x", "001 ", "not in its canonical form"),
+    (" model-x", "001", "not in its canonical form"),
     ("model-x", "2026-1-1", "not a pinned form"),
     ("model-x", "v1", "not a pinned form"),
     ("model-x", "stable", "not a pinned form"),
@@ -34,7 +50,9 @@ def test_every_unpinned_form_is_refused_and_names_unpinned(model_id, version, re
 
 @pytest.mark.parametrize("model_id, version", [
     ("fake-alpha-verifier", "2026-11-21"), ("model-x", "20261121"), ("model-x", "002"), ("model-x", "1.2"), ("model-x", "v2.0.1"),
-    ("model-x", "1.2.3.4"),
+    ("model-x", "1.2.3.4"), ("model-x", "2024-02-29"), ("model-x", "000"),
+    # "exp" inside a word is no alias: only a token that is, or ends in, exp and digits is refused.
+    ("titan-text-express-v1", "2026-11-21"), ("expert-verifier", "2026-11-21"),
 ])
 def test_the_pinned_forms_pass(model_id, version):
     assert pin_problem(model_id, version) is None

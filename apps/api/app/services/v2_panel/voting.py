@@ -8,17 +8,20 @@ T  tally: objections o (family verdicts other than SUPPORTED; NOT_ENOUGH_INFO ob
      1oo3                    N = 3, fail iff o >= 1
      2oo3                    N = 3, fail iff o >= 2
      1oo2                    N = 2, fail iff o >= 1
-     equal-weights-share-v1  N >= 1, pass iff den * s >= num * N (2/3, PD-25)
+     equal-weights-share-v1  N >= 1, pass iff den * s >= num * N (TIER3_THRESHOLD 2/3, PD-25; the loader binds the
+                             package's value to it while Q-22 is unresolved, so the record rule re-tallies with it)
      withhold-queue-v3       withheld (no call is made)
    A rule given the wrong N raises ValueError.
+E  objection_types: the EHMF types of a claim's objecting family verdicts (rule F per family), in family order; a
+   failing claim whose every objection is type E is a presentation fault (plan 5.8 "Type E re-renders only").
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Literal
 
-from app.services.v2_panel.rules import DEGRADED_MODES, MAX_MEMBERS, OBJECTIONS
+from app.services.v2_panel.rules import DEGRADED_MODES, MAX_MEMBERS, OBJECTIONS, TIER3_THRESHOLD
 
 _ORDER = {"SUPPORTED": 0, "NOT_ENOUGH_INFO": 1, "CONTRADICTED": 2}
 
@@ -40,7 +43,23 @@ def supports(verdicts: Sequence[str]) -> int:
     return sum(1 for verdict in verdicts if verdict == "SUPPORTED")
 
 
-def tally(rule: str, family_verdicts: Sequence[str], *, threshold: tuple[int, int] = (2, 3)) -> Literal["pass", "fail", "withheld"]:
+def objection_types(pairs_by_family: Mapping[str, Sequence[tuple[str, str | None]]]) -> tuple[str, ...]:
+    """The EHMF types of the objecting family verdicts of one claim, in family order: each family's pairs (in span-id
+    order) folded by rule F; a SUPPORTED family adds nothing."""
+    types = []
+    for family in sorted(pairs_by_family):
+        verdict, ehmf = family_verdict(pairs_by_family[family])
+        if verdict != "SUPPORTED":
+            types.append(ehmf)
+    return tuple(types)
+
+
+def presentation_only(types: Sequence[str | None]) -> bool:
+    """Whether a failing claim's objections are all EHMF type E (presentation), so it is re-rendered, never revised."""
+    return bool(types) and all(ehmf == "E" for ehmf in types)
+
+
+def tally(rule: str, family_verdicts: Sequence[str], *, threshold: tuple[int, int] = TIER3_THRESHOLD) -> Literal["pass", "fail", "withheld"]:
     n = len(family_verdicts)
     o, s = objections(family_verdicts), supports(family_verdicts)
     if rule == "withhold-queue-v3":
