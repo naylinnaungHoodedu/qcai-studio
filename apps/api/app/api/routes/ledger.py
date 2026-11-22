@@ -13,9 +13,11 @@ that failed, was refused, or was deferred and then failed), so a lost record is 
 of the package in force at read time carries their labels (`conflicts`, evidence_panel.record_conflicts; AC-4-6,
 Phase 4 spec 4.15 item 3), for its owner and for the reviewer alike; the record's versions name the package in force
 at delivery, and nothing stores the labels that delivery showed (DI-68). The reviewer role (LEDGER_READER_ROLES; plan 7.3
-"owner or reviewer", nothing wider) reads any record, shadow records included, with the chain fields; each such
-read is a security event (plan 7.6). Any other role, admin included, is an owner reader only. A learner never sees
-a shadow record (AC-3-6): every miss is the same 404 with Cache-Control: no-store.
+"owner or reviewer", nothing wider), where the reviewer gate admits it (app.core.reviewer_access.reviewer_admitted:
+development, or a staffed reviewer pool; outside development no reviewer is admitted while D-18 is open, and such a
+caller reads as an owner, Phase 6 spec 4.12), reads any record, shadow records included, with the chain fields; each
+such read is a security event (plan 7.6). Any other role, admin included, is an owner reader only. A learner never
+sees a shadow record (AC-3-6): every miss is the same 404 with Cache-Control: no-store.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ from app.core.config import get_settings
 from app.core.config_package import get_config_package
 from app.core.db import get_db
 from app.core.rate_limit import limiter
+from app.core.reviewer_access import reviewer_admitted
 from app.db_models import ResponseLedgerRecord, TutorTurn
 from app.schemas import LedgerClaimRead, LedgerRecordRead, LedgerResponseRead
 from app.services.evidence_panel import record_conflicts
@@ -102,7 +105,7 @@ def read_ledger_response(
         return _not_found()
     row = db.scalars(select(ResponseLedgerRecord).where(ResponseLedgerRecord.response_id == response_id)).first()
     result: LedgerResponseRead | None = None
-    if user.role in LEDGER_READER_ROLES:
+    if user.role in LEDGER_READER_ROLES and reviewer_admitted(settings):
         if row is not None:
             result = LedgerResponseRead(response_id=response_id, recorded=True, legacy_turn=False, record=_record(row, reviewer=True))
         elif response_id.startswith("turn-") and (turn := db.get(TutorTurn, response_id)) is not None:

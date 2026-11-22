@@ -15,8 +15,8 @@ hits of the non-stopword query terms plus the phrase bonus), never the ranking s
 is on another scale. So score, floor and X4 margin are on one scale under either gate and V1.5 never re-scores a span.
 The shipped X4 margins are bm25f-v1's abstention.margin (V1.5 then marks exactly what the gate flags near_floor) and
 0.0 for p1-floor (V1.5 never marks there: every result the gate keeps has a floor score at or above the floor); an
-owner value replaces either in the package alone. A mark is the Phase 6 X4 trigger candidate: the response is
-labelled near_floor and its claims carry a V3 intent with trigger X4; it is never delivered as confident.
+owner value replaces either in the package alone. A mark is the X4 trigger (app.services.v3.triggers.x4_fires): the
+response is labelled near_floor and its claims carry a V3 intent with trigger X4; it is never delivered as confident.
 """
 
 from __future__ import annotations

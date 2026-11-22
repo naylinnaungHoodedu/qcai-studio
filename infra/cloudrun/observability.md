@@ -39,7 +39,7 @@ All the API filters start with `resource.type="cloud_run_revision" AND resource.
 | Auth failures | `jsonPayload.event_type=("auth.login" OR "auth.credential_rejected" OR "auth.lockout") AND jsonPayload.outcome!="success"` | Counter metric |
 | Erasure time | `jsonPayload.event_type="account.delete" AND jsonPayload.outcome="success"`, value `jsonPayload.details.duration_ms` | Distribution metric. It times the erase and its commit, not the password check. |
 | `governance_enforced` | `jsonPayload.event="startup" AND jsonPayload.governance_enforced=false` | Alert on any match. `/ready` reports the same field. |
-| **Alert on overrides** | `jsonPayload.event_type="config.override"` (details name the override: `demo_auth_enabled` or `corpus_governance_disabled`; the Phase 2, 3 and 4 rows below name theirs) | Alert on any match |
+| **Alert on overrides** | `jsonPayload.event_type="config.override"` (details name the override: `demo_auth_enabled` or `corpus_governance_disabled`; the Phase 2, 3, 4, 5 and 6 rows below name theirs) | Alert on any match |
 | Security events not recorded | `jsonPayload.recorded=false` | Alert on any match |
 | Security log chain broken | `jsonPayload.job="security_log" AND jsonPayload.status!="ok"` | Alert on any match |
 | Retention job failed | `jsonPayload.job="retention" AND jsonPayload.status="failed"` | Alert on any match |
@@ -197,3 +197,36 @@ The Phase 5 events log on `qcai.gateway` (the `gateway.*` events) or `qcai.tutor
 | Disagreement | `tutor.v2.disagreement` (`v1_final`, `v2_would`): a counter (plan G's shadow dual-run) |
 | Unavailable | `tutor.v2.unavailable` (`reason`): an alert on any line |
 | Security event `config.override` | the details name `model_gateway_shadow` (the V2 shadow outside development), `model_gateway_on` (refused outside development before the Phase 5 exit; a line means a package claiming the exit) or `model_egress_opt_in` (an environment naming a provider in `MODEL_EGRESS_PROVIDERS`): an alert on any line |
+
+## Phase 6 SLIs: V3 (plan Phase 6 I)
+
+**Not set up yet** (DI-95). Creating log-based metrics and alerts is a cloud write (Platform Owner approval each time).
+
+Plan Phase 6 I: "Escalation share (V-3 <= 10% is a Table XVII gate, EG/OT per Section 15 [Evidence E-105]; production SLO [Decision D-06]); queue age p90 alert [Risk R-40]." The SLIs are reported, per database, by the reviewer-only `GET /v3/metrics` and the worker's `python -m app.workers.v3_queue status` line (`v3.status`), never by the public `/ready`, which carries the static V3 values only (`v3_queue`, `v3_queue_setting`, `phase6_exit_passed`, `v3`). Ratios are `k/n` strings. Every value below is report only and provisional (PD-37; D-06 open):
+- **Escalation share (V-3):** learner deliveries the scan considered in the last 7 days with an item whose triggers include X1-X4 (audits X5 and X6 are proof tests, plan 15.3), over those deliveries; a shadow record's item counts on the delivery it shadowed. At most 1/10.
+- **Queue age:** the open items' age p90 (nearest rank; the alert's measure, plan I) and the oldest open item's age (the stop's measure) against the 72-hour SLO.
+- **Draws:** deliveries considered, drawn X6 (1/20) and X5 (1/5 inside an X5 window), and the deliveries that are not auditable (tutor turns without a ledger record, Q&A answers before the ledger).
+- **Double-review agreement:** round-2 pairs and how many agreed with round 1.
+- **Residual bound:** the Wilson 95% upper bound of residual error over X6-audited answer deliveries, per UTC month (plan 15.3 "HR-3 deployment form: monthly Wilson bound from the 5% draw").
+- **Gold rows, the stop and the X5 windows.**
+
+The service events log on `qcai.v3`, the V2 track's on `qcai.tutor`, the worker's on `qcai.worker` and the security events on `qcai.security`. They carry enumerations, counts, item ids, model keys, seq numbers and hashes only: no response, turn, thread, message or user id and no text.
+
+| SLI or event | Log-based metric or alert |
+|---|---|
+| V-3 escalation share | `GET /v3/metrics`, or `jsonPayload.event="v3.status"` field `escalation_share` (`share` `m/n`, `max` 1/10, `above_max`): report only |
+| Queue age p90 and oldest age | `jsonPayload.event="v3.status"`, fields `queue.age_p90_s` and `queue.age_max_s` against `queue.slo_s`: an alert on `age_p90_s` above the SLO (plan I, R-40; DI-95) |
+| Draws | `jsonPayload.event="v3.scan"` (INFO; `from_seq`, `to_seq`, `records`, `deliveries`, `drawn_x6`, `drawn_x5`, `items_created`, `items_updated`, `model_changes`, `unparsed`, `done`): counter metrics of `drawn_x6` and `drawn_x5` over `deliveries` |
+| Double-review agreement | `jsonPayload.event="v3.adjudicated"` (INFO; `item_id`, `review_round`, `subject`, `state`, `agreement` in round 2 only) with `review_round=2`, labelled by `agreement`: report only |
+| Residual bound | `jsonPayload.event="v3.status"` field `residual.by_month` (the monthly Wilson 95% upper bound): report only |
+| The V3 stop | `v3.stop` (`active`, `reason` `clear`, `queue_age` or `unreadable`, `window_s`, `slo_s`; WARNING when active, INFO when clear) with `active=true`, or `v3.stop_unread` (WARNING, no fields: the queue could not be read, so tier 1 is withheld): an alert on any line |
+| The tier-1 stop path | `tutor.v2.v3_stop` (on `qcai.tutor`; WARNING; `tier`, `policy` `pre_verified_only`): a tier-1 shadow run under the stop, a counter |
+| X5 events | `v3.x5_event` (WARNING; `kind` `model_change` or `cusum_alarm`, `model_key`, `from_version`, `to_version` or `stream`): an alert on any line (the audit rate is 1/5 for the next 1500 deliveries) |
+| A trigger on a closed item | `v3.trigger_after_close` (INFO; `item_id`, `triggers`): recorded, never reopened; a counter |
+| Applied labels and the gold chain | `v3.applied` (INFO; `item_id`, `final_gold_seq`) and `v3.gold_appended` (INFO; `seq`, `record_hash`, the off-database copy of the gold chain): counters; `v3.gold_verified` (on `qcai.worker`; `count`, `head_seq`, `head_hash`, `problem_count`, `problems`) from `python -m app.workers.v3_queue verify-gold`: an alert on `problem_count` above 0 |
+| Learner flags | `v3.flag_recorded` (INFO; `duplicate`): a counter (development only) |
+| V3 unavailable | `v3.unavailable` (WARNING; `reason`, start-up: a package v5 v3 problem, so the V3 mode stays off): an alert on any line |
+| Worker status | `v3.status` (on `qcai.worker`; INFO): the SLIs and the mode |
+| Reviewer actions | security events `v3.queue_read`, `v3.scan_run`, `v3.item_read`, `v3.item_claimed`, `v3.item_adjudicated`, `v3.item_applied` and `v3.metrics_read` (on `qcai.security`; outcome success; `route` and the call's counts or item id, the actor role and the subject digest): counters |
+| Reviewer refusals | security event `authz.denied` (on `qcai.security`; outcome denied; `route`, `required` `role:reviewer`, or `reviewer_pool:D-18` outside development while D-18 is open, `provider`): a counter |
+| Security event `config.override` | the details name `v3_queue_shadow` (the V3 queue in shadow outside development) or `v3_queue_on` (refused outside development before the Phase 6 exit; a line means a package claiming the exit): an alert on any line |

@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+from datetime import UTC, datetime
 import os
 from pathlib import Path
 from uuid import uuid4
@@ -23,6 +24,10 @@ from app.core.config import get_settings
 from app.main import _initialize_database
 
 _initialize_database()
+# Phase 6 (spec 0.1): no test writes a backdated V3 queue item into the shared database; v3_fakes.FIXED_NOW is for fresh
+# databases only. The V2 track reads the queue-age stop through its pipeline's database, so one backdated item in the
+# shared database would stop every later tier-1 shadow run.
+SESSION_STARTED = datetime.now(UTC)
 
 
 @pytest.fixture(autouse=True)
@@ -51,6 +56,31 @@ def _fresh_process_gateway_and_cache():
     reset_process_gateway()
     clear_shared_controls()
     reset_process_cache()
+
+
+def _backdated_items() -> int:
+    from sqlalchemy import func, select
+
+    from app.core.db import SessionLocal
+    from app.db_models import V3QueueItem
+
+    with SessionLocal() as db:
+        return int(db.scalar(select(func.count()).select_from(V3QueueItem).where(V3QueueItem.enqueued_at < SESSION_STARTED)) or 0)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_v3_stop_and_no_backdated_shared_items():
+    """Each test reads the V3 stop afresh (v3.stop.reset_stop_cache), and fails when it leaves a shared-database queue
+    item enqueued before the session started (Phase 6 spec 0.1)."""
+    from app.services.v3.stop import reset_stop_cache
+
+    reset_stop_cache()
+    before = _backdated_items()
+    yield
+    reset_stop_cache()
+    after = _backdated_items()
+    if after > before:
+        pytest.fail(f"a test left {after - before} backdated V3 queue item(s) in the shared database; use v3_fakes.fresh_v3_sessions()")
 
 
 @pytest.fixture

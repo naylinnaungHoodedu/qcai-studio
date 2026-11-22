@@ -292,6 +292,7 @@ class TwoPassPipeline:
         cache: Any = None,
         tool_host: Any = None,
         v2_clock: Callable[[], float] = time.monotonic,
+        v3_stop: Callable[[], bool] | None = None,
     ) -> None:
         self.package = get_config_package(settings)
         if self.package.tutor_pipeline is None:
@@ -316,6 +317,9 @@ class TwoPassPipeline:
         # nothing is built while the V2 mode is off.
         self.gateway, self.adapter_registry, self.cache, self.tool_host = gateway, adapter_registry, cache, tool_host
         self.v2_clock = v2_clock
+        # Phase 6 (spec 4.13): the V3 stop the V2 track reads at a tier-1 response's first consult; by default the stop over
+        # this pipeline's own database (v3.stop.tier1_withheld through session_factory), never the process database.
+        self.v3_stop = v3_stop
         # The clock V1.3 times a checker call with (tests and the fixture runner inject one).
         self.v1_clock: Callable[[], float] = time.monotonic
         self.checker, self.keyed_items, self.misconceptions = checker, keyed_items, misconceptions
@@ -355,6 +359,13 @@ class TwoPassPipeline:
         from app.services import v2_panel
 
         return v2_panel.mode(self.settings, self.package, gateway=self.gateway)
+
+    def _v3_stop(self) -> bool:
+        if self.v3_stop is not None:
+            return bool(self.v3_stop())
+        from app.services.v3.stop import tier1_withheld
+
+        return tier1_withheld(self.settings, self.package, session_factory=self.session_factory)
 
     def _v2_parts(self):
         """(gateway, adapter registry, cache, tool host) for one run while V2 runs: the injected ones, else the process
@@ -501,7 +512,8 @@ class TwoPassPipeline:
             gateway, registry, cache, tools = self._v2_parts()
             hook = V2Track(self, context, mode=v2_mode, gateway=gateway, adapter_registry=registry, cache=cache, tools=tools,
                            settings=self.settings, clock=self.v2_clock,
-                           budget_over=lambda step: self._over(started, budget_ms, step, event="tutor.v2.budget_exceeded"))
+                           budget_over=lambda step: self._over(started, budget_ms, step, event="tutor.v2.budget_exceeded"),
+                           v3_stop=self._v3_stop)
         track = V1Track(self, checker=self.checker, keyed_items=self.keyed_items, library=self.misconceptions, v2_hook=hook,
                         clock=self.v1_clock, cache=cache if mode == "enforce" else None)
         # In enforce the V1 track is the record's composition; in shadow it runs after the record's decision.

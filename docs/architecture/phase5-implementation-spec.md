@@ -131,7 +131,7 @@ Phase 5 therefore:
 
 **R-d. "One vote per family" (rule 4, AC-5-2).** Per claim, each member family contributes exactly one family verdict to the tally, whatever number of adapters the family has in the registry: the first eligible one in registry order is used, and the others are never called. Pair votes (one per member and cited span) are recorded, because plan 7.4 gives each vote a `span_id`, and are folded into the family verdict by 4.9 rule F. "Distinct families = votes" (invariant 4) counts family verdicts.
 
-**R-e. "Critical".** A claim matched by D-25's critical-claim registry. D-25 is OPEN and the registry is empty, so no claim is critical in Phase 5. The X1 route is Phase 6's (AC-5-4).
+**R-e. "Critical".** A claim matched by D-25's critical-claim registry. D-25 is OPEN. Outside development the registry is empty, so no claim is critical there; development holds Phase 6's synthetic registry (Phase 6 spec PD-33). The X1 trigger and the sticky hold of a critical tier-1 claim are Phase 6's.
 
 **R-f. "Pre-verified module content (stage 4)".** No store of pre-verified module content exists. The zero-member path is therefore "abstain and queue" (4.10). The record names what the learner received (D-20's replacement values). See DI-83.
 
@@ -678,7 +678,7 @@ Neither text names a model, family, generator, learner or vote. The hashes are p
 
 ### 4.8 Tiers (`v2_panel/tiers.py`; PD-25)
 
-`tier_for(items, package)`: 1 when `items` is non-empty, where the V2 track computes `items = assessment_items(ctx.resolved.text, pipeline.keyed_items, v1=pipeline.v1_params, stopwords=package.retrieval.stopwords)` itself (the V1 render hook's own computation; `V1Passed` keeps its fields); otherwise `package.v2.default_tier` (2). `expert_mode` is `null` in v4, so tier 3 is never assigned in shipped behaviour; tests reach tier 3 through an in-memory overlay of the parsed parameters. `critical_for(claim_id, package)` is membership of `v2.correction.critical_registry`, which is empty (D-25 open). Every claim of a response has the same tier.
+`tier_for(items, package)`: 1 when `items` is non-empty, where the V2 track computes `items = assessment_items(ctx.resolved.text, pipeline.keyed_items, v1=pipeline.v1_params, stopwords=package.retrieval.stopwords)` itself (the V1 render hook's own computation; `V1Passed` keeps its fields); otherwise `package.v2.default_tier` (2). `expert_mode` is `null` in v4, so tier 3 is never assigned in shipped behaviour; tests reach tier 3 through an in-memory overlay of the parsed parameters. `critical_for(claim_id, package, *, environment)` is membership of package v5's `v3.critical_claims` registry for the environment (empty outside development while D-25 is open; synthetic in development), and of `v2.correction.critical_registry` (empty) for a package without a v3 block (Phase 6 spec 4.13). Every claim of a response has the same tier.
 
 ### 4.9 Voting (`v2_panel/voting.py`; unit-tested exhaustively)
 
@@ -1032,7 +1032,7 @@ The retired settings are listed in 4.18. `openai_api_key` is no setting either: 
 | `v1_checks/runner.py` | 4.13, 4.16 (a `_RunState` per candidate, `pre_render`, the correction loop, `regenerate`, `presentation`/`omit_extra`, fresh post-render hooks, the claim-plan cache, latency without V2); docstring |
 | `v1_checks/aggregate.py` | `v2_outcome`; `withheld_claim_ids(..., v1_3_routes_to_v2=False)`; the module docstring states D-20 with V2 off or in shadow and V1.3 flags routing to V2 under `on`; `V2Hook`'s docstring names the Phase 5 track |
 | `services/ledger.py` | `SCHEMA_REVISION` is `20261122_phase5_gateway_controls` (section 8). `_provenance_problems(seq, entry, params, v1, phase5)`: `phase5` is `phase5_blocks(package)` (`(package.v2, package.tools)` or `None`), passed by every caller. The V1 checks apply to `entry_schema in ("ledger-entry-v2", "ledger-entry-v3")`; a v3 record must also match `tool_contract_version`, `panel_weights_version`, `routing_table_version` and `verification.v2.verifier_prompt_hash` with the package. `pending_v3_intents` reads `entry_schema IN ('ledger-entry-v2', 'ledger-entry-v3')` and adds `"escalation"` to v3 rows only; a v2 row's item is unchanged. The module docstring names the shipped package. |
-| `services/tutor_followups.py` | Docstring names the shipped package's budgets (v4 since Phase 5) |
+| `services/tutor_followups.py` | Docstring names the shipped package's budgets (v5 since Phase 6 and v4 since Phase 5) |
 | `services/retrieval_engine.py` | 4.19: the backend embeds through the gateway (no `langchain_openai` import, no key), `embedder=` on the backend and the engine, `embedding_problem`, `index_configured`, `egress_refused`, `semantic_inactive_reason`, the store passed to `embedder_for`; `sync_semantic_index` logs `gateway.egress_refused` (`consumer` `semantic-retrieval`, once per process) when the setting is on without the opt-in; the module docstring |
 | `services/teaching_assistant.py` | 4.18 |
 | `core/config.py` | Section 6; the retired fields, `openai_api_key`, `openai_embedding_model` and `openai_embedding_model_version` deleted |

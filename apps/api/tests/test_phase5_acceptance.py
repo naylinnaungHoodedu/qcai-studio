@@ -1212,7 +1212,8 @@ def test_plan_i_ready_reports_package_v4_and_the_gateway_state_and_no_per_run_ou
     from app import main as main_module
 
     body = client.get("/ready").json()
-    assert body["config_package_version"] == "4.0.0" and body["model_gateway"] == "shadow" and body["model_gateway_setting"] == "shadow"
+    # The shipped package's version (4.0.0 with Phase 5, 5.0.0 since Phase 6); the gateway fields are v4's, which v5 keeps.
+    assert body["config_package_version"] == PACKAGE.package_version and body["model_gateway"] == "shadow" and body["model_gateway_setting"] == "shadow"
     assert body["phase5_exit_passed"] is False
     gateway = body["gateway"]
     assert {key: gateway[key] for key in ("version", "registry", "state", "budget_daily_units", "tool_contract_version", "provisional",
@@ -1539,7 +1540,7 @@ def test_phase5_docs_the_runbooks_and_registers_state_the_gateway_s_operations_e
     # The Phase 3 spec's test 31 and the Phase 4 spec's loader line state the current code; the cache keeps no learner text.
     phase4 = (REPO_ROOT / "docs" / "architecture" / "phase4-implementation-spec.md").read_text(encoding="utf-8")
     assert "`_build_fields()` makes no DB call." not in phase3 and "its only statements are the shared gateway stop's reads" in phase3
-    assert "`schema_version in (1, 2, 3)`, and 4 since Phase 5" in phase4
+    assert "`schema_version in (1, 2, 3)`, and 4 since Phase 5 and 5 since Phase 6" in phase4
     cache_doc = " ".join((API_ROOT / "app" / "services" / "v2_panel" / "cache.py").read_text(encoding="utf-8").split('"""', 2)[1].split())
     assert "or any text: keys are hashes" not in cache_doc and "whose only text is corpus text" in cache_doc
     # A stopped instance never reopens: no text says the stop ends at the operator's clear (spec 4.5).

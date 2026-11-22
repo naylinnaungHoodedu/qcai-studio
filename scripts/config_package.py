@@ -1,22 +1,26 @@
-"""Check or re-hash the configuration package (Phase 2 spec 2.5; Phase 3 spec 5.5; Phase 4 spec 5.4; Phase 5 spec 5.4).
+"""Check or re-hash the configuration package (Phase 2 spec 2.5; Phase 3 spec 5.5; Phase 4 spec 5.4; Phase 5 spec 5.4;
+Phase 6 spec 5.3).
 
 Run: python scripts/config_package.py --check [--path P]   (validates the package and its sidecar hash; for packages
-                                                             v2 to v4 also the tutor-pipeline schema pins, prompt hashes
-                                                             and schema structure, for v3 and v4 the V1 block: rule ids
-                                                             and their hash, and the adversarial fixture set's pin, and
-                                                             for v4 the gateway, v2 and tools blocks, the committed tool
-                                                             contract document included; exit 1 on a problem)
-     python scripts/config_package.py --rehash [--path P]  (recomputes the stopword hash and, for v2 to v4, the schema
+                                                             v2 to v5 also the tutor-pipeline schema pins, prompt hashes
+                                                             and schema structure, for v3 to v5 the V1 block: rule ids
+                                                             and their hash, and the adversarial fixture set's pin, for
+                                                             v4 and v5 the gateway, v2 and tools blocks, the committed
+                                                             tool contract document included, and for v5 the v3 block:
+                                                             its two schema pins and structure, its rule ids and the
+                                                             development registry's fixture; exit 1 on a problem)
+     python scripts/config_package.py --rehash [--path P]  (recomputes the stopword hash and, for v2 to v5, the schema
                                                              pins, the three prompt hashes and the legacy containment
-                                                             rule hash from the code; for v3 and v4 also v1.rules_hash,
+                                                             rule hash from the code; for v3 to v5 also v1.rules_hash,
                                                              the misconception library sha256 and the fixture set's
-                                                             sha256 and case count; for v4 the tool contract file's
-                                                             sha256 and the two V2 prompt hashes; rewrites the sidecar)
+                                                             sha256 and case count; for v4 and v5 the tool contract
+                                                             file's sha256 and the two V2 prompt hashes; for v5 the two
+                                                             V3 schema pins; rewrites the sidecar)
      python scripts/config_package.py --write-schemas      (writes the pinned contract schemas from the pydantic models,
-                                                             fourteen and the tool contract document for v4, then
-                                                             --rehash)
-The default path is the shipped package v4; v3, v2 and v1 stay readable for one release (--path .../v3.json, DI-84;
---path .../v2.json, DI-63; --path .../v1.json, DI-42).
+                                                             fourteen and the tool contract document for v4 and v5, the
+                                                             two V3 schemas for v5, then --rehash)
+The default path is the shipped package v5; v4, v3, v2 and v1 stay readable for one release (--path .../v4.json, DI-100;
+--path .../v3.json, DI-84; --path .../v2.json, DI-63; --path .../v1.json, DI-42).
 """
 
 from __future__ import annotations
@@ -66,6 +70,14 @@ def write_schemas(path: Path) -> list[Path]:
         target = path.parent / payload["tools"]["path"]
         target.write_text(json.dumps(tool_contract_document(), indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
         written.append(target)
+    if payload.get("schema_version", 0) >= 5:
+        from app.services.v3.contracts import V3_SCHEMA_MODELS
+
+        for name, pin in payload["v3"]["schemas"].items():
+            target = path.parent / pin["path"]
+            schema = V3_SCHEMA_MODELS[name].model_json_schema(mode="validation")
+            target.write_text(json.dumps(schema, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+            written.append(target)
     return written
 
 
@@ -74,7 +86,7 @@ def rehash(path: Path) -> str:
     words = sorted(set(payload["retrieval"]["stopwords"]["words"]))
     payload["retrieval"]["stopwords"]["words"] = words
     payload["retrieval"]["stopwords"]["sha256"] = stopwords_sha256(words)
-    if payload.get("schema_version") in (3, 4):
+    if payload.get("schema_version") in (3, 4, 5):
         from app.core.config_package import misconception_library_sha256
         from app.services.v1_checks.package_check import fixture_set_sha256, repository_root
 
@@ -86,13 +98,16 @@ def rehash(path: Path) -> str:
             cases = json.loads(fixtures_path.read_text(encoding="utf-8"))["cases"]
             v1["fixtures"]["set_sha256"] = fixture_set_sha256(cases)
             v1["fixtures"]["cases"] = len(cases)
-    if payload.get("schema_version") == 4:
+    if payload.get("schema_version") in (4, 5):
         from app.services.v2_panel.rules import alignment_prompt_hash, verifier_prompt_hash
 
         payload["tools"]["sha256"] = canonical_sha256(json.loads((path.parent / payload["tools"]["path"]).read_text(encoding="utf-8")))
         payload["v2"]["prompt"]["verifier_prompt_hash"] = verifier_prompt_hash()
         payload["v2"]["prompt"]["alignment_prompt_hash"] = alignment_prompt_hash()
-    if payload.get("schema_version") in (2, 3, 4):
+    if payload.get("schema_version") == 5:
+        for pin in payload["v3"]["schemas"].values():
+            pin["sha256"] = canonical_sha256(json.loads((path.parent / pin["path"]).read_text(encoding="utf-8")))
+    if payload.get("schema_version") in (2, 3, 4, 5):
         from app.services.tutor_pipeline.evidential import evidential_prompt_hash
         from app.services.tutor_pipeline.render import pedagogical_prompt_hash
         from app.services.tutor_pipeline.resolve import resolver_prompt_hash
@@ -108,7 +123,7 @@ def rehash(path: Path) -> str:
         from app.services.ledger import LEGACY_CONTAINMENT_RULE_HASH
 
         tutor["legacy"]["containment_rule_hash"] = LEGACY_CONTAINMENT_RULE_HASH
-    if payload.get("schema_version") in (3, 4):
+    if payload.get("schema_version") in (3, 4, 5):
         from app.services.v1_checks.rules import v1_rules_hash
 
         payload["v1"]["rules_hash"] = v1_rules_hash(parse_config_package(payload, path=path, sha256="", hash_verified=False))
@@ -133,6 +148,10 @@ def check(path: Path) -> int:
             from app.gateway.package_check import check_gateway_package
 
             problems.extend(check_gateway_package(package, structural=True))
+        if package.schema_version >= 5:
+            from app.services.v3.package_check import check_v3_package
+
+            problems.extend(check_v3_package(package, structural=True))
         if problems:
             for problem in problems:
                 print(f"configuration package check failed: {problem}", file=sys.stderr)
@@ -162,6 +181,14 @@ def check(path: Path) -> int:
         print(
             f"gateway {gateway.version} (provisional): registries {registries}; daily units {budgets}; tools {package.tools.version}; "
             f"routing table {v2.routing_table_version}; phase5_exit_passed {package.flag_policy.phase5_exit_passed}"
+        )
+    if package.v3 is not None:
+        v3 = package.v3
+        registries = ", ".join(f"{name} {len(claims)}" for name, claims in v3.critical_registries.items())
+        print(
+            f"v3 {v3.version} (provisional): triggers {v3.trigger_registry_version}; draw {v3.draw_rule} at {v3.draw_rate} "
+            f"({v3.x5_rate} under X5); double review {v3.double_review_rate}; critical registries {registries}; "
+            f"phase6_exit_passed {package.flag_policy.phase6_exit_passed}"
         )
     return 0
 

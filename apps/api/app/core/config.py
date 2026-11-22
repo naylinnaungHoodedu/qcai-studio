@@ -205,6 +205,18 @@ class Settings(BaseSettings):
     # abstains too while no pre-verified source exists, DI-83). Like MODEL_GATEWAY it acts on the two-pass shadow
     # pipeline only: no delivered answer reads it (strictly more conservative; delivery is DI-85).
     model_gateway_kill_switch: Literal["none", "abstain_only", "pre_verified_only"] = "none"
+    # Phase 6 (V3 audit and adjudication; docs/architecture/phase6-implementation-spec.md section 6). Plan Phase 6 L:
+    # "Disabling V3 MUST NOT release withheld items." None = "shadow" in development and "off" elsewhere
+    # (V3_QUEUE_DEFAULT_DEVELOPMENT, V3_QUEUE_DEFAULT_ELSEWHERE, which package v5 flag_policy.v3_queue must name). Off
+    # runs no scan, no draw, no item and no flag intake, and the reviewer routes answer 404; the holds and the stop are
+    # computed from the records and the stored queue whatever it says, so switching it off releases nothing. "on" is
+    # refused outside development while the package says flag_policy.phase6_exit_passed is false, and runs as shadow:
+    # nothing in Phase 6 reaches a learner (DI-97). Shadow outside development is a recorded override that changes no
+    # learner path: the flag route stays 404 there and no reviewer is admitted while D-18 is open (PD-38).
+    v3_queue: Literal["off", "shadow", "on"] | None = None
+    # The learner flag route's rate limit (POST /v3/flags, development only): an engineering parameter like PD-11's
+    # limits, provisional with PD-38 (DI-98).
+    v3_flag_rate_limit: str = "10/minute"
 
     @field_validator("model_egress_providers", "model_gateway_disabled_adapters", mode="before")
     @classmethod
@@ -289,6 +301,10 @@ class Settings(BaseSettings):
             raise ValueError("MODEL_GATEWAY=on needs V1_PIPELINE=enforce (V2 consults only the V1 track's own V1Passed)")
         if not development and self.model_gateway == "on":
             self._refuse_model_gateway_on_before_phase_5_exit()
+        if self.v3_queue is None:
+            self.v3_queue = V3_QUEUE_DEFAULT_DEVELOPMENT if development else V3_QUEUE_DEFAULT_ELSEWHERE
+        if not development and self.v3_queue == "on":
+            self._refuse_v3_queue_on_before_phase_6_exit()
         if self.arena_enabled and self.environment.lower() != "development":
             raise ValueError("ARENA_ENABLED is not permitted outside development (Decision D-03).")
         if self.guest_token_secret is None and self.environment.lower() == "development":
@@ -347,6 +363,22 @@ class Settings(BaseSettings):
             )
         if not (package.is_default_path and package.hash_verified):
             raise ValueError("MODEL_GATEWAY=on outside development needs the shipped, hash-verified configuration package.")
+
+    def _refuse_v3_queue_on_before_phase_6_exit(self) -> None:
+        # Read lazily, as for TWO_PASS_TUTOR=on: no other construction of Settings depends on the package.
+        from app.core.config_package import ConfigPackageError, get_config_package  # lazy: avoids an import cycle
+
+        try:
+            package = get_config_package(self)
+        except ConfigPackageError as exc:
+            raise ValueError(f"V3_QUEUE=on needs a valid configuration package: {exc}") from exc
+        if not package.flag_policy.phase6_exit_passed:
+            raise ValueError(
+                "V3_QUEUE=on is refused outside development before the Phase 6 exit (configuration package "
+                "flag_policy.phase6_exit_passed is false; plan Phase 6 L, P). Use off or shadow."
+            )
+        if not (package.is_default_path and package.hash_verified):
+            raise ValueError("V3_QUEUE=on outside development needs the shipped, hash-verified configuration package.")
 
     @property
     def tutor_turns_route_enabled(self) -> bool:
@@ -421,6 +453,10 @@ V1_PIPELINE_DEFAULT_ELSEWHERE = "shadow"
 # default_development and default_elsewhere, and the loader refuses a package whose values differ.
 MODEL_GATEWAY_DEFAULT_DEVELOPMENT = "shadow"
 MODEL_GATEWAY_DEFAULT_ELSEWHERE = "off"
+# The v3_queue defaults (PD-38). Configuration package v5 records them as flag_policy.v3_queue.default_development and
+# default_elsewhere, and the loader refuses a package whose values differ.
+V3_QUEUE_DEFAULT_DEVELOPMENT = "shadow"
+V3_QUEUE_DEFAULT_ELSEWHERE = "off"
 
 
 @lru_cache

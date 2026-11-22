@@ -636,3 +636,65 @@ export type ServiceHealth = {
   status: string;
   app: string;
 };
+
+// Phase 6 V3 reviewer console (docs/architecture/phase6-implementation-spec.md section 11): the API's reviewer views only.
+// A view holds claim text and public, quotable span text, span ids and a keyed digest: no learner identifier, vote,
+// severity, support share or priority.
+export type V3SpanView = {
+  span_id: string;
+  shown: boolean;
+  text: string | null;
+};
+
+export type V3ClaimView = {
+  claim_id: string;
+  text: string | null;
+  spans: V3SpanView[];
+};
+
+export type V3QueueItem = {
+  item_id: string;
+  subject: "claim" | "response";
+  record_kind: "delivery" | "shadow";
+  decision: "answer" | "abstain";
+  triggers: string[];
+  reasons: string[];
+  held: boolean;
+  state: "queued" | "claimed" | "adjudicated" | "applied";
+  review_round: number;
+  double_review: boolean;
+  reviewable: boolean;
+  enqueued_at: string;
+  age_s: number;
+  response_digest: string;
+  claims: V3ClaimView[];
+  final_gold_seq?: number | null;
+};
+
+export type V3ClaimLabel = {
+  claim_id: string;
+  verdict: "SUPPORTED" | "CONTRADICTED" | "NOT_ENOUGH_INFO";
+  ehmf_type: "A" | "B" | "C" | "D" | "E" | null;
+};
+
+export type V3ScanResult = {
+  from_seq: number;
+  to_seq: number;
+  records: number;
+  deliveries: number;
+  drawn_x6: number;
+  drawn_x5: number;
+  items_created: number;
+  items_updated: number;
+  model_changes: number;
+  unparsed: number;
+  done: boolean;
+};
+
+export type V3Metrics = {
+  escalation_share: { deliveries: number; escalated: number; share: string; max: string; above_max: boolean; counted: string[] };
+  queue: { open: number; claimed: number; age_p90_s: number | null; age_max_s: number | null; slo_s: number; above_slo: boolean };
+  draws: { considered: number; x6: number; x5: number; x6_rate: string };
+  double_review: { pairs: number; agreeing: number; agreement: string };
+  gold: { rows: number; head_seq: number; claims_labelled: number; dawid_skene_minimum: number };
+};

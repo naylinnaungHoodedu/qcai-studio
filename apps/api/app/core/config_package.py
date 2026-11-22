@@ -13,13 +13,17 @@ two_pass_tutor flag policy (phase4_exit_passed). Version 3 (Phase 4) copies ever
 (LedgerEntryV2) and adds the V1 checks (`v1`): rule ids and their hash, the lexicon, every V1 threshold and band
 (provisional, Q-22), the checker hosting (none, D-21), the misconception library (v0, empty, Q-14), the D-20 interim
 rule, the quiz-key disclosure rule (PD-21), the adversarial fixture set's hash and the plan L stop conditions; and the
-v1_pipeline flag policy. Version 4 (Phase 5, apps/api/app/config_package/v4.json, the shipped package) copies every v3
-block, pins five more schemas (LedgerEntryV3 and the four gateway request and verdict contracts) and adds the model
-gateway (`gateway`: the adapter registry per environment, the pinning rule, the D-23 egress opt-in, budgets, the
-evidential cache, the payload policy, the stop guards and the retired settings), the V2 panel (`v2`: families, tiers,
-the voting matrix, correction, degraded modes, the alignment item), the tool contracts (`tools`) and the model_gateway
-flag policy. Next to each file, <name>.json.sha256 holds the sha256 of its canonical JSON, so a CRLF checkout hashes the
-same. v3.json, v2.json and v1.json stay readable for one release (DI-84, DI-63, DI-42).
+v1_pipeline flag policy. Version 4 (Phase 5, apps/api/app/config_package/v4.json) copies every v3 block, pins five more
+schemas (LedgerEntryV3 and the four gateway request and verdict contracts) and adds the model gateway (`gateway`: the
+adapter registry per environment, the pinning rule, the D-23 egress opt-in, budgets, the evidential cache, the payload
+policy, the stop guards and the retired settings), the V2 panel (`v2`: families, tiers, the voting matrix, correction,
+degraded modes, the alignment item), the tool contracts (`tools`) and the model_gateway flag policy. Version 5 (Phase 6,
+apps/api/app/config_package/v5.json, the shipped package) copies every v4 block and adds the V3 audit (`v3`: the trigger
+registry x-triggers-v1, the queue priority and its EHMF weights, the seeded audit draw, the adjudication workflow, the
+gold store, the critical-claim registry per environment, the queue-age SLO and the stop, the residual statistic, the
+reviewer gate and the two pinned V3 schemas), the v3_queue flag policy and the D-08, D-14 and D-18 owner decisions.
+Next to each file, <name>.json.sha256 holds the sha256 of its canonical JSON, so a CRLF checkout hashes the same.
+v4.json, v3.json, v2.json and v1.json stay readable for one release (DI-100, DI-84, DI-63, DI-42).
 
 Start-up loads and validates it before any database work. A structural error always stops start-up; a hash
 mismatch stops a governed build and is a logged warning in development. The loader never opens the calibration
@@ -30,6 +34,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from fractions import Fraction
 import hashlib
 import json
 import logging
@@ -45,15 +50,18 @@ from app.core.config import (
     TWO_PASS_DEFAULT_ELSEWHERE,
     V1_PIPELINE_DEFAULT_DEVELOPMENT,
     V1_PIPELINE_DEFAULT_ELSEWHERE,
+    V3_QUEUE_DEFAULT_DEVELOPMENT,
+    V3_QUEUE_DEFAULT_ELSEWHERE,
     Settings,
 )
 from app.core.structured_logging import FIELDS
 
 LOGGER = logging.getLogger("qcai.config_package")
 PACKAGE_DIRECTORY = Path(__file__).resolve().parents[1] / "config_package"
-DEFAULT_PACKAGE_PATH = PACKAGE_DIRECTORY / "v4.json"
-# Readable for one release after the Phase 5 merge (DI-84), the Phase 4 merge (DI-63) and the Phase 3 merge (DI-42); CI
-# checks each with config_package.py --check --path.
+DEFAULT_PACKAGE_PATH = PACKAGE_DIRECTORY / "v5.json"
+# Readable for one release after the Phase 6 merge (DI-100), the Phase 5 merge (DI-84), the Phase 4 merge (DI-63) and
+# the Phase 3 merge (DI-42); CI checks each with config_package.py --check --path.
+V4_PACKAGE_PATH = PACKAGE_DIRECTORY / "v4.json"
 V3_PACKAGE_PATH = PACKAGE_DIRECTORY / "v3.json"
 V2_PACKAGE_PATH = PACKAGE_DIRECTORY / "v2.json"
 V1_PACKAGE_PATH = PACKAGE_DIRECTORY / "v1.json"
@@ -239,6 +247,9 @@ class FlagPolicy:
     # Package v4: MODEL_GATEWAY=on is refused outside development while this is false (plan Phase 5 G, P).
     phase5_exit_passed: bool = False
     phase5_exit_evidence: str | None = None
+    # Package v5: V3_QUEUE=on is refused outside development while this is false (plan Phase 6 L, P).
+    phase6_exit_passed: bool = False
+    phase6_exit_evidence: str | None = None
 
 
 @dataclass(frozen=True)
@@ -358,6 +369,8 @@ class ConfigPackage:
     gateway: "GatewayParams | None" = None
     v2: "V2Params | None" = None
     tools: "ToolParams | None" = None
+    # Package v5 (Phase 6): the V3 audit and adjudication. None on a v1 to v4 package.
+    v3: "V3Params | None" = None
 
 
 def _require(condition: bool, message: str) -> None:
@@ -845,7 +858,27 @@ def _parse_flag_policy(raw: Mapping[str, Any], *, schema_version: int = 2) -> Fl
         _require(isinstance(evidence5, str) and bool(evidence5.strip()), "flag_policy.phase5_exit_passed true needs a phase5_exit_evidence string")
     else:
         _require(evidence5 is None or isinstance(evidence5, str), "flag_policy.phase5_exit_evidence must be null or a string")
-    return FlagPolicy(phase4_exit_passed=passed, phase4_exit_evidence=evidence, phase5_exit_passed=passed5, phase5_exit_evidence=evidence5)
+    if schema_version < 5:
+        return FlagPolicy(phase4_exit_passed=passed, phase4_exit_evidence=evidence, phase5_exit_passed=passed5, phase5_exit_evidence=evidence5)
+    _require(all(name in str(policy.get("authority")) for name in ("PD-38", "DI-98")),
+             "flag_policy.authority must name PD-38 (DI-98): it holds the v3_queue defaults")
+    queue = _mapping(policy, "v3_queue")
+    _require(queue.get("values") == ["off", "shadow", "on"], "flag_policy.v3_queue.values must be [off, shadow, on]")
+    _require(queue.get("default_development") == V3_QUEUE_DEFAULT_DEVELOPMENT,
+             f"flag_policy.v3_queue.default_development must be the code's default ({V3_QUEUE_DEFAULT_DEVELOPMENT!r})")
+    _require(queue.get("default_elsewhere") == V3_QUEUE_DEFAULT_ELSEWHERE,
+             f"flag_policy.v3_queue.default_elsewhere must be the code's default ({V3_QUEUE_DEFAULT_ELSEWHERE!r})")
+    _require(queue.get("on_requires") == "phase6_exit_passed", "flag_policy.v3_queue.on_requires must be 'phase6_exit_passed'")
+    _require(queue.get("disable") == "releases_nothing", "flag_policy.v3_queue.disable must be 'releases_nothing' (plan Phase 6 L)")
+    passed6 = policy.get("phase6_exit_passed")
+    _require(isinstance(passed6, bool), "flag_policy.phase6_exit_passed must be a boolean")
+    evidence6 = policy.get("phase6_exit_evidence")
+    if passed6:
+        _require(isinstance(evidence6, str) and bool(evidence6.strip()), "flag_policy.phase6_exit_passed true needs a phase6_exit_evidence string")
+    else:
+        _require(evidence6 is None or isinstance(evidence6, str), "flag_policy.phase6_exit_evidence must be null or a string")
+    return FlagPolicy(phase4_exit_passed=passed, phase4_exit_evidence=evidence, phase5_exit_passed=passed5, phase5_exit_evidence=evidence5,
+                      phase6_exit_passed=passed6, phase6_exit_evidence=evidence6)
 
 
 # ------------------------------------------------------------------------------------------------ package v4 (Phase 5)
@@ -1169,13 +1202,256 @@ def _parse_tools(raw: Mapping[str, Any]) -> ToolParams:
                       path=_relative_path(tools.get("path"), "tools.path"), sha256=_hex64(tools, "sha256"))
 
 
+# ------------------------------------------------------------------------------------------------ package v5 (Phase 6)
+
+V3_CRITICAL_REGISTRIES = ("development", "staging", "production", "default")
+V3_PROVISIONAL_BLOCKS = ("triggers", "priority", "draw", "workflow", "critical_claims", "slo", "reviewers")
+V3_BLIND_TO = ("finals", "other_rounds", "votes", "objection_types", "support_share", "severity", "priority")
+V3_RESIDUAL = {"statistic": "wilson95_upper", "population": "x6_audited_answer_deliveries", "period": "utc_month", "report_only": True}
+V3_OWNER_DECISIONS = ("D-06", "D-08", "D-14", "D-18", "D-25")
+V3_SEED = r"^[a-z0-9][a-z0-9-]{0,63}$"
+
+
+@dataclass(frozen=True)
+class V3Params:
+    """Package v5 v3 (Phase 6 spec 5.1, 5.2): the V3 audit's parameters, provisional (PD-32 to PD-39, DI-98). Rates and
+    weights are exact Fractions, so no float takes part in a draw or an ordering."""
+
+    version: str
+    trigger_registry_version: str
+    trigger_rules: Mapping[str, str]
+    counted: tuple[str, ...]
+    queue_reasons: tuple[str, ...]
+    x1_tier: int
+    x2_types: tuple[str, ...]
+    x5_rate: Fraction
+    x5_window_deliveries: int
+    severity: Mapping[str, Fraction]
+    priority_rule: str
+    exposure_rule: str
+    claim_set_key_rule: str
+    k_rule: str
+    tie_break: tuple[str, ...]
+    draw_rule: str
+    draw_seed: str
+    draw_rate: Fraction
+    population: tuple[str, ...]
+    lease_s: int
+    double_review_rate: Fraction
+    max_rounds: int
+    gold_chain: str
+    gold_schema: str
+    gold_record_hash_rule: str
+    critical_registries: Mapping[str, tuple[str, ...]]
+    critical_fixture: str
+    queue_age_slo_s: int
+    stop_measure: str
+    stop_window_s: int
+    stop_sample_s: int
+    stop_refresh_s: int
+    stop_tier1: str
+    escalation_share_max: Fraction
+    window_days: int
+    reviewer_pool: str
+    schemas: Mapping[str, SchemaPin]
+
+    def critical_registry_for(self, environment: str) -> tuple[str, ...]:
+        """The critical-claim registry of an environment: its own when the package names it, else default."""
+        name = environment.lower()
+        return tuple(self.critical_registries.get(name, self.critical_registries["default"]))
+
+
+def _fraction(raw: Mapping[str, Any], key: str) -> Fraction:
+    value = _mapping(raw, key)
+    numerator, denominator = value.get("numerator"), value.get("denominator")
+    _require(all(isinstance(item, int) and not isinstance(item, bool) for item in (numerator, denominator)) and 0 <= numerator <= denominator
+             and denominator > 0, f"'{key}' must hold integers with 0 <= numerator <= denominator")
+    return Fraction(numerator, denominator)
+
+
+def _parse_v3(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], v2: "V2Params | None") -> V3Params:
+    """Package v5 v3 (Phase 6 spec 5.2). Every refusal is structural: a package that names other trigger rules, weights,
+    rates or a non-empty registry outside development never loads."""
+    from app.services.tutor_pipeline.contracts import CLAIM_ID
+    from app.services.v3.contracts import V3_SCHEMA_MODELS
+    from app.services.v3.rules import (
+        CLAIM_SET_KEY_RULE,
+        DRAW_RULE,
+        EXPOSURE_RULE,
+        GOLD_CHAIN,
+        GOLD_RECORD_HASH_RULE,
+        GOLD_SCHEMA,
+        K_RULE,
+        MAX_ROUNDS,
+        PLAN_SEVERITY,
+        PRIORITY_RULE,
+        QUEUE_REASONS,
+        REVIEWER_ROLE,
+        TIE_BREAK,
+        TRIGGER_REGISTRY_VERSION,
+        TRIGGER_RULES,
+        V3_COUNTED,
+        V3_VERSION,
+        WORKFLOW_STATES,
+        X2_TYPES,
+    )
+
+    for name in V3_OWNER_DECISIONS:
+        _require(isinstance(decisions.get(name), dict), f"owner_decisions.{name} must be an object in package v5")
+    d06_open = _bool_state(decisions, "D-06", ("open",))
+    d18_open = _bool_state(decisions, "D-18", ("open",))
+    d25_open = _bool_state(decisions, "D-25", ("open",))
+    v3 = _mapping(raw, "v3")
+    _require(v3.get("provisional") is True, "v3 must be marked provisional: true (PD-32 to PD-39; DI-98)")
+    for name in V3_PROVISIONAL_BLOCKS:
+        _require(_mapping(v3, name).get("provisional") is True, f"v3.{name} must be marked provisional: true")
+    _require(v3.get("version") == V3_VERSION, f"v3.version must be '{V3_VERSION}'")
+
+    triggers = _mapping(v3, "triggers")
+    _require(triggers.get("version") == TRIGGER_REGISTRY_VERSION and triggers.get("rules") == TRIGGER_RULES,
+             f"v3.triggers must be the code's trigger registry {TRIGGER_REGISTRY_VERSION} and its rules")
+    x1 = _mapping(triggers, "x1")
+    _require(x1 == {"tier": 1, "min_objections": 1, "withholds": True, "revision": "never", "hold": "sticky_for_the_response"},
+             "v3.triggers.x1 must be tier 1, min_objections 1, withholds true, revision never, hold sticky_for_the_response (AC-6-1)")
+    _require(_mapping(triggers, "x2").get("ehmf_types") == list(X2_TYPES), "v3.triggers.x2.ehmf_types must be [A, B] (plan task 1 \"Type A/B\")")
+    _require(_mapping(triggers, "x4").get("margin_source") == "v1.v1_5.x4_margin", "v3.triggers.x4.margin_source must be v1.v1_5.x4_margin")
+    x5 = _mapping(triggers, "x5")
+    x5_rate = _fraction(x5, "audit_rate")
+    _require(x5_rate == Fraction(1, 5), "v3.triggers.x5.audit_rate must be 1/5 (plan task 1 \"audit 20%\")")
+    window = _integer_in(x5, "window_deliveries", 1, 1_000_000)
+    _require(x5.get("sources") == ["cusum_alarm", "model_change"], "v3.triggers.x5.sources must be [cusum_alarm, model_change]")
+    counted = tuple(triggers.get("counted") or ())
+    if d06_open:
+        _require(counted == V3_COUNTED, "v3.triggers.counted must be X1-X4 while D-06 is open (plan 15.3; PD-37)")
+    _require(set(counted) <= set(TRIGGER_RULES), "v3.triggers.counted names a trigger the registry does not hold")
+    _require(tuple(triggers.get("queue_reasons") or ()) == QUEUE_REASONS, "v3.triggers.queue_reasons must be the code's queue reasons")
+
+    priority = _mapping(v3, "priority")
+    for key, code in (("rule", PRIORITY_RULE), ("exposure_rule", EXPOSURE_RULE), ("claim_set_key_rule", CLAIM_SET_KEY_RULE), ("k_rule", K_RULE)):
+        _require(priority.get(key) == code, f"v3.priority.{key} must be '{code}'")
+    weights = _mapping(priority, "severity")
+    _require(set(weights) == {*PLAN_SEVERITY, "unknown", "disclosed_conflict"},
+             "v3.priority.severity must name A-E, unknown and disclosed_conflict")
+    severity: dict[str, Fraction] = {}
+    for key, value in weights.items():
+        _require(isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 1, f"v3.priority.severity.{key} must be in [0, 1]")
+        severity[key] = Fraction(str(value))
+    if d06_open:
+        _require(all(severity[key] == Fraction(value) for key, value in PLAN_SEVERITY.items()),
+                 "v3.priority.severity must hold the plan's 6.3 weights while D-06 is open (PD-34)")
+        _require(severity["disclosed_conflict"] == 0, "v3.priority.severity.disclosed_conflict must be 0 while D-06 is open (plan Phase 7 A)")
+    _require(tuple(priority.get("tie_break") or ()) == TIE_BREAK, "v3.priority.tie_break must be [enqueued_at, item_id]")
+
+    draw = _mapping(v3, "draw")
+    _require(draw.get("rule") == DRAW_RULE, f"v3.draw.rule must be '{DRAW_RULE}'")
+    seed = draw.get("seed")
+    _require(isinstance(seed, str) and re.fullmatch(V3_SEED, seed) is not None, f"v3.draw.seed must match {V3_SEED}")
+    draw_rate = _fraction(draw, "rate")
+    _require(draw_rate == Fraction(1, 20), "v3.draw.rate must be 1/20 (plan 6.3 \"X6 = 5%\")")
+    _require(draw.get("population") == ["delivered", "legacy"], "v3.draw.population must be [delivered, legacy]")
+
+    workflow = _mapping(v3, "workflow")
+    _require(tuple(workflow.get("states") or ()) == WORKFLOW_STATES, "v3.workflow.states must be queued, claimed, adjudicated, applied")
+    lease_s = _integer_in(workflow, "lease_s", 60, 86400)
+    double = _mapping(workflow, "double_review")
+    double_rate = _fraction(double, "rate")
+    if d06_open:
+        _require(double_rate == Fraction(1, 10), "v3.workflow.double_review.rate must be 1/10 while D-06 is open (plan task 3; PD-36)")
+    _require(double.get("rule") == DRAW_RULE, f"v3.workflow.double_review.rule must be '{DRAW_RULE}'")
+    _require(workflow.get("max_rounds") == MAX_ROUNDS, f"v3.workflow.max_rounds must be {MAX_ROUNDS}")
+    for key, value in (("self_review", "refused"), ("apply_by", "another_reviewer"), ("independence", "user_keyed_round_records"),
+                       ("unreviewable", "stays_queued"), ("applies_to_ledger", False), ("releases_withheld", False),
+                       ("recalibration", "phase7_change_control")):
+        _require(workflow.get(key) == value, f"v3.workflow.{key} must be {value!r} (PD-36)")
+    blind = workflow.get("blind_to")
+    _require(isinstance(blind, list) and set(V3_BLIND_TO) <= set(blind), f"v3.workflow.blind_to must name {', '.join(V3_BLIND_TO)}")
+
+    gold = _mapping(v3, "gold_store")
+    _require(gold.get("chain") == GOLD_CHAIN and gold.get("schema") == GOLD_SCHEMA and gold.get("record_hash_rule") == GOLD_RECORD_HASH_RULE,
+             "v3.gold_store must name the code's chain, schema and record-hash rule")
+    _require(gold.get("append_only") is True and gold.get("restore") == "none", "v3.gold_store is append_only with restore none")
+
+    critical = _mapping(v3, "critical_claims")
+    registries_raw = _mapping(critical, "registries")
+    _require(tuple(sorted(registries_raw)) == tuple(sorted(V3_CRITICAL_REGISTRIES)),
+             f"v3.critical_claims.registries must name {', '.join(V3_CRITICAL_REGISTRIES)}")
+    registries: dict[str, tuple[str, ...]] = {}
+    for name in V3_CRITICAL_REGISTRIES:
+        registry = _mapping(registries_raw, name)
+        entries = registry.get("claims")
+        _require(isinstance(entries, list), f"v3.critical_claims.registries.{name}.claims must be a list")
+        ids = []
+        for entry in entries:
+            _require(isinstance(entry, dict) and isinstance(entry.get("claim_id"), str) and re.fullmatch(CLAIM_ID, entry["claim_id"]) is not None,
+                     f"v3.critical_claims.registries.{name}: every entry names a claim id")
+            index = entry.get("query_index")
+            _require(isinstance(index, int) and not isinstance(index, bool) and index >= 0,
+                     f"v3.critical_claims.registries.{name}: every entry names its fixture query_index")
+            ids.append(entry["claim_id"])
+        _require(len(ids) == len(set(ids)), f"v3.critical_claims.registries.{name} lists a claim twice")
+        if name != "development" and d25_open:
+            _require(not ids, f"v3.critical_claims.registries.{name} must be empty while D-25 is open (PD-33)")
+        if name == "development" and ids:
+            _require(registry.get("synthetic") is True, "v3.critical_claims.registries.development must be marked synthetic: true (PD-33)")
+        registries[name] = tuple(ids)
+    fixture = _relative_path(critical.get("fixture"), "v3.critical_claims.fixture")
+    if v2 is not None:
+        _require(not v2.critical_registry, "v2.correction.critical_registry must be empty in package v5: v3.critical_claims supersedes it")
+
+    slo = _mapping(v3, "slo")
+    queue_age_slo_s = _integer_in(slo, "queue_age_slo_s", 3600, 2_592_000)
+    _require(slo.get("stop_measure") == "oldest_open_item_age" and slo.get("alert_measure") == "queue_age_p90",
+             "v3.slo.stop_measure must be oldest_open_item_age and alert_measure queue_age_p90 (PD-37)")
+    stop_window_s = _integer_in(slo, "stop_window_s", 1, 10**9)
+    _require(stop_window_s == 172800, "v3.slo.stop_window_s must be 172800 (plan Phase 6 L \"for two days\")")
+    stop_sample_s = _integer_in(slo, "stop_sample_s", 60, 86400)
+    _require(stop_window_s % stop_sample_s == 0, "v3.slo.stop_sample_s must divide the stop window")
+    _require(slo.get("stop_tier1") == "pre_verified_only", "v3.slo.stop_tier1 must be pre_verified_only (plan Phase 6 L)")
+    stop_refresh_s = _integer_in(slo, "stop_refresh_s", 1, 3600)
+    _require(slo.get("unreadable") == "stop", "v3.slo.unreadable must be 'stop'")
+    share = _fraction(slo, "escalation_share_max")
+    _require(share == Fraction(1, 10), "v3.slo.escalation_share_max must be 1/10 (plan Phase 6 I \"V-3 <= 10%\")")
+    window_days = _integer_in(slo, "window_days", 1, 90)
+    _require(slo.get("report_only") is True, "v3.slo.report_only must be true (plan 13.7)")
+
+    residual = _mapping(v3, "residual")
+    _require(dict(residual) == V3_RESIDUAL, "v3.residual must be the Wilson 95% upper bound over X6-audited answer deliveries per UTC month")
+
+    reviewers = _mapping(v3, "reviewers")
+    _require(reviewers.get("role") == REVIEWER_ROLE, f"v3.reviewers.role must be '{REVIEWER_ROLE}'")
+    _require(reviewers.get("flag_intake") == "development_only", "v3.reviewers.flag_intake must be development_only while the D-05 freeze holds")
+    pool = reviewers.get("pool")
+    _require(isinstance(pool, str) and bool(pool), "v3.reviewers.pool must be a string")
+    if d18_open:
+        _require(pool == "unstaffed" and reviewers.get("outside_development") == "refused_while_d18_open",
+                 "v3.reviewers.pool must be unstaffed and outside_development refused_while_d18_open while D-18 is open (PD-38)")
+
+    schemas_raw = _mapping(v3, "schemas")
+    _require(set(schemas_raw) == set(V3_SCHEMA_MODELS), f"v3.schemas must name exactly {', '.join(sorted(V3_SCHEMA_MODELS))}")
+    schemas = {}
+    for name in sorted(V3_SCHEMA_MODELS):
+        pin = _mapping(schemas_raw, name)
+        schemas[name] = SchemaPin(version=_text(pin, "version"), path=_schema_path(pin.get("path"), name), sha256=_hex64(pin, "sha256"))
+    return V3Params(
+        version=V3_VERSION, trigger_registry_version=TRIGGER_REGISTRY_VERSION, trigger_rules=dict(TRIGGER_RULES), counted=counted,
+        queue_reasons=QUEUE_REASONS, x1_tier=1, x2_types=X2_TYPES, x5_rate=x5_rate, x5_window_deliveries=window, severity=severity,
+        priority_rule=PRIORITY_RULE, exposure_rule=EXPOSURE_RULE, claim_set_key_rule=CLAIM_SET_KEY_RULE, k_rule=K_RULE, tie_break=TIE_BREAK,
+        draw_rule=DRAW_RULE, draw_seed=seed, draw_rate=draw_rate, population=("delivered", "legacy"), lease_s=lease_s,
+        double_review_rate=double_rate, max_rounds=MAX_ROUNDS, gold_chain=GOLD_CHAIN, gold_schema=GOLD_SCHEMA,
+        gold_record_hash_rule=GOLD_RECORD_HASH_RULE, critical_registries=registries, critical_fixture=fixture,
+        queue_age_slo_s=queue_age_slo_s, stop_measure="oldest_open_item_age", stop_window_s=stop_window_s, stop_sample_s=stop_sample_s,
+        stop_refresh_s=stop_refresh_s, stop_tier1="pre_verified_only", escalation_share_max=share, window_days=window_days,
+        reviewer_pool=pool, schemas=schemas,
+    )
+
+
 
 
 def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bool) -> ConfigPackage:
     _require(isinstance(raw, dict), "the file must hold a JSON object")
     _require(raw.get("package") == PACKAGE_NAME, f"'package' must be '{PACKAGE_NAME}'")
     schema_version = raw.get("schema_version")
-    _require(schema_version in (1, 2, 3, 4) and not isinstance(schema_version, bool), "'schema_version' must be 1, 2, 3 or 4")
+    _require(schema_version in (1, 2, 3, 4, 5) and not isinstance(schema_version, bool), "'schema_version' must be 1, 2, 3, 4 or 5")
     package_version = _text(raw, "package_version")
 
     identity = _mapping(raw, "span_identity")
@@ -1292,6 +1568,7 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
     gateway_params: GatewayParams | None = None
     v2_params: V2Params | None = None
     tool_params: ToolParams | None = None
+    v3_params: V3Params | None = None
     if schema_version >= 2:
         supersedes = _mapping(raw, "supersedes")
         _text(supersedes, "package_version")
@@ -1306,6 +1583,8 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
             gateway_params = _parse_gateway(raw, decisions=decisions, tutor=tutor_pipeline)
             v2_params = _parse_v2(raw, decisions=decisions, gateway=gateway_params)
             tool_params = _parse_tools(raw)
+        if schema_version >= 5:
+            v3_params = _parse_v3(raw, decisions=decisions, v2=v2_params)
         d12 = decisions.get("D-12")
         _require(isinstance(d12, dict), "owner_decisions.D-12 must be an object in package v2")
         if d12.get("state") == "open":
@@ -1352,6 +1631,7 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
         gateway=gateway_params,
         v2=v2_params,
         tools=tool_params,
+        v3=v3_params,
     )
 
 
