@@ -67,9 +67,9 @@ def test_v1_5_applies_the_configured_x4_margin_whatever_margin_the_gate_flags_wi
     assert check_v1_5(_p1_sufficiency(P1_FLOOR + 2.0), x4_margin=1.5).outcome == "pass"
     raw = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
     raw["v1"]["v1_5"]["x4_margin"] = {"bm25f-v1": 1.0, "p1-floor": 1.5}
-    path = tmp_path / "v3.json"
+    path = tmp_path / DEFAULT_PACKAGE_PATH.name
     path.write_text(json.dumps(raw), encoding="utf-8")
-    (tmp_path / "v3.json.sha256").write_text(canonical_sha256(raw) + "\n", encoding="utf-8")
+    (tmp_path / (DEFAULT_PACKAGE_PATH.name + ".sha256")).write_text(canonical_sha256(raw) + "\n", encoding="utf-8")
     owner = load_config_package(path, governed=False)
     assert dict(owner.v1.x4_margin) == {"bm25f-v1": 1.0, "p1-floor": 1.5} and owner.abstention.margin == MARGIN
     assert x4_margin(owner, "p1-floor") == 1.5

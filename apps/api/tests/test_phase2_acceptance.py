@@ -1155,9 +1155,11 @@ class _StubEmbeddings:
         return [0.0]
 
 
-def _semantic_engine(store: CourseStore, *, enabled: bool, extra: int = 0) -> RetrievalEngine:
+def _semantic_engine(store: CourseStore, *, enabled: bool, extra: int = 0, opted_in: bool = True) -> RetrievalEngine:
+    # Phase 5 (D-23, PD-22): the embedding egress also needs the environment's opt-in, openai-embeddings.
     settings = Settings(semantic_retrieval_enabled=enabled, openai_api_key="test-openai-key", pinecone_api_key="test-pinecone-key",
-                        pinecone_index="test-index", retrieval_gate=store.gate)
+                        pinecone_index="test-index", retrieval_gate=store.gate,
+                        model_egress_providers=["openai-embeddings"] if opted_in else [])
     engine = RetrievalEngine(store, settings)
     engine._semantic_backend.__dict__["_index"] = _StubIndex(extra=extra)
     engine._semantic_backend.__dict__["_embeddings"] = _StubEmbeddings()
@@ -1169,6 +1171,10 @@ def test_plan_h_the_semantic_backend_is_off_by_default_and_needs_span_ids():
     off = _semantic_engine(store, enabled=False)
     assert off.semantic_enabled is False and off._semantic_backend.enabled is False and off.sync_semantic_index() is False
     assert off.search("QUBO logistics").mode == "lexical"
+
+    # Enabled, but without the D-23 opt-in, the backend stays off (Phase 5 spec conflict 10).
+    unopted = _semantic_engine(store, enabled=True, opted_in=False)
+    assert unopted._semantic_backend.enabled is False and unopted.sync_semantic_index() is False
 
     on = _semantic_engine(store, enabled=True)
     assert on.semantic_enabled is False  # not aligned until synced

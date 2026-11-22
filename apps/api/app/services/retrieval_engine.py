@@ -70,8 +70,13 @@ class PineconeSemanticBackend:
 
     @property
     def enabled(self) -> bool:
+        # D-23 (PD-22): the embedding egress also needs the environment's opt-in, openai-embeddings in
+        # MODEL_EGRESS_PROVIDERS (Phase 5 spec conflict 10); moving it behind the gateway is DI-77.
+        from app.gateway.egress import egress_allowed
+
         return bool(
             self.settings.semantic_retrieval_enabled
+            and egress_allowed(self.settings, "openai-embeddings")
             and Pinecone
             and self.settings.openai_api_key
             and self.settings.openai_embedding_model

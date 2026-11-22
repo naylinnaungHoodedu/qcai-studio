@@ -7,7 +7,7 @@ A run ends in exactly one of three types:
                no consult path.
   V1Abstained  V1.5 below the floor, no envelope, no claims, no bound claim, the checker unavailable, a readability
                band never met, the budget: not a hard fail, and no consult path either.
-  V1Passed     a rendering passed every check of its candidate. Only this type can reach a V2 hook (consult_v2), and
+  V1Passed     a rendering passed every check of its candidate. Only this type can reach a V2 hook (v2_outcome), and
                V1Passed refuses to exist if its accepted generation attempt or its passing render attempt holds a
                hard_fail or an abstain; the one exemption is V1.2's claim-scoped drop of a proposed claim that is not
                a locked claim (the drop is final for that proposal, and the candidate's other claims go on).
@@ -15,10 +15,12 @@ A regeneration is a new candidate that every check judges from the start; no lat
 hard-failed candidate (Phase 4 spec R-d).
 
 Per locked claim of a V1Passed, final is deliver iff the passing rendering shows it and it has no V1.3 flag, no V1.8
-flag, no withheld V1.7 conflict and was not left out for V1.6; otherwise withhold. Before Phase 5 there is no V2, so
-D-20's interim text applies (PD-13): every flagged claim is withheld, and the response's replacement is the D-19
-contained answer the learner received (extractive_d19, or abstention), "unknown" when no legacy decision exists (replay
-and fixture runs). No "under review" label exists. A V1HardFail or V1Abstained abstains on every claim. Whatever the
+flag, no withheld V1.7 conflict and was not left out for V1.6; otherwise withhold. While no V2 vote decides
+(MODEL_GATEWAY off, the default outside development, or shadow, or a panel in ZERO) D-20's interim text applies
+(PD-13): every flagged claim is withheld, and the response's replacement is the D-19 contained answer the learner
+received (extractive_d19, or abstention), "unknown" when no legacy decision exists (replay and fixture runs). Under
+MODEL_GATEWAY=on V1.3 flags route to the V2 panel, whose record (v2_panel.aggregate.build_record_v2) decides those
+claims. No "under review" label exists. A V1HardFail or V1Abstained abstains on every claim. Whatever the
 decision, a claim V1.3 flagged or V1.8 matched in the accepted candidate carries a V3 queue intent, and every claim does
 when V1.5 marked the response (X4).
 """
@@ -113,17 +115,22 @@ V1Decision = V1HardFail | V1Abstained | V1Passed
 
 
 class V2Hook(Protocol):
-    """The Phase 5 V2 panel implements it; Phase 4 wires none."""
+    """The Phase 5 V2 track (v2_panel.track.V2Track) implements it; Phase 4 wired none."""
 
     def consult(self, passed: V1Passed) -> object: ...
 
 
-def consult_v2(hook: V2Hook | None, decision: V1Decision) -> V1Decision:
-    """Only a V1Passed reaches a hook (plan rule 1, invariant 3). Phase 4 returns `decision` unchanged whatever the
-    hook returns; Phase 5 defines how V2 verdicts apply to a V1Passed's flagged claims."""
+def v2_outcome(hook: V2Hook | None, decision: V1Decision) -> object | None:
+    """Only a V1Passed reaches a hook (plan rule 1, invariant 3); returns the hook's result, else None."""
     if hook is None or not isinstance(decision, V1Passed):
-        return decision
-    hook.consult(decision)
+        return None
+    return hook.consult(decision)
+
+
+def consult_v2(hook: V2Hook | None, decision: V1Decision) -> V1Decision:
+    """Only a V1Passed reaches a hook (plan rule 1, invariant 3). Returns `decision` unchanged whatever the hook
+    returns: the Phase 5 V2 track applies its verdicts in its own record (v2_panel.aggregate.build_record_v2)."""
+    v2_outcome(hook, decision)
     return decision
 
 
@@ -143,13 +150,14 @@ def _flagged(accepted: tuple[CheckResult, ...], check_id: str) -> frozenset[str]
     return frozenset(result.claim_id for result in accepted if result.check_id == check_id and result.outcome == "flag" and result.claim_id)
 
 
-def withheld_claim_ids(results: Iterable[CheckResult], disclosure: DisclosureBlock | None) -> frozenset[str]:
-    """The claims D-20 and 13.6 withhold before Phase 5: V1.3-flagged, V1.8-matched, and the claims of a withheld V1.7
-    conflict."""
+def withheld_claim_ids(results: Iterable[CheckResult], disclosure: DisclosureBlock | None, *, v1_3_routes_to_v2: bool = False) -> frozenset[str]:
+    """The claims D-20 and 13.6 withhold while no V2 vote decides: V1.3-flagged, V1.8-matched, and the claims of a
+    withheld V1.7 conflict. With v1_3_routes_to_v2 (MODEL_GATEWAY=on) V1.3 flags route to the V2 panel instead."""
     results = tuple(results)
     conflict = frozenset(claim_id for pair in disclosure.conflicts for claim_id in pair.claim_ids) \
         if disclosure is not None and disclosure.policy == "withhold" else frozenset()
-    return _flagged(results, "V1.3") | _flagged(results, "V1.8") | conflict
+    flagged = frozenset() if v1_3_routes_to_v2 else _flagged(results, "V1.3")
+    return flagged | _flagged(results, "V1.8") | conflict
 
 
 def passed_verdicts(

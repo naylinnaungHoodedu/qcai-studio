@@ -42,7 +42,7 @@ client = TestClient(app)
 
 
 def write_package(tmp_path: Path, edit) -> Path:
-    """A copy of the shipped package (DEFAULT_PACKAGE_PATH, package v3 since Phase 4) under its own name, with `edit`
+    """A copy of the shipped package (DEFAULT_PACKAGE_PATH, package v4 since Phase 5) under its own name, with `edit`
     applied, its sidecar rewritten and its schema files alongside."""
     payload = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
     edit(payload)
@@ -80,11 +80,15 @@ SETTING_RELAXATIONS = {
     # Review round 3 (spec 18.6 D5): an environment override of a PD-11 budget.
     "shadow_budget_overridden": {"two_pass_shadow_budget_ms": 1000},
     "ledger_append_budget_overridden": {"tutor_ledger_append_budget_ms": 1000},
+    # Phase 5: the V2 panel in shadow outside development, and a provider egress opt-in (D-23).
+    "model_gateway_shadow": {"model_gateway": "shadow"},
+    "model_egress_opt_in": {"model_egress_providers": ["openai-embeddings"]},
 }
 PACKAGE_RELAXATIONS = {"config_package_path_overridden": {"is_default_path": False}, "config_package_hash_unverified": {"hash_verified": False}}
 # Phase 4: a relaxation Settings refuse outside development before the Phase 4 exit (V1_PIPELINE=enforce). The alert
 # still names it, should a build ever run with it, so it has its own case (built without validation).
-REFUSED_RELAXATIONS = {"v1_pipeline_enforce": {"v1_pipeline": "enforce"}}
+# Phase 5: MODEL_GATEWAY=on, refused outside development before the Phase 5 exit (and without V1_PIPELINE=enforce).
+REFUSED_RELAXATIONS = {"v1_pipeline_enforce": {"v1_pipeline": "enforce"}, "model_gateway_on": {"model_gateway": "on"}}
 
 
 def _override_details(monkeypatch, settings: Settings, package=None) -> dict | None:

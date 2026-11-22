@@ -1,5 +1,6 @@
-"""Consistency of a configuration package of schema 2 or later (v2; v3, the shipped package since Phase 4) with the
-tutor pipeline code (Phase 3 spec 5.4, conflict 30; Phase 4 spec 5.3 for schema 3's ledger rules).
+"""Consistency of a configuration package of schema 2 or later (v2; v3; v4, the shipped package since Phase 5) with the
+tutor pipeline code (Phase 3 spec 5.4, conflict 30; Phase 4 spec 5.3 for schema 3's ledger rules; Phase 5 spec 5.3 for
+schema 4's).
 
 Always (start-up, tests, CI): each pinned schema file exists and its canonical sha256 equals its pin; the three
 prompt hashes the code computes equal the pinned values; every rule id and name the package records (sentence,
@@ -87,6 +88,7 @@ def _closed_everywhere(schema: Any, path: str = "$") -> list[str]:
 
 
 def model_schema(name: str) -> dict[str, Any]:
+    import app.gateway.contracts  # noqa: F401 - registers the gateway's request and verdict models (package v4)
     from app.services.tutor_pipeline.contracts import SCHEMA_MODELS
 
     return SCHEMA_MODELS[name].model_json_schema(mode="validation")
@@ -134,17 +136,19 @@ def check_tutor_pipeline_package(package: ConfigPackage, *, structural: bool) ->
     from app.services.claim_gate import SUBSET_CHECK_RULE
     from app.services.ledger import CHAIN, GENESIS_HASH, RECORD_HASH_RULE
     from app.services.tutor_pipeline.bind import BINDING_RULE
-    from app.services.tutor_pipeline.contracts import ENTRY_SCHEMAS, LedgerEntry, LedgerEntryV2
+    from app.services.tutor_pipeline.contracts import ENTRY_SCHEMAS, LedgerEntry, LedgerEntryV2, LedgerEntryV3
     from app.services.tutor_pipeline.retrieve import NEAR_MISS_RULE
     from app.services.tutor_pipeline.text import SENTENCE_RULE
 
-    # Package v3 (Phase 4 spec 5.3): the two-pass record is a ledger-entry-v2, and the package names every entry
-    # schema the ledger dispatches on.
-    entry_model = LedgerEntryV2 if package.schema_version >= 3 else LedgerEntry
+    # Package v3 (Phase 4 spec 5.3): the two-pass record is a ledger-entry-v2, and the package names every entry schema
+    # the ledger dispatches on; package v4 (Phase 5 spec 5.3): the newest record is a ledger-entry-v3, and v4 names
+    # every entry schema the code holds (v3 keeps naming the two it knew).
+    entry_model = LedgerEntryV3 if package.schema_version >= 4 else LedgerEntryV2 if package.schema_version >= 3 else LedgerEntry
     if package.schema_version >= 3:
         named = list(((package.raw.get("tutor_pipeline") or {}).get("ledger") or {}).get("entry_schemas") or [])
-        if named != sorted(ENTRY_SCHEMAS):
-            problems.append(f"tutor_pipeline.ledger.entry_schemas in the package ({', '.join(named)}) differ from the code's ({', '.join(sorted(ENTRY_SCHEMAS))})")
+        expected = sorted(ENTRY_SCHEMAS) if package.schema_version >= 4 else ["ledger-entry-v1", "ledger-entry-v2"]
+        if named != expected:
+            problems.append(f"tutor_pipeline.ledger.entry_schemas in the package ({', '.join(named)}) differ from the code's ({', '.join(expected)})")
     # The rule ids and names the package records must be the code's: a rule changed under its old id is a silent
     # change.
     rules = {

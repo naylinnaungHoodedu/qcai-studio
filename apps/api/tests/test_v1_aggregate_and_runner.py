@@ -162,9 +162,10 @@ def test_a_v1_track_overrun_logs_the_phase_3_budget_event_only_when_v1_is_the_re
 
 
 def test_shadow_and_enforce_records():
-    shadow = run(dev_pipeline(Settings(v1_pipeline="shadow")), MULTI_CLAIM, legacy_decision="answer").entry
-    enforce = run(dev_pipeline(Settings(v1_pipeline="enforce")), MULTI_CLAIM, legacy_decision="answer").entry
-    off = run(dev_pipeline(Settings(v1_pipeline="off")), MULTI_CLAIM, legacy_decision="answer").entry
+    # MODEL_GATEWAY off: the subject is V1's record per mode (Phase 5 spec 13.3; the v3 record is test_v2_ledger_records.py's).
+    shadow = run(dev_pipeline(Settings(v1_pipeline="shadow", model_gateway="off")), MULTI_CLAIM, legacy_decision="answer").entry
+    enforce = run(dev_pipeline(Settings(v1_pipeline="enforce", model_gateway="off")), MULTI_CLAIM, legacy_decision="answer").entry
+    off = run(dev_pipeline(Settings(v1_pipeline="off", model_gateway="off")), MULTI_CLAIM, legacy_decision="answer").entry
     assert (off.entry_schema, shadow.entry_schema, enforce.entry_schema) == ("ledger-entry-v1", "ledger-entry-v2", "ledger-entry-v2")
     assert shadow.verification.mode == "shadow" and shadow.verification.comparison.phase3_decision == shadow.decision == "answer"
     assert enforce.verification.mode == "enforce" and enforce.verification.comparison.phase3_decision is None
@@ -181,7 +182,7 @@ def test_a_v1_1_hard_failed_candidate_counts_its_claims_so_the_bound_claim_ratio
     forged = [(clean[0][0], ["span-" + "e" * 64]), *clean[1:]]
     entries = {}
     for mode in ("off", "shadow", "enforce"):
-        pipeline = dev_pipeline(Settings(v1_pipeline=mode), generator=ScriptedGenerator([forged]), checker=AlwaysSupportedChecker())
+        pipeline = dev_pipeline(Settings(v1_pipeline=mode, model_gateway="off"), generator=ScriptedGenerator([forged]), checker=AlwaysSupportedChecker())
         entries[mode] = run(pipeline, MULTI_CLAIM, legacy_decision="answer").entry
     for mode in ("off", "shadow"):
         counts = entries[mode].counts

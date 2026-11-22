@@ -9,12 +9,27 @@
         V1.9 envelope -> V1.4 (the Phase 3 subset check, through the pipeline's check_subset seam) -> V1.6 -> V1.9 band
         an attempt is accepted iff all four pass; a V1.6 failure re-renders with the socratic plan and leaves the keyed
         claims out (or abstains with keyed_answer_leak when nothing would be left); a band miss re-renders
-    aggregate (aggregate.py) -> consult_v2 (no hook before Phase 5) -> VerificationRecord
+    aggregate (aggregate.py) -> consult_v2 (an explicit V2 hook, the Phase 4 seam) -> VerificationRecord
+
+With the Phase 5 V2 track as its hook (v2_panel.track.V2Track; Phase 5 spec 4.13, 4.14) run() instead:
+    every candidate has its own run state (no earlier candidate's results reach accepted_results), and only a
+    V1Passed reaches the track (aggregate.v2_outcome; plan rule 1, invariant 3)
+    shadow  one V2 vote per candidate beside the Phase 4 decision, which decides every final
+    on      failing claims are corrected at most MAX_CORRECTION_CYCLES times (revised through the generator's optional
+            revise(), else re-verified unchanged, every pair a cache hit); a changed plan is a new candidate that every
+            V1 check judges from the start, with fresh state; still failing after two cycles, a claim abstains with
+            escalation X2. Then the final rendering of the deliverable claims (fresh post-render hook), and the
+            alignment item, whose Type E failure re-renders only (sharing the two cycles)
+    -> build_record_v2 -> VerificationRecordV2
+The generation-1 claim plan is read from and written to the evidential cache (v2_panel.cache) when a V2 track runs in
+enforce; a regeneration and a correction candidate bypass it, and a cached plan whose candidate hard-fails V1.9 or
+V1.1 is evicted. V1 latency is measured without the V2 time.
 
 The claims D-20 withholds (V1.3 flags, V1.8 matches, the claims of a withheld V1.7 conflict) are left out of the
 rendering when some claim is left to show; when every claim is withheld every claim is rendered, recorded and never
-deliverable. The track never writes the ledger and returns nothing to a learner: the pipeline records its
-VerificationRecord on the shadow ledger record (AC-3-6).
+deliverable. Under MODEL_GATEWAY=on V1.3 flags route to V2 and stay in the rendering. The track never writes the
+ledger and returns nothing to a learner: the pipeline records its verification record on the shadow ledger record
+(AC-3-6).
 """
 
 from __future__ import annotations
@@ -53,6 +68,7 @@ from app.services.v1_checks.aggregate import (
     consult_v2,
     labels_for,
     passed_verdicts,
+    v2_outcome,
     withheld_claim_ids,
 )
 from app.services.v1_checks.metrics import V1_METRICS
@@ -98,6 +114,8 @@ class V1Run:
     proposed: int = 0
     dropped: Counter = field(default_factory=Counter)
     scores: dict = field(default_factory=dict)
+    # The last V2 outcome (v2_panel.track.V2Outcome) when a V2 track ran, else None.
+    v2: Any = None
 
 
 class _RenderHook:
@@ -165,7 +183,7 @@ class _RenderHook:
 
 class V1Track:
     def __init__(self, pipeline: "TwoPassPipeline", *, checker=None, keyed_items=None, library=None, v2_hook=None,
-                 v1: "V1Params | None" = None, clock: Callable[[], float] = time.monotonic) -> None:
+                 v1: "V1Params | None" = None, clock: Callable[[], float] = time.monotonic, cache: Any = None) -> None:
         self.pipeline = pipeline
         self.v1 = v1 if v1 is not None else pipeline.v1_params
         if self.v1 is None:
@@ -175,6 +193,10 @@ class V1Track:
         self.library = library if library is not None else pipeline.misconceptions
         self.v2_hook = v2_hook
         self.clock = clock
+        # The evidential cache for the generation-1 claim plan (only with a V2 track in enforce; Phase 5 spec 4.15).
+        self.cache = cache
+        # Under MODEL_GATEWAY=on V1.3 flags route to V2, so the rendering keeps them (Phase 5 spec 4.16).
+        self.v1_3_routes_to_v2 = getattr(v2_hook, "is_v2_track", False) and getattr(v2_hook, "mode", None) == "on"
 
     def policy(self) -> V1Policy:
         return V1Policy(
@@ -233,6 +255,9 @@ class V1Track:
         mode: Literal["shadow", "enforce"],
         phase3_decision: str | None,
     ) -> V1Run:
+        if getattr(self.v2_hook, "is_v2_track", False):
+            return self._run_v2(ctx, bundle, envelope, envelope_reason=envelope_reason, first_raw=first_raw, budget_over=budget_over,
+                                mode=mode, phase3_decision=phase3_decision)
         started = time.perf_counter()
         state = _RunState(empty=self._lock((), bundle, ctx, has_plan=False))
         decision = self._decide(ctx, bundle, envelope, envelope_reason, first_raw, budget_over, state)
@@ -256,7 +281,8 @@ class V1Track:
             scores=dict(state.scores),
         )
 
-    def _decide(self, ctx, bundle, envelope, envelope_reason, first_raw, budget_over, state: "_RunState") -> V1Decision:
+    def _decide(self, ctx, bundle, envelope, envelope_reason, first_raw, budget_over, state: "_RunState", *,
+                regenerate: bool = True) -> V1Decision:
         v1 = self.v1
         pipeline = self.pipeline
         results = state.results
@@ -268,15 +294,21 @@ class V1Track:
             return V1Abstained(results=tuple(results), generation_attempts=0, render_attempts=0,
                                abstention_reason=envelope_reason or "no_quotable_evidence")
         stopwords = pipeline.package.retrieval.stopwords
-        attempts = 1 + v1.max_generation_regenerations
+        attempts = 1 + v1.max_generation_regenerations if regenerate else 1
         generation = 0
         for generation in range(1, attempts + 1):
             if generation > 1 and budget_over("generate"):
                 return V1Abstained(results=tuple(results), generation_attempts=generation - 1, render_attempts=0, abstention_reason="budget_exceeded")
             state.reset_candidate()
-            raw = first_raw if generation == 1 and first_raw is not _UNSET else self._propose(envelope)
+            cache_key, cached = self._cached_plan(envelope) if generation == 1 and first_raw is _UNSET and regenerate else (None, None)
+            raw = first_raw if generation == 1 and first_raw is not _UNSET else (cached if cached is not None else self._propose(envelope))
             schema, plan = check_v1_9_plan(raw, generator_ref=pipeline.generator.ref, attempt=generation)
             results.append(schema)
+            if cache_key is not None:
+                if plan is None and cached is not None:
+                    self.cache.evict("claim_plan", cache_key)
+                elif plan is not None and cached is None:
+                    self.cache.put("claim_plan", cache_key, plan)
             if plan is None:
                 if generation < attempts:
                     continue
@@ -294,6 +326,8 @@ class V1Track:
             resolution = check_v1_1(plan, bundle, resolver=pipeline.resolver, attempt=generation)
             results.append(resolution)
             if resolution.outcome == "hard_fail":
+                if cache_key is not None:
+                    self.cache.evict("claim_plan", cache_key)
                 if generation < attempts:
                     continue
                 # V1.1 judges the candidate whole, so none of its claims is bound: each is counted under
@@ -321,26 +355,42 @@ class V1Track:
             results.append(conflict)
             results.extend(check_v1_8(state.locked, self.library, attempt=generation))
             break
+        state.pre_render, state.generation = tuple(results), generation
         return self._render(ctx, state, generation, budget_over, stopwords)
 
-    def _render(self, ctx, state: "_RunState", generation: int, budget_over, stopwords) -> V1Decision:
+    def _cached_plan(self, envelope: EvidentialEnvelope) -> tuple[str | None, ClaimPlan | None]:
+        from app.services.v2_panel.cache import claim_plan_key, plan_cacheable
+
+        if self.cache is None or envelope is None or not plan_cacheable(self.pipeline.generator):
+            return None, None
+
+        key = claim_plan_key(envelope, self.pipeline.package, self.pipeline.generator.ref)
+        return key, self.cache.get("claim_plan", key)
+
+    def _render(self, ctx, state: "_RunState", generation: int, budget_over, stopwords, *, presentation: PresentationPlan | None = None,
+                omit_extra: frozenset[str] = frozenset()) -> V1Decision:
+        """Render the candidate's locked claims with a fresh post-render hook. The decision's results are the candidate's
+        pre-render results and this rendering's post-render results only (a re-render never mixes in an earlier one)."""
         from app.services.tutor_pipeline.pipeline import render_checked
 
         v1 = self.v1
         locked = state.locked
-        results = state.results
-        withheld = withheld_claim_ids(results, state.disclosure)
+        results = list(state.pre_render) if state.pre_render is not None else state.results
+        withheld = withheld_claim_ids(results, state.disclosure, v1_3_routes_to_v2=self.v1_3_routes_to_v2)
         claim_ids = {claim.claim_id for claim in locked.claims}
         omit = frozenset() if claim_ids <= withheld else frozenset(withheld & claim_ids)
+        if omit_extra:
+            omit = frozenset(omit | omit_extra) & frozenset(claim_ids)
         items = assessment_items(ctx.resolved.text, self.keyed_items, v1=v1, stopwords=stopwords)
         hook = _RenderHook(self, ctx, locked, items)
+        start_presentation = presentation or ctx.presentation
         rendered, attempts, reason = render_checked(
-            self.pipeline.renderer, locked, ctx.presentation, max_regenerations=v1.max_render_regenerations,
+            self.pipeline.renderer, locked, start_presentation, max_regenerations=v1.max_render_regenerations,
             over=lambda: budget_over("render"), post_render=hook, omit=omit,
         )
         results.extend(hook.results)
         if rendered is not None:
-            presentation = hook.accepted_presentation or ctx.presentation
+            presentation = hook.accepted_presentation or start_presentation
             verdicts, final, final_reason = passed_verdicts(
                 locked=locked, rendered=rendered, results=tuple(results), disclosure=state.disclosure,
                 keyed_omitted=hook.keyed_omitted, generation_attempts=generation, render_attempts=attempts,
@@ -353,6 +403,132 @@ class V1Track:
             return V1HardFail(results=tuple(results), failing=hook.last_failing, generation_attempts=generation, render_attempts=attempts,
                               abstention_reason=reason)
         return V1Abstained(results=tuple(results), generation_attempts=generation, render_attempts=attempts, abstention_reason=reason)
+
+    # ------------------------------------------------------------------------------------------------- V2
+
+    def _run_v2(self, ctx, bundle, envelope, *, envelope_reason, first_raw, budget_over, mode, phase3_decision) -> V1Run:
+        """The run with the Phase 5 V2 track as its hook (Phase 5 spec 4.13, 4.14)."""
+        from app.services.tutor_pipeline.contracts import V2Correction
+        from app.services.v2_panel.aggregate import build_record_v2
+        from app.services.v2_panel.metrics import V2_METRICS
+        from app.services.v2_panel.rules import MAX_CORRECTION_CYCLES
+
+        track = self.v2_hook
+        started = time.perf_counter()
+        state = _RunState(empty=self._lock((), bundle, ctx, has_plan=False))
+        decision = self._decide(ctx, bundle, envelope, envelope_reason, first_raw, budget_over, state)
+        outcome, cycles, corrections, exhausted = None, 0, [], frozenset()
+        while True:
+            track.cycle = cycles
+            outcome = v2_outcome(track, decision)
+            if outcome is None or outcome.mode == "shadow":
+                break
+            failing = outcome.failing()
+            if not failing:
+                break
+            if cycles == MAX_CORRECTION_CYCLES:
+                exhausted = frozenset(failing)
+                break
+            cycles += 1
+            correction_started = time.perf_counter()
+            plan, revised = self._correction_plan(decision, failing, outcome)
+            corrections.append(V2Correction(cycle=cycles, kind="revise", failed_claim_ids=tuple(sorted(failing)), revised_claim_ids=tuple(sorted(revised))))
+            if revised:
+                # A new candidate, judged by every V1 check from the start with fresh state (Phase 4 R-d); a hard fail
+                # or an abstention ends the loop with no further V2 call.
+                state = _RunState(empty=self._lock((), bundle, ctx, has_plan=False))
+                decision = self._decide(ctx, bundle, envelope, None, plan, budget_over, state, regenerate=False)
+            V2_METRICS.correction((time.perf_counter() - correction_started) * MS_PER_S)
+        alignment, alignment_failed, alignment_missing = None, False, False
+        if isinstance(decision, V1Passed) and outcome is not None and outcome.mode == "on":
+            decision, alignment, cycles, alignment_failed, alignment_missing = self._final_rendering(
+                ctx, state, decision, outcome, exhausted, cycles, corrections, budget_over)
+        passed = isinstance(decision, V1Passed)
+        record = build_record_v2(decision, mode=mode, policy=self.policy(), locked=state.locked, disclosure=state.disclosure,
+                                 phase3_decision=phase3_decision, legacy_decision=ctx.legacy_decision, track=track,
+                                 outcome=outcome if passed else None, cycles=cycles, corrections=tuple(corrections), exhausted=exhausted,
+                                 alignment=alignment, alignment_failed=alignment_failed, alignment_missing=alignment_missing)
+        latency_ms = max((time.perf_counter() - started) * MS_PER_S - track.latency_ms, 0.0)
+        self._observe(record, latency_ms, bundle, state.locked)
+        track.finish(record, passed=passed)
+        return V1Run(
+            decision=decision,
+            record=record,
+            plan=state.plan,
+            bind=state.binding,
+            locked=state.locked,
+            rendered=decision.rendered if passed else None,
+            presentation=decision.presentation if passed else ctx.presentation,
+            latency_ms=latency_ms,
+            proposed=state.proposed,
+            dropped=state.binding.dropped if state.binding is not None else Counter(state.unbound),
+            scores=dict(state.scores),
+            v2=outcome if passed else None,
+        )
+
+    def _correction_plan(self, decision: V1Passed, failing, outcome) -> tuple[ClaimPlan, list[str]]:
+        """The next candidate's claim plan: each failing claim revised against its cited spans when the generator can
+        revise (an optional revise(claim_text, span_texts, ehmf_type)), else unchanged; every other claim unchanged."""
+        from app.services.tutor_pipeline.contracts import ProposedClaim
+
+        generator = self.pipeline.generator
+        revise = getattr(generator, "revise", None)
+        registry = self.pipeline.store.span_registry
+        claims, revised = [], []
+        for claim in decision.locked.claims:
+            text = claim.text
+            if claim.claim_id in failing and callable(revise):
+                verdict = outcome.claims[claim.claim_id]
+                ehmf = next((vote.ehmf_type for vote in verdict.votes if vote.ehmf_type), "A")
+                spans = tuple(record.text for span_id in claim.span_ids if (record := registry.get(span_id)) is not None)
+                proposal = revise(claim.text, spans, ehmf)
+                if proposal and proposal != claim.text:
+                    text = proposal
+                    revised.append(claim.claim_id)
+            claims.append(ProposedClaim(text=text, span_ids=claim.span_ids))
+        return ClaimPlan(generator=generator.ref, claims=tuple(claims)), revised
+
+    def _final_rendering(self, ctx, state, decision: V1Passed, outcome, exhausted, cycles: int, corrections: list, budget_over):
+        """Mode on: render the deliverable claims once more when they differ from what V1's accepted rendering shows
+        (not a correction cycle), then the alignment item on it; a Type E failure re-renders only (Socratic, the same
+        omissions), sharing the cycles. Returns (decision, alignment, cycles, alignment_failed, alignment_missing)."""
+        from app.services.tutor_pipeline.contracts import V2Correction
+        from app.services.v1_checks.v1_6_keyed_answers import assessment_items as items_for
+        from app.services.v2_panel.aggregate import v1_excluded
+        from app.services.v2_panel.rules import MAX_CORRECTION_CYCLES
+
+        track = self.v2_hook
+        stopwords = self.pipeline.package.retrieval.stopwords
+        items = items_for(ctx.resolved.text, self.keyed_items, v1=self.v1, stopwords=stopwords)
+        excluded = v1_excluded(decision, items, self.v1)
+        deliverable = frozenset(claim_id for claim_id, verdict in outcome.claims.items() if verdict.outcome == "pass") - exhausted - excluded
+        if not deliverable:
+            return decision, None, cycles, False, False
+        omit_extra = frozenset(claim.claim_id for claim in decision.locked.claims) - deliverable
+
+        def shown(rendering) -> frozenset[str]:
+            return frozenset(segment.claim_id for segment in rendering.segments if segment.kind == "claim" and segment.claim_id)
+
+        if shown(decision.rendered) != deliverable:
+            rendered = self._render(ctx, state, state.generation, budget_over, stopwords, presentation=decision.presentation, omit_extra=omit_extra)
+            if not isinstance(rendered, V1Passed):
+                return rendered, None, cycles, False, False
+            decision = rendered
+        while True:
+            alignment = track.align(decision.rendered, decision.locked)
+            if alignment is None:
+                return decision, None, cycles, False, True
+            if alignment.outcome == "pass":
+                return decision, alignment, cycles, False, False
+            if cycles == MAX_CORRECTION_CYCLES:
+                return decision, alignment, cycles, True, False
+            cycles += 1
+            corrections.append(V2Correction(cycle=cycles, kind="re_render", failed_claim_ids=tuple(sorted(shown(decision.rendered)))))
+            socratic = PresentationPlan(plan_id=self.v1.socratic_plan, source=ctx.presentation.source)
+            rendered = self._render(ctx, state, state.generation, budget_over, stopwords, presentation=socratic, omit_extra=omit_extra)
+            if not isinstance(rendered, V1Passed):
+                return rendered, None, cycles, False, False
+            decision = rendered
 
     # ---------------------------------------------------------------------------------------------- observe
 
@@ -409,6 +585,9 @@ class _RunState:
     locked: LockedClaimSet | None = None
     disclosure: DisclosureBlock | None = None
     scores: dict = field(default_factory=dict)
+    # The accepted candidate's pre-render results and generation attempt, which every rendering of it starts from.
+    pre_render: tuple | None = None
+    generation: int = 0
 
     def __post_init__(self) -> None:
         self.locked = self.empty

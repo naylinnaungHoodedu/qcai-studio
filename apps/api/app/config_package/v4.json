@@ -1,0 +1,1250 @@
+{
+  "package": "qcai-configuration-package",
+  "package_version": "4.0.0",
+  "schema_version": 4,
+  "phase": "5",
+  "status": "provisional",
+  "created": "2026-11-21",
+  "supersedes": {
+    "package_version": "3.0.0",
+    "sha256": "116504d45d14b1048eeed5ccba0a62f16c92ccdb9b72618bd4ca65b97813a153",
+    "readable_until": "the release after the Phase 5 merge"
+  },
+  "span_identity": {
+    "scheme": "span-v2",
+    "id_inputs": [
+      "scheme",
+      "item_id",
+      "start",
+      "end",
+      "content_hash"
+    ],
+    "item_id_rule": "source_asset_id(filename, kind) | authored-curriculum",
+    "canonical_text": "sections-v1",
+    "section_separator": "\n\n\n",
+    "heading_separator": "\n\n",
+    "offset_unit": "unicode-code-point",
+    "splitter": {
+      "library": "langchain-text-splitters",
+      "version": "1.1.2",
+      "class": "RecursiveCharacterTextSplitter",
+      "chunk_size": 700,
+      "chunk_overlap": 120
+    },
+    "parser": {
+      "library": "python-docx",
+      "version": "1.2.0",
+      "function": "parse_docx_sections"
+    }
+  },
+  "corpus_version": {
+    "scheme": "corpus-version-v3",
+    "inputs": [
+      "item_id",
+      "version",
+      "sha256",
+      "span_scheme"
+    ],
+    "members": "built items (plan 11.1): public-plane, bound items the build admits; a governed build admits the authored item and the approved items, development every public-plane, bound item. Partial approval changes the version; a licence-field edit does not. The manifest records the governed value.",
+    "authority": "plan 11.1 (\"corpus_version MUST hash the sorted (item_id, item_version, sha256) of built items plus the span-scheme version\")"
+  },
+  "gates": {
+    "p1-floor": {
+      "version": "score-floor-p1-v1",
+      "floor": 6,
+      "authority": "P1-D-04",
+      "stopwords": "retrieval_p1.QUERY_STOPWORDS (178 words, frozen)",
+      "scope": "containment for the D-31 configuration; see Phase 2 spec conflict 29",
+      "recall_stop": "spec conflict 29, enforced: outside development, governed start-up and validate_corpus --check-recall-stop refuse a build that indexes document spans under this gate (plan Phase 2 L stop) unless ALLOW_P1_FLOOR_WITH_DOCUMENTS, which logs a config.override event"
+    },
+    "bm25f-v1": {
+      "see": "retrieval, abstention"
+    }
+  },
+  "retrieval": {
+    "algorithm": "bm25f-simple-v1",
+    "k1": 1.5,
+    "b": 0.75,
+    "title_weight": 2.0,
+    "idf": "ln(1+(N-df+0.5)/(df+0.5))",
+    "tokenizer": {
+      "version": "nfkc-casefold-alnum-v1",
+      "min_token_length": 2,
+      "stemmer": "none"
+    },
+    "stopwords": {
+      "version": "stopwords-v1",
+      "sha256": "9b7e17e2c00929d94c72251cca3252f9b6df54e4e905b2cfb1485c9eeba83688",
+      "words": [
+        "about",
+        "above",
+        "after",
+        "again",
+        "all",
+        "also",
+        "always",
+        "am",
+        "an",
+        "and",
+        "any",
+        "anyone",
+        "anything",
+        "are",
+        "aren",
+        "as",
+        "at",
+        "be",
+        "because",
+        "been",
+        "before",
+        "being",
+        "below",
+        "between",
+        "both",
+        "but",
+        "by",
+        "can",
+        "can't",
+        "could",
+        "define",
+        "definition",
+        "describe",
+        "did",
+        "didn",
+        "do",
+        "does",
+        "doesn",
+        "doesn't",
+        "doing",
+        "don",
+        "don't",
+        "done",
+        "down",
+        "during",
+        "each",
+        "even",
+        "ever",
+        "everything",
+        "explain",
+        "few",
+        "for",
+        "from",
+        "further",
+        "get",
+        "gets",
+        "give",
+        "go",
+        "got",
+        "had",
+        "has",
+        "have",
+        "he",
+        "hello",
+        "her",
+        "here",
+        "hers",
+        "hey",
+        "him",
+        "his",
+        "how",
+        "if",
+        "in",
+        "into",
+        "is",
+        "isn",
+        "isn't",
+        "it",
+        "its",
+        "itself",
+        "just",
+        "kind",
+        "know",
+        "let",
+        "lets",
+        "like",
+        "made",
+        "make",
+        "makes",
+        "many",
+        "may",
+        "me",
+        "mean",
+        "means",
+        "meant",
+        "might",
+        "more",
+        "most",
+        "much",
+        "must",
+        "my",
+        "myself",
+        "need",
+        "never",
+        "no",
+        "nor",
+        "not",
+        "nothing",
+        "now",
+        "of",
+        "off",
+        "often",
+        "oh",
+        "ok",
+        "okay",
+        "on",
+        "once",
+        "one",
+        "ones",
+        "only",
+        "onto",
+        "or",
+        "other",
+        "our",
+        "ours",
+        "ourselves",
+        "out",
+        "over",
+        "own",
+        "per",
+        "please",
+        "really",
+        "said",
+        "same",
+        "say",
+        "shall",
+        "she",
+        "should",
+        "so",
+        "some",
+        "someone",
+        "something",
+        "still",
+        "such",
+        "tell",
+        "term",
+        "terms",
+        "than",
+        "thank",
+        "thanks",
+        "that",
+        "the",
+        "their",
+        "theirs",
+        "them",
+        "themselves",
+        "then",
+        "there",
+        "these",
+        "they",
+        "thing",
+        "things",
+        "think",
+        "this",
+        "those",
+        "through",
+        "to",
+        "too",
+        "under",
+        "until",
+        "up",
+        "upon",
+        "us",
+        "use",
+        "used",
+        "uses",
+        "using",
+        "very",
+        "via",
+        "want",
+        "was",
+        "way",
+        "ways",
+        "we",
+        "well",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "while",
+        "who",
+        "whom",
+        "whose",
+        "why",
+        "will",
+        "with",
+        "without",
+        "won",
+        "word",
+        "words",
+        "work",
+        "works",
+        "would",
+        "yes",
+        "yet",
+        "you",
+        "your",
+        "yours",
+        "yourself"
+      ]
+    },
+    "coverage_rule": "coverage-v1",
+    "tie_break": "span_id ascending",
+    "module_boost": false,
+    "chapter_summaries_indexed": false
+  },
+  "semantic": {
+    "enabled_by_default": false,
+    "vector_id_scheme": "span-v2",
+    "require_namespace_count_equals_span_count": true,
+    "apply_active_gate_to_every_result": true
+  },
+  "abstention": {
+    "version": "abstention-p2-v1",
+    "floor": 2.35,
+    "margin": 2.4,
+    "provisional": true,
+    "provisional_until": "Q-22 (DI-52)",
+    "not_final_before": "E1 freeze",
+    "calibration_record": "docs/evaluation/phase2/calibration_record_v1.json",
+    "calibration_record_sha256": "ab8aca0d58c9ea201773fcf11972d45a6fb57a29d64b91921bf40a72e755d7e9",
+    "calibrated_with_package_version": "1.0.0"
+  },
+  "near_duplicate": {
+    "version": "near-dup-v1",
+    "provisional": true,
+    "document_shingle_words": 5,
+    "document_jaccard_threshold": 0.5,
+    "document_containment_threshold": 0.8,
+    "video_duration_tolerance_s": 0.5,
+    "video_size_ratio_tolerance": 0.01,
+    "chapter_shingle_words": 5,
+    "chapter_jaccard_threshold": 0.5
+  },
+  "legacy_citations": {
+    "decision": "D-30",
+    "status": "provisional",
+    "ratified": false,
+    "match_rule": "unique normalised-excerpt hash (D3); titles, containment and v1 content_hash are diagnostics",
+    "max_unresolved_share_native": 0.0,
+    "max_unresolved_share_legacy": null,
+    "legacy_share_statistic": "point",
+    "legacy_share_statistic_note": "used only when max_unresolved_share_legacy is a number: 'point' compares the observed share (the plan's \"unresolved citations exceed the threshold\"), 'wilson95_upper' its Wilson 95% upper bound; D-30 ratifies both",
+    "stop_on_exact_match_regression": true,
+    "stop_on_non_canonical_row_in_apply": true,
+    "unresolved_label": "unverified historical reference",
+    "dual_read_releases": 2
+  },
+  "tutor_pipeline": {
+    "version": "two-pass-v1",
+    "status": "provisional",
+    "provisional": true,
+    "phase": "3",
+    "authority": "plan Phase 3 tasks 3.1-3.8; every value without plan text is an engineering parameter with no plan value (PD-11, as PD-04 and PD-05), provisional, never a plan default",
+    "schemas": {
+      "ResolvedQuestion": {
+        "version": "resolved-question-v1",
+        "path": "schemas/resolved-question.v1.schema.json",
+        "sha256": "418b57092b72e5d15594d6575c053462cba9eba39de55ae5199ffa6d5917234c"
+      },
+      "RetrievalRequest": {
+        "version": "retrieval-request-v1",
+        "path": "schemas/retrieval-request.v1.schema.json",
+        "sha256": "2c53d4186caa1c77870b506d19c637a01e3691ca075f3026a62826b4b34c6b7e"
+      },
+      "EvidenceBundle": {
+        "version": "evidence-bundle-v1",
+        "path": "schemas/evidence-bundle.v1.schema.json",
+        "sha256": "4ed6eb773cbd01fd78dca5c09a83da83935311715f80eee7d71ba7759b5542e0"
+      },
+      "EvidentialEnvelope": {
+        "version": "evidential-envelope-v1",
+        "path": "schemas/evidential-envelope.v1.schema.json",
+        "sha256": "df47a128da24328b29c812feb9146822fc7aa035749d179250552d1ca611a67e"
+      },
+      "ClaimPlan": {
+        "version": "claim-plan-v1",
+        "path": "schemas/claim-plan.v1.schema.json",
+        "sha256": "1b65d4dcacc09c99ba7f0512da46ada47a8044f38ff3d34fe79fdc1c9dae0e08"
+      },
+      "LockedClaimSet": {
+        "version": "locked-claim-set-v1",
+        "path": "schemas/locked-claim-set.v1.schema.json",
+        "sha256": "73682a185c3a58cb8ed7717a984fffda777a85b9c283b882820f950c48c5e1b2"
+      },
+      "PresentationPlan": {
+        "version": "presentation-plan-v1",
+        "path": "schemas/presentation-plan.v1.schema.json",
+        "sha256": "14888767260012baf6520117851f47c43036ce5b3725e105482fa95049f7948c"
+      },
+      "LedgerEntry": {
+        "version": "ledger-entry-v1",
+        "path": "schemas/ledger-entry.v1.schema.json",
+        "sha256": "cc84fa000eb74fa2531cf493e3a0865415089e89e9a67e621b750b602a1a6ebc"
+      },
+      "LedgerEntryV2": {
+        "version": "ledger-entry-v2",
+        "path": "schemas/ledger-entry.v2.schema.json",
+        "sha256": "efb4b6749d2f56458fa1444249dc17806ee5022460a4f223479bd59fa072b490"
+      },
+      "LedgerEntryV3": {
+        "version": "ledger-entry-v3",
+        "path": "schemas/ledger-entry.v3.schema.json",
+        "sha256": "dedfe8503bcac2751f7d22261840882b7ff3d60ea95dda8dc235ce1749de61a3"
+      },
+      "V2VerdictRequest": {
+        "version": "v2-verdict-request-v1",
+        "path": "schemas/v2-verdict-request.v1.schema.json",
+        "sha256": "6b2f514483c58948264a49e7b644e8cde7b43ecc15a1ebedda97724a8a1a2e35"
+      },
+      "V2AlignmentRequest": {
+        "version": "v2-alignment-request-v1",
+        "path": "schemas/v2-alignment-request.v1.schema.json",
+        "sha256": "217872652a7c57dcd030aa6126af403ba918e937fe4c70b90f3d310388da8fe8"
+      },
+      "V2AdapterVerdict": {
+        "version": "v2-adapter-verdict-v1",
+        "path": "schemas/v2-adapter-verdict.v1.schema.json",
+        "sha256": "c369d02cf75a1c65b7384adab192a390b4021a11e2275f5575c67bd57f6dc445"
+      },
+      "V2AlignmentVerdict": {
+        "version": "v2-alignment-verdict-v1",
+        "path": "schemas/v2-alignment-verdict.v1.schema.json",
+        "sha256": "704dec8edf26832b2e1bd390ec8cd0b931d29a72418c1eea5063f39dd6447d3f"
+      }
+    },
+    "resolver": {
+      "id": "thread-resolver-v1",
+      "prompt_hash": "c7409f113bf7f5358ff16e981092d5d0fc4c3c407cd9731b869061fd26c7ad22",
+      "min_content_terms": 2,
+      "continuation_cues": [
+        "and ",
+        "also ",
+        "but ",
+        "so ",
+        "then ",
+        "what about ",
+        "how about "
+      ],
+      "max_lookback": 4,
+      "inputs": "the learner's own user messages of the same thread (plan 3.1)"
+    },
+    "retrieval": {
+      "request_fields": [
+        "text",
+        "lesson_slug",
+        "corpus_version"
+      ],
+      "top_k": 4,
+      "mode": "lexical",
+      "near_miss_rule": "gate-near-floor-flag-of-top-result-v1"
+    },
+    "evidential": {
+      "generator_default": "extractive-d19-v1",
+      "generators_allowed": [
+        "extractive-d19-v1"
+      ],
+      "prompt_hash": "6bf3f1f1030374216d123e7fdbd6f5075b4a0d0bbe5d00b394636563f85f4b09",
+      "max_claims": 3,
+      "max_claims_per_span": 2,
+      "min_sentence_words": 4,
+      "max_sentence_chars": 1000,
+      "min_question_overlap_terms": 1,
+      "sentence_rule": "sentences-v2",
+      "binding_rule": "resolver-bundle-sentence-v2"
+    },
+    "pedagogical": {
+      "renderer": "template-renderer-v1",
+      "prompt_hash": "452fbef12b51d5c1d2aa615ac845a1ab518f31d949e990bdf52ec948fefc613b",
+      "presentation_plans": [
+        "concise",
+        "stepwise",
+        "socratic"
+      ],
+      "default_plan": "concise",
+      "max_regenerations": 2,
+      "max_regenerations_authority": "plan 3.7: at most two",
+      "subset_check": "segment-exact-whitespace-v3"
+    },
+    "ledger": {
+      "chain": "tutor-responses",
+      "entry_schema": "ledger-entry-v3",
+      "record_hash_rule": "sha256(canonical{chain,seq,created_at,prev_hash,entry_sha256})-v1",
+      "genesis": "0000000000000000000000000000000000000000000000000000000000000000",
+      "deliveries": [
+        "legacy",
+        "shadow",
+        "delivered"
+      ],
+      "retention": "retain",
+      "legacy_entry_schema": "ledger-entry-v1",
+      "entry_schemas": [
+        "ledger-entry-v1",
+        "ledger-entry-v2",
+        "ledger-entry-v3"
+      ]
+    },
+    "legacy": {
+      "pipeline_version": "legacy-contained-v1",
+      "generator_id": "contained-answers-v1",
+      "generator_model_id": "extractive-lexically-screened",
+      "containment_rule_hash": "aa942034579c6fcdb7fe1b14818c07a8bccf66cf0552544d6dbd90ff94ffbff0",
+      "authority": "the D-19 contained path (task 1.11) that every legacy ledger record names, production's only records; pinned so the provenance audit has a reference value (F-2 stand-in, DI-49); package_check compares each value with app.services.ledger"
+    },
+    "stop": {
+      "phase2_bound_claim_ratio": 1.0,
+      "authority": "plan Phase 3 L; measured, spec M1"
+    },
+    "budgets": {
+      "provisional": true,
+      "authority": "PD-11: engineering parameters with no plan value (E1 'bounded budget'; spec conflict 29), not plan defaults; TWO_PASS_SHADOW_BUDGET_MS and TUTOR_LEDGER_APPEND_BUDGET_MS override the first two only, and every ledger record stamps the budgets in force and which of them were overridden (versions.budgets); an override outside development logs a config.override event",
+      "shadow_ms": 2000,
+      "ledger_append_ms": 1500,
+      "ledger_append_attempts": 3,
+      "ledger_wait_grace_ms": 250,
+      "ledger_append_workers": 4,
+      "ledger_append_max_in_flight": 16
+    },
+    "idempotency": {
+      "provisional": true,
+      "authority": "plan 7.3 'mutations carry client keys' (DI-40); the values are engineering parameters with no plan value (PD-11)",
+      "header": "Idempotency-Key",
+      "key_pattern": "^[A-Za-z0-9._:-]{8,128}$",
+      "ttl_hours": 24,
+      "in_progress_lease_seconds": 600
+    },
+    "unused_provenance_fields": []
+  },
+  "v1": {
+    "version": "v1-checks-v1",
+    "status": "provisional",
+    "provisional": true,
+    "phase": "4",
+    "authority": "plan Phase 4 D; [PROV] values 'MUST be frozen in versioned configuration before use (Q-22; Decision D-06), never reported as results' (plan L795-800); PD-13..PD-21",
+    "rules_hash": "4ed598c5e8a3325700c7561cf263b94533e7500d690ab94173b460293ca7a81e",
+    "rule_ids": {
+      "V1.1": "span-resolution-current-v1",
+      "V1.2": "binding-polarity-v1",
+      "V1.3": "entailment-interface-v1",
+      "V1.4": "segment-exact-whitespace-v3",
+      "V1.5": "gate-decision-margin-v3",
+      "V1.6": "keyed-answer-containment-v1",
+      "V1.6-omit": "keyed-answer-socratic-omit-v1",
+      "V1.7": "conflict-version-polarity-v1",
+      "V1.8": "misconception-all-terms-v1",
+      "V1.9": "schema-forbid-v1",
+      "V1.9-band": "fk-grade-segments-v1"
+    },
+    "ehmf": {
+      "V1.1": [
+        "B"
+      ],
+      "V1.2": [
+        "A",
+        "B"
+      ],
+      "V1.3": [
+        "A",
+        "B",
+        "C"
+      ],
+      "V1.4": [
+        "D",
+        "E"
+      ],
+      "V1.5": [
+        "A"
+      ],
+      "V1.6": [
+        "E"
+      ],
+      "V1.7": [
+        "D"
+      ],
+      "V1.8": [
+        "C"
+      ],
+      "V1.9": [
+        "E"
+      ]
+    },
+    "regeneration": {
+      "max_generation_regenerations": 2,
+      "max_render_regenerations": 2,
+      "authority": "plan Phase 4 D: 'regen/abstain', 'HARD; regen <= 2'; plan 7.2: 'regenerate (<= 2) or abstain'"
+    },
+    "lexicon": {
+      "provisional": true,
+      "authority": "PD-20",
+      "negation_cues": [
+        "cannot",
+        "neither",
+        "never",
+        "no",
+        "nobody",
+        "none",
+        "nor",
+        "not",
+        "nothing",
+        "nowhere",
+        "without"
+      ],
+      "negation_suffixes": [
+        "n't",
+        "n’t"
+      ],
+      "number_words": [
+        "billion",
+        "double",
+        "dozen",
+        "eight",
+        "eleven",
+        "five",
+        "four",
+        "half",
+        "hundred",
+        "million",
+        "nine",
+        "one",
+        "seven",
+        "six",
+        "ten",
+        "thousand",
+        "three",
+        "twelve",
+        "twice",
+        "two",
+        "zero"
+      ],
+      "units": [
+        "bit",
+        "bits",
+        "cm",
+        "db",
+        "ghz",
+        "hz",
+        "k",
+        "kb",
+        "khz",
+        "mb",
+        "mhz",
+        "mk",
+        "ms",
+        "mw",
+        "nm",
+        "ns",
+        "qubit",
+        "qubits",
+        "s",
+        "sec",
+        "seconds",
+        "us",
+        "w",
+        "x",
+        "µs",
+        "μs"
+      ],
+      "min_alignment_term_chars": 2
+    },
+    "v1_3": {
+      "provisional": true,
+      "authority": "PD-14 (D-21 open: none), PD-15 (Q-22: V1.3 threshold)",
+      "hosting": "none",
+      "checker_model_id": "none",
+      "support_threshold": 0.5,
+      "timeout_ms": 1000,
+      "unavailable": "abstain"
+    },
+    "v1_5": {
+      "provisional": true,
+      "authority": "PD-15 (Q-22: the X4 margin per gate, which V1.5 applies: it marks a response whose top result's gate score, the score the gate compares with its floor, is below the gate floor plus the margin; V1.5 frozen before E1) over PD-04",
+      "x4_margin": {
+        "bm25f-v1": 2.4,
+        "p1-floor": 0.0
+      },
+      "rule": "gate-decision-margin-v3"
+    },
+    "v1_6": {
+      "provisional": true,
+      "authority": "PD-17",
+      "assessment_threshold": 0.6,
+      "short_key_min_tokens": 3,
+      "socratic_plan": "socratic",
+      "scope": "all_lessons"
+    },
+    "v1_7": {
+      "provisional": true,
+      "authority": "PD-15, PD-20",
+      "alignment_threshold": 0.6,
+      "min_alignment_terms": 4,
+      "on_conflict": "disclose",
+      "version_families": [
+        {
+          "family": "qcai-lecture-2025-2026",
+          "item_ids": [
+            "quantum-computing-and-artificial-intelligence-2025",
+            "quantum-computing-and-artificial-intelligence-2026"
+          ],
+          "authority": "owner_decisions.Q-10 (re-encode of the 2025 lecture, E-21); video items, never cited spans: inert in production (spec conflict 33)"
+        }
+      ]
+    },
+    "v1_8": {
+      "library": {
+        "library": "qcai-misconception-library",
+        "version": "v0",
+        "status": "empty: Q-14 seed list unavailable (A-18)",
+        "entries": [],
+        "sha256": "f053d035f99e20f6d2fdbb307ce0619f8d30d62bccc52a192389429083a5af7b"
+      },
+      "on_match": "flag_withhold_queue_v3",
+      "authority": "Q-14 unavailable (A-18); DI-53"
+    },
+    "v1_9": {
+      "provisional": true,
+      "authority": "PD-16 (Q-22: V1.9 band)",
+      "readability": {
+        "min_grade": -4.0,
+        "max_grade": 64.0,
+        "basis": "component envelope of the dev public corpus's whole document sentences and the renderer templates (Phase 4 spec M6)"
+      }
+    },
+    "quiz_feedback": {
+      "provisional": true,
+      "authority": "PD-21: plan Phase 4 B precondition \"keyed answers outside public payloads\" (R-42); no owner decision is named, ratification is DI-55",
+      "rule": "keys-after-saved-attempt-answered-only-v1",
+      "public_payloads": "no_keys",
+      "feedback": "answered_questions_after_a_saved_attempt"
+    },
+    "d20_interim": {
+      "provisional": true,
+      "authority": "PD-13 (D-20 OPEN, its own text; hold H15)",
+      "rule": "withhold-all-flagged-v1",
+      "replacement": "extractive_d19_else_abstention"
+    },
+    "fixtures": {
+      "path": "docs/evaluation/phase4/v1_adversarial_fixtures_v1.json",
+      "set_sha256": "60a8f5425bb21880f09f5cc95681de9260ec622076b199e5d0ae89e1ce73f04f",
+      "cases": 66,
+      "public_corpus_only": true
+    },
+    "stop": {
+      "provisional": true,
+      "authority": "PD-18 (plan Phase 4 L; Q-22)",
+      "answer_rate_floor": {
+        "bm25f-v1": {
+          "answered": 166,
+          "in_domain": 174
+        },
+        "p1-floor": {
+          "answered": 146,
+          "in_domain": 174
+        },
+        "metric": "phase2-answer-rate-v1-over-v1.5",
+        "compare": "answered * floor.in_domain >= floor.answered * in_domain",
+        "baseline": "docs/evaluation/phase2/calibration_record_v1.json answer_rate (bm25 166/174; p1_floor_span_index 146/174)"
+      },
+      "composition": {
+        "rule": "v1-adds-no-in-domain-abstention-v1",
+        "configuration": "deterministic_only",
+        "compare": "v1 non-abstain in-domain count >= v1-off composition count, per gate, same run"
+      },
+      "v1_p95_latency_ms": 250
+    }
+  },
+  "gateway": {
+    "provisional": true,
+    "status": "provisional",
+    "version": "gateway-v1",
+    "authority": "PD-22 (D-23 egress opt-in), PD-24 (D-07 option (a)'s pinning rule; no model chosen), PD-26 (caps and budgets; A-15 open, hold H9), PD-27 (the evidential cache); ratification DI-76",
+    "pinning": {
+      "rule": "pinned-version-v1",
+      "refused_tokens": "alias|auto|current|default|exp\\d*|experimental|latest|nightly|preview\\d*",
+      "version_pattern": "^(?:\\d{4}-\\d{2}-\\d{2}|\\d{8}|\\d{3}|v?\\d+(?:\\.\\d+){1,3})$",
+      "applies_to": "every member of every registry; an unpinned identifier stops the load and start-up (AC-5-10)"
+    },
+    "egress": {
+      "opt_in": "per_environment_per_provider",
+      "setting": "MODEL_EGRESS_PROVIDERS",
+      "default": [],
+      "provisional": true,
+      "record": "PD-22"
+    },
+    "registries": {
+      "development": [
+        {
+          "adapter_id": "fake-alpha-v1",
+          "family": "fake-alpha",
+          "provider": "fake",
+          "model_id": "fake-alpha-verifier",
+          "model_version": "2026-11-21",
+          "capabilities": [
+            "verify"
+          ],
+          "caps": {
+            "max_tokens": 256,
+            "timeout_ms": 500,
+            "max_retries": 1
+          },
+          "cost_units_per_call": 1,
+          "fake": {
+            "rule": "verbatim-support-v1"
+          }
+        },
+        {
+          "adapter_id": "fake-beta-v1",
+          "family": "fake-beta",
+          "provider": "fake",
+          "model_id": "fake-beta-verifier",
+          "model_version": "2026-11-21",
+          "capabilities": [
+            "verify"
+          ],
+          "caps": {
+            "max_tokens": 256,
+            "timeout_ms": 500,
+            "max_retries": 1
+          },
+          "cost_units_per_call": 1,
+          "fake": {
+            "rule": "verbatim-support-v1"
+          }
+        },
+        {
+          "adapter_id": "fake-gamma-v1",
+          "family": "fake-gamma",
+          "provider": "fake",
+          "model_id": "fake-gamma-verifier",
+          "model_version": "2026-11-21",
+          "capabilities": [
+            "verify"
+          ],
+          "caps": {
+            "max_tokens": 256,
+            "timeout_ms": 500,
+            "max_retries": 1
+          },
+          "cost_units_per_call": 1,
+          "fake": {
+            "rule": "verbatim-support-v1"
+          }
+        },
+        {
+          "adapter_id": "fake-delta-v1",
+          "family": "fake-delta",
+          "provider": "fake",
+          "model_id": "fake-delta-verifier",
+          "model_version": "2026-11-21",
+          "capabilities": [
+            "generate",
+            "verify"
+          ],
+          "caps": {
+            "max_tokens": 256,
+            "timeout_ms": 500,
+            "max_retries": 1
+          },
+          "cost_units_per_call": 1,
+          "fake": {
+            "rule": "verbatim-support-v1"
+          }
+        }
+      ],
+      "staging": [],
+      "production": [],
+      "default": []
+    },
+    "budgets": {
+      "provisional": true,
+      "unit": "cost-unit",
+      "daily_units": {
+        "development": 100000,
+        "staging": 0,
+        "production": 0,
+        "default": 0
+      },
+      "alert_share": {
+        "numerator": 4,
+        "denominator": 5
+      },
+      "record": "PD-26; hold H9 (DI-72)"
+    },
+    "cache": {
+      "provisional": true,
+      "scope": "process",
+      "key_rule": "plan-5.7-envelope-union-7.3-v1",
+      "max_entries": {
+        "claim_plan": 1024,
+        "verdict": 8192
+      },
+      "record": "PD-27"
+    },
+    "payload_policy": {
+      "rule": "public-quotable-spans-and-templates-only-v1",
+      "on_violation": "stop"
+    },
+    "stop": {
+      "on": [
+        "budget_breach",
+        "payload_violation",
+        "secret_in_logs"
+      ],
+      "action": "gateway_stopped_then_off_security_event"
+    },
+    "retired_settings": [
+      "OPENAI_CHAT_MODEL",
+      "VERTEX_AI_API_KEY",
+      "VERTEX_AI_CHAT_MODEL",
+      "VERTEX_AI_LOCATION",
+      "VERTEX_AI_PROJECT_ID"
+    ],
+    "terms": null
+  },
+  "v2": {
+    "provisional": true,
+    "status": "provisional",
+    "version": "v2-panel-v1",
+    "panel": {
+      "max_members": 3,
+      "one_vote_per_family": true,
+      "order": "registry",
+      "eligibility": "before_panel",
+      "generator_excluded": true,
+      "blind": true
+    },
+    "generator_families": {
+      "extractive-d19-v1": "extractive-d19"
+    },
+    "verdicts": [
+      "SUPPORTED",
+      "CONTRADICTED",
+      "NOT_ENOUGH_INFO"
+    ],
+    "objection": [
+      "CONTRADICTED",
+      "NOT_ENOUGH_INFO"
+    ],
+    "prompt": {
+      "verifier_prompt_id": "blind-claim-span-v1",
+      "verifier_prompt_hash": "4c968d62a6a838f2a2661b35fcd568d59bee79f9719f7417a27b42e88f9a980f",
+      "alignment_prompt_id": "alignment-item-v1",
+      "alignment_prompt_hash": "beda8f31a3dad3158a82920b75e799f34c5fb746665fb544ff0e75d1d59bb32a"
+    },
+    "tiers": {
+      "provisional": true,
+      "rule": "context-tier-v1",
+      "assessment_context": 1,
+      "default": 2,
+      "expert_mode": null,
+      "record": "PD-25"
+    },
+    "voting": {
+      "provisional": true,
+      "matrix": {
+        "FULL": {
+          "1": "1oo3",
+          "2": "2oo3",
+          "3": "equal-weights-share-v1"
+        },
+        "REDUCED-2": {
+          "1": "1oo2",
+          "2": "1oo2",
+          "3": "1oo2"
+        },
+        "REDUCED-1": {
+          "1": "withhold-queue-v3",
+          "2": "withhold-queue-v3",
+          "3": "equal-weights-share-v1"
+        },
+        "ZERO": {
+          "1": "withhold-queue-v3",
+          "2": "withhold-queue-v3",
+          "3": "withhold-queue-v3"
+        }
+      },
+      "tier3_threshold": {
+        "numerator": 2,
+        "denominator": 3
+      },
+      "provisional_until": "Q-22 (DI-52)",
+      "record": "PD-23, PD-25"
+    },
+    "panel_weights_version": "equal-weights-v1",
+    "routing_table_version": "degraded-matrix-v1",
+    "correction": {
+      "provisional": true,
+      "max_cycles": 2,
+      "type_e": "re_render_only",
+      "other": "revise_or_reverify_unchanged",
+      "exhausted": "abstain_mark_x2",
+      "critical_registry": [],
+      "record": "PD-29"
+    },
+    "degraded": {
+      "provisional": true,
+      "zero": "pre_verified_or_abstain_queue",
+      "pre_verified_source": null,
+      "banners": {
+        "degraded-reduced-2-v1": "Fewer independent checks than usual verified this answer.",
+        "degraded-reduced-1-v1": "Parts of this answer are held back until more checks are available.",
+        "degraded-zero-v1": "Verification is unavailable right now, so only checked course material or no answer is shown."
+      },
+      "record": "PD-30"
+    },
+    "alignment": {
+      "rule": "1ooN-leakage-v1",
+      "objective_source": "lesson_summary",
+      "band_source": "v1.v1_9.readability",
+      "rating_gates": false
+    }
+  },
+  "tools": {
+    "version": "mcp-tools-v1",
+    "transport": "in-process",
+    "servers": [
+      "analytics",
+      "citation",
+      "corpus",
+      "learner",
+      "verification"
+    ],
+    "path": "schemas/tool-contracts.v1.json",
+    "sha256": "fb703c329877de5f2d3868a0796f7e834fbe61855b7807a81042f26179a3f04c",
+    "provisional": true
+  },
+  "flag_policy": {
+    "provisional": true,
+    "authority": "PD-10 for two_pass_tutor and phase4_exit_passed: the Phase 3 switch outside development (plan Phase 3 G; AC-3-6; 13.6), whose values are plan MUST text or a fact, recorded provisional with PD-10 and ratified with it (DI-37); PD-19 for v1_pipeline: the Phase 4 switch (plan Phase 4 G; 13.6), an engineering default recorded provisional with PD-19 and ratified with it (DI-55); PD-28 for model_gateway and phase5_exit_passed: the Phase 5 switch (plan Phase 5 G, L; 13.6), an engineering default recorded provisional with PD-28 and ratified with it (DI-76)",
+    "two_pass_tutor": {
+      "values": [
+        "off",
+        "shadow",
+        "on"
+      ],
+      "default_development": "shadow",
+      "default_elsewhere": "off",
+      "on_requires": "phase4_exit_passed",
+      "authority": "plan Phase 3 G; AC-3-6; 13.6"
+    },
+    "v1_pipeline": {
+      "values": [
+        "off",
+        "shadow",
+        "enforce"
+      ],
+      "default_development": "enforce",
+      "default_elsewhere": "shadow",
+      "enforce_requires": "phase4_exit_passed",
+      "off_outside_development": "refused",
+      "authority": "plan Phase 4 G; 13.6; PD-19"
+    },
+    "phase4_exit_passed": false,
+    "phase4_exit_evidence": null,
+    "model_gateway": {
+      "values": [
+        "off",
+        "shadow",
+        "on"
+      ],
+      "default_development": "shadow",
+      "default_elsewhere": "off",
+      "on_requires": "phase5_exit_passed",
+      "on_outside_development": "refused_before_exit",
+      "on_requires_v1": "enforce",
+      "stop": "off_until_restart",
+      "authority": "plan Phase 5 G, L; 13.6; PD-28"
+    },
+    "phase5_exit_passed": false,
+    "phase5_exit_evidence": null
+  },
+  "owner_decisions": {
+    "D-17": {
+      "option": "a",
+      "text": "interim, migrate by Phase 11",
+      "status": "provisional",
+      "authority": "P1-D-18 (owner delegation, 2026-11-19)",
+      "ratified": false,
+      "record": "docs/adr/ADR-002-retrieval-architecture.md (Revision 2026-11-19)"
+    },
+    "D-30": {
+      "status": "provisional",
+      "authority": "P1-D-18",
+      "ratified": false,
+      "rule": "pre-Phase-2 citations that cannot be resolved are labelled legacy_unresolved and never presented as resolved; the migration report shows their share; citations created by the Phase 2 pipeline must resolve 100%"
+    },
+    "Q-10": {
+      "state": "unresolved",
+      "path": "2025 asset only (plan Action 25 stop condition)",
+      "unbound_items": [
+        {
+          "item_id": "quantum-computing-and-artificial-intelligence-2026",
+          "asset_filename": "Quantum Computing and Artificial Intelligence 2026.mp4"
+        }
+      ]
+    },
+    "PLAN-11.3": {
+      "status": "provisional",
+      "ratified": false,
+      "authority": "P1-D-18 (engineering default); ratification needs the Principal Investigator or the Research Lead",
+      "deviations": [
+        {
+          "plan": "11.3: \"a stemmed, stopword-filtered BM25-style index\"",
+          "applied": "retrieval.tokenizer.stemmer = none (an S-stemmer raised out-of-scope leakage, all-approved maximum 8.2); spec conflict 5"
+        },
+        {
+          "plan": "11.3: \"a sufficiency gate (floor plus runner-up margin) before any generator call\"",
+          "applied": "the margin labels near_floor results (floor <= score < floor + margin, D6 and V1.5) and drops none; no runner-up test (Phase 2 spec conflict 4; DI-28, carried as DI-67)"
+        }
+      ],
+      "record": "docs/adr/ADR-002-retrieval-architecture.md (Revision 2026-11-19)"
+    },
+    "D-19": {
+      "option": "RECOMMENDATION (no-provider extractive mode)",
+      "text": "no-provider extractive mode quoting spans only from manifest-approved public-plane assets, never the private licensed evaluation corpus or ULQS; no approved span, abstain",
+      "status": "provisional",
+      "authority": "P1-D-18 (owner delegation, 2026-11-19)",
+      "ratified": false,
+      "applied_to": [
+        "legacy contained answers (task 1.11)",
+        "two-pass evidential generator extractive-d19-v1"
+      ],
+      "record": "PD-08"
+    },
+    "PLAN-3.3": {
+      "status": "provisional",
+      "ratified": false,
+      "authority": "P1-D-18 (engineering reading under D-19); acceptance needs the Principal Investigator or the Research Lead (DI-47)",
+      "deviations": [
+        {
+          "plan": "3.3: \"Claim plan: atomic claims bound to span ids from a structured envelope; unbound dropped [Risk R-11].\"",
+          "applied": "under D-19 extractive mode the claim unit is one verbatim whole sentence of every cited span (a sentences-v2 sentence of the document's section text lying wholly inside the span, at most max_sentence_chars), not a decomposed atomic claim: a sub-sentence cut can drop a qualification or a negation (spec conflict 32), so binding refuses it (not_verbatim), and refuses a span-edge fragment of a longer document sentence too (partial_sentence; rule resolver-bundle-sentence-v2, spec 18.10 H1). A compound sentence is one claim with one future verdict. Atomic decomposition needs a generator that writes claims (Phase 5, D-12) and per-claim V1.3 entailment (Phase 4)"
+        }
+      ],
+      "record": "Phase 3 spec conflict 34; DI-47"
+    },
+    "D-12": {
+      "state": "open",
+      "path": "hold H6 blocks the provider interim path (D-12, a single pinned provider; plan 9.4 H6 'P3 interim path') and stays held; no provider generator is wired, and Phase 3 runs D-19 extractive mode instead, which sends no provider payload",
+      "ratified": false,
+      "record": "PD-09"
+    },
+    "PLAN-12.8": {
+      "state": "open",
+      "text": "OPEN DECISION. Retention period (Product Owner; Principal Investigator consulted); proposed default release life plus 24 months.",
+      "path": "unresolved: the response ledger is retained; no job deletes ledger rows (the append-only triggers refuse DELETE)",
+      "behaviour": "retain",
+      "ratified": false,
+      "record": "DI-45",
+      "proposed_default": "release life plus 24 months",
+      "proposed_default_applied": false,
+      "why_not_applied": "a 12.8 'proposed default' is not one of the default forms the provisional-defaults register lets engineering apply (an 18.3 RECOMMENDATION, an 'until decided' rule, a stop-condition path); the period stays open for the PO and PI. It changes nothing today: no release life has ended, so retaining every record is what the proposed default would also do, and a pruning job is needed only once a decided period ends (DI-45)"
+    },
+    "D-20": {
+      "state": "open",
+      "applied": "withhold-all-flagged-v1",
+      "text": "before Phase 5 (no V2), V1.3-flagged claims at every tier are withheld, replaced by pre-verified module content or extractive mode [Decision D-19], else abstain, and queued for V3; no \"under review\" delivery without a completed V2 vote [VBT RevB: p. 10, Sec. V-A, Table VIII, V1.3]",
+      "ratified": false,
+      "record": "PD-13"
+    },
+    "D-21": {
+      "state": "open",
+      "path": "none: no checker hosting; V1.3 flags every claim (plan Phase 4 E)",
+      "ratified": false,
+      "record": "PD-14"
+    },
+    "Q-22": {
+      "state": "unresolved",
+      "provisional_values": [
+        "v1.v1_5.x4_margin",
+        "abstention",
+        "v1.v1_3.support_threshold",
+        "v1.v1_7",
+        "v1.v1_9.readability",
+        "v1.stop",
+        "v2.voting"
+      ],
+      "record": "PD-15, PD-16, PD-18, PD-25; DI-52"
+    },
+    "Q-14": {
+      "state": "unavailable",
+      "path": "misconception library v0 empty (A-18)",
+      "record": "DI-53"
+    },
+    "D-06": {
+      "state": "open",
+      "path": "[PROV] values frozen in versioned configuration before use, never reported as results (plan L795-800)",
+      "record": "DI-52"
+    },
+    "D-07": {
+      "state": "open",
+      "option": "(a) Table XIV rule, pinned",
+      "applied": "pinned-version-v1 (rule only; no model chosen)",
+      "ratified": false,
+      "record": "PD-24; DI-69; hold H8"
+    },
+    "Q-09": {
+      "state": "unresolved",
+      "terms": null,
+      "record": "DI-70; A-11"
+    },
+    "D-23": {
+      "option": "RECOMMENDATION",
+      "text": "provider egress needs a per-environment opt-in [Evidence E-109]; invariant 8 [Risk R-10]. SL.",
+      "applied": "MODEL_EGRESS_PROVIDERS, default []",
+      "ratified": false,
+      "record": "PD-22"
+    },
+    "D-29": {
+      "state": "open",
+      "applied": "(a)",
+      "text": "REDUCED-1 tiers: (a) withhold tiers 1-2, queue (RECOMMENDATION, Phase 5 item 5.9); (b) tiers 2-3 \"under review\" after V1 pass plus one SUPPORTED vote. Until decided, (a)",
+      "ratified": false,
+      "record": "PD-23"
+    },
+    "D-25": {
+      "state": "open",
+      "registry": [],
+      "record": "PD-29"
+    },
+    "A-15": {
+      "state": "open",
+      "budgets": "0 outside development",
+      "hold": "H9 blocks the P5 panel until an approved budget is filed",
+      "record": "PD-26; DI-72"
+    },
+    "Q-15": {
+      "state": "owner review pending",
+      "register": "docs/security/payload-register.md",
+      "record": "DI-71"
+    }
+  },
+  "boundary": {
+    "version": "boundary-v1",
+    "private_plane_globs": [
+      "corpus/private/**",
+      "lqs/private/**",
+      "lqs/ratings/*.private.jsonl",
+      "docs/thesis/ethics/private/**",
+      "evaluation/reports/*.private.json",
+      "**/*.private.json",
+      "**/*.private.jsonl"
+    ],
+    "public_exceptions": [
+      "corpus/private/README.md"
+    ],
+    "licensed_volume_globs": [
+      "**/*.pdf"
+    ],
+    "secret_like_name_globs": [
+      ".env",
+      ".env.*",
+      "**/.env",
+      "**/.env.*",
+      "**/*.env",
+      "**/*.env.yaml",
+      "**/*.env.local"
+    ],
+    "passage_shingle_words": 12,
+    "passage_min_hits_per_file": 1
+  }
+}

@@ -1,0 +1,1177 @@
+"""Phase 5 acceptance: the provider-neutral gateway and the V2 panel (plan Phase 5 K AC-5-1 to AC-5-11, and its D, E, F, G,
+H, I, L and P rows; plan 7.8 invariants 3, 4, 6, 10; plan 13.6; docs/architecture/phase5-implementation-spec.md 13.1).
+
+Every model call here goes to a deterministic fake family (no network: conftest's guard refuses a non-loopback socket),
+and the HTTP adapter runs only over httpx.MockTransport. Learner ids are uuid4 demo ids. Security events are read in seq
+order.
+"""
+
+from __future__ import annotations
+
+import ast
+import dataclasses
+import importlib.util
+import itertools
+import json
+import logging
+import os
+from pathlib import Path
+import random
+import re
+import subprocess
+import sys
+import traceback
+from uuid import uuid4
+
+import httpx
+import pytest
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
+from sqlalchemy import func, select
+
+from app.core.config import Settings
+from app.core.config_package import DEFAULT_PACKAGE_PATH, ConfigPackageError, get_config_package, parse_config_package
+from app.core.db import SessionLocal
+from app.db_models import ResponseLedgerRecord, SecurityEvent
+from app.gateway.adapters import AdapterError, HttpJsonAdapter
+from app.gateway.budget import DailyBudget
+from app.gateway.contracts import AlignmentInstructions, AlignmentRequest, ReadabilityBand, VerdictInstructions, VerdictRequest, VerdictSpan
+from app.gateway.gateway import GatewayStopped, ModelGateway, get_gateway
+from app.gateway.policy import PolicyContext
+from app.gateway.registry import AdapterRegistry, registry_for
+from app.gateway.tools import ToolHost
+from app.main import app
+from app.services import ledger
+from app.services.tutor_pipeline import contracts
+from app.services.tutor_pipeline.contracts import LedgerEntryV2, LedgerEntryV3, V2ClaimVerdict, VerificationRecord, VerificationRecordV2
+from app.services.tutor_pipeline.evidential import ExtractiveD19Generator
+from app.services.v2_panel import rules
+from app.services.v2_panel.panel import Panel, PanelError
+from app.services.v2_panel.voting import family_verdict, tally
+from tutor_fakes import ScriptedGenerator
+from v1_fakes import MULTI_CLAIM, RaisingChecker, SupportedVoter, dev_pipeline, run, temp_package
+from v2_fakes import (
+    FAMILIES,
+    FakeAlphaGenerator,
+    FakeSecretStore,
+    FamilyGenerator,
+    RevisingGenerator,
+    adapters_of,
+    captured,
+    claim_key,
+    fake_spec,
+    fresh_gateway,
+    make_registry,
+    v2_pipeline,
+)
+
+API_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = API_ROOT.parents[1]
+SPEC_PATH = REPO_ROOT / "docs" / "architecture" / "phase5-implementation-spec.md"
+
+
+def spec_text() -> str:
+    return SPEC_PATH.read_text(encoding="utf-8")
+
+
+PACKAGE = get_config_package(Settings())
+client = TestClient(app)
+TIER2 = "Why do the sources repeatedly emphasize hybrid loops instead of end-to-end quantum models?"
+TWO_CLAIMS = "What problem does SAC solve inside the augmented Lagrangian workflow?"
+DATA = json.loads((API_ROOT / "tests" / "data" / "score_floor_queries.json").read_text(encoding="utf-8"))
+OFF_TOPIC = list(DATA["off_topic"])
+THREE = make_registry(("fake-alpha", "fake-beta", "fake-gamma"))
+FOUR = make_registry(FAMILIES)
+
+
+def demo(prefix: str) -> dict[str, str]:
+    return {"x-demo-user": f"{prefix}-{uuid4().hex[:12]}", "x-demo-role": "learner", "x-forwarded-for": f"phase5-{uuid4().hex}"}
+
+
+def fresh(headers: dict[str, str]) -> dict[str, str]:
+    return {**headers, "x-forwarded-for": f"phase5-{uuid4().hex}"}
+
+
+def judged(entry) -> dict:
+    return {verdict.claim_id: verdict.v2 for verdict in entry.verification.verdicts if verdict.v2 is not None}
+
+
+def load_script(name: str):
+    spec = importlib.util.spec_from_file_location(f"phase5_{name}", REPO_ROOT / "scripts" / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def security_events(event_type: str, after: int = 0) -> list[SecurityEvent]:
+    with SessionLocal() as db:
+        return list(db.scalars(select(SecurityEvent).where(SecurityEvent.seq > after, SecurityEvent.event_type == event_type).order_by(SecurityEvent.seq)))
+
+
+def last_security_seq() -> int:
+    with SessionLocal() as db:
+        return int(db.scalar(select(func.max(SecurityEvent.seq))) or 0)
+
+
+def contradicting(registry: AdapterRegistry, claim, members=None) -> dict:
+    script = {claim_key(claim.text, span_id): ("CONTRADICTED", "A") for span_id in claim.span_ids}
+    chosen = members or [spec.adapter_id for spec in registry.members]
+    return adapters_of(registry, **{adapter_id: {"script": script} for adapter_id in chosen})
+
+
+@pytest.fixture(scope="module")
+def fixture_report():
+    return load_script("run_v2_fixtures").compute(commit_source=lambda: "test")
+
+
+# ======================================================================================================== AC-5-1
+
+
+def test_ac_5_1_the_panel_never_holds_the_generator_s_family_for_any_registry_ordering():
+    families = ("fa", "fb", "fc", "fd")
+    registries = checked = 0
+    for size in range(1, 6):
+        for order in itertools.product(families, repeat=size):
+            registries += 1
+            specs = [fake_spec(family, adapter_id=f"{family}-{index}") for index, family in enumerate(order)]
+            for eligible_mask in itertools.product((True, False), repeat=min(3, size)):
+                eligible = [spec for index, spec in enumerate(specs) if index >= 3 or eligible_mask[index]]
+                for generator in (*families, "outside"):
+                    panel = Panel.build(eligible, generator_family=generator)
+                    held = [member.family for member in panel.members]
+                    assert generator not in held and len(held) == len(set(held)) and len(held) <= 3
+                    expected, taken = [], set()
+                    for spec in eligible:
+                        if spec.family != generator and spec.family not in taken and len(expected) < 3:
+                            taken.add(spec.family)
+                            expected.append(spec.adapter_id)
+                    assert [member.adapter_id for member in panel.members] == expected
+                    checked += 1
+    assert registries == 1364 and checked > 50000
+
+
+def test_ac_5_1_a_panel_with_the_generator_s_family_cannot_be_built_or_recorded():
+    with pytest.raises(PanelError):
+        Panel(generator_family="fake-alpha", members=(fake_spec("fake-alpha"),))
+    vote = {"verifier_model_id": "m", "verifier_model_version": "2026-11-21", "family": "fake-alpha", "verifier_prompt_hash": "0" * 64,
+            "verdict": "SUPPORTED", "ehmf_type": None, "span_id": "span-" + "a" * 64, "cached": False}
+    with pytest.raises(ValidationError, match="generator's family"):
+        V2ClaimVerdict(tier=2, rule="withhold-queue-v3", generator_family="fake-alpha", mode="REDUCED-1", members=("fake-alpha",), votes=(vote,),
+                       objections=0, split=False, outcome="withheld", cycle=0)
+    registry = make_registry(FAMILIES, generator_family="fake-alpha")
+    adapters = adapters_of(registry)
+    generator = FakeAlphaGenerator(ExtractiveD19Generator(PACKAGE))
+    entry = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters), registry=registry, generator=generator), TIER2).entry
+    block = entry.verification.v2
+    assert block.generator_family == "fake-alpha" and block.members == ("fake-beta", "fake-delta", "fake-gamma")
+    assert adapters["fake-alpha-v1"].calls == 0 and all(vote.family != "fake-alpha" for verdict in judged(entry).values() for vote in verdict.votes)
+    payload = entry.verification.model_dump(mode="json")
+    payload["v2"]["members"] = sorted(["fake-alpha", *payload["v2"]["members"][:2]])
+    with pytest.raises(ValidationError, match="excludes the generator"):
+        VerificationRecordV2.model_validate(payload)
+    # An unknown generator family fails closed: no panel, every eligible claim withheld, no call.
+    unknown = FamilyGenerator(ExtractiveD19Generator(PACKAGE), "unregistered-generator")
+    adapters = adapters_of(THREE)
+    entry = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters), registry=THREE, generator=unknown), TIER2).entry
+    assert entry.verification.v2.members == () and all(adapter.calls == 0 for adapter in adapters.values())
+    assert {verdict.outcome for verdict in judged(entry).values()} == {"withheld"} and entry.verification.final == "withhold"
+
+
+# ======================================================================================================== AC-5-2
+
+
+def test_ac_5_2_two_verifiers_of_one_family_yield_one_vote():
+    registry = make_registry(("fake-alpha", "fake-beta", "fake-gamma"), duplicate="fake-beta")
+    adapters = adapters_of(registry)
+    entry = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters), registry=registry), TIER2).entry
+    assert entry.verification.v2.members == ("fake-alpha", "fake-beta", "fake-gamma") and adapters["fake-beta-2"].calls == 0
+    for verdict in judged(entry).values():
+        assert [vote.family for vote in verdict.votes].count("fake-beta") == len({vote.span_id for vote in verdict.votes})
+        assert len(verdict.members) == 3
+    adapters = adapters_of(registry)
+    settings = Settings(model_gateway="on", model_gateway_disabled_adapters=["fake-beta-1"])
+    entry = run(v2_pipeline(settings, gateway=fresh_gateway(adapters=adapters), registry=registry), TIER2).entry
+    assert adapters["fake-beta-1"].calls == 0 and adapters["fake-beta-2"].calls > 0 and "fake-beta" in entry.verification.v2.members
+    verdict = next(iter(judged(entry).values())).model_dump(mode="json")
+    verdict["votes"] = [verdict["votes"][1], dict(verdict["votes"][1])]
+    with pytest.raises(ValidationError, match="one vote per family and span"):
+        V2ClaimVerdict.model_validate(verdict)
+
+
+# ======================================================================================================== AC-5-3
+
+FORBIDDEN_KEYS = {"vote", "votes", "verdict_of", "family", "generator", "model"}
+
+
+def _keys(value) -> set[str]:
+    if isinstance(value, dict):
+        return set(value) | {key for item in value.values() for key in _keys(item)}
+    if isinstance(value, list):
+        return {key for item in value for key in _keys(item)}
+    return set()
+
+
+def test_ac_5_3_captured_verifier_prompts_hold_no_generator_identity_votes_learner_ids_text_or_history():
+    gateway = get_gateway()
+    marker = f"marker{uuid4().hex[:10]}"
+    first_question = f"Why does routing depth matter on sparse hardware {marker}?"
+    texts, ids = [first_question], []
+    with captured(gateway) as requests:
+        for path in ("/assistant/chat", "/tutor/turns"):
+            headers = demo("p5-capture")
+            first = client.post(path, json={"message": first_question}, headers=fresh(headers)).json()
+            follow = "And why does it matter for compilation?"
+            second = client.post(path, json={"message": follow, "thread_id": first["thread_id"]}, headers=fresh(headers)).json()
+            assert first.get("turn_id") and second.get("turn_id"), (first, second)
+            texts.append(follow)
+            ids += [headers["x-demo-user"], first["thread_id"], first["turn_id"], second["turn_id"]]
+        for query in (TIER2, MULTI_CLAIM):
+            pipeline = v2_pipeline(gateway=gateway, registry=registry_for(PACKAGE, Settings()))
+            result = run(pipeline, query)
+            texts.append(query)
+            ids += [result.entry.response_id, result.entry.shadowed_response_id, *result.entry.resolved_question.source_turn_ids]
+    assert requests and {request.item for request in requests} == {"claim", "alignment"}
+    others = [spec for spec in registry_for(PACKAGE, Settings()).members]
+    for request in requests:
+        payload = request.model_dump(mode="json")
+        text = json.dumps(payload)
+        assert not (_keys(payload) & FORBIDDEN_KEYS), _keys(payload) & FORBIDDEN_KEYS
+        for value in ("extractive-d19-v1", "extractive-d19", *(spec.adapter_id for spec in others), *(spec.model_id for spec in others)):
+            assert value not in text, value
+        for value in (*ids, *texts, marker):
+            assert value not in text, value
+        assert "@" not in text
+
+
+def test_ac_5_3_objective_and_band_appear_only_in_the_alignment_item_payload():
+    pipeline = v2_pipeline(registry=THREE, gateway=fresh_gateway(adapters=adapters_of(THREE)))
+    slug, lesson = next((slug, lesson) for slug, lesson in pipeline.store.lessons.items()
+                        if run(pipeline, TIER2, lesson_slug=slug).rendered is not None)
+    pipeline = v2_pipeline(registry=THREE, gateway=fresh_gateway(adapters=adapters_of(THREE)))  # a cold cache: every pair is a call
+    with captured(pipeline.gateway) as requests:
+        result = run(pipeline, TIER2, lesson_slug=slug)
+    assert result.entry.verification.v2.alignment is not None
+    claims = [request for request in requests if request.item == "claim"]
+    alignments = [request for request in requests if request.item == "alignment"]
+    assert claims and alignments
+    for request in claims:
+        payload = request.model_dump(mode="json")
+        assert not ({"objective", "band"} & _keys(payload)) and lesson.summary not in json.dumps(payload)
+    for request in alignments:
+        assert request.objective == lesson.summary and request.band == ReadabilityBand(min_grade=PACKAGE.v1.readability_min,
+                                                                                       max_grade=PACKAGE.v1.readability_max)
+
+
+def test_ac_5_3_every_verifier_gets_the_same_prompt_and_tool_surface():
+    gateway = fresh_gateway(adapters=adapters_of(THREE))
+    pipeline = v2_pipeline(gateway=gateway, registry=THREE)
+    pipeline.tool_host = ToolHost.default(pipeline, gateway)
+    entries = [run(pipeline, query).entry for query in (TIER2, MULTI_CLAIM, TWO_CLAIMS)]
+    with captured(gateway) as requests:
+        entries.append(run(pipeline, "What makes a QC+AI claim plausible in the NISQ era?").entry)
+    votes = [vote for entry in entries for verdict in judged(entry).values() for vote in verdict.votes]
+    assert votes and {vote.verifier_prompt_hash for vote in votes} == {rules.verifier_prompt_hash()}
+    assert {entry.verification.v2.tool_contract_version for entry in entries} == {"mcp-tools-v1"}
+    assert len({request.instructions.model_dump_json() for request in requests if request.item == "claim"}) == 1
+    fresh_votes = sum(1 for vote in votes if not vote.cached)
+    assert pipeline.tool_host.calls[("verifier", "verification.verdict")] == fresh_votes
+    assert pipeline.tool_host.calls[("verifier", "corpus.span_text")] == len(votes)
+
+
+# ======================================================================================================== AC-5-4
+
+
+def test_ac_5_4_one_objection_fails_tier_1_and_passes_tier_2_and_not_enough_info_objects():
+    for objection in ("CONTRADICTED", "NOT_ENOUGH_INFO"):
+        assert tally("1oo3", ["SUPPORTED", "SUPPORTED", objection]) == "fail" and tally("2oo3", ["SUPPORTED", "SUPPORTED", objection]) == "pass"
+    for query, tier, expected in ((MULTI_CLAIM, 1, "fail"), (TIER2, 2, "pass")):
+        claim = run(dev_pipeline(), query).locked.claims[0]
+        for objection in ("CONTRADICTED", "NOT_ENOUGH_INFO"):
+            script = {claim_key(claim.text, span_id): (objection, "A") for span_id in claim.span_ids}
+            adapters = adapters_of(THREE, **{"fake-gamma-v1": {"script": script}})
+            entry = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters), registry=THREE), query).entry
+            verdict = judged(entry)[claim.claim_id]
+            assert (verdict.tier, verdict.outcome, verdict.objections) == (tier, expected, 1), (query, objection)
+            final = {item.claim_id: item.final for item in entry.verification.verdicts}[claim.claim_id]
+            assert final == ("abstain" if expected == "fail" else "deliver")
+
+
+# ======================================================================================================== AC-5-5
+
+
+def test_ac_5_5_a_v1_hard_fail_or_abstention_makes_no_gateway_call():
+    clean = [(claim.text, list(claim.span_ids)) for claim in run(dev_pipeline(), MULTI_CLAIM).plan.claims]
+    forged = [(clean[0][0], ["span-" + "e" * 64]), *clean[1:]]
+    cases = (
+        ("hard fail", MULTI_CLAIM, {"generator": ScriptedGenerator([forged])}),
+        ("V1.5 abstain", OFF_TOPIC[0], {}),
+        ("checker unavailable", MULTI_CLAIM, {"checker": RaisingChecker()}),
+    )
+    for name, query, options in cases:
+        adapters = adapters_of(THREE)
+        entry = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters), registry=THREE, **options), query).entry
+        verification = entry.verification
+        assert all(adapter.calls == 0 for adapter in adapters.values()), name
+        assert all(verdict.v2 is None for verdict in verification.verdicts) and not verification.v2.panel_reached, name
+        assert verification.final == "abstain" and verification.v2.calls == 0, name
+    assert verification.final_reason == "checker_unavailable"
+
+
+# ======================================================================================================== AC-5-6
+
+
+@pytest.mark.parametrize("down, mode, banner", [
+    ((), "FULL", None),
+    (("fake-gamma-v1", "fake-delta-v1"), "REDUCED-2", "degraded-reduced-2-v1"),
+    (("fake-beta-v1", "fake-gamma-v1", "fake-delta-v1"), "REDUCED-1", "degraded-reduced-1-v1"),
+    (("fake-alpha-v1", "fake-beta-v1", "fake-gamma-v1", "fake-delta-v1"), "ZERO", "degraded-zero-v1"),
+])
+def test_ac_5_6_fault_injection_one_two_and_three_providers_down(down, mode, banner):
+    adapters = adapters_of(FOUR, **{adapter_id: {"down": True} for adapter_id in down})
+    entry = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters), registry=FOUR), TIER2, legacy_decision="answer").entry
+    verification = entry.verification
+    verdicts = judged(entry).values()
+    assert {verdict.mode for verdict in verdicts} == {mode} and verification.v2.degraded_mode == mode
+    assert verification.v2.banner == banner and (("degraded" in verification.labels) == (banner is not None))
+    rule = rules.RULE_MATRIX[mode][2]
+    assert {verdict.rule for verdict in verdicts} == {rule}
+    if mode in ("FULL", "REDUCED-2"):
+        assert {verdict.outcome for verdict in verdicts} == {"pass"} and verification.final == "deliver"
+    else:
+        # D-29 (a): REDUCED-1 withholds and queues tiers 1 and 2; ZERO withholds and queues every claim; no call either way.
+        assert {verdict.outcome for verdict in verdicts} == {"withheld"} and all(not verdict.votes for verdict in verdicts)
+        assert all(adapter.calls == 0 for adapter in adapters.values())
+        assert (verification.final, verification.final_reason, verification.replacement) == ("withhold", "v2_degraded_withheld", "extractive_d19")
+        assert all("v2_degraded_withheld" in verdict.v3.reasons and verdict.v3.escalation is None for verdict in verification.verdicts)
+    if mode == "REDUCED-1":
+        # A tier-3 claim follows its rule (equal weights) on the remaining verifier (an in-memory overlay: no shipped tier 3).
+        pipeline = v2_pipeline(gateway=fresh_gateway(adapters=adapters_of(FOUR, **{adapter_id: {"down": True} for adapter_id in down})),
+                               registry=FOUR)
+        pipeline.package = dataclasses.replace(pipeline.package, v2=dataclasses.replace(pipeline.package.v2, default_tier=3))
+        tier3 = run(pipeline, TIER2).entry
+        assert {(verdict.tier, verdict.rule, verdict.outcome, len(verdict.votes)) for verdict in judged(tier3).values()} == {
+            (3, "equal-weights-share-v1", "pass", 1)} and tier3.verification.final == "deliver"
+
+
+def test_ac_5_6_a_mid_response_loss_and_each_kill_switch():
+    adapters = adapters_of(THREE, **{"fake-beta-v1": {"fail_calls": {1}}})
+    entry = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters), registry=THREE), TIER2).entry
+    assert [verdict.mode for verdict in judged(entry).values()] == ["REDUCED-2"] * 3
+    assert all(not vote.cached for verdict in judged(entry).values() for vote in verdict.votes)
+    for switch in ("abstain_only", "pre_verified_only"):
+        adapters = adapters_of(THREE)
+        settings = Settings(model_gateway="on", model_gateway_kill_switch=switch)
+        entry = run(v2_pipeline(settings, gateway=fresh_gateway(adapters=adapters), registry=THREE), TIER2).entry
+        assert entry.verification.final_reason == "v2_kill_switch" and all(adapter.calls == 0 for adapter in adapters.values())
+
+
+# ======================================================================================================== AC-5-7
+
+
+def test_ac_5_7_a_claim_failing_two_correction_cycles_is_abstained_and_marked_x2():
+    claims = run(dev_pipeline(), TIER2).locked.claims
+    generator = RevisingGenerator(ExtractiveD19Generator(PACKAGE))
+    with SessionLocal() as db:
+        before = int(db.scalar(select(func.max(ResponseLedgerRecord.seq))) or 0)
+    result = run(v2_pipeline(gateway=fresh_gateway(adapters=contradicting(THREE, claims[1])), registry=THREE, generator=generator), TIER2,
+                 record=True)
+    verification = result.entry.verification
+    by_id = {verdict.claim_id: verdict for verdict in verification.verdicts}
+    failed = by_id[claims[1].claim_id]
+    assert verification.v2.cycles == 2 and failed.final == "abstain" and failed.v3.escalation == "X2"
+    assert len(generator.revised) == 2 and verification.final == "deliver"
+    with SessionLocal() as db:
+        intents = [item for item in ledger.pending_v3_intents(db, after_seq=before) if item["claim_id"] == claims[1].claim_id]
+    assert intents and intents[0]["escalation"] == "X2" and "v2_correction_exhausted" in intents[0]["reasons"]
+    # The extractive generator cannot revise: the failed claim is re-verified unchanged (every pair a cache hit).
+    adapters = contradicting(THREE, claims[1])
+    entry = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters), registry=THREE), TIER2).entry
+    assert all(adapter.calls == len(claims) + 1 for adapter in adapters.values())
+    assert {item.claim_id: item.final for item in entry.verification.verdicts}[claims[1].claim_id] == "abstain"
+
+
+def test_ac_5_7_a_type_e_objection_re_renders_only():
+    generator = RevisingGenerator(ExtractiveD19Generator(PACKAGE))
+    adapters = adapters_of(THREE, **{"fake-beta-v1": {"alignment": {"rating": 3, "leakage": True}}})
+    result = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters), registry=THREE, generator=generator), TIER2)
+    verification = result.entry.verification
+    assert generator.proposals == 1 and generator.revised == []  # no new claim plan
+    assert [item.kind for item in verification.v2.corrections] == ["re_render", "re_render"]
+    assert verification.final_reason == "v2_alignment_failed" and result.decision == "abstain"
+    assert result.entry.presentation.plan_id == "socratic"
+
+
+# ======================================================================================================== AC-5-8
+
+
+def test_ac_5_8_a_repeated_claim_span_pair_hits_the_cache_and_a_configuration_bump_misses(tmp_path):
+    from app.services.v2_panel.cache import ProcessEvidentialCache
+
+    cache = ProcessEvidentialCache()
+    adapters = adapters_of(THREE)
+    pipeline = v2_pipeline(gateway=fresh_gateway(adapters=adapters), registry=THREE, cache=cache)
+    first = run(pipeline, TIER2).entry
+    calls = {name: adapter.calls for name, adapter in adapters.items()}
+    second = run(pipeline, TIER2).entry
+    assert all(not vote.cached for verdict in judged(first).values() for vote in verdict.votes)
+    assert all(vote.cached for verdict in judged(second).values() for vote in verdict.votes)
+    assert {name: adapter.calls - calls[name] for name, adapter in adapters.items()} == {name: 1 for name in adapters}  # alignment only
+    bumped = temp_package(tmp_path, edit=lambda raw: raw.update(package_version="4.0.1"))
+    settings = Settings(model_gateway="on", config_package_path=str(bumped))
+    other = v2_pipeline(settings, gateway=fresh_gateway(adapters=adapters), registry=THREE, cache=cache)
+    assert other.package.sha256 != pipeline.package.sha256
+    third = run(other, TIER2).entry
+    assert all(not vote.cached for verdict in judged(third).values() for vote in verdict.votes)
+
+
+# ======================================================================================================== AC-5-9
+
+KEY = f"provider-key-{uuid4().hex}"
+
+
+def _http_gateway(responses):
+    seen: list = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        item = responses[min(len(seen) - 1, len(responses) - 1)]
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    spec = fake_spec("test-family", provider="test-provider", endpoint="https://verifier.invalid/v1/verdicts", auth_header="authorization-bearer",
+                     secret_ref="TEST_PROVIDER_KEY", max_retries=1)
+    adapter = HttpJsonAdapter(spec, secret_store=FakeSecretStore({"TEST_PROVIDER_KEY": KEY}), transport=httpx.MockTransport(handler),
+                              sleep=lambda seconds: None)
+    return spec, fresh_gateway(adapters={spec.adapter_id: adapter}), seen
+
+
+@pytest.mark.parametrize("responses", [
+    [httpx.Response(401, json={"error": f"invalid key {KEY}"})],
+    [httpx.Response(500)],
+    [httpx.ReadTimeout("slow")],
+    [httpx.Response(200, content=b"<html>not json</html>")],
+])
+def test_ac_5_9_a_provider_error_leaves_no_key_authorization_header_or_query_in_logs_or_exceptions(responses, caplog):
+    pipeline = dev_pipeline()
+    claim = run(pipeline, TIER2).locked.claims[0]
+    record = pipeline.store.span_registry.get(claim.span_ids[0])
+    request = VerdictRequest(claim_text=claim.text, span=VerdictSpan(span_id=record.span_id, text=record.text),
+                             instructions=VerdictInstructions(prompt_hash=rules.verifier_prompt_hash(), tool_contract_version="mcp-tools-v1"))
+    spec, gateway, seen = _http_gateway(responses)
+    for name in ("", "httpx", "httpcore", "qcai.gateway"):
+        caplog.set_level(logging.DEBUG, logger=name or None)
+    with pytest.raises(AdapterError) as excinfo:
+        gateway.verify(spec, request, context=PolicyContext(store=pipeline.store, corpus_registry=pipeline.registry))
+    error = excinfo.value
+    assert seen and seen[0].headers["authorization"] == f"Bearer {KEY}" and not seen[0].url.query
+    assert error.__cause__ is None and error.__context__ is None
+    # The formatted traceback from the gateway down (the test frame names this test, whose name says "authorization").
+    rendered = [str(error), repr(error), "".join(traceback.format_tb(error.__traceback__.tb_next)) + "".join(traceback.format_exception_only(error))]
+    lines = [record.getMessage() for record in caplog.records] + [json.dumps(getattr(record, "json_fields", {})) for record in caplog.records]
+    for text in rendered + lines:
+        assert KEY not in text and "Bearer" not in text and "Authorization" not in text and "authorization" not in text and "?" not in text
+    assert gateway.state == "open"  # no gateway secret reached a log line
+    with pytest.raises(ValueError, match="never travel in the URL"):
+        HttpJsonAdapter(dataclasses.replace(spec, endpoint="https://verifier.invalid/v1?key=abc"), secret_store=FakeSecretStore({}))
+
+
+def test_ac_5_9_calls_stop_at_the_daily_budget(caplog):
+    caplog.set_level(logging.WARNING, logger="qcai.gateway")
+    adapters = adapters_of(THREE)
+    gateway = ModelGateway(budget=DailyBudget(5), adapters=adapters)
+    pipeline = v2_pipeline(gateway=gateway, registry=THREE)
+    assert len(run(dev_pipeline(), TWO_CLAIMS).locked.claims) == 2
+    start = last_security_seq()
+    entry = run(pipeline, TWO_CLAIMS).entry
+    assert sum(adapter.calls for adapter in adapters.values()) == 5
+    alerts = [record.json_fields for record in caplog.records if getattr(record, "json_fields", {}).get("event") == "gateway.budget_alert"]
+    assert alerts == [{"event": "gateway.budget_alert", "share": "4/5", "daily_units": 5, "spent": 4}]
+    assert (gateway.state, gateway.stop_reason) == ("stopped", "budget_breach")
+    events = security_events("gateway.stopped", start)
+    assert [(event.outcome, event.actor_role, event.details.get("reason")) for event in events] == [("denied", "system", "budget_breach")]
+    modes = [verdict.mode for verdict in judged(entry).values()]
+    assert modes == ["FULL", "ZERO"] and entry.verification.v2.gateway_state == "stopped"
+    assert pipeline.v2_mode() == "off"
+    after = run(pipeline, TWO_CLAIMS).entry
+    assert after.entry_schema == "ledger-entry-v2" and sum(adapter.calls for adapter in adapters.values()) == 5
+
+
+# ======================================================================================================= AC-5-10
+
+UNPINNED = {
+    "missing version": lambda member: member.pop("model_version"),
+    "preview": lambda member: member.update(model_id="fake-alpha-preview"),
+    "latest": lambda member: member.update(model_id="fake-alpha-latest"),
+    "exp": lambda member: member.update(model_id="fake-alpha-exp"),
+    "alias": lambda member: member.update(model_version="alias"),
+    "non-pinned form": lambda member: member.update(model_version="stable-1"),
+}
+
+
+def _package_copy(tmp_path: Path, edit) -> Path:
+    """A copy of the shipped package (schemas included) with `edit` applied and its sidecar rewritten, unparsed."""
+    import shutil
+
+    from app.core.config_package import canonical_sha256
+
+    raw = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
+    edit(raw)
+    path = tmp_path / "package" / DEFAULT_PACKAGE_PATH.name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(DEFAULT_PACKAGE_PATH.parent / "schemas", path.parent / "schemas", dirs_exist_ok=True)
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    path.with_name(DEFAULT_PACKAGE_PATH.name + ".sha256").write_text(canonical_sha256(raw) + "\n", encoding="utf-8")
+    return path
+
+
+def _startup(extra: dict[str, str]) -> subprocess.CompletedProcess:
+    env = {key: value for key, value in os.environ.items() if key not in {"V1_PIPELINE", "CONFIG_PACKAGE_PATH", "ENFORCE_CORPUS_GOVERNANCE", "MODEL_GATEWAY"}}
+    env.update({"PYTHONUNBUFFERED": "1", **extra})
+    return subprocess.run([sys.executable, "-c", "from app.main import _initialize_database; _initialize_database()"], cwd=API_ROOT, env=env,
+                          capture_output=True, text=True, timeout=240)
+
+
+@pytest.mark.parametrize("name", sorted(UNPINNED))
+def test_ac_5_10_an_unpinned_identifier_makes_start_up_fail(name, tmp_path, fresh_database_url):
+    path = _package_copy(tmp_path, lambda raw: UNPINNED[name](raw["gateway"]["registries"]["development"][0]))
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    with pytest.raises(ConfigPackageError, match="unpinned"):
+        parse_config_package(raw, path=path, sha256="0" * 64, hash_verified=False)
+    completed = _startup({"DATABASE_URL": fresh_database_url, "ENVIRONMENT": "development", "CONFIG_PACKAGE_PATH": str(path)})
+    assert completed.returncode != 0 and "unpinned" in completed.stderr, completed.stderr[-500:]
+    retired = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
+    retired["gateway"]["registries"]["development"][0].update(model_id="gemini-3.1-flash-lite-preview", model_version="2026-01-01")
+    with pytest.raises(ConfigPackageError, match="unpinned"):
+        parse_config_package(retired, path=DEFAULT_PACKAGE_PATH, sha256="0" * 64, hash_verified=False)
+
+
+# ======================================================================================================= AC-5-11
+
+
+def test_ac_5_11_two_learners_share_only_evidential_entries_and_a_model_change_misses(monkeypatch):
+    from app.services.tutor_pipeline.contracts import ClaimPlan
+    from app.services.tutor_pipeline.render import TemplateRenderer
+    from app.services.v2_panel.cache import get_cache
+
+    renders = []
+    real_render = TemplateRenderer.render
+    monkeypatch.setattr(TemplateRenderer, "render", lambda self, *args, **kwargs: renders.append(1) or real_render(self, *args, **kwargs))
+    cache = get_cache()
+    learners = [demo("p5-cache-a"), demo("p5-cache-b")]
+    bodies = []
+    for index, headers in enumerate(learners):
+        before = cache.snapshot()
+        renders_before = len(renders)
+        bodies.append(client.post("/tutor/turns", json={"message": TIER2}, headers=fresh(headers)).json())
+        after = cache.snapshot()
+        assert len(renders) > renders_before  # every learner's response is rendered, never served from the cache
+        if index == 1:
+            assert after["claim_plan"]["hits"] > before["claim_plan"]["hits"] and after["verdict"]["hits"] > before["verdict"]["hits"]
+    values = cache.values("claim_plan") + cache.values("verdict")
+    assert values and all(isinstance(value, (ClaimPlan, contracts.SCHEMA_MODELS["V2AdapterVerdict"])) for value in values)
+    dumped = json.dumps([value.model_dump(mode="json") for value in values]) + json.dumps(cache.keys("claim_plan") + cache.keys("verdict"))
+    for headers, body in zip(learners, bodies):
+        assert headers["x-demo-user"] not in dumped and body["thread_id"] not in dumped and body["turn_id"] not in dumped
+    assert TIER2 not in dumped and "These sentences are quoted" not in dumped
+    # A model change misses: a registry whose fake-alpha names a new model version.
+    changed = AdapterRegistry(name="development", members=tuple(
+        dataclasses.replace(spec, model_version="2026-12-01") if spec.family == "fake-alpha" else spec for spec in THREE.members))
+    adapters = adapters_of(changed)
+    entry = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters), registry=changed, cache=cache), TIER2).entry
+    votes = [vote for verdict in judged(entry).values() for vote in verdict.votes]
+    assert all(not vote.cached for vote in votes if vote.family == "fake-alpha") and any(vote.cached for vote in votes if vote.family != "fake-alpha")
+    # The same question under another lesson scope misses the claim-plan entry.
+    pipeline = v2_pipeline(gateway=fresh_gateway(adapters=adapters_of(THREE)), registry=THREE, cache=cache)
+    plans_before = cache.snapshot()["claim_plan"]
+    slug = next(slug for slug in pipeline.store.lessons if run(pipeline, TIER2, lesson_slug=slug).envelope is not None)
+    assert cache.snapshot()["claim_plan"]["misses"] > plans_before["misses"] and slug
+
+
+# ========================================================================================================= plan P
+
+
+def test_plan_p_f_1_every_fixture_response_carries_ledger_verdicts(fixture_report):
+    assert fixture_report["result"] == "pass", fixture_report["problems"]
+    names = [block["name"] for block in fixture_report["scenarios"]]
+    assert names == ["all_up", "one_down", "two_down", "three_down"]
+    for block, mode in zip(fixture_report["scenarios"], ("FULL", "REDUCED-2", "REDUCED-1", "ZERO")):
+        assert block["responses"] == 298 and block["f1"]["rate"] == "298/298", block["name"]
+        assert block["v2_after_v1_fail"] == 0 and block["deliver_without_pass"] == 0
+        assert set(key for key, count in block["modes"].items() if count) == {mode}, block["name"]
+    assert fixture_report["cache_pass"]["f1"]["rate"] == "298/298" and fixture_report["cache_pass"]["verdict_hits"] > 0
+    assert fixture_report["cache_pass"]["claim_plan_hits"] > 0
+    assert fixture_report["payload_fields"]["claim"] == ["claim_text", "instructions", "item", "request_schema", "span"]
+
+
+def test_plan_p_the_committed_v2_fixture_report_matches_a_fresh_run_and_names_its_evidence_class(fixture_report):
+    runner = load_script("run_v2_fixtures")
+    committed = json.loads((REPO_ROOT / "docs" / "evaluation" / "phase5" / "v2_fixture_report_v1.json").read_text(encoding="utf-8"))
+
+    def comparable(report):
+        stripped = runner._strip_volatile(report)
+        stripped.pop("inputs", None)  # inside a test process the imported-module map also holds what other tests imported
+        return stripped
+
+    assert comparable(committed) == comparable(fixture_report)
+    # The record's module map matches the checkout, and every module it lists is one this run imported, unchanged
+    # (`run_v2_fixtures.py --check`, a process of its own, compares the whole map).
+    assert runner.input_problems(committed["inputs"]) == []
+    fresh = fixture_report["inputs"]["files"]
+    assert all(fresh.get(path) == digest for path, digest in committed["inputs"]["files"].items())
+    assert committed["evidence_class"].startswith("fixture measurements, not research results") and committed["public_corpus_only"] is True
+    assert committed["config_package"] == {"version": PACKAGE.package_version, "sha256": PACKAGE.sha256}
+    assert runner.exit_code(dict(committed, result="breach")) == 5 and runner.exit_code(dict(committed, result="stop")) == 3
+
+
+# ================================================================================================ plan G and L
+
+
+def test_plan_g_model_gateway_defaults_and_refusals(monkeypatch, fresh_database_url):
+    from app import main as main_module
+    import app.gateway as gateway_package
+
+    production = {"environment": "production", "allowed_origins": ["https://qantumlearn.academy"]}
+    assert Settings().model_gateway == "shadow" and Settings(**production).model_gateway == "off"
+    with pytest.raises(ValidationError, match="needs V1_PIPELINE=enforce"):
+        Settings(model_gateway="on", v1_pipeline="shadow")
+    with pytest.raises(ValidationError, match="needs V1_PIPELINE=enforce|phase4_exit_passed"):
+        Settings(**production, model_gateway="on")
+    exited = dataclasses.replace(PACKAGE, flag_policy=dataclasses.replace(PACKAGE.flag_policy, phase4_exit_passed=True, phase4_exit_evidence="x"))
+    monkeypatch.setattr("app.core.config_package.get_config_package", lambda settings=None: exited)
+    with pytest.raises(ValidationError, match="phase5_exit_passed"):
+        Settings(**production, v1_pipeline="enforce", model_gateway="on")
+    both = dataclasses.replace(exited, flag_policy=dataclasses.replace(exited.flag_policy, phase5_exit_passed=True, phase5_exit_evidence="y"))
+    monkeypatch.setattr("app.core.config_package.get_config_package", lambda settings=None: both)
+    allowed = Settings(**production, v1_pipeline="enforce", model_gateway="on")
+    assert allowed.model_gateway == "on"
+    recorded = []
+    monkeypatch.setattr(main_module, "IS_PRODUCTION", True)
+    monkeypatch.setattr(main_module, "settings", allowed)
+    monkeypatch.setattr(main_module, "get_config_package", lambda _settings=None: both)
+    monkeypatch.setattr(main_module, "record_security_event", lambda *args, **kwargs: recorded.append(kwargs["details"]))
+    main_module._record_configuration_overrides()
+    assert recorded and recorded[0].get("model_gateway_on") is True
+    monkeypatch.undo()
+    # A gateway package problem other than pinning stops a governed start-up only when the gateway is requested.
+    broken = dataclasses.replace(PACKAGE, tools=dataclasses.replace(PACKAGE.tools, sha256="0" * 64))
+    for requested, stops in (("shadow", True), ("off", False)):
+        monkeypatch.setattr(main_module, "settings", Settings(enforce_corpus_governance=True, model_gateway=requested))
+        try:
+            if stops:
+                with pytest.raises(ConfigPackageError, match="gateway: tools"):
+                    main_module._check_gateway_package(broken)
+            else:
+                main_module._check_gateway_package(broken)
+                assert gateway_package.GATEWAY_UNAVAILABLE_REASON is not None
+                assert main_module._gateway_fields(PACKAGE)["available"] is False
+                from app.services import v2_panel
+
+                assert v2_panel.mode(Settings(), PACKAGE) == "off"
+        finally:
+            gateway_package.GATEWAY_UNAVAILABLE_REASON = None
+    completed = _startup({"DATABASE_URL": fresh_database_url, "ENVIRONMENT": "production", "MODEL_GATEWAY": "on", "V1_PIPELINE": "shadow",
+                          "ALLOWED_ORIGINS": "https://qantumlearn.academy", "GUEST_TOKEN_SECRET": "a-production-like-secret-of-sufficient-length"})
+    assert completed.returncode != 0 and "MODEL_GATEWAY=on" in completed.stderr, completed.stderr[-500:]
+
+
+def test_plan_l_flag_off_returns_to_phase_4(monkeypatch):
+    import app.gateway.gateway as gateway_module
+    import app.services.v2_panel.cache as cache_module
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("with MODEL_GATEWAY off no gateway or cache is built or read")
+
+    monkeypatch.setattr(gateway_module, "get_gateway", refuse)
+    monkeypatch.setattr(cache_module, "get_cache", refuse)
+    off = run(dev_pipeline(Settings(model_gateway="off")), MULTI_CLAIM, legacy_decision="answer").entry
+    assert type(off) is LedgerEntryV2 and type(off.verification) is VerificationRecord
+    voter = SupportedVoter()
+    hooked = run(dev_pipeline(Settings(model_gateway="on"), v2_hook=voter), MULTI_CLAIM, legacy_decision="answer").entry
+    assert type(hooked) is LedgerEntryV2 and voter.calls == 1
+    for entry in (off, hooked):
+        assert (entry.verification.final, entry.verification.final_reason, entry.verification.replacement) == (
+            "withhold", "d20_interim_withhold", "extractive_d19")
+    assert [verdict.final for verdict in off.verification.verdicts] == [verdict.final for verdict in hooked.verification.verdicts]
+
+
+def test_plan_g_shadow_dual_run_records_v2_beside_the_unchanged_v1_decision(caplog):
+    caplog.set_level(logging.INFO, logger="qcai.tutor")
+    off = run(dev_pipeline(Settings(model_gateway="off")), TIER2, legacy_decision="answer").entry
+    shadow = run(v2_pipeline(Settings(model_gateway="shadow"), gateway=fresh_gateway(adapters=adapters_of(THREE)), registry=THREE), TIER2,
+                 legacy_decision="answer").entry
+    assert type(shadow) is LedgerEntryV3 and shadow.verification.v2.mode == "shadow"
+    for name in ("final", "final_reason", "replacement", "labels"):
+        assert getattr(shadow.verification, name) == getattr(off.verification, name), name
+    assert [verdict.final for verdict in shadow.verification.verdicts] == [verdict.final for verdict in off.verification.verdicts]
+    summary = shadow.verification.v2.shadow
+    assert summary.would_deliver == len(judged(shadow)) and shadow.verification.v2.cycles == 0
+    disagreements = [record.json_fields for record in caplog.records if getattr(record, "json_fields", {}).get("event") == "tutor.v2.disagreement"]
+    assert disagreements == [{"event": "tutor.v2.disagreement", "v1_final": "withhold", "v2_would": "deliver"}]
+
+
+def test_plan_l_a_payload_violation_stops_the_gateway_with_a_security_event():
+    pipeline = dev_pipeline()
+    result = run(pipeline, TIER2)
+    claim = result.locked.claims[0]
+    record = pipeline.store.span_registry.get(claim.span_ids[0])
+    instructions = VerdictInstructions(prompt_hash=rules.verifier_prompt_hash(), tool_contract_version="mcp-tools-v1")
+    from app.services.tutor_pipeline.render import layout_text
+
+    segments = list(result.rendered.segments)
+    segments[0] = segments[0].model_copy(update={"text": "A segment no template wrote."})
+    forged = result.rendered.model_copy(update={"segments": tuple(segments), "text": layout_text(segments)})
+    cases = {
+        "unknown span": (VerdictRequest(claim_text=claim.text, span=VerdictSpan(span_id="span-" + "f" * 64, text=record.text), instructions=instructions),
+                         PolicyContext(store=pipeline.store, corpus_registry=pipeline.registry)),
+        "identifier": (VerdictRequest.model_construct(request_schema="v2-verdict-request-v1", item="claim", claim_text="Write to learner@example.edu",
+                                                      span=VerdictSpan(span_id=record.span_id, text=record.text), instructions=instructions),
+                       PolicyContext(store=pipeline.store, corpus_registry=pipeline.registry)),
+        "non-template segment": (AlignmentRequest(rendered_text=forged.text, band=ReadabilityBand(min_grade=-4.0, max_grade=64.0),
+                                                  instructions=AlignmentInstructions(prompt_hash=rules.alignment_prompt_hash(),
+                                                                                     tool_contract_version="mcp-tools-v1")),
+                                 PolicyContext(store=pipeline.store, corpus_registry=pipeline.registry, rendering=forged, locked=result.locked)),
+    }
+    for name, (request, context) in cases.items():
+        start = last_security_seq()
+        gateway = fresh_gateway(adapters=adapters_of(THREE))
+        call = gateway.align if isinstance(request, AlignmentRequest) else gateway.verify
+        with pytest.raises(GatewayStopped):
+            call(THREE.members[0], request, context=context)
+        assert (gateway.state, gateway.stop_reason) == ("stopped", "payload_violation"), name
+        assert len(security_events("gateway.stopped", start)) == 1, name
+        later = v2_pipeline(gateway=gateway, registry=THREE)
+        assert later.v2_mode() == "off" and run(later, TIER2).entry.entry_schema == "ledger-entry-v2", name
+
+
+def test_plan_l_a_secret_reaching_a_log_stops_the_gateway():
+    from app.core.log_redaction import install_log_redaction
+
+    secret = f"gateway-secret-{uuid4().hex}"
+    gateway = fresh_gateway(adapters=adapters_of(THREE))
+    install_log_redaction([secret], owner="gateway")
+    start = last_security_seq()
+    logging.getLogger("qcai.test.secret").warning("a provider response echoed %s", secret)
+    # The listener only set a flag: no stop, no event, no database write inside the logging call.
+    assert gateway.state == "open" and security_events("gateway.stopped", start) == []
+    assert gateway.eligible(THREE.verifiers(), settings=Settings()) == []
+    assert (gateway.state, gateway.stop_reason) == ("stopped", "secret_in_logs") and len(security_events("gateway.stopped", start)) == 1
+
+
+def test_plan_h_only_public_quotable_spans_leave_and_gateway_and_v2_import_no_learner_module():
+    from app.core.corpus_governance import get_corpus_registry
+    from app.gateway.policy import PayloadPolicy, PayloadViolation
+    from app.services.content_assembler import CourseStore
+
+    governed = Settings(environment="production", enforce_corpus_governance=True, allowed_origins=["https://qantumlearn.academy"])
+    store = CourseStore(governed)
+    context = PolicyContext(store=store, corpus_registry=get_corpus_registry(governed))
+    instructions = VerdictInstructions(prompt_hash=rules.verifier_prompt_hash(), tool_contract_version="mcp-tools-v1")
+    for record in list(store.span_registry._by_id.values())[:10]:
+        with pytest.raises(PayloadViolation):
+            PayloadPolicy().check(VerdictRequest(claim_text="A claim.", span=VerdictSpan(span_id=record.span_id, text=record.text),
+                                                 instructions=instructions), context)
+    forbidden = ("learner_record", "learner_progress", "learning_intelligence", "microlearning", "app.core.auth", "app.api.routes",
+                 "answer_history", "retrieval_legacy_p1")
+    for root in (API_ROOT / "app" / "gateway", API_ROOT / "app" / "services" / "v2_panel"):
+        for path in root.glob("*.py"):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                names = [alias.name for alias in node.names] if isinstance(node, ast.Import) else (
+                    [node.module or ""] if isinstance(node, ast.ImportFrom) else [])
+                for name in names:
+                    assert not any(item in name for item in forbidden), (path.name, name)
+
+
+# ===================================================================================================== plan E
+
+
+REMOVED = ("_ask_vertex", "_vertex_client", "_vertex_endpoint", "_vertex_headers", "_vertex_provider_label", "_google_auth_bundle",
+           "vertex_enabled", "vertex_api_key", "vertex_project_id", "_access_token", "_format_page_context", "_extract_text", "_sanitize_history",
+           "vertex_ai_api_key", "vertex_ai_project_id", "vertex_ai_location", "vertex_ai_chat_model", "openai_chat_model")
+
+
+def test_plan_e_the_legacy_provider_code_is_retired_and_no_production_path_reached_it(monkeypatch):
+    import network_guard
+    from app.services import teaching_assistant
+    from app.services.retrieval_engine import RetrievalEngine
+    from app.services.store import get_course_store
+    from app.services.teaching_assistant import TeachingAssistantService
+
+    for root in (API_ROOT / "app", REPO_ROOT / "scripts", API_ROOT / "alembic", REPO_ROOT / "evaluation"):
+        for path in root.rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                name = (node.name if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else
+                        node.attr if isinstance(node, ast.Attribute) else None)
+                assert name not in REMOVED, (path, name)
+    assert not (set(REMOVED) & set(Settings.model_fields))
+    source = Path(teaching_assistant.__file__).read_text(encoding="utf-8")
+    for removed in ("httpx", "google.auth", "aiplatform", "import os"):
+        assert removed not in source, removed
+    monkeypatch.setenv("VERTEX_AI_API_KEY", f"retired-key-{uuid4().hex}")
+    network_guard.take_blocked()
+    service = TeachingAssistantService(RetrievalEngine(get_course_store(), Settings()), Settings())
+    assert service.chat("Why does routing depth matter?").provider == "none"
+    body = client.post("/assistant/chat", json={"message": "Why does routing depth matter?"}, headers=demo("p5-retired")).json()
+    assert body["provider"] == "none" and network_guard.take_blocked() == []
+
+
+def test_plan_e_a_retired_setting_is_named_at_start_up_and_its_value_never_logged(monkeypatch, caplog):
+    from app import main as main_module
+    from app.core.log_redaction import REDACTED, install_log_redaction
+    from app.gateway.retired import RETIRED_PROVIDER_SETTINGS, retired_secret_values, retired_settings_present
+
+    value = f"retired-vertex-key-{uuid4().hex}"
+    monkeypatch.setenv("VERTEX_AI_API_KEY", value)
+    monkeypatch.setenv("VERTEX_AI_CHAT_MODEL", "gemini-3.1-flash-lite-preview")
+    assert set(retired_settings_present()) >= {"VERTEX_AI_API_KEY", "VERTEX_AI_CHAT_MODEL"} and value in retired_secret_values()
+    assert Settings().model_dump().keys().isdisjoint({name.lower() for name in RETIRED_PROVIDER_SETTINGS})
+    install_log_redaction(retired_secret_values())
+    caplog.set_level(logging.WARNING, logger="qcai.gateway")
+    main_module._warn_retired_provider_settings()
+    events = [record.json_fields for record in caplog.records if getattr(record, "json_fields", {}).get("event") == "gateway.retired_setting"]
+    assert events and set(events[0]["names"]) >= {"VERTEX_AI_API_KEY", "VERTEX_AI_CHAT_MODEL"}
+    logging.getLogger("qcai.test.retired").warning("echo %s", value)
+    assert value not in caplog.text and REDACTED in caplog.text
+
+
+def test_plan_e_only_the_gateway_makes_model_egress():
+    from test_gateway_egress_guard import ALLOWED_IMPORTS, scan
+
+    assert scan() == [] and ALLOWED_IMPORTS == {"app/services/retrieval_engine.py": {"langchain_openai", "pinecone"}}
+
+
+def test_plan_e_d_23_provider_egress_needs_a_per_environment_per_provider_opt_in():
+    from app.services.retrieval_engine import RetrievalEngine
+    from app.services.store import get_course_store
+
+    paid = fake_spec("paid-family", provider="test-provider", endpoint="https://verifier.invalid/v1", auth_header="x-api-key", secret_ref="TEST_KEY")
+    gateway = fresh_gateway(adapters={})
+    assert Settings().model_egress_providers == [] and Settings(environment="production", allowed_origins=["https://x.invalid"]).model_egress_providers == []
+    assert gateway.ineligible_reason(paid, settings=Settings()) == "egress_refused"
+    assert gateway.ineligible_reason(paid, settings=Settings(model_egress_providers="test-provider")) is None
+    assert gateway.ineligible_reason(paid, settings=Settings(model_egress_providers='["other-provider"]')) == "egress_refused"
+    with pytest.raises(ValidationError):
+        Settings(model_egress_providers=["Not A Name"])
+    keys = dict(openai_api_key="k" * 12, pinecone_api_key="p" * 12, pinecone_index="i", semantic_retrieval_enabled=True)
+    assert RetrievalEngine(get_course_store(), Settings(**keys))._semantic_backend.enabled is False
+    opted = RetrievalEngine(get_course_store(), Settings(**keys, model_egress_providers=["openai-embeddings"]))._semantic_backend
+    assert opted.enabled is bool(__import__("app.services.retrieval_engine", fromlist=["Pinecone"]).Pinecone)
+
+
+def test_plan_e_no_real_provider_is_registered_in_any_shipped_registry():
+    for name, members in PACKAGE.gateway.registries.items():
+        assert all(spec.provider == "fake" for spec in members), name
+        if name != "development":
+            assert members == () and PACKAGE.gateway.daily_units[name] == 0, name
+    for environment in ("production", "staging", "preview"):
+        assert registry_for(PACKAGE, Settings.model_construct(environment=environment)).members == ()
+    assert PACKAGE.raw["gateway"]["terms"] is None and PACKAGE.owner_decisions["D-12"]["state"] == "open"
+
+
+def test_plan_d_five_tool_servers_have_versioned_contracts_and_the_learner_server_is_hidden():
+    from app.gateway.tools import SERVERS, TOOLS, tool_contract_document
+
+    assert SERVERS == ("analytics", "citation", "corpus", "learner", "verification") == tuple(PACKAGE.tools.servers)
+    document = tool_contract_document()
+    assert document["contract_version"] == "mcp-tools-v1" == PACKAGE.tools.version
+    learner = next(tool for tool in TOOLS if tool.server == "learner")
+    assert not (learner.roles & {"evidential", "verifier"})
+    entry = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters_of(THREE)), registry=THREE), TIER2).entry
+    assert entry.provenance.tool_contract_version == entry.verification.v2.tool_contract_version == "mcp-tools-v1"
+
+
+# ===================================================================================================== plan I
+
+
+def test_plan_i_ready_reports_package_v4_and_the_gateway_state_and_no_per_run_outcome():
+    from app import main as main_module
+
+    body = client.get("/ready").json()
+    assert body["config_package_version"] == "4.0.0" and body["model_gateway"] == "shadow" and body["model_gateway_setting"] == "shadow"
+    assert body["phase5_exit_passed"] is False
+    gateway = body["gateway"]
+    assert {key: gateway[key] for key in ("version", "registry", "state", "stop_reason", "budget_daily_units", "tool_contract_version",
+                                          "provisional", "available", "kill_switch")} == {
+        "version": "gateway-v1", "registry": "development", "state": "open", "stop_reason": None, "budget_daily_units": 100000,
+        "tool_contract_version": "mcp-tools-v1", "provisional": True, "available": True, "kill_switch": "none"}
+    assert [member["adapter_id"] for member in gateway["members"]] == ["fake-alpha-v1", "fake-beta-v1", "fake-gamma-v1", "fake-delta-v1"]
+    assert all(set(member) == {"adapter_id", "family", "provider", "model_id", "model_version", "capabilities"} for member in gateway["members"])
+    before = main_module._build_fields()
+    client.post("/assistant/chat", json={"message": "Why does routing depth matter?"}, headers=demo("p5-ready"))
+    assert main_module._build_fields() == before
+    assert not ({"calls", "cost_units", "spent", "spent_today", "cache_hits", "outcomes"} & set(gateway))
+    get_gateway().stop("budget_breach")
+    stopped = client.get("/ready").json()
+    assert (stopped["gateway"]["state"], stopped["gateway"]["stop_reason"], stopped["model_gateway"]) == ("stopped", "budget_breach", "off")
+
+
+def test_plan_i_v2_metrics_report_completion_time_degraded_p95_cost_and_the_budget_event(caplog):
+    from app.services.v2_panel.metrics import V2_METRICS
+
+    V2_METRICS.reset()
+    caplog.set_level(logging.WARNING, logger="qcai.gateway")
+    gateway = ModelGateway(budget=DailyBudget(30), adapters=adapters_of(THREE))
+    pipeline = v2_pipeline(gateway=gateway, registry=THREE)
+    for query in (TIER2, MULTI_CLAIM, OFF_TOPIC[0]):
+        run(pipeline, query)
+    down = v2_pipeline(gateway=fresh_gateway(adapters=adapters_of(THREE, **{"fake-gamma-v1": {"down": True}})), registry=THREE)
+    run(down, TIER2)
+    snapshot = V2_METRICS.detail_snapshot(budget=gateway.budget.snapshot())
+    assert snapshot["completion"] == {"passed_v1": 3, "completed": 3, "rate": "3/3"}
+    assert snapshot["modes"]["FULL"] == 2 and snapshot["modes"]["REDUCED-2"] == 1 and snapshot["runs"]["on"] == 4
+    assert set(snapshot["time_in_mode_s"]) >= {"FULL"} and snapshot["latency_ms"]["panel"] is not None
+    assert snapshot["latency_ms"]["gateway_call"] and snapshot["cost_units"]["total"] > 0 and snapshot["cost_units"]["per_response_p95"] > 0
+    assert snapshot["budget"]["daily_units"] == 30 and snapshot["budget"]["alerted"] is True
+    assert any(getattr(record, "json_fields", {}).get("event") == "gateway.budget_alert" for record in caplog.records)
+
+
+# ===================================================================================================== freeze and invariants
+
+
+def test_freeze_public_payloads_with_shipped_non_development_settings_are_byte_identical_to_phase_4():
+    capture = load_script("capture_public_payloads")
+    committed = json.loads((API_ROOT / "tests" / "data" / "phase4_public_payloads_v1.json").read_text(encoding="utf-8"))
+    assert committed["captured_on_app_tree"] == "98f7cc4" and committed["queries"]["count"] == 298
+    fresh_capture = capture.compute()
+    assert capture.differences(committed, fresh_capture) == []
+    assert Settings(environment="production", allowed_origins=["https://qantumlearn.academy"]).model_gateway == "off"
+
+
+def test_invariant_3_v2_never_overwrites_a_v1_hard_fail():
+    from test_v2_correction import LaterUnmapped
+
+    claims = run(dev_pipeline(), TIER2).locked.claims
+    # The final rendering of the deliverable claims hard-fails V1.4: the record is that V1 decision's.
+    pipeline = v2_pipeline(gateway=fresh_gateway(adapters=contradicting(THREE, claims[1])), registry=THREE, renderer=LaterUnmapped(PACKAGE))
+    verification = run(pipeline, TIER2).entry.verification
+    assert verification.hard_fail and verification.final == "abstain" and verification.v2.panel_reached
+    assert all(verdict.v2 is None for verdict in verification.verdicts) and verification.v2.alignment is None
+    payload = verification.model_dump(mode="json")
+    v2 = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters_of(THREE)), registry=THREE), TIER2).entry.verification.model_dump(mode="json")
+    payload["verdicts"][0]["v2"] = v2["verdicts"][0]["v2"]
+    with pytest.raises(ValidationError, match="V2 never overwrites a V1 decision"):
+        VerificationRecordV2.model_validate(payload)
+
+
+def test_invariant_4_distinct_families_equal_votes():
+    entry = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters_of(FOUR)), registry=FOUR), MULTI_CLAIM).entry
+    claims = {claim.claim_id: claim for claim in entry.claims}
+    for claim_id, verdict in judged(entry).items():
+        families = sorted({vote.family for vote in verdict.votes})
+        assert families == list(verdict.members) and entry.verification.v2.generator_family not in families
+        assert len(verdict.votes) == len(families) * len(claims[claim_id].span_ids)
+        for family in families:
+            pairs = [(vote.verdict, vote.ehmf_type) for vote in verdict.votes if vote.family == family]
+            assert family_verdict(pairs)[0] in rules.V2_VERDICTS
+
+
+def test_invariant_6_no_v2_delivery_without_a_completed_passing_vote():
+    generator = random.Random(20261121)
+    queries = (TIER2, MULTI_CLAIM, TWO_CLAIMS)
+    claims_of = {query: run(dev_pipeline(), query).locked.claims for query in queries}
+    delivered = 0
+    for _ in range(300):
+        query = generator.choice(queries)
+        options = {}
+        for spec in FOUR.members:
+            option = {}
+            if generator.random() < 0.25:
+                option["down"] = True
+            if generator.random() < 0.25:
+                option["fail_calls"] = {generator.randint(1, 4)}
+            if generator.random() < 0.3:
+                claim = generator.choice(claims_of[query])
+                option["script"] = {claim_key(claim.text, span_id): (generator.choice(("CONTRADICTED", "NOT_ENOUGH_INFO")), "A")
+                                    for span_id in claim.span_ids}
+            if generator.random() < 0.1:
+                option["alignment"] = {"rating": 2, "leakage": True}
+            options[spec.adapter_id] = option
+        entry = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters_of(FOUR, **options)), registry=FOUR), query).entry
+        verification = entry.verification
+        for verdict in verification.verdicts:
+            if verdict.final == "deliver":
+                delivered += 1
+                assert verdict.v2 is not None and verdict.v2.outcome == "pass"
+        assert (verification.final == "deliver") == any(verdict.final == "deliver" for verdict in verification.verdicts)
+        assert entry.delivery == "shadow"
+    assert delivered > 0
+
+
+def test_invariant_10_every_vote_carries_its_prompt_hash_and_every_v3_record_its_provenance_fields():
+    entry = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters_of(THREE)), registry=THREE), MULTI_CLAIM).entry
+    for name in ("generator_model_id", "evidential_prompt_hash", "pedagogical_prompt_hash", "v1_3_checker_model_id", "corpus_version",
+                 "threshold_set_version", "panel_weights_version", "routing_table_version", "tool_contract_version"):
+        assert getattr(entry.provenance, name) is not None, name
+    assert all(vote.verifier_prompt_hash == entry.verification.v2.verifier_prompt_hash for verdict in judged(entry).values() for vote in verdict.votes)
+    assert all(vote.verifier_prompt_hash == entry.verification.v2.alignment_prompt_hash for vote in entry.verification.v2.alignment.votes)
+    assert PACKAGE.tutor_pipeline.unused_provenance_fields == ()
+
+
+def test_freeze_v1_3_flags_route_to_v2_only_under_model_gateway_on():
+    finals = {}
+    for setting in ("off", "shadow", "on"):
+        settings = Settings(model_gateway=setting)
+        pipeline = (dev_pipeline(settings) if setting == "off" else
+                    v2_pipeline(settings, gateway=fresh_gateway(adapters=adapters_of(THREE)), registry=THREE))
+        entry = run(pipeline, TIER2, legacy_decision="answer").entry
+        assert all(any(check.check_id == "V1.3" and check.outcome == "flag" for check in verdict.v1) for verdict in entry.verification.verdicts)
+        finals[setting] = {verdict.final for verdict in entry.verification.verdicts}
+    assert finals == {"off": {"withhold"}, "shadow": {"withhold"}, "on": {"deliver"}}
+
+
+# ===================================================================================================== plan F
+
+
+def test_plan_f_the_registry_matrix_payload_register_and_terms_record_match_the_package():
+    registry_doc = (REPO_ROOT / "docs" / "architecture" / "gateway-registry.md").read_text(encoding="utf-8")
+    for spec in PACKAGE.gateway.registries["development"]:
+        assert f"`{spec.adapter_id}`" in registry_doc and spec.model_version in registry_doc
+    for name in ("staging", "production", "default"):
+        assert f"| {name} | none |" in registry_doc
+    adr = (REPO_ROOT / "docs" / "adr" / "ADR-008-model-gateway-and-v2-panel.md").read_text(encoding="utf-8")
+    for text in (registry_doc, adr, spec_text()):
+        for mode, row in rules.RULE_MATRIX.items():
+            line = next(line for line in text.splitlines() if line.startswith(f"| {mode} ("))
+            for tier in (1, 2, 3):
+                assert {"withhold-queue-v3": "withheld", "equal-weights-share-v1": "equal weights"}.get(row[tier], row[tier]) in line, (mode, tier)
+    register = (REPO_ROOT / "docs" / "security" / "payload-register.md").read_text(encoding="utf-8")
+    for model in (VerdictRequest, AlignmentRequest, VerdictSpan, VerdictInstructions, AlignmentInstructions, ReadabilityBand):
+        for field in model.model_fields:
+            assert f"`{field}`" in register, (model.__name__, field)
+    for never in ("resolved question", "learner identifiers", "history", "generator identity", "other votes", "rationale"):
+        assert never in register, never
+    assert "Status: owner review pending (DI-71)" in register
+    terms = (REPO_ROOT / "docs" / "security" / "provider-terms-record.md").read_text(encoding="utf-8")
+    assert "Q-09 is unresolved; no provider terms are recorded; no provider is registered; package v4 `gateway.terms` is null" in terms
+    assert PACKAGE.raw["gateway"]["terms"] is None
+
+
+# ===================================================================================================== docs
+
+
+def _code_fields(source: str, name: str) -> list[str]:
+    node = next(node for node in ast.parse(source).body if isinstance(node, ast.ClassDef) and node.name == name)
+    return [ast.unparse(item) for item in node.body if isinstance(item, (ast.AnnAssign, ast.Assign))]
+
+
+def test_phase5_spec_section_3_lists_the_code_s_fields():
+    section = spec_text().split("## 3. Data shapes", 1)[1].split("## 4. Algorithms", 1)[0]
+    paths = {"contracts": "services/tutor_pipeline/contracts.py", "gateway_contracts": "gateway/contracts.py", "registry": "gateway/registry.py",
+             "panel": "services/v2_panel/panel.py", "track": "services/v2_panel/track.py", "cache": "services/v2_panel/cache.py"}
+    sources = {name: (API_ROOT / "app" / path).read_text(encoding="utf-8") for name, path in paths.items()}
+    classes = {name: {node.name for node in ast.parse(source).body if isinstance(node, ast.ClassDef)} for name, source in sources.items()}
+    checked = 0
+    for block in re.findall(r"```python\n(.*?)```", section, flags=re.DOTALL):
+        for node in ast.parse(block).body:
+            if not isinstance(node, ast.ClassDef):
+                continue
+            owner = next(name for name in paths if node.name in classes[name])
+            listed = [ast.unparse(item) for item in node.body if isinstance(item, (ast.AnnAssign, ast.Assign))]
+            assert listed == _code_fields(sources[owner], node.name), node.name
+            checked += 1
+    assert checked >= 25
+
+
+def test_phase5_docs_quote_the_plan_and_state_the_current_rules():
+    plan_l = "Flag off returns to Phase 4. Stop on a payload violation, secret in logs or budget breach."
+    plan_m = "Residual: correlation unmeasured until E2."
+    adr = (REPO_ROOT / "docs" / "adr" / "ADR-008-model-gateway-and-v2-panel.md").read_text(encoding="utf-8")
+    runbook = (REPO_ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8").split("## Phase 5: gateway and V2 (runbook)", 1)[1]
+    spec = spec_text()
+    assert plan_m in adr and plan_m in spec and plan_l in spec and "Flag off returns to Phase 4" in runbook
+    head = spec.split("\n## 18. Review history\n", 1)[0]
+    for number in range(22, 31):
+        assert f"| PD-{number} |" in head, number
+    for number in range(69, 86):
+        assert f"| DI-{number} |" in head, number
+    values = PACKAGE.owner_decisions["Q-22"]["provisional_values"]
+    assert "v2.voting" in values and "PD-25" in PACKAGE.owner_decisions["Q-22"]["record"]
+    assert "`provisional_until \"Q-22 (DI-52)\"`" in head
+    for code_name in ("MODEL_GATEWAY", "MODEL_EGRESS_PROVIDERS", "MODEL_GATEWAY_DISABLED_ADAPTERS", "MODEL_GATEWAY_KILL_SWITCH"):
+        assert code_name in head and code_name in runbook, code_name
+    from test_phase3_docs import NARRATIVE
+
+    assert NARRATIVE.findall(head) == []
+
+
+def _test_function_names() -> set[str]:
+    names = set()
+    for path in (API_ROOT / "tests").glob("test_*.py"):
+        names |= set(re.findall(r"^(?:async )?def (test_\w+)\(", path.read_text(encoding="utf-8"), flags=re.MULTILINE))
+    return names
+
+
+def test_phase5_docs_the_test_strategy_maps_every_test_module_the_phase_added():
+    strategy = (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
+    phase_5 = strategy.split("## Phase 5 acceptance map", 1)[1].split("\n## ", 1)[0]
+    table = phase_5.split("### Phase 5 test files", 1)[1].split("**Exit gate.**", 1)[0]
+    rows = {match.group(1): match.group(2) for line in table.splitlines() if (match := re.match(r"\| `([^`]+)` \| (.+) \|$", line))}
+    tests = API_ROOT / "tests"
+    expected = {path.name for pattern in ("test_phase5_*.py", "test_gateway_*.py", "test_v2_*.py", "v2_fakes.py", "network_guard.py")
+                for path in tests.glob(pattern)}
+    assert len([name for name in expected if name.startswith("test_gateway_")]) == 7 and len([name for name in expected if name.startswith("test_v2_")]) == 5
+    assert sorted(rows) == sorted(expected), sorted(set(rows) ^ expected)
+    for name, text in rows.items():
+        assert len(text) > 80, name
+    functions = _test_function_names()
+    missing = [name for name in re.findall(r"`(test_[a-z0-9_]+)`", phase_5) if name not in functions]
+    assert missing == []
+    assert "**Exit gate.**" in phase_5 and "phase5_exit_passed" in phase_5
+
+
+def test_phase5_docs_the_spec_ends_in_one_review_history_table():
+    head, history = spec_text().split("\n## 18. Review history\n", 1)
+    assert re.findall(r"^## (\d+)\. ", head, flags=re.MULTILINE) == [str(number) for number in range(18)]
+    assert "\n## " not in history and "\n### " not in history and history.count("\n| Round |") == 1
+    intro = history.split("\n| Round |", 1)[0]
+    assert "may describe behaviour that a later round superseded" in intro and "sections 0-17 are authoritative" in intro
+    rows = [line for line in history.splitlines() if line.startswith("| ") and not line.startswith(("| Round |", "|---"))]
+    assert [row.split(" | ", 1)[0] for row in rows[:3]] == ["| Spec (pre-code)", "| Spec review 1 (pre-code)", "| Build"]
+    functions = _test_function_names()
+    for row in rows:
+        round_name, commit, findings = row.split(" | ", 2)
+        assert "pre-code" in round_name or re.search(r"`[0-9a-f]{7,40}`|the commit", commit), round_name
+        for finding in findings.rstrip(" |").split("<br>"):
+            names = re.findall(r"`(test_[a-z0-9_]+)`", finding)
+            files = re.findall(r"`(test_[a-z0-9_]+\.py)`", finding)
+            assert names or files, (round_name, finding[:60])
+            assert all(name in functions for name in names), (round_name, names)
+    assert re.findall(r"\b[Rr]eview \d+\b|\bround \d+\b", head) == []
+
+
+# ===================================================================================================== plan 13.6
+
+
+def test_plan_13_6_flag_combinations_never_disable_v1_or_deliver_unverified_text():
+    from app.services import tutor_pipeline, v1_checks, v2_panel
+
+    checked = refused = 0
+    for environment, two_pass, v1, gateway, switch, egress in itertools.product(
+            ("development", "production"), ("off", "shadow", "on"), ("off", "shadow", "enforce"), ("off", "shadow", "on"),
+            ("none", "abstain_only", "pre_verified_only"), ([], ["test-provider"])):
+        options = dict(environment=environment, two_pass_tutor=two_pass, v1_pipeline=v1, model_gateway=gateway, model_gateway_kill_switch=switch,
+                       model_egress_providers=egress, allowed_origins=["https://qantumlearn.academy"])
+        expected_refusal = (two_pass == "on" or (gateway == "on" and v1 != "enforce")
+                            or (environment == "production" and (v1 in ("off", "enforce") or gateway == "on")))
+        try:
+            settings = Settings(**options)
+        except ValidationError:
+            refused += 1
+            assert expected_refusal, options
+            continue
+        assert not expected_refusal, options
+        checked += 1
+        package = get_config_package(settings)
+        if environment == "production":
+            assert v1_checks.mode(settings, package) != "off" and tutor_pipeline.effective_mode(settings, package) != "on"
+            # V2 is off outside development unless MODEL_GATEWAY=shadow is set explicitly (a config.override); either way
+            # the registry is empty and the budget 0, so no call can be made and the record is a shadow record only.
+            mode = v2_panel.mode(settings, package)
+            assert mode == "off" or (mode == "shadow" and gateway == "shadow" and two_pass == "shadow"), options
+            registry = registry_for(package, settings)
+            assert registry.members == () and package.gateway.daily_units[registry.name] == 0
+    assert checked and refused
+    with SessionLocal() as db:
+        assert not list(db.scalars(select(ResponseLedgerRecord).where(ResponseLedgerRecord.delivery == "delivered")))
+    assert contracts.TWO_PASS_DELIVERY_IMPLEMENTED is False

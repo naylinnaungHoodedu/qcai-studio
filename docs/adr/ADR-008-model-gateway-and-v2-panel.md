@@ -1,0 +1,36 @@
+# ADR-008: Model gateway and V2 panel
+
+## Context
+
+Phase 5 of the upgrade plan (L1357-1436) puts all model egress through one pinned gateway and adds the generator-excluded V2 panel. Before it, the tree held a dead Vertex path with a preview default model and no token, timeout or retry caps (E-42, E-66), a key that could travel in a URL (E-43), and application-default-credential discovery (E-109). The risks are R-06 (a key in URLs and logs), R-10 (provider payload leakage), R-20 (correlated verifiers), R-21 (provider outage), R-24 (model-version drift), R-47 (cost runaway) and R-48 (a zero-member panel). Holds H6 (D-12, payload register), H8 (D-07, pinned registry), H9 (A-15, approved budget) and H14 (D-21, zero-member policy) bear on the phase. D-07, D-12 and Q-09 are open, A-15 is open and D-21 is open, and the freeze (D-05) holds.
+
+## Decision 2026-11-21 (Phase 5: provider-neutral gateway and V2)
+
+- **An in-API gateway** (`apps/api/app/gateway/`; plan E "in-API service or sidecar") is the only module allowed model egress, through typed, pinned adapters (`AdapterSpec`); an AST guard enforces it. Every registry identifier must be pinned (`pinned-version-v1`, D-07 option (a)'s rule, PD-24); an unpinned identifier stops the configuration load and start-up (AC-5-10).
+- **No real provider is registered.** Staging, production and default registries are empty; development registers four deterministic fake families (`fake-alpha` to `fake-delta`, rule `verbatim-support-v1`), which make no network call. Egress needs a per-environment opt-in (D-23, PD-22). One provider-neutral HTTP adapter exists as code, exercised only through a mock transport, to prove keys in headers and error redaction.
+- **The V2 panel** is the registry's families minus the generator's (`Panel.build`; AC-5-1), one adapter per family (AC-5-2), at most three, blind: a claim item carries the claim, one bound span and the fixed instructions; objective and band go only to the alignment item (AC-5-3). Verdicts are SUPPORTED, CONTRADICTED or NOT_ENOUGH_INFO with an EHMF type; NOT_ENOUGH_INFO objects. Tier 1 (an assessment context) is 1oo3, tier 2 2oo3, tier 3 equal weights (no shipped claim is tier 3); a V1 hard fail makes no V2 call (AC-5-5).
+- **Degraded modes** follow `degraded-matrix-v1`, D-29 option (a) (PD-23):
+
+| Mode (eligible members) | Tier 1 | Tier 2 | Tier 3 | Response |
+|---|---|---|---|---|
+| FULL (3) | 1oo3 | 2oo3 | equal weights ≥ 2/3 | as voted |
+| REDUCED-2 (2) | 1oo2 | 1oo2 | 1oo2 | label `degraded`, banner `degraded-reduced-2-v1` |
+| REDUCED-1 (1) | withheld, queued for V3 | withheld, queued (D-29 (a)) | equal weights on the remaining verifier | label `degraded`, banner `degraded-reduced-1-v1` |
+| ZERO (0) | withheld, queued | withheld, queued | withheld, queued | no call; no pre-verified source exists, so withhold and queue; banner `degraded-zero-v1` |
+
+- **Correction** runs at most two cycles (a revised claim is a new candidate judged by V1 from the start; an unrevisable claim is re-verified from the cache); a claim still failing is abstained and marked X2; a Type E (alignment) failure re-renders only (AC-5-7).
+- **The evidential cache** holds claim plans and verdicts only, per process, keyed on plan 5.7's fields with the envelope's hash and plan 7.3's union; a configuration or model change misses (AC-5-8, AC-5-11).
+- **Caps and a daily budget hard stop** (task 5.10): budgets are 0 outside development (A-15, hold H9), with an alert event at 4/5. The gateway stops on a payload violation, a secret in logs or a budget breach (plan L).
+- **`MODEL_GATEWAY`** is `off` outside development (behaviour equals Phase 4), `shadow` in development (V2 votes beside the unchanged V1 decision), and `on` is refused outside development while `phase5_exit_passed` is false (PD-28). Configuration package v4 holds every value (v3 stays readable for one release); ledger records are `ledger-entry-v3`.
+
+## Consequences
+
+Nothing learner-facing changes outside development: the legacy contained answers equal Phase 4's (a committed golden of body hashes), and the V2 panel runs only in the two-pass shadow. With the empty production registry, production is permanently ZERO, which is today's contained or abstaining behaviour. Every V2 record names its panel, tier, rule, votes (with each verifier's prompt hash), degraded mode, cycles and versions, so F-1 is measured over the fixture responses (`scripts/run_v2_fixtures.py`).
+
+## Residuals
+
+- Plan M: "Residual: correlation unmeasured until E2." Verifier correlation, V-2 and V-4 are E2 results, never claimed from fixtures (DI-75).
+- Production is permanently ZERO while the registries are empty (D-07, D-12, Q-09; DI-69, DI-70, DI-73).
+- The cache and the budget are per process: a shared store and a cross-instance budget are DI-79 and DI-72.
+- The semantic embedding backend's egress and its key sit outside the gateway, allow-listed behind the D-23 opt-in: plan 7.1's MUST is unmet until DI-77.
+- The paper's learner band in the alignment item and its novice-learner tier wait for the Phase 8 learner model (DI-82).

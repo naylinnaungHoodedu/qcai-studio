@@ -35,6 +35,20 @@ def _no_network_attempt():
         pytest.fail(f"a test tried to touch the network: {blocked[:3]}")
 
 
+@pytest.fixture(autouse=True)
+def _fresh_process_gateway_and_cache():
+    """Each test starts with a new process gateway (open, a fresh budget) and a cold evidential cache (Phase 5 spec 4.5,
+    4.15): a stop or a cached verdict never leaks from one test into the next."""
+    from app.gateway.gateway import reset_process_gateway
+    from app.services.v2_panel.cache import reset_process_cache
+
+    reset_process_gateway()
+    reset_process_cache()
+    yield
+    reset_process_gateway()
+    reset_process_cache()
+
+
 @pytest.fixture
 def fresh_database_url(tmp_path: Path) -> Iterator[str]:
     # An empty database of the session's dialect, so start-up can be watched from nothing.

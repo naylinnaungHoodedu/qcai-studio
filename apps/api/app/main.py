@@ -20,6 +20,7 @@ from app.core.config_package import ConfigPackageError, get_config_package
 from app.core.corpus_governance import CorpusGovernanceError, DriftReport, get_corpus_registry, p1_floor_recall_stop
 from app.core.config import get_settings
 from app.core.db import Base, SessionLocal, engine
+from app.gateway.retired import retired_secret_values, retired_settings_present
 from app.core.rate_limit import limiter
 from app.core.guest_tokens import require_guest_token_secret
 from app.core.log_redaction import install_log_redaction
@@ -38,7 +39,8 @@ settings = get_settings()
 IS_PRODUCTION = settings.environment.lower() != "development"
 install_log_redaction(
     [
-        settings.vertex_ai_api_key,
+        # A retired provider key (VERTEX_AI_API_KEY) that a deployment still sets stays masked (Phase 5 spec 4.18).
+        *retired_secret_values(),
         settings.openai_api_key,
         settings.pinecone_api_key,
         settings.guest_token_secret,
@@ -171,11 +173,13 @@ def _check_tutor_pipeline_package(package) -> None:
 
     First _check_v1_package (Phase 4 spec 10.1): any problem with the v1 block, a package without one included, stops
     every governed build and every build outside development, whatever TWO_PASS_TUTOR says; only a development build
-    with governance off goes on, with the two-pass V1 mode off. Then the tutor pipeline (Phase 3 spec 5.4, conflict
-    30): one of its problems stops a governed build only when the pipeline is requested (TWO_PASS_TUTOR not off);
-    otherwise the pipeline is reported unavailable (/ready tutor_pipeline.available false) and its effective mode
-    stays off."""
+    with governance off goes on, with the two-pass V1 mode off. Then _check_gateway_package (Phase 5 spec 4.17): a
+    problem with package v4's gateway, v2 or tools block stops a governed build only when the gateway is requested
+    (MODEL_GATEWAY not off), else the V2 mode stays off. Then the tutor pipeline (Phase 3 spec 5.4, conflict 30): one
+    of its problems stops a governed build only when the pipeline is requested (TWO_PASS_TUTOR not off); otherwise the
+    pipeline is reported unavailable (/ready tutor_pipeline.available false) and its effective mode stays off."""
     _check_v1_package(package)
+    _check_gateway_package(package)
     if package.tutor_pipeline is None:
         tutor_shadow.PIPELINE_UNAVAILABLE_REASON = None
         return
@@ -193,6 +197,41 @@ def _check_tutor_pipeline_package(package) -> None:
         "The two-pass tutor pipeline is unavailable; it stays off",
         extra={FIELDS: {"event": "tutor.two_pass.unavailable", "reason": reason}},
     )
+
+
+def _check_gateway_package(package) -> None:
+    """Package v4's gateway, v2 and tools blocks against the code (Phase 5 spec 4.17, 10.1). A pinning problem never
+    reaches this check: the loader refuses an unpinned identifier in every build, so start-up has already stopped
+    (AC-5-10). Without a gateway block (a v1 to v3 package) the V2 mode is off. Any other problem stops a governed build
+    when the gateway is requested (MODEL_GATEWAY not off); otherwise the gateway is reported unavailable (/ready
+    gateway.available false), the V2 mode stays off and tutor.v2.unavailable is logged. Outside development
+    MODEL_GATEWAY is off, so such a problem never stops a production start-up. Reads only the package, the committed
+    files beside it and code values; writes nothing."""
+    import app.gateway as gateway
+
+    if package.gateway is None:
+        gateway.GATEWAY_UNAVAILABLE_REASON = None
+        return
+    from app.gateway.package_check import check_gateway_package
+
+    problems = check_gateway_package(package, structural=False)
+    if not problems:
+        gateway.GATEWAY_UNAVAILABLE_REASON = None
+        return
+    reason = "; ".join(problems)[:500]
+    if settings.enforce_corpus_governance and settings.model_gateway != "off":
+        raise ConfigPackageError(f"gateway: {reason}")
+    gateway.GATEWAY_UNAVAILABLE_REASON = reason
+    TUTOR_LOGGER.warning("The model gateway is unavailable; the V2 mode stays off", extra={FIELDS: {"event": "tutor.v2.unavailable", "reason": reason}})
+
+
+def _warn_retired_provider_settings() -> None:
+    """Names (never values) of retired provider variables the deployment still sets (Phase 5 spec 4.18)."""
+    names = retired_settings_present()
+    if names:
+        logging.getLogger("qcai.gateway").warning(
+            "Retired provider settings are set and ignored", extra={FIELDS: {"event": "gateway.retired_setting", "names": list(names)}}
+        )
 
 
 def _check_v1_package(package) -> None:
@@ -249,6 +288,7 @@ async def lifespan(_: FastAPI):
     # Before the database step, so a missing secret stops start-up without touching the schema.
     require_guest_token_secret(settings)
     _initialize_database()
+    _warn_retired_provider_settings()
     _record_configuration_overrides()
     get_course_store()
     if settings.semantic_retrieval_enabled and not get_retrieval_engine().semantic_enabled:
@@ -300,6 +340,11 @@ def _record_configuration_overrides() -> None:
             ("ledger_append_budget_overridden", settings.tutor_ledger_append_budget_ms is not None),
             # Phase 4: V1 enforcing the shadow record outside development (refused before the Phase 4 exit).
             ("v1_pipeline_enforce", settings.v1_pipeline == "enforce"),
+            # Phase 5: the V2 panel outside development (on is refused before the Phase 5 exit) and a provider egress
+            # opt-in (D-23).
+            ("model_gateway_shadow", settings.model_gateway == "shadow"),
+            ("model_gateway_on", settings.model_gateway == "on"),
+            ("model_egress_opt_in", bool(settings.model_egress_providers)),
         )
         if active
     }
@@ -514,6 +559,47 @@ def _build_fields() -> dict:
         "v1_pipeline": _v1_mode(package),
         "v1_pipeline_setting": settings.v1_pipeline,
         "v1": _v1_fields(package),
+        # Phase 5 (plan 7.7: "/ready MUST report build SHA, corpus_version, threshold_set_version and gateway state";
+        # spec 10.2): the V2 mode in force, the setting, and the gateway's static values and state. No call, spend or
+        # per-run outcome is public.
+        "model_gateway": _v2_mode(package),
+        "model_gateway_setting": settings.model_gateway,
+        "phase5_exit_passed": bool(package.flag_policy.phase5_exit_passed),
+        "gateway": _gateway_fields(package),
+    }
+
+
+def _v2_mode(package) -> str:
+    from app.services import v2_panel
+
+    return v2_panel.mode(settings, package)
+
+
+def _gateway_fields(package) -> dict | None:
+    gateway, v2 = package.gateway, package.v2
+    if gateway is None or v2 is None:
+        return None
+    import app.gateway as gateway_package
+    from app.gateway.gateway import process_gateway_state
+    from app.gateway.registry import registry_for
+
+    registry = registry_for(package, settings)
+    state, stop_reason = process_gateway_state()
+    return {
+        "version": gateway.version,
+        "registry": registry.name,
+        "members": [spec.public() for spec in registry.members],
+        "egress_providers": list(settings.model_egress_providers),
+        "kill_switch": settings.model_gateway_kill_switch,
+        "disabled_adapters": list(settings.model_gateway_disabled_adapters),
+        "state": state,
+        "stop_reason": stop_reason,
+        "budget_daily_units": gateway.daily_units.get(registry.name, 0),
+        "tool_contract_version": package.tools.version if package.tools is not None else None,
+        "panel": {"max_members": v2.max_members, "weights": v2.panel_weights_version, "routing_table": v2.routing_table_version,
+                  "tier_rule": v2.tier_rule},
+        "provisional": True,
+        "available": gateway_package.GATEWAY_UNAVAILABLE_REASON is None,
     }
 
 

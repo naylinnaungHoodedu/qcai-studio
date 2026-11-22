@@ -2,15 +2,17 @@
 
 Every contract is frozen and refuses unknown fields (extra="forbid"), so a learner-state field can never ride along
 on a retrieval request or an evidential envelope (AC-3-1, R-41) and a generator cannot smuggle text past the claim
-plan (R-11). The committed JSON schemas (app/config_package/schemas/: the eight *.v1.schema.json, and
-ledger-entry.v2.schema.json for LedgerEntryV2) are generated from these models and pinned by sha256 in the shipped
-configuration package (v3 since Phase 4, all nine; v2, still readable, pins the eight v1 schemas).
+plan (R-11). The committed JSON schemas (app/config_package/schemas/: the eight *.v1.schema.json,
+ledger-entry.v2.schema.json for LedgerEntryV2 and ledger-entry.v3.schema.json for LedgerEntryV3) are generated from
+these models and pinned by sha256 in the shipped configuration package (v4 since Phase 5, which also pins the four
+gateway request and verdict schemas; v3, still readable, pins nine, and v2 the eight v1 schemas).
 
 Channels:
 - evidential: ResolvedQuestion -> RetrievalRequest -> EvidenceBundle -> EvidentialEnvelope -> ClaimPlan ->
   LockedClaimSet. Nothing here takes a learner input.
 - pedagogical: PresentationPlan + LockedClaimSet -> RenderedResponse (typed segments) -> subset check.
-- ledger: LedgerEntry, one per response, hash-chained in response_ledger (app/services/ledger.py).
+- ledger: LedgerEntry, one per response, hash-chained in response_ledger (app/services/ledger.py); LedgerEntryV2 adds
+  the V1 verification (Phase 4), LedgerEntryV3 the V2 panel's verdicts beside it (Phase 5, section "V2").
 """
 
 from __future__ import annotations
@@ -586,6 +588,8 @@ ACCEPTED_ABSTENTION_REASONS = {
     "ledger-entry-v1": (*ABSTENTION_REASONS, LEGACY_ABSTENTION_REASON),
     "ledger-entry-v2": (*ABSTENTION_REASONS, LEGACY_ABSTENTION_REASON, *V1_ABSTENTION_REASONS),
 }
+# The final reasons a Phase 4 VerificationRecord accepts (VerificationRecordV2 adds V2's).
+PHASE4_FINAL_REASONS = (*ABSTENTION_REASONS, *V1_ABSTENTION_REASONS, *V1_WITHHOLD_REASONS)
 # Claim-scoped results: these checks judge one claim (claim_id set), except the response-level reasons listed.
 _CLAIM_SCOPED = {"V1.2": ("no_bound_claims",), "V1.3": ("checker_unavailable",), "V1.8": ()}
 _RESPONSE_SCOPED = ("V1.1", "V1.4", "V1.5", "V1.6", "V1.7", "V1.9")
@@ -723,55 +727,71 @@ class VerificationRecord(Contract):
 
     @model_validator(mode="after")
     def _rules(self) -> "VerificationRecord":
-        problems = []
-        cycles = max(self.generation_attempts - 1, 0) + max(self.render_attempts - 1, 0)
-        if self.cycle_count != cycles or any(verdict.cycle_count != cycles for verdict in self.verdicts):
-            problems.append("cycle_count is the regenerations made (generation and render), on the record and on every verdict")
-        if self.final == "correct":
-            problems.append("no V1 decision is 'correct' before V2 exists (Phase 5)")
-        if (self.final == "withhold") != (self.replacement != "none"):
-            problems.append("a withheld response, and only one, names its replacement")
-        if self.final == "withhold":
-            expected = {"answer": "extractive_d19", "abstain": "abstention", None: "unknown"}[self.comparison.legacy_decision]
-            if self.replacement != expected:
-                problems.append(f"a withheld response's replacement follows the legacy decision ({expected})")
-        finals = [verdict.final for verdict in self.verdicts]
-        if self.final == "deliver" and "deliver" not in finals:
-            problems.append("a delivered response delivers at least one claim")
-        if self.final == "withhold" and (not finals or "deliver" in finals):
-            problems.append("a withheld response has claims and delivers none")
-        if self.final == "abstain" and any(final != "abstain" for final in finals):
-            problems.append("an abstention abstains on every claim")
-        if self.final != "abstain" and "abstain" in finals:
-            problems.append("a claim abstains only when the response abstains")
-        if self.hard_fail and self.final != "abstain":
-            problems.append("a V1 hard fail is final: the response abstains")
-        if (self.final_reason is None) != (self.final == "deliver"):
-            problems.append("every response but a delivered one has a final_reason")
-        if self.final_reason is not None and self.final_reason not in (*ABSTENTION_REASONS, *V1_ABSTENTION_REASONS, *V1_WITHHOLD_REASONS):
-            problems.append(f"unknown final_reason {self.final_reason!r}")
-        for verdict in self.verdicts:
-            if verdict.final == "deliver" and not all(_deliverable(result) for result in verdict.v1):
-                problems.append(f"{verdict.claim_id} is delivered despite a V1 result that is not pass (invariant 6; 13.6)")
-        if self.disclosure is not None and self.disclosure.policy == "withhold":
-            named = {claim_id for pair in self.disclosure.conflicts for claim_id in pair.claim_ids}
-            if any(verdict.final == "deliver" and verdict.claim_id in named for verdict in self.verdicts):
-                problems.append("a claim of a withheld conflict is never delivered")
-        disclosed = self.disclosure is not None and self.disclosure.policy == "disclose"
-        if ("conflict_disclosed" in self.labels) != disclosed:
-            problems.append("the conflict_disclosed label is set exactly when a disclosure block is disclosed")
-        marked = any(result.check_id == "V1.5" and result.outcome == "mark" for result in self.checks)
-        if ("near_floor" in self.labels) != marked:
-            problems.append("the near_floor label is set exactly when V1.5 marked the response")
-        if self.comparison.v1_outcome != ("abstain" if self.final == "abstain" else "answer"):
-            problems.append("comparison.v1_outcome is abstain exactly when the response abstains")
-        for reference, agrees in ((self.comparison.phase3_decision, self.comparison.agrees_phase3),
-                                  (self.comparison.legacy_decision, self.comparison.agrees_legacy)):
-            if (reference is None) != (agrees is None) or (reference is not None and agrees != (reference == self.comparison.v1_outcome)):
-                problems.append("each comparison agrees_* is null exactly when its reference is, else reference == v1_outcome")
+        problems = verification_problems(self)
         if problems:
             raise ValueError("; ".join(problems))
         return self
+
+
+def _never(verdict: ClaimVerdict) -> bool:
+    return False
+
+
+def verification_problems(record: VerificationRecord, *, v1_3_routed=_never, claim_abstains_alone=_never,
+                          final_reasons: tuple[str, ...] = PHASE4_FINAL_REASONS) -> list[str]:
+    """The rules every verification record keeps (Phase 4 spec 3.3; Phase 5 spec 3.3). With the default parameters they
+    are Phase 4's exactly. VerificationRecordV2 under MODEL_GATEWAY=on passes three: v1_3_routed (a delivered claim may
+    hold a V1.3 flag when its V2 vote passed: "after Phase 5, flags route to V2"), claim_abstains_alone (a claim
+    abstained with escalation X2 may abstain in a response that does not) and final_reasons (V2's reasons too)."""
+    problems = []
+    cycles = max(record.generation_attempts - 1, 0) + max(record.render_attempts - 1, 0)
+    if record.cycle_count != cycles or any(verdict.cycle_count != cycles for verdict in record.verdicts):
+        problems.append("cycle_count is the regenerations made (generation and render), on the record and on every verdict")
+    if record.final == "correct":
+        problems.append("a record never ends in 'correct': a correction is a new candidate (Phase 4 R-d)")
+    if (record.final == "withhold") != (record.replacement != "none"):
+        problems.append("a withheld response, and only one, names its replacement")
+    if record.final == "withhold":
+        expected = {"answer": "extractive_d19", "abstain": "abstention", None: "unknown"}[record.comparison.legacy_decision]
+        if record.replacement != expected:
+            problems.append(f"a withheld response's replacement follows the legacy decision ({expected})")
+    finals = [verdict.final for verdict in record.verdicts]
+    if record.final == "deliver" and "deliver" not in finals:
+        problems.append("a delivered response delivers at least one claim")
+    if record.final == "withhold" and (not finals or "deliver" in finals):
+        problems.append("a withheld response has claims and delivers none")
+    if record.final == "abstain" and any(final != "abstain" for final in finals):
+        problems.append("an abstention abstains on every claim")
+    if record.final != "abstain" and any(verdict.final == "abstain" and not claim_abstains_alone(verdict) for verdict in record.verdicts):
+        problems.append("a claim abstains only when the response abstains")
+    if record.hard_fail and record.final != "abstain":
+        problems.append("a V1 hard fail is final: the response abstains")
+    if (record.final_reason is None) != (record.final == "deliver"):
+        problems.append("every response but a delivered one has a final_reason")
+    if record.final_reason is not None and record.final_reason not in final_reasons:
+        problems.append(f"unknown final_reason {record.final_reason!r}")
+    for verdict in record.verdicts:
+        routed = v1_3_routed(verdict)
+        if verdict.final == "deliver" and not all(_deliverable(result) or (routed and result.check_id == "V1.3" and result.outcome == "flag")
+                                                  for result in verdict.v1):
+            problems.append(f"{verdict.claim_id} is delivered despite a V1 result that is not pass (invariant 6; 13.6)")
+    if record.disclosure is not None and record.disclosure.policy == "withhold":
+        named = {claim_id for pair in record.disclosure.conflicts for claim_id in pair.claim_ids}
+        if any(verdict.final == "deliver" and verdict.claim_id in named for verdict in record.verdicts):
+            problems.append("a claim of a withheld conflict is never delivered")
+    disclosed = record.disclosure is not None and record.disclosure.policy == "disclose"
+    if ("conflict_disclosed" in record.labels) != disclosed:
+        problems.append("the conflict_disclosed label is set exactly when a disclosure block is disclosed")
+    marked = any(result.check_id == "V1.5" and result.outcome == "mark" for result in record.checks)
+    if ("near_floor" in record.labels) != marked:
+        problems.append("the near_floor label is set exactly when V1.5 marked the response")
+    if record.comparison.v1_outcome != ("abstain" if record.final == "abstain" else "answer"):
+        problems.append("comparison.v1_outcome is abstain exactly when the response abstains")
+    for reference, agrees in ((record.comparison.phase3_decision, record.comparison.agrees_phase3),
+                              (record.comparison.legacy_decision, record.comparison.agrees_legacy)):
+        if (reference is None) != (agrees is None) or (reference is not None and agrees != (reference == record.comparison.v1_outcome)):
+            problems.append("each comparison agrees_* is null exactly when its reference is, else reference == v1_outcome")
+    return problems
 
 
 class ProvenanceV2(Provenance):
@@ -841,3 +861,313 @@ class LedgerEntryV2(LedgerEntry):
 SCHEMA_MODELS["LedgerEntryV2"] = LedgerEntryV2
 # verify_response_ledger, export and restore dispatch on a row's entry_schema.
 ENTRY_SCHEMAS: dict[str, type[LedgerEntry]] = {"ledger-entry-v1": LedgerEntry, "ledger-entry-v2": LedgerEntryV2}
+
+
+# ------------------------------------------------------------------------------------------------- V2 (Phase 5)
+#
+# Plan 7.4's v2 verdict {tier, rule, generator_family, votes[] {verifier_model_id, family, verifier_prompt_hash, verdict,
+# ehmf_type, span_id}, blind: true}, additive: VerificationRecordV2 and LedgerEntryV3 extend the Phase 4 classes, whose
+# fields are unchanged (Phase 5 spec 3.3). Votes add the verifier's model version and a cache flag (conflict 17).
+
+from app.services.v2_panel.rules import (  # noqa: E402 - standard library only, after the Phase 4 section it extends
+    BANNER_FOR_MODE,
+    MAX_CORRECTION_CYCLES,
+    ROUTING_TABLES,
+    V2_ABSTENTION_REASONS,
+    V2_WITHHOLD_REASONS,
+)
+from app.services.v2_panel.voting import family_verdict, is_split, mode_for, objections, tally  # noqa: E402
+
+V2_FINAL_REASONS = (*PHASE4_FINAL_REASONS, *V2_ABSTENTION_REASONS, *V2_WITHHOLD_REASONS)
+_V1_REASONS = (*ABSTENTION_REASONS, *V1_ABSTENTION_REASONS)
+
+
+class V2Vote(Contract):                       # plan 7.4 votes[] plus model version and cache flag
+    verifier_model_id: str
+    verifier_model_version: str
+    family: str
+    verifier_prompt_hash: str = Field(pattern=HEX64)
+    verdict: Literal["SUPPORTED", "CONTRADICTED", "NOT_ENOUGH_INFO"]
+    ehmf_type: EhmfType | None                # None iff SUPPORTED
+    span_id: str = Field(pattern=SPAN_ID)
+    cached: bool
+
+    @model_validator(mode="after")
+    def _ehmf(self) -> "V2Vote":
+        if (self.ehmf_type is None) != (self.verdict == "SUPPORTED"):
+            raise ValueError("a vote names an EHMF type exactly when it objects")
+        return self
+
+
+class V2ClaimVerdict(Contract):               # plan 7.4 v2 {tier, rule, generator_family, votes[], blind: true}
+    tier: Literal[1, 2, 3]
+    rule: Literal["1oo3", "2oo3", "1oo2", "equal-weights-share-v1", "withhold-queue-v3"]
+    generator_family: str
+    mode: Literal["FULL", "REDUCED-2", "REDUCED-1", "ZERO"]
+    members: tuple[str, ...] = Field(max_length=3)     # the families eligible for this claim's tally, sorted
+    votes: tuple[V2Vote, ...] = Field(max_length=24)   # sorted by (family, span_id)
+    blind: Literal[True] = True
+    objections: int = Field(ge=0, le=3)
+    split: bool
+    outcome: Literal["pass", "fail", "withheld"]
+    critical: bool = False
+    cycle: int = Field(ge=0, le=2)
+
+    @model_validator(mode="after")
+    def _consistent(self) -> "V2ClaimVerdict":
+        problems = []
+        if self.generator_family in self.members:
+            problems.append("a claim's panel never holds the generator's family (AC-5-1)")
+        if not _sorted_unique(self.members):
+            problems.append("the members are sorted and unique")
+        if any(vote.family not in self.members for vote in self.votes):
+            problems.append("every vote is a member family's")
+        keys = [(vote.family, vote.span_id) for vote in self.votes]
+        if keys != sorted(keys) or len(keys) != len(set(keys)):
+            problems.append("one vote per family and span, sorted (AC-5-2)")
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
+
+class AlignmentVote(Contract):
+    verifier_model_id: str
+    verifier_model_version: str
+    family: str
+    verifier_prompt_hash: str = Field(pattern=HEX64)
+    rating: int = Field(ge=1, le=5)
+    leakage: bool
+
+
+class V2Alignment(Contract):
+    rule: Literal["1ooN-leakage-v1"] = "1ooN-leakage-v1"
+    members: tuple[str, ...] = Field(max_length=3)
+    votes: tuple[AlignmentVote, ...] = Field(max_length=3)
+    rendered_text_sha256: str = Field(pattern=HEX64)   # the rendering judged
+    outcome: Literal["pass", "fail"]
+
+    @model_validator(mode="after")
+    def _consistent(self) -> "V2Alignment":
+        if [vote.family for vote in self.votes] != list(self.members) or not _sorted_unique(self.members):
+            raise ValueError("the alignment votes are one per member family, sorted")
+        if (self.outcome == "fail") != any(vote.leakage for vote in self.votes):
+            raise ValueError("the alignment item fails exactly when a member flags leakage (1ooN-leakage-v1)")
+        return self
+
+
+class V2Correction(Contract):
+    cycle: int = Field(ge=1, le=2)
+    kind: Literal["revise", "re_render"]
+    failed_claim_ids: tuple[str, ...]          # sorted, claim-id pattern
+    revised_claim_ids: tuple[str, ...] = ()    # the failed claims whose text the generator changed
+
+    @model_validator(mode="after")
+    def _consistent(self) -> "V2Correction":
+        import re
+
+        if not _sorted_unique(self.failed_claim_ids) or not _sorted_unique(self.revised_claim_ids):
+            raise ValueError("the correction's claim ids are sorted and unique")
+        if any(not re.fullmatch(CLAIM_ID, claim_id) for claim_id in (*self.failed_claim_ids, *self.revised_claim_ids)):
+            raise ValueError("a correction names claim ids")
+        if not set(self.revised_claim_ids) <= set(self.failed_claim_ids) or (self.kind == "re_render" and self.revised_claim_ids):
+            raise ValueError("only failed claims are revised, and a re-render revises none")
+        return self
+
+
+class V2ShadowSummary(Contract):              # mode "shadow" only: what "on" would decide without correction
+    would_deliver: int = Field(ge=0)
+    would_fail: int = Field(ge=0)
+    would_withhold: int = Field(ge=0)
+
+
+class V2Block(Contract):
+    block_schema: Literal["v2-panel-v1"] = "v2-panel-v1"
+    mode: Literal["shadow", "on"]
+    panel_reached: bool                       # the hook was consulted on at least one V1Passed candidate of this response
+    gateway_state: Literal["open", "stopped"]
+    registry: str
+    generator_family: str
+    members: tuple[str, ...] = Field(max_length=3)     # the panel at the start of the response, sorted
+    degraded_mode: Literal["FULL", "REDUCED-2", "REDUCED-1", "ZERO"]   # the worst mode of a recorded claim verdict, FULL if none
+    panel_weights_version: str
+    routing_table_version: str
+    tool_contract_version: str
+    verifier_prompt_hash: str = Field(pattern=HEX64)
+    alignment_prompt_hash: str = Field(pattern=HEX64)
+    alignment: V2Alignment | None
+    cycles: int = Field(ge=0, le=2)
+    corrections: tuple[V2Correction, ...] = Field(max_length=2)
+    calls: int = Field(ge=0)
+    cache_hits: int = Field(ge=0)
+    cost_units: int = Field(ge=0)
+    kill_switch: Literal["none", "abstain_only", "pre_verified_only"]
+    banner: Literal["degraded-reduced-2-v1", "degraded-reduced-1-v1", "degraded-zero-v1"] | None
+    shadow: V2ShadowSummary | None
+
+
+class V3IntentV2(V3Intent):
+    reasons: tuple[Literal["v1_3_flag", "v1_8_misconception", "x4_margin", "v2_correction_exhausted", "v2_degraded_withheld"], ...] = Field(min_length=1)
+    escalation: Literal["X2"] | None = None    # X2 iff "v2_correction_exhausted" in reasons
+
+    @model_validator(mode="after")
+    def _escalation(self) -> "V3IntentV2":
+        if (self.escalation == "X2") != ("v2_correction_exhausted" in self.reasons):
+            raise ValueError("the X2 escalation is set exactly when v2_correction_exhausted is a reason")
+        return self
+
+
+class ClaimVerdictV2(ClaimVerdict):
+    v2: V2ClaimVerdict | None = None
+    v3: V3IntentV2 | None = None
+
+
+def _v2_vote_problems(record: "VerificationRecordV2", verdict: ClaimVerdictV2) -> list[str]:
+    """What in one claim's V2 verdict the record's block or its own votes contradict (Phase 5 spec 3.3)."""
+    block, v2 = record.v2, verdict.v2
+    problems = []
+    name = verdict.claim_id
+    if v2.generator_family != block.generator_family or v2.generator_family in v2.members:
+        problems.append(f"{name}: the panel names the response's generator family and excludes it (AC-5-1, R-20)")
+    if any(vote.family not in v2.members for vote in v2.votes):
+        problems.append(f"{name}: every vote is a member family's")
+    keys = [(vote.family, vote.span_id) for vote in v2.votes]
+    if len(keys) != len(set(keys)):
+        problems.append(f"{name}: two votes of one family on one span (AC-5-2)")
+    if v2.mode != mode_for(len(v2.members)):
+        problems.append(f"{name}: the mode is the one its member count gives")
+    table = ROUTING_TABLES.get(block.routing_table_version)
+    if table is None or v2.rule != table[v2.mode][v2.tier]:
+        problems.append(f"{name}: the rule is the routing table's for its mode and tier")
+    if v2.rule == "withhold-queue-v3":
+        if v2.votes or v2.objections or v2.split or v2.outcome != "withheld":
+            problems.append(f"{name}: a withheld claim has no vote, no objection and outcome withheld")
+    else:
+        by_family: dict[str, list] = {}
+        for vote in sorted(v2.votes, key=lambda item: (item.family, item.span_id)):
+            by_family.setdefault(vote.family, []).append((vote.verdict, vote.ehmf_type))
+        if set(by_family) != set(v2.members):
+            problems.append(f"{name}: every member family voted")
+        else:
+            family_verdicts = [family_verdict(by_family[family])[0] for family in sorted(by_family)]
+            try:
+                outcome = tally(v2.rule, family_verdicts)
+            except ValueError:
+                outcome = None
+            if (v2.objections != objections(family_verdicts) or v2.split != is_split(family_verdicts) or v2.outcome != outcome):
+                problems.append(f"{name}: the objections, split and outcome are the ones its votes give")
+    if any(vote.verifier_prompt_hash != block.verifier_prompt_hash for vote in v2.votes):
+        problems.append(f"{name}: every vote carries the block's verifier prompt hash (E-97)")
+    if v2.cycle > block.cycles:
+        problems.append(f"{name}: a claim verdict's cycle is at most the record's cycles")
+    return problems
+
+
+class VerificationRecordV2(VerificationRecord):
+    verification_schema: Literal["v2-verification-v1"] = "v2-verification-v1"
+    verdicts: tuple[ClaimVerdictV2, ...] = Field(max_length=20)
+    labels: tuple[Literal["near_floor", "conflict_disclosed", "degraded"], ...] = ()
+    v2: V2Block
+
+    @model_validator(mode="after")
+    def _rules(self) -> "VerificationRecordV2":
+        on = self.v2.mode == "on"
+        problems = verification_problems(
+            self,
+            v1_3_routed=lambda verdict: on and verdict.v2 is not None and verdict.v2.outcome == "pass",
+            claim_abstains_alone=lambda verdict: on and verdict.v3 is not None and verdict.v3.escalation == "X2",
+            final_reasons=V2_FINAL_REASONS,
+        )
+        problems.extend(self._v2_rules())
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
+    def _v2_rules(self) -> list[str]:
+        block = self.v2
+        problems = []
+        judged = [verdict for verdict in self.verdicts if verdict.v2 is not None]
+        if self.hard_fail or (self.final == "abstain" and self.final_reason in _V1_REASONS):
+            if judged or block.alignment is not None:
+                problems.append("V2 never overwrites a V1 decision: a V1 hard fail or abstention carries no V2 verdict (invariant 3)")
+        if not block.panel_reached and (block.calls or block.cycles or block.corrections or judged):
+            problems.append("a response whose panel was never reached made no call, no cycle and no V2 verdict")
+        if block.generator_family in block.members or not _sorted_unique(block.members):
+            problems.append("the panel excludes the generator's family and lists its families sorted (AC-5-1)")
+        for verdict in judged:
+            problems.extend(_v2_vote_problems(self, verdict))
+        if block.mode == "shadow":
+            if block.shadow is None or block.cycles or block.corrections:
+                problems.append("a shadow block has its would-summary and no correction")
+            if any(verdict.v3 is not None and verdict.v3.escalation is not None for verdict in self.verdicts):
+                problems.append("a shadow record escalates nothing")
+            if self.final_reason is not None and self.final_reason not in PHASE4_FINAL_REASONS:
+                problems.append("a shadow record's final reason is Phase 4's")
+        else:
+            if block.shadow is not None:
+                problems.append("an on block has no would-summary")
+            for verdict in self.verdicts:
+                outcome = verdict.v2.outcome if verdict.v2 is not None else None
+                if verdict.final == "deliver" and outcome != "pass":
+                    problems.append(f"{verdict.claim_id} is delivered without a passing V2 vote (invariant 6)")
+                if outcome == "fail" and (verdict.final != "abstain" or verdict.v3 is None or verdict.v3.escalation != "X2"):
+                    problems.append(f"{verdict.claim_id} failed V2 and is not abstained with X2")
+                if outcome == "withheld" and (verdict.final != "withhold" or verdict.v3 is None or "v2_degraded_withheld" not in verdict.v3.reasons):
+                    problems.append(f"{verdict.claim_id} was withheld by V2 and is not withheld and queued")
+            if len(block.corrections) != block.cycles or [item.cycle for item in block.corrections] != list(range(1, block.cycles + 1)):
+                problems.append("the corrections are the cycles, numbered from 1")
+            if any(verdict.v3 is not None and verdict.v3.escalation == "X2" for verdict in self.verdicts) and block.cycles != MAX_CORRECTION_CYCLES:
+                problems.append("an X2 escalation follows the last correction cycle")
+            if block.kill_switch != "none" and self.final == "withhold" and self.final_reason != "v2_kill_switch":
+                problems.append("a kill switch withholds with reason v2_kill_switch")
+        if block.kill_switch != "none":
+            if any(verdict.v2.votes or verdict.v2.outcome != "withheld" or verdict.v2.mode != "ZERO" for verdict in judged) or block.calls:
+                problems.append("a kill switch makes no call: every judged claim is withheld in ZERO")
+        degraded = bool(judged) and block.degraded_mode != "FULL"
+        if degraded != ("degraded" in self.labels):
+            problems.append("the degraded label is set exactly when a judged claim ran below FULL")
+        if (block.banner is not None) != ("degraded" in self.labels) or (block.banner is not None and block.banner != BANNER_FOR_MODE.get(block.degraded_mode)):
+            problems.append("the banner is set exactly with the degraded label, and names the degraded mode")
+        worst = max((verdict.v2.mode for verdict in judged), key=("FULL", "REDUCED-2", "REDUCED-1", "ZERO").index, default="FULL")
+        if block.degraded_mode != worst:
+            problems.append("degraded_mode is the worst mode of a judged claim, FULL if none")
+        return problems
+
+
+class ProvenanceV3(ProvenanceV2):             # plan 7.4: every provenance field is filled
+    panel_weights_version: str
+    routing_table_version: str
+    tool_contract_version: str
+
+
+class ClaimLedgerEntryV3(ClaimLedgerEntryV2):
+    provenance: ProvenanceV3
+
+
+class LedgerEntryV3(LedgerEntryV2):
+    entry_schema: Literal["ledger-entry-v3"] = "ledger-entry-v3"
+    claims: tuple[ClaimLedgerEntryV3, ...]
+    provenance: ProvenanceV3
+    verification: VerificationRecordV2
+
+    @model_validator(mode="after")
+    def _v3_rules(self) -> "LedgerEntryV3":
+        problems = []
+        block = self.verification.v2
+        for name in ("panel_weights_version", "routing_table_version", "tool_contract_version"):
+            if getattr(self.provenance, name) != getattr(block, name):
+                problems.append(f"provenance.{name} is the V2 block's")
+        if self.delivery != "shadow":
+            problems.append("only shadow records carry a V2 verification (DI-85)")
+        if self.verification.mode == "enforce":
+            spans = {claim.claim_id: set(claim.span_ids) for claim in self.claims}
+            for verdict in self.verification.verdicts:
+                if verdict.v2 is not None and any(vote.span_id not in spans.get(verdict.claim_id, set()) for vote in verdict.v2.votes):
+                    problems.append(f"{verdict.claim_id}: every vote names one of its claim's spans")
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
+
+ACCEPTED_ABSTENTION_REASONS["ledger-entry-v3"] = (*ACCEPTED_ABSTENTION_REASONS["ledger-entry-v2"], *V2_ABSTENTION_REASONS)
+SCHEMA_MODELS["LedgerEntryV3"] = LedgerEntryV3
+ENTRY_SCHEMAS["ledger-entry-v3"] = LedgerEntryV3

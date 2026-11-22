@@ -181,7 +181,7 @@ Each resolution is a refinement. None reverses a fixed decision without quoted p
     - **Resolution:** apply it. D-20's text is itself the interim policy, and hold H15 ("V1.3 routing [Decision D-20] | P4 V1.3 enforcement | Interim policy") names that policy as its release evidence. It is the most conservative path: every flagged claim is withheld. Recorded as PD-13; ratification and the filed policy are DI-55.
 15. **D-21 OPEN** ("hosting for the V1.3 checker and open-weight verifier, or none"). **Resolution:** take the "none" path, which is the fact today. Plan E reads "if none, V1.3 flags everything". `NullChecker` (`checker_model_id: "none"`); PD-14, DI-54.
 16. **V1.3 "flag only, never HARD"**, against AC-4-7 (abstain when the checker is unavailable). **Resolution:** unavailability is outcome `abstain` (response-level), never `hard_fail`.
-17. **V1.8 "flag, queue V3"**, while D-20 names only V1.3. **Resolution:** a V1.8-flagged claim is also withheld before Phase 5, by 13.6 ("deliver text whose verification has not completed"), and carries a V3 intent. This is stricter.
+17. **V1.8 "flag, queue V3"**, while D-20 names only V1.3. **Resolution:** a V1.8-flagged claim is also withheld, with V2 off, in shadow or on (V2 never decides a V1.8 match), by 13.6 ("deliver text whose verification has not completed"), and carries a V3 intent. This is stricter.
 18. **V1.9 "invalid schema HARD; outside band | E | HARD/regen"**, against E9 ("readability … re-render only, never hard"). **Resolution:** a band miss is outcome `flag`, which forces a re-render; when the render limit is spent the run abstains (`V1Abstained`, E2).
 19. **V1.5 under the two gates** (M11), and plan B "V1.3, X4 and V1.9 values set as operator policy (Q-22)" with plan D "Thresholds load from configuration [Risk R-46]". **Resolution:** V1.5 (rule `gate-decision-margin-v3`) abstains when the gate returned nothing, with the gate's reason; otherwise it applies the package's X4 margin for the active gate (`v1.v1_5.x4_margin[gate]`) to the top result's gate score the bundle records, the score the gate compared with its floor (M11): `mark` when that score is below the gate's floor plus the margin, or when the bundle records none, else `pass`. The floor and the score are on one scale under either gate (the 9-digit BM25F score under `bm25f-v1`; the P1 floor score, not the ranking score, under `p1-floor`), so nothing is re-scored. The shipped margins are `bm25f-v1`'s `abstention.margin` (2.4: V1.5 marks exactly what the gate flags `near_floor`, the display rounding included) and 0.0 for `p1-floor` (no mark: every kept result's floor score is at least the floor), PD-15; an owner value under Q-22 for either gate changes the package only, and the loader accepts any non-negative number per gate.
 20. **AC-4-3's metric**, against the lower composition rate (M2). **Resolution:** R-c. The stop floor in v3 applies to the V1.5 rate. A second stop (`stop.composition`) catches V1's own over-abstention. The composition gap is Phase 3's whole-sentence extractive rule.
@@ -394,7 +394,7 @@ class LedgerEntryV2(LedgerEntry):
 
 **`VerificationRecord._rules`**
 - `cycle_count == max(generation_attempts - 1, 0) + max(render_attempts - 1, 0)`, and each verdict's `cycle_count` equals it.
-- `final != "correct"`: there is no V2 yet.
+- `final != "correct"`: a record never ends in 'correct': a correction is a new candidate (R-d; the Phase 5 V2 record counts its corrections in `v2.cycles`).
 - `(final == "withhold") == (replacement != "none")`; when `final == "withhold"`, `replacement` is `extractive_d19` iff `comparison.legacy_decision == "answer"`, `abstention` iff it is `"abstain"`, and `unknown` iff it is None.
 - `deliver` needs at least one verdict `deliver`; `withhold` needs at least one verdict and none `deliver`; `abstain` needs every verdict `abstain`; and a verdict `abstain` occurs only when the response abstains.
 - `hard_fail` implies `final == "abstain"`.
@@ -433,15 +433,13 @@ class V1Passed:
     final: Literal["deliver", "withhold"]; final_reason: str | None
 V1Decision = V1HardFail | V1Abstained | V1Passed
 
-class V2Hook(Protocol):                       # Phase 5 implements it; Phase 4 wires none
+class V2Hook(Protocol):                       # the Phase 5 V2 track implements it; Phase 4 wired none
     def consult(self, passed: V1Passed) -> object: ...
 
 def consult_v2(hook: V2Hook | None, decision: V1Decision) -> V1Decision:
-    """Only a V1Passed reaches a hook (plan rule 1, invariant 3). Phase 4 returns `decision` unchanged whatever the
-    hook returns; Phase 5 defines how V2 verdicts apply to a V1Passed's flagged claims."""
-    if hook is None or not isinstance(decision, V1Passed):
-        return decision
-    hook.consult(decision)
+    """Only a V1Passed reaches a hook (plan rule 1, invariant 3). Returns `decision` unchanged whatever the hook
+    returns: the Phase 5 V2 track applies its verdicts in its own record (v2_panel.aggregate.build_record_v2)."""
+    v2_outcome(hook, decision)
     return decision
 ```
 
@@ -793,7 +791,7 @@ def undisclosed_conflict(contained: ContainedAnswer, package) -> bool   # panel_
 
 ### 5.2 Loader (`app/core/config_package.py`)
 
-- `DEFAULT_PACKAGE_PATH` is `v3.json`; `V2_PACKAGE_PATH` and `V1_PACKAGE_PATH` name the readable older packages.
+- `DEFAULT_PACKAGE_PATH` is `v3.json` with Phase 4 and `v4.json` with Phase 5 (its spec 5.2, which adds `V3_PACKAGE_PATH`); `V2_PACKAGE_PATH` and `V1_PACKAGE_PATH` name the readable older packages.
 - `schema_version in (1, 2, 3)`. Schema 3 applies every v2 rule with the schema names `TUTOR_SCHEMA_NAMES_V3`, `legacy_entry_schema == "ledger-entry-v1"`, `entry_schemas == ["ledger-entry-v1", "ledger-entry-v2"]` and the v3 unused fields (`ledger.entry_schema` is compared with the `LedgerEntryV2` contract by `package_check`, conflict 37).
 - **`_parse_v1` refuses**: an unmarked provisional block (`v1`, `lexicon`, `v1_3`, `v1_5`, `v1_6`, `v1_7`, `v1_9`, `quiz_feedback`, `d20_interim`, `stop`); a `quiz_feedback` rule other than `V1_QUIZ_FEEDBACK_RULE`, `public_payloads` other than `no_keys` or `feedback` other than `answered_questions_after_a_saved_attempt`; `ehmf` other than the plan's; regeneration values outside 0-2; empty lexicon lists or lists that are not lowercase, sorted and unique (suffixes exempt); `hosting` not in `WIRED_CHECKERS`; `support_threshold` outside [0, 1]; `timeout_ms` outside 10-10000 or not below `budgets.shadow_ms`; `unavailable` other than `abstain`; an `x4_margin` that does not name exactly `bm25f-v1` and `p1-floor`, each with a non-negative number (any such value is an owner's to set under Q-22); `assessment_threshold` or `alignment_threshold` outside (0, 1]; `min_alignment_terms` outside 1-20; `short_key_min_tokens` outside 1-10; a `socratic_plan` that is not a presentation plan; a `scope` other than `all_lessons`; `on_conflict` other than disclose or withhold; a family with fewer than 2 distinct items, an item in two families, or more than 20 families; a library that is malformed, breaks the entry rules or whose `sha256` is not its canonical sha256; `on_match` other than `flag_withhold_queue_v3`; a band with `min_grade >= max_grade` or a bound outside [−50, 200]; answer-rate floors that are not integers with 0 < answered ≤ in_domain; another composition rule; `v1_p95_latency_ms` outside 1 to `shadow_ms`; a `fixtures` path that is absolute or holds `..`; a malformed `rules_hash` or `set_sha256`.
 - **Owner decisions:** `D-20`, `D-21`, `Q-22`, `Q-14` and `D-06` must be objects; `D-21` open ⇒ hosting and model id `"none"`; `Q-14` unavailable ⇒ no library entries; `D-20` open ⇒ `d20_interim.rule == "withhold-all-flagged-v1"`. `Q-22.provisional_values` (`_q22_provisional_values`) is a non-empty list of paths the package holds, and names every block whose `provisional_until` names Q-22 (today `abstention`).

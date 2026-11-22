@@ -385,10 +385,10 @@ def test_the_provenance_audit_checks_a_v2_record_s_checker_and_rules_hash(isolat
     answered, _ = _v2_entries(factory)
     entry = answered.entry.model_dump(mode="json")
     params = ledger_params(package)
-    assert _provenance_problems(1, entry, params, package.v1) == []
+    assert _provenance_problems(1, entry, params, package.v1, ledger.phase5_blocks(package)) == []
     entry["verification"]["policy"]["rules_hash"] = "0" * 64
-    assert any("rules_hash" in problem for problem in _provenance_problems(1, entry, params, package.v1))
-    assert any("no v1 block" in problem for problem in _provenance_problems(1, entry, params, None))
+    assert any("rules_hash" in problem for problem in _provenance_problems(1, entry, params, package.v1, ledger.phase5_blocks(package)))
+    assert any("no v1 block" in problem for problem in _provenance_problems(1, entry, params, None, ledger.phase5_blocks(package)))
     with factory() as db:
         audit = ledger.ledger_provenance(db, package)
     # The second record names a test checker, not the package's ("none"), and the audit says so; the first is clean.

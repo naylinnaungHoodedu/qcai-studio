@@ -73,13 +73,11 @@ class Settings(BaseSettings):
     enable_demo_auth: bool | None = None
     cloud_sql_connection_name: str | None = None
     cloud_sql_ip_type: str = "PUBLIC"
+    # The Phase 2 semantic backend's embedding key and model (retrieval_engine.PineconeSemanticBackend; task 2.5). The
+    # backend also needs MODEL_EGRESS_PROVIDERS to name openai-embeddings (D-23). No chat provider setting exists: the
+    # retired ones (app.gateway.retired.RETIRED_PROVIDER_SETTINGS) are ignored and named at start-up.
     openai_api_key: str | None = None
-    openai_chat_model: str = "gpt-4.1-mini"
     openai_embedding_model: str = "text-embedding-3-small"
-    vertex_ai_api_key: str | None = None
-    vertex_ai_project_id: str | None = None
-    vertex_ai_location: str = "global"
-    vertex_ai_chat_model: str = "gemini-3.1-flash-lite-preview"
     auth0_domain: str | None = None
     auth0_audience: str | None = None
     pinecone_api_key: str | None = None
@@ -184,6 +182,49 @@ class Settings(BaseSettings):
     # path has no flag: V1.1 and V1.2 always, and V1.7 whenever no evidence panel shows the conflict
     # (EVIDENCE_PANEL_ENABLED off) or the package's conflict policy (v1.v1_7.on_conflict) is withhold.
     v1_pipeline: Literal["off", "shadow", "enforce"] | None = None
+    # Phase 5 (provider-neutral gateway and V2; docs/architecture/phase5-implementation-spec.md section 6). Plan Phase 5 G:
+    # "One release of shadow dual-run, then flag cutover"; L: "Flag off returns to Phase 4". It acts on the two-pass
+    # shadow pipeline only, so no learner sees a change. None = "shadow" in development and "off" elsewhere
+    # (MODEL_GATEWAY_DEFAULT_DEVELOPMENT, MODEL_GATEWAY_DEFAULT_ELSEWHERE, which package v4 flag_policy.model_gateway
+    # must name). "on" needs V1_PIPELINE=enforce, and outside development is refused while the package says
+    # flag_policy.phase5_exit_passed is false. A runtime stop of the gateway turns the effective mode off until restart.
+    model_gateway: Literal["off", "shadow", "on"] | None = None
+    # D-23 (PD-22): the providers this environment opts in to model egress, a comma or JSON list. Empty everywhere,
+    # development included: the development fakes need none, and no non-fake provider is registered anywhere.
+    model_egress_providers: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # Plan 13.6 "kill switches per provider": these adapter ids are never eligible (strictly more conservative).
+    model_gateway_disabled_adapters: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # Plan 13.6 "abstain-only, pre-verified-only": either makes every adapter ineligible, so V2 withholds and queues
+    # every claim with no call (ZERO; strictly more conservative).
+    model_gateway_kill_switch: Literal["none", "abstain_only", "pre_verified_only"] = "none"
+
+    @field_validator("model_egress_providers", "model_gateway_disabled_adapters", mode="before")
+    @classmethod
+    def parse_name_list(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            raw_value = value.strip()
+            if not raw_value:
+                return []
+            if raw_value.startswith("["):
+                try:
+                    parsed = json.loads(raw_value)
+                except ValueError as exc:
+                    raise ValueError("the list is not valid JSON") from exc
+                if not isinstance(parsed, list):
+                    raise ValueError("the list is not a JSON list")
+                return [str(item).strip() for item in parsed if str(item).strip()]
+            return [item.strip() for item in raw_value.split(",") if item.strip()]
+        return value
+
+    @field_validator("model_egress_providers", "model_gateway_disabled_adapters")
+    @classmethod
+    def check_names(cls, value: list[str]) -> list[str]:
+        import re
+
+        for item in value:
+            if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", item):
+                raise ValueError(f"{item!r} is not a provider or adapter name ([a-z0-9][a-z0-9-]{{0,63}})")
+        return value
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
@@ -234,6 +275,12 @@ class Settings(BaseSettings):
             raise ValueError("V1_PIPELINE=off is refused outside development (plan 13.6: no flag may disable V1). Use shadow.")
         if not development and self.v1_pipeline == "enforce":
             self._refuse_v1_enforce_before_phase_4_exit()
+        if self.model_gateway is None:
+            self.model_gateway = MODEL_GATEWAY_DEFAULT_DEVELOPMENT if development else MODEL_GATEWAY_DEFAULT_ELSEWHERE
+        if self.model_gateway == "on" and self.v1_pipeline != "enforce":
+            raise ValueError("MODEL_GATEWAY=on needs V1_PIPELINE=enforce (V2 consults only the V1 track's own V1Passed)")
+        if not development and self.model_gateway == "on":
+            self._refuse_model_gateway_on_before_phase_5_exit()
         if self.arena_enabled and self.environment.lower() != "development":
             raise ValueError("ARENA_ENABLED is not permitted outside development (Decision D-03).")
         if self.guest_token_secret is None and self.environment.lower() == "development":
@@ -276,6 +323,22 @@ class Settings(BaseSettings):
             )
         if not (package.is_default_path and package.hash_verified):
             raise ValueError("V1_PIPELINE=enforce outside development needs the shipped, hash-verified configuration package.")
+
+    def _refuse_model_gateway_on_before_phase_5_exit(self) -> None:
+        # Read lazily, as for TWO_PASS_TUTOR=on: no other construction of Settings depends on the package.
+        from app.core.config_package import ConfigPackageError, get_config_package  # lazy: avoids an import cycle
+
+        try:
+            package = get_config_package(self)
+        except ConfigPackageError as exc:
+            raise ValueError(f"MODEL_GATEWAY=on needs a valid configuration package: {exc}") from exc
+        if not package.flag_policy.phase5_exit_passed:
+            raise ValueError(
+                "MODEL_GATEWAY=on is refused outside development before the Phase 5 exit (configuration package "
+                "flag_policy.phase5_exit_passed is false; plan Phase 5 G, P). Use off or shadow."
+            )
+        if not (package.is_default_path and package.hash_verified):
+            raise ValueError("MODEL_GATEWAY=on outside development needs the shipped, hash-verified configuration package.")
 
     @property
     def tutor_turns_route_enabled(self) -> bool:
@@ -346,6 +409,10 @@ TWO_PASS_DEFAULT_ELSEWHERE = "off"
 # default_development and default_elsewhere, and the loader refuses a package whose values differ.
 V1_PIPELINE_DEFAULT_DEVELOPMENT = "enforce"
 V1_PIPELINE_DEFAULT_ELSEWHERE = "shadow"
+# The model_gateway defaults (PD-28). Configuration package v4 records them as flag_policy.model_gateway.
+# default_development and default_elsewhere, and the loader refuses a package whose values differ.
+MODEL_GATEWAY_DEFAULT_DEVELOPMENT = "shadow"
+MODEL_GATEWAY_DEFAULT_ELSEWHERE = "off"
 
 
 @lru_cache

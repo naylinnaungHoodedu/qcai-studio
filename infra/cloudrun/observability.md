@@ -165,3 +165,28 @@ All Phase 4 events log on the `qcai.tutor` logger with enumerations, counts and 
 | Security event `config.override` | the details name `v1_pipeline_enforce`: V1 deciding the shadow record outside development, which settings refuse before the Phase 4 exit (a line means a package claiming the exit) | An alert on any line |
 
 Citation resolution (V-1, "100% of delivered citations resolve") is measured over delivered V1 verdicts; none exists before the Phase 4 exit, so the measure has no production input yet. Operating the answer-rate stop (plan L) on traffic needs labelled in-domain traffic; until then it is the fixture runner's check in CI.
+
+## Phase 5 SLIs: gateway and V2 (plan Phase 5 I)
+
+**Not set up yet.** Creating log-based metrics and alerts is a cloud write (Platform Owner approval each time; DI-80). Production runs no V2 panel while `TWO_PASS_TUTOR` and `MODEL_GATEWAY` are off, and its registry is empty with a budget of 0, so the SLIs below have no production input yet.
+
+Plan Phase 5 I: "Verification completion, time degraded, p95 per stage, cost per response; alert at 80% of budget."
+- `/ready` reports the gateway's values in force, never a run's outcome: `model_gateway` (the effective mode) and `model_gateway_setting`, `phase5_exit_passed`, and `gateway` (version, registry, members, egress providers, kill switch, disabled adapters, `state` and `stop_reason`, the daily budget, the tool contract version, the panel's size, weights, routing table and tier rule, `available`). Only `state` and `stop_reason` can change, once, at a stop.
+- In process (tests only; no route serves it), `V2_METRICS.detail_snapshot()` and `GATEWAY_METRICS.snapshot()` (Phase 5 spec 10.3).
+
+All Phase 5 events log on `qcai.gateway` or `qcai.tutor` with enumerations, counts, adapter ids and hashes only: no question, claim or rendered text, and no learner, response, turn, thread or message id.
+
+| SLI or event | Log-based metric or alert |
+|---|---|
+| Verification completion | `jsonPayload.event="tutor.v2.run"`: the share of lines with `completed=true` among those whose response passed V1 (a V1-passed response whose every eligible claim got a completed vote or a typed `withheld` outcome) |
+| Time in each degraded mode | `tutor.v2.run` counted by `degraded_mode`; `tutor.v2.degraded` (`mode`, `eligible`) marks each response below FULL |
+| p95 per stage | `gateway.call` `latency_ms` by `adapter_id` (the gateway call) and `tutor.v2.run` `latency_ms` (the panel), each a distribution metric at the 95th percentile |
+| Cost per response | `tutor.v2.run` `cost_units` (fake units in development), a distribution metric |
+| The 80% budget event | `jsonPayload.event="gateway.budget_alert"` (`share` 4/5, `daily_units`, `spent`): an alert on any line |
+| A stop | `gateway.stopped` (`reason`: `payload_violation`, `secret_in_logs` or `budget_breach`) and the security event `gateway.stopped`: an alert on any line; the V2 mode is off until the process restarts |
+| A failed call | `gateway.call_failed` (`adapter_id`, `kind`, `status`): a counter by `kind` |
+| Egress refused | `gateway.egress_refused` (`adapter_id`, `provider`): an alert on any line (a non-fake member without its D-23 opt-in) |
+| A retired setting | `gateway.retired_setting` (`names`): an alert on any line until DI-81 removes the variables |
+| Disagreement | `tutor.v2.disagreement` (`v1_final`, `v2_would`): a counter (plan G's shadow dual-run) |
+| Unavailable | `tutor.v2.unavailable` (`reason`): an alert on any line |
+| Security event `config.override` | the details name `model_gateway_shadow` (the V2 shadow outside development), `model_gateway_on` (refused outside development before the Phase 5 exit; a line means a package claiming the exit) or `model_egress_opt_in` (an environment naming a provider in `MODEL_EGRESS_PROVIDERS`) | An alert on any line |

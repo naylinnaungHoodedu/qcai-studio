@@ -137,7 +137,8 @@ class UnmappedRenderer:
 
 
 def temp_package(tmp_path: Path, edit=None, **v1_overrides) -> Path:
-    """A copy of package v3 (with schemas/) whose v1 block is edited, rehashed where a hash pins it, with a sidecar."""
+    """A copy of the shipped package (with schemas/) whose v1 block is edited, rehashed where a hash pins it, with a
+    sidecar."""
     from app.services.v1_checks.rules import v1_rules_hash
     from app.core.config_package import parse_config_package
 
@@ -152,13 +153,13 @@ def temp_package(tmp_path: Path, edit=None, **v1_overrides) -> Path:
         edit(raw)
     library = raw["v1"]["v1_8"]["library"]
     library["sha256"] = misconception_library_sha256(library)
-    path = tmp_path / "package" / "v3.json"
+    path = tmp_path / "package" / DEFAULT_PACKAGE_PATH.name
     path.parent.mkdir(parents=True, exist_ok=True)
     if not (path.parent / "schemas").exists():
         shutil.copytree(DEFAULT_PACKAGE_PATH.parent / "schemas", path.parent / "schemas")
     raw["v1"]["rules_hash"] = v1_rules_hash(parse_config_package(raw, path=path, sha256="", hash_verified=False))
     path.write_text(json.dumps(raw), encoding="utf-8")
-    path.with_name("v3.json.sha256").write_text(canonical_sha256(raw) + "\n", encoding="utf-8")
+    path.with_name(DEFAULT_PACKAGE_PATH.name + ".sha256").write_text(canonical_sha256(raw) + "\n", encoding="utf-8")
     return path
 
 
@@ -168,13 +169,15 @@ MULTI_CLAIM = "Explain why quantum logistics needs both problem reduction before
 
 
 def dev_pipeline(settings=None, **kwargs):
-    """A two-pass pipeline over the dev store (V1_PIPELINE=enforce, the development default, unless settings say else)."""
+    """A two-pass pipeline over the dev store (V1_PIPELINE=enforce, the development default, unless settings say else).
+    Without settings MODEL_GATEWAY is off, so the record is Phase 4's (Phase 5 spec conflict 24; v2_fakes.v2_pipeline
+    builds a V2 pipeline)."""
     from app.core.config import Settings
     from app.services.retrieval_engine import RetrievalEngine
     from app.services.store import get_course_store
     from app.services.tutor_pipeline.pipeline import TwoPassPipeline
 
-    settings = settings or Settings()
+    settings = settings or Settings(model_gateway="off")
     return TwoPassPipeline(RetrievalEngine(get_course_store(), settings), settings, **kwargs)
 
 

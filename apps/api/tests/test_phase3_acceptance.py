@@ -360,9 +360,14 @@ def observe_three_learners(monkeypatch, *, assistant_class=None, prefix: str = "
     monkeypatch.setattr(RetrievalEngine, "search", lambda self, query, lesson_slug=None, top_k=8, *, surface="search": legacy_calls.append(
         {"query": query, "lesson_slug": lesson_slug, "top_k": top_k}) or real_search(self, query, lesson_slug, top_k, surface=surface))
     markers, observed = [], []
+    from app.services.v2_panel.cache import reset_process_cache
+
     for mastery in (0.1, 0.5, 0.9):
         if on_learner is not None:
             on_learner(mastery)
+        # Each learner starts from a cold evidential cache: a record's V2 call and cache-hit counts are the process's
+        # traffic history, not learner state (Phase 5 spec 4.15; AC-5-11 shares the cache across learners on purpose).
+        reset_process_cache()
         headers = demo(f"{prefix}-{int(mastery * 10)}")
         marker = f"MARKER-{uuid4().hex}"
         markers.append(marker)
