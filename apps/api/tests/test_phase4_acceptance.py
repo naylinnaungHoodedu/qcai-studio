@@ -1605,16 +1605,19 @@ def test_phase4_docs_the_code_texts_name_the_shipped_package():
 
 
 def test_phase4_docs_the_ci_records_name_the_latest_branch_run():
-    # The branch was pushed at 863179f (run 44868544555) and again at e3ac436, the housekeeping round's head (run
-    # 44881947571, success on every job). Spec 17's CI bullet, its DI-58 row and the test strategy's exit gate name
-    # that run, and name only the unpushed commits as having none.
+    # PR #36 was squash-merged as 98f7cc4 (tree identical to aa9f1ef); main run 44971066403 passed every job and is the
+    # cited run. Spec 17's CI bullet, its DI-58 row and the test strategy's exit gate name the merge and that run, none
+    # still says a commit is unpushed or has no run, and the exit stays not passed.
     texts = {"spec 17": _spec_line("- **CI.**"), "DI-58": _spec_line("| DI-58 |"),
              "test strategy": next(line for line in (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
                                    .split("## Phase 4 acceptance map", 1)[1].splitlines() if line.startswith("**Exit gate.**"))}
     for name, text in texts.items():
-        assert "44881947571" in text and "`e3ac436`" in text, name
-        assert "each later commit needs its own" not in text, name
-        assert "`48b3fe8`" in text, name  # the first commit with no run
+        assert "44971066403" in text and "`98f7cc4`" in text, name
+        for stale in ("not pushed", "have no run", "has no run", "each later commit needs its own"):
+            assert stale not in text, (name, stale)
+    for name in ("DI-58", "test strategy"):
+        assert "The exit is not passed" in texts[name] and "D-06" in texts[name], name
+    assert _spec_line("- `phase4_exit_passed` stays `false`").endswith("the exit is not passed (DI-58).")
 
 
 def _test_function_names() -> set[str]:
