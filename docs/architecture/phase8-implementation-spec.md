@@ -147,11 +147,13 @@ Plan M: "[Risk R-01][Risk R-08][Risk R-41][Risk R-42][Risk R-51]; residual: back
 
 ## 17. Verification, work order and exit
 
-Start with the baseline, then implement identity and synchronization, the privacy lifecycle, and the planner and harness. Run offline tests and validators with isolated scratch files. Repeat the applicable SQLite, PostgreSQL, frontend, and integration checks against the final branch after the Phase 5 merge. Plan P: "AC-8-1 to AC-8-7 green; harness in CI." `phase8_exit_passed` stays false while DI-300 remains open.
+Start with the baseline, then implement identity and synchronization, the privacy lifecycle, and the planner and harness. Run offline tests and validators with isolated scratch files. Repeat the applicable SQLite, PostgreSQL, frontend, and integration checks against the final branch after the Phase 6 integration. Plan P: "AC-8-1 to AC-8-7 green; harness in CI." `phase8_exit_passed` stays false while DI-300 remains open.
 
 The Phase 5 merged baseline passed 8 separately isolated template tests, 1,593 SQLite tests (2 skipped, 9 deselected, 3 xfailed), and 1,591 tests per PostgreSQL driver (9 deselected, 3 xfailed each). Frontend lint, type checking, and 154 integration tests passed. The existing validators passed, including package v1 through v4, the V2 fixture report, and all 1,192 frozen public payload bodies. The path boundary scan passed. Licensed-passage scanning requires the fingerprint input. The Phase 8 invariance harness and erasure-proof scripts are pending.
 
 The first build passed 43 targeted tests on each database backend, including the Phase 8 modules and existing learner-record, erasure, and gateway egress tests. The freeze, planner threshold, and version-conflict tests failed under their respective in-process mutations. The setup install reported 11 moderate npm advisories. Package and lock files retain the integrated versions.
+
+The Phase 3 replay and Phase 4 and 5 fixture records were regenerated from the clean build commit. Their input digests are `b5f54f43c1f9390461374456266312cd060be61498d8976d468918a2dd155792`, `79d312a15ee9430edcfc93624fe2fe8ffc75cab547275de934dc3bfd28ed2a99`, and `9a8bdcab76826f6d0cd7a1fbaa2a939523fd88485da271bf6f52ddbd77afa6f5`, respectively. Fresh record checks passed and the frozen public payload check matched all 1,192 bodies again.
 
 ## 18. Review history
 
@@ -160,3 +162,4 @@ The rows below record what each round fixed, in order. They may describe behavio
 | Round | Commit | Findings fixed (one line each, with their tests) |
 |---|---|---|
 | Spec (pre-code) | - | Initial design and verification map. |
+| Build | `9d1417c` | Initial settings, read path, sync services, and pure planner, covered by `test_settings_phase8_defaults_and_refusals`, `test_phase8_sync_read_issues_no_insert`, `test_phase8_sync_parallel_replicas_conflict_and_retry_without_losing_updates`, and `test_phase8_planner_uses_the_provisional_mastery_bands`. |

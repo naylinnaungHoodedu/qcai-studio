@@ -1,8 +1,8 @@
 {
  "report": "qcai-three-plan-replay",
  "format_version": 1,
- "created_at": "2026-11-22T13:55:36+00:00",
- "commit": "6a56107de4f794909381a2589d523913d277db96-dirty",
+ "created_at": "2026-11-22T18:33:26+00:00",
+ "commit": "9d1417cea334be3b9052eb70588946ac0556b8e8",
  "evidence_class": "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 evidence (plan Phase 3 H)",
  "public_corpus_only": true,
  "excluded_sources": [
@@ -169,16 +169,17 @@
   "rule": "imported-repository-modules-sha256-lf-v1",
   "files": {
    "apps/api/app/__init__.py": "a45661633011b095a62071507cf3309e100424dd64d34feabf2cc6d084696348",
-   "apps/api/app/core/config.py": "7f0b338ca4981ca41d8beb55ce244b371f9f288629d9021c7b6f0d6834030778",
+   "apps/api/app/core/config.py": "08ad5de5ee08cd8b325dd69d35f11d6a9e1fbc11c6f20fd9a21f9a4cf30c5b99",
    "apps/api/app/core/config_package.py": "26890e0fd903b2388d76e01487d9db13335a49f3c5346a929cf41d0e1059f291",
    "apps/api/app/core/corpus_governance.py": "39153061b8d613ca0298a5210b4d9abeb4da2298608b1b471c0cf659a7f9a4fd",
    "apps/api/app/core/data_planes.py": "195f35a4a4a01cabeb32d48a0d81c1beb0ca714e943d7c154abe3e96a35a5976",
    "apps/api/app/core/db.py": "81d5e54a250dc4e3d6d477ad33bb37f78cee4a98854330e39e223f1ab44b6014",
    "apps/api/app/core/log_redaction.py": "ac76ce9520ac9b42986775b36bb803b00105edb9a6b256748f541022437582c3",
    "apps/api/app/core/manifest_v2.py": "993892df5fb5e97fa34d5e8bd645eabca4d2960b7cf8959383064d2de10087a3",
+   "apps/api/app/core/phase8_settings.py": "24b81254906dec46a8fb6bac178186b4b58b4ea0e0907f2b7a81b4188571af55",
    "apps/api/app/core/source_assets.py": "1889e9d025697c0d928b6e068325c0569adc7b8a802394a6dd3750f451e39ce5",
    "apps/api/app/core/structured_logging.py": "854ef58ab42efdb665dc20cff8595e296241ccd63c5322eb77bcb7830b691ea1",
-   "apps/api/app/db_models.py": "28b24dc9efe599609c38e9d1be8b7a3862eec38f755ea8b6205db2a6af4111c3",
+   "apps/api/app/db_models.py": "4f4b9eb571a993335c877d8241ff4ae146d259076ace44513c31a06e83c48b38",
    "apps/api/app/gateway/__init__.py": "f30aa888d009d0bfc94f7be7dcd0a67f371e323e2f2a33ade73b0a06e1b568f2",
    "apps/api/app/gateway/adapters.py": "982c5d6c9932d7b702db9269ed3decba2bb08e6a409f50bc68c237c286eed977",
    "apps/api/app/gateway/contracts.py": "f026234f38ecf07749f6356afe4bf5248f8099cd55279c7bc847fe24423bf969",
@@ -237,6 +238,6 @@
    "apps/api/app/services/v2_panel/voting.py": "369859a4c5808e23c4a84306d14b7b594693d4755e4bb23132f14292905bff78",
    "scripts/replay_tutor_plans.py": "287a264cea97c41d4e59c958c817c00d6a84e5b8f4d47dd76a867584cc11191a"
   },
-  "sha256": "ff3b34164be33f841dfeb535140d7c32980b1b931978fd7a739817b85603be79"
+  "sha256": "b5f54f43c1f9390461374456266312cd060be61498d8976d468918a2dd155792"
  }
 }
