@@ -2,11 +2,12 @@
 
 Lexical retrieval is the evidence path: CourseStore.evaluate with the active gate (p1-floor or bm25f-v1). The
 semantic (Pinecone) backend is OFF unless SEMANTIC_RETRIEVAL_ENABLED, whatever keys are set. It embeds only through the
-gateway (app.gateway.embeddings, the sole holder of the embedding key; plan 7.1), which gives it an embedder only when
-the environment opts in (D-23: openai-embeddings in MODEL_EGRESS_PROVIDERS, PD-22; a refusal logs
-gateway.egress_refused once per process, consumer semantic-retrieval), the provider decisions are closed (D-07, D-12,
-Q-09) and the Q-15 payload review is done, the model is pinned, the registry has a budget, the gateway is open and the
-key is set; with the shipped package no embedder is given anywhere. Even then it runs only once it is aligned: its
+gateway (app.gateway.embeddings, the sole holder of the embedding key; plan 7.1), which names why it gives no embedder
+(D-23: openai-embeddings in MODEL_EGRESS_PROVIDERS, PD-22, and a refusal logs gateway.egress_refused once per process,
+consumer semantic-retrieval; the provider decisions D-07, D-12, Q-09 and the Q-15 payload review; a pinned model in
+package v4 gateway.embeddings; a budget; an open gateway; the key) and, once every one of those passes, learner_text:
+the backend embeds every query, and plan H never lets the learner's query text leave. So no provider embedder is given
+anywhere, and a test's in-process embedder (embedder=) is the only one. Even then it runs only once it is aligned: its
 vector ids are span ids and the namespace holds exactly one vector per index entry. RetrievalEngine.
 semantic_inactive_reason names why it is off. Every semantic result is re-gated with the active gate before fusion, so
 hybrid fusion can never bypass the abstention floor (the latent hybrid bypass found on 2026-11-17). The vector index
@@ -105,7 +106,7 @@ class PineconeSemanticBackend:
         from app.core.config_package import get_config_package
         from app.gateway.embeddings import embedder_for
 
-        embedder = embedder_for(self.settings, get_config_package(self.settings))
+        embedder = embedder_for(self.settings, get_config_package(self.settings), store=self.store)
         if embedder is None:
             raise RuntimeError("the gateway gives the semantic backend no embedder")
         return embedder
@@ -225,8 +226,8 @@ class RetrievalEngine:
     @property
     def semantic_inactive_reason(self) -> str | None:
         """Why semantic retrieval is off although its setting is on: the gateway's reason for giving no embedder
-        (egress_not_opted_in, provider_open, unpinned, no_budget, gateway_stopped or not_configured; app.gateway.
-        embeddings), not_configured when the vector index's SDK, key or name is missing, else not_aligned; None when the
+        (egress_not_opted_in, provider_open, unpinned, no_budget, gateway_stopped, not_configured or learner_text;
+        app.gateway.embeddings), not_configured when the vector index's SDK, key or name is missing, else not_aligned; None when the
         setting is off or retrieval is hybrid."""
         backend = self._semantic_backend
         if not self.settings.semantic_retrieval_enabled or self.semantic_enabled:

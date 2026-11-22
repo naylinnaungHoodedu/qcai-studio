@@ -8,23 +8,30 @@ call, so pipelines over different settings, stores or manifests share one budget
 Eligibility (before any panel is built; R-b): an adapter is dropped when the gateway is stopped, a kill switch is on
 (MODEL_GATEWAY_KILL_SWITCH abstain_only or pre_verified_only), it is in MODEL_GATEWAY_DISABLED_ADAPTERS, its provider
 is not opted in (egress_allowed), the remaining daily budget is below one call's cost (a budget of 0 drops every
-adapter), or it reports itself down. Each drop is counted by reason.
+adapter), the budget's store cannot be read (budget_unavailable), or it reports itself down. Each drop is counted by
+reason.
 
 A call: the shared stop, the secret flag, then the stop, the payload policy, the budget, the capture hook, then the
 adapter; a fake call whose measured duration (an injectable clock) exceeds its caps.timeout_ms is a timeout, and an adapter exception
-other than AdapterError becomes AdapterError(kind="error"), so a misbehaving member is only unavailable. Every call
-logs gateway.call (outcome ok, error, timeout, or refused for a call the gateway refused before the adapter), and a
-failed one gateway.call_failed. Three runtime guards stop the gateway (plan L "Stop on a payload violation, secret in
-logs or budget breach"): PayloadPolicy refused a request, a gateway-owned secret reached a log record (the redaction
-listener only sets a flag; the gateway stops at its next eligibility decision or call, outside the logging call), or
-a call would cross the daily budget or reported a cost above its reservation (cost_overrun). A stop logs
+other than AdapterError becomes AdapterError(kind="error"), so a misbehaving member is only unavailable. The call's
+reservation covers its first attempt; an adapter that retries (HttpJsonAdapter) reserves each retry through the
+call's reserve_retry hook before it sends it, so every attempt sent is counted. A budget store that cannot be read
+or written refuses the call (GatewayRefused, gateway.budget_unavailable): the member is unavailable, nothing is sent
+and nothing is spent, and the gateway does not stop. Every call logs gateway.call (outcome ok, error, timeout, or
+refused for a call the gateway refused before the adapter; cost_units is what its attempts reserved), and a failed one
+gateway.call_failed. Three runtime guards stop the gateway (plan L "Stop on a payload violation, secret in logs or
+budget breach"): PayloadPolicy refused a request, a gateway-owned secret reached a log record (the redaction listener
+only sets a flag; the gateway stops at its next eligibility decision or call, outside the logging call), or a call or
+a retry would cross the daily budget or a reply reported a cost above its reservation (cost_overrun). A stop logs
 gateway.stopped (origin instance), writes the security event gateway.stopped, refuses every later call and writes the
-registry's shared stop (app.gateway.controls.DatabaseStopStore); every other instance's gateway, and every new process,
-reads that stop before its next eligibility decision or call and stops too (gateway.stopped, origin shared, no second
-security event). The stop lasts until an operator clears it (python -m app.workers.gateway_stop --clear), and the V2
-track's effective mode is off from the next response on (v2_panel.mode). The process gateway's daily budget is the
-registry's shared DatabaseBudget, so every instance spends from one budget (package v4 gateway.budgets.scope and
-gateway.stop.scope "database"; a test or the fixture runner passes its own budget and no stop store).
+registry's shared stop (app.gateway.controls.DatabaseStopStore); every other instance's gateway, and every new process
+that builds a gateway, reads that stop before its next eligibility decision or call and stops too (gateway.stopped,
+origin shared, no second security event). A running gateway never reopens: a stopped instance refuses every call
+until it is replaced, and an operator's clear (python -m app.workers.gateway_stop --clear) lets only the processes
+started after it open, so service resumes with a new revision. The V2 track's effective mode is off from the next
+response on (v2_panel.mode). The process gateway's daily budget is the registry's shared DatabaseBudget, so every
+instance spends from one budget (package v4 gateway.budgets.scope and gateway.stop.scope "database"; a test or the
+fixture runner passes its own budget and no stop store).
 """
 
 from __future__ import annotations
@@ -48,7 +55,7 @@ from app.gateway.secrets import EnvironmentSecretStore
 
 LOGGER = logging.getLogger("qcai.gateway")
 STOP_REASONS = ("payload_violation", "secret_in_logs", "budget_breach")
-INELIGIBLE_REASONS = ("stopped", "kill_switch", "disabled", "egress_refused", "budget", "down")
+INELIGIBLE_REASONS = ("stopped", "kill_switch", "disabled", "egress_refused", "budget", "budget_unavailable", "down")
 SECRET_OWNER = "gateway"
 
 
@@ -57,7 +64,13 @@ class GatewayRefused(RuntimeError):
 
 
 class GatewayStopped(GatewayRefused):
-    """The gateway is stopped: every call is refused until an operator clears the stop."""
+    """The gateway is stopped: this instance refuses every call for the rest of its life (an operator's clear of the
+    shared stop opens only the processes started after it)."""
+
+
+def budget_unavailable() -> None:
+    """Log that the daily budget's store could not be read or written (no detail of the error is kept)."""
+    LOGGER.warning("The gateway's daily budget could not be read; the call is refused", extra={FIELDS: {"event": "gateway.budget_unavailable"}})
 
 
 class ModelGateway:
@@ -142,8 +155,14 @@ class ModelGateway:
         if not egress_allowed(settings, spec.provider):
             log_refusal(spec.provider, spec.adapter_id)
             return "egress_refused"
-        remaining = self.budget.remaining()
-        if self.budget.daily_units == 0 or remaining < spec.cost_units_per_call:
+        if self.budget.daily_units == 0:
+            return "budget"
+        try:
+            remaining = self.budget.remaining()
+        except Exception:  # noqa: BLE001 - an unreadable budget store makes the member ineligible (fail closed, no spend)
+            budget_unavailable()
+            return "budget_unavailable"
+        if remaining < spec.cost_units_per_call:
             return "budget"
         if not self.adapter_for(spec).available():
             return "down"
@@ -209,18 +228,40 @@ class ModelGateway:
             self.stop("payload_violation")
             self._refused(spec, item)
             raise GatewayStopped("the payload policy refused a request")
-        if not self.budget.reserve(spec.cost_units_per_call):
+        try:
+            reserved = self.budget.reserve(spec.cost_units_per_call)
+        except Exception:  # noqa: BLE001 - an unwritable budget store refuses the call: nothing is sent or spent, no stop
+            reserved = None
+        if reserved is None:
+            budget_unavailable()
+            self._refused(spec, item)
+            raise GatewayRefused("the daily budget could not be read")
+        if not reserved:
             self.stop("budget_breach")
             self._refused(spec, item)
             raise GatewayStopped("the daily budget is spent")
         self.capture(request)
         adapter = self.adapter_for(spec)
+        # Each retry an adapter sends reserves one more call's cost first (task 5.10: the hard stop counts every attempt).
+        spent = {"units": spec.cost_units_per_call, "store_failed": False}
+
+        def reserve_retry() -> bool:
+            try:
+                granted = self.budget.reserve(spec.cost_units_per_call)
+            except Exception:  # noqa: BLE001 - the retry is not sent; the member is unavailable, the gateway stays open
+                spent["store_failed"] = True
+                return False
+            if granted:
+                spent["units"] += spec.cost_units_per_call
+            return bool(granted)
+
         started = self.clock()
         error: AdapterError | None = None
         misbehaved = False
         raw = None
         try:
-            raw = adapter.verify(request) if item == "claim" else adapter.align(request)
+            send = adapter.verify if item == "claim" else adapter.align
+            raw = send(request, reserve_retry=reserve_retry) if isinstance(adapter, HttpJsonAdapter) else send(request)
         except AdapterError as exc:
             error = exc
         except Exception:  # noqa: BLE001 - any other adapter exception makes the member unavailable; nothing of it is kept
@@ -231,19 +272,23 @@ class ModelGateway:
         if error is None and spec.provider == "fake" and latency_ms > spec.caps.timeout_ms:
             error = AdapterError(spec.adapter_id, "timeout")
         outcome = "ok" if error is None else ("timeout" if error.kind == "timeout" else "error")
-        GATEWAY_METRICS.call(spec.adapter_id, outcome, latency_ms, spec.cost_units_per_call)
+        GATEWAY_METRICS.call(spec.adapter_id, outcome, latency_ms, spent["units"])
         LOGGER.info("Gateway call", extra={FIELDS: {"event": "gateway.call", "adapter_id": spec.adapter_id, "family": spec.family,
                                                      "item": item, "outcome": outcome, "latency_ms": round(latency_ms, 3),
-                                                     "cost_units": spec.cost_units_per_call}})
+                                                     "cost_units": spent["units"]}})
         if error is not None:
             kind, status = error.kind, error.status
             error = None
             LOGGER.warning("Gateway call failed", extra={FIELDS: {"event": "gateway.call_failed", "adapter_id": spec.adapter_id,
                                                                   "kind": kind, "status": status}})
-            if kind == "cost_overrun":
-                # The provider reported a cost above the call's reservation: the daily budget no longer bounds the spend.
+            if kind == "budget" and spent["store_failed"]:
+                budget_unavailable()
+                raise GatewayRefused("the daily budget could not be read")
+            if kind in ("budget", "cost_overrun"):
+                # A retry the daily budget refused, or a reply that cost more than its reservation: the budget would no
+                # longer bound the spend.
                 self.stop("budget_breach")
-                raise GatewayStopped("a call cost more than its reservation")
+                raise GatewayStopped("the daily budget no longer bounds the call")
             raise AdapterError(spec.adapter_id, kind, status)
         return raw
 
@@ -293,7 +338,9 @@ def process_gateway_stopped() -> bool:
 
 
 def process_gateway_state() -> tuple[str, str | None]:
-    """The process gateway's state (the shared stop adopted), or open when this process has built none."""
+    """The process gateway's state (the shared stop adopted), or open when this process has built none: a process whose
+    V2 mode is off by its settings (MODEL_GATEWAY off, every environment outside development) builds no gateway and
+    reads no stop; the operator's status command reads the registry's stops (python -m app.workers.gateway_stop)."""
     gateway = _PROCESS
     if gateway is None:
         return ("open", None)

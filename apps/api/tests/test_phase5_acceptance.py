@@ -369,11 +369,77 @@ def test_ac_5_6_a_mid_response_loss_and_each_kill_switch():
         assert (verification.v2.kill_switch, verification.v2.degraded_mode, verification.v2.calls) == (switch, "ZERO", 0)
         outcomes[switch] = (verification.final, verification.replacement, verification.v2.banner, entry.decision,
                             sorted((verdict.final, verdict.v2.outcome if verdict.v2 else None) for verdict in verification.verdicts))
-    # No pre-verified store exists (v4 v2.degraded.pre_verified_source is null, DI-83), so pre-verified-only takes plan
-    # 5.11's other branch, "abstain and queue", as abstain-only does: the two records differ only in the switch they name,
-    # and the replacement is the D-19 answer the learner received from the unchanged legacy path (spec 4.10).
+        # The record's rules: a kill switch abstains with v2_kill_switch, and only a kill switch gives that reason.
+        payload = verification.model_dump(mode="json")
+        withheld = {**payload, "final": "withhold", "replacement": "extractive_d19",
+                    "verdicts": [{**verdict, "final": "withhold"} for verdict in payload["verdicts"]]}
+        with pytest.raises(ValidationError, match="a kill switch abstains"):
+            VerificationRecordV2.model_validate(withheld)
+        with pytest.raises(ValidationError, match="only a kill switch gives the reason v2_kill_switch"):
+            VerificationRecordV2.model_validate({**payload, "v2": {**payload["v2"], "kill_switch": "none"}})
+    # Plan 13.6 "abstain-only, pre-verified-only" and plan 5.11 "pre-verified module content (stage 4) or abstain and
+    # queue": abstain-only abstains whatever the legacy decision was (here an answer), and no pre-verified store exists
+    # (v4 v2.degraded.pre_verified_source is null, DI-83), so pre-verified-only abstains and queues too: the two records
+    # differ only in the switch they name, and every claim abstains with its V2 withholding queued (spec 4.10).
     assert PACKAGE.v2.pre_verified_source is None
-    assert outcomes["abstain_only"] == outcomes["pre_verified_only"] and outcomes["abstain_only"][:3] == ("withhold", "extractive_d19", "degraded-zero-v1")
+    assert outcomes["abstain_only"] == outcomes["pre_verified_only"]
+    assert outcomes["abstain_only"][:4] == ("abstain", "none", "degraded-zero-v1", "abstain")
+    assert {final for final, _ in outcomes["abstain_only"][4]} == {"abstain"}
+
+
+def _store_down(*args, **kwargs):
+    from sqlalchemy.exc import OperationalError
+
+    raise OperationalError("SELECT 1", {}, Exception("database unavailable"))
+
+
+@pytest.mark.parametrize("mode", ["on", "shadow"])
+def test_ac_5_6_a_shared_store_failure_fails_closed_and_every_response_keeps_its_ledger_record(mode, monkeypatch, caplog):
+    # Plan P "ledger verdicts for 100% of test responses (F-1)" and fault injection (plan J): a database fault in the
+    # process gateway's shared budget (DatabaseBudget) or the shared cache (DatabaseEvidentialCache) never escapes the V2
+    # track. A budget that cannot be read makes every member ineligible, and one that cannot be written makes each member
+    # unavailable at its first call, so the response runs on to ZERO and keeps its record; a cache that cannot be read or
+    # written is a miss. No case stops the gateway.
+    from app.gateway.controls import DatabaseBudget
+    from app.services.retrieval_engine import RetrievalEngine
+    from app.services.store import get_course_store
+    from app.services.tutor_pipeline.pipeline import TwoPassPipeline
+    from app.services.v2_panel import cache as cache_module
+
+    caplog.set_level(logging.WARNING)
+    settings = Settings(model_gateway=mode)
+
+    def pipeline():  # the process gateway and the process cache, as the shadow runner builds them
+        return TwoPassPipeline(RetrievalEngine(get_course_store(), settings), settings)
+
+    with SessionLocal() as db:
+        before = int(db.scalar(select(func.max(ResponseLedgerRecord.seq))) or 0)
+    entries = {}
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(DatabaseBudget, "remaining", _store_down)
+        entries["unreadable budget"] = run(pipeline(), TIER2, legacy_decision="answer", record=True).entry
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(DatabaseBudget, "reserve", _store_down)
+        entries["unwritable budget"] = run(pipeline(), TIER2, legacy_decision="answer", record=True).entry
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(cache_module, "_engine", _store_down)
+        entries["cache down"] = run(pipeline(), TIER2, legacy_decision="answer", record=True).entry
+    # Unreadable: no member is eligible (ZERO). Unwritable: each member called is refused before it is sent and leaves
+    # the panel, so the claims are withheld with no call once the rule withholds (REDUCED-1, tier 2).
+    for case, modes in (("unreadable budget", {"ZERO"}), ("unwritable budget", {"REDUCED-1"})):
+        verification = entries[case].verification
+        assert {verdict.mode for verdict in judged(entries[case]).values()} == modes and verification.v2.calls == 0, case
+        assert {verdict.outcome for verdict in judged(entries[case]).values()} == {"withheld"}, case
+        assert verification.final == "withhold" and verification.v2.gateway_state == "open", case
+    cached = entries["cache down"].verification
+    assert {verdict.mode for verdict in judged(entries["cache down"]).values()} == {"FULL"} and cached.v2.calls > 0
+    assert cached.v2.cache_hits == 0 and cached.final == ("deliver" if mode == "on" else "withhold")
+    with SessionLocal() as db:
+        recorded = list(db.scalars(select(ResponseLedgerRecord.response_id).where(ResponseLedgerRecord.seq > before)))
+    assert sorted(recorded) == sorted(entry.response_id for entry in entries.values())  # F-1: every response has its record
+    events = [getattr(record, "json_fields", {}).get("event") for record in caplog.records]
+    assert "gateway.budget_unavailable" in events and "tutor.v2.cache_unavailable" in events and "gateway.stopped" not in events
+    assert get_gateway().state == "open"
 
 
 def test_ac_5_6_the_degraded_banners_claim_no_check_the_learner_does_not_get():
@@ -611,6 +677,14 @@ def test_ac_5_10_an_unpinned_identifier_makes_start_up_fail(name, tmp_path, fres
         parse_config_package(retired, path=DEFAULT_PACKAGE_PATH, sha256="0" * 64, hash_verified=False)
 
 
+def test_ac_5_10_an_unpinned_embedding_model_makes_start_up_fail(tmp_path, fresh_database_url):
+    # The embedding egress's model is package v4's gateway.embeddings (PD-26), under the same pinning rule as every
+    # registry member: an unpinned identifier there stops the load and start-up too.
+    path = _package_copy(tmp_path, lambda raw: raw["gateway"]["embeddings"].update(model_id="text-embedding-3-small", model_version="latest"))
+    completed = _startup({"DATABASE_URL": fresh_database_url, "ENVIRONMENT": "development", "CONFIG_PACKAGE_PATH": str(path)})
+    assert completed.returncode != 0 and "gateway.embeddings is unpinned" in completed.stderr, completed.stderr[-500:]
+
+
 # ======================================================================================================= AC-5-11
 
 
@@ -835,7 +909,8 @@ def test_plan_l_a_secret_reaching_a_log_stops_the_gateway():
 def test_plan_l_a_stop_is_shared_by_every_instance_and_lasts_until_an_operator_clears_it(caplog):
     # Plan L "Stop on a payload violation, secret in logs or budget breach.": a stop on one instance is written to the
     # registry's shared stop; another instance, and a new process, adopts it (no second security event) and its V2 mode
-    # and /ready say off and stopped; only the operator's command clears it, with its own security event.
+    # and /ready say off and stopped; only the operator's command clears it, with its own security event. A running
+    # instance that stopped never reopens: after the clear only a new process starts open (a new revision).
     from app.gateway.controls import DatabaseStopStore
     from app.gateway.gateway import process_gateway_state, reset_process_gateway
     from app.services import v2_panel
@@ -857,12 +932,18 @@ def test_plan_l_a_stop_is_shared_by_every_instance_and_lasts_until_an_operator_c
     assert (get_gateway().state, get_gateway().stop_reason) == ("stopped", "payload_violation")
     reset_process_gateway()
     body = client.get("/ready").json()  # the V2 mode builds the process gateway, which reads the stop
-    assert (body["gateway"]["state"], body["gateway"]["stop_reason"], body["model_gateway"]) == ("stopped", "payload_violation", "off")
+    assert (body["gateway"]["state"], body["model_gateway"]) == ("stopped", "off") and "stop_reason" not in body["gateway"]
     assert DatabaseStopStore("staging").read() is None  # each registry's stop is its own
     assert gateway_stop.main([]) == 0 and DatabaseStopStore("development").read() == "payload_violation"  # a status read clears nothing
     assert gateway_stop.main(["--clear", "development"]) == 0 and DatabaseStopStore("development").read() is None
     cleared = security_events("gateway.stop_cleared", start)
     assert [(event.actor_role, event.details) for event in cleared] == [("operator", {"registry": "development", "reason": "payload_violation"})]
+    # The clear removes the row only: the instances that stopped, or adopted the stop, keep it until they are replaced.
+    for running in (one, other, get_gateway()):
+        running.refresh()
+        assert (running.state, running.stop_reason) == ("stopped", "payload_violation")
+        assert running.eligible(THREE.verifiers(), settings=Settings()) == []
+    assert client.get("/ready").json()["model_gateway"] == "off"
     reset_process_gateway()
     assert process_gateway_state() == ("open", None) and client.get("/ready").json()["model_gateway"] == "shadow"
     with pytest.raises(SystemExit):
@@ -1001,37 +1082,44 @@ def test_plan_e_d_23_provider_egress_needs_a_per_environment_per_provider_opt_in
 
 def test_plan_e_the_gateway_holds_the_embedding_key_and_gives_an_embedder_only_when_every_check_passes(monkeypatch):
     # Plan 7.1 "The gateway MUST be the sole holder of provider credentials": no Settings field holds OPENAI_API_KEY; the
-    # gateway's secret store reads it, and app.gateway.embeddings gives the semantic backend an embedder only when the
-    # environment opts in (D-23), the provider decisions are closed and the Q-15 review is done, the model is pinned, the
-    # registry has a budget, the gateway is open and the key is set (spec 4.19).
-    from app.gateway.embeddings import EMBEDDINGS_SECRET_REF, OpenAIEmbeddingAdapter, embedder_for, embedding_problem
+    # gateway's secret store reads it. app.gateway.embeddings names the first check that fails: the environment's opt-in
+    # (D-23), the provider decisions and the Q-15 review, a pinned model in package v4 gateway.embeddings, the registry's
+    # budget, an open gateway and the key; once every one passes, plan H's bar remains: a query embedding would send the
+    # learner's query text, so no provider embedder is ever given (spec 4.19).
+    from app.gateway.embeddings import EMBEDDINGS_SECRET_REF, embedder_for, embedding_problem
     from app.gateway.secrets import PROVIDER_SECRET_REFS, provider_secret_values
 
     assert EMBEDDINGS_SECRET_REF in PROVIDER_SECRET_REFS and "openai_api_key" not in Settings.model_fields
+    assert not {"openai_embedding_model", "openai_embedding_model_version"} & set(Settings.model_fields)  # package v4 holds them
     store = FakeSecretStore({EMBEDDINGS_SECRET_REF: "k" * 16})
     decided = {**PACKAGE.owner_decisions, "D-07": {"state": "decided"}, "D-12": {"state": "decided"}, "Q-09": {"state": "resolved"},
                "Q-15": {"state": "reviewed"}}
     closed = dataclasses.replace(PACKAGE, owner_decisions=decided)
     review_pending = dataclasses.replace(PACKAGE, owner_decisions={**decided, "Q-15": PACKAGE.owner_decisions["Q-15"]})
+
+    def with_model(package, model_id, version):
+        spec = dataclasses.replace(package.gateway.embeddings, model_id=model_id, model_version=version)
+        return dataclasses.replace(package, gateway=dataclasses.replace(package.gateway, embeddings=spec))
+
+    pinned = with_model(closed, "text-embedding-3-small", "2024-01-25")
     opted = {"model_egress_providers": ["openai-embeddings"]}
-    pinned = {**opted, "openai_embedding_model_version": "2024-01-25"}
     gateway = fresh_gateway(10)
     cases = [
         (Settings(), PACKAGE, "egress_not_opted_in"),
         (Settings(**opted), PACKAGE, "provider_open"),
         (Settings(**opted), review_pending, "provider_open"),
         (Settings(**opted), closed, "unpinned"),
-        (Settings(**opted, openai_embedding_model_version="latest"), closed, "unpinned"),
-        (Settings(**pinned, environment="production", allowed_origins=["https://qantumlearn.academy"]), closed, "no_budget"),
-        (Settings(**pinned), closed, None),
+        (Settings(**opted), with_model(closed, "text-embedding-3-small", "latest"), "unpinned"),
+        (Settings(**opted, environment="production", allowed_origins=["https://qantumlearn.academy"]), pinned, "no_budget"),
+        (Settings(**opted), pinned, "learner_text"),
     ]
     for settings, package, expected in cases:
         assert embedding_problem(settings, package, secret_store=store, gateway=gateway) == expected, (expected, settings.model_egress_providers)
-    assert embedding_problem(Settings(**pinned), closed, secret_store=FakeSecretStore(), gateway=gateway) == "not_configured"
-    assert isinstance(embedder_for(Settings(**pinned), closed, secret_store=store, gateway=gateway), OpenAIEmbeddingAdapter)
+    assert embedding_problem(Settings(**opted), pinned, secret_store=FakeSecretStore(), gateway=gateway) == "not_configured"
+    assert embedder_for(Settings(**opted), pinned, secret_store=store, gateway=gateway) is None
     assert embedder_for(Settings(**opted), PACKAGE, secret_store=store, gateway=gateway) is None
     gateway.stop("payload_violation")
-    assert embedding_problem(Settings(**pinned), closed, secret_store=store, gateway=gateway) == "gateway_stopped"
+    assert embedding_problem(Settings(**opted), pinned, secret_store=store, gateway=gateway) == "gateway_stopped"
     monkeypatch.setenv(EMBEDDINGS_SECRET_REF, "env-embedding-key-0123456789")
     assert provider_secret_values() == ["env-embedding-key-0123456789"]
     for path in (API_ROOT / "app" / "main.py", API_ROOT / "app" / "workers" / "common.py"):
@@ -1127,19 +1215,30 @@ def test_plan_i_ready_reports_package_v4_and_the_gateway_state_and_no_per_run_ou
     assert body["config_package_version"] == "4.0.0" and body["model_gateway"] == "shadow" and body["model_gateway_setting"] == "shadow"
     assert body["phase5_exit_passed"] is False
     gateway = body["gateway"]
-    assert {key: gateway[key] for key in ("version", "registry", "state", "stop_reason", "budget_daily_units", "tool_contract_version",
-                                          "provisional", "available", "kill_switch")} == {
-        "version": "gateway-v1", "registry": "development", "state": "open", "stop_reason": None, "budget_daily_units": 100000,
-        "tool_contract_version": "mcp-tools-v1", "provisional": True, "available": True, "kill_switch": "none"}
+    assert {key: gateway[key] for key in ("version", "registry", "state", "budget_daily_units", "tool_contract_version", "provisional",
+                                          "available", "embeddings")} == {
+        "version": "gateway-v1", "registry": "development", "state": "open", "budget_daily_units": 100000,
+        "tool_contract_version": "mcp-tools-v1", "provisional": True, "available": True,
+        "embeddings": {"provider": "openai-embeddings", "model_id": None, "model_version": None}}
     assert [member["adapter_id"] for member in gateway["members"]] == ["fake-alpha-v1", "fake-beta-v1", "fake-gamma-v1", "fake-delta-v1"]
     assert all(set(member) == {"adapter_id", "family", "provider", "model_id", "model_version", "capabilities"} for member in gateway["members"])
     before = main_module._build_fields()
     client.post("/assistant/chat", json={"message": "Why does routing depth matter?"}, headers=demo("p5-ready"))
     assert main_module._build_fields() == before
     assert not ({"calls", "cost_units", "spent", "spent_today", "cache_hits", "outcomes"} & set(gateway))
+    # /ready is public (authorization matrix: GET /ready, public): the stop's reason (it may say a credential reached the
+    # logs) and the operator's switches stay off it, on every body (ready, degraded, building).
+    private = {"stop_reason", "kill_switch", "disabled_adapters", "egress_providers", "secret_ref", "endpoint"}
+    switched = Settings(model_gateway_kill_switch="abstain_only", model_egress_providers=["openai-embeddings"],
+                        model_gateway_disabled_adapters=["fake-beta-v1"])
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(main_module, "settings", switched)
+        fields = main_module._build_fields()["gateway"]
+    assert not (private & set(fields)) and not (private & set(gateway)) and "abstain_only" not in json.dumps(fields)
+    assert not (private & set(gateway["embeddings"])) and all(not (private & set(member)) for member in gateway["members"])
     get_gateway().stop("budget_breach")
     stopped = client.get("/ready").json()
-    assert (stopped["gateway"]["state"], stopped["gateway"]["stop_reason"], stopped["model_gateway"]) == ("stopped", "budget_breach", "off")
+    assert (stopped["gateway"]["state"], stopped["model_gateway"]) == ("stopped", "off") and "budget_breach" not in json.dumps(stopped)
 
 
 def test_plan_i_v2_metrics_report_completion_time_degraded_p95_cost_and_the_budget_event(caplog, monkeypatch):
@@ -1307,6 +1406,12 @@ def test_plan_f_the_registry_matrix_payload_register_and_terms_record_match_the_
     assert f"Alert at {numerator}/{denominator}." in registry_doc
     for name in ("staging", "production", "default"):
         assert f"| {name} | none |" in registry_doc and PACKAGE.gateway.registries[name] == ()
+    # The embedding egress's entry (gateway.embeddings, PD-26): its model, caps and cost as the package holds them.
+    embedding = PACKAGE.gateway.embeddings
+    assert embedding.model_id is None and "model none" in registry_doc and f"provider `{embedding.provider}`" in registry_doc
+    caps = embedding.caps
+    assert (f"caps {caps.max_items} inputs per request, {caps.max_input_chars} characters per input, {caps.timeout_ms} ms, "
+            f"{caps.max_retries} retries; {embedding.cost_units_per_item} unit per input and attempt") in registry_doc
     adr = (REPO_ROOT / "docs" / "adr" / "ADR-008-model-gateway-and-v2-panel.md").read_text(encoding="utf-8")
     for text in (registry_doc, adr, spec_text()):
         for mode, row in rules.RULE_MATRIX.items():
@@ -1431,6 +1536,24 @@ def test_phase5_docs_the_runbooks_and_registers_state_the_gateway_s_operations_e
     for path in (REPO_ROOT / "docs" / "adr" / "ADR-002-retrieval-architecture.md", REPO_ROOT / "docs" / "architecture" / "phase2-implementation-spec.md",
                  API_ROOT / "app" / "services" / "retrieval_engine.py", infra / "api-production.env.example.yaml"):
         assert "openai-embeddings" in path.read_text(encoding="utf-8"), path.name
+    # The Phase 3 spec's test 31 and the Phase 4 spec's loader line state the current code; the cache keeps no learner text.
+    phase4 = (REPO_ROOT / "docs" / "architecture" / "phase4-implementation-spec.md").read_text(encoding="utf-8")
+    assert "`_build_fields()` makes no DB call." not in phase3 and "its only statements are the shared gateway stop's reads" in phase3
+    assert "`schema_version in (1, 2, 3)`, and 4 since Phase 5" in phase4
+    cache_doc = " ".join((API_ROOT / "app" / "services" / "v2_panel" / "cache.py").read_text(encoding="utf-8").split('"""', 2)[1].split())
+    assert "or any text: keys are hashes" not in cache_doc and "whose only text is corpus text" in cache_doc
+    # A stopped instance never reopens: no text says the stop ends at the operator's clear (spec 4.5).
+    stale = {API_ROOT / "app" / "gateway" / "gateway.py": "every call is refused until an operator clears the stop",
+             API_ROOT / "app" / "core" / "config.py": "turns the effective mode off until an operator clears",
+             infra / "observability.md": "every instance's V2 mode is off until an operator clears the stop",
+             SPEC_PATH: "turns the effective mode off until an operator clears it"}
+    for path, text in stale.items():
+        assert text not in " ".join(path.read_text(encoding="utf-8").replace("#", " ").split()), path.name
+    assert "a stopped instance stays stopped until it is replaced" in slis and "A running gateway never reopens" in " ".join(
+        (API_ROOT / "app" / "gateway" / "gateway.py").read_text(encoding="utf-8").split())
+    # The loggers: every Phase 5 event's logger is named, the operator's command and the start-up lines included.
+    assert "All Phase 5 events log on `qcai.gateway` or `qcai.tutor`" not in slis and "`gateway.stop_status` (on `qcai.worker`)" in slis
+    assert "`gateway.retired_setting` and `semantic.inactive` (on `qcai.api`)" in slis
     # The mutation-check record claims only the checks the commit messages and the phase record name (spec 13.5).
     mutation = spec.split("### 13.5 Mutation checks", 1)[1].split("\n## 14.", 1)[0]
     assert "The record of each check is in the commit messages and the BEP phase record." not in mutation

@@ -8,8 +8,10 @@ Every API instance and worker of an environment reads and writes the same rows, 
                      refuses a cost the day's remaining units cannot cover, and the first reservation that reaches 4/5 of
                      the day's units, across every instance, logs gateway.budget_alert.
   DatabaseStopStore  the registry's stop (gateway_stops): the first stop guard to fire writes its reason, every instance's
-                     gateway reads it before each eligibility decision and call, and it lasts until an operator clears
-                     it (python -m app.workers.gateway_stop --clear; infra/cloudrun/deployment.md, Phase 5).
+                     gateway reads it before each eligibility decision and call, and the row lasts until an operator
+                     clears it (python -m app.workers.gateway_stop --clear; infra/cloudrun/deployment.md, Phase 5). A
+                     gateway that stopped never reopens, so clearing the row lets only processes started afterwards
+                     open (service resumes with a new revision).
 No row holds learner data: a registry name, a UTC date, counts, a stop reason and its time. Package v4 names the scope
 (gateway.budgets.scope and gateway.stop.scope "database"); get_gateway builds these for the process gateway, and a
 test or the fixture runner may pass the per-process DailyBudget instead.

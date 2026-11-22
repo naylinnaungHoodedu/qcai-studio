@@ -12,13 +12,15 @@ verdict and EHMF type, or "error"), late_ms (advancing an injected clock) and ca
 the requests it was given only when built with record=True (a test's choice), so a long-running process holds none.
 
 HttpJsonAdapter is provider-neutral and exercised only through httpx.MockTransport; no shipped registry can hold it (the
-loader refuses a non-fake member while D-12 is open). Its endpoint is https with no query, userinfo or fragment (keys
+loader refuses a non-fake member while D-12, D-07 or Q-09 is open or the Q-15 review is pending). Its endpoint is https with no query, userinfo or fragment (keys
 and parameters never travel in the URL); the key is read from the secret store per call and travels only in a header
 (Authorization: Bearer or x-api-key). The body is {model, model_version, max_tokens, instructions, input}: the fixed
 instruction text of the request's prompt id (the text whose hash the request carries; a request naming another hash
 is refused, invalid_request) and the request contract. Timeouts, transport errors and 429/500/502/503/504 are retried
 at most caps.max_retries times, a 4xx other than 429 never; a body the client cannot decode is invalid_output and any
-other httpx error is transport. The reply's usage.cost_units must be a non-negative integer no larger than the call's
+other httpx error is transport. Before each retry it calls the gateway's reserve_retry hook, which reserves one more
+call's cost from the daily budget; a refused reservation sends nothing more and is budget, on which the gateway stops
+(budget_breach) unless the budget's store failed (the member is then only unavailable). The reply's usage.cost_units must be a non-negative integer no larger than the call's
 reservation (spec.cost_units_per_call), else cost_overrun, on which the gateway stops (budget_breach). Every failure
 raises AdapterError(adapter_id, kind, status) after its except block, so the error's __cause__ and __context__ are None
 and no httpx object (whose request holds the headers) is reachable from it; its text names the adapter, the kind and
@@ -43,7 +45,8 @@ from app.services.v2_panel import rules
 WIRED_FAKE_RULES = frozenset({"verbatim-support-v1"})
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 # "error" is the gateway's kind for an adapter that raised anything but an AdapterError.
-ERROR_KINDS = ("http_status", "timeout", "transport", "invalid_output", "invalid_request", "cost_overrun", "no_key", "down", "scripted", "error")
+ERROR_KINDS = ("http_status", "timeout", "transport", "invalid_output", "invalid_request", "cost_overrun", "budget", "no_key", "down",
+               "scripted", "error")
 # The fixed instruction text of each prompt id and the hash that names it (Phase 5 spec 4.7; E-97).
 INSTRUCTIONS = {
     rules.VERIFIER_PROMPT_ID: (rules.VERIFIER_INSTRUCTIONS, rules.verifier_prompt_hash),
@@ -170,11 +173,11 @@ class HttpJsonAdapter:
     def available(self) -> bool:
         return True
 
-    def verify(self, request: VerdictRequest) -> dict:
-        return self._post(request)
+    def verify(self, request: VerdictRequest, *, reserve_retry: Callable[[], bool] | None = None) -> dict:
+        return self._post(request, reserve_retry)
 
-    def align(self, request: AlignmentRequest) -> dict:
-        return self._post(request)
+    def align(self, request: AlignmentRequest, *, reserve_retry: Callable[[], bool] | None = None) -> dict:
+        return self._post(request, reserve_retry)
 
     def _headers(self) -> dict[str, str]:
         key = self._secret_store.get(self.spec.secret_ref)
@@ -187,7 +190,9 @@ class HttpJsonAdapter:
             return {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
         return {"x-api-key": key, "Content-Type": "application/json"}
 
-    def _post(self, request) -> dict:
+    def _post(self, request, reserve_retry: Callable[[], bool] | None = None) -> dict:
+        """One call: up to 1 + caps.max_retries attempts; each retry is reserved through reserve_retry first (the gateway's
+        hook; a direct call without it, as in the adapter's own tests, reserves nothing)."""
         import httpx
 
         spec = self.spec
@@ -200,6 +205,9 @@ class HttpJsonAdapter:
         failure: tuple[str, int | None] = ("transport", None)
         for attempt in range(attempts):
             if attempt:
+                if reserve_retry is not None and not reserve_retry():
+                    failure = ("budget", None)
+                    break
                 self._sleep(0.05 * 2 ** (attempt - 1))
             kind = status = None
             payload = None

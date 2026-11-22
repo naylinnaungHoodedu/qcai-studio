@@ -10,6 +10,8 @@ import httpx
 import pytest
 
 from app.gateway.adapters import AdapterError, FakeAdapter, HttpJsonAdapter, claim_text_sha256, project_verdict
+from app.gateway.budget import DailyBudget
+from app.gateway.gateway import ModelGateway
 from app.gateway.contracts import VerdictInstructions, VerdictRequest, VerdictSpan
 from app.services.v2_panel.rules import VERIFIER_INSTRUCTIONS, verifier_prompt_hash
 from v1_fakes import InjectedClock
@@ -200,31 +202,106 @@ def _embedding_reply(http_request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, json={"data": [{"index": index, "embedding": [0.5, float(index)]} for index in reversed(range(len(inputs)))]})
 
 
-def embedder(responses=None, seen=None, *, gateway=None, key=EMBED_KEY):
+def embedding_spec(**caps):
+    from app.gateway.registry import EmbeddingCaps, EmbeddingSpec
+
+    options = dict(max_items=256, max_input_chars=8000, timeout_ms=10000, max_retries=2)
+    options.update(caps)
+    return EmbeddingSpec(provider="openai-embeddings", secret_ref="OPENAI_API_KEY", model_id="text-embedding-3-small", model_version="2024-01-25",
+                         caps=EmbeddingCaps(**options), cost_units_per_item=1)
+
+
+def documents(count: int = 3) -> list[str]:
+    """Excerpts of the development store's index entries whose spans pass the claim-item span checks (public, quotable)."""
+    from app.gateway.policy import PolicyContext, _span_problem
+    from app.services.span_resolver import SpanResolver
+    from app.services.store import get_course_store
+
+    store = get_course_store()
+    context = PolicyContext(store=store, corpus_registry=SpanResolver(store).registry)
+    texts = [entry.excerpt for entry in store.chunks if _span_problem(entry.span_id, context) is None]
+    assert len(texts) >= count
+    return texts[:count]
+
+
+def embedder(responses=None, seen=None, *, gateway=None, key=EMBED_KEY, spec=None):
     from app.gateway.embeddings import EMBEDDINGS_SECRET_REF, OpenAIEmbeddingAdapter
+    from app.services.store import get_course_store
 
     seen = seen if seen is not None else []
     transport = _transport(responses, seen) if responses is not None else httpx.MockTransport(lambda r: seen.append(r) or _embedding_reply(r))
-    return OpenAIEmbeddingAdapter("text-embedding-3-small", "2024-01-25", secret_store=FakeSecretStore({EMBEDDINGS_SECRET_REF: key} if key else {}),
+    return OpenAIEmbeddingAdapter(spec or embedding_spec(), store=get_course_store(),
+                                  secret_store=FakeSecretStore({EMBEDDINGS_SECRET_REF: key} if key else {}),
                                   gateway=gateway if gateway is not None else fresh_gateway(10), transport=transport, sleep=lambda seconds: None)
 
 
 def test_the_embedding_adapter_sends_its_key_in_a_header_and_spends_from_the_gateway_s_budget():
     # Plan 7.1: the gateway is the sole holder of the embedding key. It is read per call from the secret store, sent only
-    # as a Bearer header (never in the URL or the body), and each request reserves one unit of the gateway's budget.
+    # as a Bearer header (never in the URL or the body), and each attempt reserves one unit per input from the gateway's
+    # budget (package v4 gateway.embeddings.cost_units_per_item).
     from app.gateway.embeddings import EMBEDDINGS_ENDPOINT
 
     seen: list = []
     gateway = fresh_gateway(10)
     adapter = embedder(seen=seen, gateway=gateway)
-    assert adapter.embed_query("a span") == [0.5, 0.0]
-    assert adapter.embed_documents(["a", "b", "c"]) == [[0.5, 0.0], [0.5, 1.0], [0.5, 2.0]]  # in input order
-    first = seen[0]
-    assert str(first.url) == EMBEDDINGS_ENDPOINT and first.url.query == b"" and first.headers["authorization"] == f"Bearer {EMBED_KEY}"
-    assert json.loads(first.content) == {"model": "text-embedding-3-small", "input": ["a span"], "encoding_format": "float"}
+    first, *rest = documents(4)
+    assert adapter.embed_documents([first]) == [[0.5, 0.0]]
+    assert adapter.embed_documents(rest) == [[0.5, 0.0], [0.5, 1.0], [0.5, 2.0]]  # in input order
+    sent = seen[0]
+    assert str(sent.url) == EMBEDDINGS_ENDPOINT and sent.url.query == b"" and sent.headers["authorization"] == f"Bearer {EMBED_KEY}"
+    assert json.loads(sent.content) == {"model": "text-embedding-3-small", "input": [first], "encoding_format": "float"}
     assert all(EMBED_KEY not in request.content.decode() and EMBED_KEY not in str(request.url) for request in seen)
-    assert gateway.budget.spent == 2 and not any(EMBED_KEY in repr(value) for value in vars(adapter).values())
-    assert adapter.embed_documents([]) == [] and gateway.budget.spent == 2
+    assert gateway.budget.spent == 4 and not any(EMBED_KEY in repr(value) for value in vars(adapter).values())
+    assert adapter.embed_documents([]) == [] and gateway.budget.spent == 4
+
+
+def test_the_embedding_caps_bound_each_request_before_anything_is_sent():
+    # Plan 5.10 "Token, timeout and retry caps": max_items is the batch, and an input over max_input_chars (the token
+    # cap) is refused before any request; neither stops the gateway.
+    from app.gateway.embeddings import EmbeddingError
+
+    seen: list = []
+    gateway = fresh_gateway(10)
+    batched = embedder(seen=seen, gateway=gateway, spec=embedding_spec(max_items=2))
+    assert len(batched.embed_documents(documents(3))) == 3 and [len(json.loads(request.content)["input"]) for request in seen] == [2, 1]
+    short = embedder(seen=seen, gateway=gateway, spec=embedding_spec(max_input_chars=10))
+    with pytest.raises(EmbeddingError) as excinfo:
+        short.embed_documents(documents(1))
+    assert excinfo.value.kind == "invalid_request" and len(seen) == 2 and gateway.state == "open" and gateway.budget.spent == 3
+
+
+def test_an_embedding_request_passes_the_payload_policy_before_it_leaves():
+    # Plan H "Only public-corpus spans leave the platform"; control row "No private span in production provider payloads |
+    # Payload-policy test (invariant 8)": a query embedding (the learner's query text) is refused, and so is a document
+    # that is not the excerpt of a public, quotable index entry; each refusal sends nothing and stops the gateway.
+    from types import SimpleNamespace
+
+    from app.gateway.embeddings import EmbeddingError
+
+    # An index entry whose span is not public-plane (a store the policy context names; no such span is shipped).
+    private = SimpleNamespace(chunks=[SimpleNamespace(span_id="span-" + "c" * 64, excerpt="A licensed passage.")],
+                              span_registry={"span-" + "c" * 64: SimpleNamespace(plane="private")})
+    calls = ((None, lambda adapter: adapter.embed_query(documents(1)[0])),
+             (None, lambda adapter: adapter.embed_documents(["A learner's own words."])),
+             (None, lambda adapter: adapter.embed_documents([*documents(1), "Not a span."])),
+             (private, lambda adapter: adapter.embed_documents(["A licensed passage."])))
+    for store, call in calls:
+        seen: list = []
+        gateway = fresh_gateway(10)
+        adapter = embedder(seen=seen, gateway=gateway)
+        if store is not None:
+            adapter._store, adapter._corpus_registry = store, object()
+        with pytest.raises(EmbeddingError) as excinfo:
+            call(adapter)
+        assert excinfo.value.kind == "payload_violation" and seen == [] and gateway.budget.spent == 0
+        assert (gateway.state, gateway.stop_reason) == ("stopped", "payload_violation")
+    # Without a store the policy cannot check a document: it is refused too (fail closed).
+    gateway = fresh_gateway(10)
+    unbound = embedder(gateway=gateway)
+    unbound._store = None
+    with pytest.raises(EmbeddingError):
+        unbound.embed_documents(documents(1))
+    assert gateway.stop_reason == "payload_violation"
 
 
 @pytest.mark.parametrize("responses, kind, attempts", [
@@ -243,16 +320,18 @@ def test_every_embedding_failure_is_bounded_and_raised_with_no_cause_context_or_
     from app.gateway.embeddings import EmbeddingError
 
     seen: list = []
-    adapter = embedder(responses, seen)
+    gateway = fresh_gateway(10)
+    adapter = embedder(responses, seen, gateway=gateway)
     with pytest.raises(EmbeddingError) as excinfo:
-        adapter.embed_query("a span")
+        adapter.embed_documents(documents(1))
     error = excinfo.value
     assert error.kind == kind and error.__cause__ is None and error.__context__ is None and len(seen) == attempts
+    assert gateway.budget.spent == attempts  # every attempt sent was reserved first (task 5.10)
     text = str(error) + repr(error) + "".join(traceback.format_exception(error))
     assert EMBED_KEY not in text and "Bearer" not in text and "api.openai.com" not in text
 
 
-def test_a_retried_embedding_call_succeeds_within_its_bound():
+def test_a_retried_embedding_call_succeeds_within_its_bound_and_each_attempt_is_reserved():
     replies = iter([httpx.Response(429), httpx.Response(503)])
     seen: list = []
 
@@ -260,27 +339,80 @@ def test_a_retried_embedding_call_succeeds_within_its_bound():
         seen.append(http_request)
         return next(replies, None) or _embedding_reply(http_request)
 
-    adapter = embedder()
+    gateway = fresh_gateway(10)
+    adapter = embedder(gateway=gateway)
     adapter._transport = httpx.MockTransport(reply)
-    assert adapter.embed_query("a span") == [0.5, 0.0] and len(seen) == 3
+    assert adapter.embed_documents(documents(1)) == [[0.5, 0.0]] and len(seen) == 3 and gateway.budget.spent == 3
 
 
 def test_an_embedding_call_needs_a_key_an_open_gateway_and_budget_and_a_breach_stops_the_gateway():
     from app.gateway.embeddings import EmbeddingError
 
-    for adapter, kind in ((embedder(key=None), "no_key"),):
-        with pytest.raises(EmbeddingError) as excinfo:
-            adapter.embed_query("a span")
-        assert excinfo.value.kind == kind
+    with pytest.raises(EmbeddingError) as excinfo:
+        embedder(key=None).embed_documents(documents(1))
+    assert excinfo.value.kind == "no_key"
     gateway = fresh_gateway(1)
     adapter = embedder(gateway=gateway)
-    assert adapter.embed_query("a span") == [0.5, 0.0]
+    assert adapter.embed_documents(documents(1)) == [[0.5, 0.0]]
     with pytest.raises(EmbeddingError) as excinfo:
-        adapter.embed_query("another span")
+        adapter.embed_documents(documents(1))
     assert excinfo.value.kind == "budget" and (gateway.state, gateway.stop_reason) == ("stopped", "budget_breach")
     with pytest.raises(EmbeddingError) as excinfo:
-        embedder(gateway=gateway).embed_query("a span")
+        embedder(gateway=gateway).embed_documents(documents(1))
     assert excinfo.value.kind == "stopped"
+    # A retry the budget refuses is not sent: the budget stops the gateway after the attempts it could reserve.
+    seen: list = []
+    gateway = fresh_gateway(2)
+    with pytest.raises(EmbeddingError) as excinfo:
+        embedder([httpx.Response(500)] * 5, seen, gateway=gateway).embed_documents(documents(1))
+    assert excinfo.value.kind == "budget" and len(seen) == 2 and (gateway.state, gateway.budget.spent) == ("stopped", 2)
+
+
+def test_an_embedding_budget_store_failure_sends_nothing_and_does_not_stop_the_gateway(caplog):
+    import logging
+
+    from sqlalchemy.exc import OperationalError
+
+    from app.gateway.embeddings import EmbeddingError
+
+    class Unwritable(DailyBudget):
+        def reserve(self, cost):
+            raise OperationalError("UPDATE gateway_budget_days", {}, Exception("database unavailable"))
+
+    caplog.set_level(logging.WARNING, logger="qcai.gateway")
+    seen: list = []
+    gateway = ModelGateway(budget=Unwritable(10))
+    with pytest.raises(EmbeddingError) as excinfo:
+        embedder(seen=seen, gateway=gateway).embed_documents(documents(1))
+    assert excinfo.value.kind == "budget_unavailable" and seen == [] and gateway.state == "open"
+    assert [getattr(record, "json_fields", {}).get("event") for record in caplog.records].count("gateway.budget_unavailable") == 1
+
+
+def test_an_embedding_request_adopts_a_stop_another_instance_wrote():
+    # Spec 4.5: the shared stop is read before every call. An index sync posts one request per batch; a stop another
+    # instance writes between two batches is adopted before the next one, which is never sent.
+    from app.gateway.controls import DatabaseStopStore
+    from app.gateway.embeddings import EmbeddingError
+
+    other = ModelGateway(budget=DailyBudget(10), stop_store=DatabaseStopStore("development"))
+    gateway = ModelGateway(budget=DailyBudget(10), stop_store=DatabaseStopStore("development"))
+    seen: list = []
+
+    def reply(http_request: httpx.Request) -> httpx.Response:
+        seen.append(http_request)
+        other.stop("payload_violation")  # another instance stops while this one is mid-sync
+        return _embedding_reply(http_request)
+
+    adapter = embedder(gateway=gateway, spec=embedding_spec(max_items=1))
+    adapter._transport = httpx.MockTransport(reply)
+    with pytest.raises(EmbeddingError) as excinfo:
+        adapter.embed_documents(documents(2))
+    assert excinfo.value.kind == "stopped" and len(seen) == 1 and (gateway.state, gateway.stop_reason) == ("stopped", "payload_violation")
+    late = ModelGateway(budget=DailyBudget(10), stop_store=DatabaseStopStore("development"))
+    unsent: list = []
+    with pytest.raises(EmbeddingError) as excinfo:
+        embedder(seen=unsent, gateway=late).embed_documents(documents(1))
+    assert excinfo.value.kind == "stopped" and unsent == [] and late.state == "stopped"
 
 
 def test_no_key_and_an_endpoint_with_a_query_userinfo_fragment_or_plain_http_are_refused():

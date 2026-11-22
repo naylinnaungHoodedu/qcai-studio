@@ -1528,12 +1528,18 @@ def test_d9_ready_reports_the_p1_floor_threshold_in_force_and_the_effective_sema
         "p1-floor", "score-floor-p1-v1", 6.0, 0.0)
     assert (fields["thresholds_provisional"], fields["threshold_authority"]) == (False, "P1-D-04")
     assert fields["bm25f_v1_calibrated"]["floor"] == package.abstention.floor  # reported, but not in force
-    # The setting alone never enables hybrid retrieval: this process has not aligned span-id vectors.
-    switched = Settings(semantic_retrieval_enabled=True, pinecone_api_key="test-pinecone-key", pinecone_index="test-index")
-    monkeypatch.setattr(main_module, "settings", switched)
-    monkeypatch.setattr(main_module, "get_retrieval_engine", lambda: RetrievalEngine(governed, switched))
+    # The setting alone never enables hybrid retrieval: this process has not aligned span-id vectors. The engine has an
+    # embedder (a test's in-process one: since Phase 5 the gateway gives none, spec 4.19) and an index, so its backend is
+    # enabled and only the missing alignment keeps /ready's semantic_enabled false.
+    switched = _semantic_engine(governed, enabled=True)
+    monkeypatch.setattr(main_module, "settings", switched.settings)
+    monkeypatch.setattr(main_module, "get_retrieval_engine", lambda: switched)
+    assert switched._semantic_backend.enabled is True and switched.semantic_inactive_reason == "not_aligned"
     fields = main_module._build_fields()
     assert (fields["semantic_setting"], fields["semantic_enabled"]) == (True, False)
+    # Aligned, /ready reports the effective state on.
+    assert switched.sync_semantic_index(refresh=True) is (len(governed.chunks) > 0)
+    assert main_module._build_fields()["semantic_enabled"] is switched.semantic_enabled
 
 
 def _startup(database_url: str, extra_env: dict[str, str]) -> subprocess.CompletedProcess:

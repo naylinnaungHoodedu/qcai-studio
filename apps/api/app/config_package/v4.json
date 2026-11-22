@@ -883,6 +883,23 @@
       },
       "record": "PD-27"
     },
+    "embeddings": {
+      "provisional": true,
+      "record": "PD-26",
+      "consumer": "semantic-retrieval",
+      "provider": "openai-embeddings",
+      "secret_ref": "OPENAI_API_KEY",
+      "model_id": null,
+      "model_version": null,
+      "model_note": "no embedding model is chosen while D-07, D-12 or Q-09 is open or the Q-15 review is pending; a named model must be pinned (pinned-version-v1)",
+      "caps": {
+        "max_items": 256,
+        "max_input_chars": 8000,
+        "timeout_ms": 10000,
+        "max_retries": 2
+      },
+      "cost_units_per_item": 1
+    },
     "payload_policy": {
       "rule": "public-quotable-spans-and-templates-only-v1",
       "on_violation": "stop"

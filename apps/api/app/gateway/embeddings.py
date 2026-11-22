@@ -1,28 +1,37 @@
 """The gateway's embedding egress (plan 7.1 "The gateway MUST be the sole holder of provider credentials [Risk R-06]";
-7.6 "Provider keys stay in the gateway"; D-23; Phase 5 spec 4.19).
+7.6 "Provider keys stay in the gateway"; plan H "Only public-corpus spans leave the platform"; D-23; Phase 5 spec 4.19).
 
 The Phase 2 semantic backend (retrieval_engine.PineconeSemanticBackend) embeds its index entries and its queries
 through this module only, so no module outside app.gateway reads OPENAI_API_KEY or calls an embedding provider (no
-Settings field holds the key). embedding_problem(settings, package) names why no provider embedder may run, the first
-check that fails giving the reason:
+Settings field holds the key). Its parameters are package v4's gateway.embeddings entry (app.gateway.registry.
+EmbeddingSpec, provisional, PD-26): the model id and pinned version (null while no model is chosen), the caps
+(max_items per request, max_input_chars per input, timeout_ms, max_retries) and cost_units_per_item.
+embedding_problem(settings, package) names why no provider embedder may run, the first check that fails giving the
+reason:
   egress_not_opted_in   the environment's MODEL_EGRESS_PROVIDERS does not name openai-embeddings (D-23, PD-22)
-  provider_open         D-12 or D-07 is open or Q-09 is unresolved (the loader's rule for every non-fake member), or
-                        Q-15's payload review is pending: a query embedding sends the learner's query text, which the
-                        payload register lists, and the register's owner review precedes every non-fake adapter (DI-71)
-  unpinned              OPENAI_EMBEDDING_MODEL with OPENAI_EMBEDDING_MODEL_VERSION fails pinned-version-v1 (D-07's rule)
+  provider_open         D-12 or D-07 is open, Q-09 is unresolved or Q-15's payload review is pending (the loader's rule
+                        for every non-fake member, app.gateway.registry.providers_open)
+  unpinned              gateway.embeddings names no pinned model (D-07's rule; the loader refuses an unpinned one)
   no_budget             the registry's daily budget is 0 (every budget outside development, while A-15 is open)
   gateway_stopped       the process gateway is stopped (a stop guard, or the shared stop, 4.5)
   not_configured        OPENAI_API_KEY is not set in the process environment (the gateway's SecretStore)
-With the shipped package D-07, D-12, Q-09 and Q-15 are open, so once an environment opts in the reason is provider_open
-and no embedding call is possible anywhere. embedder_for builds the embedder when there is no problem.
+  learner_text          the semantic backend embeds every query, and a query embedding sends the learner's query text,
+                        which plan H never lets leave (PayloadPolicy.check_embedding refuses it)
+So embedding_problem never returns None and embedder_for never builds an embedder: with the shipped package the reason
+is provider_open once an environment opts in, and learner_text would remain once every other check passed.
 
-OpenAIEmbeddingAdapter, like HttpJsonAdapter, is exercised only through httpx.MockTransport. It posts {model, input,
-encoding_format} to the embeddings endpoint (https, no query): the key is read from the SecretStore per call,
-registered with the log redaction (owner gateway) and sent only as Authorization: Bearer. Each request reserves
-EMBEDDING_COST_UNITS from the process gateway's daily budget; a refusal stops the gateway (budget_breach), and a
-stopped gateway refuses every embedding call. Timeouts, transport errors and 429/500/502/503/504 are retried at most
-EMBEDDING_MAX_RETRIES times. Every failure raises EmbeddingError(kind, status) after its except block, so its
-__cause__ and __context__ are None and no httpx object (whose request holds the headers) is reachable from it.
+OpenAIEmbeddingAdapter, like HttpJsonAdapter, is exercised only through httpx.MockTransport. A request runs: the shared
+stop (gateway.refresh, so a stop another instance wrote is adopted before every request), the secret flag, the stop,
+the payload policy (PayloadPolicy.check_embedding: a query item is refused; each document item must be the excerpt of
+an index entry of the adapter's store whose span is public and quotable; a violation stops the gateway), the caps (more
+than max_items inputs or an input over max_input_chars is invalid_request, before anything is sent), then up to
+1 + max_retries attempts. Each attempt first reserves len(inputs) * cost_units_per_item from the process gateway's daily
+budget: a refusal stops the gateway (budget_breach), and a budget store that cannot be read or written is
+budget_unavailable (nothing is sent, no stop). It posts {model, input, encoding_format} to the embeddings endpoint
+(https, no query): the key is read from the SecretStore per attempt, registered with the log redaction (owner gateway)
+and sent only as Authorization: Bearer. Timeouts, transport errors and 429/500/502/503/504 are retried. Every failure
+raises EmbeddingError(kind, status) after its except block, so its __cause__ and __context__ are None and no httpx
+object (whose request holds the headers) is reachable from it.
 """
 
 from __future__ import annotations
@@ -37,16 +46,14 @@ from app.gateway.egress import egress_allowed
 if TYPE_CHECKING:  # pragma: no cover
     from app.core.config import Settings
     from app.core.config_package import ConfigPackage
+    from app.gateway.registry import EmbeddingSpec
 
 EMBEDDINGS_PROVIDER = "openai-embeddings"
 EMBEDDINGS_SECRET_REF = "OPENAI_API_KEY"
 EMBEDDINGS_ENDPOINT = "https://api.openai.com/v1/embeddings"
-EMBEDDING_TIMEOUT_MS = 10000
-EMBEDDING_MAX_RETRIES = 2
-EMBEDDING_BATCH = 256
-EMBEDDING_COST_UNITS = 1
-EMBEDDING_PROBLEMS = ("egress_not_opted_in", "provider_open", "unpinned", "no_budget", "gateway_stopped", "not_configured")
-EMBEDDING_ERROR_KINDS = ("http_status", "timeout", "transport", "invalid_output", "no_key", "stopped", "budget")
+EMBEDDING_PROBLEMS = ("egress_not_opted_in", "provider_open", "unpinned", "no_budget", "gateway_stopped", "not_configured", "learner_text")
+EMBEDDING_ERROR_KINDS = ("http_status", "timeout", "transport", "invalid_output", "invalid_request", "no_key", "stopped", "budget",
+                         "budget_unavailable", "payload_violation")
 
 
 class EmbeddingError(RuntimeError):
@@ -62,29 +69,24 @@ class Embedder(Protocol):
 
 
 def providers_open(package: "ConfigPackage") -> bool:
-    """D-12 or D-07 open, Q-09 unresolved, or Q-15's payload review pending; a decision the package does not hold counts
-    as open (fail closed)."""
-    decisions = package.owner_decisions or {}
+    """The package's provider gates (app.gateway.registry.providers_open), the loader's rule for every non-fake member."""
+    from app.gateway.registry import providers_open as gates_open
 
-    def state(name: str) -> Any:
-        entry = decisions.get(name)
-        return entry.get("state") if isinstance(entry, dict) else "missing"
-
-    return (state("D-12") in ("open", "missing") or state("D-07") in ("open", "missing")
-            or state("Q-09") in ("unresolved", "missing") or state("Q-15") != "reviewed")
+    return gates_open(package.owner_decisions)
 
 
 def embedding_problem(settings: "Settings", package: "ConfigPackage", *, secret_store=None, gateway=None) -> str | None:
-    """Why no provider embedder may run (the module docstring's order), or None."""
+    """Why no provider embedder may run (the module docstring's order); learner_text, plan H's bar, is the last check."""
     from app.gateway.pinning import pin_problem
     from app.gateway.registry import registry_name
     from app.gateway.secrets import EnvironmentSecretStore
 
     if not egress_allowed(settings, EMBEDDINGS_PROVIDER):
         return "egress_not_opted_in"
-    if package.gateway is None or providers_open(package):
+    spec = package.gateway.embeddings if package.gateway is not None else None
+    if spec is None or providers_open(package):
         return "provider_open"
-    if pin_problem(settings.openai_embedding_model, settings.openai_embedding_model_version) is not None:
+    if spec.model_id is None or pin_problem(spec.model_id, spec.model_version) is not None:
         return "unpinned"
     if package.gateway.daily_units.get(registry_name(settings, package.gateway.registries), 0) == 0:
         return "no_budget"
@@ -98,27 +100,33 @@ def embedding_problem(settings: "Settings", package: "ConfigPackage", *, secret_
     store = secret_store if secret_store is not None else EnvironmentSecretStore()
     if not store.get(EMBEDDINGS_SECRET_REF):
         return "not_configured"
-    return None
+    return "learner_text"
 
 
-def embedder_for(settings: "Settings", package: "ConfigPackage", *, secret_store=None, gateway=None, transport=None) -> "OpenAIEmbeddingAdapter | None":
-    """The provider embedder when embedding_problem finds no problem, else None."""
+def embedder_for(settings: "Settings", package: "ConfigPackage", *, store: Any = None, secret_store=None, gateway=None,
+                 transport=None) -> "OpenAIEmbeddingAdapter | None":
+    """The provider embedder when embedding_problem finds no problem, else None. While plan H holds it always finds one
+    (learner_text at the latest), so no provider embedder is built."""
     from app.gateway.secrets import EnvironmentSecretStore
 
-    store = secret_store if secret_store is not None else EnvironmentSecretStore()
-    if embedding_problem(settings, package, secret_store=store, gateway=gateway) is not None:
+    secrets = secret_store if secret_store is not None else EnvironmentSecretStore()
+    if embedding_problem(settings, package, secret_store=secrets, gateway=gateway) is not None:
         return None
-    return OpenAIEmbeddingAdapter(settings.openai_embedding_model, settings.openai_embedding_model_version, secret_store=store,
-                                  gateway=gateway, transport=transport)
+    return OpenAIEmbeddingAdapter(package.gateway.embeddings, store=store, secret_store=secrets, gateway=gateway, transport=transport)
 
 
 class OpenAIEmbeddingAdapter:
     """The gateway's one embedding adapter (tests: httpx.MockTransport only; no shipped configuration reaches it)."""
 
-    def __init__(self, model_id: str, model_version: str | None, *, secret_store, gateway=None, transport=None,
+    def __init__(self, spec: "EmbeddingSpec", *, store: Any, secret_store, gateway=None, transport=None, corpus_registry: Any = None,
                  sleep: Callable[[float], None] = time.sleep) -> None:
+        if spec.model_id is None or spec.model_version is None:
+            raise ValueError("the embedding adapter needs a pinned model (gateway.embeddings)")
         self.provider = EMBEDDINGS_PROVIDER
-        self.model_id, self.model_version = model_id, model_version
+        self.spec = spec
+        self.model_id, self.model_version = spec.model_id, spec.model_version
+        self._store = store
+        self._corpus_registry = corpus_registry
         self._secret_store = secret_store
         self._gateway = gateway
         self._transport = transport
@@ -127,12 +135,13 @@ class OpenAIEmbeddingAdapter:
     def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         vectors: list[list[float]] = []
         items = [str(text) for text in texts]
-        for start in range(0, len(items), EMBEDDING_BATCH):
-            vectors.extend(self._post(items[start:start + EMBEDDING_BATCH]))
+        batch = self.spec.caps.max_items
+        for start in range(0, len(items), batch):
+            vectors.extend(self._post(items[start:start + batch], purpose="documents"))
         return vectors
 
     def embed_query(self, text: str) -> list[float]:
-        return self._post([str(text)])[0]
+        return self._post([str(text)], purpose="query")[0]
 
     def _gateway_or_process(self):
         if self._gateway is not None:
@@ -140,6 +149,18 @@ class OpenAIEmbeddingAdapter:
         from app.gateway.gateway import get_gateway
 
         return get_gateway()
+
+    def _context(self):
+        if self._store is None:
+            return None
+        from app.gateway.policy import PolicyContext
+
+        registry = self._corpus_registry
+        if registry is None:
+            from app.services.span_resolver import SpanResolver
+
+            registry = SpanResolver(self._store).registry
+        return PolicyContext(store=self._store, corpus_registry=registry)
 
     def _headers(self) -> dict[str, str]:
         key = self._secret_store.get(EMBEDDINGS_SECRET_REF)
@@ -150,31 +171,62 @@ class OpenAIEmbeddingAdapter:
         install_log_redaction([key], owner="gateway")
         return {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
 
-    def _reserve(self) -> None:
+    def _admit(self, texts: list[str], purpose: str) -> None:
+        """The checks before any attempt: the shared stop, the secret flag, the stop, the payload policy and the caps."""
+        from app.gateway.policy import PayloadViolation
+
         gateway = self._gateway_or_process()
+        gateway.refresh()
         gateway.check_secret_flag()
         if gateway.state == "stopped":
             raise EmbeddingError("stopped")
-        if not gateway.budget.reserve(EMBEDDING_COST_UNITS):
+        try:
+            gateway.policy.check_embedding(texts, purpose=purpose, context=self._context())
+        except PayloadViolation:
+            violation = True
+        else:
+            violation = False
+        if violation:
+            gateway.stop("payload_violation")
+            raise EmbeddingError("payload_violation")
+        caps = self.spec.caps
+        if len(texts) > caps.max_items or any(len(text) > caps.max_input_chars for text in texts):
+            raise EmbeddingError("invalid_request")
+
+    def _reserve(self, count: int) -> None:
+        """One attempt's reservation: count inputs at cost_units_per_item each."""
+        gateway = self._gateway_or_process()
+        try:
+            granted = gateway.budget.reserve(count * self.spec.cost_units_per_item)
+        except Exception:  # noqa: BLE001 - an unwritable budget store sends nothing and does not stop the gateway
+            granted = None
+        if granted is None:
+            from app.gateway.gateway import budget_unavailable
+
+            budget_unavailable()
+            raise EmbeddingError("budget_unavailable")
+        if not granted:
             gateway.stop("budget_breach")
             raise EmbeddingError("budget")
 
-    def _post(self, texts: list[str]) -> list[list[float]]:
+    def _post(self, texts: list[str], *, purpose: str) -> list[list[float]]:
         import httpx
 
         if not texts:
             return []
-        self._reserve()
+        self._admit(texts, purpose)
+        caps = self.spec.caps
         body = {"model": self.model_id, "input": texts, "encoding_format": "float"}
         failure: tuple[str, int | None] = ("transport", None)
-        for attempt in range(1 + EMBEDDING_MAX_RETRIES):
+        for attempt in range(1 + caps.max_retries):
             if attempt:
                 self._sleep(0.05 * 2 ** (attempt - 1))
+            self._reserve(len(texts))
             kind = status = None
             payload = None
             headers = self._headers()
             try:
-                with httpx.Client(timeout=EMBEDDING_TIMEOUT_MS / 1000.0, transport=self._transport) as client:
+                with httpx.Client(timeout=caps.timeout_ms / 1000.0, transport=self._transport) as client:
                     response = client.post(EMBEDDINGS_ENDPOINT, headers=headers, json=body)
                 status = response.status_code
                 if status == 200:

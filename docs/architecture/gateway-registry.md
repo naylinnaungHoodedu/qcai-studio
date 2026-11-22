@@ -20,7 +20,9 @@ Hand-maintained from configuration package v4 (`apps/api/app/config_package/v4.j
 
 `fake-delta` is the spare family: eligibility precedes the panel, so it is drawn only when one of the first three is ineligible. The package's generator (`extractive-d19-v1`) has the family `extractive-d19`, which no registry member has.
 
-**Daily budgets** (PD-26; A-15 open, hold H9): development 100000 units; staging, production and default 0 (every adapter ineligible). Alert at 4/5. Each registry's budget is one row per UTC day in the application database, shared by every instance, and so is its stop.
+**Daily budgets** (PD-26; A-15 open, hold H9): development 100000 units; staging, production and default 0 (every adapter ineligible). Alert at 4/5. Each registry's budget is one row per UTC day in the application database, shared by every instance, and so is its stop. Every attempt an adapter sends reserves its cost, retries included.
+
+**Embedding egress** (`gateway.embeddings`, PD-26; the Phase 2 semantic backend's, never a panel member): provider `openai-embeddings`, model none (no model is chosen while D-07, D-12 or Q-09 is open or the Q-15 review is pending; a named one must be pinned); caps 256 inputs per request, 8000 characters per input, 10000 ms, 2 retries; 1 unit per input and attempt. The gateway gives no embedder: a query embedding would send the learner's query text, which plan H never lets leave (Phase 5 spec 4.19).
 
 ## Degraded-mode matrix (`degraded-matrix-v1`; D-29 (a), PD-23)
 

@@ -6,9 +6,10 @@ provider SDK or HTTP client import anywhere else in the API image, with one reco
 client (pinecone) of app/services/retrieval_engine.py, reached only with an embedder this package gives. Its
 host-string rule refuses a provider host name in a string literal of the Python files under apps/api/app, scripts,
 evaluation (its tests included) and tools outside this package; apps/api/tests, apps/frontend, infra and every
-non-Python file are not scanned. D-12 (provider and terms), D-07 (pinned models) and Q-09 (terms) are open, so no real
-provider is registered: the staging, production and default registries are empty, development registers four
-deterministic fake families that make no network call, and no embedder is given anywhere. Modules: contracts (the
+non-Python file are not scanned. D-12 (provider and terms), D-07 (pinned models) and Q-09 (terms) are open and the Q-15
+payload review is pending, so no real provider is registered: the staging, production and default registries are
+empty, development registers four deterministic fake families that make no network call, and no embedder is given
+anywhere (plan H bars the learner's query text from an embedding request in any case). Modules: contracts (the
 payloads), pinning, registry, adapters, embeddings (the embedding egress), secrets, egress (D-23), budget, controls
 (the shared budget and stop), policy (the payload policy), gateway (the process gateway and its stop guards), tools
 (the five tool servers' contracts), retired (the retired provider settings), metrics and package_check. Names are

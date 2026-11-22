@@ -2,9 +2,10 @@
 breach."; Phase 5 spec 4.5; infra/cloudrun/deployment.md, Phase 5).
 
 A stop guard that fires writes its registry's stop to gateway_stops, and every instance then refuses every gateway
-call until the stop is cleared. This in-image command is the operator's only way to clear it. It connects as the API
-does (the Cloud SQL Python connector when CLOUD_SQL_CONNECTION_NAME is set) and logs one JSON line (event
-gateway.stop_status: every registry's stop, reason and time; names, reasons and times only).
+call; a process started while the stop is recorded starts stopped. This in-image command is the operator's only way
+to clear it. It connects as the API does (the Cloud SQL Python connector when CLOUD_SQL_CONNECTION_NAME is set) and
+logs one JSON line on the qcai.worker logger (event gateway.stop_status: every registry's stop, reason and time;
+registry names, reasons and times only).
   --clear REGISTRY  removes that registry's stop, after the cause is fixed, and writes the security event
                     gateway.stop_cleared (actor_role operator, the registry and the reason it held). Instances already
                     running stay stopped until they are replaced (a new revision), because each keeps its own stop.

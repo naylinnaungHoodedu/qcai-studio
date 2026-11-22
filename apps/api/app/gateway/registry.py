@@ -1,8 +1,10 @@
 """The adapter registry (plan Phase 5 E1 ModelAdapter; task 5.1; Phase 5 spec 3.1, 4.2).
 
 Package v4 holds one registry per environment (gateway.registries): development lists four deterministic fakes, and
-staging, production and default are empty (D-07, D-12 and Q-09 open: no model is chosen and no provider is
-registered). registry_for picks the registry named by ENVIRONMENT, else default. generator_family names the family of
+staging, production and default are empty (D-07, D-12 and Q-09 open and the Q-15 review pending: no model is chosen and
+no provider is registered; providers_open is the one rule the loader and the embedding egress share). Its
+gateway.embeddings entry is the embedding egress's EmbeddingSpec (app.gateway.embeddings): no model while those gates
+are open. registry_for picks the registry named by ENVIRONMENT, else default. generator_family names the family of
 the package's generator, which the panel excludes (AC-5-1); a generator the package does not name raises
 GeneratorFamilyUnknown, and the V2 track then fails closed (no panel, every eligible claim withheld).
 
@@ -26,6 +28,24 @@ AUTH_HEADERS = ("authorization-bearer", "x-api-key")
 MAX_TOKENS = (1, 4096)
 TIMEOUT_MS = (50, 10000)
 MAX_RETRIES = (0, 2)
+EMBEDDING_MAX_ITEMS = (1, 2048)
+EMBEDDING_MAX_INPUT_CHARS = (1, 32000)
+# The owner gates a non-fake registry member and the embedding egress wait for: D-12 (provider and terms), D-07 (the
+# pinned model set), Q-09 (provider terms in force) and Q-15 (the payload register's owner review, DI-71).
+PROVIDER_GATES = ("D-12", "D-07", "Q-09", "Q-15")
+
+
+def providers_open(decisions) -> bool:
+    """D-12 or D-07 open, Q-09 unresolved, or Q-15's payload review not done; a decision the package does not hold counts
+    as open (fail closed)."""
+    decisions = decisions or {}
+
+    def state(name: str):
+        entry = decisions.get(name)
+        return entry.get("state") if isinstance(entry, dict) else "missing"
+
+    return (state("D-12") in ("open", "missing") or state("D-07") in ("open", "missing")
+            or state("Q-09") in ("unresolved", "missing") or state("Q-15") != "reviewed")
 
 
 class GeneratorFamilyUnknown(LookupError):
@@ -58,6 +78,28 @@ class AdapterSpec:         # E1 ModelAdapter {adapter_id, family, provider, mode
         """What /ready reports of a member: identifiers only, never an endpoint or a secret reference."""
         return {"adapter_id": self.adapter_id, "family": self.family, "provider": self.provider, "model_id": self.model_id,
                 "model_version": self.model_version, "capabilities": list(self.capabilities)}
+
+
+@dataclass(frozen=True)
+class EmbeddingCaps:
+    max_items: int         # inputs per request (one batch), 1..2048
+    max_input_chars: int   # characters per input, 1..32000: the token cap (the gateway holds no tokenizer)
+    timeout_ms: int        # 50..10000
+    max_retries: int       # 0..2
+
+
+@dataclass(frozen=True)
+class EmbeddingSpec:       # package v4 gateway.embeddings (PD-26)
+    provider: str          # "openai-embeddings"
+    secret_ref: str        # "OPENAI_API_KEY"
+    model_id: str | None   # null while no embedding model is chosen (D-07 open)
+    model_version: str | None
+    caps: EmbeddingCaps
+    cost_units_per_item: int   # >= 1; each attempt reserves len(inputs) * cost_units_per_item
+
+    def public(self) -> dict:
+        """What /ready reports: identifiers only, never a secret reference."""
+        return {"provider": self.provider, "model_id": self.model_id, "model_version": self.model_version}
 
 
 @dataclass(frozen=True)

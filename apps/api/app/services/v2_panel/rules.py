@@ -56,8 +56,10 @@ ALIGNMENT_INSTRUCTIONS = (
     "Rate from 1 to 5 how well this rendered answer serves the stated learning objective at the stated readability band, "
     "and flag leakage when it reveals an assessment answer key."
 )
-V2_ABSTENTION_REASONS = ("v2_correction_exhausted", "v2_alignment_failed")
-V2_WITHHOLD_REASONS = ("v2_degraded_withheld", "v2_kill_switch")
+# A kill switch abstains (plan 13.6 "abstain-only, pre-verified-only"; pre-verified-only abstains while no pre-verified
+# source exists, DI-83), so v2_kill_switch is an abstention reason.
+V2_ABSTENTION_REASONS = ("v2_correction_exhausted", "v2_alignment_failed", "v2_kill_switch")
+V2_WITHHOLD_REASONS = ("v2_degraded_withheld",)
 BANNER_IDS = ("degraded-reduced-2-v1", "degraded-reduced-1-v1", "degraded-zero-v1")
 BANNER_FOR_MODE = {"REDUCED-2": "degraded-reduced-2-v1", "REDUCED-1": "degraded-reduced-1-v1", "ZERO": "degraded-zero-v1"}
 KILL_SWITCHES = ("none", "abstain_only", "pre_verified_only")

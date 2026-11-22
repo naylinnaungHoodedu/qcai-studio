@@ -13,16 +13,20 @@ alignment verdicts and ledger entries are never cached, so nothing a learner was
                   resolved question's sha256, corpus_version, the package's version and sha256, the generator id and
                   model id
 So a configuration bump (config_package_sha256) or a model change (verifier_model_version) misses. No key or value
-holds a learner identifier, a thread or response id or any text: keys are hashes, values are ClaimPlan or
-AdapterVerdict (put refuses any other type).
+holds a learner identifier, a thread or response id or any learner text: keys are hashes, and values are ClaimPlan
+or AdapterVerdict (put refuses any other type), whose only text is corpus text (a ClaimPlan's claim texts, which the
+one wired generator, extractive-d19-v1, quotes from the evidence bundle's spans; a verdict holds a span id and
+enumerations).
 Two implementations:
   DatabaseEvidentialCache  shared by every API instance through the application database (evidential_cache_entries;
                            plan 5.7 "Shared cache", 7.5 "shared verdict cache"): each key is stored as a keyed digest
                            (HMAC with the guest-token secret, so a stored key cannot be matched against a guessed
                            question), each value as the canonical JSON of its ClaimPlan or AdapterVerdict; a hit
                            refreshes used_at, and a put evicts the least recently used entries beyond the kind's bound.
-                           The table starts empty with its migration (plan G "cold cache"); the keys are never logged
-                           or exported. Package v4 gateway.cache.scope "database" makes it the process cache.
+                           A store error is a miss on get and a skipped put or evict (tutor.v2.cache_unavailable, the
+                           operation only), so a database fault costs calls, never the response or its record. The table starts
+                           empty with its migration (plan G "cold cache"); the keys are never logged or exported.
+                           Package v4 gateway.cache.scope "database" makes it the process cache.
   ProcessEvidentialCache   one LRU per kind in process memory: a test's, or the fixture runner's, own cache.
 get_cache() is the process's cache; reset_process_cache() is the test seam (a new object and an empty shared table).
 """
@@ -31,13 +35,17 @@ from __future__ import annotations
 
 from collections import Counter, OrderedDict
 import json
+import logging
 import threading
 import time
 from typing import Any, Literal, Protocol
 
 from app.core.config_package import canonical_sha256
+from app.core.structured_logging import FIELDS
 from app.gateway.contracts import AdapterVerdict
 from app.services.tutor_pipeline.contracts import ClaimPlan, sha256_hex
+
+LOGGER = logging.getLogger("qcai.tutor")
 
 Kind = Literal["claim_plan", "verdict"]
 VALUE_TYPES = {"claim_plan": ClaimPlan, "verdict": AdapterVerdict}
@@ -124,6 +132,11 @@ class DatabaseEvidentialCache:   # shared by every instance (evidential_cache_en
 
         return keyed_digest(key, "evidential-cache")
 
+    @staticmethod
+    def _unavailable(operation: str) -> None:
+        LOGGER.warning("The shared evidential cache could not be used", extra={FIELDS: {"event": "tutor.v2.cache_unavailable",
+                                                                                    "operation": operation}})
+
     def get(self, kind: Kind, key: str):
         from sqlalchemy import select, update
 
@@ -131,10 +144,14 @@ class DatabaseEvidentialCache:   # shared by every instance (evidential_cache_en
             raise KeyError(kind)
         table, stored = _table(), self.stored_key(key)
         where = (table.c.kind == kind, table.c.key == stored)
-        with _engine().begin() as connection:
-            value = connection.execute(select(table.c.value).where(*where)).scalar_one_or_none()
-            if value is not None:
-                connection.execute(update(table).where(*where).values(used_at=self._clock()))
+        try:
+            with _engine().begin() as connection:
+                value = connection.execute(select(table.c.value).where(*where)).scalar_one_or_none()
+                if value is not None:
+                    connection.execute(update(table).where(*where).values(used_at=self._clock()))
+        except Exception:  # noqa: BLE001 - an unreadable store is a miss: the caller makes the call instead
+            self._unavailable("get")
+            value = None
         with self._lock:
             (self.misses if value is None else self.hits)[kind] += 1
         return None if value is None else VALUE_TYPES[kind].model_validate_json(value)
@@ -147,26 +164,33 @@ class DatabaseEvidentialCache:   # shared by every instance (evidential_cache_en
         expected = VALUE_TYPES.get(kind)
         if expected is None or not isinstance(value, expected):
             raise TypeError(f"the evidential cache holds only {expected.__name__ if expected else 'evidential'} values for {kind}")
-        table, engine = _table(), _engine()
+        table = _table()
         text = json.dumps(value.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-        insert = postgresql_insert if engine.dialect.name == "postgresql" else sqlite_insert
         now = self._clock()
-        statement = insert(table).values(kind=kind, key=self.stored_key(key), value=text, used_at=now)
-        statement = statement.on_conflict_do_update(index_elements=[table.c.kind, table.c.key], set_={"value": text, "used_at": now})
-        with engine.begin() as connection:
-            connection.execute(statement)
-            count = int(connection.execute(select(func.count()).select_from(table).where(table.c.kind == kind)).scalar_one())
-            excess = count - self._limits[kind]
-            if excess > 0:
-                oldest = select(table.c.key).where(table.c.kind == kind).order_by(table.c.used_at, table.c.key).limit(excess)
-                connection.execute(delete(table).where(table.c.kind == kind, table.c.key.in_([row.key for row in connection.execute(oldest)])))
+        try:
+            engine = _engine()
+            insert = postgresql_insert if engine.dialect.name == "postgresql" else sqlite_insert
+            statement = insert(table).values(kind=kind, key=self.stored_key(key), value=text, used_at=now)
+            statement = statement.on_conflict_do_update(index_elements=[table.c.kind, table.c.key], set_={"value": text, "used_at": now})
+            with engine.begin() as connection:
+                connection.execute(statement)
+                count = int(connection.execute(select(func.count()).select_from(table).where(table.c.kind == kind)).scalar_one())
+                excess = count - self._limits[kind]
+                if excess > 0:
+                    oldest = select(table.c.key).where(table.c.kind == kind).order_by(table.c.used_at, table.c.key).limit(excess)
+                    connection.execute(delete(table).where(table.c.kind == kind, table.c.key.in_([row.key for row in connection.execute(oldest)])))
+        except Exception:  # noqa: BLE001 - an unwritable store skips the put: the entry is simply not cached
+            self._unavailable("put")
 
     def evict(self, kind: Kind, key: str) -> None:
         from sqlalchemy import delete
 
         table = _table()
-        with _engine().begin() as connection:
-            connection.execute(delete(table).where(table.c.kind == kind, table.c.key == self.stored_key(key)))
+        try:
+            with _engine().begin() as connection:
+                connection.execute(delete(table).where(table.c.kind == kind, table.c.key == self.stored_key(key)))
+        except Exception:  # noqa: BLE001 - an entry that cannot be evicted is refused again by V1.9 when it is read
+            self._unavailable("evict")
 
     def _rows(self, kind: Kind) -> list:
         from sqlalchemy import select

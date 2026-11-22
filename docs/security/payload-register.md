@@ -1,6 +1,6 @@
 # Payload register (Q-15; plan Phase 5 F and H)
 
-What each model-gateway call would send. In the claim and alignment items only public-corpus spans and fixed templates leave the platform (plan H; invariant 8); the embedding item would carry learner text, so the gateway gives no embedder before this register's review. The payload policy (`app/gateway/policy.py`, rule `public-quotable-spans-and-templates-only-v1`) stops the gateway on anything it refuses. For a claim item it refuses a span that is unknown, not public-plane or not quotable, a span text other than the span's, a claim text that does not lie inside that span (NFKC-casefolded, whitespace collapsed) and any identifier pattern. For an alignment item it refuses a rendering other than the context's, a claim segment that is not a locked claim on such spans, a segment that is not its template's output, an objective other than the lesson's summary and any identifier pattern. No non-fake adapter is registered and no embedder is given (D-12, Q-09 open), so today nothing leaves the process.
+What each model-gateway call would send. In the claim and alignment items only public-corpus spans and fixed templates leave the platform (plan H; invariant 8); the embedding item's query would carry learner text, so the payload policy refuses it and the gateway gives no embedder at all. The payload policy (`app/gateway/policy.py`, rule `public-quotable-spans-and-templates-only-v1`) stops the gateway on anything it refuses. For a claim item it refuses a span that is unknown, not public-plane or not quotable, a span text other than the span's, a claim text that does not lie inside that span (NFKC-casefolded, whitespace collapsed) and any identifier pattern. For an alignment item it refuses a rendering other than the context's, a claim segment that is not a locked claim on such spans, a segment that is not its template's output, an objective other than the lesson's summary and any identifier pattern. For an embedding item it refuses every query and any document that is not the excerpt of a public, quotable index entry (and any identifier pattern). No non-fake adapter is registered (D-12, D-07 and Q-09 open, this review pending) and no embedder is given, so today nothing leaves the process.
 
 Status: owner review pending (DI-71). This register is hold H6's release evidence; no non-fake adapter may be registered before the review.
 
@@ -29,16 +29,16 @@ The span's fields are `span_id` and `text`; the instructions' fields are `prompt
 
 ## Embedding item (`OpenAIEmbeddingAdapter`, the semantic backend's egress; Phase 5 spec 4.19)
 
-The gateway gives the semantic backend no embedder while D-07, D-12 or Q-09 is open or this register's review is pending (DI-71), so with package v4 nothing below leaves the process.
+The gateway gives the semantic backend no embedder (Phase 5 spec 4.19): with package v4 D-07, D-12 and Q-09 are open and this review is pending (DI-71), and whatever they become, the payload policy refuses the query item, which the backend needs for every search. So nothing below leaves the process.
 
 | Field | Source | Plane | Bound |
 |---|---|---|---|
-| `model` | `OPENAI_EMBEDDING_MODEL` (pinned with `OPENAI_EMBEDDING_MODEL_VERSION`) | none | fixed per environment |
-| `input` (index sync) | the span index's excerpts (`CourseStore.chunks`), in batches of 256 | public | the index's spans |
-| `input` (a search) | the learner's search or question text, one string | learner text | the request's query |
+| `model` | package v4 `gateway.embeddings.model_id` (pinned with its `model_version`; null: no model is chosen) | none | fixed per package |
+| `input` (index sync) | the span index's excerpts (`CourseStore.chunks`) whose spans are public and quotable, in batches of `caps.max_items` (256), each at most `caps.max_input_chars` (8000) characters | public | the index's spans |
+| `input` (a search) | the learner's search or question text, one string: never sent (the policy refuses it, `learner_text`) | learner text | refused |
 | `encoding_format` | constant `float` | none | fixed |
 
-A search embedding is the one gateway payload that would carry learner text, which plan H ("Only public-corpus spans leave the platform") and the list below exclude from the V2 items; that is why its owner review precedes any embedder. The key travels in the `Authorization` header only.
+A search embedding is the one gateway payload that would carry learner text, which plan H ("Only public-corpus spans leave the platform") excludes: the payload policy refuses it whatever this review says, and with it the semantic backend gets no embedder. The key travels in the `Authorization` header only.
 
 ## Never sent
 

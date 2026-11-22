@@ -876,6 +876,8 @@ class GatewayParams:
     budget_scope: str = "database"
     stop_scope: str = "database"
     cache_scope: str = "database"
+    # The embedding egress's parameters (gateway.embeddings, app.gateway.registry.EmbeddingSpec; PD-26).
+    embeddings: Any = None
 
 
 @dataclass(frozen=True)
@@ -953,7 +955,8 @@ def _parse_adapter(raw: Any, registry: str, *, providers_open: bool) -> Any:
                  f"gateway adapter {adapter_id}: a fake member has no endpoint, auth header or secret")
     else:
         _require(fake is None, f"gateway adapter {adapter_id}: only a fake member names a fake rule")
-        _require(not providers_open, f"gateway adapter {adapter_id}: no non-fake provider is registered while D-12, D-07 or Q-09 is open")
+        _require(not providers_open, f"gateway adapter {adapter_id}: no non-fake provider is registered while D-12, D-07 or Q-09 is open "
+                                     "or the Q-15 payload review is pending")
     endpoint = raw.get("endpoint")
     if endpoint is not None:
         from urllib.parse import urlsplit
@@ -972,11 +975,41 @@ def _parse_adapter(raw: Any, registry: str, *, providers_open: bool) -> Any:
                        endpoint=endpoint, auth_header=auth_header, secret_ref=secret_ref)
 
 
+def _parse_embeddings(gateway: Mapping[str, Any], *, providers_open: bool) -> Any:
+    """Package v4 gateway.embeddings (Phase 5 spec 4.19, 5.2; PD-26): the embedding egress's model, caps and cost. A
+    model is named only as a pinned pair, and an unpinned one stops the load and with it start-up (AC-5-10); none is
+    named while D-12, D-07 or Q-09 is open or the Q-15 review is pending."""
+    from app.gateway.embeddings import EMBEDDINGS_PROVIDER, EMBEDDINGS_SECRET_REF
+    from app.gateway.pinning import pin_problem
+    from app.gateway.registry import EMBEDDING_MAX_INPUT_CHARS, EMBEDDING_MAX_ITEMS, MAX_RETRIES, TIMEOUT_MS, EmbeddingCaps, EmbeddingSpec
+
+    raw = _mapping(gateway, "embeddings")
+    _require(raw.get("provisional") is True and raw.get("record") == "PD-26", "gateway.embeddings must be marked provisional: true, record PD-26")
+    _require(raw.get("provider") == EMBEDDINGS_PROVIDER and raw.get("secret_ref") == EMBEDDINGS_SECRET_REF,
+             f"gateway.embeddings names provider {EMBEDDINGS_PROVIDER} and secret_ref {EMBEDDINGS_SECRET_REF}")
+    _require("model_id" in raw and "model_version" in raw, "gateway.embeddings names model_id and model_version (null when no model is chosen)")
+    model_id, version = raw["model_id"], raw["model_version"]
+    if model_id is not None or version is not None:
+        _require(isinstance(model_id, str) and bool(model_id.strip()), "gateway.embeddings.model_id must be a non-empty string or null")
+        problem = pin_problem(model_id, version if isinstance(version, str) else None)
+        _require(problem is None, f"gateway.embeddings is {problem} (AC-5-10; D-07 option (a), PD-24)")
+        _require(not providers_open, "gateway.embeddings names no model while D-12, D-07 or Q-09 is open or the Q-15 payload review is pending")
+    caps = _mapping(raw, "caps")
+    return EmbeddingSpec(
+        provider=EMBEDDINGS_PROVIDER, secret_ref=EMBEDDINGS_SECRET_REF, model_id=model_id, model_version=version,
+        caps=EmbeddingCaps(max_items=_integer_in(caps, "max_items", *EMBEDDING_MAX_ITEMS),
+                           max_input_chars=_integer_in(caps, "max_input_chars", *EMBEDDING_MAX_INPUT_CHARS),
+                           timeout_ms=_integer_in(caps, "timeout_ms", *TIMEOUT_MS), max_retries=_integer_in(caps, "max_retries", *MAX_RETRIES)),
+        cost_units_per_item=_integer(raw, "cost_units_per_item", minimum=1),
+    )
+
+
 def _parse_gateway(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], tutor: TutorPipelineParams) -> GatewayParams:
     """Package v4 gateway (Phase 5 spec 5.2). Every refusal is structural: an unpinned identifier always stops the load,
     and with it start-up (AC-5-10)."""
     from app.gateway.pinning import PIN_RULE, PINNED_VERSION_TEXT, REFUSED_TOKENS_TEXT, REFUSED_WITHIN_TOKEN_TEXT
     from app.gateway.registry import REGISTRY_NAMES
+    from app.gateway.registry import providers_open as gates_open
     from app.gateway.retired import RETIRED_PROVIDER_SETTINGS
 
     gateway = _mapping(raw, "gateway")
@@ -989,8 +1022,8 @@ def _parse_gateway(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], tuto
     egress = _mapping(gateway, "egress")
     _require(egress.get("setting") == "MODEL_EGRESS_PROVIDERS" and egress.get("default") == [] and egress.get("provisional") is True,
              "gateway.egress names MODEL_EGRESS_PROVIDERS with default [] and is provisional (D-23, PD-22)")
-    providers_open = (_bool_state(decisions, "D-12", ("open",)) or _bool_state(decisions, "D-07", ("open",))
-                      or _bool_state(decisions, "Q-09", ("unresolved",)))
+    # One rule for every non-fake member and the embedding egress (app.gateway.registry.providers_open).
+    providers_open = gates_open(decisions)
     for name in ("D-07", "Q-09", "D-23", "D-29", "D-25", "A-15", "Q-15"):
         _require(isinstance(decisions.get(name), dict), f"owner_decisions.{name} must be an object in package v4")
     registries_raw = _mapping(gateway, "registries")
@@ -1001,7 +1034,8 @@ def _parse_gateway(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], tuto
     for name, members in registries_raw.items():
         _require(isinstance(members, list), f"gateway.registries.{name} must be a list")
         if name != "development":
-            _require(not (providers_open and members), f"gateway.registries.{name} must be empty while D-12, D-07 or Q-09 is open")
+            _require(not (providers_open and members),
+                     f"gateway.registries.{name} must be empty while D-12, D-07 or Q-09 is open or the Q-15 payload review is pending")
         specs = []
         for entry in members:
             spec = _parse_adapter(entry, name, providers_open=providers_open)
@@ -1044,6 +1078,7 @@ def _parse_gateway(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], tuto
         cache_max_plans=_integer_in(bounds, "claim_plan", 1, 100000), cache_max_verdicts=_integer_in(bounds, "verdict", 1, 100000),
         payload_rule=_text(policy, "rule"), stop_on=GATEWAY_STOPS, retired_settings=retired,
         budget_scope="database", stop_scope="database", cache_scope="database",
+        embeddings=_parse_embeddings(gateway, providers_open=providers_open),
     )
 
 

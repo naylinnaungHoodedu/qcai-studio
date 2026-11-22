@@ -1111,14 +1111,17 @@ class VerificationRecordV2(VerificationRecord):
                     problems.append(f"{verdict.claim_id} is delivered without a passing V2 vote (invariant 6)")
                 if outcome == "fail" and (verdict.final != "abstain" or verdict.v3 is None or verdict.v3.escalation != "X2"):
                     problems.append(f"{verdict.claim_id} failed V2 and is not abstained with X2")
-                if outcome == "withheld" and (verdict.final != "withhold" or verdict.v3 is None or "v2_degraded_withheld" not in verdict.v3.reasons):
-                    problems.append(f"{verdict.claim_id} was withheld by V2 and is not withheld and queued")
+                held = "abstain" if block.kill_switch != "none" else "withhold"
+                if outcome == "withheld" and (verdict.final != held or verdict.v3 is None or "v2_degraded_withheld" not in verdict.v3.reasons):
+                    problems.append(f"{verdict.claim_id} was withheld by V2 and is not {held} and queued")
             if len(block.corrections) != block.cycles or [item.cycle for item in block.corrections] != list(range(1, block.cycles + 1)):
                 problems.append("the corrections are the cycles, numbered from 1")
             if any(verdict.v3 is not None and verdict.v3.escalation == "X2" for verdict in self.verdicts) and block.cycles != MAX_CORRECTION_CYCLES:
                 problems.append("an X2 escalation follows the last correction cycle")
-            if block.kill_switch != "none" and self.final == "withhold" and self.final_reason != "v2_kill_switch":
-                problems.append("a kill switch withholds with reason v2_kill_switch")
+            if block.kill_switch != "none" and (self.final != "abstain" or self.final_reason not in (*_V1_REASONS, "v2_kill_switch")):
+                problems.append("a kill switch abstains with reason v2_kill_switch (or the response is V1's abstention)")
+        if self.final_reason == "v2_kill_switch" and block.kill_switch == "none":
+            problems.append("only a kill switch gives the reason v2_kill_switch")
         if block.kill_switch != "none":
             if any(verdict.v2.votes or verdict.v2.outcome != "withheld" or verdict.v2.mode != "ZERO" for verdict in judged) or block.calls:
                 problems.append("a kill switch makes no call: every judged claim is withheld in ZERO")

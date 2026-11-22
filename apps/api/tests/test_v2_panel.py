@@ -87,7 +87,11 @@ def test_a_kill_switch_runs_the_zero_path_with_no_call(switch):
     verification = entry.verification
     assert all(adapter.calls == 0 for adapter in adapters.values()) and verification.v2.calls == 0
     assert all(verdict.mode == "ZERO" and verdict.outcome == "withheld" and not verdict.votes for verdict in judged(entry).values())
-    assert (verification.final, verification.final_reason, verification.replacement) == ("withhold", "v2_kill_switch", "extractive_d19")
+    # Plan 13.6 "abstain-only, pre-verified-only": the record abstains whatever the legacy decision was (no replacement),
+    # and every claim V2 withheld is queued; pre-verified-only abstains while no pre-verified source exists (DI-83).
+    assert (verification.final, verification.final_reason, verification.replacement) == ("abstain", "v2_kill_switch", "none")
+    assert (entry.decision, entry.abstention_reason) == ("abstain", "v2_kill_switch")
+    assert all(verdict.final == "abstain" and "v2_degraded_withheld" in verdict.v3.reasons for verdict in verification.verdicts)
     assert verification.v2.kill_switch == switch and verification.v2.banner == "degraded-zero-v1"
 
 

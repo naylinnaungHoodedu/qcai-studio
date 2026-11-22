@@ -9,8 +9,12 @@ build_record_v2 turns the final V1 decision and the V2 track's state into a Veri
           conflict, V1.6) or its V2 outcome is withheld (or the alignment item could not be judged); abstain iff it is
           exhausted (it failed V2 after two correction cycles, or the alignment item still failed), with V3 escalation
           X2. The response delivers when any claim does; withholds when none does and any claim is withheld
-          (v2_kill_switch, else v2_degraded_withheld when V2 withheld one, else Phase 4's reason); abstains when every
-          claim is exhausted (v2_alignment_failed or v2_correction_exhausted).
+          (v2_degraded_withheld when V2 withheld one, else Phase 4's reason); abstains when every claim is exhausted
+          (v2_alignment_failed or v2_correction_exhausted).
+          Under a kill switch (plan 13.6 "abstain-only, pre-verified-only"; pre-verified-only abstains while no
+          pre-verified source exists, DI-83) no member is eligible, so no call is made: every claim abstains, each claim
+          V2 withheld keeps its v2_degraded_withheld queue intent, and the response abstains (v2_kill_switch) whatever
+          the legacy decision was.
 V3 intents keep the Phase 4 reasons, except that v1_3_flag is dropped once the claim's V2 vote completed (pass or fail:
 "after Phase 5, flags route to V2"); a V2 withholding adds v2_degraded_withheld; exhaustion adds
 v2_correction_exhausted with escalation X2. The degraded label and banner follow the worst mode of a judged claim.
@@ -114,6 +118,7 @@ def build_record_v2(decision: Any, *, mode: str, policy: Any, locked: Any, discl
     shown = {segment.claim_id for segment in decision.rendered.segments if segment.kind == "claim" and segment.claim_id}
     if alignment_failed:
         exhausted = frozenset(exhausted) | frozenset(claim_id for claim_id, verdict in judged.items() if verdict.outcome == "pass" and claim_id in shown)
+    kill = track.kill_switch != "none"
     verdicts = []
     for verdict in decision.verdicts:
         claim_id = verdict.claim_id
@@ -130,16 +135,17 @@ def build_record_v2(decision: Any, *, mode: str, policy: Any, locked: Any, discl
             final, intent = "withhold", _intent(verdict.v3, drop_v1_3=True, add=("v2_degraded_withheld",))
         else:
             final, intent = "withhold", _intent(verdict.v3, drop_v1_3=completed)
+        if kill:
+            final = "abstain"
         verdicts.append(ClaimVerdictV2(claim_id=claim_id, v1=verdict.v1, v2=v2, v3=intent, final=final, cycle_count=verdict.cycle_count))
     finals = [verdict.final for verdict in verdicts]
-    kill = track.kill_switch != "none"
-    if "deliver" in finals:
+    if kill:
+        final, final_reason = "abstain", "v2_kill_switch"
+    elif "deliver" in finals:
         final, final_reason = "deliver", None
     elif "withhold" in finals:
         final = "withhold"
-        if kill:
-            final_reason = "v2_kill_switch"
-        elif any(verdict.v3 is not None and "v2_degraded_withheld" in verdict.v3.reasons for verdict in verdicts):
+        if any(verdict.v3 is not None and "v2_degraded_withheld" in verdict.v3.reasons for verdict in verdicts):
             final_reason = "v2_degraded_withheld"
         else:
             conflict = withheld_claim_ids((), decision.disclosure)

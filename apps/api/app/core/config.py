@@ -73,13 +73,12 @@ class Settings(BaseSettings):
     enable_demo_auth: bool | None = None
     cloud_sql_connection_name: str | None = None
     cloud_sql_ip_type: str = "PUBLIC"
-    # The Phase 2 semantic backend's embedding model and its pinned version (D-07's rule, pinned-version-v1), used only
-    # through the gateway (app.gateway.embeddings; Phase 5 spec 4.19). Its key, OPENAI_API_KEY, is no setting: the
-    # gateway's secret store reads it from the process environment per call (plan 7.1: the gateway is the sole holder of
-    # provider credentials). No chat provider setting exists: the retired ones
-    # (app.gateway.retired.RETIRED_PROVIDER_SETTINGS) are ignored and named at start-up.
-    openai_embedding_model: str = "text-embedding-3-small"
-    openai_embedding_model_version: str | None = None
+    # No provider setting exists. The Phase 2 semantic backend's embedding model, its pinned version, caps and cost are
+    # package v4's gateway.embeddings (app.gateway.embeddings; Phase 5 spec 4.19), and its key, OPENAI_API_KEY, is no
+    # setting: the gateway's secret store reads it from the process environment per call (plan 7.1: the gateway is the
+    # sole holder of provider credentials). The retired chat-provider settings (app.gateway.retired.
+    # RETIRED_PROVIDER_SETTINGS) are ignored and named at start-up; OPENAI_EMBEDDING_MODEL and
+    # OPENAI_EMBEDDING_MODEL_VERSION are no settings either (Settings ignore unknown keys).
     auth0_domain: str | None = None
     auth0_audience: str | None = None
     pinecone_api_key: str | None = None
@@ -192,16 +191,19 @@ class Settings(BaseSettings):
     # shadow pipeline only, so no learner sees a change. None = "shadow" in development and "off" elsewhere
     # (MODEL_GATEWAY_DEFAULT_DEVELOPMENT, MODEL_GATEWAY_DEFAULT_ELSEWHERE, which package v4 flag_policy.model_gateway
     # must name). "on" needs V1_PIPELINE=enforce, and outside development is refused while the package says
-    # flag_policy.phase5_exit_passed is false. A runtime stop of the gateway turns the effective mode off until an
-    # operator clears the registry's shared stop (python -m app.workers.gateway_stop --clear).
+    # flag_policy.phase5_exit_passed is false. A runtime stop of the gateway turns the effective mode off for the rest
+    # of the process's life: an operator clears the registry's shared stop (python -m app.workers.gateway_stop --clear)
+    # and replaces the stopped instances (a new revision), whose new processes start open.
     model_gateway: Literal["off", "shadow", "on"] | None = None
     # D-23 (PD-22): the providers this environment opts in to model egress, a comma or JSON list. Empty everywhere,
     # development included: the development fakes need none, and no non-fake provider is registered anywhere.
     model_egress_providers: Annotated[list[str], NoDecode] = Field(default_factory=list)
     # Plan 13.6 "kill switches per provider": these adapter ids are never eligible (strictly more conservative).
     model_gateway_disabled_adapters: Annotated[list[str], NoDecode] = Field(default_factory=list)
-    # Plan 13.6 "abstain-only, pre-verified-only": either makes every adapter ineligible, so V2 withholds and queues
-    # every claim with no call (ZERO; strictly more conservative).
+    # Plan 13.6 "abstain-only, pre-verified-only": either makes every adapter ineligible, so V2 makes no call and every
+    # claim is in ZERO; under MODEL_GATEWAY=on the record abstains and queues every claim V2 withheld (pre-verified-only
+    # abstains too while no pre-verified source exists, DI-83). Like MODEL_GATEWAY it acts on the two-pass shadow
+    # pipeline only: no delivered answer reads it (strictly more conservative; delivery is DI-85).
     model_gateway_kill_switch: Literal["none", "abstain_only", "pre_verified_only"] = "none"
 
     @field_validator("model_egress_providers", "model_gateway_disabled_adapters", mode="before")

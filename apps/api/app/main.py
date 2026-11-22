@@ -289,19 +289,22 @@ def _initialize_database() -> None:
 SEMANTIC_INACTIVE_MESSAGES = {
     "egress_not_opted_in": "Semantic retrieval is enabled by setting but its embedding egress is not opted in (openai-embeddings in MODEL_EGRESS_PROVIDERS, D-23); retrieval stays lexical",
     "provider_open": "Semantic retrieval is enabled by setting but the gateway gives no embedder while D-07, D-12 or Q-09 is open or the Q-15 payload review is pending; retrieval stays lexical",
-    "unpinned": "Semantic retrieval is enabled by setting but its embedding model is not pinned (OPENAI_EMBEDDING_MODEL_VERSION, pinned-version-v1); retrieval stays lexical",
+    "unpinned": "Semantic retrieval is enabled by setting but package v4 gateway.embeddings names no pinned embedding model (pinned-version-v1); retrieval stays lexical",
     "no_budget": "Semantic retrieval is enabled by setting but the gateway's daily budget for this environment is 0; retrieval stays lexical",
     "gateway_stopped": "Semantic retrieval is enabled by setting but the model gateway is stopped; retrieval stays lexical",
     "not_configured": "Semantic retrieval is enabled by setting but its keys, SDK or index are missing; retrieval stays lexical",
+    "learner_text": "Semantic retrieval is enabled by setting but a query embedding would send the learner's query text, and only public-corpus spans leave the platform (plan Phase 5 H); retrieval stays lexical",
     "not_aligned": "Semantic retrieval is enabled by setting but not aligned in this process; retrieval stays lexical",
 }
 
 
 def _warn_semantic_inactive() -> str | None:
     """The start-up semantic.inactive warning: the setting alone never enables hybrid retrieval. It also needs an embedder
-    from the gateway (the D-23 opt-in, closed provider decisions and the Q-15 review, a pinned model, a budget, an open
-    gateway and the key), the vector index's key and name, and a process that aligned the span-id vectors
-    (workers/rag.py). The API process stays lexical, and /ready reports semantic_enabled false. Returns the reason."""
+    from the gateway, which names the first check that fails (the D-23 opt-in, closed provider decisions and the Q-15
+    review, a pinned model in package v4, a budget, an open gateway, the key, and plan H's bar on the learner's query
+    text, which no configuration lifts), the vector index's key and name, and a process that aligned the span-id
+    vectors (workers/rag.py). The API process stays lexical, and /ready reports semantic_enabled false. Returns the
+    reason."""
     inactive = get_retrieval_engine().semantic_inactive_reason
     if inactive is not None:
         LOGGER.warning(SEMANTIC_INACTIVE_MESSAGES[inactive], extra={FIELDS: {"event": "semantic.inactive", "reason": inactive}})
@@ -579,8 +582,8 @@ def _build_fields() -> dict:
         "v1_pipeline_setting": settings.v1_pipeline,
         "v1": _v1_fields(package),
         # Phase 5 (plan 7.7: "/ready MUST report build SHA, corpus_version, threshold_set_version and gateway state";
-        # spec 10.2): the V2 mode in force, the setting, and the gateway's static values and state. No call, spend or
-        # per-run outcome is public.
+        # spec 10.2): the V2 mode in force, the setting, and the gateway's static values and state. No call, spend,
+        # per-run outcome, stop reason or operator switch is public.
         "model_gateway": _v2_mode(package),
         "model_gateway_setting": settings.model_gateway,
         "phase5_exit_passed": bool(package.flag_policy.phase5_exit_passed),
@@ -603,16 +606,16 @@ def _gateway_fields(package) -> dict | None:
     from app.gateway.registry import registry_for
 
     registry = registry_for(package, settings)
-    state, stop_reason = process_gateway_state()
+    # The state only: the stop's reason (which may say a credential reached the logs, or name a spend outcome) and the
+    # operator's switches (egress opt-ins, kill switch, disabled adapters) stay off this unauthenticated route. The
+    # reason is in the gateway.stopped log line and the operator's status command (python -m app.workers.gateway_stop).
+    state, _ = process_gateway_state()
     return {
         "version": gateway.version,
         "registry": registry.name,
         "members": [spec.public() for spec in registry.members],
-        "egress_providers": list(settings.model_egress_providers),
-        "kill_switch": settings.model_gateway_kill_switch,
-        "disabled_adapters": list(settings.model_gateway_disabled_adapters),
+        "embeddings": gateway.embeddings.public() if gateway.embeddings is not None else None,
         "state": state,
-        "stop_reason": stop_reason,
         "budget_daily_units": gateway.daily_units.get(registry.name, 0),
         "tool_contract_version": package.tools.version if package.tools is not None else None,
         "panel": {"max_members": v2.max_members, "weights": v2.panel_weights_version, "routing_table": v2.routing_table_version,

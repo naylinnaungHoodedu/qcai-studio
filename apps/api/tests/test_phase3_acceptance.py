@@ -1655,9 +1655,25 @@ def test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode(monkeypatch
     assert (body["tutor_ledger_enabled"], body["ledger_route_enabled"], body["evidence_panel_enabled"], body["tutor_turns_route_enabled"]) == (True,) * 4
     from app import main as main_module
 
+    from sqlalchemy import event
+
+    from app.core.db import engine
+
     monkeypatch.setattr(main_module, "SessionLocal", _raise("_build_fields read the database"))
-    fields = main_module._build_fields()
+    statements: list[str] = []
+
+    def seen(conn, cursor, statement, parameters, context, executemany):
+        statements.append(" ".join(statement.split()))
+
+    event.listen(engine, "before_cursor_execute", seen)
+    try:
+        fields = main_module._build_fields()
+    finally:
+        event.remove(engine, "before_cursor_execute", seen)
     assert fields["two_pass_tutor"] == "shadow" and fields["tutor_pipeline"]["version"] == "two-pass-v1"
+    # No session read; since Phase 5 the only statements are the shared gateway stop's reads, where the V2 mode is not
+    # off by settings (development): the V2 mode and the gateway state adopt the registry's stop (Phase 5 spec 10.2).
+    assert statements and all(statement.startswith("SELECT gateway_stops.reason FROM gateway_stops") for statement in statements), statements
     assert main_module._ledger_head() == {"chain": "tutor-responses", "status": "unavailable"}  # fails open
 
 

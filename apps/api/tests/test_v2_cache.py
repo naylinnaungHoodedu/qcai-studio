@@ -142,3 +142,31 @@ def test_no_learner_data_is_a_key_or_a_value():
     dumped = repr(cache.values("verdict")) + repr(cache.values("claim_plan"))
     assert TIER2 not in dumped and result.rendered.text not in dumped
     assert result.entry.response_id not in dumped and result.entry.shadowed_response_id not in dumped
+
+
+def test_a_shared_cache_whose_store_fails_misses_and_skips_and_never_raises(monkeypatch, caplog):
+    # F-1 (plan P): the shared cache is evidential and optional. A database fault makes a get a miss and a put or an evict
+    # a no-op (tutor.v2.cache_unavailable, the operation only), so the caller makes the call instead of failing.
+    import logging
+
+    from sqlalchemy.exc import OperationalError
+
+    from app.services.v2_panel import cache as cache_module
+
+    verdict = AdapterVerdict(verdict="SUPPORTED", ehmf_type=None, span_id="span-" + "a" * 64)
+    shared = DatabaseEvidentialCache()
+    shared.put("verdict", "k", verdict)
+
+    def down():
+        raise OperationalError("SELECT evidential_cache_entries", {}, Exception("database unavailable"))
+
+    caplog.set_level(logging.WARNING, logger="qcai.tutor")
+    monkeypatch.setattr(cache_module, "_engine", down)
+    assert shared.get("verdict", "k") is None and shared.misses["verdict"] == 1
+    assert shared.put("verdict", "other", verdict) is None and shared.evict("verdict", "k") is None
+    with pytest.raises(TypeError):
+        shared.put("verdict", "k", "not a verdict")  # a wrong type is still refused: a programming error, not a fault
+    events = [record.json_fields for record in caplog.records if getattr(record, "json_fields", {}).get("event") == "tutor.v2.cache_unavailable"]
+    assert [event["operation"] for event in events] == ["get", "put", "evict"]
+    monkeypatch.undo()
+    assert shared.get("verdict", "k") == verdict and shared.get("verdict", "other") is None  # nothing was evicted or written
