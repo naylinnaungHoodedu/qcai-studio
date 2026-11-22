@@ -13,4 +13,4 @@ The old key (`qcai-vertex-ai-api-key`, version 1, created 2026-03-31) was once s
 
 3. Decide, with the Security Lead, whether existing Cloud Logging entries that may hold the old key should be purged or allowed to expire.
 
-**Provider egress needs a per-environment opt-in** (D-23, PD-22): a non-fake provider is ineligible unless the environment's `MODEL_EGRESS_PROVIDERS` names it, and the list is empty everywhere. A future provider key is read only by the gateway's secret store, travels only in a header and is registered with the log redaction (ADR-006, revision 2026-11-21).
+**Provider egress needs a per-environment opt-in** (D-23, PD-22): a non-fake provider is ineligible unless the environment's `MODEL_EGRESS_PROVIDERS` names it, and the list is empty everywhere. A future provider key, and `OPENAI_API_KEY` for the semantic backend's embeddings, is read only by the gateway's secret store, travels only in a header and is registered with the log redaction (ADR-006, revision 2026-11-21).

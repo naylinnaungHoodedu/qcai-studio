@@ -1597,7 +1597,7 @@ qcai_dev.db
 | `citations.unresolved_on_read` | — | WARNING |
 | `corpus.drift` | — | WARNING (development), start-up error (governed) |
 | `semantic.misaligned` | — | WARNING |
-| `semantic.inactive` | — (start-up: the setting is on but this process has not aligned span-id vectors) | WARNING |
+| `semantic.inactive` | `reason` (start-up: the setting is on and retrieval stays lexical: `egress_not_opted_in`, `provider_open`, `unpinned`, `no_budget`, `gateway_stopped` or `not_configured` when the model gateway gives no embedder, Phase 5 spec 4.19; `not_configured` when the vector index's SDK, key or name is missing; else `not_aligned`, this process has not aligned span-id vectors) | WARNING |
 | `retrieval.recall_stop_overridden` | `items` | WARNING |
 | Job lines | — | INFO, or ERROR on failure |
 
@@ -1611,7 +1611,7 @@ The SLIs follow plan Phase 2 I: citation resolution rate 100%; duplicate span id
 |---|---|---|
 | `CONFIG_PACKAGE_PATH` | Packaged `v1.json` | For tests. A non-default path outside development raises a `config.override` event [R19]. |
 | `RETRIEVAL_GATE` | `None`: `bm25f-v1` in development, `p1-floor` elsewhere | Freeze (conflict 26). `p1-floor` is the approved containment. The switch is a D-05 remediation release (R-15) and logs a `config.override` event. |
-| `SEMANTIC_RETRIEVAL_ENABLED` | `false` | Task 2.5. Off whatever keys are set. Since Phase 5 it also needs `openai-embeddings` in `MODEL_EGRESS_PROVIDERS` (D-23, PD-22). Effective only in a process that aligned span-id vectors; `/ready` `semantic_enabled` is the effective state and `semantic_setting` the setting. |
+| `SEMANTIC_RETRIEVAL_ENABLED` | `false` | Task 2.5. Off whatever keys are set. Since Phase 5 the backend embeds only through the model gateway, which gives it an embedder only with `openai-embeddings` in `MODEL_EGRESS_PROVIDERS` (D-23, PD-22), closed D-07, D-12 and Q-09, the Q-15 review, a pinned model, a budget, an open gateway and `OPENAI_API_KEY` (Phase 5 spec 4.19; none is given with the shipped package). Effective only in a process that aligned span-id vectors; `/ready` `semantic_enabled` is the effective state and `semantic_setting` the setting. |
 | `ALLOW_P1_FLOOR_WITH_DOCUMENTS` | `false` | Conflict 29 stop (plan Phase 2 L). Outside development, start-up and `validate_corpus.py --check-recall-stop` refuse document spans under `p1-floor` unless this owner override is set; it logs a `config.override` event. |
 | `SPAN_RESOLVER_ROUTE_ENABLED` | `None`: true in development, false elsewhere | Freeze and D-31 (conflict 8). |
 | `CITATION_PROVISIONAL_LIFT_ENABLED` | `false` | Freeze. Enabling it outside development logs a `config.override` event and needs AC-2-3 evidence plus D-05 approval (conflict 7, [R14]). |

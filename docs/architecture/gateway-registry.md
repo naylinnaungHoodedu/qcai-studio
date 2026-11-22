@@ -20,7 +20,7 @@ Hand-maintained from configuration package v4 (`apps/api/app/config_package/v4.j
 
 `fake-delta` is the spare family: eligibility precedes the panel, so it is drawn only when one of the first three is ineligible. The package's generator (`extractive-d19-v1`) has the family `extractive-d19`, which no registry member has.
 
-**Daily budgets** (PD-26; A-15 open, hold H9): development 100000 units; staging, production and default 0 (every adapter ineligible). Alert at 4/5.
+**Daily budgets** (PD-26; A-15 open, hold H9): development 100000 units; staging, production and default 0 (every adapter ineligible). Alert at 4/5. Each registry's budget is one row per UTC day in the application database, shared by every instance, and so is its stop.
 
 ## Degraded-mode matrix (`degraded-matrix-v1`; D-29 (a), PD-23)
 

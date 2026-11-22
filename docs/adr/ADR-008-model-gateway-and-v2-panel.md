@@ -19,8 +19,9 @@ Phase 5 of the upgrade plan (L1357-1436) puts all model egress through one pinne
 | ZERO (0) | withheld, queued | withheld, queued | withheld, queued | no call; no pre-verified source exists, so withhold and queue; banner `degraded-zero-v1` |
 
 - **Correction** runs at most two cycles (plan 5.8). A failing claim whose objections are all EHMF type E (presentation) is re-rendered only, never revised, and so is a failing alignment item (type E); any other failing claim is revised through the generator (a revised claim is a new candidate judged by V1 from the start) or, when it cannot be revised, re-verified from the cache. A claim still failing is abstained and marked X2 (AC-5-7). Package v4's `v2.correction` names these rules, and the loader refuses any other.
-- **The evidential cache** holds claim plans and verdicts only, per process, keyed on plan 5.7's fields with the envelope's hash and plan 7.3's union; a configuration or model change misses (AC-5-8, AC-5-11).
-- **Caps and a daily budget hard stop** (task 5.10): budgets are 0 outside development (A-15, hold H9), with an alert event at 4/5; each call reserves its adapter's cost, and a reply reporting more than the reservation is a budget breach. The gateway stops on a payload violation, a secret in logs or a budget breach (plan L).
+- **The evidential cache** holds claim plans and verdicts only, shared by every instance through the application database (`evidential_cache_entries`, each key stored as a keyed digest, bounded per kind), keyed on plan 5.7's fields with the envelope's hash and plan 7.3's union; a configuration or model change misses everywhere (AC-5-8, AC-5-11).
+- **Caps and a daily budget hard stop** (task 5.10): budgets are 0 outside development (A-15, hold H9), with an alert event at 4/5; each registry's budget is one row per UTC day shared by every instance, each call reserves its adapter's cost, and a reply reporting more than the reservation is a budget breach. The gateway stops on a payload violation, a secret in logs or a budget breach (plan L); the stop is shared by every instance and every new process until an operator clears it.
+- **The embedding egress** of the Phase 2 semantic backend is the gateway's too (`app/gateway/embeddings.py`; the key `OPENAI_API_KEY` is no setting): an embedder only with the D-23 opt-in, closed D-07, D-12 and Q-09, the Q-15 review, a pinned model, a budget and an open gateway, so none is given with the shipped package.
 - **`MODEL_GATEWAY`** is `off` outside development (behaviour equals Phase 4), `shadow` in development (V2 votes beside the unchanged V1 decision), and `on` is refused outside development while `phase5_exit_passed` is false (PD-28). Configuration package v4 holds every value (v3 stays readable for one release); ledger records are `ledger-entry-v3`.
 
 ## Consequences
@@ -31,7 +32,7 @@ Nothing learner-facing changes outside development: the legacy contained answers
 
 - Plan M: "Residual: correlation unmeasured until E2." Verifier correlation, V-2 and V-4 are E2 results, never claimed from fixtures (DI-75).
 - Production is permanently ZERO while the registries are empty (D-07, D-12, Q-09; DI-69, DI-70, DI-73).
-- The cache, the budget and the stop are per process: a shared store and a cross-instance budget are DI-79 and DI-72, and a stop covers one instance until it is replaced (a scale event, a crash or a new revision starts open), so the runbook makes a stop durable with `MODEL_GATEWAY=off`; a shared, durable stop is DI-87.
+- An instance that adopted a stop keeps it until it is replaced, after the operator clears the shared stop; `MODEL_GATEWAY=off` stays the flag back (plan L).
 - The tool names and the in-process transport are this phase's own (`mcp-tools-v1`, provisional, PD-31): plan 7.4 says "tool names are UNVERIFIED / REQUIRES ACCESS [Assumption A-18]", and the paper's names are DI-86.
-- The semantic embedding backend's egress and its key sit outside the gateway, allow-listed behind the D-23 opt-in: plan 7.1's MUST is unmet until DI-77.
+- A query embedding would send the learner's query text to the embedding provider; the gateway gives no embedder before the Q-15 review of the payload register (DI-71) and the provider decisions (DI-69, DI-70).
 - The paper's learner band in the alignment item and its novice-learner tier wait for the Phase 8 learner model (DI-82).
