@@ -13,9 +13,13 @@ two_pass_tutor flag policy (phase4_exit_passed). Version 3 (Phase 4) copies ever
 (LedgerEntryV2) and adds the V1 checks (`v1`): rule ids and their hash, the lexicon, every V1 threshold and band
 (provisional, Q-22), the checker hosting (none, D-21), the misconception library (v0, empty, Q-14), the D-20 interim
 rule, the quiz-key disclosure rule (PD-21), the adversarial fixture set's hash and the plan L stop conditions; and the
-v1_pipeline flag policy. Next to
-each file, <name>.json.sha256 holds the sha256 of its canonical JSON, so a CRLF checkout hashes the same. v2.json and
-v1.json stay readable for one release (DI-63, DI-42).
+v1_pipeline flag policy. Version 4 (Phase 5, apps/api/app/config_package/v4.json, the shipped package) copies every v3
+block, pins five more schemas (LedgerEntryV3 and the four gateway request and verdict contracts) and adds the model
+gateway (`gateway`: the adapter registry per environment, the pinning rule, the D-23 egress opt-in, budgets, the
+evidential cache, the payload policy, the stop guards and the retired settings), the V2 panel (`v2`: families, tiers,
+the voting matrix, correction, degraded modes, the alignment item), the tool contracts (`tools`) and the model_gateway
+flag policy. Next to each file, <name>.json.sha256 holds the sha256 of its canonical JSON, so a CRLF checkout hashes the
+same. v3.json, v2.json and v1.json stay readable for one release (DI-84, DI-63, DI-42).
 
 Start-up loads and validates it before any database work. A structural error always stops start-up; a hash
 mismatch stops a governed build and is a logged warning in development. The loader never opens the calibration
@@ -35,6 +39,8 @@ import threading
 from typing import Any
 
 from app.core.config import (
+    MODEL_GATEWAY_DEFAULT_DEVELOPMENT,
+    MODEL_GATEWAY_DEFAULT_ELSEWHERE,
     TWO_PASS_DEFAULT_DEVELOPMENT,
     TWO_PASS_DEFAULT_ELSEWHERE,
     V1_PIPELINE_DEFAULT_DEVELOPMENT,
@@ -45,9 +51,10 @@ from app.core.structured_logging import FIELDS
 
 LOGGER = logging.getLogger("qcai.config_package")
 PACKAGE_DIRECTORY = Path(__file__).resolve().parents[1] / "config_package"
-DEFAULT_PACKAGE_PATH = PACKAGE_DIRECTORY / "v3.json"
-# Readable for one release after the Phase 4 merge (DI-63) and the Phase 3 merge (DI-42); CI checks both with
-# config_package.py --check --path.
+DEFAULT_PACKAGE_PATH = PACKAGE_DIRECTORY / "v4.json"
+# Readable for one release after the Phase 5 merge (DI-84), the Phase 4 merge (DI-63) and the Phase 3 merge (DI-42); CI
+# checks each with config_package.py --check --path.
+V3_PACKAGE_PATH = PACKAGE_DIRECTORY / "v3.json"
 V2_PACKAGE_PATH = PACKAGE_DIRECTORY / "v2.json"
 V1_PACKAGE_PATH = PACKAGE_DIRECTORY / "v1.json"
 PACKAGE_NAME = "qcai-configuration-package"
@@ -55,7 +62,8 @@ SPAN_SCHEME = "span-v2"
 P1_FLOOR_VERSION = "score-floor-p1-v1"
 P1_FLOOR = 6
 # D-12 open: no provider generator is wired. Hold H6 blocks the provider interim path (a single pinned provider;
-# PD-09) and stays held, so Phase 3 runs the D-19 extractive generator instead (PD-08), which sends no provider payload.
+# PD-09) and stays held, so the pipeline runs the D-19 extractive generator instead (PD-08), which sends no provider
+# payload; package v4 names its family (v2.generator_families), which the V2 panel excludes.
 WIRED_GENERATORS = frozenset({"extractive-d19-v1"})
 TUTOR_SCHEMA_NAMES = (
     "ResolvedQuestion",
@@ -75,6 +83,10 @@ UNUSED_PROVENANCE_FIELDS = ("v1_3_checker_model_id", "panel_weights_version", "r
 # Package v3: V1.3 records its checker id ("none" while D-21 is open), so three provenance fields stay unused.
 UNUSED_PROVENANCE_FIELDS_V3 = ("panel_weights_version", "routing_table_version", "tool_contract_version")
 LEDGER_ENTRY_SCHEMAS_V3 = ("ledger-entry-v1", "ledger-entry-v2")
+# Package v4 pins LedgerEntryV3 and the gateway's four request and verdict contracts (Phase 5 spec 5.1).
+TUTOR_SCHEMA_NAMES_V4 = (*TUTOR_SCHEMA_NAMES_V3, "LedgerEntryV3", "V2VerdictRequest", "V2AlignmentRequest", "V2AdapterVerdict",
+                         "V2AlignmentVerdict")
+LEDGER_ENTRY_SCHEMAS_V4 = ("ledger-entry-v1", "ledger-entry-v2", "ledger-entry-v3")
 V1_FAMILY_LIMIT = 20
 # The plan's EHMF types per check (plan Phase 4 D table), which package v3 v1.ehmf must repeat.
 V1_EHMF = {"V1.1": ("B",), "V1.2": ("A", "B"), "V1.3": ("A", "B", "C"), "V1.4": ("D", "E"), "V1.5": ("A",),
@@ -224,6 +236,9 @@ class TutorPipelineParams:
 class FlagPolicy:
     phase4_exit_passed: bool
     phase4_exit_evidence: str | None
+    # Package v4: MODEL_GATEWAY=on is refused outside development while this is false (plan Phase 5 G, P).
+    phase5_exit_passed: bool = False
+    phase5_exit_evidence: str | None = None
 
 
 @dataclass(frozen=True)
@@ -339,6 +354,10 @@ class ConfigPackage:
     supersedes: Mapping[str, Any] | None = None
     # Package v3 (Phase 4): the V1 checks. None on a v1 or v2 package.
     v1: V1Params | None = None
+    # Package v4 (Phase 5): the model gateway, the V2 panel and the tool contracts. None on a v1, v2 or v3 package.
+    gateway: "GatewayParams | None" = None
+    v2: "V2Params | None" = None
+    tools: "ToolParams | None" = None
 
 
 def _require(condition: bool, message: str) -> None:
@@ -417,7 +436,7 @@ def _schema_path(value: Any, name: str) -> str:
 def _parse_tutor_pipeline(raw: Mapping[str, Any], *, schema_version: int = 2) -> TutorPipelineParams:
     tutor = _mapping(raw, "tutor_pipeline")
     schemas_raw = _mapping(tutor, "schemas")
-    names = TUTOR_SCHEMA_NAMES_V3 if schema_version >= 3 else TUTOR_SCHEMA_NAMES
+    names = TUTOR_SCHEMA_NAMES_V4 if schema_version >= 4 else TUTOR_SCHEMA_NAMES_V3 if schema_version >= 3 else TUTOR_SCHEMA_NAMES
     _require(set(schemas_raw) == set(names), f"tutor_pipeline.schemas must name exactly {', '.join(names)}")
     schemas: dict[str, SchemaPin] = {}
     for name in names:
@@ -478,7 +497,15 @@ def _parse_tutor_pipeline(raw: Mapping[str, Any], *, schema_version: int = 2) ->
     ratio = _number(stop, "phase2_bound_claim_ratio", maximum=1.0)
     _require(ratio > 0, "tutor_pipeline.stop.phase2_bound_claim_ratio must be in (0, 1]")
     unused = tuple(tutor.get("unused_provenance_fields") or ())
-    if schema_version >= 3:
+    if schema_version >= 4:
+        # The list describes the package's entry schema (tutor_pipeline.ledger.entry_schema), as in v1 to v3: package v4's,
+        # ledger-entry-v3, fills every provenance field (plan 7.4). A ledger-entry-v2 record written under v4 with
+        # MODEL_GATEWAY off keeps the three Phase 5 fields null, as a v1 record under v3 kept v1_3_checker_model_id null.
+        _require(unused == (), "tutor_pipeline.unused_provenance_fields must be empty in package v4 (its entry schema, ledger-entry-v3, fills every provenance field)")
+        _require(ledger.get("legacy_entry_schema") == "ledger-entry-v1", "tutor_pipeline.ledger.legacy_entry_schema must be 'ledger-entry-v1'")
+        _require(ledger.get("entry_schemas") == list(LEDGER_ENTRY_SCHEMAS_V4),
+                 "tutor_pipeline.ledger.entry_schemas must be [ledger-entry-v1, ledger-entry-v2, ledger-entry-v3]")
+    elif schema_version >= 3:
         # ledger.entry_schema is compared with the LedgerEntryV2 contract by package_check, as every rule id is.
         _require(unused == UNUSED_PROVENANCE_FIELDS_V3, "tutor_pipeline.unused_provenance_fields must name the three Phase 5 provenance fields")
         _require(ledger.get("legacy_entry_schema") == "ledger-entry-v1", "tutor_pipeline.ledger.legacy_entry_schema must be 'ledger-entry-v1'")
@@ -781,6 +808,9 @@ def _parse_flag_policy(raw: Mapping[str, Any], *, schema_version: int = 2) -> Fl
         authority = policy.get("authority")
         _require(isinstance(authority, str) and all(name in authority for name in ("PD-10", "DI-37", "PD-19", "DI-55")),
                  "flag_policy.authority must name PD-10 (DI-37) and PD-19 (DI-55): it holds the v1_pipeline defaults")
+    if schema_version >= 4:
+        _require(all(name in str(policy.get("authority")) for name in ("PD-28", "DI-76")),
+                 "flag_policy.authority must name PD-28 (DI-76): it holds the model_gateway defaults")
     two_pass = _mapping(policy, "two_pass_tutor")
     _require(two_pass.get("values") == ["off", "shadow", "on"], "flag_policy.two_pass_tutor.values must be [off, shadow, on]")
     _require(two_pass.get("default_elsewhere") == "off", "flag_policy.two_pass_tutor.default_elsewhere must be 'off' (freeze, D-05)")
@@ -798,14 +828,354 @@ def _parse_flag_policy(raw: Mapping[str, Any], *, schema_version: int = 2) -> Fl
         _require(isinstance(evidence, str) and bool(evidence.strip()), "flag_policy.phase4_exit_passed true needs a phase4_exit_evidence string")
     else:
         _require(evidence is None or isinstance(evidence, str), "flag_policy.phase4_exit_evidence must be null or a string")
-    return FlagPolicy(phase4_exit_passed=passed, phase4_exit_evidence=evidence)
+    if schema_version < 4:
+        return FlagPolicy(phase4_exit_passed=passed, phase4_exit_evidence=evidence)
+    gateway = _mapping(policy, "model_gateway")
+    _require(gateway.get("values") == ["off", "shadow", "on"], "flag_policy.model_gateway.values must be [off, shadow, on]")
+    _require(gateway.get("default_development") == MODEL_GATEWAY_DEFAULT_DEVELOPMENT,
+             f"flag_policy.model_gateway.default_development must be the code's default ({MODEL_GATEWAY_DEFAULT_DEVELOPMENT!r})")
+    _require(gateway.get("default_elsewhere") == MODEL_GATEWAY_DEFAULT_ELSEWHERE,
+             f"flag_policy.model_gateway.default_elsewhere must be the code's default ({MODEL_GATEWAY_DEFAULT_ELSEWHERE!r})")
+    _require(gateway.get("on_requires") == "phase5_exit_passed" and gateway.get("on_requires_v1") == "enforce",
+             "flag_policy.model_gateway.on_requires must be 'phase5_exit_passed' and on_requires_v1 'enforce'")
+    passed5 = policy.get("phase5_exit_passed")
+    _require(isinstance(passed5, bool), "flag_policy.phase5_exit_passed must be a boolean")
+    evidence5 = policy.get("phase5_exit_evidence")
+    if passed5:
+        _require(isinstance(evidence5, str) and bool(evidence5.strip()), "flag_policy.phase5_exit_passed true needs a phase5_exit_evidence string")
+    else:
+        _require(evidence5 is None or isinstance(evidence5, str), "flag_policy.phase5_exit_evidence must be null or a string")
+    return FlagPolicy(phase4_exit_passed=passed, phase4_exit_evidence=evidence, phase5_exit_passed=passed5, phase5_exit_evidence=evidence5)
+
+
+# ------------------------------------------------------------------------------------------------ package v4 (Phase 5)
+
+GATEWAY_STOPS = ("budget_breach", "payload_violation", "secret_in_logs")
+TOOL_SERVERS = ("analytics", "citation", "corpus", "learner", "verification")
+
+
+@dataclass(frozen=True)
+class GatewayParams:
+    """Package v4 gateway (Phase 5 spec 5.1): the adapter registry per environment and the gateway's rules. Every value
+    is provisional (PD-22, PD-24, PD-26, PD-27; DI-76)."""
+
+    version: str
+    registries: Mapping[str, tuple[Any, ...]]   # name -> AdapterSpec tuple, registry order
+    pin_rule: str
+    egress_setting: str
+    daily_units: Mapping[str, int]
+    alert_share: tuple[int, int]
+    cache_key_rule: str
+    cache_max_plans: int
+    cache_max_verdicts: int
+    payload_rule: str
+    stop_on: tuple[str, ...]
+    retired_settings: tuple[str, ...]
+    # Where the daily budget, the stop and the evidential cache live: "database", shared by every instance
+    # (app.gateway.controls, v2_panel.cache.DatabaseEvidentialCache; plan 5.7, 5.10, L, 7.5).
+    budget_scope: str = "database"
+    stop_scope: str = "database"
+    cache_scope: str = "database"
+    # The embedding egress's parameters (gateway.embeddings, app.gateway.registry.EmbeddingSpec; PD-26).
+    embeddings: Any = None
+
+
+@dataclass(frozen=True)
+class V2Params:
+    """Package v4 v2 (Phase 5 spec 5.1): the V2 panel's parameters, provisional (PD-23, PD-25, PD-29, PD-30)."""
+
+    version: str
+    max_members: int
+    generator_families: Mapping[str, str]
+    verifier_prompt_id: str
+    verifier_prompt_hash: str
+    alignment_prompt_id: str
+    alignment_prompt_hash: str
+    tier_rule: str
+    assessment_tier: int
+    default_tier: int
+    expert_mode: Any
+    matrix: Mapping[str, Mapping[int, str]]
+    tier3_threshold: tuple[int, int]
+    panel_weights_version: str
+    routing_table_version: str
+    max_cycles: int
+    critical_registry: tuple[str, ...]
+    pre_verified_source: Any
+    banners: Mapping[str, str]
+    alignment_rule: str
+
+
+@dataclass(frozen=True)
+class ToolParams:
+    version: str
+    transport: str
+    servers: tuple[str, ...]
+    path: str
+    sha256: str
+
+
+def _bool_state(decisions: Mapping[str, Any], name: str, open_states: tuple[str, ...]) -> bool:
+    entry = decisions.get(name)
+    return isinstance(entry, dict) and entry.get("state") in open_states
+
+
+def _parse_adapter(raw: Any, registry: str, *, providers_open: bool) -> Any:
+    from app.gateway.adapters import WIRED_FAKE_RULES
+    from app.gateway.pinning import pin_problem
+    from app.gateway.registry import AUTH_HEADERS, CAPABILITIES, IDENTIFIER, MAX_RETRIES, MAX_TOKENS, TIMEOUT_MS, AdapterSpec, Caps
+
+    _require(isinstance(raw, dict), f"gateway.registries.{registry} entries must be objects")
+    adapter_id = raw.get("adapter_id")
+    _require(isinstance(adapter_id, str) and re.fullmatch(IDENTIFIER, adapter_id) is not None,
+             f"gateway.registries.{registry}: adapter_id must match {IDENTIFIER}")
+    family = raw.get("family")
+    _require(isinstance(family, str) and re.fullmatch(IDENTIFIER, family) is not None, f"gateway adapter {adapter_id}: family must match {IDENTIFIER}")
+    model_id = raw.get("model_id")
+    _require(isinstance(model_id, str) and bool(model_id.strip()), f"gateway adapter {adapter_id}: model_id must be a non-empty string")
+    version = raw.get("model_version")
+    problem = pin_problem(model_id, version if isinstance(version, str) else None)
+    _require(problem is None, f"gateway adapter {adapter_id} is {problem} (AC-5-10; D-07 option (a), PD-24)")
+    provider = raw.get("provider")
+    _require(isinstance(provider, str) and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", provider) is not None,
+             f"gateway adapter {adapter_id}: provider must be a lowercase name")
+    capabilities = raw.get("capabilities")
+    _require(isinstance(capabilities, list) and bool(capabilities) and set(capabilities) <= set(CAPABILITIES) and len(set(capabilities)) == len(capabilities),
+             f"gateway adapter {adapter_id}: capabilities must be generate and/or verify")
+    caps_raw = _mapping(raw, "caps")
+    caps = Caps(max_tokens=_integer_in(caps_raw, "max_tokens", *MAX_TOKENS), timeout_ms=_integer_in(caps_raw, "timeout_ms", *TIMEOUT_MS),
+                max_retries=_integer_in(caps_raw, "max_retries", *MAX_RETRIES))
+    cost = _integer(raw, "cost_units_per_call", minimum=0)
+    fake = raw.get("fake")
+    fake_rule = fake.get("rule") if isinstance(fake, dict) else None
+    if provider == "fake":
+        _require(fake_rule in WIRED_FAKE_RULES, f"gateway adapter {adapter_id}: a fake member names a wired fake rule")
+        _require(registry == "development", f"gateway adapter {adapter_id}: fake members are registered in development only")
+        _require(all(raw.get(key) is None for key in ("endpoint", "auth_header", "secret_ref")),
+                 f"gateway adapter {adapter_id}: a fake member has no endpoint, auth header or secret")
+    else:
+        _require(fake is None, f"gateway adapter {adapter_id}: only a fake member names a fake rule")
+        _require(not providers_open, f"gateway adapter {adapter_id}: no non-fake provider is registered while D-12, D-07 or Q-09 is open "
+                                     "or the Q-15 payload review is pending")
+    endpoint = raw.get("endpoint")
+    if endpoint is not None:
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(str(endpoint))
+        _require(parts.scheme == "https" and bool(parts.hostname) and not parts.query and not parts.fragment
+                 and not parts.username and not parts.password and "@" not in parts.netloc,
+                 f"gateway adapter {adapter_id}: the endpoint is https with no query, userinfo or fragment")
+    auth_header = raw.get("auth_header")
+    _require(auth_header is None or auth_header in AUTH_HEADERS, f"gateway adapter {adapter_id}: auth_header must be one of {AUTH_HEADERS}")
+    secret_ref = raw.get("secret_ref")
+    _require(secret_ref is None or (isinstance(secret_ref, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{1,127}", secret_ref) is not None),
+             f"gateway adapter {adapter_id}: secret_ref must be an upper-case environment variable name")
+    return AdapterSpec(adapter_id=adapter_id, family=family, provider=provider, model_id=model_id, model_version=str(version),
+                       capabilities=tuple(capabilities), caps=caps, cost_units_per_call=cost, fake_rule=fake_rule,
+                       endpoint=endpoint, auth_header=auth_header, secret_ref=secret_ref)
+
+
+def _parse_embeddings(gateway: Mapping[str, Any], *, providers_open: bool) -> Any:
+    """Package v4 gateway.embeddings (Phase 5 spec 4.19, 5.2; PD-26): the embedding egress's model, caps and cost. A
+    model is named only as a pinned pair, and an unpinned one stops the load and with it start-up (AC-5-10); none is
+    named while D-12, D-07 or Q-09 is open or the Q-15 review is pending."""
+    from app.gateway.embeddings import EMBEDDINGS_PROVIDER, EMBEDDINGS_SECRET_REF
+    from app.gateway.pinning import pin_problem
+    from app.gateway.registry import EMBEDDING_MAX_INPUT_CHARS, EMBEDDING_MAX_ITEMS, MAX_RETRIES, TIMEOUT_MS, EmbeddingCaps, EmbeddingSpec
+
+    raw = _mapping(gateway, "embeddings")
+    _require(raw.get("provisional") is True and raw.get("record") == "PD-26", "gateway.embeddings must be marked provisional: true, record PD-26")
+    _require(raw.get("provider") == EMBEDDINGS_PROVIDER and raw.get("secret_ref") == EMBEDDINGS_SECRET_REF,
+             f"gateway.embeddings names provider {EMBEDDINGS_PROVIDER} and secret_ref {EMBEDDINGS_SECRET_REF}")
+    _require("model_id" in raw and "model_version" in raw, "gateway.embeddings names model_id and model_version (null when no model is chosen)")
+    model_id, version = raw["model_id"], raw["model_version"]
+    if model_id is not None or version is not None:
+        _require(isinstance(model_id, str) and bool(model_id.strip()), "gateway.embeddings.model_id must be a non-empty string or null")
+        problem = pin_problem(model_id, version if isinstance(version, str) else None)
+        _require(problem is None, f"gateway.embeddings is {problem} (AC-5-10; D-07 option (a), PD-24)")
+        _require(not providers_open, "gateway.embeddings names no model while D-12, D-07 or Q-09 is open or the Q-15 payload review is pending")
+    caps = _mapping(raw, "caps")
+    return EmbeddingSpec(
+        provider=EMBEDDINGS_PROVIDER, secret_ref=EMBEDDINGS_SECRET_REF, model_id=model_id, model_version=version,
+        caps=EmbeddingCaps(max_items=_integer_in(caps, "max_items", *EMBEDDING_MAX_ITEMS),
+                           max_input_chars=_integer_in(caps, "max_input_chars", *EMBEDDING_MAX_INPUT_CHARS),
+                           timeout_ms=_integer_in(caps, "timeout_ms", *TIMEOUT_MS), max_retries=_integer_in(caps, "max_retries", *MAX_RETRIES)),
+        cost_units_per_item=_integer(raw, "cost_units_per_item", minimum=1),
+    )
+
+
+def _parse_gateway(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], tutor: TutorPipelineParams) -> GatewayParams:
+    """Package v4 gateway (Phase 5 spec 5.2). Every refusal is structural: an unpinned identifier always stops the load,
+    and with it start-up (AC-5-10)."""
+    from app.gateway.pinning import PIN_RULE, PINNED_VERSION_TEXT, REFUSED_TOKENS_TEXT, REFUSED_WITHIN_TOKEN_TEXT
+    from app.gateway.registry import REGISTRY_NAMES
+    from app.gateway.registry import providers_open as gates_open
+    from app.gateway.retired import RETIRED_PROVIDER_SETTINGS
+
+    gateway = _mapping(raw, "gateway")
+    _require(gateway.get("provisional") is True, "gateway must be marked provisional: true (PD-22, PD-24, PD-26, PD-27)")
+    pinning = _mapping(gateway, "pinning")
+    _require(pinning.get("rule") == PIN_RULE, f"gateway.pinning.rule must be '{PIN_RULE}'")
+    for name, code in (("refused_tokens", REFUSED_TOKENS_TEXT), ("refused_within_token", REFUSED_WITHIN_TOKEN_TEXT),
+                       ("version_pattern", PINNED_VERSION_TEXT)):
+        _require(pinning.get(name) == code, f"gateway.pinning.{name} must be the code's pinning rule text (pinned-version-v1)")
+    egress = _mapping(gateway, "egress")
+    _require(egress.get("setting") == "MODEL_EGRESS_PROVIDERS" and egress.get("default") == [] and egress.get("provisional") is True,
+             "gateway.egress names MODEL_EGRESS_PROVIDERS with default [] and is provisional (D-23, PD-22)")
+    # One rule for every non-fake member and the embedding egress (app.gateway.registry.providers_open).
+    providers_open = gates_open(decisions)
+    for name in ("D-07", "Q-09", "D-23", "D-29", "D-25", "A-15", "Q-15"):
+        _require(isinstance(decisions.get(name), dict), f"owner_decisions.{name} must be an object in package v4")
+    registries_raw = _mapping(gateway, "registries")
+    _require(set(registries_raw) <= set(REGISTRY_NAMES) and "default" in registries_raw,
+             f"gateway.registries names only {', '.join(REGISTRY_NAMES)}, default included")
+    registries: dict[str, tuple[Any, ...]] = {}
+    seen: set[str] = set()
+    for name, members in registries_raw.items():
+        _require(isinstance(members, list), f"gateway.registries.{name} must be a list")
+        if name != "development":
+            _require(not (providers_open and members),
+                     f"gateway.registries.{name} must be empty while D-12, D-07 or Q-09 is open or the Q-15 payload review is pending")
+        specs = []
+        for entry in members:
+            spec = _parse_adapter(entry, name, providers_open=providers_open)
+            _require(spec.adapter_id not in seen, f"gateway adapter {spec.adapter_id} is listed twice")
+            seen.add(spec.adapter_id)
+            if "verify" in spec.capabilities:
+                _require(spec.caps.timeout_ms * (1 + spec.caps.max_retries) <= tutor.shadow_budget_ms,
+                         f"gateway adapter {spec.adapter_id}: timeout_ms * (1 + max_retries) must fit tutor_pipeline.budgets.shadow_ms")
+            specs.append(spec)
+        registries[name] = tuple(specs)
+    budgets = _mapping(gateway, "budgets")
+    _require(budgets.get("provisional") is True, "gateway.budgets must be marked provisional: true (PD-26)")
+    units_raw = _mapping(budgets, "daily_units")
+    _require(set(units_raw) == set(registries_raw), "gateway.budgets.daily_units names every registry")
+    daily_units = {name: _integer(units_raw, name, minimum=0) for name in units_raw}
+    if _bool_state(decisions, "A-15", ("open",)):
+        _require(all(units == 0 for name, units in daily_units.items() if name != "development"),
+                 "gateway.budgets.daily_units outside development must be 0 while A-15 is open (hold H9)")
+    share = _mapping(budgets, "alert_share")
+    _require(share.get("numerator") == 4 and share.get("denominator") == 5, "gateway.budgets.alert_share must be 4/5 (plan Phase 5 I: alert at 80%)")
+    _require(budgets.get("scope") == "database",
+             "gateway.budgets.scope must be 'database': every instance spends from one daily budget (plan Phase 5 task 5.10, a hard stop)")
+    cache = _mapping(gateway, "cache")
+    _require(cache.get("provisional") is True and cache.get("scope") == "database",
+             "gateway.cache is shared through the application database and provisional (plan 5.7, 7.5; PD-27)")
+    bounds = _mapping(cache, "max_entries")
+    policy = _mapping(gateway, "payload_policy")
+    _require(policy.get("on_violation") == "stop", "gateway.payload_policy.on_violation must be 'stop' (plan Phase 5 L)")
+    stop = _mapping(gateway, "stop")
+    _require(sorted(stop.get("on") or []) == list(GATEWAY_STOPS), "gateway.stop.on must name budget_breach, payload_violation and secret_in_logs")
+    _require(stop.get("scope") == "database" and stop.get("clear") == "operator",
+             "gateway.stop is shared through the application database and cleared by an operator only (plan Phase 5 L; PD-28)")
+    retired = tuple(gateway.get("retired_settings") or ())
+    _require(retired == RETIRED_PROVIDER_SETTINGS, "gateway.retired_settings must be the code's RETIRED_PROVIDER_SETTINGS")
+    if _bool_state(decisions, "Q-09", ("unresolved",)):
+        _require(gateway.get("terms", "missing") is None, "gateway.terms must be null while Q-09 is unresolved (no terms are recorded)")
+    return GatewayParams(
+        version=_text(gateway, "version"), registries=registries, pin_rule=PIN_RULE, egress_setting="MODEL_EGRESS_PROVIDERS",
+        daily_units=daily_units, alert_share=(4, 5), cache_key_rule=_text(cache, "key_rule"),
+        cache_max_plans=_integer_in(bounds, "claim_plan", 1, 100000), cache_max_verdicts=_integer_in(bounds, "verdict", 1, 100000),
+        payload_rule=_text(policy, "rule"), stop_on=GATEWAY_STOPS, retired_settings=retired,
+        budget_scope="database", stop_scope="database", cache_scope="database",
+        embeddings=_parse_embeddings(gateway, providers_open=providers_open),
+    )
+
+
+def _parse_v2(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], gateway: GatewayParams) -> V2Params:
+    """Package v4 v2 (Phase 5 spec 5.2). Every refusal is structural."""
+    from app.services.v2_panel.rules import (
+        BANNER_IDS,
+        CORRECTION_RULES,
+        MAX_CORRECTION_CYCLES,
+        MAX_MEMBERS,
+        ROUTING_TABLE_VERSION,
+        ROUTING_TABLES,
+        TIER3_THRESHOLD,
+        matrix_from_package,
+    )
+
+    v2 = _mapping(raw, "v2")
+    _require(v2.get("provisional") is True, "v2 must be marked provisional: true (PD-23, PD-25, PD-29, PD-30)")
+    panel = _mapping(v2, "panel")
+    _require(panel.get("max_members") == MAX_MEMBERS, f"v2.panel.max_members must be {MAX_MEMBERS} (E-81 N = 3)")
+    families_raw = _mapping(v2, "generator_families")
+    _require(set(WIRED_GENERATORS) <= set(families_raw), "v2.generator_families must name every wired generator")
+    registered = {spec.family for specs in gateway.registries.values() for spec in specs}
+    for generator, family in families_raw.items():
+        _require(isinstance(family, str) and bool(family) and family not in registered,
+                 f"v2.generator_families.{generator} names a family no registry member has")
+    prompt = _mapping(v2, "prompt")
+    tiers = _mapping(v2, "tiers")
+    _require(tiers.get("provisional") is True, "v2.tiers must be marked provisional: true (PD-25)")
+    _require(tiers.get("assessment_context") == 1, "v2.tiers.assessment_context must be 1")
+    default_tier = _integer_in(tiers, "default", 1, 3)
+    voting = _mapping(v2, "voting")
+    _require(voting.get("provisional") is True, "v2.voting must be marked provisional: true (PD-23, PD-25)")
+    version = _text(v2, "routing_table_version")
+    _require(version in ROUTING_TABLES, "v2.routing_table_version names no routing table the code holds")
+    if _bool_state(decisions, "D-29", ("open",)):
+        _require(version == ROUTING_TABLE_VERSION, f"v2.routing_table_version must be '{ROUTING_TABLE_VERSION}' while D-29 is open (option (a), PD-23)")
+    matrix_raw = _mapping(voting, "matrix")
+    try:
+        matrix = matrix_from_package(matrix_raw)
+    except (TypeError, ValueError, AttributeError):
+        matrix = None
+    _require(matrix == ROUTING_TABLES[version], "v2.voting.matrix must be the routing table its routing_table_version names")
+    threshold = _mapping(voting, "tier3_threshold")
+    numerator, denominator = threshold.get("numerator"), threshold.get("denominator")
+    _require(all(isinstance(value, int) and not isinstance(value, bool) for value in (numerator, denominator)) and 0 < numerator <= denominator,
+             "v2.voting.tier3_threshold must hold integers with 0 < numerator <= denominator")
+    if _bool_state(decisions, "Q-22", ("unresolved",)):
+        # The record rule re-tallies every recorded claim with this value (PD-25), so the package cannot hold another.
+        _require((numerator, denominator) == TIER3_THRESHOLD,
+                 f"v2.voting.tier3_threshold must be {TIER3_THRESHOLD[0]}/{TIER3_THRESHOLD[1]} while Q-22 is unresolved (PD-25)")
+    correction = _mapping(v2, "correction")
+    _require(correction.get("provisional") is True, "v2.correction must be marked provisional: true (PD-29)")
+    _require(correction.get("max_cycles") == MAX_CORRECTION_CYCLES, f"v2.correction.max_cycles must be {MAX_CORRECTION_CYCLES} (plan 5.8)")
+    for name, rule in CORRECTION_RULES.items():
+        _require(correction.get(name) == rule, f"v2.correction.{name} must be '{rule}', the code's correction rule (plan 5.8)")
+    critical = tuple(correction.get("critical_registry") or ())
+    if _bool_state(decisions, "D-25", ("open",)):
+        _require(not critical, "v2.correction.critical_registry must be empty while D-25 is open (PD-29)")
+    degraded = _mapping(v2, "degraded")
+    _require(degraded.get("provisional") is True, "v2.degraded must be marked provisional: true (PD-30)")
+    _require(degraded.get("pre_verified_source", "missing") is None, "v2.degraded.pre_verified_source must be null: no pre-verified store exists (DI-83)")
+    banners = _mapping(degraded, "banners")
+    _require(tuple(sorted(banners)) == tuple(sorted(BANNER_IDS)) and all(isinstance(text, str) and text.strip() for text in banners.values()),
+             "v2.degraded.banners must hold a text for each banner id")
+    alignment = _mapping(v2, "alignment")
+    _require(alignment.get("provisional") is True, "v2.alignment must be marked provisional: true (PD-25)")
+    return V2Params(
+        version=_text(v2, "version"), max_members=MAX_MEMBERS, generator_families=dict(families_raw),
+        verifier_prompt_id=_text(prompt, "verifier_prompt_id"), verifier_prompt_hash=_hex64(prompt, "verifier_prompt_hash"),
+        alignment_prompt_id=_text(prompt, "alignment_prompt_id"), alignment_prompt_hash=_hex64(prompt, "alignment_prompt_hash"),
+        tier_rule=_text(tiers, "rule"), assessment_tier=1, default_tier=default_tier, expert_mode=tiers.get("expert_mode"),
+        matrix=matrix, tier3_threshold=(int(numerator), int(denominator)), panel_weights_version=_text(v2, "panel_weights_version"),
+        routing_table_version=version, max_cycles=MAX_CORRECTION_CYCLES, critical_registry=critical, pre_verified_source=None,
+        banners=dict(banners), alignment_rule=_text(alignment, "rule"),
+    )
+
+
+def _parse_tools(raw: Mapping[str, Any]) -> ToolParams:
+    tools = _mapping(raw, "tools")
+    # Plan 7.4: "tool names are UNVERIFIED / REQUIRES ACCESS [Assumption A-18]": the names and the transport are this
+    # phase's own (PD-31; the paper's names are DI-86).
+    _require(tools.get("provisional") is True, "tools must be marked provisional: true (A-18: the tool names are UNVERIFIED; PD-31)")
+    _require(tools.get("version") == "mcp-tools-v1", "tools.version must be 'mcp-tools-v1'")
+    _require(tuple(tools.get("servers") or ()) == TOOL_SERVERS, f"tools.servers must be {', '.join(TOOL_SERVERS)}")
+    _require(tools.get("transport") == "in-process", "tools.transport must be 'in-process'")
+    return ToolParams(version="mcp-tools-v1", transport="in-process", servers=TOOL_SERVERS,
+                      path=_relative_path(tools.get("path"), "tools.path"), sha256=_hex64(tools, "sha256"))
+
+
 
 
 def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bool) -> ConfigPackage:
     _require(isinstance(raw, dict), "the file must hold a JSON object")
     _require(raw.get("package") == PACKAGE_NAME, f"'package' must be '{PACKAGE_NAME}'")
     schema_version = raw.get("schema_version")
-    _require(schema_version in (1, 2, 3) and not isinstance(schema_version, bool), "'schema_version' must be 1, 2 or 3")
+    _require(schema_version in (1, 2, 3, 4) and not isinstance(schema_version, bool), "'schema_version' must be 1, 2, 3 or 4")
     package_version = _text(raw, "package_version")
 
     identity = _mapping(raw, "span_identity")
@@ -919,6 +1289,9 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
     flag_policy = FlagPolicy(False, None)
     supersedes: Mapping[str, Any] | None = None
     v1_params: V1Params | None = None
+    gateway_params: GatewayParams | None = None
+    v2_params: V2Params | None = None
+    tool_params: ToolParams | None = None
     if schema_version >= 2:
         supersedes = _mapping(raw, "supersedes")
         _text(supersedes, "package_version")
@@ -929,6 +1302,10 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
             v1_params = _parse_v1(raw, tutor=tutor_pipeline)
             _v1_owner_decisions(decisions, v1_params)
             _q22_provisional_values(raw, decisions)
+        if schema_version >= 4:
+            gateway_params = _parse_gateway(raw, decisions=decisions, tutor=tutor_pipeline)
+            v2_params = _parse_v2(raw, decisions=decisions, gateway=gateway_params)
+            tool_params = _parse_tools(raw)
         d12 = decisions.get("D-12")
         _require(isinstance(d12, dict), "owner_decisions.D-12 must be an object in package v2")
         if d12.get("state") == "open":
@@ -972,6 +1349,9 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
         flag_policy=flag_policy,
         supersedes=supersedes,
         v1=v1_params,
+        gateway=gateway_params,
+        v2=v2_params,
+        tools=tool_params,
     )
 
 

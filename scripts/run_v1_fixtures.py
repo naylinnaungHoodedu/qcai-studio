@@ -7,8 +7,9 @@ Run: python scripts/run_v1_fixtures.py --write docs/evaluation/phase4/v1_fixture
 The fixture file (docs/evaluation/phase4/v1_adversarial_fixtures_v1.json) holds public-corpus cases only, never ULQS
 (plan H, E-95: anything under lqs/ is refused); it holds no corpus text: the sentences an attack changes are taken from
 the store at run time, and its own sentences are synthetic. Each case is hashed (canonical sha256) and the set hash is
-pinned in configuration package v3 (v1.fixtures). The runner builds the all-public-approved store (a temporary
-manifest approving every public-plane, bound item) in development with V1_PIPELINE=enforce, and runs every case in
+pinned in the shipped configuration package (v1.fixtures). The runner builds the all-public-approved store (a temporary
+manifest approving every public-plane, bound item) in development with V1_PIPELINE=enforce and MODEL_GATEWAY=off (the
+report measures V1 alone; scripts/run_v2_fixtures.py measures V2), and runs every case in
 two checker configurations:
   production          the NullChecker (D-21 none): V1.3 flags every claim, so nothing is delivered (D-20)
   deterministic_only  a fake always-SUPPORTED checker: what the deterministic checks catch alone
@@ -373,9 +374,9 @@ def _approved_manifest() -> Path:
 def gate_environment(gate: str) -> Gate:
     manifest = _approved_manifest()
     settings = Settings(environment="development", enforce_corpus_governance=True, corpus_manifest_path=str(manifest), retrieval_gate=gate,
-                        two_pass_tutor="shadow", v1_pipeline="enforce")
+                        two_pass_tutor="shadow", v1_pipeline="enforce", model_gateway="off")
     off = Settings(environment="development", enforce_corpus_governance=True, corpus_manifest_path=str(manifest), retrieval_gate=gate,
-                   two_pass_tutor="shadow", v1_pipeline="off")
+                   two_pass_tutor="shadow", v1_pipeline="off", model_gateway="off")
     if gate not in _STORES:
         _STORES[gate] = CourseStore(settings)
     return Gate(gate=gate, settings=settings, off_settings=off, store=_STORES[gate])

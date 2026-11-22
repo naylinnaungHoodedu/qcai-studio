@@ -309,7 +309,7 @@ def test_evidence_is_the_lexical_search_never_semantic_and_records_no_sli():
     store = get_course_store()
     lexical = RetrievalEngine(store, Settings())
     calls: list[str] = []
-    switched = Settings(semantic_retrieval_enabled=True, openai_api_key="test-key", pinecone_api_key="test-key", pinecone_index="test-index")
+    switched = Settings(semantic_retrieval_enabled=True, pinecone_api_key="test-key", pinecone_index="test-index")
     hybrid = RetrievalEngine(store, switched)
     hybrid._semantic_backend = SimpleNamespace(enabled=True, aligned=True, search=lambda *args, **kwargs: calls.append("semantic") or [])
     assert hybrid.semantic_enabled is True

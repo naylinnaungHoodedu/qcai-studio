@@ -28,6 +28,14 @@ jobs:
       - run: python scripts/config_package.py --check --path apps/api/app/config_package/v1.json
       # Phase 4: configuration package v2 stays readable for one release (DI-63).
       - run: python scripts/config_package.py --check --path apps/api/app/config_package/v2.json
+      # Phase 5: configuration package v3 stays readable for one release (DI-84).
+      - run: python scripts/config_package.py --check --path apps/api/app/config_package/v3.json
+      # Plan Phase 5 P/J: F-1 (ledger verdicts for 100% of fixture responses) and fault injection, one to three
+      # providers down, on development fakes (fixture measurements, not E2 results). Exit 3 is an F-1 or matrix stop;
+      # exit 5 a V2 call after a V1 fail or a delivery without a passing vote.
+      - run: python scripts/run_v2_fixtures.py --check docs/evaluation/phase5/v2_fixture_report_v1.json
+      # E12: the shipped non-development learner answer bodies equal Phase 4's (sha256 only; no corpus text committed).
+      - run: python scripts/capture_public_payloads.py --check apps/api/tests/data/phase4_public_payloads_v1.json
       # Plan Phase 4 F/H/K: the hashed adversarial fixture set and its report (fixture measurements, not research
       # results). Exit 3 is a plan L stop (answer-rate floor, V1 composition, or V1 p95 budget); exit 5 an adversarial
       # case delivered.

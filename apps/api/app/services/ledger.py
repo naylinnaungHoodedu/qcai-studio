@@ -17,7 +17,9 @@ shown the record and only a reviewer reads it. It is not unlinkable while the as
 qa_interactions row holds the same answer (rendered_text_sha256 is its sha256), the same cited spans and a time a
 few milliseconds earlier, so anyone who can read both tables can match the two (spec 18.6 D10). Erasure, or guest
 retention, deletes that row, and the record can then no longer be tied to anyone. Every shadow run of the two-pass
-pipeline is recorded with delivery "shadow" and a shadow- id naming the turn it shadowed. "delivered" is Phase 4's.
+pipeline is recorded with delivery "shadow" and a shadow- id naming the turn it shadowed. "delivered" waits for the
+delivered two-pass path (DI-59). A shadow record is a ledger-entry-v1 (V1 off), a ledger-entry-v2 (the V1
+verification) or a ledger-entry-v3 (the V2 panel's verdicts beside it; Phase 5).
 
 A legacy record's abstention_reason says why the delivery abstained (plan I "abstention by reason"; spec 18.8 F1):
 the retrieval gate's own reason when the gate returned nothing (no_query_terms, no_match, insufficient_coverage,
@@ -33,7 +35,7 @@ long that takes while the process keeps its CPU, and ledger_coverage counts a tu
 than that horizon (spec 18.12 J5, J6).
 
 Budgets, attempts and the appender's size come from the shipped configuration package (tutor_pipeline.budgets; PD-11;
-v2 with the Phase 3 release, v3 from the Phase 4 release, with the same values).
+v2 with the Phase 3 release, v3 from the Phase 4 release, v4 from the Phase 5 release, with the same values).
 TUTOR_LEDGER_APPEND_BUDGET_MS and TWO_PASS_SHADOW_BUDGET_MS override the two budgets only; every record stamps
 the budgets in force and which of them differ from the package (versions.budgets), so a record names its budgets
 whether or not they were overridden (R-46), and an override outside development logs a config.override event.
@@ -108,7 +110,7 @@ RECORD_HASH_RULE = "sha256(canonical{chain,seq,created_at,prev_hash,entry_sha256
 # retried within the remaining budget like an IntegrityError (spec 18.8 F8).
 RETRYABLE_SQLSTATES = frozenset({"40P01", "40001"})
 # The Alembic revision this code expects (tested against the single head); stamped on every record (plan 13.5).
-SCHEMA_REVISION = "20261119_phase3_response_ledger"
+SCHEMA_REVISION = "20261122_phase5_gateway_controls"
 # The legacy contained path's ids and rule hash, stamped on every legacy record (the only records production writes).
 # Configuration package v2 pins all four (tutor_pipeline.legacy) and package_check requires them to agree, so the
 # provenance audit (ledger_provenance) has a pinned reference value (DI-49).
@@ -617,10 +619,12 @@ def ledger_coverage(db: Session, since: datetime, *, now: datetime | None = None
     }
 
 
-def _provenance_problems(seq: int, entry: dict[str, Any], params: TutorPipelineParams, v1: Any) -> list[str]:
-    """What in one record's provenance differs from the package's pins (ledger_provenance). A two-pass
-    ledger-entry-v2 record must also name the package's V1.3 checker and V1 rules hash (Phase 4 spec 7.9); v1 is the
-    package's v1 block (None for a package without one), passed by every caller so that no call skips the check."""
+def _provenance_problems(seq: int, entry: dict[str, Any], params: TutorPipelineParams, v1: Any, phase5: Any) -> list[str]:
+    """What in one record's provenance differs from the package's pins (ledger_provenance). A two-pass ledger-entry-v2
+    or ledger-entry-v3 record must also name the package's V1.3 checker and V1 rules hash (Phase 4 spec 7.9); a v3
+    record also its tool contract, panel weights and routing table versions and its V2 verifier prompt hash (Phase 5
+    spec 7.3). v1 is the package's v1 block (None for a package without one) and phase5 its (v2, tools) blocks (None for
+    a package without them), each passed by every caller so that no call skips a check."""
     provenance = entry.get("provenance") if isinstance(entry.get("provenance"), dict) else {}
     versions = entry.get("versions") if isinstance(entry.get("versions"), dict) else {}
     pipeline = entry.get("pipeline")
@@ -644,7 +648,7 @@ def _provenance_problems(seq: int, entry: dict[str, Any], params: TutorPipelineP
         }
         if versions.get("generator_id") not in params.generators_allowed:
             problems.append(f"seq {seq} versions.generator_id is not a generator the package allows")
-        if entry.get("entry_schema") == "ledger-entry-v2":
+        if entry.get("entry_schema") in ("ledger-entry-v2", "ledger-entry-v3"):
             verification = entry.get("verification") if isinstance(entry.get("verification"), dict) else {}
             policy = verification.get("policy") if isinstance(verification.get("policy"), dict) else {}
             if v1 is None:
@@ -652,6 +656,17 @@ def _provenance_problems(seq: int, entry: dict[str, Any], params: TutorPipelineP
             else:
                 expected["provenance.v1_3_checker_model_id"] = (provenance.get("v1_3_checker_model_id"), v1.checker_model_id)
                 expected["verification.policy.rules_hash"] = (policy.get("rules_hash"), v1.rules_hash)
+        if entry.get("entry_schema") == "ledger-entry-v3":
+            verification = entry.get("verification") if isinstance(entry.get("verification"), dict) else {}
+            block = verification.get("v2") if isinstance(verification.get("v2"), dict) else {}
+            if phase5 is None:
+                problems.append(f"seq {seq} is a V2-verified record but the package has no v2 or tools block")
+            else:
+                v2, tools = phase5
+                expected["provenance.tool_contract_version"] = (provenance.get("tool_contract_version"), tools.version)
+                expected["provenance.panel_weights_version"] = (provenance.get("panel_weights_version"), v2.panel_weights_version)
+                expected["provenance.routing_table_version"] = (provenance.get("routing_table_version"), v2.routing_table_version)
+                expected["verification.v2.verifier_prompt_hash"] = (block.get("verifier_prompt_hash"), v2.verifier_prompt_hash)
     else:
         return [f"seq {seq} names a pipeline the package does not pin"]
     for name, (recorded, pinned) in expected.items():
@@ -694,7 +709,7 @@ def ledger_provenance(db: Session, package: ConfigPackage) -> dict[str, Any]:
             other_package += 1
             continue
         checked += 1
-        problems.extend(_provenance_problems(seq, entry, params, package.v1))
+        problems.extend(_provenance_problems(seq, entry, params, package.v1, phase5_blocks(package)))
     return {
         "package_version": package.package_version,
         "package_sha256": package.sha256,
@@ -706,19 +721,24 @@ def ledger_provenance(db: Session, package: ConfigPackage) -> dict[str, Any]:
     }
 
 
+def phase5_blocks(package: ConfigPackage) -> Any:
+    """(v2, tools) of a package v4, else None: what _provenance_problems compares a ledger-entry-v3 record with."""
+    return (package.v2, package.tools) if package.v2 is not None and package.tools is not None else None
+
+
 def pending_v3_intents(db: Session, *, after_seq: int = 0, limit: int = 1000) -> list[dict[str, Any]]:
-    """The V3 queue intents on ledger-entry-v2 records (Phase 4 spec 7.9, conflict 28): one item per claim verdict with
-    a v3 intent, in seq order, after `after_seq`. Read-only; filtered on entry_schema in SQL and parsed in Python, so it
-    behaves alike on SQLite, psycopg and pg8000. Ids, claim ids and enumerations only, never text. Phase 6 consumes it
-    (DI-56)."""
+    """The V3 queue intents on ledger-entry-v2 and ledger-entry-v3 records (Phase 4 spec 7.9, conflict 28; Phase 5 spec
+    7.3): one item per claim verdict with a v3 intent, in seq order, after `after_seq`; a v3 record's items also carry
+    its escalation (X2 or null). Read-only; filtered on entry_schema in SQL and parsed in Python, so it behaves alike on
+    SQLite, psycopg and pg8000. Ids, claim ids and enumerations only, never text. Phase 6 consumes it (DI-56)."""
     rows = db.execute(
-        select(ResponseLedgerRecord.seq, ResponseLedgerRecord.response_id, ResponseLedgerRecord.entry)
-        .where(ResponseLedgerRecord.entry_schema == "ledger-entry-v2", ResponseLedgerRecord.seq > int(after_seq))
+        select(ResponseLedgerRecord.seq, ResponseLedgerRecord.response_id, ResponseLedgerRecord.entry_schema, ResponseLedgerRecord.entry)
+        .where(ResponseLedgerRecord.entry_schema.in_(("ledger-entry-v2", "ledger-entry-v3")), ResponseLedgerRecord.seq > int(after_seq))
         .order_by(ResponseLedgerRecord.seq)
         .limit(int(limit))
     )
     intents: list[dict[str, Any]] = []
-    for seq, response_id, raw in rows:
+    for seq, response_id, entry_schema, raw in rows:
         try:
             entry = json.loads(raw)
         except (TypeError, ValueError):
@@ -727,8 +747,11 @@ def pending_v3_intents(db: Session, *, after_seq: int = 0, limit: int = 1000) ->
         for verdict in (verification or {}).get("verdicts") or []:
             intent = verdict.get("v3") if isinstance(verdict, dict) else None
             if isinstance(intent, dict):
-                intents.append({"seq": int(seq), "response_id": response_id, "claim_id": verdict.get("claim_id"),
-                                "reasons": list(intent.get("reasons") or []), "trigger": intent.get("trigger")})
+                item = {"seq": int(seq), "response_id": response_id, "claim_id": verdict.get("claim_id"),
+                        "reasons": list(intent.get("reasons") or []), "trigger": intent.get("trigger")}
+                if entry_schema == "ledger-entry-v3":
+                    item["escalation"] = intent.get("escalation")
+                intents.append(item)
     return intents
 
 

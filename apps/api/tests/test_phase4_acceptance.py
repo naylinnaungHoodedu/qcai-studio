@@ -31,7 +31,7 @@ from app.api.routes import assistant as assistant_route
 from app.api.routes import ledger as ledger_route
 from app.api.routes import qa as qa_route
 from app.core.config import Settings
-from app.core.config_package import DEFAULT_PACKAGE_PATH, V2_PACKAGE_PATH, canonical_sha256, get_config_package, load_config_package
+from app.core.config_package import DEFAULT_PACKAGE_PATH, V2_PACKAGE_PATH, V3_PACKAGE_PATH, canonical_sha256, get_config_package, load_config_package
 from app.core.db import Base, SessionLocal
 from app.core.schema_upgrades import run_schema_upgrades
 from app.db_models import ResponseLedgerRecord
@@ -676,8 +676,10 @@ def test_plan_g_ledger_v2_is_additive_and_old_records_still_verify(isolated, tmp
 
     engine, factory = isolated
     ledger.append_ledger_entry(make_entry(), session_factory=factory, budget_ms=5000)
-    run(dev_pipeline(Settings(v1_pipeline="off"), session_factory=factory), MULTI_CLAIM, record=True)
-    shadow = run(dev_pipeline(Settings(v1_pipeline="shadow"), session_factory=factory), MULTI_CLAIM, record=True, legacy_decision="answer")
+    # MODEL_GATEWAY off: this test's subject is the v2 record beside v1 (Phase 5 spec 13.3; test_v2_ledger_records.py has v3).
+    run(dev_pipeline(Settings(v1_pipeline="off", model_gateway="off"), session_factory=factory), MULTI_CLAIM, record=True)
+    shadow = run(dev_pipeline(Settings(v1_pipeline="shadow", model_gateway="off"), session_factory=factory), MULTI_CLAIM, record=True,
+                 legacy_decision="answer")
     with factory() as db:
         schemas = [row.entry_schema for row in db.scalars(select(ResponseLedgerRecord).order_by(ResponseLedgerRecord.seq))]
         assert schemas == ["ledger-entry-v1", "ledger-entry-v1", "ledger-entry-v2"]
@@ -770,7 +772,8 @@ def test_plan_g_a_route_turn_s_shadow_record_compares_v1_with_the_decision_the_l
         assert body["decision"] == decision, body
         with SessionLocal() as db:
             rows = list(db.scalars(select(ResponseLedgerRecord).where(ResponseLedgerRecord.shadowed_response_id == body["turn_id"])))
-        assert len(rows) == 1 and rows[0].entry_schema == "ledger-entry-v2"
+        # The development default (MODEL_GATEWAY=shadow) records V2's shadow beside V1: a ledger-entry-v3 (Phase 5 spec 13.3).
+        assert len(rows) == 1 and rows[0].entry_schema == "ledger-entry-v3"
         verification = json.loads(rows[0].entry)["verification"]
         comparison = verification["comparison"]
         assert (comparison["legacy_decision"], comparison["agrees_legacy"]) == (decision, agrees), (path, decision)
@@ -939,7 +942,7 @@ def test_plan_i_ready_reports_package_v3_and_the_v1_fields_and_no_shadow_outcome
     from app.services.retrieval_metrics import snapshot as retrieval_slis
 
     body = client.get("/ready").json()
-    assert body["config_package_version"] == "3.0.0" and body["config_package_sha256"] == PACKAGE.sha256
+    assert body["config_package_version"] == PACKAGE.package_version and body["config_package_sha256"] == PACKAGE.sha256
     assert (body["v1_pipeline"], body["v1_pipeline_setting"]) == ("enforce", "enforce")
     v1 = body["v1"]
     assert v1 == {"version": V1.version, "rules_hash": V1.rules_hash, "checker": {"hosting": "none", "model_id": "none"},
@@ -1114,7 +1117,7 @@ def test_plan_h_and_ac_3_1_v1_checks_import_no_learner_module_and_hold_no_learne
     turn_id = response.json()["turn_id"]
     with SessionLocal() as db:
         rows = list(db.scalars(select(ResponseLedgerRecord).where(ResponseLedgerRecord.shadowed_response_id == turn_id)))
-    assert rows and rows[0].entry_schema == "ledger-entry-v2"
+    assert rows and rows[0].entry_schema == "ledger-entry-v3"  # the development default records V2's shadow (Phase 5)
     texts = [rows[0].entry, *[json.dumps(r.json_fields) for r in caplog.records if str(getattr(r, "json_fields", {}).get("event", "")).startswith("tutor.v1.")]]
     for text in texts:
         assert headers["x-demo-user"] not in text and marker not in text and question not in text
@@ -1285,8 +1288,9 @@ def test_phase4_docs_quote_plan_m_and_state_the_current_rules():
 
 def test_phase4_docs_name_every_q_22_value_and_the_package_s_provisional_until():
     # The spec's DI-52 row names every value package v3 lists under owner_decisions.Q-22, and main.py's comment on
-    # bm25f-v1's floor and margin states the package's abstention.provisional_until.
-    raw = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
+    # bm25f-v1's floor and margin states the package's abstention.provisional_until. Package v3 is the package this spec's
+    # DI-52 row describes (the Phase 5 spec names v4's v2.voting; test_phase5_docs_quote_the_plan_and_state_the_current_rules).
+    raw = json.loads(V3_PACKAGE_PATH.read_text(encoding="utf-8"))
     labels = {"v1.v1_5.x4_margin": "X4 margin", "abstention": "V1.5 floor and margin", "v1.v1_3.support_threshold": "V1.3 threshold",
               "v1.v1_7": "V1.7 alignment rule", "v1.v1_9.readability": "V1.9 band", "v1.stop": "stop values"}
     values = raw["owner_decisions"]["Q-22"]["provisional_values"]
@@ -1326,19 +1330,19 @@ def test_phase4_docs_the_phase3_spec_states_what_phase4_changed():
     assert "Phase 4 adds ledger-entry-v2." not in phase3
     shipped = re.search(r'^DEFAULT_PACKAGE_PATH = .*?"(v\d+\.json)"', (API_ROOT / "app" / "core" / "config_package.py").read_text(encoding="utf-8"),
                         flags=re.MULTILINE).group(1)
-    assert shipped == DEFAULT_PACKAGE_PATH.name and f"`.../{shipped}` with Phase 4" in phase3
+    assert shipped == DEFAULT_PACKAGE_PATH.name and f"`.../{shipped}` with Phase 5" in phase3
     assert "`DEFAULT_PACKAGE_PATH` becomes `.../v2.json`" not in phase3
     assert '`config_package_version == "2.0.0"`' not in phase3 and 'asserts `package_version == "2.0.0"`' not in phase3
     for test in ("test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode", "test_the_shipped_package_validates_and_matches_its_hash"):
         line = next(line for line in phase3.splitlines() if f"`{test}`" in line or f"::{test}`" in line)
-        assert f"{PACKAGE.package_version} for Phase 4's v3" in line, test
+        assert f"{PACKAGE.package_version} for Phase 5's v4" in line, test
     # 13.3 item 1 and 13.1 test 25 name the package their tests read; 5.2's parsing names every schema version the
     # loader accepts; the frontend row quotes the chat's render expression; 4.3 names the sufficiency's score.
-    assert "`RAW` now reads v2" not in phase3 and "`RAW` reads the shipped package (v3 since Phase 4) and `V2_RAW` reads v2" in phase3
+    assert "`RAW` now reads v2" not in phase3 and "`RAW` reads the shipped package (v4 since Phase 5) and `V2_RAW` reads v2" in phase3
     assert "a copy of `v2.json`" not in phase3
-    accepted = re.search(r"_require\(schema_version in \((\d), (\d), (\d)\)", (API_ROOT / "app" / "core" / "config_package.py").read_text(encoding="utf-8"))
-    assert accepted and accepted.groups() == ("1", "2", "3")
-    assert "accepts `schema_version` 1 or 2. For 1" not in phase3 and "accepts `schema_version` 1 or 2, and 3 since Phase 4" in phase3
+    accepted = re.search(r"_require\(schema_version in \((\d), (\d), (\d), (\d)\)", (API_ROOT / "app" / "core" / "config_package.py").read_text(encoding="utf-8"))
+    assert accepted and accepted.groups() == ("1", "2", "3", "4")
+    assert "accepts `schema_version` 1 or 2. For 1" not in phase3 and "accepts `schema_version` 1 or 2, 3 since Phase 4, and 4 since Phase 5" in phase3
     chat = (REPO_ROOT / "apps" / "frontend" / "src" / "components" / "teaching-assistant-chat.tsx").read_text(encoding="utf-8")
     render = next(line.strip() for line in chat.splitlines() if "<EvidencePanel evidence={message.evidence} />" in line)
     assert f"render `{render}`" in phase3
@@ -1350,7 +1354,7 @@ def test_phase4_docs_the_phase3_spec_states_what_phase4_changed():
     shape = phase3.split("**Report shape**", 1)[1].split("- **Exit codes:**", 1)[0]
     assert record["config_package"]["version"] == PACKAGE.package_version
     assert '"config_package": {"version": "2.0.0"' not in shape and '"config_package": {"version": "...", "sha256": "..."}' in shape
-    assert f"{record['config_package']['version']} for Phase 4's v3, which the committed record holds" in shape
+    assert f"{record['config_package']['version']} for Phase 5's v4, which the committed record holds" in shape
     assert "7.17's three-plan replay report shape" in _spec_head().split("### 7.14", 1)[1].split("### 7.15", 1)[0]
 
 
@@ -1571,7 +1575,7 @@ def test_phase4_docs_the_runbook_says_what_a_legacy_record_s_sufficiency_score_h
 
 def test_phase4_docs_the_code_texts_name_the_shipped_package():
     # P2-12-D-03 covers docstrings and comments: the texts that say where the budgets come from, or which package pins
-    # the schemas or is checked against the pipeline code, name the shipped package (v3 since Phase 4), as the Phase 3
+    # the schemas or is checked against the pipeline code, name the shipped package (v4 since Phase 5), as the Phase 3
     # runbook's lines do; contracts.py names the v2 ledger schema that only package v3 pins (spec 7.14).
     import inspect
 
@@ -1580,21 +1584,23 @@ def test_phase4_docs_the_code_texts_name_the_shipped_package():
 
     raw = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
     v2 = json.loads(V2_PACKAGE_PATH.read_text(encoding="utf-8"))
-    assert raw["tutor_pipeline"]["budgets"] == v2["tutor_pipeline"]["budgets"]
+    v3 = json.loads(V3_PACKAGE_PATH.read_text(encoding="utf-8"))
+    assert raw["tutor_pipeline"]["budgets"] == v2["tutor_pipeline"]["budgets"] == v3["tutor_pipeline"]["budgets"]
     v2_schema = "schemas/ledger-entry.v2.schema.json"
-    paths = {name: {entry["path"] for entry in package["tutor_pipeline"]["schemas"].values()} for name, package in (("v3", raw), ("v2", v2))}
+    paths = {name: {entry["path"] for entry in package["tutor_pipeline"]["schemas"].values()} for name, package in (("v4", raw), ("v3", v3), ("v2", v2))}
     assert v2_schema in paths["v3"] and v2_schema not in paths["v2"] and len(paths["v3"]) == len(paths["v2"]) + 1
+    assert paths["v3"] < paths["v4"] and len(paths["v4"]) == len(paths["v3"]) + 5
     texts = {"contracts": inspect.getdoc(contracts), "package_check": inspect.getdoc(package_check),
              "ledger": inspect.getdoc(ledger), "tutor_followups": inspect.getdoc(tutor_followups),
              "tutor_pipeline": inspect.getdoc(tutor_pipeline)}
     flat = {name: _flat(text) for name, text in texts.items()}
     assert "pinned by sha256 in configuration package v2." not in flat["contracts"]
-    assert "ledger-entry.v2.schema.json" in flat["contracts"] and "the shipped configuration package (v3 since Phase 4" in flat["contracts"]
+    assert "ledger-entry.v2.schema.json" in flat["contracts"] and "the shipped configuration package (v4 since Phase 5" in flat["contracts"]
     assert not flat["package_check"].startswith("Consistency of configuration package v2 with")
-    assert "schema 2 or later" in flat["package_check"] and "v3, the shipped package since Phase 4" in flat["package_check"]
+    assert "schema 2 or later" in flat["package_check"] and "v4, the shipped package since Phase 5" in flat["package_check"]
     assert "come from configuration package v2" not in flat["ledger"] and "come from the shipped configuration package" in flat["ledger"]
     assert "(configuration package v2 tutor_pipeline.budgets" not in flat["tutor_followups"]
-    assert "the shipped configuration package's tutor_pipeline.budgets, v3 since Phase 4" in flat["tutor_followups"]
+    assert "the shipped configuration package's tutor_pipeline.budgets, v4 since Phase 5" in flat["tutor_followups"]
     assert "package_check (configuration package v2)" not in flat["tutor_pipeline"]
     example = _comments((REPO_ROOT / "infra" / "cloudrun" / "api-production.env.example.yaml").read_text(encoding="utf-8"))
     assert "configuration package v2 tutor_pipeline.budgets" not in example
@@ -1605,16 +1611,19 @@ def test_phase4_docs_the_code_texts_name_the_shipped_package():
 
 
 def test_phase4_docs_the_ci_records_name_the_latest_branch_run():
-    # The branch was pushed at 863179f (run 44868544555) and again at e3ac436, the housekeeping round's head (run
-    # 44881947571, success on every job). Spec 17's CI bullet, its DI-58 row and the test strategy's exit gate name
-    # that run, and name only the unpushed commits as having none.
+    # PR #36 was squash-merged as 98f7cc4 (tree identical to aa9f1ef); main run 44971066403 passed every job and is the
+    # cited run. Spec 17's CI bullet, its DI-58 row and the test strategy's exit gate name the merge and that run, none
+    # still says a commit is unpushed or has no run, and the exit stays not passed.
     texts = {"spec 17": _spec_line("- **CI.**"), "DI-58": _spec_line("| DI-58 |"),
              "test strategy": next(line for line in (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
                                    .split("## Phase 4 acceptance map", 1)[1].splitlines() if line.startswith("**Exit gate.**"))}
     for name, text in texts.items():
-        assert "44881947571" in text and "`e3ac436`" in text, name
-        assert "each later commit needs its own" not in text, name
-        assert "`48b3fe8`" in text, name  # the first commit with no run
+        assert "44971066403" in text and "`98f7cc4`" in text, name
+        for stale in ("not pushed", "have no run", "has no run", "each later commit needs its own"):
+            assert stale not in text, (name, stale)
+    for name in ("DI-58", "test strategy"):
+        assert "The exit is not passed" in texts[name] and "D-06" in texts[name], name
+    assert _spec_line("- `phase4_exit_passed` stays `false`").endswith("the exit is not passed (DI-58).")
 
 
 def _test_function_names() -> set[str]:
