@@ -1734,6 +1734,30 @@ def test_phase5_docs_the_spec_ends_in_one_review_history_table():
     assert re.findall(r"\b[Rr]eview \d+\b|\bround \d+\b", head) == []
 
 
+def test_phase5_docs_the_records_name_the_merge_and_the_cited_main_run():
+    # PR #37 was squash-merged as c34a8c1 (tree identical to 8aa4ff1); main run 45044415408 passed every job and is the
+    # cited run (Phase 6 design E15). The spec's DI-74 row, its section 17 exit bullet and the test strategy's Phase 5 exit
+    # paragraph name the merge, the merged tree and that run, none keeps a pre-merge phrase, and the exit stays not passed.
+    spec = spec_text()
+    head = spec.split("\n## 18. Review history\n", 1)[0]
+    exit_block = head.split("**Exit (plan P).**", 1)[1]
+    strategy = (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
+    texts = {
+        "DI-74": next(line for line in head.splitlines() if line.startswith("| DI-74 |")),
+        "spec 17": next(line for line in exit_block.splitlines() if line.startswith("- The AC tests and F-1")),
+        "test strategy": next(line for line in strategy.split("## Phase 5 acceptance map", 1)[1].splitlines() if line.startswith("**Exit gate.**")),
+    }
+    for name, text in texts.items():
+        for fact in ("`c34a8c1`", "`8aa4ff1`", "45044415408"):
+            assert fact in text, (name, fact)
+        for stale in ("the cited run follows the merge", "each later commit needs its own run", "the cited run must be on `main`"):
+            assert stale not in text, (name, stale)
+    assert "The exit is not passed." in texts["DI-74"] and texts["DI-74"].endswith("| Eng / PI | Open |")
+    assert "The exit is not passed." in texts["test strategy"]
+    assert "- `phase5_exit_passed` stays `false`." in exit_block
+    assert "| Merge | `c34a8c1` |" in spec.split("\n## 18. Review history\n", 1)[1]
+
+
 # ===================================================================================================== plan 13.6
 
 
