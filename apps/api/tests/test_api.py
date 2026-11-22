@@ -5,7 +5,6 @@ import re
 import time
 from uuid import uuid4
 
-import httpx
 import pytest
 from fastapi import HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
@@ -510,21 +509,14 @@ def test_assistant_chat_truncates_oversized_history_instead_of_rejecting_it(monk
     assert data["citations"]
 
 
-class _NoProviderCalls:
-    def post(self, *_args, **_kwargs):
-        raise AssertionError("contained answers must not call a provider")
-
-
-def test_teaching_assistant_quotes_approved_spans_and_never_calls_a_provider():
-    # D-19 / AC-1-14: even with a provider key configured, the answer is verbatim approved spans.
-    class KeyedAssistant(TeachingAssistantService):
-        @property
-        def _vertex_client(self):
-            return _NoProviderCalls()
-
-    service = KeyedAssistant(RetrievalEngine(get_course_store(), Settings()), Settings(vertex_ai_api_key="configured-key-0123456789"))
+def test_teaching_assistant_quotes_approved_spans_and_never_calls_a_provider(monkeypatch):
+    # D-19 / AC-1-14: even with a (retired) provider key set in the environment, the answer is verbatim approved spans,
+    # and the class holds no provider path (Phase 5 spec 4.18).
+    monkeypatch.setenv("VERTEX_AI_API_KEY", "configured-key-0123456789")
+    service = TeachingAssistantService(RetrievalEngine(get_course_store(), Settings()), Settings())
     response = service.chat("Why does routing depth matter?", lesson_slug="ai4qc-routing-and-optimization")
 
+    assert not hasattr(TeachingAssistantService, "_ask_vertex") and not hasattr(service, "_vertex_client")
     assert response.provider == "none"
     assert response.grounded is False
     assert response.decision == "answer"
@@ -575,76 +567,6 @@ def test_learner_answers_carry_no_generated_text_and_provisional_citations(path)
         assert len(lines) - 1 == len(excerpts)
         assert all(excerpt in line for excerpt, line in zip(excerpts, lines[1:]))
     assert all(citation["provisional"] is True for citation in data["citations"])
-
-
-def test_teaching_assistant_uses_api_key_header_and_no_learner_state_in_the_prompt():
-    class RecordingClient:
-        def __init__(self):
-            self.captured_url = ""
-            self.captured_headers = {}
-            self.captured_payload = {}
-
-        def post(self, url: str, *, headers: dict[str, str], json: dict):
-            self.captured_url, self.captured_headers, self.captured_payload = url, headers, json
-
-            class Response:
-                def raise_for_status(self):
-                    return None
-
-                def json(self):
-                    return {"candidates": [{"content": {"parts": [{"text": "unused"}]}}]}
-
-            return Response()
-
-    client_stub = RecordingClient()
-
-    class ApiKeyAssistant(TeachingAssistantService):
-        @property
-        def _vertex_client(self):
-            return client_stub
-
-    service = ApiKeyAssistant(
-        RetrievalEngine(get_course_store(), Settings()),
-        Settings(vertex_ai_api_key="test-api-key", vertex_ai_chat_model="gemini-3.1-flash-lite-preview"),
-    )
-    citation = Citation(chunk_id="c1", source_title="Doc", source_kind="document", section_title="S", excerpt="Routing adds SWAPs.")
-    service._ask_vertex(message="How should I start?", lesson_slug=None, page_path="/", history=[], citations=[citation])
-
-    assert "test-api-key" not in client_stub.captured_url
-    assert "key=" not in client_stub.captured_url
-    assert client_stub.captured_headers["x-goog-api-key"] == "test-api-key"
-    assert "/publishers/google/models/gemini-3.1-flash-lite-preview:generateContent" in client_stub.captured_url
-    assert "Authorization" not in client_stub.captured_headers
-    prompt = str(client_stub.captured_payload)
-    assert "Presentation guidance" not in prompt and "mastery" not in prompt.lower()
-
-
-def test_provider_error_logs_no_key(caplog):
-    # AC-1-8: a real httpx call that the provider rejects; the key must appear in no log record.
-    provider_key = "provider-key-ac18-0123456789abcdef"
-    seen = {}
-
-    def reject(request: httpx.Request) -> httpx.Response:
-        seen["url"] = str(request.url)
-        seen["header"] = request.headers.get("x-goog-api-key")
-        return httpx.Response(403, json={"error": {"message": "API key not valid"}})
-
-    class RejectedAssistant(TeachingAssistantService):
-        @property
-        def _vertex_client(self):
-            return httpx.Client(transport=httpx.MockTransport(reject))
-
-    service = RejectedAssistant(RetrievalEngine(get_course_store(), Settings()), Settings(vertex_ai_api_key=provider_key))
-    citation = Citation(chunk_id="c1", source_title="Doc", source_kind="document", section_title="S", excerpt="Routing adds SWAPs.")
-    with caplog.at_level("DEBUG"):
-        with pytest.raises(httpx.HTTPStatusError) as excinfo:
-            service._ask_vertex(message="How should I start?", lesson_slug=None, page_path="/", history=[], citations=[citation])
-        logging.getLogger("app.services.teaching_assistant").warning("Vertex call failed: %s", excinfo.value)
-
-    assert seen["header"] == provider_key and provider_key not in seen["url"]
-    assert any("Vertex call failed" in record.getMessage() for record in caplog.records)
-    assert provider_key not in caplog.text
-    assert "key=" not in caplog.text
 
 
 def test_log_redaction_masks_urls_headers_secrets_and_tracebacks(caplog):

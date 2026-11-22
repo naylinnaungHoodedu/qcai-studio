@@ -176,14 +176,14 @@ def test_l7_the_provenance_audit_passes_on_the_records_the_code_writes_and_names
     ] and audit["problem_count"] == 4
     # A record naming a pipeline the package does not pin, and one whose generator it does not allow.
     two_pass = json.loads(json.dumps(answered.entry.model_dump(mode="json")))
-    assert ledger._provenance_problems(10, {**two_pass, "pipeline": "two-pass-v9"}, PARAMS, PACKAGE.v1) == ["seq 10 names a pipeline the package does not pin"]
+    assert ledger._provenance_problems(10, {**two_pass, "pipeline": "two-pass-v9"}, PARAMS, PACKAGE.v1, ledger.phase5_blocks(PACKAGE)) == ["seq 10 names a pipeline the package does not pin"]
     two_pass["versions"]["generator_id"] = "gateway-v1"
-    assert ledger._provenance_problems(11, two_pass, PARAMS, PACKAGE.v1) == ["seq 11 versions.generator_id is not a generator the package allows"]
+    assert ledger._provenance_problems(11, two_pass, PARAMS, PACKAGE.v1, ledger.phase5_blocks(PACKAGE)) == ["seq 11 versions.generator_id is not a generator the package allows"]
     # A claim whose provenance differs from its record's: the LedgerEntry contract refuses one, so the audit's check is a
     # second line, shown here on a raw entry.
     legacy = legacy_entry.model_dump(mode="json")
     legacy["claims"][0]["provenance"] = {**legacy["provenance"], "threshold_set_version": "other"}
-    assert ledger._provenance_problems(12, legacy, PARAMS, PACKAGE.v1) == ["seq 12 has a claim whose provenance differs from its record's"]
+    assert ledger._provenance_problems(12, legacy, PARAMS, PACKAGE.v1, ledger.phase5_blocks(PACKAGE)) == ["seq 12 has a claim whose provenance differs from its record's"]
 
 
 def _run_worker(database_url: str, *args: str) -> tuple[int, dict]:

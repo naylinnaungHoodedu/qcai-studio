@@ -8,8 +8,8 @@ reported as results").
 ## Files
 
 - `v1_adversarial_fixtures_v1.json`: 66 cases in 16 classes. Each case is hashed (`canonical_sha256`), and the set
-  hash and case count are pinned in configuration package v3 (`v1.fixtures`); `scripts/config_package.py --check`
-  compares them.
+  hash and case count are pinned in the shipped configuration package's `v1.fixtures` (v3 with Phase 4, v4 with
+  Phase 5, which keeps the values); `scripts/config_package.py --check` compares them.
 - `v1_fixture_report_v1.json`: the report `scripts/run_v1_fixtures.py` writes.
 
 ## Reproduce
@@ -77,7 +77,7 @@ spec 10.3 that `V1_METRICS` and the runbook use, so a run whose three attempts e
 For each gate, the report applies the Phase 2 answer-rate definition ("share of in-domain queries with >= 1 document
 span among the top 4 survivors") to V1.5's decision over the 174 in-domain items: 166/174 under `bm25f-v1` and 146/174
 under `p1-floor`, equal to the Phase 2 baselines in `docs/evaluation/phase2/calibration_record_v1.json`. The floors
-are stored in package v3 as counts. It also counts the two-pass composition with V1 off and with V1 under each
+are stored in the package's `v1.stop` as counts (v3 with Phase 4, unchanged in v4). It also counts the two-pass composition with V1 off and with V1 under each
 checker (147 and 129), and the items whose decision, claim set and rendering are identical with and without V1 under
 `deterministic_only` (174 of 174 per gate). The plan L stops: a V1.5 answer rate below its floor, V1 adding an
 in-domain abstention under `deterministic_only`, or the V1 p95 above `v1.stop.v1_p95_latency_ms` (250 ms).

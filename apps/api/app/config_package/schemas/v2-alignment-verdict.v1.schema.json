@@ -1,0 +1,21 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "leakage": {
+      "title": "Leakage",
+      "type": "boolean"
+    },
+    "rating": {
+      "maximum": 5,
+      "minimum": 1,
+      "title": "Rating",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "rating",
+    "leakage"
+  ],
+  "title": "AlignmentVerdict",
+  "type": "object"
+}

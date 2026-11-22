@@ -18,7 +18,9 @@ different remedies (an approval, or a sentence rule that fits the corpus), so pl
 them apart.
 
 D-12 (the provider) is open, so no provider generator exists (hold H6, PD-09): ClaimGenerator is the interface a
-Phase 5 gateway generator implements, and get_generator refuses any id outside WIRED_GENERATORS. The only wired
+gateway generator would implement (an adapter with the gateway's generate capability; none is wired while D-12 is open),
+and get_generator refuses any id outside WIRED_GENERATORS. A generator may also implement the optional ClaimReviser
+capability (v2_panel.track) that the V2 correction cycle uses; the extractive generator does not. The only wired
 generator is extractive-d19-v1 (D-19 RECOMMENDATION, PD-08): each claim is one verbatim whole sentence of a quotable
 span that shares at least tutor_pipeline.evidential.min_question_overlap_terms content terms (1; PD-11, spec 18.8 F5)
 with the question. Under D-31 no span is quotable, so the governed build abstains.

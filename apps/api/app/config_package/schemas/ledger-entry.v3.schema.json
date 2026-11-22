@@ -1,0 +1,1871 @@
+{
+  "$defs": {
+    "AlignmentVote": {
+      "additionalProperties": false,
+      "properties": {
+        "family": {
+          "title": "Family",
+          "type": "string"
+        },
+        "leakage": {
+          "title": "Leakage",
+          "type": "boolean"
+        },
+        "rating": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Rating",
+          "type": "integer"
+        },
+        "verifier_model_id": {
+          "title": "Verifier Model Id",
+          "type": "string"
+        },
+        "verifier_model_version": {
+          "title": "Verifier Model Version",
+          "type": "string"
+        },
+        "verifier_prompt_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Verifier Prompt Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "verifier_model_id",
+        "verifier_model_version",
+        "family",
+        "verifier_prompt_hash",
+        "rating",
+        "leakage"
+      ],
+      "title": "AlignmentVote",
+      "type": "object"
+    },
+    "BudgetStamp": {
+      "additionalProperties": false,
+      "description": "The budgets in force for this record (PD-11). They are package values unless TWO_PASS_SHADOW_BUDGET_MS or\nTUTOR_LEDGER_APPEND_BUDGET_MS overrode them, so config_package_sha256 alone does not name them when\n`overridden` is not empty (R-46). shadow_ms is null where no shadow budget applies (a legacy record, an\nunbounded replay run).",
+      "properties": {
+        "ledger_append_ms": {
+          "minimum": 1,
+          "title": "Ledger Append Ms",
+          "type": "integer"
+        },
+        "overridden": {
+          "default": [],
+          "items": {
+            "enum": [
+              "shadow_ms",
+              "ledger_append_ms"
+            ],
+            "type": "string"
+          },
+          "title": "Overridden",
+          "type": "array"
+        },
+        "shadow_ms": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Shadow Ms"
+        }
+      },
+      "required": [
+        "shadow_ms",
+        "ledger_append_ms"
+      ],
+      "title": "BudgetStamp",
+      "type": "object"
+    },
+    "CheckResult": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt": {
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "check_id": {
+          "enum": [
+            "V1.1",
+            "V1.2",
+            "V1.3",
+            "V1.4",
+            "V1.5",
+            "V1.6",
+            "V1.7",
+            "V1.8",
+            "V1.9"
+          ],
+          "title": "Check Id",
+          "type": "string"
+        },
+        "checker_model_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Checker Model Id"
+        },
+        "claim_id": {
+          "anyOf": [
+            {
+              "pattern": "^claim-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Claim Id"
+        },
+        "ehmf_types": {
+          "items": {
+            "enum": [
+              "A",
+              "B",
+              "C",
+              "D",
+              "E"
+            ],
+            "type": "string"
+          },
+          "title": "Ehmf Types",
+          "type": "array"
+        },
+        "outcome": {
+          "enum": [
+            "pass",
+            "flag",
+            "hard_fail",
+            "abstain",
+            "mark"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "reason_code": {
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "stage": {
+          "enum": [
+            "pre_render",
+            "post_render"
+          ],
+          "title": "Stage",
+          "type": "string"
+        }
+      },
+      "required": [
+        "check_id",
+        "stage",
+        "attempt",
+        "outcome",
+        "ehmf_types",
+        "reason_code"
+      ],
+      "title": "CheckResult",
+      "type": "object"
+    },
+    "ClaimLedgerEntryV3": {
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {
+          "pattern": "^claim-[0-9a-f]{32}$",
+          "title": "Claim Id",
+          "type": "string"
+        },
+        "entailment_score": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Entailment Score"
+        },
+        "locked": {
+          "const": true,
+          "default": true,
+          "title": "Locked",
+          "type": "boolean"
+        },
+        "provenance": {
+          "$ref": "#/$defs/ProvenanceV3"
+        },
+        "response_id": {
+          "pattern": "^(turn|shadow|qa)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Response Id",
+          "type": "string"
+        },
+        "span_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Span Ids",
+          "type": "array"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claim_id",
+        "response_id",
+        "text",
+        "span_ids",
+        "provenance"
+      ],
+      "title": "ClaimLedgerEntryV3",
+      "type": "object"
+    },
+    "ClaimVerdictV2": {
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {
+          "pattern": "^claim-[0-9a-f]{32}$",
+          "title": "Claim Id",
+          "type": "string"
+        },
+        "cycle_count": {
+          "maximum": 4,
+          "minimum": 0,
+          "title": "Cycle Count",
+          "type": "integer"
+        },
+        "final": {
+          "enum": [
+            "deliver",
+            "correct",
+            "withhold",
+            "abstain"
+          ],
+          "title": "Final",
+          "type": "string"
+        },
+        "v1": {
+          "items": {
+            "$ref": "#/$defs/CheckResult"
+          },
+          "title": "V1",
+          "type": "array"
+        },
+        "v2": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/V2ClaimVerdict"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "v3": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/V3IntentV2"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "claim_id",
+        "v1",
+        "final",
+        "cycle_count"
+      ],
+      "title": "ClaimVerdictV2",
+      "type": "object"
+    },
+    "ConflictPair": {
+      "additionalProperties": false,
+      "properties": {
+        "claim_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Claim Ids",
+          "type": "array"
+        },
+        "item_ids": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Item Ids",
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "version_of_same_asset",
+            "number_disagreement",
+            "negation_disagreement"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "span_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 2,
+          "title": "Span Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "span_ids",
+        "item_ids"
+      ],
+      "title": "ConflictPair",
+      "type": "object"
+    },
+    "DisclosureBlock": {
+      "additionalProperties": false,
+      "properties": {
+        "block_schema": {
+          "const": "conflict-disclosure-v1",
+          "default": "conflict-disclosure-v1",
+          "title": "Block Schema",
+          "type": "string"
+        },
+        "conflicts": {
+          "items": {
+            "$ref": "#/$defs/ConflictPair"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Conflicts",
+          "type": "array"
+        },
+        "policy": {
+          "enum": [
+            "disclose",
+            "withhold"
+          ],
+          "title": "Policy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy",
+        "conflicts"
+      ],
+      "title": "DisclosureBlock",
+      "type": "object"
+    },
+    "EvidenceSpan": {
+      "additionalProperties": false,
+      "properties": {
+        "char_end": {
+          "minimum": 1,
+          "title": "Char End",
+          "type": "integer"
+        },
+        "char_start": {
+          "minimum": 0,
+          "title": "Char Start",
+          "type": "integer"
+        },
+        "content_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "item_id": {
+          "title": "Item Id",
+          "type": "string"
+        },
+        "item_version": {
+          "title": "Item Version",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "document",
+            "authored"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "license_class": {
+          "const": "public",
+          "title": "License Class",
+          "type": "string"
+        },
+        "near_floor": {
+          "title": "Near Floor",
+          "type": "boolean"
+        },
+        "quotable": {
+          "title": "Quotable",
+          "type": "boolean"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Score"
+        },
+        "span_id": {
+          "pattern": "^span-[0-9a-f]{64}$",
+          "title": "Span Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "span_id",
+        "item_id",
+        "item_version",
+        "kind",
+        "char_start",
+        "char_end",
+        "content_hash",
+        "score",
+        "near_floor",
+        "license_class",
+        "quotable"
+      ],
+      "title": "EvidenceSpan",
+      "type": "object"
+    },
+    "PipelineCountsV2": {
+      "additionalProperties": false,
+      "description": "PipelineCounts that also accept V1's own reasons (V1_COUNT_REASONS: V1.2's polarity drops, and a V1.1\nhard-failed candidate's claims); the arithmetic rule is unchanged.",
+      "properties": {
+        "bound_claims": {
+          "minimum": 0,
+          "title": "Bound Claims",
+          "type": "integer"
+        },
+        "dropped": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Dropped",
+          "type": "object"
+        },
+        "proposed_claims": {
+          "minimum": 0,
+          "title": "Proposed Claims",
+          "type": "integer"
+        },
+        "render_attempts": {
+          "minimum": 0,
+          "title": "Render Attempts",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "proposed_claims",
+        "bound_claims",
+        "dropped",
+        "render_attempts"
+      ],
+      "title": "PipelineCountsV2",
+      "type": "object"
+    },
+    "PresentationRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "attempts": {
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Attempts",
+          "type": "integer"
+        },
+        "plan_id": {
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "rendered_claim_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Rendered Claim Ids",
+          "type": "array"
+        },
+        "rendered_span_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Rendered Span Ids",
+          "type": "array"
+        },
+        "renderer_id": {
+          "title": "Renderer Id",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "subset_check": {
+          "enum": [
+            "passed",
+            "failed"
+          ],
+          "title": "Subset Check",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan_id",
+        "source",
+        "renderer_id",
+        "attempts",
+        "subset_check"
+      ],
+      "title": "PresentationRecord",
+      "type": "object"
+    },
+    "ProvenanceV3": {
+      "additionalProperties": false,
+      "properties": {
+        "corpus_version": {
+          "title": "Corpus Version",
+          "type": "string"
+        },
+        "evidential_prompt_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Evidential Prompt Hash"
+        },
+        "generator_model_id": {
+          "title": "Generator Model Id",
+          "type": "string"
+        },
+        "panel_weights_version": {
+          "title": "Panel Weights Version",
+          "type": "string"
+        },
+        "pedagogical_prompt_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pedagogical Prompt Hash"
+        },
+        "routing_table_version": {
+          "title": "Routing Table Version",
+          "type": "string"
+        },
+        "threshold_set_version": {
+          "title": "Threshold Set Version",
+          "type": "string"
+        },
+        "tool_contract_version": {
+          "title": "Tool Contract Version",
+          "type": "string"
+        },
+        "v1_3_checker_model_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "V1 3 Checker Model Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "generator_model_id",
+        "evidential_prompt_hash",
+        "pedagogical_prompt_hash",
+        "v1_3_checker_model_id",
+        "corpus_version",
+        "threshold_set_version",
+        "panel_weights_version",
+        "routing_table_version",
+        "tool_contract_version"
+      ],
+      "title": "ProvenanceV3",
+      "type": "object"
+    },
+    "ResolvedQuestionRef": {
+      "additionalProperties": false,
+      "description": "The resolved question without its text (no learner text in the ledger).",
+      "properties": {
+        "contains_learner_state": {
+          "const": false,
+          "default": false,
+          "title": "Contains Learner State",
+          "type": "boolean"
+        },
+        "resolver": {
+          "$ref": "#/$defs/ResolverRef"
+        },
+        "source_turn_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Turn Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "resolver",
+        "source_turn_ids"
+      ],
+      "title": "ResolvedQuestionRef",
+      "type": "object"
+    },
+    "ResolverRef": {
+      "additionalProperties": false,
+      "properties": {
+        "model_id": {
+          "title": "Model Id",
+          "type": "string"
+        },
+        "prompt_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Prompt Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model_id",
+        "prompt_hash"
+      ],
+      "title": "ResolverRef",
+      "type": "object"
+    },
+    "RetrievalRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "corpus_version": {
+          "title": "Corpus Version",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceSpan"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "evidence_scope": {
+          "enum": [
+            "retrieved",
+            "delivered_citations"
+          ],
+          "title": "Evidence Scope",
+          "type": "string"
+        },
+        "floor": {
+          "title": "Floor",
+          "type": "number"
+        },
+        "gate": {
+          "title": "Gate",
+          "type": "string"
+        },
+        "index_version": {
+          "title": "Index Version",
+          "type": "string"
+        },
+        "margin": {
+          "title": "Margin",
+          "type": "number"
+        },
+        "mode": {
+          "title": "Mode",
+          "type": "string"
+        },
+        "sufficiency": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sufficiency"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "threshold_version": {
+          "title": "Threshold Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "corpus_version",
+        "index_version",
+        "gate",
+        "threshold_version",
+        "floor",
+        "margin",
+        "mode",
+        "evidence_scope",
+        "sufficiency",
+        "evidence"
+      ],
+      "title": "RetrievalRecord",
+      "type": "object"
+    },
+    "Sufficiency": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "enum": [
+            "answer",
+            "abstain",
+            "near_miss"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "floor": {
+          "title": "Floor",
+          "type": "number"
+        },
+        "gate": {
+          "enum": [
+            "p1-floor",
+            "bm25f-v1"
+          ],
+          "title": "Gate",
+          "type": "string"
+        },
+        "margin": {
+          "title": "Margin",
+          "type": "number"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Score"
+        },
+        "threshold_version": {
+          "title": "Threshold Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "score",
+        "gate",
+        "threshold_version",
+        "floor",
+        "margin",
+        "decision",
+        "reason"
+      ],
+      "title": "Sufficiency",
+      "type": "object"
+    },
+    "V1Comparison": {
+      "additionalProperties": false,
+      "properties": {
+        "agrees_legacy": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Agrees Legacy"
+        },
+        "agrees_phase3": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Agrees Phase3"
+        },
+        "legacy_decision": {
+          "anyOf": [
+            {
+              "enum": [
+                "answer",
+                "abstain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Legacy Decision"
+        },
+        "phase3_decision": {
+          "anyOf": [
+            {
+              "enum": [
+                "answer",
+                "abstain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Phase3 Decision"
+        },
+        "v1_outcome": {
+          "enum": [
+            "answer",
+            "abstain"
+          ],
+          "title": "V1 Outcome",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phase3_decision",
+        "legacy_decision",
+        "v1_outcome",
+        "agrees_phase3",
+        "agrees_legacy"
+      ],
+      "title": "V1Comparison",
+      "type": "object"
+    },
+    "V1Policy": {
+      "additionalProperties": false,
+      "properties": {
+        "checker_hosting": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Checker Hosting",
+          "type": "string"
+        },
+        "checker_model_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Checker Model Id",
+          "type": "string"
+        },
+        "d20_interim": {
+          "const": "withhold-all-flagged-v1",
+          "title": "D20 Interim",
+          "type": "string"
+        },
+        "misconception_library_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Misconception Library Sha256",
+          "type": "string"
+        },
+        "misconception_library_version": {
+          "title": "Misconception Library Version",
+          "type": "string"
+        },
+        "rules_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Rules Hash",
+          "type": "string"
+        },
+        "rules_version": {
+          "title": "Rules Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rules_version",
+        "rules_hash",
+        "checker_hosting",
+        "checker_model_id",
+        "misconception_library_version",
+        "misconception_library_sha256",
+        "d20_interim"
+      ],
+      "title": "V1Policy",
+      "type": "object"
+    },
+    "V2Alignment": {
+      "additionalProperties": false,
+      "properties": {
+        "members": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 3,
+          "title": "Members",
+          "type": "array"
+        },
+        "outcome": {
+          "enum": [
+            "pass",
+            "fail"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "rendered_text_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Rendered Text Sha256",
+          "type": "string"
+        },
+        "rule": {
+          "const": "1ooN-leakage-v1",
+          "default": "1ooN-leakage-v1",
+          "title": "Rule",
+          "type": "string"
+        },
+        "votes": {
+          "items": {
+            "$ref": "#/$defs/AlignmentVote"
+          },
+          "maxItems": 3,
+          "title": "Votes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "members",
+        "votes",
+        "rendered_text_sha256",
+        "outcome"
+      ],
+      "title": "V2Alignment",
+      "type": "object"
+    },
+    "V2Block": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/V2Alignment"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "alignment_prompt_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Alignment Prompt Hash",
+          "type": "string"
+        },
+        "banner": {
+          "anyOf": [
+            {
+              "enum": [
+                "degraded-reduced-2-v1",
+                "degraded-reduced-1-v1",
+                "degraded-zero-v1"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Banner"
+        },
+        "block_schema": {
+          "const": "v2-panel-v1",
+          "default": "v2-panel-v1",
+          "title": "Block Schema",
+          "type": "string"
+        },
+        "cache_hits": {
+          "minimum": 0,
+          "title": "Cache Hits",
+          "type": "integer"
+        },
+        "calls": {
+          "minimum": 0,
+          "title": "Calls",
+          "type": "integer"
+        },
+        "corrections": {
+          "items": {
+            "$ref": "#/$defs/V2Correction"
+          },
+          "maxItems": 2,
+          "title": "Corrections",
+          "type": "array"
+        },
+        "cost_units": {
+          "minimum": 0,
+          "title": "Cost Units",
+          "type": "integer"
+        },
+        "cycles": {
+          "maximum": 2,
+          "minimum": 0,
+          "title": "Cycles",
+          "type": "integer"
+        },
+        "degraded_mode": {
+          "enum": [
+            "FULL",
+            "REDUCED-2",
+            "REDUCED-1",
+            "ZERO"
+          ],
+          "title": "Degraded Mode",
+          "type": "string"
+        },
+        "gateway_state": {
+          "enum": [
+            "open",
+            "stopped"
+          ],
+          "title": "Gateway State",
+          "type": "string"
+        },
+        "generator_family": {
+          "title": "Generator Family",
+          "type": "string"
+        },
+        "kill_switch": {
+          "enum": [
+            "none",
+            "abstain_only",
+            "pre_verified_only"
+          ],
+          "title": "Kill Switch",
+          "type": "string"
+        },
+        "members": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 3,
+          "title": "Members",
+          "type": "array"
+        },
+        "mode": {
+          "enum": [
+            "shadow",
+            "on"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "panel_reached": {
+          "title": "Panel Reached",
+          "type": "boolean"
+        },
+        "panel_weights_version": {
+          "title": "Panel Weights Version",
+          "type": "string"
+        },
+        "registry": {
+          "title": "Registry",
+          "type": "string"
+        },
+        "routing_table_version": {
+          "title": "Routing Table Version",
+          "type": "string"
+        },
+        "shadow": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/V2ShadowSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tool_contract_version": {
+          "title": "Tool Contract Version",
+          "type": "string"
+        },
+        "verifier_prompt_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Verifier Prompt Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "panel_reached",
+        "gateway_state",
+        "registry",
+        "generator_family",
+        "members",
+        "degraded_mode",
+        "panel_weights_version",
+        "routing_table_version",
+        "tool_contract_version",
+        "verifier_prompt_hash",
+        "alignment_prompt_hash",
+        "alignment",
+        "cycles",
+        "corrections",
+        "calls",
+        "cache_hits",
+        "cost_units",
+        "kill_switch",
+        "banner",
+        "shadow"
+      ],
+      "title": "V2Block",
+      "type": "object"
+    },
+    "V2ClaimVerdict": {
+      "additionalProperties": false,
+      "properties": {
+        "blind": {
+          "const": true,
+          "default": true,
+          "title": "Blind",
+          "type": "boolean"
+        },
+        "critical": {
+          "default": false,
+          "title": "Critical",
+          "type": "boolean"
+        },
+        "cycle": {
+          "maximum": 2,
+          "minimum": 0,
+          "title": "Cycle",
+          "type": "integer"
+        },
+        "generator_family": {
+          "title": "Generator Family",
+          "type": "string"
+        },
+        "members": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 3,
+          "title": "Members",
+          "type": "array"
+        },
+        "mode": {
+          "enum": [
+            "FULL",
+            "REDUCED-2",
+            "REDUCED-1",
+            "ZERO"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "objections": {
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Objections",
+          "type": "integer"
+        },
+        "outcome": {
+          "enum": [
+            "pass",
+            "fail",
+            "withheld"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "rule": {
+          "enum": [
+            "1oo3",
+            "2oo3",
+            "1oo2",
+            "equal-weights-share-v1",
+            "withhold-queue-v3"
+          ],
+          "title": "Rule",
+          "type": "string"
+        },
+        "split": {
+          "title": "Split",
+          "type": "boolean"
+        },
+        "tier": {
+          "enum": [
+            1,
+            2,
+            3
+          ],
+          "title": "Tier",
+          "type": "integer"
+        },
+        "votes": {
+          "items": {
+            "$ref": "#/$defs/V2Vote"
+          },
+          "maxItems": 24,
+          "title": "Votes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "tier",
+        "rule",
+        "generator_family",
+        "mode",
+        "members",
+        "votes",
+        "objections",
+        "split",
+        "outcome",
+        "cycle"
+      ],
+      "title": "V2ClaimVerdict",
+      "type": "object"
+    },
+    "V2Correction": {
+      "additionalProperties": false,
+      "properties": {
+        "cycle": {
+          "maximum": 2,
+          "minimum": 1,
+          "title": "Cycle",
+          "type": "integer"
+        },
+        "failed_claim_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failed Claim Ids",
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "revise",
+            "re_render"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "revised_claim_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Revised Claim Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "cycle",
+        "kind",
+        "failed_claim_ids"
+      ],
+      "title": "V2Correction",
+      "type": "object"
+    },
+    "V2ShadowSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "would_deliver": {
+          "minimum": 0,
+          "title": "Would Deliver",
+          "type": "integer"
+        },
+        "would_fail": {
+          "minimum": 0,
+          "title": "Would Fail",
+          "type": "integer"
+        },
+        "would_withhold": {
+          "minimum": 0,
+          "title": "Would Withhold",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "would_deliver",
+        "would_fail",
+        "would_withhold"
+      ],
+      "title": "V2ShadowSummary",
+      "type": "object"
+    },
+    "V2Vote": {
+      "additionalProperties": false,
+      "properties": {
+        "cached": {
+          "title": "Cached",
+          "type": "boolean"
+        },
+        "ehmf_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "E"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ehmf Type"
+        },
+        "family": {
+          "title": "Family",
+          "type": "string"
+        },
+        "span_id": {
+          "pattern": "^span-[0-9a-f]{64}$",
+          "title": "Span Id",
+          "type": "string"
+        },
+        "verdict": {
+          "enum": [
+            "SUPPORTED",
+            "CONTRADICTED",
+            "NOT_ENOUGH_INFO"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        },
+        "verifier_model_id": {
+          "title": "Verifier Model Id",
+          "type": "string"
+        },
+        "verifier_model_version": {
+          "title": "Verifier Model Version",
+          "type": "string"
+        },
+        "verifier_prompt_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Verifier Prompt Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "verifier_model_id",
+        "verifier_model_version",
+        "family",
+        "verifier_prompt_hash",
+        "verdict",
+        "ehmf_type",
+        "span_id",
+        "cached"
+      ],
+      "title": "V2Vote",
+      "type": "object"
+    },
+    "V3IntentV2": {
+      "additionalProperties": false,
+      "properties": {
+        "escalation": {
+          "anyOf": [
+            {
+              "const": "X2",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Escalation"
+        },
+        "gold_label_id": {
+          "default": null,
+          "title": "Gold Label Id",
+          "type": "null"
+        },
+        "queue": {
+          "const": "pending_v3",
+          "default": "pending_v3",
+          "title": "Queue",
+          "type": "string"
+        },
+        "reasons": {
+          "items": {
+            "enum": [
+              "v1_3_flag",
+              "v1_8_misconception",
+              "x4_margin",
+              "v2_correction_exhausted",
+              "v2_degraded_withheld"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Reasons",
+          "type": "array"
+        },
+        "trigger": {
+          "anyOf": [
+            {
+              "const": "X4",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trigger"
+        }
+      },
+      "required": [
+        "reasons"
+      ],
+      "title": "V3IntentV2",
+      "type": "object"
+    },
+    "VerificationRecordV2": {
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/CheckResult"
+          },
+          "maxItems": 256,
+          "title": "Checks",
+          "type": "array"
+        },
+        "claim_set_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Claim Set Hash"
+        },
+        "comparison": {
+          "$ref": "#/$defs/V1Comparison"
+        },
+        "cycle_count": {
+          "maximum": 4,
+          "minimum": 0,
+          "title": "Cycle Count",
+          "type": "integer"
+        },
+        "disclosure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DisclosureBlock"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "final": {
+          "enum": [
+            "deliver",
+            "correct",
+            "withhold",
+            "abstain"
+          ],
+          "title": "Final",
+          "type": "string"
+        },
+        "final_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Final Reason"
+        },
+        "generation_attempts": {
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Generation Attempts",
+          "type": "integer"
+        },
+        "hard_fail": {
+          "title": "Hard Fail",
+          "type": "boolean"
+        },
+        "labels": {
+          "default": [],
+          "items": {
+            "enum": [
+              "near_floor",
+              "conflict_disclosed",
+              "degraded"
+            ],
+            "type": "string"
+          },
+          "title": "Labels",
+          "type": "array"
+        },
+        "mode": {
+          "enum": [
+            "shadow",
+            "enforce"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "policy": {
+          "$ref": "#/$defs/V1Policy"
+        },
+        "render_attempts": {
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Render Attempts",
+          "type": "integer"
+        },
+        "replacement": {
+          "enum": [
+            "extractive_d19",
+            "abstention",
+            "unknown",
+            "none"
+          ],
+          "title": "Replacement",
+          "type": "string"
+        },
+        "v2": {
+          "$ref": "#/$defs/V2Block"
+        },
+        "verdicts": {
+          "items": {
+            "$ref": "#/$defs/ClaimVerdictV2"
+          },
+          "maxItems": 20,
+          "title": "Verdicts",
+          "type": "array"
+        },
+        "verification_schema": {
+          "const": "v2-verification-v1",
+          "default": "v2-verification-v1",
+          "title": "Verification Schema",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "policy",
+        "generation_attempts",
+        "render_attempts",
+        "cycle_count",
+        "checks",
+        "verdicts",
+        "final",
+        "final_reason",
+        "replacement",
+        "hard_fail",
+        "comparison",
+        "v2"
+      ],
+      "title": "VerificationRecordV2",
+      "type": "object"
+    },
+    "VersionStamps": {
+      "additionalProperties": false,
+      "properties": {
+        "budgets": {
+          "$ref": "#/$defs/BudgetStamp"
+        },
+        "code_sha": {
+          "title": "Code Sha",
+          "type": "string"
+        },
+        "config_package_sha256": {
+          "title": "Config Package Sha256",
+          "type": "string"
+        },
+        "config_package_version": {
+          "title": "Config Package Version",
+          "type": "string"
+        },
+        "generator_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Generator Id"
+        },
+        "manifest_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Manifest Sha256"
+        },
+        "pipeline_version": {
+          "title": "Pipeline Version",
+          "type": "string"
+        },
+        "policy_version": {
+          "title": "Policy Version",
+          "type": "string"
+        },
+        "renderer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Renderer Id"
+        },
+        "resolver_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Resolver Id"
+        },
+        "schema_revision_expected": {
+          "title": "Schema Revision Expected",
+          "type": "string"
+        },
+        "span_scheme": {
+          "title": "Span Scheme",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pipeline_version",
+        "code_sha",
+        "schema_revision_expected",
+        "config_package_version",
+        "config_package_sha256",
+        "manifest_sha256",
+        "span_scheme",
+        "policy_version",
+        "resolver_id",
+        "generator_id",
+        "renderer_id",
+        "budgets"
+      ],
+      "title": "VersionStamps",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "abstention_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Abstention Reason"
+    },
+    "claim_set_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Claim Set Hash"
+    },
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/ClaimLedgerEntryV3"
+      },
+      "title": "Claims",
+      "type": "array"
+    },
+    "counts": {
+      "$ref": "#/$defs/PipelineCountsV2"
+    },
+    "decision": {
+      "enum": [
+        "answer",
+        "abstain"
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
+    "delivery": {
+      "enum": [
+        "shadow",
+        "delivered",
+        "legacy"
+      ],
+      "title": "Delivery",
+      "type": "string"
+    },
+    "entry_schema": {
+      "const": "ledger-entry-v3",
+      "default": "ledger-entry-v3",
+      "title": "Entry Schema",
+      "type": "string"
+    },
+    "pipeline": {
+      "enum": [
+        "two-pass-v1",
+        "legacy-contained-v1"
+      ],
+      "title": "Pipeline",
+      "type": "string"
+    },
+    "presentation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PresentationRecord"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "provenance": {
+      "$ref": "#/$defs/ProvenanceV3"
+    },
+    "rendered_text_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Rendered Text Sha256"
+    },
+    "resolved_question": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ResolvedQuestionRef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "response_id": {
+      "pattern": "^(turn|shadow|qa)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "title": "Response Id",
+      "type": "string"
+    },
+    "retrieval": {
+      "$ref": "#/$defs/RetrievalRecord"
+    },
+    "shadowed_response_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Shadowed Response Id"
+    },
+    "span_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Span Ids",
+      "type": "array"
+    },
+    "verification": {
+      "$ref": "#/$defs/VerificationRecordV2"
+    },
+    "versions": {
+      "$ref": "#/$defs/VersionStamps"
+    }
+  },
+  "required": [
+    "response_id",
+    "delivery",
+    "shadowed_response_id",
+    "pipeline",
+    "decision",
+    "abstention_reason",
+    "resolved_question",
+    "retrieval",
+    "claim_set_hash",
+    "claims",
+    "span_ids",
+    "presentation",
+    "rendered_text_sha256",
+    "provenance",
+    "versions",
+    "verification",
+    "counts"
+  ],
+  "title": "LedgerEntryV3",
+  "type": "object"
+}

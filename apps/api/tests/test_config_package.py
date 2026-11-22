@@ -17,6 +17,7 @@ from app.core.config_package import (
     DEFAULT_PACKAGE_PATH,
     V1_PACKAGE_PATH,
     V2_PACKAGE_PATH,
+    V3_PACKAGE_PATH,
     WIRED_GENERATORS,
     ConfigPackageError,
     canonical_sha256,
@@ -31,6 +32,7 @@ API_APP = REPO_ROOT / "apps" / "api" / "app"
 IMAGE_APP = PurePosixPath("/app/app")
 RAW = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
 V2_RAW = json.loads(V2_PACKAGE_PATH.read_text(encoding="utf-8"))
+V3_RAW = json.loads(V3_PACKAGE_PATH.read_text(encoding="utf-8"))
 
 
 def _write(tmp_path: Path, payload: dict, *, sidecar: str | None = None) -> Path:
@@ -41,11 +43,13 @@ def _write(tmp_path: Path, payload: dict, *, sidecar: str | None = None) -> Path
 
 
 def test_the_shipped_package_validates_and_matches_its_hash():
-    # Phase 4 P: the shipped package is v3 (3.0.0); the 2.0.0 assertions are test_v2_stays_readable_for_one_release's and
-    # the 1.0.0 ones test_v1_stays_readable_for_one_release's.
+    # Phase 5: the shipped package is v4 (4.0.0); the 3.0.0, 2.0.0 and 1.0.0 assertions are
+    # test_v3_stays_readable_for_one_release's, test_v2_stays_readable_for_one_release's and
+    # test_v1_stays_readable_for_one_release's.
     package = load_config_package(DEFAULT_PACKAGE_PATH, governed=True)
-    assert package.hash_verified and package.is_default_path and package.package_version == "3.0.0"
-    assert package.schema_version == 3 and package.tutor_pipeline is not None and package.v1 is not None
+    assert package.hash_verified and package.is_default_path and package.package_version == "4.0.0"
+    assert package.schema_version == 4 and package.tutor_pipeline is not None and package.v1 is not None
+    assert package.gateway is not None and package.v2 is not None and package.tools is not None
     assert package.sha256 == recorded_sha256(DEFAULT_PACKAGE_PATH) == canonical_sha256(RAW)
     assert package.span_scheme == "span-v2" and package.abstention.provisional is True
     # The image copies apps/api/app, so the package ships inside it (the Dockerfile has no other path for it).
@@ -244,7 +248,7 @@ def test_v2_stays_readable_for_one_release():
 
     package = load_config_package(V2_PACKAGE_PATH, governed=True)
     assert package.hash_verified and package.package_version == "2.0.0" and package.schema_version == 2 and package.v1 is None
-    assert package.sha256 == recorded_sha256(V2_PACKAGE_PATH) == canonical_sha256(V2_RAW) == RAW["supersedes"]["sha256"]
+    assert package.sha256 == recorded_sha256(V2_PACKAGE_PATH) == canonical_sha256(V2_RAW) == V3_RAW["supersedes"]["sha256"]
     assert not package.is_default_path
     assert check_tutor_pipeline_package(package, structural=True) == []
 
@@ -254,26 +258,26 @@ def test_v3_keeps_every_v2_value_but_the_listed_changes():
         if key in {"package_version", "schema_version", "phase", "created", "supersedes", "tutor_pipeline", "flag_policy", "owner_decisions",
                    "abstention"}:
             continue
-        assert RAW[key] == V2_RAW[key], key
-    assert (RAW["package_version"], RAW["schema_version"], RAW["phase"]) == ("3.0.0", 3, "4")
-    assert RAW["supersedes"] == {"package_version": "2.0.0", "sha256": canonical_sha256(V2_RAW), "readable_until": "the release after the Phase 4 merge"}
-    assert RAW["abstention"]["calibrated_with_package_version"] == "1.0.0"
+        assert V3_RAW[key] == V2_RAW[key], key
+    assert (V3_RAW["package_version"], V3_RAW["schema_version"], V3_RAW["phase"]) == ("3.0.0", 3, "4")
+    assert V3_RAW["supersedes"] == {"package_version": "2.0.0", "sha256": canonical_sha256(V2_RAW), "readable_until": "the release after the Phase 4 merge"}
+    assert V3_RAW["abstention"]["calibrated_with_package_version"] == "1.0.0"
     # The abstention values stay provisional past Phase 4: until Q-22 sets them (DI-52), not "Phase 4" as v2 says.
-    abstention = dict(RAW["abstention"])
+    abstention = dict(V3_RAW["abstention"])
     assert (abstention.pop("provisional_until"), V2_RAW["abstention"]["provisional_until"]) == ("Q-22 (DI-52)", "Phase 4")
     assert abstention == {key: value for key, value in V2_RAW["abstention"].items() if key != "provisional_until"}
     assert abstention["provisional"] is True
     for key, value in V2_RAW["tutor_pipeline"].items():
         if key not in V3_CHANGED_TUTOR_KEYS:
-            assert RAW["tutor_pipeline"][key] == value, key
-    assert {name: pin for name, pin in RAW["tutor_pipeline"]["schemas"].items() if name != "LedgerEntryV2"} == V2_RAW["tutor_pipeline"]["schemas"]
-    assert RAW["tutor_pipeline"]["schemas"]["LedgerEntryV2"]["path"] == "schemas/ledger-entry.v2.schema.json"
-    ledger = dict(RAW["tutor_pipeline"]["ledger"])
+            assert V3_RAW["tutor_pipeline"][key] == value, key
+    assert {name: pin for name, pin in V3_RAW["tutor_pipeline"]["schemas"].items() if name != "LedgerEntryV2"} == V2_RAW["tutor_pipeline"]["schemas"]
+    assert V3_RAW["tutor_pipeline"]["schemas"]["LedgerEntryV2"]["path"] == "schemas/ledger-entry.v2.schema.json"
+    ledger = dict(V3_RAW["tutor_pipeline"]["ledger"])
     assert (ledger.pop("entry_schema"), ledger.pop("legacy_entry_schema"), ledger.pop("entry_schemas")) == (
         "ledger-entry-v2", "ledger-entry-v1", ["ledger-entry-v1", "ledger-entry-v2"])
     assert ledger == {key: value for key, value in V2_RAW["tutor_pipeline"]["ledger"].items() if key != "entry_schema"}
-    assert RAW["tutor_pipeline"]["unused_provenance_fields"] == ["panel_weights_version", "routing_table_version", "tool_contract_version"]
-    policy = dict(RAW["flag_policy"])
+    assert V3_RAW["tutor_pipeline"]["unused_provenance_fields"] == ["panel_weights_version", "routing_table_version", "tool_contract_version"]
+    policy = dict(V3_RAW["flag_policy"])
     assert policy.pop("v1_pipeline") == {"values": ["off", "shadow", "enforce"], "default_development": "enforce", "default_elsewhere": "shadow",
                                          "enforce_requires": "phase4_exit_passed", "off_outside_development": "refused",
                                          "authority": "plan Phase 4 G; 13.6; PD-19"}
@@ -283,17 +287,17 @@ def test_v3_keeps_every_v2_value_but_the_listed_changes():
     assert all(name in authority for name in ("PD-10", "DI-37", "PD-19", "DI-55")) and "v1_pipeline" in authority
     assert policy == {key: value for key, value in V2_RAW["flag_policy"].items() if key != "authority"}
     assert policy["phase4_exit_passed"] is False and policy["phase4_exit_evidence"] is None
-    assert set(RAW["owner_decisions"]) == set(V2_RAW["owner_decisions"]) | {"D-20", "D-21", "Q-22", "Q-14", "D-06"}
+    assert set(V3_RAW["owner_decisions"]) == set(V2_RAW["owner_decisions"]) | {"D-20", "D-21", "Q-22", "Q-14", "D-06"}
     # Q-22 names every value PD-15, PD-16 and PD-18 apply as operator policy: V1.7's alignment rule, and the V1.5 floor
     # and margin (abstention, provisional until Q-22), included.
-    assert RAW["owner_decisions"]["Q-22"]["provisional_values"] == ["v1.v1_5.x4_margin", "abstention", "v1.v1_3.support_threshold",
+    assert V3_RAW["owner_decisions"]["Q-22"]["provisional_values"] == ["v1.v1_5.x4_margin", "abstention", "v1.v1_3.support_threshold",
                                                                      "v1.v1_7", "v1.v1_9.readability", "v1.stop"]
     for name, decision in V2_RAW["owner_decisions"].items():
         if name == "PLAN-11.3":
             continue
-        assert RAW["owner_decisions"][name] == decision, name
+        assert V3_RAW["owner_decisions"][name] == decision, name
     # PLAN-11.3's runner-up deviation names the item that carries it now (DI-67); nothing else of it changed.
-    plan_11_3, v2_plan_11_3 = json.loads(json.dumps(RAW["owner_decisions"]["PLAN-11.3"])), V2_RAW["owner_decisions"]["PLAN-11.3"]
+    plan_11_3, v2_plan_11_3 = json.loads(json.dumps(V3_RAW["owner_decisions"]["PLAN-11.3"])), V2_RAW["owner_decisions"]["PLAN-11.3"]
     runner_up = plan_11_3["deviations"][1]
     assert runner_up.pop("applied").endswith("no runner-up test (Phase 2 spec conflict 4; DI-28, carried as DI-67)")
     assert v2_plan_11_3["deviations"][1]["applied"].endswith("no runner-up test (spec conflict 4; Phase 4, DI-28)")
@@ -302,25 +306,19 @@ def test_v3_keeps_every_v2_value_but_the_listed_changes():
     assert plan_11_3 == v2_plan_11_3
     # Every prompt hash is v2's, and the eight v1 schema files are unchanged.
     for block in ("resolver", "evidential", "pedagogical"):
-        assert RAW["tutor_pipeline"][block]["prompt_hash"] == V2_RAW["tutor_pipeline"][block]["prompt_hash"]
+        assert V3_RAW["tutor_pipeline"][block]["prompt_hash"] == V2_RAW["tutor_pipeline"][block]["prompt_hash"]
     package = load_config_package(DEFAULT_PACKAGE_PATH, governed=True)
     assert package.retrieval_sha256 == load_config_package(V2_PACKAGE_PATH, governed=True).retrieval_sha256
     v1 = package.v1
     assert v1.checker_hosting == v1.checker_model_id == "none" and v1.library_entries == () and v1.d20_rule == "withhold-all-flagged-v1"
     assert dict(v1.answer_rate_floor) == {"bm25f-v1": (166, 174), "p1-floor": (146, 174)} and v1.p95_budget_ms == 250
-    assert all(RAW["v1"][block]["provisional"] is True
+    assert all(V3_RAW["v1"][block]["provisional"] is True
                for block in ("lexicon", "v1_3", "v1_5", "v1_6", "v1_7", "v1_9", "quiz_feedback", "d20_interim", "stop"))
     # PD-21 lives in the package, provisional, and names the rule the quiz route implements.
-    assert {key: value for key, value in RAW["v1"]["quiz_feedback"].items() if key != "authority"} == {
+    assert {key: value for key, value in V3_RAW["v1"]["quiz_feedback"].items() if key != "authority"} == {
         "provisional": True, "rule": "keys-after-saved-attempt-answered-only-v1", "public_payloads": "no_keys",
         "feedback": "answered_questions_after_a_saved_attempt"}
-    assert "PD-21" in RAW["v1"]["quiz_feedback"]["authority"] and v1.quiz_feedback_rule == "keys-after-saved-attempt-answered-only-v1"
-
-
-def _v3(edit):
-    payload = json.loads(json.dumps(RAW))
-    edit(payload)
-    return payload
+    assert "PD-21" in V3_RAW["v1"]["quiz_feedback"]["authority"] and v1.quiz_feedback_rule == "keys-after-saved-attempt-answered-only-v1"
 
 
 @pytest.mark.parametrize(
@@ -390,10 +388,14 @@ def _v3(edit):
     ],
 )
 def test_v3_structural_errors_always_stop_the_load(tmp_path, edit):
-    path = _write(tmp_path, _v3(edit))
-    for governed in (True, False):
-        with pytest.raises(ConfigPackageError):
-            load_config_package(path, governed=governed)
+    # Each refusal holds for v3.json, still readable, and for the shipped v4, which keeps every v3 block (Phase 5 spec 13.3).
+    for base in (V3_RAW, RAW):
+        payload = json.loads(json.dumps(base))
+        edit(payload)
+        path = _write(tmp_path, payload)
+        for governed in (True, False):
+            with pytest.raises(ConfigPackageError):
+                load_config_package(path, governed=governed)
 
 
 def test_package_check_v1_problems(tmp_path):
@@ -463,3 +465,168 @@ def test_no_image_module_computes_a_parent_its_image_path_lacks_at_import():
                     checked += 1
     assert checked >= 3
 
+
+# --- Package v4 (Phase 5) ---
+
+V4_NEW_BLOCKS = {"gateway", "v2", "tools"}
+V4_SCHEMAS = {"LedgerEntryV3": "schemas/ledger-entry.v3.schema.json", "V2VerdictRequest": "schemas/v2-verdict-request.v1.schema.json",
+              "V2AlignmentRequest": "schemas/v2-alignment-request.v1.schema.json", "V2AdapterVerdict": "schemas/v2-adapter-verdict.v1.schema.json",
+              "V2AlignmentVerdict": "schemas/v2-alignment-verdict.v1.schema.json"}
+
+
+def test_v3_stays_readable_for_one_release():
+    from app.services.tutor_pipeline.package_check import check_tutor_pipeline_package
+    from app.services.v1_checks.package_check import check_v1_package
+
+    package = load_config_package(V3_PACKAGE_PATH, governed=True)
+    assert package.hash_verified and package.package_version == "3.0.0" and package.schema_version == 3 and not package.is_default_path
+    assert package.gateway is None and package.v2 is None and package.tools is None and package.flag_policy.phase5_exit_passed is False
+    assert package.sha256 == recorded_sha256(V3_PACKAGE_PATH) == canonical_sha256(V3_RAW) == RAW["supersedes"]["sha256"]
+    assert check_tutor_pipeline_package(package, structural=True) == [] and check_v1_package(package, structural=True) == []
+
+
+def test_v4_keeps_every_v3_value_but_the_listed_changes():
+    assert (RAW["package_version"], RAW["schema_version"], RAW["phase"]) == ("4.0.0", 4, "5")
+    assert RAW["supersedes"] == {"package_version": "3.0.0", "sha256": canonical_sha256(V3_RAW), "readable_until": "the release after the Phase 5 merge"}
+    assert set(RAW) == set(V3_RAW) | V4_NEW_BLOCKS
+    for key in V3_RAW:
+        if key not in {"package_version", "schema_version", "phase", "created", "supersedes", "tutor_pipeline", "flag_policy", "owner_decisions"}:
+            assert RAW[key] == V3_RAW[key], key
+    tutor, v3_tutor = RAW["tutor_pipeline"], V3_RAW["tutor_pipeline"]
+    for key, value in v3_tutor.items():
+        if key not in {"schemas", "ledger", "unused_provenance_fields"}:
+            assert tutor[key] == value, key
+    assert {name: pin for name, pin in tutor["schemas"].items() if name not in V4_SCHEMAS} == v3_tutor["schemas"]
+    assert {name: tutor["schemas"][name]["path"] for name in V4_SCHEMAS} == V4_SCHEMAS
+    ledger = dict(tutor["ledger"])
+    assert (ledger.pop("entry_schema"), ledger.pop("entry_schemas")) == ("ledger-entry-v3", ["ledger-entry-v1", "ledger-entry-v2", "ledger-entry-v3"])
+    assert ledger == {key: value for key, value in v3_tutor["ledger"].items() if key not in {"entry_schema", "entry_schemas"}}
+    assert tutor["unused_provenance_fields"] == []
+    policy = dict(RAW["flag_policy"])
+    assert policy.pop("model_gateway")["default_elsewhere"] == "off" and policy.pop("phase5_exit_passed") is False
+    assert policy.pop("phase5_exit_evidence") is None
+    authority = policy.pop("authority")
+    assert authority.startswith(V3_RAW["flag_policy"]["authority"]) and "PD-28" in authority and "DI-76" in authority
+    assert policy == {key: value for key, value in V3_RAW["flag_policy"].items() if key != "authority"}
+    decisions = RAW["owner_decisions"]
+    assert set(decisions) == set(V3_RAW["owner_decisions"]) | {"D-07", "Q-09", "D-23", "D-29", "D-25", "A-15", "Q-15"}
+    for name, decision in V3_RAW["owner_decisions"].items():
+        if name != "Q-22":
+            assert decisions[name] == decision, name
+    assert decisions["Q-22"]["provisional_values"] == [*V3_RAW["owner_decisions"]["Q-22"]["provisional_values"], "v2.voting"]
+    assert decisions["Q-22"]["record"] == "PD-15, PD-16, PD-18, PD-25; DI-52"
+    gateway = RAW["gateway"]
+    assert {name: len(members) for name, members in gateway["registries"].items()} == {"development": 4, "staging": 0, "production": 0, "default": 0}
+    assert gateway["budgets"]["daily_units"] == {"development": 100000, "staging": 0, "production": 0, "default": 0} and gateway["terms"] is None
+    assert RAW["v2"]["degraded"]["pre_verified_source"] is None and RAW["v2"]["correction"]["critical_registry"] == []
+    assert RAW["v2"]["voting"]["provisional_until"] == "Q-22 (DI-52)"
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        lambda p: p["v2"].update(provisional=False),
+        lambda p: p["v2"]["panel"].update(max_members=4),
+        lambda p: p["v2"].update(routing_table_version="degraded-matrix-v2"),
+        lambda p: p["v2"]["voting"]["matrix"]["REDUCED-1"].update({"2": "1oo2"}),
+        lambda p: p["v2"]["voting"]["matrix"]["FULL"].update({"1": "2oo3"}),
+        lambda p: p["v2"]["voting"]["tier3_threshold"].update(numerator=4),
+        lambda p: p["v2"]["voting"]["tier3_threshold"].update(numerator=0),
+        lambda p: p["v2"]["tiers"].update(default=4),
+        lambda p: p["v2"]["tiers"].update(assessment_context=2),
+        lambda p: p["v2"]["correction"].update(max_cycles=3),
+        lambda p: p["v2"]["correction"].update(critical_registry=["claim-x"]),
+        lambda p: p["v2"]["generator_families"].pop("extractive-d19-v1"),
+        lambda p: p["v2"]["generator_families"].update({"extractive-d19-v1": "fake-alpha"}),
+        lambda p: p["v2"]["degraded"].update(pre_verified_source="module-store-v1"),
+        lambda p: p["v2"]["degraded"]["banners"].pop("degraded-zero-v1"),
+        lambda p: p["v2"]["degraded"]["banners"].update({"degraded-zero-v1": " "}),
+        lambda p: p["owner_decisions"]["Q-22"]["provisional_values"].remove("v2.voting"),
+        lambda p: p["tools"].update(version="mcp-tools-v2"),
+        lambda p: p["tools"].update(servers=["corpus"]),
+        lambda p: p["tools"].update(path="../tool-contracts.json"),
+        lambda p: p["tools"].update(sha256="xyz"),
+        lambda p: p["flag_policy"]["model_gateway"].update(default_elsewhere="shadow"),
+        lambda p: p["flag_policy"]["model_gateway"].update(default_development="on"),
+        lambda p: p["flag_policy"]["model_gateway"].update(on_requires_v1="shadow"),
+        lambda p: p["flag_policy"].update(phase5_exit_passed="no"),
+        lambda p: p["flag_policy"].update(phase5_exit_passed=True),
+        lambda p: p["flag_policy"].update(authority=V3_RAW["flag_policy"]["authority"]),
+        lambda p: p["tutor_pipeline"]["schemas"].pop("LedgerEntryV3"),
+        lambda p: p["tutor_pipeline"]["ledger"].update(entry_schemas=["ledger-entry-v1", "ledger-entry-v2"]),
+        lambda p: p["tutor_pipeline"].update(unused_provenance_fields=["tool_contract_version"]),
+        lambda p: p.update(schema_version=5),
+        lambda p: p.pop("gateway"),
+        lambda p: p["gateway"]["registries"]["development"][0].update(model_version="preview"),
+        lambda p: p["owner_decisions"].pop("D-29"),
+        # The tier-3 share is 2/3 while Q-22 is unresolved: the record rule re-tallies with it (PD-25).
+        lambda p: p["v2"]["voting"]["tier3_threshold"].update(numerator=1, denominator=2),
+        # Plan 5.8's correction rules are the code's (type E re-renders only).
+        lambda p: p["v2"]["correction"].update(type_e="revise_or_reverify_unchanged"),
+        lambda p: p["v2"]["correction"].update(other="re_render_only"),
+        lambda p: p["v2"]["correction"].pop("exhausted"),
+        # The tool names are provisional (A-18; PD-31).
+        lambda p: p["tools"].update(provisional=False),
+        # The pinning texts are the code's, and a glued alias is unpinned.
+        lambda p: p["gateway"]["pinning"].update(refused_tokens="alias|latest"),
+        lambda p: p["gateway"]["pinning"].pop("refused_within_token"),
+        lambda p: p["gateway"]["pinning"].update(version_pattern="^.+$"),
+        lambda p: p["gateway"]["registries"]["development"][0].update(model_id="fakealpha3preview"),
+        lambda p: p["gateway"]["registries"]["development"][0].update(model_version="2026-02-30"),
+        # Every provisional sub-block of v2 carries its own mark (PD-25, PD-29, PD-30).
+        lambda p: p["v2"]["correction"].pop("provisional"),
+        lambda p: p["v2"]["degraded"].update(provisional=False),
+        lambda p: p["v2"]["alignment"].pop("provisional"),
+        # The budget, the stop and the cache are shared by every instance, and only an operator clears a stop.
+        lambda p: p["gateway"]["budgets"].update(scope="process"),
+        lambda p: p["gateway"]["cache"].update(scope="process"),
+        lambda p: p["gateway"]["stop"].update(scope="process"),
+        lambda p: p["gateway"]["stop"].update(clear="restart"),
+    ],
+)
+def test_v4_structural_errors_always_stop_the_load(tmp_path, edit):
+    payload = json.loads(json.dumps(RAW))
+    edit(payload)
+    path = _write(tmp_path, payload)
+    for governed in (True, False):
+        with pytest.raises(ConfigPackageError):
+            load_config_package(path, governed=governed)
+
+
+def test_v4_names_the_entry_schema_whose_provenance_fields_it_fills(tmp_path):
+    # unused_provenance_fields describes the package's entry schema (ledger-entry-v3 in v4), as in v1 to v3; a v2 record
+    # written under v4 with MODEL_GATEWAY off keeps the three Phase 5 fields null.
+    payload = json.loads(json.dumps(RAW))
+    payload["tutor_pipeline"]["unused_provenance_fields"] = ["tool_contract_version"]
+    with pytest.raises(ConfigPackageError, match="its entry schema, ledger-entry-v3, fills every provenance field"):
+        load_config_package(_write(tmp_path, payload), governed=True)
+    assert RAW["tutor_pipeline"]["ledger"]["entry_schema"] == "ledger-entry-v3"
+    assert {RAW["gateway"][block]["scope"] for block in ("budgets", "cache", "stop")} == {"database"} and RAW["gateway"]["stop"]["clear"] == "operator"
+    assert RAW["flag_policy"]["model_gateway"]["stop"] == "off_until_cleared"
+    assert all(RAW["v2"][block]["provisional"] is True for block in ("tiers", "voting", "correction", "degraded", "alignment"))
+
+
+def test_gateway_package_check_problems():
+    import dataclasses
+
+    from app.gateway.package_check import check_gateway_package
+
+    package = load_config_package(DEFAULT_PACKAGE_PATH, governed=True)
+    assert check_gateway_package(package, structural=True) == []
+    assert check_gateway_package(load_config_package(V3_PACKAGE_PATH, governed=True), structural=False) == [
+        "the configuration package has no gateway, v2 or tools block (package v4 is required)"]
+    cases = {
+        "tools: schemas/tool-contracts.v1.json does not match its pinned sha256": dataclasses.replace(
+            package, tools=dataclasses.replace(package.tools, sha256="0" * 64)),
+        "tools: schemas/missing.json is missing": dataclasses.replace(package, tools=dataclasses.replace(package.tools, path="schemas/missing.json")),
+        "v2.prompt: a prompt hash differs": dataclasses.replace(package, v2=dataclasses.replace(package.v2, verifier_prompt_hash="0" * 64)),
+        "v2.panel_weights_version": dataclasses.replace(package, v2=dataclasses.replace(package.v2, panel_weights_version="dawid-skene-v1")),
+        "v2.voting.matrix is not the routing table": dataclasses.replace(package, v2=dataclasses.replace(
+            package.v2, matrix={**package.v2.matrix, "ZERO": {1: "1oo2", 2: "1oo2", 3: "1oo2"}})),
+        "gateway.retired_settings differ": dataclasses.replace(package, gateway=dataclasses.replace(package.gateway, retired_settings=())),
+        "v2.generator_families does not name every wired generator": dataclasses.replace(
+            package, v2=dataclasses.replace(package.v2, generator_families={})),
+    }
+    for expected, broken in cases.items():
+        problems = check_gateway_package(broken, structural=False)
+        assert any(expected in problem for problem in problems), (expected, problems)

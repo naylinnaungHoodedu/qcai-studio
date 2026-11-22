@@ -1,0 +1,110 @@
+{
+  "$defs": {
+    "AlignmentInstructions": {
+      "additionalProperties": false,
+      "properties": {
+        "prompt_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Prompt Hash",
+          "type": "string"
+        },
+        "prompt_id": {
+          "const": "alignment-item-v1",
+          "default": "alignment-item-v1",
+          "title": "Prompt Id",
+          "type": "string"
+        },
+        "ratings": {
+          "default": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "items": {
+            "type": "integer"
+          },
+          "title": "Ratings",
+          "type": "array"
+        },
+        "tool_contract_version": {
+          "title": "Tool Contract Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt_hash",
+        "tool_contract_version"
+      ],
+      "title": "AlignmentInstructions",
+      "type": "object"
+    },
+    "ReadabilityBand": {
+      "additionalProperties": false,
+      "properties": {
+        "max_grade": {
+          "title": "Max Grade",
+          "type": "number"
+        },
+        "min_grade": {
+          "title": "Min Grade",
+          "type": "number"
+        }
+      },
+      "required": [
+        "min_grade",
+        "max_grade"
+      ],
+      "title": "ReadabilityBand",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "band": {
+      "$ref": "#/$defs/ReadabilityBand"
+    },
+    "instructions": {
+      "$ref": "#/$defs/AlignmentInstructions"
+    },
+    "item": {
+      "const": "alignment",
+      "default": "alignment",
+      "title": "Item",
+      "type": "string"
+    },
+    "objective": {
+      "anyOf": [
+        {
+          "maxLength": 4000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Objective"
+    },
+    "rendered_text": {
+      "maxLength": 20000,
+      "minLength": 1,
+      "title": "Rendered Text",
+      "type": "string"
+    },
+    "request_schema": {
+      "const": "v2-alignment-request-v1",
+      "default": "v2-alignment-request-v1",
+      "title": "Request Schema",
+      "type": "string"
+    }
+  },
+  "required": [
+    "rendered_text",
+    "band",
+    "instructions"
+  ],
+  "title": "AlignmentRequest",
+  "type": "object"
+}

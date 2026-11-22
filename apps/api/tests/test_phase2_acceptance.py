@@ -1155,12 +1155,13 @@ class _StubEmbeddings:
         return [0.0]
 
 
-def _semantic_engine(store: CourseStore, *, enabled: bool, extra: int = 0) -> RetrievalEngine:
-    settings = Settings(semantic_retrieval_enabled=enabled, openai_api_key="test-openai-key", pinecone_api_key="test-pinecone-key",
-                        pinecone_index="test-index", retrieval_gate=store.gate)
-    engine = RetrievalEngine(store, settings)
+def _semantic_engine(store: CourseStore, *, enabled: bool, extra: int = 0, embedder: bool = True) -> RetrievalEngine:
+    # Phase 5 (spec 4.19): the backend embeds only through the gateway; a test gives it an in-process embedder (no
+    # egress). Without one, the gateway's own checks apply: here no D-23 opt-in, so no embedder.
+    settings = Settings(semantic_retrieval_enabled=enabled, pinecone_api_key="test-pinecone-key", pinecone_index="test-index",
+                        retrieval_gate=store.gate)
+    engine = RetrievalEngine(store, settings, embedder=_StubEmbeddings() if embedder else None)
     engine._semantic_backend.__dict__["_index"] = _StubIndex(extra=extra)
-    engine._semantic_backend.__dict__["_embeddings"] = _StubEmbeddings()
     return engine
 
 
@@ -1169,6 +1170,11 @@ def test_plan_h_the_semantic_backend_is_off_by_default_and_needs_span_ids():
     off = _semantic_engine(store, enabled=False)
     assert off.semantic_enabled is False and off._semantic_backend.enabled is False and off.sync_semantic_index() is False
     assert off.search("QUBO logistics").mode == "lexical"
+
+    # Enabled, but with no embedder from the gateway (no D-23 opt-in here), the backend stays off (Phase 5 spec 4.19).
+    unopted = _semantic_engine(store, enabled=True, embedder=False)
+    assert unopted._semantic_backend.enabled is False and unopted.sync_semantic_index() is False
+    assert unopted.semantic_inactive_reason == "egress_not_opted_in"
 
     on = _semantic_engine(store, enabled=True)
     assert on.semantic_enabled is False  # not aligned until synced
@@ -1522,13 +1528,18 @@ def test_d9_ready_reports_the_p1_floor_threshold_in_force_and_the_effective_sema
         "p1-floor", "score-floor-p1-v1", 6.0, 0.0)
     assert (fields["thresholds_provisional"], fields["threshold_authority"]) == (False, "P1-D-04")
     assert fields["bm25f_v1_calibrated"]["floor"] == package.abstention.floor  # reported, but not in force
-    # The setting alone never enables hybrid retrieval: this process has not aligned span-id vectors.
-    switched = Settings(semantic_retrieval_enabled=True, openai_api_key="test-openai-key", pinecone_api_key="test-pinecone-key",
-                        pinecone_index="test-index")
-    monkeypatch.setattr(main_module, "settings", switched)
-    monkeypatch.setattr(main_module, "get_retrieval_engine", lambda: RetrievalEngine(governed, switched))
+    # The setting alone never enables hybrid retrieval: this process has not aligned span-id vectors. The engine has an
+    # embedder (a test's in-process one: since Phase 5 the gateway gives none, spec 4.19) and an index, so its backend is
+    # enabled and only the missing alignment keeps /ready's semantic_enabled false.
+    switched = _semantic_engine(governed, enabled=True)
+    monkeypatch.setattr(main_module, "settings", switched.settings)
+    monkeypatch.setattr(main_module, "get_retrieval_engine", lambda: switched)
+    assert switched._semantic_backend.enabled is True and switched.semantic_inactive_reason == "not_aligned"
     fields = main_module._build_fields()
     assert (fields["semantic_setting"], fields["semantic_enabled"]) == (True, False)
+    # Aligned, /ready reports the effective state on.
+    assert switched.sync_semantic_index(refresh=True) is (len(governed.chunks) > 0)
+    assert main_module._build_fields()["semantic_enabled"] is switched.semantic_enabled
 
 
 def _startup(database_url: str, extra_env: dict[str, str]) -> subprocess.CompletedProcess:

@@ -1,0 +1,124 @@
+{
+  "$defs": {
+    "VerdictInstructions": {
+      "additionalProperties": false,
+      "properties": {
+        "ehmf_types": {
+          "default": [
+            "A",
+            "B",
+            "C",
+            "D",
+            "E"
+          ],
+          "items": {
+            "enum": [
+              "A",
+              "B",
+              "C",
+              "D",
+              "E"
+            ],
+            "type": "string"
+          },
+          "title": "Ehmf Types",
+          "type": "array"
+        },
+        "prompt_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Prompt Hash",
+          "type": "string"
+        },
+        "prompt_id": {
+          "const": "blind-claim-span-v1",
+          "default": "blind-claim-span-v1",
+          "title": "Prompt Id",
+          "type": "string"
+        },
+        "tool_contract_version": {
+          "title": "Tool Contract Version",
+          "type": "string"
+        },
+        "verdicts": {
+          "default": [
+            "SUPPORTED",
+            "CONTRADICTED",
+            "NOT_ENOUGH_INFO"
+          ],
+          "items": {
+            "enum": [
+              "SUPPORTED",
+              "CONTRADICTED",
+              "NOT_ENOUGH_INFO"
+            ],
+            "type": "string"
+          },
+          "title": "Verdicts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "prompt_hash",
+        "tool_contract_version"
+      ],
+      "title": "VerdictInstructions",
+      "type": "object"
+    },
+    "VerdictSpan": {
+      "additionalProperties": false,
+      "properties": {
+        "span_id": {
+          "pattern": "^span-[0-9a-f]{64}$",
+          "title": "Span Id",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 20000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "span_id",
+        "text"
+      ],
+      "title": "VerdictSpan",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "claim_text": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Claim Text",
+      "type": "string"
+    },
+    "instructions": {
+      "$ref": "#/$defs/VerdictInstructions"
+    },
+    "item": {
+      "const": "claim",
+      "default": "claim",
+      "title": "Item",
+      "type": "string"
+    },
+    "request_schema": {
+      "const": "v2-verdict-request-v1",
+      "default": "v2-verdict-request-v1",
+      "title": "Request Schema",
+      "type": "string"
+    },
+    "span": {
+      "$ref": "#/$defs/VerdictSpan"
+    }
+  },
+  "required": [
+    "claim_text",
+    "span",
+    "instructions"
+  ],
+  "title": "VerdictRequest",
+  "type": "object"
+}

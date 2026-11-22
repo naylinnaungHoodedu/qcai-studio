@@ -360,9 +360,14 @@ def observe_three_learners(monkeypatch, *, assistant_class=None, prefix: str = "
     monkeypatch.setattr(RetrievalEngine, "search", lambda self, query, lesson_slug=None, top_k=8, *, surface="search": legacy_calls.append(
         {"query": query, "lesson_slug": lesson_slug, "top_k": top_k}) or real_search(self, query, lesson_slug, top_k, surface=surface))
     markers, observed = [], []
+    from app.services.v2_panel.cache import reset_process_cache
+
     for mastery in (0.1, 0.5, 0.9):
         if on_learner is not None:
             on_learner(mastery)
+        # Each learner starts from a cold evidential cache: a record's V2 call and cache-hit counts are the process's
+        # traffic history, not learner state (Phase 5 spec 4.15; AC-5-11 shares the cache across learners on purpose).
+        reset_process_cache()
         headers = demo(f"{prefix}-{int(mastery * 10)}")
         marker = f"MARKER-{uuid4().hex}"
         markers.append(marker)
@@ -1650,9 +1655,25 @@ def test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode(monkeypatch
     assert (body["tutor_ledger_enabled"], body["ledger_route_enabled"], body["evidence_panel_enabled"], body["tutor_turns_route_enabled"]) == (True,) * 4
     from app import main as main_module
 
+    from sqlalchemy import event
+
+    from app.core.db import engine
+
     monkeypatch.setattr(main_module, "SessionLocal", _raise("_build_fields read the database"))
-    fields = main_module._build_fields()
+    statements: list[str] = []
+
+    def seen(conn, cursor, statement, parameters, context, executemany):
+        statements.append(" ".join(statement.split()))
+
+    event.listen(engine, "before_cursor_execute", seen)
+    try:
+        fields = main_module._build_fields()
+    finally:
+        event.remove(engine, "before_cursor_execute", seen)
     assert fields["two_pass_tutor"] == "shadow" and fields["tutor_pipeline"]["version"] == "two-pass-v1"
+    # No session read; since Phase 5 the only statements are the shared gateway stop's reads, where the V2 mode is not
+    # off by settings (development): the V2 mode and the gateway state adopt the registry's stop (Phase 5 spec 10.2).
+    assert statements and all(statement.startswith("SELECT gateway_stops.reason FROM gateway_stops") for statement in statements), statements
     assert main_module._ledger_head() == {"chain": "tutor-responses", "status": "unavailable"}  # fails open
 
 
@@ -1675,10 +1696,12 @@ def test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_emp
                     parents.add(node.value.value)
     assert revisions - parents == {SCHEMA_REVISION} and len(SCHEMA_REVISION) <= 32  # the single head; fits alembic_version
     engine = create_engine(fresh_database_url)
-    # Every table the Phase 3 revision creates (the Idempotency-Key records of POST /tutor/turns joined it, DI-40).
+    # Every table the Phase 3 revision creates (the Idempotency-Key records of POST /tutor/turns joined it, DI-40), and
+    # the Phase 5 revision's, which follows it (the gateway's shared controls).
     ledger_tables = {"response_ledger", "response_ledger_head", "tutor_turn_idempotency"}
+    phase5_tables = {"gateway_budget_days", "gateway_stops", "evidential_cache_entries"}
     try:
-        Base.metadata.create_all(engine, tables=[table for table in Base.metadata.sorted_tables if table.name not in ledger_tables])
+        Base.metadata.create_all(engine, tables=[table for table in Base.metadata.sorted_tables if table.name not in ledger_tables | phase5_tables])
         # A Phase 2 database: tutor_turns has no ledger_record_expected yet (the revision adds it; spec 18.8 F12).
         with engine.begin() as connection:
             connection.exec_driver_sql("ALTER TABLE tutor_turns DROP COLUMN ledger_record_expected")
@@ -1689,6 +1712,11 @@ def test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_emp
         with engine.connect() as connection:
             assert compare_metadata(MigrationContext.configure(connection, opts={"compare_type": True}), Base.metadata) == []
         append_ledger_entry(make_entry(), session_factory=sessionmaker(bind=engine), budget_ms=5000)
+        engine.dispose()
+        # One revision at a time: the Phase 5 step drops its own tables only, then the Phase 3 revision is the current one.
+        down = _alembic(fresh_database_url, "downgrade", "20261119_phase3_response_ledger")
+        assert down.returncode == 0, down.stderr[-2000:]
+        assert not phase5_tables & set(sa_inspect(engine).get_table_names()) and ledger_tables <= set(sa_inspect(engine).get_table_names())
         engine.dispose()
         refused = _alembic(fresh_database_url, "downgrade", "-1")
         assert refused.returncode != 0 and "export first" in refused.stderr

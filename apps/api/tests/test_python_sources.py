@@ -17,6 +17,9 @@ of order. The scan reads a select bound to a name through that name's assignment
 A test that creates a SQLAlchemy engine and never disposes it leaves its pooled database connection for the garbage
 collector to close at an arbitrary point in a later test (a ResourceWarning run of the suite found such leaks). The
 scan follows an engine a helper returns to each call of the helper, which must dispose it in turn.
+
+No test touches the network (Phase 5 spec 13.2): conftest.py installs network_guard before the application is imported,
+and a test here shows it refuses a non-loopback connect or name lookup before any packet and lets loopback through.
 """
 
 from __future__ import annotations
@@ -374,3 +377,41 @@ def test_the_engine_scan_catches_an_undisposed_engine_and_accepts_a_disposed_one
     )
     for source in disposed:
         assert _undisposed_engines(source, "sample.py") == [], source
+
+
+def test_the_network_guard_refuses_a_non_loopback_socket_and_allows_loopback():
+    import socket
+
+    import pytest
+
+    import network_guard
+
+    assert network_guard._installed  # conftest installed it before the application was imported
+    for attempt in (lambda: socket.create_connection(("203.0.113.1", 9), timeout=0.01),
+                    lambda: socket.getaddrinfo("example.com", 443)):
+        with pytest.raises(network_guard.NetworkBlocked):
+            attempt()
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        with pytest.raises(network_guard.NetworkBlocked):
+            probe.connect(("203.0.113.1", 9))
+        with pytest.raises(network_guard.NetworkBlocked):
+            probe.connect_ex(("203.0.113.1", 9))
+    finally:
+        probe.close()
+    blocked = network_guard.take_blocked()
+    assert len(blocked) == 4 and all("203.0.113.1" in item or "example.com" in item for item in blocked)
+    # Loopback passes through: a listener on 127.0.0.1 accepts a connect, and the local names resolve.
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        client = socket.create_connection(server.getsockname(), timeout=2)
+        client.close()
+    finally:
+        server.close()
+    assert socket.getaddrinfo("localhost", 80) and socket.getaddrinfo("127.0.0.1", 80)
+    if socket.has_ipv6:
+        assert network_guard._is_local("::1") and network_guard._is_local("[::1]")
+    assert not network_guard._is_local("2001:db8::1") and not network_guard._is_local("api.example.org")
+    assert network_guard.take_blocked() == []

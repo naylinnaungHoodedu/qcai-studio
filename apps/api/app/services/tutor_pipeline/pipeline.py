@@ -18,6 +18,15 @@ V1 (Phase 4 spec 4.13) runs inside the shadow, by v1_checks.mode:
   enforce  retrieve, bundle and envelope as in Phase 3, then the V1 track decides the record: its claims, rendering,
            counts and decision (ledger-entry-v2); decision "answer" means a rendering passed V1, and whether any of it
            may be delivered is verification.final
+
+V2 (Phase 5 spec 4.16) runs inside the V1 track, by v2_panel.mode (off whenever the shadow itself is off, outside
+development by default):
+  off      every path is Phase 4's exactly: no gateway is built and no cache is read
+  shadow   the V2 track votes on each V1-passed candidate beside the Phase 4 decision, which decides every final; the
+           record is a ledger-entry-v3 whose verification carries the V2 verdicts and the would-summary
+  on       (V1 enforce only) V2 decides each V1-passed claim; the record's decision is abstain exactly when its
+           verification's final is, and its rendering is the final rendering (ledger-entry-v3)
+An explicit v2_hook (the Phase 4 seam) takes precedence: with it the pipeline builds no V2 track and its V2 mode is off.
 """
 
 from __future__ import annotations
@@ -45,11 +54,13 @@ from app.services.tutor_pipeline.bind import bind
 from app.services.tutor_pipeline.contracts import (
     ClaimLedgerEntry,
     ClaimLedgerEntryV2,
+    ClaimLedgerEntryV3,
     ClaimPlan,
     EvidenceBundle,
     EvidentialEnvelope,
     LedgerEntry,
     LedgerEntryV2,
+    LedgerEntryV3,
     LockedClaimSet,
     PipelineCounts,
     PipelineCountsV2,
@@ -57,11 +68,13 @@ from app.services.tutor_pipeline.contracts import (
     PresentationRecord,
     Provenance,
     ProvenanceV2,
+    ProvenanceV3,
     RenderedResponse,
     ResolvedQuestion,
     ResolvedQuestionRef,
     RetrievalRecord,
     RetrievalRequest,
+    VerificationRecordV2,
     VersionStamps,
     sha256_hex,
 )
@@ -72,6 +85,13 @@ from app.services.tutor_pipeline.render import Renderer, TemplateRenderer
 from app.services.tutor_pipeline.retrieve import build_request, retrieve
 
 LOGGER = logging.getLogger("qcai.tutor")
+# The shadow-budget events and their messages (spec 10.4): the record's own composition, a shadow-mode V1 track and the
+# V2 panel each name their own stop.
+BUDGET_EVENTS = {
+    "tutor.two_pass.budget_exceeded": "Two-pass shadow exceeded its budget",
+    "tutor.v1.budget_exceeded": "The shadow V1 track exceeded its budget",
+    "tutor.v2.budget_exceeded": "The V2 panel exceeded the shadow budget",
+}
 PIPELINE_VERSION = "two-pass-v1"
 
 
@@ -267,6 +287,11 @@ class TwoPassPipeline:
         keyed_items: Any = None,
         misconceptions: Any = None,
         v2_hook: Any = None,
+        gateway: Any = None,
+        adapter_registry: Any = None,
+        cache: Any = None,
+        tool_host: Any = None,
+        v2_clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.package = get_config_package(settings)
         if self.package.tutor_pipeline is None:
@@ -286,6 +311,11 @@ class TwoPassPipeline:
         # block (v1 or v2) runs Phase 3 only.
         self.v1_params = self.package.v1
         self.v2_hook = v2_hook
+        # Phase 5 (spec 4.16): the V2 track's gateway, adapter registry, evidential cache and tool host. Each defaults,
+        # when V2 runs, to the process gateway, the environment's registry, the process cache and the default tool host;
+        # nothing is built while the V2 mode is off.
+        self.gateway, self.adapter_registry, self.cache, self.tool_host = gateway, adapter_registry, cache, tool_host
+        self.v2_clock = v2_clock
         # The clock V1.3 times a checker call with (tests and the fixture runner inject one).
         self.v1_clock: Callable[[], float] = time.monotonic
         self.checker, self.keyed_items, self.misconceptions = checker, keyed_items, misconceptions
@@ -304,18 +334,42 @@ class TwoPassPipeline:
     def _over(self, started: float, budget_ms: int | None, step: str, *, event: str = "tutor.two_pass.budget_exceeded") -> bool:
         """Whether the shadow budget is spent at `step`, logging `event` when it is. The record's own composition logs
         tutor.two_pass.budget_exceeded; a shadow-mode V1 track, which runs after the Phase 3 decision is fixed, logs
-        tutor.v1.budget_exceeded, so the Phase 3 signal still means the record itself overran (spec 4.13, 10.4)."""
+        tutor.v1.budget_exceeded, so the Phase 3 signal still means the record itself overran; the V2 track's step
+        "verify" logs tutor.v2.budget_exceeded. Each event has its own message (BUDGET_EVENTS; spec 4.12, 4.13, 10.4)."""
         if budget_ms is None:
             return False
         elapsed_ms = (self.clock() - started) * 1000
         if elapsed_ms <= budget_ms:
             return False
-        message = "Two-pass shadow exceeded its budget" if event == "tutor.two_pass.budget_exceeded" else "The shadow V1 track exceeded its budget"
+        message = BUDGET_EVENTS[event]
         LOGGER.warning(
             message,
             extra={FIELDS: {"event": event, "step": step, "elapsed_ms": round(elapsed_ms, 3), "budget_ms": budget_ms}},
         )
         return True
+
+    def v2_mode(self) -> Literal["off", "shadow", "on"]:
+        """The V2 mode of this pipeline: off with an explicit v2_hook, else v2_panel.mode for its settings and gateway."""
+        if self.v2_hook is not None:
+            return "off"
+        from app.services import v2_panel
+
+        return v2_panel.mode(self.settings, self.package, gateway=self.gateway)
+
+    def _v2_parts(self):
+        """(gateway, adapter registry, cache, tool host) for one run while V2 runs: the injected ones, else the process
+        gateway and cache (read per run, never kept on the pipeline), the environment's registry and the default tool host
+        over that gateway."""
+        from app.gateway.gateway import get_gateway
+        from app.gateway.registry import registry_for
+        from app.gateway.tools import ToolHost
+        from app.services.v2_panel.cache import get_cache
+
+        gateway = self.gateway if self.gateway is not None else get_gateway()
+        registry = self.adapter_registry if self.adapter_registry is not None else registry_for(self.package, self.settings)
+        cache = self.cache if self.cache is not None else get_cache()
+        tools = self.tool_host if self.tool_host is not None else ToolHost.default(self, gateway)
+        return gateway, registry, cache, tools
 
     def _propose(self, envelope: EvidentialEnvelope, *, keep: list | None = None) -> ClaimPlan:
         """The generator's plan, re-validated. With `keep`, the raw output (or the generator's exception) is appended,
@@ -351,15 +405,22 @@ class TwoPassPipeline:
         from app.services import v1_checks
 
         mode = v1_checks.mode(self.settings, self.package)
+        v2_mode = self.v2_mode() if mode != "off" else "off"
         params = self.params
         started = self.clock()
         request = build_request(item.resolved, lesson_slug=item.lesson_slug, corpus_version=self.store.corpus_version)
         bundle = retrieve(self.engine, request, top_k=params.top_k, registry=self.registry)
         envelope, reason = self._envelope(request, bundle, started, budget_ms)
         if mode == "enforce":
-            v1 = self._v1(item, bundle, envelope, reason, started, budget_ms, mode="enforce", phase3_decision=None)
-            decision: Literal["answer", "abstain"] = "answer" if v1.rendered is not None else "abstain"
-            reason = None if decision == "answer" else v1.decision.abstention_reason
+            v1 = self._v1(item, bundle, envelope, reason, started, budget_ms, mode="enforce", phase3_decision=None, v2_mode=v2_mode)
+            decision: Literal["answer", "abstain"]
+            if v2_mode == "on":
+                # The record abstains exactly when V2's final does (Phase 5 spec 4.16; LedgerEntryV2's enforce rule).
+                decision = "abstain" if v1.record.final == "abstain" else "answer"
+                reason = None if decision == "answer" else v1.record.final_reason
+            else:
+                decision = "answer" if v1.rendered is not None else "abstain"
+                reason = None if decision == "answer" else v1.decision.abstention_reason
             entry = self._entry_v2(item, decision, reason, bundle, v1.locked, v1.rendered, v1.record.render_attempts, v1.proposed,
                                    v1.dropped, budget_ms, v1=v1, presentation=v1.presentation)
             return self._finish(item, entry, decision, reason, request, bundle, envelope, v1.plan, v1.locked, v1.rendered,
@@ -375,6 +436,11 @@ class TwoPassPipeline:
             except Exception:  # noqa: BLE001 - any generator fault or malformed plan abstains (R-11)
                 reason = "claim_plan_invalid"
             else:
+                from app.services.v2_panel.cache import claim_plan_key, plan_cacheable
+
+                if v2_mode != "off" and plan_cacheable(self.generator):
+                    # V1 shadow: Phase 3's first proposal, validated, is the generation-1 claim plan (Phase 5 spec 4.15).
+                    self._v2_parts()[2].put("claim_plan", claim_plan_key(envelope, self.package, self.generator.ref), plan)
                 proposed = len(plan.claims)
                 if not plan.claims:
                     reason = "no_claims"
@@ -416,18 +482,28 @@ class TwoPassPipeline:
         # shadow: the record is the Phase 3 composition's; the V1 track judges the same bundle and first proposal.
         first_raw = raws[0] if raws else _NO_RAW
         no_envelope = bundle.sufficiency.reason if bundle.sufficiency.decision == "abstain" else (reason if envelope is None else None)
-        v1 = self._v1(item, bundle, envelope, no_envelope, started, budget_ms, mode="shadow", phase3_decision=decision, first_raw=first_raw)
+        v1 = self._v1(item, bundle, envelope, no_envelope, started, budget_ms, mode="shadow", phase3_decision=decision, first_raw=first_raw,
+                      v2_mode=v2_mode)
         entry = self._entry_v2(item, decision, reason, bundle, locked, rendered, attempts, proposed, dropped, budget_ms, v1=v1,
                                presentation=item.presentation)
         return self._finish(item, entry, decision, reason, request, bundle, envelope, plan, locked, rendered, attempts, record, v1=v1)
 
-    def _v1(self, item: PipelineInput, bundle, envelope, envelope_reason, started, budget_ms, *, mode, phase3_decision, first_raw=_NO_RAW):
+    def _v1(self, item: PipelineInput, bundle, envelope, envelope_reason, started, budget_ms, *, mode, phase3_decision, first_raw=_NO_RAW,
+            v2_mode="off"):
         from app.services.v1_checks.runner import _UNSET, V1Context, V1Track
 
-        track = V1Track(self, checker=self.checker, keyed_items=self.keyed_items, library=self.misconceptions, v2_hook=self.v2_hook,
-                        clock=self.v1_clock)
         context = V1Context(resolved=item.resolved, lesson_slug=item.lesson_slug, presentation=item.presentation,
                             legacy_decision=item.legacy_decision)
+        hook, cache = self.v2_hook, None
+        if v2_mode != "off":
+            from app.services.v2_panel.track import V2Track
+
+            gateway, registry, cache, tools = self._v2_parts()
+            hook = V2Track(self, context, mode=v2_mode, gateway=gateway, adapter_registry=registry, cache=cache, tools=tools,
+                           settings=self.settings, clock=self.v2_clock,
+                           budget_over=lambda step: self._over(started, budget_ms, step, event="tutor.v2.budget_exceeded"))
+        track = V1Track(self, checker=self.checker, keyed_items=self.keyed_items, library=self.misconceptions, v2_hook=hook,
+                        clock=self.v1_clock, cache=cache if mode == "enforce" else None)
         # In enforce the V1 track is the record's composition; in shadow it runs after the record's decision.
         event = "tutor.two_pass.budget_exceeded" if mode == "enforce" else "tutor.v1.budget_exceeded"
         return track.run(
@@ -555,7 +631,11 @@ class TwoPassPipeline:
     def _entry_v2(self, item, decision, reason, bundle, locked, rendered, attempts, proposed, dropped, budget_ms, *, v1,
                   presentation: PresentationPlan) -> LedgerEntryV2:
         """A ledger-entry-v2 record (Phase 4 spec 4.13): the v1 fields, ProvenanceV2 naming the V1.3 checker, claims with
-        their entailment score (enforce only, from a real checker), the V1 VerificationRecord and PipelineCountsV2."""
+        their entailment score (enforce only, from a real checker), the V1 VerificationRecord and PipelineCountsV2. With
+        a V2 verification record (Phase 5) it is a ledger-entry-v3 (_entry_v3)."""
+        if isinstance(v1.record, VerificationRecordV2):
+            return self._entry_v3(item, decision, reason, bundle, locked, rendered, attempts, proposed, dropped, budget_ms, v1=v1,
+                                  presentation=presentation)
         base = self._provenance(bundle)
         provenance = ProvenanceV2(**base.model_dump(exclude={"v1_3_checker_model_id"}), v1_3_checker_model_id=v1.record.policy.checker_model_id)
         scores = v1.scores if v1.record.mode == "enforce" else {}
@@ -577,3 +657,31 @@ class TwoPassPipeline:
             ),
         )
 
+    def _entry_v3(self, item, decision, reason, bundle, locked, rendered, attempts, proposed, dropped, budget_ms, *, v1,
+                  presentation: PresentationPlan) -> LedgerEntryV3:
+        """A ledger-entry-v3 record (Phase 5 spec 4.16): the v2 fields, ProvenanceV3 filling every plan 7.4 provenance
+        field from the package, and the VerificationRecordV2."""
+        block = v1.record.v2
+        base = self._provenance(bundle)
+        provenance = ProvenanceV3(**base.model_dump(exclude={"v1_3_checker_model_id", "panel_weights_version", "routing_table_version",
+                                                             "tool_contract_version"}),
+                                  v1_3_checker_model_id=v1.record.policy.checker_model_id, panel_weights_version=block.panel_weights_version,
+                                  routing_table_version=block.routing_table_version, tool_contract_version=block.tool_contract_version)
+        scores = v1.scores if v1.record.mode == "enforce" else {}
+        claims = tuple(
+            ClaimLedgerEntryV3(claim_id=claim.claim_id, response_id=item.response_id, text=claim.text, span_ids=claim.span_ids,
+                               entailment_score=scores.get(claim.claim_id), provenance=provenance)
+            for claim in locked.claims
+        )
+        return LedgerEntryV3(
+            **self._entry_fields(item, decision, reason, bundle, locked, rendered, attempts, budget_ms, presentation),
+            claims=claims,
+            provenance=provenance,
+            verification=v1.record,
+            counts=PipelineCountsV2(
+                proposed_claims=proposed,
+                bound_claims=len(locked.claims),
+                dropped=dict(sorted(dropped.items())),
+                render_attempts=attempts,
+            ),
+        )
