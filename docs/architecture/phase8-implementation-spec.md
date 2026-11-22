@@ -24,12 +24,25 @@ Separate credential verification from subject resolution. An account and a valid
 
 The subject mapping binds a provider principal to a random subject identifier. The synchronization command includes an issued replica, operation identifiers and clocks, and an expected record version. Its result contains operation receipts and the resulting version. Consent records and change history carry version, class, state, time, and source. The planner returns a plan ID, ordered lesson IDs, and a planner version. Erasure receipts carry a random ID, timestamp, consent version, table coverage and zero counts, configuration digest, and scope statements. Concrete models and their field listings will be pinned as the interfaces are implemented.
 
+The first build adds the following shapes:
+
+| Model | Fields |
+|---|---|
+| `LearnerIssuedReplica` | `replica_id` (random server-issued string, primary key), `user_id` (indexed erasure key), `created_at` (database timestamp). |
+| `LearnerPresentation` | `plan_id` (`concise`, `stepwise`, or `socratic`), `lesson_order` (ordered tuple of lesson identifiers), `planner_version` (`learner-planner-v1`). |
+
+The client operations service accepts a subject, expected version, and existing operation input models. The authenticated GET uses the no-write reader when synchronization is enabled. The API write route uses the baseline merge pending coordinated wiring of the trusted writer and authorization policy.
+
 ## 4. Algorithms
 
 - Bind replicas to the subject. Resolve existing receipts before rejecting a stale clock, so a repeated request can recover a prior outcome. Validate new operations' replica ownership, monotonicity, and causal-vector scope. Serialize the version check and record, receipt, and clock updates in one transaction. Resolve first-insert races with a bounded retry or conflict response.
 - Preserve server-scored mastery and merge semantics. Choose assessment-operation counters under the same transaction as the attempt. Refuse client mastery operations and server-owned operation and replica identifiers.
 - Select lesson order and style from server mastery, completion, and attempt state. Use static course order when the planner is unavailable or adaptation consent is absent.
 - Erase through metadata-derived, child-first table coverage. Resolve the guest revocation representation against rotation and legacy-upgrade tests before wiring identity. Persist the canonical receipt digest and coverage summary in the durable audit path. A receipt describes local data scope and the information available about processors and backups.
+
+In `learner_record_sync.py`, a conflict-tolerant insert creates the record when needed. A version-preserving row update acquires the transaction's write lock, then the service checks the expected version and reads the subject's issued replicas. All new operations have strictly increasing clocks and known causal counters. Identical operations in the same batch generate one applied receipt followed by duplicate receipts. A replay containing only known operations can recover its receipts after the record advances. The read-only entry point returns a version-zero record for a missing subject without issuing an insert.
+
+The planner maps the mean finite course-local server mastery below 0.4 to stepwise, from 0.4 through values below 0.75 to concise, and from 0.75 to socratic. It keeps unfinished lessons in course order and applies PD-204 to the review order. With adaptation disabled or no valid course mastery, it returns the configured default plan and static order. Any eventual caller must source mastery from trusted assessment evidence.
 
 ## 5. Configuration package
 
@@ -44,7 +57,7 @@ Defer the package bump until after Phase 6 is merged into this branch and the Ph
 | `LEARNER_IDENTITY` | `off` or `on` / `off` | Isolates subject mapping and claim behavior. Preserve compatibility with the baseline demo fixtures. |
 | `LEARNER_PRIVACY` | `off` or `on` / `on` | Gates consent, retention additions, export, and erasure receipts. |
 
-All are off outside development. Refuse every non-off setting outside development while the verified configuration package's `phase8_exit_passed` is false. Enforce the separate D-27 restriction for adaptation. Persist a shared adaptation stop across processes and restarts. Plan L: "Flags for planner and sync. Stop: any harness violation blocks adaptation (never evidence)."
+All default to off outside development. Settings reject every non-off value outside development until the shipped, hash-verified configuration package reports the Phase 8 exit. A missing exit value is false. D-27 independently precludes adaptation outside development. Planner on is refused everywhere pending DI-312. The shared adaptation stop is pending. Plan L: "Flags for planner and sync. Stop: any harness violation blocks adaptation (never evidence)."
 
 ## 7. File-by-file changes
 
@@ -84,6 +97,12 @@ Generate the erasure proof and the invariance report from synthetic or approved 
 
 Add authorization, retention, export, failover, stop persistence, migration, and freeze checks as each feature lands. Record the actual test names and regression checks with the build.
 
+| Test module | Coverage implemented |
+|---|---|
+| `test_phase8_settings.py` | Development and production defaults, pre-exit startup refusal, verified package requirement, D-27, and DI-312. |
+| `test_phase8_sync.py` | No INSERT on read, stale and duplicate operations, cross-subject ownership, server namespace, and write conflict with retry. Route and trusted assessment coverage are pending. |
+| `test_phase8_planner.py` | Provisional mastery bands, deterministic lesson ordering, and static fallback. The cross-channel invariance harness remains pending. |
+
 ## 14. CI changes
 
 Use the existing test jobs first. After integration, add the package readability and harness verification steps at the prescribed locations. Preserve the existing public-payload golden record.
@@ -102,7 +121,7 @@ The following defaults are provisional. Implementation locations in this section
 | PD-201 | D-26 compare-and-set (Security Lead) | Plan task 2 requires server-issued replica clocks, monotonic counters, and compare-and-set on `record_version`. | Check the expected version and serialize writes to the learner record. An out-of-date client re-reads and retries. Identical receipts remain idempotent. | Learner-record sync and trusted assessment write path. |
 | PD-202 | D-08 research timing and D-14 research data plane (Principal Investigator) | Plan 18.3 offers IRB and OSF before research use. Plan H makes research contingent on IRB. | Apply D-08 option (a). Refuse research grants and research export everywhere. Use synthetic learners and the public fixture for engineering evidence. D-14 remains with DI-09. | Consent service and invariance harness. |
 | PD-203 | D-05 feature freeze | Plan L requires planner and sync switches and an adaptation stop on harness violation. | Keep all Phase 8 switches off outside development and refuse non-off values before the verified Phase 8 exit. Development defaults are sync on, planner shadow, identity off, and privacy on. Refuse planner on pending DI-312. | Phase 8 settings and future package flag policy. |
-| PD-204 | Engineering parameters (Engineering) | Plan tasks 2, 3, and 6 require clocks, server mastery, a planner, and three synthetic learner levels. | Use planner thresholds 0.4 and 0.75 and fixture levels 0.1, 0.5, and 0.9. Preserve unfinished course order. Sort completed review lessons by ascending mastery, then descending attempts, then course order. Resolve the replica cap, retry budget, attempt limits, and export and receipt encoding with their implementation. | Planner constants and the future sync, assessment, export, and harness implementation. |
+| PD-204 | Engineering parameters (Engineering) | Plan tasks 2, 3, and 6 require clocks, server mastery, a planner, and three synthetic learner levels. | Cap issued replicas at 16 per subject. Use planner thresholds 0.4 and 0.75 and fixture levels 0.1, 0.5, and 0.9. Preserve unfinished course order. Sort completed review lessons by ascending mastery, then descending attempts, then course order. Set the remaining retry budget, attempt limits, and export and receipt encoding with their implementation. | `learner_record_sync.py`, `learner_record_planner.py`, and the future assessment, export, and harness implementation. |
 | PD-205 | Retention classes (Engineering and Data Steward) | Plan task 5 requires scheduled retention. P1-D-09 records the 365-day security-event period. | Reuse the existing retention constants and provider-independent account and session rules. Keep the response ledger outside the expiry schedule pending PLAN-12.8. | Retention class register, shared cleanup service, and scheduled worker. |
 
 | # | Item | Who | State |
@@ -129,6 +148,10 @@ Plan M: "[Risk R-01][Risk R-08][Risk R-41][Risk R-42][Risk R-51]; residual: back
 ## 17. Verification, work order and exit
 
 Start with the baseline, then implement identity and synchronization, the privacy lifecycle, and the planner and harness. Run offline tests and validators with isolated scratch files. Repeat the applicable SQLite, PostgreSQL, frontend, and integration checks against the final branch after the Phase 5 merge. Plan P: "AC-8-1 to AC-8-7 green; harness in CI." `phase8_exit_passed` stays false while DI-300 remains open.
+
+The Phase 5 merged baseline passed 8 separately isolated template tests, 1,593 SQLite tests (2 skipped, 9 deselected, 3 xfailed), and 1,591 tests per PostgreSQL driver (9 deselected, 3 xfailed each). Frontend lint, type checking, and 154 integration tests passed. The existing validators passed, including package v1 through v4, the V2 fixture report, and all 1,192 frozen public payload bodies. The path boundary scan passed. Licensed-passage scanning requires the fingerprint input. The Phase 8 invariance harness and erasure-proof scripts are pending.
+
+The first build passed 43 targeted tests on each database backend, including the Phase 8 modules and existing learner-record, erasure, and gateway egress tests. The freeze, planner threshold, and version-conflict tests failed under their respective in-process mutations. The setup install reported 11 moderate npm advisories. Package and lock files retain the integrated versions.
 
 ## 18. Review history
 

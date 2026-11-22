@@ -372,6 +372,14 @@ class LearnerRecordOperation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class LearnerIssuedReplica(Base):
+    __tablename__ = "learner_issued_replicas"
+
+    replica_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(255), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class TutorThread(Base):
     __tablename__ = "tutor_threads"
     __table_args__ = (Index("ix_tutor_threads_user_id_updated_at", "user_id", "updated_at"),)

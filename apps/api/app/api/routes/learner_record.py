@@ -7,6 +7,7 @@ from app.core.rate_limit import limiter
 from app.core.config import get_settings
 from app.schemas import LearnerRecordOperationsRequest, LearnerRecordOperationsResponse, LearnerRecordRead
 from app.services.learner_record import apply_learner_record_operations, read_learner_record
+from app.services.learner_record_sync import read_existing_learner_record
 
 
 router = APIRouter(prefix="/learner-record", tags=["learner-record"])
@@ -17,6 +18,8 @@ def get_learner_record(
     user: AuthUser = Depends(require_durable_learner),
     db: Session = Depends(get_db),
 ):
+    if get_settings().learner_sync == "on":
+        return read_existing_learner_record(db, user.user_id)
     return read_learner_record(db, user.user_id)
 
 
