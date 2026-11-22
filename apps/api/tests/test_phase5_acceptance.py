@@ -1551,13 +1551,124 @@ def test_phase5_docs_the_runbooks_and_registers_state_the_gateway_s_operations_e
         assert text not in " ".join(path.read_text(encoding="utf-8").replace("#", " ").split()), path.name
     assert "a stopped instance stays stopped until it is replaced" in slis and "A running gateway never reopens" in " ".join(
         (API_ROOT / "app" / "gateway" / "gateway.py").read_text(encoding="utf-8").split())
-    # The loggers: every Phase 5 event's logger is named, the operator's command and the start-up lines included.
-    assert "All Phase 5 events log on `qcai.gateway` or `qcai.tutor`" not in slis and "`gateway.stop_status` (on `qcai.worker`)" in slis
-    assert "`gateway.retired_setting` and `semantic.inactive` (on `qcai.api`)" in slis
+    # The loggers each Phase 5 event logs on: test_phase5_docs_name_the_logger_each_phase5_event_logs_on.
     # The mutation-check record claims only the checks the commit messages and the phase record name (spec 13.5).
     mutation = spec.split("### 13.5 Mutation checks", 1)[1].split("\n## 14.", 1)[0]
     assert "The record of each check is in the commit messages and the BEP phase record." not in mutation
     assert "not yet mutation-checked" in mutation
+
+
+LOG_METHODS = {"debug", "info", "warning", "error", "exception", "critical", "log"}
+
+
+def _code_loggers() -> dict[str, set[str | None]]:
+    """Every literal `event` the API code logs, with the names of the loggers it is logged on, read from the source: a
+    module-level `NAME = logging.getLogger("...")`, a logger a module imports by name from another app module, or a
+    direct `logging.getLogger("...")` call. None stands for a receiver this reading cannot resolve."""
+
+    def logger_name(node: ast.AST) -> str | None:
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "getLogger"
+                and isinstance(node.func.value, ast.Name) and node.func.value.id == "logging"
+                and len(node.args) == 1 and isinstance(node.args[0], ast.Constant)):
+            return node.args[0].value
+        return None
+
+    trees = {}
+    for path in sorted((API_ROOT / "app").rglob("*.py")):
+        parts = path.relative_to(API_ROOT).with_suffix("").parts
+        trees[".".join(parts[:-1] if parts[-1] == "__init__" else parts)] = ast.parse(path.read_text(encoding="utf-8"))
+    own = {module: {target.id: name for statement in tree.body if isinstance(statement, ast.Assign)
+                    and (name := logger_name(statement.value)) for target in statement.targets if isinstance(target, ast.Name)}
+           for module, tree in trees.items()}
+    events: dict[str, set[str | None]] = {}
+    for module, tree in trees.items():
+        loggers = dict(own[module])
+        for statement in tree.body:
+            if isinstance(statement, ast.ImportFrom) and statement.module in own:
+                loggers.update({alias.asname or alias.name: own[statement.module][alias.name]
+                                for alias in statement.names if alias.name in own[statement.module]})
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in LOG_METHODS):
+                continue
+            receiver = node.func.value
+            name = loggers.get(receiver.id) if isinstance(receiver, ast.Name) else logger_name(receiver)
+            for keyword in node.keywords:
+                for fields in keyword.value.values if keyword.arg == "extra" and isinstance(keyword.value, ast.Dict) else ():
+                    for key, value in zip(fields.keys, fields.values) if isinstance(fields, ast.Dict) else ():
+                        if isinstance(key, ast.Constant) and key.value == "event" and isinstance(value, ast.Constant):
+                            events.setdefault(value.value, set()).add(name)
+    return events
+
+
+def _documented_loggers(text: str) -> dict[str, str]:
+    """The loggers a text names: "`event` (on `logger`)", where a list of events joined by commas or "and" before one
+    "(on `logger`)" names that logger for each; a `gateway.*` or `tutor.*` event the text does not name this way is on
+    the logger the text gives its family."""
+    assert "`qcai.gateway` (the `gateway.*` events)" in text and "`qcai.tutor` (the `tutor.*` events)" in text, text[:80]
+    named: dict[str, str] = {}
+    for group, logger in re.findall(r"((?:`[a-z0-9_.]+`(?:, | and ))*`[a-z0-9_.]+`) \(on `([a-z0-9_.]+)`\)", text):
+        for event in re.findall(r"`([a-z0-9_.]+)`", group):
+            assert named.setdefault(event, logger) == logger, (event, text[:80])
+    return named
+
+
+def test_phase5_docs_name_the_logger_each_phase5_event_logs_on(monkeypatch, caplog):
+    # Spec 10.4, its 7.1 import rule and the observability runbook name the logger of every 10.4 event as the code logs
+    # it: the gateway.* events on qcai.gateway (the start-up line gateway.retired_setting included) and the tutor.* events
+    # on qcai.tutor, except the operator's gateway.stop_status (qcai.worker) and the start-up semantic.inactive
+    # (qcai.api); the security events gateway.stopped and gateway.stop_cleared are on qcai.security. Read from the
+    # source, then confirmed at run time for the start-up lines and the stop command.
+    from app import main as main_module
+    from app.services import security_log
+    from app.services.retrieval_engine import RetrievalEngine
+    from app.services.store import get_course_store
+    from app.services.tutor_pipeline import pipeline
+    from app.workers import gateway_stop
+
+    spec = spec_text()
+    table = spec.split("### 10.4 Log events", 1)[1].split("\n## 11.", 1)[0]
+    events = re.findall(r"^\| `([a-z0-9_.]+)`", table, flags=re.MULTILINE)
+    assert {"gateway.retired_setting", "gateway.stop_status", "semantic.inactive", "tutor.v2.budget_exceeded"} <= set(events)
+    code = _code_loggers()
+    for event in pipeline.BUDGET_EVENTS:  # the one event name the code passes in a variable (TwoPassPipeline._over)
+        code.setdefault(event, set()).add(pipeline.LOGGER.name)
+    loggers = {event: code.get(event, set()) for event in events}
+    assert all(len(names) == 1 and None not in names for names in loggers.values()), loggers
+    loggers = {event: next(iter(names)) for event, names in loggers.items()}
+    assert (loggers["gateway.retired_setting"], loggers["gateway.stop_status"], loggers["semantic.inactive"]) == ("qcai.gateway", "qcai.worker", "qcai.api")
+    # The start-up lines and the operator's command, run: each record's logger is the one the source gives.
+    caplog.set_level(logging.INFO)
+    monkeypatch.setenv("VERTEX_AI_CHAT_MODEL", "gemini-3.1-flash-lite-preview")
+    main_module._warn_retired_provider_settings()
+    engine = RetrievalEngine(get_course_store(), Settings(semantic_retrieval_enabled=True))
+    monkeypatch.setattr(main_module, "get_retrieval_engine", lambda: engine)
+    assert main_module._warn_semantic_inactive() == "egress_not_opted_in"
+    assert gateway_stop.main([]) == 0
+    seen: dict[str, set[str]] = {}
+    for record in caplog.records:
+        if event := getattr(record, "json_fields", {}).get("event"):
+            seen.setdefault(event, set()).add(record.name)
+    for event in ("gateway.retired_setting", "semantic.inactive", "gateway.stop_status"):
+        assert seen.get(event) == {loggers[event]}, (event, seen.get(event))
+    # Each text names those loggers; a stale sentence (a start-up line on another logger, or no exception named) fails.
+    slis = (REPO_ROOT / "infra" / "cloudrun" / "observability.md").read_text(encoding="utf-8").split(
+        "## Phase 5 SLIs: gateway and V2 (plan Phase 5 I)", 1)[1]
+    texts = {
+        "observability runbook": next(line for line in slis.splitlines() if line.startswith("The Phase 5 events log on")),
+        "spec 10.4": next(line for line in table.splitlines() if line.startswith("The Phase 5 events log on")),
+        "spec 7.1": next(line for line in spec.splitlines() if line.startswith("**Import rule.**")),
+    }
+    family = {"gateway.": "qcai.gateway", "tutor.": "qcai.tutor"}
+    for name, text in texts.items():
+        named = _documented_loggers(text)
+        documented = {event: named.get(event) or next((logger for prefix, logger in family.items() if event.startswith(prefix)), None)
+                      for event in events}
+        assert documented == loggers, (name, {event: (documented[event], loggers[event]) for event in events if documented[event] != loggers[event]})
+        assert set(named) <= set(events), (name, sorted(set(named) - set(events)))
+    assert security_log.LOGGER.name == "qcai.security"
+    for name in ("observability runbook", "spec 10.4"):
+        assert "the security events `gateway.stopped` and `gateway.stop_cleared` log on `qcai.security`" in texts[name], name
+    assert "All Phase 5 events log on `qcai.gateway` or `qcai.tutor`" not in slis
 
 
 def _test_function_names() -> set[str]:
