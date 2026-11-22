@@ -17,10 +17,12 @@ disclosed, which needs both the package's policy v1.v1_7.on_conflict "disclose" 
 value) and a caller that shows the disclosure (disclosure_shown True: the evidence panel, whose `conflicts` label the
 conflicting passages, is on). Under "withhold" every conflict is withheld whatever the panel shows, as V1.7 withholds
 on the two-pass track. An answer delivered with the panel's labels is stored, and each read that shows it again
-returns the same labels for its stored quotations: GET /assistant/threads/{thread_id} and GET /qa/history for the
-chat's stored bubbles and the Q&A history to render (evidence_panel.stored_conflicts), and the owner's and reviewer's
-GET /ledger/responses/{response_id} for the legacy record's claims (evidence_panel.record_conflicts). So no read
-returns those quotations without their labels.
+labels its stored quotations by the V1.7 rule of the package in force at read time: GET /assistant/threads/{thread_id}
+and GET /qa/history for the chat's stored bubbles and the Q&A history to render (evidence_panel.stored_conflicts), and
+the owner's and reviewer's GET /ledger/responses/{response_id} for the legacy record's claims
+(evidence_panel.record_conflicts). Nothing stores the labels a delivery showed, so a package with other V1.7 values
+(an owner value under Q-22) relabels a stored answer on its next read and can drop a label shown at delivery (spec
+4.15 item 3, DI-68).
 Any failure withholds the whole answer: the contained answer becomes today's abstention (the same bytes), the guard
 counts it (V1_METRICS.legacy_guard) and logs tutor.v1.legacy_guard_withheld with the check, the reason and the surface
 (a V1.1 or V1.2 failure is an upstream defect; a V1.7 one is conflicting sources quoted with no disclosure allowed). The

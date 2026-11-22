@@ -593,9 +593,9 @@ def test_ac_4_6_under_the_withhold_policy_conflicting_quotations_are_withheld_ev
 def test_ac_4_6_a_stored_answer_quoting_conflicting_spans_is_shown_again_with_its_disclosure(monkeypatch):
     # AC-4-6 on every surface that shows a stored answer again: with the panel on, the answer quoting conflicting
     # passages is delivered with the panel's conflicts and stored; GET /assistant/threads/{id}, GET /qa/history and the
-    # owner's and the reviewer's GET /ledger/responses/{turn_id} then return the same labels whatever
-    # EVIDENCE_PANEL_ENABLED says at read time. They are the current package's V1.7 labels: under the shipped package
-    # (no fixture family) the same stored answer carries none, and no conflicts key.
+    # owner's and the reviewer's GET /ledger/responses/{turn_id} then return its labels whatever EVIDENCE_PANEL_ENABLED
+    # says at read time. They are the V1.7 labels of the package in force at read time, not stored ones: under the
+    # shipped package (no fixture family) the same stored answer carries none, and no conflicts key (DI-68).
     citations, family = _family_citations()
     overlay = dataclasses.replace(PACKAGE, v1=dataclasses.replace(V1, version_families={item: "fixture" for item in family}))
     real = contain_answer
@@ -1344,6 +1344,14 @@ def test_phase4_docs_the_phase3_spec_states_what_phase4_changed():
     assert f"render `{render}`" in phase3
     sufficiency = next(line for line in phase3.splitlines() if "Decision `near_miss` when `top.near_floor`" in line)
     assert "`score = top.score`" not in sufficiency and "`score` is the top result's gate score" in sufficiency
+    # 7.17's three-plan replay report shape gives config_package.version as the package in force, the version the
+    # committed record (which `replay_tutor_plans.py --check` reads) holds.
+    record = json.loads((REPO_ROOT / "docs" / "evaluation" / "phase3" / "three_plan_replay_v1.json").read_text(encoding="utf-8"))
+    shape = phase3.split("**Report shape**", 1)[1].split("- **Exit codes:**", 1)[0]
+    assert record["config_package"]["version"] == PACKAGE.package_version
+    assert '"config_package": {"version": "2.0.0"' not in shape and '"config_package": {"version": "...", "sha256": "..."}' in shape
+    assert f"{record['config_package']['version']} for Phase 4's v3, which the committed record holds" in shape
+    assert "7.17's three-plan replay report shape" in _spec_head().split("### 7.14", 1)[1].split("### 7.15", 1)[0]
 
 
 def test_phase4_docs_13_3_calls_unchanged_no_test_it_names_as_changed():
@@ -1394,7 +1402,223 @@ def test_phase4_docs_the_start_up_mode_and_settings_text_states_the_current_rule
     assert "or the package's conflict policy (v1.v1_7.on_conflict) is withhold" in pipeline
 
 
+def _flat(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _comments(text: str) -> str:
+    """The comment lines of a YAML or Python text, joined without their markers."""
+    return _flat(" ".join(line.strip().lstrip("# ") for line in text.splitlines() if line.strip().startswith("#")))
+
+
+def _spec_head() -> str:
+    """Sections 0-17 of this phase's spec: the authoritative text."""
+    return SPEC.split("\n## 18. Review history\n", 1)[0]
+
+
+def _spec_line(start: str) -> str:
+    return next(line for line in _spec_head().splitlines() if line.lstrip().startswith(start))
+
+
+def _runbook(name: str, heading: str) -> str:
+    text = (REPO_ROOT / "infra" / "cloudrun" / name).read_text(encoding="utf-8")
+    return text.split(heading, 1)[1].split("\n## ", 1)[0]
+
+
+def test_phase4_docs_name_each_v1_rule_by_its_current_id():
+    # The authoritative texts name every V1 rule by the id the code (rules.RULE_IDS) and package v3 hold, and no other
+    # version of it: spec 5.1's listing of the v1_5 block names the package's rule.
+    from app.services.v1_checks.rules import RULE_IDS
+
+    raw = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
+    assert raw["v1"]["rule_ids"] == RULE_IDS and raw["v1"]["v1_5"]["rule"] == RULE_IDS["V1.5"]
+    adr = (REPO_ROOT / "docs" / "adr" / "ADR-005-abstention-gate.md").read_text(encoding="utf-8")
+    strategy = (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
+    texts = {"spec 0-17": _spec_head(), "ADR-005": adr.split("## Decision 2026-11-20", 1)[1],
+             "test strategy": strategy.split("## Phase 4 acceptance map", 1)[1],
+             "README": (REPO_ROOT / "docs" / "evaluation" / "phase4" / "README.md").read_text(encoding="utf-8"),
+             "deployment.md": _runbook("deployment.md", "## Phase 4"), "observability.md": _runbook("observability.md", "## Phase 4")}
+    for name, text in texts.items():
+        for rule in RULE_IDS.values():
+            family = re.sub(r"-v\d+$", "", rule)
+            assert set(re.findall(rf"\b{re.escape(family)}-v\d+\b", text)) <= {rule}, (name, rule)
+    block = _spec_head().split("### 5.1 File", 1)[1].split("`v1_5` (", 1)[1].split("), `v1_6`", 1)[0]
+    assert f'`rule "{raw["v1"]["v1_5"]["rule"]}"`' in block and "gate score" in block
+
+
+def test_phase4_docs_state_the_learner_path_v1_7_rule_wherever_they_name_it():
+    # legacy_guard.may_disclose: on the learner path a V1.7 conflict is disclosed only under the package's policy
+    # disclose with the evidence panel shown; with the panel off, or under withhold, the guard withholds the answer.
+    # Every authoritative text that says when the guard withholds names both cases (spec R-a, conflict 3, section 2,
+    # the AC-4-6 row, 4.8 item 4, 10.4; the v1_checks, Q&A and orchestrator docstrings; the env example; the
+    # observability runbook), and the spec's lists of the reads that label a stored answer name the ledger read too.
+    import inspect
+
+    from app.services import v1_checks
+    from app.services.v1_checks import legacy_guard
+
+    withhold = dataclasses.replace(PACKAGE, v1=dataclasses.replace(V1, on_conflict="withhold"))
+    assert PACKAGE.v1.on_conflict == "disclose" and legacy_guard.may_disclose(PACKAGE, disclosure_shown=True)
+    assert not legacy_guard.may_disclose(PACKAGE, disclosure_shown=False) and not legacy_guard.may_disclose(withhold, disclosure_shown=True)
+    head = _flat(_spec_head())
+    for stale in ("V1.7 while no evidence panel is shown", "V1.7 when no panel is shown", "with no panel shown",
+                  "or, with the panel off, the legacy guard withholds the answer", "the panel labels them; with the panel off"):
+        assert stale not in head, stale
+    statements = {
+        "R-a": _spec_line('- In AC-4-6, "a disclosure block is shown"'),
+        "conflict 3": _spec_line("- **Resolution:** `off` is development and test only"),
+        "section 2": _spec_line("├─ contain_answer (D-19, unchanged)"),
+        "AC-4-6 row": _spec_line("| AC-4-6 |"),
+        "4.8 item 4": _spec_line("4. **Legacy path.**"),
+        "10.4": _spec_line("| `tutor.v1.legacy_guard_withheld` |"),
+    }
+    for name, line in statements.items():
+        # Withheld unless the policy is disclose and the panel shows the conflict: the line names the panel, and the
+        # withhold value or the rule's "unless ... disclose".
+        assert "panel" in line, name
+        assert "`withhold`" in line or ("unless" in line and "disclose" in line), name
+    for name in ("R-a", "AC-4-6 row"):
+        assert "ledger read" in statements[name] and "current package" in statements[name], name
+    assert "`GET /ledger/responses/{response_id}`" in statements["R-a"]
+    docstrings = {"v1_checks": inspect.getdoc(v1_checks), "qa_engine": inspect.getdoc(qa_engine),
+                  "tutor_orchestrator": inspect.getdoc(tutor_orchestrator)}
+    for name, text in docstrings.items():
+        flat = _flat(text)
+        assert "conflict policy" in flat and "disclose" in flat, name
+    assert "when no evidence panel discloses them" not in _flat(docstrings["v1_checks"])
+    example = _comments((REPO_ROOT / "infra" / "cloudrun" / "api-production.env.example.yaml").read_text(encoding="utf-8"))
+    assert "with it on, the package's conflict policy (v1.v1_7.on_conflict) decides: disclose labels the conflict, withhold withholds the answer" in example
+    paragraph = next(line for line in (REPO_ROOT / "infra" / "cloudrun" / "observability.md").read_text(encoding="utf-8").splitlines()
+                     if line.startswith("A legacy delivery's abstention reason"))
+    assert "with no evidence panel shown" not in paragraph and "conflict policy `v1.v1_7.on_conflict` `withhold`" in paragraph
+
+
+def test_phase4_docs_say_a_stored_answer_is_labelled_by_the_package_in_force_at_read_time():
+    # Each read of a stored answer (the thread read, the Q&A history, the ledger read) applies the V1.7 rule of the
+    # package in force at read time to the stored citations, and nothing stores the labels a delivery showed: the AC-4-6
+    # stored-answer test reads an answer delivered with labels under one package and gets none under the shipped one.
+    # So no text promises the same labels on every read, or that no read shows the quotations undisclosed; each names
+    # the read-time package, and the residual is recorded (spec 4.15 item 3, 16.2, ADR-005; DI-68).
+    import inspect
+
+    from app.services import evidence_panel
+    from app.services.v1_checks import legacy_guard
+
+    adr = (REPO_ROOT / "docs" / "adr" / "ADR-005-abstention-gate.md").read_text(encoding="utf-8").split("## Decision 2026-11-20", 1)[1]
+    sources = {name: (API_ROOT / "app" / path).read_text(encoding="utf-8") for name, path in (
+        ("legacy_guard", "services/v1_checks/legacy_guard.py"), ("evidence_panel", "services/evidence_panel.py"),
+        ("ledger route", "api/routes/ledger.py"), ("qa_engine", "services/qa_engine.py"),
+        ("tutor_orchestrator", "services/tutor_orchestrator.py"))}
+    texts = {**sources, "ADR-005": adr, "spec 0-17": _spec_head(),
+             "deployment.md": _runbook("deployment.md", "## Phase 4"),
+             "test strategy": (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8").split("## Phase 4 acceptance map", 1)[1]}
+    for name, text in texts.items():
+        flat = _flat(text)
+        for phrase in ("the same labels", "same V1.7 labels", "never shows those quotations undisclosed", "re-shows conflicting quotations undisclosed",
+                       "So no read", "without their labels"):
+            assert phrase not in flat, (name, phrase)
+    docstrings = {"legacy_guard": inspect.getdoc(legacy_guard), "evidence_panel": inspect.getdoc(evidence_panel),
+                  "ledger route": inspect.getdoc(ledger_route), "qa_engine": inspect.getdoc(qa_engine),
+                  "tutor_orchestrator": inspect.getdoc(tutor_orchestrator)}
+    for name, text in {**docstrings, "ADR-005": adr}.items():
+        assert "in force at read time" in _flat(text), name
+    for name in ("legacy_guard", "evidence_panel", "ledger route", "tutor_orchestrator"):
+        assert "DI-68" in docstrings[name], name
+    residuals = next(line for line in adr.splitlines() if line.startswith("- **Residuals.**"))
+    assert "DI-68" in residuals and "not the labels shown at delivery" in residuals
+    item_3 = _flat(_spec_head().split("3. **Where a stored answer is shown again (AC-4-6).**", 1)[1].split("\n4. ", 1)[0])
+    assert "Nothing stores the labels a delivery showed" in item_3 and "(DI-68)" in item_3
+    assert "relabels" in _flat(_runbook("deployment.md", "## Phase 4")) and "(DI-68)" in _runbook("deployment.md", "## Phase 4")
+    assert _spec_line("| DI-68 |")
+    # The statements of what a read shows say whose rule labels it: R-a, the AC-4-6 row, 4.15 item 1, the section 9 read
+    # rows, and the test strategy's AC-4-6 row.
+    strategy = (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
+    reads = {"R-a": _spec_line('- In AC-4-6, "a disclosure block is shown"'), "AC-4-6 row": _spec_line("| AC-4-6 |"),
+             "4.15 item 1": _spec_line("**V1.7 (AC-4-6; only with a v1 block):**"),
+             "section 9 reads": _spec_line("| `GET /assistant/threads/{thread_id}`, `GET /qa/history` |"),
+             "section 9 ledger": _spec_line("| `GET /ledger/responses/{response_id}` |"),
+             "test strategy": next(line for line in strategy.splitlines() if line.startswith("| AC-4-6 "))}
+    for name, line in reads.items():
+        assert "current package" in line or "in force at read time" in line, name
+
+
+def test_phase4_docs_the_runbook_says_what_a_legacy_record_s_sufficiency_score_holds():
+    # retrieve.sufficiency_of records the top result's gate score in a legacy record's retrieval.sufficiency.score (the
+    # P1 floor score under p1-floor, production's gate), where the Phase 3 image recorded the top result's ranking score;
+    # the entry schema is still ledger-entry-v1. Production writes such a record for every delivery, so the Phase 4
+    # runbook's "What ships" and its digest rollback, and spec 8, say so and name the field that tells them apart.
+    from app.services.tutor_pipeline.retrieve import sufficiency_of
+
+    settings = Settings(retrieval_gate="p1-floor")
+    engine = RetrievalEngine(CourseStore(settings), settings)
+    differing = [query for query in list(IN_DOMAIN)[:20] if (response := engine.search(query, top_k=4)).results
+                 and sufficiency_of(response, threshold_version="t").score != response.results[0].score]
+    assert differing  # the two meanings differ on real p1-floor retrievals
+    runbook = _runbook("deployment.md", "## Phase 4")
+    ships = _flat(runbook.split("**What ships, and its defaults outside development.**", 1)[1].split("**Before the release.**", 1)[0])
+    assert "**Legacy ledger records: what `retrieval.sufficiency.score` holds changes.**" in ships
+    for phrase in ("the top result's gate score", "the P1 floor score", "the top result's ranking score", "`versions.config_package_version`",
+                   "3.0.0 from the Phase 4 image, 2.0.0 from the Phase 3 image"):
+        assert phrase in ships, phrase
+    rollback = _flat(runbook.split("**Rollback.**", 1)[1].split("**Rollback order", 1)[0])
+    assert "its legacy records go back to the ranking score in `retrieval.sufficiency.score`" in rollback
+    assert "`versions.config_package_version`" in rollback
+    section_8 = _flat(_spec_head().split("## 8. Database", 1)[1].split("\n## 9. ", 1)[0])
+    assert "**What a legacy record's `retrieval.sufficiency.score` holds.**" in section_8
+    for phrase in ("the top result's gate score", "the P1 floor score", "`versions.config_package_version`", "`ledger-entry-v1`"):
+        assert phrase in section_8, phrase
+
+
+def test_phase4_docs_the_code_texts_name_the_shipped_package():
+    # P2-12-D-03 covers docstrings and comments: the texts that say where the budgets come from, or which package pins
+    # the schemas or is checked against the pipeline code, name the shipped package (v3 since Phase 4), as the Phase 3
+    # runbook's lines do; contracts.py names the v2 ledger schema that only package v3 pins (spec 7.14).
+    import inspect
+
+    from app.services import tutor_followups, tutor_pipeline
+    from app.services.tutor_pipeline import package_check
+
+    raw = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
+    v2 = json.loads(V2_PACKAGE_PATH.read_text(encoding="utf-8"))
+    assert raw["tutor_pipeline"]["budgets"] == v2["tutor_pipeline"]["budgets"]
+    v2_schema = "schemas/ledger-entry.v2.schema.json"
+    paths = {name: {entry["path"] for entry in package["tutor_pipeline"]["schemas"].values()} for name, package in (("v3", raw), ("v2", v2))}
+    assert v2_schema in paths["v3"] and v2_schema not in paths["v2"] and len(paths["v3"]) == len(paths["v2"]) + 1
+    texts = {"contracts": inspect.getdoc(contracts), "package_check": inspect.getdoc(package_check),
+             "ledger": inspect.getdoc(ledger), "tutor_followups": inspect.getdoc(tutor_followups),
+             "tutor_pipeline": inspect.getdoc(tutor_pipeline)}
+    flat = {name: _flat(text) for name, text in texts.items()}
+    assert "pinned by sha256 in configuration package v2." not in flat["contracts"]
+    assert "ledger-entry.v2.schema.json" in flat["contracts"] and "the shipped configuration package (v3 since Phase 4" in flat["contracts"]
+    assert not flat["package_check"].startswith("Consistency of configuration package v2 with")
+    assert "schema 2 or later" in flat["package_check"] and "v3, the shipped package since Phase 4" in flat["package_check"]
+    assert "come from configuration package v2" not in flat["ledger"] and "come from the shipped configuration package" in flat["ledger"]
+    assert "(configuration package v2 tutor_pipeline.budgets" not in flat["tutor_followups"]
+    assert "the shipped configuration package's tutor_pipeline.budgets, v3 since Phase 4" in flat["tutor_followups"]
+    assert "package_check (configuration package v2)" not in flat["tutor_pipeline"]
+    example = _comments((REPO_ROOT / "infra" / "cloudrun" / "api-production.env.example.yaml").read_text(encoding="utf-8"))
+    assert "configuration package v2 tutor_pipeline.budgets" not in example
+    for budget in ("shadow_ms", "ledger_append_ms"):
+        assert (f"the shipped configuration package's tutor_pipeline.budgets.{budget} (v2 with the Phase 3 release, v3 from the Phase 4 release;"
+                in example), budget
+    assert "`test_phase4_docs_the_code_texts_name_the_shipped_package`" in _spec_head().split("### 7.14", 1)[1].split("### 7.15", 1)[0]
+
+
+def test_phase4_docs_the_ci_records_name_the_latest_branch_run():
+    # The branch was pushed at 863179f (run 44868544555) and again at e3ac436, the housekeeping round's head (run
+    # 44881947571, success on every job). Spec 17's CI bullet, its DI-58 row and the test strategy's exit gate name
+    # that run, and name only the unpushed commits as having none.
+    texts = {"spec 17": _spec_line("- **CI.**"), "DI-58": _spec_line("| DI-58 |"),
+             "test strategy": next(line for line in (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
+                                   .split("## Phase 4 acceptance map", 1)[1].splitlines() if line.startswith("**Exit gate.**"))}
+    for name, text in texts.items():
+        assert "44881947571" in text and "`e3ac436`" in text, name
+        assert "each later commit needs its own" not in text, name
+        assert "`48b3fe8`" in text, name  # the first commit with no run
+
+
 def _test_function_names() -> set[str]:
+
     names = set()
     for path in (API_ROOT / "tests").glob("test_*.py"):
         names |= set(re.findall(r"^(?:async )?def (test_\w+)\(", path.read_text(encoding="utf-8"), flags=re.MULTILINE))

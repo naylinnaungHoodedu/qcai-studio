@@ -2,7 +2,8 @@
 
 Modules: contracts (versioned schemas), text, resolve (3.1), retrieve (3.2), evidential (3.3), bind (3.4),
 lock (3.5), render (3.6), the subset checker in app.services.claim_gate (3.7), pipeline, shadow (plan G), metrics
-(plan I) and package_check (configuration package v2). The ledger (3.8) is app.services.ledger.
+(plan I) and package_check (configuration package schema 2 and later: v2, and v3, the shipped package since Phase 4).
+The ledger (3.8) is app.services.ledger.
 
 No module here imports a learner module, the auth layer, a route, the answer history or the frozen Phase 1
 retrieval (AC-3-1 import scan). Names are re-exported lazily, so importing a submodule never imports the pipeline.

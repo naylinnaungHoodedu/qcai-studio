@@ -5,7 +5,8 @@ which is model-based behind the EntailmentChecker interface (only the NullChecke
 aggregator (aggregate) types the outcome: a V1HardFail is final and has no consult path, and only a V1Passed can
 reach a V2 hook (plan rule 1, invariant 3). The runner (runner) is the V1 track of the two-pass pipeline; the legacy
 guard (legacy_guard) enforces V1.1 and V1.2 on every contained answer delivered, with no flag (plan Phase 4 L), and
-withholds an answer quoting conflicting passages when no evidence panel discloses them (V1.7, AC-4-6).
+withholds an answer quoting conflicting passages unless the package's conflict policy (v1.v1_7.on_conflict) is
+disclose and an evidence panel shows them (V1.7, AC-4-6).
 Thresholds are read only from configuration package v3 `v1` (R-46).
 
 No module here imports a learner module, the auth layer, a route, the answer history or the frozen Phase 1 retrieval

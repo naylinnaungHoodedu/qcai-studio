@@ -1365,7 +1365,7 @@ python scripts/replay_tutor_plans.py --check docs/evaluation/phase3/three_plan_r
 {"report": "qcai-three-plan-replay", "format_version": 1, "created_at": "...", "commit": "...",
  "evidence_class": "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 evidence (plan Phase 3 H)",
  "public_corpus_only": true, "excluded_sources": ["private plane", "lqs/ (ULQS)", "learner records, tutor turns, ratings"],
- "fixture": {"path": "...", "sha256": "...", "items": 298}, "config_package": {"version": "2.0.0", "sha256": "..."},
+ "fixture": {"path": "...", "sha256": "...", "items": 298}, "config_package": {"version": "...", "sha256": "..."},
  "tutor_pipeline": {"resolver": "...", "generator": "...", "renderer": "...", "prompt_hashes": {...}},
  "plans": ["concise", "stepwise", "socratic"],
  "configurations": [{"name": "...", "gate": "...", "corpus_version": "...", "index_version": "...", "items": 298,
@@ -1378,6 +1378,7 @@ python scripts/replay_tutor_plans.py --check docs/evaluation/phase3/three_plan_r
  "inputs": {"rule": "imported-repository-modules-sha256-lf-v1", "files": {"apps/api/app/...py": "<sha256 of its LF text>"}, "sha256": "..."}}
 ```
 
+- `config_package` is the package in force (`package.package_version` and its sha256): 2.0.0 for Phase 3's v2; 3.0.0 for Phase 4's v3, which the committed record holds.
 - `result`: `"pass"`, `"mismatch"` (any `claim_set_hash` or span set differing across plans) or `"stop"` (a non-null two-pass ratio below `tutor_pipeline.stop.phase2_bound_claim_ratio`; null never stops).
 - **Exit codes:** `--write` 0 on pass, 1 on mismatch, 3 on stop, 4 when the working tree differs from HEAD (refused unless `--allow-dirty`); `--check` 1 if the record differs from a fresh run (ignoring `created_at` and `commit`), else as `--write`.
 - **`inputs`** names the code the record replayed by content: every repository module the replay imported (under `apps/api/app/` and `scripts/`) with the sha256 of its text, CRLF read as LF, and the digest of that map (rule `imported-repository-modules-sha256-lf-v1`). The AC-3-2 record test recomputes each listed hash from the checkout, and `--check` compares the whole block with a fresh run.

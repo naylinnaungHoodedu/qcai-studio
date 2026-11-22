@@ -9,10 +9,11 @@ verdict "no-verdict" (the contained answer is not V1-verified: V1 runs in the tw
 also labels which quoted passages disagree (V1.7 over the quotations, Phase 4 spec 4.8). It never says "grounded" and
 never reads the two-pass shadow. EVIDENCE_PANEL_ENABLED gates it (development by default; production rollout is DI-34).
 
-stored_conflicts gives the same labels for a stored answer, from the citations stored with it, and record_conflicts
-for a legacy ledger record, from its claims, so every read that shows a stored answer's quotations again
-(GET /assistant/threads/{thread_id}, GET /qa/history, GET /ledger/responses/{response_id}) carries its V1.7 disclosure
-whatever EVIDENCE_PANEL_ENABLED says (AC-4-6; Phase 4 spec 4.15).
+stored_conflicts applies the same rule to a stored answer, over the citations stored with it, and record_conflicts to
+a legacy ledger record, over its claims, so every read that shows a stored answer's quotations again
+(GET /assistant/threads/{thread_id}, GET /qa/history, GET /ledger/responses/{response_id}) carries the V1.7 labels the
+package in force at read time gives them, whatever EVIDENCE_PANEL_ENABLED says (AC-4-6; Phase 4 spec 4.15 item 3).
+Nothing stores the labels shown at delivery, so other V1.7 values in a later package relabel the stored answer (DI-68).
 """
 
 from __future__ import annotations

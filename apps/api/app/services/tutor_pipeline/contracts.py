@@ -2,8 +2,9 @@
 
 Every contract is frozen and refuses unknown fields (extra="forbid"), so a learner-state field can never ride along
 on a retrieval request or an evidential envelope (AC-3-1, R-41) and a generator cannot smuggle text past the claim
-plan (R-11). The committed JSON schemas (app/config_package/schemas/*.v1.schema.json) are generated from these
-models and pinned by sha256 in configuration package v2.
+plan (R-11). The committed JSON schemas (app/config_package/schemas/: the eight *.v1.schema.json, and
+ledger-entry.v2.schema.json for LedgerEntryV2) are generated from these models and pinned by sha256 in the shipped
+configuration package (v3 since Phase 4, all nine; v2, still readable, pins the eight v1 schemas).
 
 Channels:
 - evidential: ResolvedQuestion -> RetrievalRequest -> EvidenceBundle -> EvidentialEnvelope -> ClaimPlan ->

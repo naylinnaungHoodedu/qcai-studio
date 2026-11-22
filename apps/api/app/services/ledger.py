@@ -32,7 +32,8 @@ tutor.ledger.appended (delivery legacy) or tutor.ledger.append_failed (spec 18.8
 long that takes while the process keeps its CPU, and ledger_coverage counts a turn as lost only once it is older
 than that horizon (spec 18.12 J5, J6).
 
-Budgets, attempts and the appender's size come from configuration package v2 (tutor_pipeline.budgets; PD-11).
+Budgets, attempts and the appender's size come from the shipped configuration package (tutor_pipeline.budgets; PD-11;
+v2 with the Phase 3 release, v3 from the Phase 4 release, with the same values).
 TUTOR_LEDGER_APPEND_BUDGET_MS and TWO_PASS_SHADOW_BUDGET_MS override the two budgets only; every record stamps
 the budgets in force and which of them differ from the package (versions.budgets), so a record names its budgets
 whether or not they were overridden (R-46), and an override outside development logs a config.override event.

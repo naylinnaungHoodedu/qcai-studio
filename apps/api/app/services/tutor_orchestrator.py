@@ -7,9 +7,10 @@ output reaches no learner (AC-3-6). The evidence panel (task 3.8) is added only 
 
 Phase 4 (spec 7.4; plan Phase 4 L): the contained answer passes the legacy guard (V1.1 and V1.2; no flag) before
 anything reads it (every current quotation passes, so the body is unchanged), and the shadow job carries the learner's
-decision for V1's comparison. Conflicting quotations (V1.7) are labelled by the evidence panel when it is shown, and
-otherwise withheld by the guard (AC-4-6). A stored reply that read_thread shows again carries the same V1.7 labels,
-from its turn's citations, whether or not the panel is on, so no surface re-shows conflicting quotations undisclosed.
+decision for V1's comparison. Conflicting quotations (V1.7) are labelled by the evidence panel when it is shown and
+the package's conflict policy is disclose, and otherwise withheld by the guard (AC-4-6). A stored reply that
+read_thread shows again carries the V1.7 labels the package in force at read time gives its turn's citations, whether
+or not the panel is on (Phase 4 spec 4.15 item 3; nothing stores the labels shown at delivery, DI-68).
 """
 
 from __future__ import annotations
@@ -200,8 +201,8 @@ class TutorOrchestrator:
         contained = contain_answer(candidate.citations, registry, self._span_registry(), settings=self.settings)
         # Plan Phase 4 L: V1.1 and V1.2 stay enforced on every delivery path, in every V1_PIPELINE mode (no flag).
         # AC-4-6: conflicting quotations are labelled by the evidence panel when it is shown and the package's conflict
-        # policy is disclose, else withheld (V1.7); the stored reply carries the same labels when read_thread shows it
-        # again, and its ledger record when the ledger route does.
+        # policy is disclose, else withheld (V1.7); when read_thread shows the stored reply again, and the ledger route
+        # its record, each labels it by the package in force at read time.
         package = get_config_package(self.settings)
         contained = guard_contained(contained, store=self._store(), package=package, surface="tutor",
                                     disclosure_shown=self.settings.evidence_panel_enabled).contained

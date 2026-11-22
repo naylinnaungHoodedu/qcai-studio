@@ -1,4 +1,5 @@
-"""Consistency of configuration package v2 with the tutor pipeline code (Phase 3 spec 5.4; conflict 30).
+"""Consistency of a configuration package of schema 2 or later (v2; v3, the shipped package since Phase 4) with the
+tutor pipeline code (Phase 3 spec 5.4, conflict 30; Phase 4 spec 5.3 for schema 3's ledger rules).
 
 Always (start-up, tests, CI): each pinned schema file exists and its canonical sha256 equals its pin; the three
 prompt hashes the code computes equal the pinned values; every rule id and name the package records (sentence,

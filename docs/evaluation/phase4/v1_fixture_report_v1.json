@@ -1,8 +1,8 @@
 {
  "report": "qcai-v1-fixture-report",
  "format_version": 1,
- "created_at": "2026-11-21T21:43:17+00:00",
- "commit": "828547d1f88585680e5e433dac57ec8a1853541b-dirty",
+ "created_at": "2026-11-22T00:00:16+00:00",
+ "commit": "9e4700099f4fab73003f28431fbf38d1366fbc85-dirty",
  "evidence_class": "fixture measurements, not research results (plan Phase 4 H)",
  "public_corpus_only": true,
  "fixtures": {
@@ -1258,7 +1258,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 7.062,
+    "p95_ms": 3.025,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2485,7 +2485,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 7.819,
+    "p95_ms": 4.081,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2539,7 +2539,7 @@
   "contained": true
  },
  "latency": {
-  "p95_ms": 8.04,
+  "p95_ms": 3.15,
   "budget_ms": 250,
   "within_budget": true
  },
@@ -2564,7 +2564,7 @@
    "apps/api/app/services/contained_answers.py": "b32a28b65f294fb7de09229679ca2503666de9c45e8179f1f4f52c0302c96e99",
    "apps/api/app/services/content_assembler.py": "0ec184c9f538361ac85040a864ee32aa6536f4be0222c519b0431e1ca3450d68",
    "apps/api/app/services/docx_parser.py": "c0b549050d0381f0bf14a26052fa66d082e9d470ca284b35e9529ed872274bd1",
-   "apps/api/app/services/ledger.py": "8ab8f2333921dd292c167c91b95b7254ebd03900d202332371de93f21ce99569",
+   "apps/api/app/services/ledger.py": "0cbff2e47da85ed7ed658da139400fa09615a717f3916d2c4a7db47fdd79cfe8",
    "apps/api/app/services/lexical_index.py": "fc0a773296b4033b759f6046fd024c612d11e237a11db119305ceba873892a95",
    "apps/api/app/services/provenance.py": "cbea0a9970dac7fe17b653e1308d26b99846e92d0c9e04b5b15be4c3a96e5857",
    "apps/api/app/services/quiz_keys.py": "c839f3da7fce2abada021d5a454cada57ed209474db93abf479fc6a6ad538131",
@@ -2575,9 +2575,9 @@
    "apps/api/app/services/spans.py": "c470878066ef33a5a92c907476f5f7e303b5bc00df4b65adea6a85ace261647e",
    "apps/api/app/services/text_utils.py": "dd37e0c66bb965d3183b46b727ae523f059737eee577614f83da58eae55153af",
    "apps/api/app/services/transcripts.py": "1a55f3f5b7e0ce0b9f74999691b50fa3ebb9aeb63bc1051f2bc16b334bd8f053",
-   "apps/api/app/services/tutor_pipeline/__init__.py": "bd5834bd1aff386c87af74f04165403a38ed4edaebe388ef3fc82906f5d43fb3",
+   "apps/api/app/services/tutor_pipeline/__init__.py": "ed3681ec0234c53db1ac7b5eb740e4034e04ee8ef25065c0f42409aa2b0386ce",
    "apps/api/app/services/tutor_pipeline/bind.py": "dd2903f4bfba727863030bb62b647c4b3594fd4037dfe3b740ac41beef283597",
-   "apps/api/app/services/tutor_pipeline/contracts.py": "cd69e83bbf260316043ffe75ed7a2498e804b9d53a22cf1b809380b5c23a131b",
+   "apps/api/app/services/tutor_pipeline/contracts.py": "0866274a14a6e9dda1c8e31f71e9dac2813d66751404a99ee08ea4b168e0c017",
    "apps/api/app/services/tutor_pipeline/evidential.py": "55866041277cc941089887939cefad970cf2578d6c1af32427f498857790e1b4",
    "apps/api/app/services/tutor_pipeline/lock.py": "f7c1709eefc4923f5fc27c19622e36f72a5d3d1c7b263f784f1a60db2edf66e5",
    "apps/api/app/services/tutor_pipeline/metrics.py": "525b2c52c517d84b6dd642b4a3ac9a92e19c4cdce3415b4d7ca3b1a01a6e3f18",
@@ -2586,7 +2586,7 @@
    "apps/api/app/services/tutor_pipeline/resolve.py": "60cad8ad9ad51c5eddf20e93f24aa2ebac6555f349f2a7c38aed17a3d2e5cc39",
    "apps/api/app/services/tutor_pipeline/retrieve.py": "ba49590036813559da98f6b9a083ba37701f83797fb00fcfc8c0ce26ed8462a8",
    "apps/api/app/services/tutor_pipeline/text.py": "f0cba778cbd9c2a16d23d220aa4342d3426a38ff0cc6bf8acd52701713ab7869",
-   "apps/api/app/services/v1_checks/__init__.py": "522235139cf414ac175350c61aaeb3db771b61365829f07c928332118c29216c",
+   "apps/api/app/services/v1_checks/__init__.py": "f48f42b7e185a4d8b16aef4661d5f7a2ae33c083e7fd9c92d7dc421c7ef4140d",
    "apps/api/app/services/v1_checks/aggregate.py": "32d7587c976ff903dc3f04ca7993c6fbfc177f2526451494e8888a6524b7711e",
    "apps/api/app/services/v1_checks/lexicon.py": "65a5e1d63a11262eb9264240c1dc230cce457083b49dfb334a593498804b90a8",
    "apps/api/app/services/v1_checks/metrics.py": "23b69babb82d883e58b93cbf2cb046b2343ed5f3ad1d7229692f8c714eb71083",
@@ -2605,6 +2605,6 @@
    "apps/api/app/services/v1_checks/v1_9_schema_readability.py": "19a237f4c033e4e0f1815ece41164a8db0dc05dc3ca585f14d464081e17cfecb",
    "scripts/run_v1_fixtures.py": "a2233b847d25b52682eb6028d484233d75e7dcb3a7e66b976e8a8f5a9688cbea"
   },
-  "sha256": "e4f52cfaf81c1a23114b753668017d5a407876975f5345a6ac260522ba5ded3b"
+  "sha256": "20ed38918f4430d18594edbae454e6d3d06f27686dc03590f35b0c9eca5a971c"
  }
 }

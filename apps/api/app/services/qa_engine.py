@@ -12,8 +12,9 @@ erasure or guest retention deletes the row (spec 18.6 D10).
 
 Phase 4 (spec 7.5; plan Phase 4 L): the contained answer passes the legacy guard (V1.1 and V1.2; no flag) before the
 answer, its Q&A row and its ledger record read it. Conflicting quotations (V1.7) are labelled by the evidence panel
-when it is shown, and otherwise withheld by the guard (AC-4-6); GET /qa/history shows a stored answer again with the
-same labels, from its stored citations, whether or not the panel is on.
+when it is shown and the package's conflict policy is disclose, and otherwise withheld by the guard (AC-4-6);
+GET /qa/history shows a stored answer again with the labels the package in force at read time gives its stored
+citations, whether or not the panel is on.
 """
 
 from uuid import uuid4

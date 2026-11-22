@@ -9,9 +9,10 @@ unrecorded_reason "earlier_image" for a turn an image that keeps no ledger creat
 during a rollback window or before traffic moved to a Phase 3 revision); unrecorded_reason "ledger_disabled" for a
 turn made while TUTOR_LEDGER_ENABLED was off; "missing" for a turn that expected a record and has none (an append
 that failed, was refused, or was deferred and then failed), so a lost record is never shown as a pre-ledger turn
-(plan L, "a ledger write fails"; spec 18.7 E6). A legacy record whose delivered quotations conflict carries their V1.7
-labels (`conflicts`, evidence_panel.record_conflicts; AC-4-6, Phase 4 spec 4.15), for its owner and for the reviewer
-alike, so this read never shows those quotations undisclosed. The reviewer role (LEDGER_READER_ROLES; plan 7.3
+(plan L, "a ledger write fails"; spec 18.7 E6). A legacy record whose delivered quotations conflict under the V1.7 rule
+of the package in force at read time carries their labels (`conflicts`, evidence_panel.record_conflicts; AC-4-6,
+Phase 4 spec 4.15 item 3), for its owner and for the reviewer alike; the record's versions name the package in force
+at delivery, and nothing stores the labels that delivery showed (DI-68). The reviewer role (LEDGER_READER_ROLES; plan 7.3
 "owner or reviewer", nothing wider) reads any record, shadow records included, with the chain fields; each such
 read is a security event (plan 7.6). Any other role, admin included, is an owner reader only. A learner never sees
 a shadow record (AC-3-6): every miss is the same 404 with Cache-Control: no-store.
