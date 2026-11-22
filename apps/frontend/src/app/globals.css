@@ -2995,6 +2995,14 @@ button:disabled,
   padding-left: 18px;
 }
 
+/* Phase 4 (V1.7): passages that may disagree. The ink token keeps at least 4.5:1 on the panel in both themes. */
+.assistant-evidence-conflicts {
+  display: grid;
+  gap: 4px;
+  padding-left: 18px;
+  color: var(--ink);
+}
+
 /* A passage link looks like a link (the global a rule inherits colour and drops the underline). */
 .assistant-evidence-spans a {
   color: var(--accent);

@@ -1552,7 +1552,7 @@ def test_progress_endpoint_aggregates_activity():
             "lesson_slug": "ai4qc-routing-and-optimization",
             "responses": {
                 question.id: question.answer
-                for question in get_course_store().lessons["ai4qc-routing-and-optimization"].quiz_questions
+                for question in get_course_store().quiz_keys.for_lesson("ai4qc-routing-and-optimization")
             },
         },
     )

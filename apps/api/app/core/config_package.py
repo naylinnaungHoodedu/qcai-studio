@@ -1,15 +1,21 @@
 """Configuration package (plan Phase 2 P: "configuration package v1 published"; Phase 3 P: "schemas in
-configuration package v2"; Phase 2 spec 2.5 and 4.2; Phase 3 spec section 5).
+configuration package v2"; Phase 4 P: "fixture hashes in configuration package v3"; Phase 2 spec 2.5 and 4.2;
+Phase 3 spec section 5; Phase 4 spec section 5).
 
-A versioned JSON file shipped in the API image (apps/api/app/config_package/v2.json) that freezes every Phase 2
+A versioned JSON file shipped in the API image (apps/api/app/config_package/v3.json) that freezes every Phase 2
 value: the span-identity scheme, the BM25 parameters and stopword list, the provisional abstention floor and
 margin, the near-duplicate thresholds, the D-30 legacy-citation rule, the provisional owner decisions (D-17, D-30,
 Q-10) and the boundary policy. Version 2 (Phase 3) copies every v1 block and adds the two-channel tutor: the
 sha256 pins of the eight contract schemas (app/config_package/schemas/), the resolver, generator and renderer ids
 and prompt hashes, the regeneration limit, the presentation plans, the bound-claim stop baseline, the ids and rule
 hash of the legacy contained path that every legacy ledger record stamps (tutor_pipeline.legacy) and the
-two_pass_tutor flag policy (phase4_exit_passed). Next to each file, <name>.json.sha256 holds the sha256 of its
-canonical JSON, so a CRLF checkout hashes the same. v1.json stays readable for one release (DI-42).
+two_pass_tutor flag policy (phase4_exit_passed). Version 3 (Phase 4) copies every v2 block, pins a ninth schema
+(LedgerEntryV2) and adds the V1 checks (`v1`): rule ids and their hash, the lexicon, every V1 threshold and band
+(provisional, Q-22), the checker hosting (none, D-21), the misconception library (v0, empty, Q-14), the D-20 interim
+rule, the quiz-key disclosure rule (PD-21), the adversarial fixture set's hash and the plan L stop conditions; and the
+v1_pipeline flag policy. Next to
+each file, <name>.json.sha256 holds the sha256 of its canonical JSON, so a CRLF checkout hashes the same. v2.json and
+v1.json stay readable for one release (DI-63, DI-42).
 
 Start-up loads and validates it before any database work. A structural error always stops start-up; a hash
 mismatch stops a governed build and is a logged warning in development. The loader never opens the calibration
@@ -28,13 +34,21 @@ import re
 import threading
 from typing import Any
 
-from app.core.config import TWO_PASS_DEFAULT_DEVELOPMENT, TWO_PASS_DEFAULT_ELSEWHERE, Settings
+from app.core.config import (
+    TWO_PASS_DEFAULT_DEVELOPMENT,
+    TWO_PASS_DEFAULT_ELSEWHERE,
+    V1_PIPELINE_DEFAULT_DEVELOPMENT,
+    V1_PIPELINE_DEFAULT_ELSEWHERE,
+    Settings,
+)
 from app.core.structured_logging import FIELDS
 
 LOGGER = logging.getLogger("qcai.config_package")
 PACKAGE_DIRECTORY = Path(__file__).resolve().parents[1] / "config_package"
-DEFAULT_PACKAGE_PATH = PACKAGE_DIRECTORY / "v2.json"
-# Readable for one release after the Phase 3 merge (DI-42); CI checks it with config_package.py --check --path.
+DEFAULT_PACKAGE_PATH = PACKAGE_DIRECTORY / "v3.json"
+# Readable for one release after the Phase 4 merge (DI-63) and the Phase 3 merge (DI-42); CI checks both with
+# config_package.py --check --path.
+V2_PACKAGE_PATH = PACKAGE_DIRECTORY / "v2.json"
 V1_PACKAGE_PATH = PACKAGE_DIRECTORY / "v1.json"
 PACKAGE_NAME = "qcai-configuration-package"
 SPAN_SCHEME = "span-v2"
@@ -53,9 +67,27 @@ TUTOR_SCHEMA_NAMES = (
     "PresentationPlan",
     "LedgerEntry",
 )
+# Package v3 pins LedgerEntryV2 too (Phase 4 spec 5.2).
+TUTOR_SCHEMA_NAMES_V3 = (*TUTOR_SCHEMA_NAMES, "LedgerEntryV2")
 REQUIRED_PRESENTATION_PLANS = ("concise", "stepwise", "socratic")
 RETRIEVAL_REQUEST_FIELDS = ("text", "lesson_slug", "corpus_version")
 UNUSED_PROVENANCE_FIELDS = ("v1_3_checker_model_id", "panel_weights_version", "routing_table_version", "tool_contract_version")
+# Package v3: V1.3 records its checker id ("none" while D-21 is open), so three provenance fields stay unused.
+UNUSED_PROVENANCE_FIELDS_V3 = ("panel_weights_version", "routing_table_version", "tool_contract_version")
+LEDGER_ENTRY_SCHEMAS_V3 = ("ledger-entry-v1", "ledger-entry-v2")
+V1_FAMILY_LIMIT = 20
+# The plan's EHMF types per check (plan Phase 4 D table), which package v3 v1.ehmf must repeat.
+V1_EHMF = {"V1.1": ("B",), "V1.2": ("A", "B"), "V1.3": ("A", "B", "C"), "V1.4": ("D", "E"), "V1.5": ("A",),
+           "V1.6": ("E",), "V1.7": ("D",), "V1.8": ("C",), "V1.9": ("E",)}
+V1_PROVISIONAL_BLOCKS = ("lexicon", "v1_3", "v1_5", "v1_6", "v1_7", "v1_9", "quiz_feedback", "d20_interim", "stop")
+V1_COMPOSITION_RULE = "v1-adds-no-in-domain-abstention-v1"
+V1_D20_RULE = "withhold-all-flagged-v1"
+# PD-21 (plan Phase 4 B "keyed answers outside public payloads"; R-42): no quiz key in any public payload; a saved
+# attempt returns the key and explanation of the questions it answered. The only rule the quiz route implements
+# (app.services.quiz_keys.FEEDBACK_RULE, which package_check compares); provisional until DI-55 ratifies it.
+V1_QUIZ_FEEDBACK_RULE = "keys-after-saved-attempt-answered-only-v1"
+MISCONCEPTION_LIBRARY_NAME = "qcai-misconception-library"
+GATE_IDS = ("bm25f-v1", "p1-floor")
 LEDGER_DELIVERIES = ("legacy", "shadow", "delivered")
 # Plan 12.8: "OPEN DECISION. Retention period (Product Owner; Principal Investigator consulted); proposed default
 # release life plus 24 months." While it is open the only behaviour the package may name is "retain": no job deletes
@@ -195,6 +227,70 @@ class FlagPolicy:
 
 
 @dataclass(frozen=True)
+class V1Lexicon:
+    """Package v3 v1.lexicon (PD-20): the negation cues, the negation suffixes, the number words, the closed unit
+    list and the shortest alignment term."""
+
+    negation_cues: frozenset[str]
+    negation_suffixes: tuple[str, ...]
+    number_words: frozenset[str]
+    units: frozenset[str]
+    min_alignment_term_chars: int
+
+
+@dataclass(frozen=True)
+class MisconceptionEntryParams:
+    entry_id: str
+    terms: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class V1Params:
+    """Package v3 v1 (Phase 4 spec 5.1): every value the V1 checks read (R-46). Values without plan text are
+    provisional (Q-22, D-06: "frozen in versioned configuration before use, never reported as results")."""
+
+    version: str
+    status: str
+    rules_hash: str
+    rule_ids: Mapping[str, str]
+    ehmf: Mapping[str, tuple[str, ...]]
+    max_generation_regenerations: int
+    max_render_regenerations: int
+    lexicon: V1Lexicon
+    checker_hosting: str
+    checker_model_id: str
+    support_threshold: float
+    checker_timeout_ms: int
+    checker_unavailable: str
+    x4_margin: Mapping[str, float]
+    assessment_threshold: float
+    short_key_min_tokens: int
+    socratic_plan: str
+    assessment_scope: str
+    alignment_threshold: float
+    min_alignment_terms: int
+    on_conflict: str
+    # item_id -> version family (v1_7.version_families).
+    version_families: Mapping[str, str]
+    library_version: str
+    library_sha256: str
+    library_entries: tuple[MisconceptionEntryParams, ...]
+    readability_min: float
+    readability_max: float
+    d20_rule: str
+    d20_replacement: str
+    fixtures_path: str
+    fixtures_set_sha256: str
+    fixtures_cases: int
+    # gate -> (answered, in_domain): the Phase 2 answer-rate baseline as counts, never a rounded rate (spec M1).
+    answer_rate_floor: Mapping[str, tuple[int, int]]
+    composition_rule: str
+    p95_budget_ms: int
+    # PD-21: the quiz-key disclosure rule the quiz route implements (V1_QUIZ_FEEDBACK_RULE).
+    quiz_feedback_rule: str
+
+
+@dataclass(frozen=True)
 class NearDuplicateParams:
     shingle_words: int
     jaccard: float
@@ -241,6 +337,8 @@ class ConfigPackage:
     tutor_pipeline: TutorPipelineParams | None = None
     flag_policy: FlagPolicy = FlagPolicy(False, None)
     supersedes: Mapping[str, Any] | None = None
+    # Package v3 (Phase 4): the V1 checks. None on a v1 or v2 package.
+    v1: V1Params | None = None
 
 
 def _require(condition: bool, message: str) -> None:
@@ -316,12 +414,13 @@ def _schema_path(value: Any, name: str) -> str:
     return value
 
 
-def _parse_tutor_pipeline(raw: Mapping[str, Any]) -> TutorPipelineParams:
+def _parse_tutor_pipeline(raw: Mapping[str, Any], *, schema_version: int = 2) -> TutorPipelineParams:
     tutor = _mapping(raw, "tutor_pipeline")
     schemas_raw = _mapping(tutor, "schemas")
-    _require(set(schemas_raw) == set(TUTOR_SCHEMA_NAMES), f"tutor_pipeline.schemas must name exactly {', '.join(TUTOR_SCHEMA_NAMES)}")
+    names = TUTOR_SCHEMA_NAMES_V3 if schema_version >= 3 else TUTOR_SCHEMA_NAMES
+    _require(set(schemas_raw) == set(names), f"tutor_pipeline.schemas must name exactly {', '.join(names)}")
     schemas: dict[str, SchemaPin] = {}
-    for name in TUTOR_SCHEMA_NAMES:
+    for name in names:
         pin = _mapping(schemas_raw, name)
         schemas[name] = SchemaPin(version=_text(pin, "version"), path=_schema_path(pin.get("path"), name), sha256=_hex64(pin, "sha256"))
     resolver = _mapping(tutor, "resolver")
@@ -379,7 +478,14 @@ def _parse_tutor_pipeline(raw: Mapping[str, Any]) -> TutorPipelineParams:
     ratio = _number(stop, "phase2_bound_claim_ratio", maximum=1.0)
     _require(ratio > 0, "tutor_pipeline.stop.phase2_bound_claim_ratio must be in (0, 1]")
     unused = tuple(tutor.get("unused_provenance_fields") or ())
-    _require(unused == UNUSED_PROVENANCE_FIELDS, "tutor_pipeline.unused_provenance_fields must name the four Phase 4-5 provenance fields")
+    if schema_version >= 3:
+        # ledger.entry_schema is compared with the LedgerEntryV2 contract by package_check, as every rule id is.
+        _require(unused == UNUSED_PROVENANCE_FIELDS_V3, "tutor_pipeline.unused_provenance_fields must name the three Phase 5 provenance fields")
+        _require(ledger.get("legacy_entry_schema") == "ledger-entry-v1", "tutor_pipeline.ledger.legacy_entry_schema must be 'ledger-entry-v1'")
+        _require(ledger.get("entry_schemas") == list(LEDGER_ENTRY_SCHEMAS_V3),
+                 "tutor_pipeline.ledger.entry_schemas must be [ledger-entry-v1, ledger-entry-v2]")
+    else:
+        _require(unused == UNUSED_PROVENANCE_FIELDS, "tutor_pipeline.unused_provenance_fields must name the four Phase 4-5 provenance fields")
     retention = _text(ledger, "retention")
     return TutorPipelineParams(
         version=_text(tutor, "version"),
@@ -435,10 +541,246 @@ def _parse_tutor_pipeline(raw: Mapping[str, Any]) -> TutorPipelineParams:
     )
 
 
-def _parse_flag_policy(raw: Mapping[str, Any]) -> FlagPolicy:
+def _parse_v1_pipeline_policy(policy: Mapping[str, Any]) -> None:
+    """Package v3 flag_policy.v1_pipeline (PD-19): the values, the defaults Settings applies and the two refusals."""
+    v1 = _mapping(policy, "v1_pipeline")
+    _require(v1.get("values") == ["off", "shadow", "enforce"], "flag_policy.v1_pipeline.values must be [off, shadow, enforce]")
+    _require(v1.get("default_development") == V1_PIPELINE_DEFAULT_DEVELOPMENT,
+             f"flag_policy.v1_pipeline.default_development must be the code's default ({V1_PIPELINE_DEFAULT_DEVELOPMENT!r})")
+    _require(v1.get("default_elsewhere") == V1_PIPELINE_DEFAULT_ELSEWHERE,
+             f"flag_policy.v1_pipeline.default_elsewhere must be the code's default ({V1_PIPELINE_DEFAULT_ELSEWHERE!r})")
+    _require(v1.get("enforce_requires") == "phase4_exit_passed", "flag_policy.v1_pipeline.enforce_requires must be 'phase4_exit_passed'")
+    _require(v1.get("off_outside_development") == "refused",
+             "flag_policy.v1_pipeline.off_outside_development must be 'refused' (plan 13.6: no flag may disable V1)")
+
+
+def _provisional(block: Mapping[str, Any], name: str) -> None:
+    _require(block.get("provisional") is True, f"v1.{name} must be marked provisional: true (Q-22; plan L795-800)")
+
+
+def _sorted_lowercase(values: tuple[str, ...], name: str) -> None:
+    _require(bool(values), f"v1.lexicon.{name} must not be empty")
+    _require(list(values) == sorted(set(values)) and all(value == value.lower() for value in values),
+             f"v1.lexicon.{name} must be lowercase, sorted and unique")
+
+
+def _relative_path(value: Any, name: str) -> str:
+    _require(isinstance(value, str) and bool(value), f"{name} must be a non-empty string")
+    parts = value.replace("\\", "/").split("/")
+    _require(not Path(value).is_absolute() and not value.startswith(("/", "\\")) and ":" not in value and ".." not in parts,
+             f"{name} must be a relative path without '..'")
+    return value
+
+
+def misconception_library_sha256(library: Mapping[str, Any]) -> str:
+    """The canonical sha256 of an inline misconception library without its own sha256 field (Phase 4 spec 4.9)."""
+    return canonical_sha256({key: value for key, value in library.items() if key != "sha256"})
+
+
+def _parse_library(raw: Any) -> tuple[str, str, tuple[MisconceptionEntryParams, ...]]:
+    _require(isinstance(raw, dict), "v1.v1_8.library must be an object")
+    _require(raw.get("library") == MISCONCEPTION_LIBRARY_NAME, f"v1.v1_8.library.library must be '{MISCONCEPTION_LIBRARY_NAME}'")
+    version = _text(raw, "version")
+    entries_raw = raw.get("entries")
+    _require(isinstance(entries_raw, list), "v1.v1_8.library.entries must be a list")
+    entries = []
+    seen: set[str] = set()
+    for entry in entries_raw:
+        _require(isinstance(entry, dict), "v1.v1_8.library entries must be objects")
+        entry_id = _text(entry, "id")
+        _require(entry_id not in seen, f"v1.v1_8.library entry {entry_id} is listed twice")
+        seen.add(entry_id)
+        terms = _strings(entry, "terms")
+        _require(len(terms) >= 2, f"v1.v1_8.library entry {entry_id} needs at least two terms")
+        _require(list(terms) == sorted(set(terms)) and all(term == term.lower() for term in terms),
+                 f"v1.v1_8.library entry {entry_id} terms must be lowercase, sorted and unique")
+        entries.append(MisconceptionEntryParams(entry_id=entry_id, terms=terms))
+    digest = _hex64(raw, "sha256")
+    _require(digest == misconception_library_sha256(raw), "v1.v1_8.library.sha256 does not match the library's canonical sha256")
+    return version, digest, tuple(entries)
+
+
+def _parse_v1(raw: Mapping[str, Any], *, tutor: TutorPipelineParams) -> V1Params:
+    """Package v3 v1 (Phase 4 spec 5.2). Every refusal is structural: a malformed block always stops the load."""
+    from app.services.v1_checks.rules import WIRED_CHECKERS  # lazy: v1_checks imports this module
+
+    v1 = _mapping(raw, "v1")
+    _require(v1.get("provisional") is True, "v1 must be marked provisional: true (Q-22)")
+    for name in V1_PROVISIONAL_BLOCKS:
+        _provisional(_mapping(v1, name), name)
+    rule_ids_raw = _mapping(v1, "rule_ids")
+    _require(all(isinstance(value, str) and value for value in rule_ids_raw.values()), "v1.rule_ids values must be non-empty strings")
+    ehmf_raw = _mapping(v1, "ehmf")
+    _require({key: tuple(value) if isinstance(value, list) else value for key, value in ehmf_raw.items()} == V1_EHMF,
+             "v1.ehmf must be the plan's EHMF types per check (plan Phase 4 D)")
+    regeneration = _mapping(v1, "regeneration")
+    lexicon_raw = _mapping(v1, "lexicon")
+    cues = _strings(lexicon_raw, "negation_cues")
+    _sorted_lowercase(cues, "negation_cues")
+    suffixes = _strings(lexicon_raw, "negation_suffixes")
+    _require(bool(suffixes), "v1.lexicon.negation_suffixes must not be empty")
+    number_words = _strings(lexicon_raw, "number_words")
+    _sorted_lowercase(number_words, "number_words")
+    units = _strings(lexicon_raw, "units")
+    _sorted_lowercase(units, "units")
+    lexicon = V1Lexicon(
+        negation_cues=frozenset(cues),
+        negation_suffixes=suffixes,
+        number_words=frozenset(number_words),
+        units=frozenset(units),
+        min_alignment_term_chars=_integer_in(lexicon_raw, "min_alignment_term_chars", 1, 10),
+    )
+    v1_3 = _mapping(v1, "v1_3")
+    hosting = _text(v1_3, "hosting")
+    _require(hosting in WIRED_CHECKERS, "v1.v1_3.hosting names a checker that is not wired (D-21 open)")
+    support = _number(v1_3, "support_threshold", minimum=0.0, maximum=1.0)
+    timeout_ms = _integer_in(v1_3, "timeout_ms", 10, 10000)
+    _require(timeout_ms < tutor.shadow_budget_ms, "v1.v1_3.timeout_ms must be below tutor_pipeline.budgets.shadow_ms")
+    _require(v1_3.get("unavailable") == "abstain", "v1.v1_3.unavailable must be 'abstain' (AC-4-7)")
+    v1_5 = _mapping(v1, "v1_5")
+    margin_raw = _mapping(v1_5, "x4_margin")
+    _require(set(margin_raw) == set(GATE_IDS), "v1.v1_5.x4_margin must name bm25f-v1 and p1-floor")
+    # The X4 margin is an operator value per gate (Q-22): V1.5 marks a response whose top score lies below the gate's
+    # floor plus it (spec 4.6, conflict 19). Any non-negative number loads; the shipped values are PD-15's.
+    x4 = {gate: _number(margin_raw, gate, minimum=0.0) for gate in GATE_IDS}
+    v1_6 = _mapping(v1, "v1_6")
+    assessment = _number(v1_6, "assessment_threshold", maximum=1.0)
+    _require(assessment > 0, "v1.v1_6.assessment_threshold must be in (0, 1]")
+    socratic = _text(v1_6, "socratic_plan")
+    _require(socratic in tutor.presentation_plans, "v1.v1_6.socratic_plan must be one of the presentation plans")
+    _require(v1_6.get("scope") == "all_lessons", "v1.v1_6.scope must be 'all_lessons'")
+    v1_7 = _mapping(v1, "v1_7")
+    alignment = _number(v1_7, "alignment_threshold", maximum=1.0)
+    _require(alignment > 0, "v1.v1_7.alignment_threshold must be in (0, 1]")
+    on_conflict = _text(v1_7, "on_conflict")
+    _require(on_conflict in ("disclose", "withhold"), "v1.v1_7.on_conflict must be 'disclose' or 'withhold'")
+    families_raw = v1_7.get("version_families")
+    _require(isinstance(families_raw, list) and len(families_raw) <= V1_FAMILY_LIMIT,
+             f"v1.v1_7.version_families must be a list of at most {V1_FAMILY_LIMIT} families")
+    families: dict[str, str] = {}
+    for family in families_raw:
+        _require(isinstance(family, dict), "v1.v1_7.version_families entries must be objects")
+        name = _text(family, "family")
+        items = _strings(family, "item_ids")
+        _require(len(set(items)) >= 2, f"v1.v1_7 family {name} needs at least two distinct items")
+        for item in items:
+            _require(item not in families, f"v1.v1_7 item {item} is in two families")
+            families[item] = name
+    v1_8 = _mapping(v1, "v1_8")
+    library_version, library_sha256, entries = _parse_library(v1_8.get("library"))
+    _require(v1_8.get("on_match") == "flag_withhold_queue_v3", "v1.v1_8.on_match must be 'flag_withhold_queue_v3' (never hard)")
+    v1_9 = _mapping(v1, "v1_9")
+    readability = _mapping(v1_9, "readability")
+    low = _number(readability, "min_grade", minimum=-50.0, maximum=200.0)
+    high = _number(readability, "max_grade", minimum=-50.0, maximum=200.0)
+    _require(low < high, "v1.v1_9.readability.min_grade must be below max_grade")
+    quiz = _mapping(v1, "quiz_feedback")
+    _require(quiz.get("rule") == V1_QUIZ_FEEDBACK_RULE, f"v1.quiz_feedback.rule must be '{V1_QUIZ_FEEDBACK_RULE}' (PD-21, the rule the quiz route implements)")
+    _require(quiz.get("public_payloads") == "no_keys", "v1.quiz_feedback.public_payloads must be 'no_keys' (plan Phase 4 B: keyed answers outside public payloads)")
+    _require(quiz.get("feedback") == "answered_questions_after_a_saved_attempt",
+             "v1.quiz_feedback.feedback must be 'answered_questions_after_a_saved_attempt' (PD-21)")
+    d20 = _mapping(v1, "d20_interim")
+    fixtures = _mapping(v1, "fixtures")
+    stop = _mapping(v1, "stop")
+    floor_raw = _mapping(stop, "answer_rate_floor")
+    floors: dict[str, tuple[int, int]] = {}
+    for gate in GATE_IDS:
+        entry = _mapping(floor_raw, gate)
+        answered, in_domain = entry.get("answered"), entry.get("in_domain")
+        _require(
+            all(isinstance(value, int) and not isinstance(value, bool) for value in (answered, in_domain)) and 0 < answered <= in_domain,
+            f"v1.stop.answer_rate_floor.{gate} must hold integers with 0 < answered <= in_domain",
+        )
+        floors[gate] = (int(answered), int(in_domain))
+    composition = _mapping(stop, "composition")
+    _require(composition.get("rule") == V1_COMPOSITION_RULE, f"v1.stop.composition.rule must be '{V1_COMPOSITION_RULE}'")
+    return V1Params(
+        version=_text(v1, "version"),
+        status=_text(v1, "status"),
+        rules_hash=_hex64(v1, "rules_hash"),
+        rule_ids=dict(rule_ids_raw),
+        ehmf=dict(V1_EHMF),
+        max_generation_regenerations=_integer_in(regeneration, "max_generation_regenerations", 0, 2),
+        max_render_regenerations=_integer_in(regeneration, "max_render_regenerations", 0, 2),
+        lexicon=lexicon,
+        checker_hosting=hosting,
+        checker_model_id=_text(v1_3, "checker_model_id"),
+        support_threshold=support,
+        checker_timeout_ms=timeout_ms,
+        checker_unavailable="abstain",
+        x4_margin=x4,
+        assessment_threshold=assessment,
+        short_key_min_tokens=_integer_in(v1_6, "short_key_min_tokens", 1, 10),
+        socratic_plan=socratic,
+        assessment_scope="all_lessons",
+        alignment_threshold=alignment,
+        min_alignment_terms=_integer_in(v1_7, "min_alignment_terms", 1, 20),
+        on_conflict=on_conflict,
+        version_families=families,
+        library_version=library_version,
+        library_sha256=library_sha256,
+        library_entries=entries,
+        readability_min=low,
+        readability_max=high,
+        d20_rule=_text(d20, "rule"),
+        d20_replacement=_text(d20, "replacement"),
+        fixtures_path=_relative_path(fixtures.get("path"), "v1.fixtures.path"),
+        fixtures_set_sha256=_hex64(fixtures, "set_sha256"),
+        fixtures_cases=_integer(fixtures, "cases", minimum=0),
+        answer_rate_floor=floors,
+        composition_rule=V1_COMPOSITION_RULE,
+        p95_budget_ms=_integer_in(stop, "v1_p95_latency_ms", 1, tutor.shadow_budget_ms),
+        quiz_feedback_rule=V1_QUIZ_FEEDBACK_RULE,
+    )
+
+
+def _v1_owner_decisions(decisions: Mapping[str, Any], v1: V1Params) -> None:
+    """The open owner decisions bound what package v3 may say (Phase 4 spec 5.2)."""
+    for name in ("D-20", "D-21", "Q-22", "Q-14", "D-06"):
+        _require(isinstance(decisions.get(name), dict), f"owner_decisions.{name} must be an object in package v3")
+    if decisions["D-21"].get("state") == "open":
+        _require(v1.checker_hosting == "none" and v1.checker_model_id == "none",
+                 "owner_decisions.D-21 is open, so V1.3 has no checker: v1.v1_3.hosting and checker_model_id must be 'none'")
+    if decisions["Q-14"].get("state") == "unavailable":
+        _require(not v1.library_entries, "owner_decisions.Q-14 is unavailable, so the misconception library ships empty (A-18)")
+    if decisions["D-20"].get("state") == "open":
+        _require(v1.d20_rule == V1_D20_RULE, f"owner_decisions.D-20 is open, so v1.d20_interim.rule must be '{V1_D20_RULE}' (its own text)")
+
+
+def _q22_provisional_values(raw: Mapping[str, Any], decisions: Mapping[str, Any]) -> None:
+    """owner_decisions.Q-22.provisional_values names every value Q-22 sets (Phase 4 spec 5.2): each listed path is a
+    value the package holds, and every block whose provisional_until names Q-22 is listed."""
+    values = decisions["Q-22"].get("provisional_values")
+    _require(isinstance(values, list) and bool(values) and all(isinstance(value, str) and value for value in values),
+             "owner_decisions.Q-22.provisional_values must be a non-empty list of package paths")
+    for path in values:
+        node: Any = raw
+        for part in path.split("."):
+            _require(isinstance(node, dict) and part in node, f"owner_decisions.Q-22.provisional_values names {path}, which the package does not hold")
+            node = node[part]
+
+    def until_q22(node: Any, path: str) -> list[str]:
+        if not isinstance(node, dict):
+            return []
+        found = [path] if isinstance(node.get("provisional_until"), str) and "Q-22" in node["provisional_until"] else []
+        return found + [inner for key, value in node.items() for inner in until_q22(value, f"{path}.{key}" if path else key)]
+
+    missing = [path for path in until_q22(raw, "") if path not in values]
+    _require(not missing, f"owner_decisions.Q-22.provisional_values must name every block provisional until Q-22 (missing {missing})")
+
+
+def _parse_flag_policy(raw: Mapping[str, Any], *, schema_version: int = 2) -> FlagPolicy:
     policy = _mapping(raw, "flag_policy")
-    # PD-10 names flag_policy as where its value lives; like every provisional block it says so (DI-37).
-    _require(policy.get("provisional") is True, "flag_policy must be marked provisional: true (PD-10)")
+    if schema_version >= 3:
+        _parse_v1_pipeline_policy(policy)
+    # PD-10 names flag_policy as where its two_pass_tutor values live (ratified under DI-37), and from schema 3 PD-19
+    # its v1_pipeline values (ratified under DI-55); like every provisional block it says so.
+    _require(policy.get("provisional") is True,
+             "flag_policy must be marked provisional: true (PD-10" + ("; PD-19 for v1_pipeline)" if schema_version >= 3 else ")"))
+    if schema_version >= 3:
+        authority = policy.get("authority")
+        _require(isinstance(authority, str) and all(name in authority for name in ("PD-10", "DI-37", "PD-19", "DI-55")),
+                 "flag_policy.authority must name PD-10 (DI-37) and PD-19 (DI-55): it holds the v1_pipeline defaults")
     two_pass = _mapping(policy, "two_pass_tutor")
     _require(two_pass.get("values") == ["off", "shadow", "on"], "flag_policy.two_pass_tutor.values must be [off, shadow, on]")
     _require(two_pass.get("default_elsewhere") == "off", "flag_policy.two_pass_tutor.default_elsewhere must be 'off' (freeze, D-05)")
@@ -463,7 +805,7 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
     _require(isinstance(raw, dict), "the file must hold a JSON object")
     _require(raw.get("package") == PACKAGE_NAME, f"'package' must be '{PACKAGE_NAME}'")
     schema_version = raw.get("schema_version")
-    _require(schema_version in (1, 2) and not isinstance(schema_version, bool), "'schema_version' must be 1 or 2")
+    _require(schema_version in (1, 2, 3) and not isinstance(schema_version, bool), "'schema_version' must be 1, 2 or 3")
     package_version = _text(raw, "package_version")
 
     identity = _mapping(raw, "span_identity")
@@ -576,12 +918,17 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
     tutor_pipeline: TutorPipelineParams | None = None
     flag_policy = FlagPolicy(False, None)
     supersedes: Mapping[str, Any] | None = None
-    if schema_version == 2:
+    v1_params: V1Params | None = None
+    if schema_version >= 2:
         supersedes = _mapping(raw, "supersedes")
         _text(supersedes, "package_version")
         _hex64(supersedes, "sha256")
-        tutor_pipeline = _parse_tutor_pipeline(raw)
-        flag_policy = _parse_flag_policy(raw)
+        tutor_pipeline = _parse_tutor_pipeline(raw, schema_version=int(schema_version))
+        flag_policy = _parse_flag_policy(raw, schema_version=int(schema_version))
+        if schema_version >= 3:
+            v1_params = _parse_v1(raw, tutor=tutor_pipeline)
+            _v1_owner_decisions(decisions, v1_params)
+            _q22_provisional_values(raw, decisions)
         d12 = decisions.get("D-12")
         _require(isinstance(d12, dict), "owner_decisions.D-12 must be an object in package v2")
         if d12.get("state") == "open":
@@ -624,6 +971,7 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
         tutor_pipeline=tutor_pipeline,
         flag_policy=flag_policy,
         supersedes=supersedes,
+        v1=v1_params,
     )
 
 

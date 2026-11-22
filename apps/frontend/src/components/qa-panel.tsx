@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
-import { EvidencePanel } from "@/components/evidence-panel";
+import { ConflictDisclosure, EvidencePanel } from "@/components/evidence-panel";
 import { askQuestion, fetchQAHistory, postAnalyticsEvent } from "@/lib/api";
 import { QAHistoryItem, QAResponse } from "@/lib/types";
 
@@ -60,6 +60,8 @@ export function QAPanel({
         <strong>{item.question}</strong>
         <p className="muted">{new Date(item.created_at).toLocaleString()}</p>
         <p className={item.withdrawn ? "muted" : undefined}>{item.answer}</p>
+        {/* Phase 4 (V1.7, AC-4-6): a stored answer quoting passages that may disagree is shown with its disclosure. */}
+        <ConflictDisclosure conflicts={item.conflicts} />
       </article>
     );
   }

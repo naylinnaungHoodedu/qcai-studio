@@ -40,6 +40,21 @@ class _Connection:
         return getattr(self._real, name)
 
 
+# Every pooled engine a test builds, closed after the test: the engine disposed and every wrapped sqlite3 connection
+# closed, so no connection is left for the garbage collector to close during a later test.
+_BUILT: list = []
+
+
+@pytest.fixture(autouse=True)
+def _close_pooled_engines():
+    yield
+    while _BUILT:
+        engine, created = _BUILT.pop()
+        engine.dispose()
+        for connection in created:
+            connection._real.close()
+
+
 def _pooled_engine():
     created: list[_Connection] = []
 
@@ -49,6 +64,7 @@ def _pooled_engine():
         return connection
 
     engine = create_engine("sqlite://", creator=creator, poolclass=QueuePool, pool_size=1, max_overflow=0, pool_pre_ping=True)
+    _BUILT.append((engine, created))
     return engine, created
 
 

@@ -73,6 +73,11 @@ class ScoredEntry:
     near_floor: bool
     # p1-floor: the lesson whose module boost the score used; bm25f-v1: None (the first bound lesson is shown).
     lesson_slug: str | None = None
+    # The score the active gate compared with its floor, at the gate's precision: bm25f-v1's score itself (9 digits,
+    # which near_floor is computed on); p1-floor's P1 floor score (P1-D-04: whole-word hits of the non-stopword query
+    # terms plus the phrase bonus, no module boost), which is not the ranking score above. None only for a semantic
+    # result before the gate re-scores it. The evidence sufficiency records it (Phase 4 spec 4.6, M11).
+    gate_score: float | None = None
 
 
 @dataclass(frozen=True)
@@ -163,7 +168,7 @@ class LexicalIndex:
         if not eligible:
             return None
         rounded = round(score, 9)
-        return ScoredEntry(entry, rounded, matched, rounded < self.abstention.floor + self.abstention.margin)
+        return ScoredEntry(entry, rounded, matched, rounded < self.abstention.floor + self.abstention.margin, gate_score=rounded)
 
     def eligible_unfloored(self, query: str) -> list[ScoredEntry]:
         """bm25f-v1 coverage-eligible entries before the floor, best first (calibration input)."""
@@ -178,6 +183,13 @@ class LexicalIndex:
 
     def p1_score_entry(self, query: str, entry: IndexEntry, lesson_slug: str | None) -> tuple[float, bool, str, bool]:
         """(score, passes the P1 floor, boost lesson, matched at all) for one entry, as Phase 1 scored it."""
+        score, _, passes, boost_lesson, matched = self.p1_scores(query, entry, lesson_slug)
+        return score, passes, boost_lesson, matched
+
+    def p1_scores(self, query: str, entry: IndexEntry, lesson_slug: str | None) -> tuple[float, int, bool, str, bool]:
+        """(ranking score, P1 floor score, passes the P1 floor, boost lesson, matched at all) for one entry. The floor
+        (P1-D-04's 6) applies to the floor score; the ranking score adds substring hits of every query term and the
+        module boost, so the two are on different scales."""
         query_terms = {token for token in _tokenize(query) if token}
         floor_terms = query_terms - QUERY_STOPWORDS
         raw = query.strip().lower()
@@ -189,7 +201,8 @@ class LexicalIndex:
         if len(raw) >= 3:
             phrase_bonus = 4 if raw in title_text else 2 if raw in excerpt_text else 0
         matched = not (title_overlap == 0 and excerpt_overlap == 0 and phrase_bonus == 0)
-        passes = matched and _floor_score(floor_terms, entry, phrase_bonus) >= SCORE_FLOOR
+        floor_score = _floor_score(floor_terms, entry, phrase_bonus)
+        passes = matched and floor_score >= SCORE_FLOOR
         if lesson_slug and lesson_slug in entry.lesson_slugs:
             boost_lesson = lesson_slug
             module_index = entry.module_indexes[entry.lesson_slugs.index(lesson_slug)]
@@ -200,7 +213,7 @@ class LexicalIndex:
             module_index = entry.module_indexes[position]
         boost = module_index + (0.1 if entry.item_kind == "authored" else 0.0)
         score = round(title_overlap * 3 + excerpt_overlap * 2 + phrase_bonus + boost, 3)
-        return score, passes, boost_lesson, matched
+        return score, floor_score, passes, boost_lesson, matched
 
     # --- either gate ---
 
@@ -211,8 +224,8 @@ class LexicalIndex:
         if self.gate == "p1-floor":
             if not query.strip():
                 return None
-            score, passes, boost_lesson, _ = self.p1_score_entry(query, entry, lesson_slug)
-            return ScoredEntry(entry, score, 0, False, boost_lesson) if passes else None
+            score, floor_score, passes, boost_lesson, _ = self.p1_scores(query, entry, lesson_slug)
+            return ScoredEntry(entry, score, 0, False, boost_lesson, gate_score=float(floor_score)) if passes else None
         scored = self._bm25_scored(self.query_terms(query), entry)
         if scored is None or scored.score < self.abstention.floor:
             return None
@@ -253,7 +266,7 @@ class LexicalIndex:
             rounded = round(score, 9)
             if rounded < self.abstention.floor:
                 continue
-            results.append(ScoredEntry(entry, rounded, matched, rounded < self.abstention.floor + self.abstention.margin))
+            results.append(ScoredEntry(entry, rounded, matched, rounded < self.abstention.floor + self.abstention.margin, gate_score=rounded))
         results.sort(key=lambda item: (-item.score, item.entry.span_id))
         reason: Reason = "evidence" if results else "below_floor" if any_eligible else "insufficient_coverage" if any_match else "no_match"
         return self._decision(reason, results[:top_k], terms)
@@ -267,10 +280,10 @@ class LexicalIndex:
         for entry in self.entries:
             if lesson_slug and lesson_slug not in entry.lesson_slugs:
                 continue
-            score, passes, boost_lesson, matched = self.p1_score_entry(query, entry, lesson_slug)
+            score, floor_score, passes, boost_lesson, matched = self.p1_scores(query, entry, lesson_slug)
             any_match = any_match or matched
             if passes:
-                results.append(ScoredEntry(entry, score, 0, False, boost_lesson))
+                results.append(ScoredEntry(entry, score, 0, False, boost_lesson, gate_score=float(floor_score)))
         results.sort(key=lambda item: item.score, reverse=True)  # stable on index order, as Phase 1 sorted
         reason: Reason = "evidence" if results else "below_floor" if any_match else "no_match"
         return self._decision(reason, results[:top_k], terms)

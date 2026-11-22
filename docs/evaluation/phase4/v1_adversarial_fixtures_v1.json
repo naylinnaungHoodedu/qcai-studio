@@ -1,0 +1,1064 @@
+{
+ "fixture_set": "qcai-v1-adversarial",
+ "format_version": 1,
+ "public_corpus_only": true,
+ "excluded_sources": [
+  "private plane",
+  "lqs/ (ULQS)",
+  "learner records, tutor turns, ratings"
+ ],
+ "evidence_class": "fixture measurements, not research results (plan Phase 4 H)",
+ "about": "Adversarial cases for the V1 checks (Phase 4 spec 12.1). Queries are the project's public-corpus fixture queries (apps/api/tests/data/score_floor_queries.json) or short synthetic keyword queries; attacked sentences are taken from the store at run time, and every sentence here is synthetic. No corpus text, no ULQS item.",
+ "fixture_package": {
+  "v1_7.version_families": [
+   {
+    "family": "fixture-2025-2026",
+    "item_ids": [
+     "analyzing-quantum-computing-and-ai-paper-2025",
+     "quantum-computing-ai-research-synthesis-2026"
+    ]
+   }
+  ],
+  "v1_3.timeout_ms": 50,
+  "note": "test-only family: the manifest does not relate these items"
+ },
+ "fixture_keys": [
+  {
+   "item_id": "fixture-key-1",
+   "prompt": "Why do the sources repeatedly emphasize hybrid loops instead of end-to-end quantum models?",
+   "key": {
+    "from_query": "Why do the sources repeatedly emphasize hybrid loops instead of end-to-end quantum models?",
+    "claim": 0
+   }
+  },
+  {
+   "item_id": "fixture-key-2",
+   "prompt": "What makes a QC+AI claim plausible in the NISQ era?",
+   "key": {
+    "from_query": "What makes a QC+AI claim plausible in the NISQ era?",
+    "claim": 0
+   }
+  },
+  {
+   "item_id": "fixture-key-3",
+   "prompt": "What problem does SAC solve inside the augmented Lagrangian workflow?",
+   "key": {
+    "from_query": "What problem does SAC solve inside the augmented Lagrangian workflow?",
+    "claim": 0
+   }
+  }
+ ],
+ "fixture_library": [
+  {
+   "id": "MC-FIXTURE-1",
+   "terms": [
+    "combinatorial",
+    "compilation"
+   ]
+  },
+  {
+   "id": "MC-FIXTURE-2",
+   "terms": [
+    "dimensionality",
+    "superconducting"
+   ]
+  },
+  {
+   "id": "MC-FIXTURE-3",
+   "terms": [
+    "bottleneck",
+    "unacceptably"
+   ]
+  }
+ ],
+ "cases": [
+  {
+   "id": "neg-strip-01",
+   "class": "stripped_negation",
+   "level": "pipeline",
+   "query": "Why do the sources repeatedly emphasize hybrid loops instead of end-to-end quantum models?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "strip_negation"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "neg-strip-02",
+   "class": "stripped_negation",
+   "level": "pipeline",
+   "query": "What makes healthcare QC+AI architectures operationally demanding?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "strip_negation"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "neg-strip-03",
+   "class": "stripped_negation",
+   "level": "pipeline",
+   "query": "Why is the quantum explainability section taught cautiously?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "strip_negation"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "neg-strip-04",
+   "class": "stripped_negation",
+   "level": "pipeline",
+   "query": "Why does cybersecurity have a more urgent migration profile than consumer recommendation or gaming use cases?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "strip_negation"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "neg-strip-05",
+   "class": "stripped_negation",
+   "level": "pipeline",
+   "query": "Which industry group in the document is most tightly tied to native molecular simulation?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "strip_negation"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "neg-insert-01",
+   "class": "inserted_negation",
+   "level": "pipeline",
+   "query": "What is the difference between QAI and AI4QC?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "insert_negation"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "neg-insert-02",
+   "class": "inserted_negation",
+   "level": "pipeline",
+   "query": "What makes a QC+AI claim plausible in the NISQ era?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "insert_negation"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "neg-insert-03",
+   "class": "inserted_negation",
+   "level": "pipeline",
+   "query": "What problem does SAC solve inside the augmented Lagrangian workflow?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "insert_negation"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "neg-insert-04",
+   "class": "inserted_negation",
+   "level": "pipeline",
+   "query": "Why can nested qubit routing still dominate runtime after the optimization model is compressed?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "insert_negation"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "neg-insert-05",
+   "class": "inserted_negation",
+   "level": "pipeline",
+   "query": "Explain why quantum logistics needs both problem reduction before execution and routing control during compilation.",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "insert_negation"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "number-swap-01",
+   "class": "number_swap",
+   "level": "pipeline",
+   "query": "Why do the sources repeatedly emphasize hybrid loops instead of end-to-end quantum models?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "number_swap"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "number-swap-02",
+   "class": "number_swap",
+   "level": "pipeline",
+   "query": "Why does the authored Module 3 document keep returning to the quantum bottleneck instead of claiming end-to-end quantum perception?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "number_swap"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "number-swap-03",
+   "class": "number_swap",
+   "level": "pipeline",
+   "query": "What does a quantum kernel add in the aneurysm classification example?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "number_swap"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "number-swap-04",
+   "class": "number_swap",
+   "level": "pipeline",
+   "query": "Why should QC-DQN be taught carefully in a clinical context?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "number_swap"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "number-swap-05",
+   "class": "number_swap",
+   "level": "pipeline",
+   "query": "Explain why QC-DQN and biomedical quantum-kernel methods should be evaluated as narrow hybrid architectures rather than end-to-end quantum replacements.",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "number_swap"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "unit-swap-01",
+   "class": "unit_swap",
+   "level": "pipeline",
+   "query": "Why do the sources repeatedly emphasize hybrid loops instead of end-to-end quantum models?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "unit_swap"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "unit-swap-02",
+   "class": "unit_swap",
+   "level": "pipeline",
+   "query": "acceptance criteria for quantum machine learning models",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "unit_swap"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "unit-swap-03",
+   "class": "unit_swap",
+   "level": "pipeline",
+   "query": "How does QGShap compute exact feature attributions?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "unit_swap"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "unit-swap-04",
+   "class": "unit_swap",
+   "level": "pipeline",
+   "query": "What is the trade-off between circuit depth and trainability?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "unit_swap"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "unit-swap-05",
+   "class": "unit_swap",
+   "level": "pipeline",
+   "query": "convolutional architecture outperformed successfully retinamnist",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "unit_swap"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "fabricated-generator-01",
+   "class": "fabricated_sentence_generator",
+   "level": "pipeline",
+   "query": "Why use graph shrinking before quantum optimization in logistics?",
+   "attack": {
+    "kind": "generator_fabrication",
+    "sentence": "Quantum annealers always outperform every classical solver on routing problems."
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "fabricated-generator-02",
+   "class": "fabricated_sentence_generator",
+   "level": "pipeline",
+   "query": "What does the GNN policy learn in the graph-shrinking pipeline?",
+   "attack": {
+    "kind": "generator_fabrication",
+    "sentence": "Every hybrid model in this course trains faster on a laptop than on any quantum device."
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "fabricated-generator-03",
+   "class": "fabricated_sentence_generator",
+   "level": "pipeline",
+   "query": "Why does the authored Module 3 document keep returning to the quantum bottleneck instead of claiming end-to-end quantum perception?",
+   "attack": {
+    "kind": "generator_fabrication",
+    "sentence": "The course recommends replacing all classical optimizers with quantum circuits by default."
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "fabricated-generator-04",
+   "class": "fabricated_sentence_generator",
+   "level": "pipeline",
+   "query": "What do QViT, QC-GCN jet tagging, and conditioned quantum diffusion gain from extreme parameter efficiency or low-data performance?",
+   "attack": {
+    "kind": "generator_fabrication",
+    "sentence": "Quantum kernels guarantee perfect accuracy on every finance dataset."
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "fabricated-generator-05",
+   "class": "fabricated_sentence_generator",
+   "level": "pipeline",
+   "query": "Why do orchestration latency, decoherence, and explainability constraints still limit how these hybrid vision and graph systems should be deployed?",
+   "attack": {
+    "kind": "generator_fabrication",
+    "sentence": "Error mitigation makes current quantum processors fully fault tolerant."
+   },
+   "expect": {
+    "caught_by": [
+     "V1.2"
+    ]
+   }
+  },
+  {
+   "id": "fabricated-renderer-01",
+   "class": "fabricated_sentence_renderer",
+   "level": "pipeline",
+   "query": "Which architectural pattern best matches the authored Module 3 vision, graph, and few-shot cases?",
+   "attack": {
+    "kind": "renderer_fabrication",
+    "sentence": "This answer was checked and approved by an expert reviewer."
+   },
+   "expect": {
+    "caught_by": [
+     "V1.4"
+    ]
+   }
+  },
+  {
+   "id": "fabricated-renderer-02",
+   "class": "fabricated_sentence_renderer",
+   "level": "pipeline",
+   "query": "Why are the QViT and QC-GCN jet-tagging examples useful teaching cases?",
+   "attack": {
+    "kind": "renderer_fabrication",
+    "sentence": "Quantum hardware will be error free within one year."
+   },
+   "expect": {
+    "caught_by": [
+     "V1.4"
+    ]
+   }
+  },
+  {
+   "id": "fabricated-renderer-03",
+   "class": "fabricated_sentence_renderer",
+   "level": "pipeline",
+   "query": "What does a quantum kernel add in the aneurysm classification example?",
+   "attack": {
+    "kind": "renderer_fabrication",
+    "sentence": "The approved sources agree on every point above."
+   },
+   "expect": {
+    "caught_by": [
+     "V1.4"
+    ]
+   }
+  },
+  {
+   "id": "unresolvable-01",
+   "class": "unresolvable_span_id",
+   "level": "pipeline",
+   "query": "Why should QC-DQN be taught carefully in a clinical context?",
+   "attack": {
+    "kind": "span_id",
+    "form": "nonexistent",
+    "seed": "unresolvable-01"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.1"
+    ]
+   }
+  },
+  {
+   "id": "unresolvable-02",
+   "class": "unresolvable_span_id",
+   "level": "pipeline",
+   "query": "What makes these healthcare-flavored examples more operationally constrained than the perception examples?",
+   "attack": {
+    "kind": "span_id",
+    "form": "malformed",
+    "seed": "unresolvable-02"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.1"
+    ]
+   }
+  },
+  {
+   "id": "unresolvable-03",
+   "class": "unresolvable_span_id",
+   "level": "pipeline",
+   "query": "Explain why QC-DQN and biomedical quantum-kernel methods should be evaluated as narrow hybrid architectures rather than end-to-end quantum replacements.",
+   "attack": {
+    "kind": "span_id",
+    "form": "uppercase",
+    "seed": "unresolvable-03"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.1"
+    ]
+   }
+  },
+  {
+   "id": "unresolvable-04",
+   "class": "unresolvable_span_id",
+   "level": "pipeline",
+   "query": "Why should QC-DQN be taught carefully?",
+   "attack": {
+    "kind": "span_id",
+    "form": "nonexistent",
+    "seed": "unresolvable-04"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.1"
+    ]
+   }
+  },
+  {
+   "id": "unresolvable-05",
+   "class": "unresolvable_span_id",
+   "level": "pipeline",
+   "query": "What makes healthcare QC+AI architectures operationally demanding?",
+   "attack": {
+    "kind": "span_id",
+    "form": "malformed",
+    "seed": "unresolvable-05"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.1"
+    ]
+   }
+  },
+  {
+   "id": "conflict-version-01",
+   "class": "conflict_version",
+   "level": "pipeline",
+   "query": "artificial intelligence quantum computing research paper synthesis",
+   "attack": {
+    "kind": "compose_from_items",
+    "items": [
+     "analyzing-quantum-computing-and-ai-paper-2025",
+     "quantum-computing-ai-research-synthesis-2026"
+    ]
+   },
+   "expect": {
+    "caught_by": [
+     "V1.7"
+    ]
+   }
+  },
+  {
+   "id": "conflict-version-02",
+   "class": "conflict_version",
+   "level": "pipeline",
+   "query": "quantum computing artificial intelligence synthesis analysis",
+   "attack": {
+    "kind": "compose_from_items",
+    "items": [
+     "analyzing-quantum-computing-and-ai-paper-2025",
+     "quantum-computing-ai-research-synthesis-2026"
+    ]
+   },
+   "expect": {
+    "caught_by": [
+     "V1.7"
+    ]
+   }
+  },
+  {
+   "id": "conflict-version-03",
+   "class": "conflict_version",
+   "level": "pipeline",
+   "query": "synthesis of quantum computing and artificial intelligence research",
+   "attack": {
+    "kind": "compose_from_items",
+    "items": [
+     "analyzing-quantum-computing-and-ai-paper-2025",
+     "quantum-computing-ai-research-synthesis-2026"
+    ]
+   },
+   "expect": {
+    "caught_by": [
+     "V1.7"
+    ]
+   }
+  },
+  {
+   "id": "conflict-number-01",
+   "class": "conflict_number",
+   "level": "check",
+   "query": "Why do the sources repeatedly emphasize hybrid loops instead of end-to-end quantum models?",
+   "attack": {
+    "kind": "twin",
+    "change": "number"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.7"
+    ]
+   }
+  },
+  {
+   "id": "conflict-number-02",
+   "class": "conflict_number",
+   "level": "check",
+   "query": "Why does the authored Module 3 document keep returning to the quantum bottleneck instead of claiming end-to-end quantum perception?",
+   "attack": {
+    "kind": "twin",
+    "change": "number"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.7"
+    ]
+   }
+  },
+  {
+   "id": "conflict-number-03",
+   "class": "conflict_number",
+   "level": "check",
+   "query": "What does a quantum kernel add in the aneurysm classification example?",
+   "attack": {
+    "kind": "twin",
+    "change": "number"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.7"
+    ]
+   }
+  },
+  {
+   "id": "conflict-negation-01",
+   "class": "conflict_negation",
+   "level": "check",
+   "query": "What problem does SAC solve inside the augmented Lagrangian workflow?",
+   "attack": {
+    "kind": "twin",
+    "change": "negation"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.7"
+    ]
+   }
+  },
+  {
+   "id": "conflict-negation-02",
+   "class": "conflict_negation",
+   "level": "check",
+   "query": "Why can nested qubit routing still dominate runtime after the optimization model is compressed?",
+   "attack": {
+    "kind": "twin",
+    "change": "negation"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.7"
+    ]
+   }
+  },
+  {
+   "id": "conflict-negation-03",
+   "class": "conflict_negation",
+   "level": "check",
+   "query": "Explain why quantum logistics needs both problem reduction before execution and routing control during compilation.",
+   "attack": {
+    "kind": "twin",
+    "change": "negation"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.7"
+    ]
+   }
+  },
+  {
+   "id": "keyed-01",
+   "class": "keyed_answer_leak",
+   "level": "pipeline",
+   "query": "Why do the sources repeatedly emphasize hybrid loops instead of end-to-end quantum models?",
+   "attack": {
+    "kind": "keyed",
+    "key": "fixture-key-1"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.6"
+    ]
+   }
+  },
+  {
+   "id": "keyed-02",
+   "class": "keyed_answer_leak",
+   "level": "pipeline",
+   "query": "What makes a QC+AI claim plausible in the NISQ era?",
+   "attack": {
+    "kind": "keyed",
+    "key": "fixture-key-2"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.6"
+    ]
+   }
+  },
+  {
+   "id": "keyed-03",
+   "class": "keyed_answer_leak",
+   "level": "pipeline",
+   "query": "What problem does SAC solve inside the augmented Lagrangian workflow?",
+   "attack": {
+    "kind": "keyed",
+    "key": "fixture-key-3"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.6"
+    ]
+   }
+  },
+  {
+   "id": "out-of-scope-01",
+   "class": "out_of_scope",
+   "level": "pipeline",
+   "query": "What is the capital of France?",
+   "attack": {
+    "kind": "none"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.5"
+    ]
+   }
+  },
+  {
+   "id": "out-of-scope-02",
+   "class": "out_of_scope",
+   "level": "pipeline",
+   "query": "Who won the World Cup in 2018?",
+   "attack": {
+    "kind": "none"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.5"
+    ]
+   }
+  },
+  {
+   "id": "out-of-scope-03",
+   "class": "out_of_scope",
+   "level": "pipeline",
+   "query": "How do I bake sourdough bread?",
+   "attack": {
+    "kind": "none"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.5"
+    ]
+   }
+  },
+  {
+   "id": "out-of-scope-04",
+   "class": "out_of_scope",
+   "level": "pipeline",
+   "query": "What time is it in Tokyo?",
+   "attack": {
+    "kind": "none"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.5"
+    ]
+   }
+  },
+  {
+   "id": "out-of-scope-05",
+   "class": "out_of_scope",
+   "level": "pipeline",
+   "query": "Recommend a good movie for tonight",
+   "attack": {
+    "kind": "none"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.5"
+    ]
+   }
+  },
+  {
+   "id": "out-of-scope-06",
+   "class": "out_of_scope",
+   "level": "pipeline",
+   "query": "How tall is Mount Everest?",
+   "attack": {
+    "kind": "none"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.5"
+    ]
+   }
+  },
+  {
+   "id": "out-of-scope-07",
+   "class": "out_of_scope",
+   "level": "pipeline",
+   "query": "What is the boiling point of water in Fahrenheit?",
+   "attack": {
+    "kind": "none"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.5"
+    ]
+   }
+  },
+  {
+   "id": "out-of-scope-08",
+   "class": "out_of_scope",
+   "level": "pipeline",
+   "query": "what is the",
+   "attack": {
+    "kind": "none"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.5"
+    ]
+   }
+  },
+  {
+   "id": "out-of-scope-09",
+   "class": "out_of_scope",
+   "level": "pipeline",
+   "query": "how does it work",
+   "attack": {
+    "kind": "none"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.5"
+    ]
+   }
+  },
+  {
+   "id": "out-of-scope-10",
+   "class": "out_of_scope",
+   "level": "pipeline",
+   "query": "and then?",
+   "attack": {
+    "kind": "none"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.5"
+    ]
+   }
+  },
+  {
+   "id": "checker-01",
+   "class": "checker_unavailable",
+   "level": "pipeline",
+   "query": "Why does the authored Module 4 source define expressive bottlenecks as structural failures rather than simple under-parameterization?",
+   "attack": {
+    "kind": "checker",
+    "checker": "raising"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.3"
+    ]
+   }
+  },
+  {
+   "id": "checker-02",
+   "class": "checker_unavailable",
+   "level": "pipeline",
+   "query": "Why should quantum explainability methods still be taught with strong caveats about graph structure, attribution cost, and deployment assumptions?",
+   "attack": {
+    "kind": "checker",
+    "checker": "late"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.3"
+    ]
+   }
+  },
+  {
+   "id": "invalid-schema-01",
+   "class": "invalid_schema",
+   "level": "pipeline",
+   "query": "What is the difference between QAI and AI4QC?",
+   "attack": {
+    "kind": "schema",
+    "form": "extra_field"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.9"
+    ]
+   }
+  },
+  {
+   "id": "invalid-schema-02",
+   "class": "invalid_schema",
+   "level": "pipeline",
+   "query": "What makes a QC+AI claim plausible in the NISQ era?",
+   "attack": {
+    "kind": "schema",
+    "form": "other_generator"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.9"
+    ]
+   }
+  },
+  {
+   "id": "invalid-schema-03",
+   "class": "invalid_schema",
+   "level": "pipeline",
+   "query": "What problem does SAC solve inside the augmented Lagrangian workflow?",
+   "attack": {
+    "kind": "schema",
+    "form": "invalid_envelope"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.9"
+    ]
+   }
+  },
+  {
+   "id": "misconception-01",
+   "class": "misconception",
+   "level": "pipeline",
+   "query": "Why can nested qubit routing still dominate runtime after the optimization model is compressed?",
+   "attack": {
+    "kind": "misconception",
+    "entry": "MC-FIXTURE-1"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.8"
+    ]
+   }
+  },
+  {
+   "id": "misconception-02",
+   "class": "misconception",
+   "level": "pipeline",
+   "query": "Explain why quantum logistics needs both problem reduction before execution and routing control during compilation.",
+   "attack": {
+    "kind": "misconception",
+    "entry": "MC-FIXTURE-2"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.8"
+    ]
+   }
+  },
+  {
+   "id": "misconception-03",
+   "class": "misconception",
+   "level": "pipeline",
+   "query": "Why does the authored Module 3 document keep returning to the quantum bottleneck instead of claiming end-to-end quantum perception?",
+   "attack": {
+    "kind": "misconception",
+    "entry": "MC-FIXTURE-3"
+   },
+   "expect": {
+    "caught_by": [
+     "V1.8"
+    ]
+   }
+  },
+  {
+   "id": "residual-paraphrase-01",
+   "class": "residual_paraphrased_contradiction",
+   "level": "check",
+   "query": "Why use graph shrinking before quantum optimization in logistics?",
+   "attack": {
+    "kind": "twin",
+    "change": "paraphrase"
+   },
+   "expect": {
+    "caught_by": []
+   }
+  },
+  {
+   "id": "residual-paraphrase-02",
+   "class": "residual_paraphrased_contradiction",
+   "level": "check",
+   "query": "What does the GNN policy learn in the graph-shrinking pipeline?",
+   "attack": {
+    "kind": "twin",
+    "change": "paraphrase"
+   },
+   "expect": {
+    "caught_by": []
+   }
+  },
+  {
+   "id": "residual-paraphrase-03",
+   "class": "residual_paraphrased_contradiction",
+   "level": "check",
+   "query": "What do QViT, QC-GCN jet tagging, and conditioned quantum diffusion gain from extreme parameter efficiency or low-data performance?",
+   "attack": {
+    "kind": "twin",
+    "change": "paraphrase"
+   },
+   "expect": {
+    "caught_by": []
+   }
+  }
+ ]
+}

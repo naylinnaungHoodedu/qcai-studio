@@ -55,10 +55,12 @@ def test_a_changed_schema_file_or_prompt_hash_is_a_package_problem(tmp_path):
     package = get_config_package(Settings())
     shutil.copytree(package.path.parent / "schemas", tmp_path / "schemas")
     raw = json.loads(package.path.read_text(encoding="utf-8"))
-    (tmp_path / "v2.json").write_text(json.dumps(raw), encoding="utf-8")
+    # A copy of the shipped package (package v3 since Phase 4) under its own name.
+    copy_path = tmp_path / package.path.name
+    copy_path.write_text(json.dumps(raw), encoding="utf-8")
     from app.core.config_package import load_config_package
 
-    copy = load_config_package(tmp_path / "v2.json", governed=False)
+    copy = load_config_package(copy_path, governed=False)
     assert check_tutor_pipeline_package(copy, structural=True) == []
     target = tmp_path / package.tutor_pipeline.schemas["RetrievalRequest"].path
     schema = json.loads(target.read_text(encoding="utf-8"))
@@ -68,8 +70,8 @@ def test_a_changed_schema_file_or_prompt_hash_is_a_package_problem(tmp_path):
     assert any("RetrievalRequest" in problem and "sha256" in problem for problem in problems)
     assert any("structure differs" in problem for problem in problems)
     raw["tutor_pipeline"]["resolver"]["prompt_hash"] = "b" * 64
-    (tmp_path / "v2.json").write_text(json.dumps(raw), encoding="utf-8")
-    assert any("resolver prompt hash" in problem for problem in check_tutor_pipeline_package(load_config_package(tmp_path / "v2.json", governed=False), structural=False))
+    copy_path.write_text(json.dumps(raw), encoding="utf-8")
+    assert any("resolver prompt hash" in problem for problem in check_tutor_pipeline_package(load_config_package(copy_path, governed=False), structural=False))
 
 
 def _locked(**overrides) -> LockedClaimSet:

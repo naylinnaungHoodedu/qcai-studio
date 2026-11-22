@@ -26,6 +26,12 @@ jobs:
       - run: python scripts/config_package.py --check
       # Phase 3: configuration package v1 stays readable for one release (DI-42).
       - run: python scripts/config_package.py --check --path apps/api/app/config_package/v1.json
+      # Phase 4: configuration package v2 stays readable for one release (DI-63).
+      - run: python scripts/config_package.py --check --path apps/api/app/config_package/v2.json
+      # Plan Phase 4 F/H/K: the hashed adversarial fixture set and its report (fixture measurements, not research
+      # results). Exit 3 is a plan L stop (answer-rate floor, V1 composition, or V1 p95 budget); exit 5 an adversarial
+      # case delivered.
+      - run: python scripts/run_v1_fixtures.py --check docs/evaluation/phase4/v1_fixture_report_v1.json
       - run: python scripts/authorization_matrix.py --check
       # Plan Phase 3 F: the three-plan replay over public-corpus fixtures (not E3 or LQ-1 evidence); exit 3 is the
       # plan L bound-claim-ratio stop.

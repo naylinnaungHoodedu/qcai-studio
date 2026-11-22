@@ -4,6 +4,13 @@ Phase 3 (docs/architecture/phase3-implementation-spec.md 7.11): the learner stil
 contained answer (D-19, unchanged). Each turn also prepares its follow-ups, which the route runs after the commit:
 a legacy ledger record (TUTOR_LEDGER_ENABLED) and, when two_pass_tutor is in shadow, a two-pass shadow run whose
 output reaches no learner (AC-3-6). The evidence panel (task 3.8) is added only when EVIDENCE_PANEL_ENABLED.
+
+Phase 4 (spec 7.4; plan Phase 4 L): the contained answer passes the legacy guard (V1.1 and V1.2; no flag) before
+anything reads it (every current quotation passes, so the body is unchanged), and the shadow job carries the learner's
+decision for V1's comparison. Conflicting quotations (V1.7) are labelled by the evidence panel when it is shown and
+the package's conflict policy is disclose, and otherwise withheld by the guard (AC-4-6). A stored reply that
+read_thread shows again carries the V1.7 labels the package in force at read time gives its turn's citations, whether
+or not the panel is on (Phase 4 spec 4.15 item 3; nothing stores the labels shown at delivery, DI-68).
 """
 
 from __future__ import annotations
@@ -26,13 +33,14 @@ from app.schemas import (
     AssistantChatMessage,
     AssistantChatRequest,
     AssistantChatResponse,
+    EvidenceConflict,
     TutorMessageRead,
     TutorThreadDetail,
     TutorThreadRead,
 )
 from app.services.answer_history import WITHDRAWN_ANSWER, stored_before_containment
 from app.services.contained_answers import ContainedAnswer, contain_answer
-from app.services.evidence_panel import build_evidence_panel
+from app.services.evidence_panel import build_evidence_panel, panel_conflicts, stored_conflicts
 from app.services.ledger import LegacyDelivery, LegacyPreparationFailed, legacy_delivery_for, preparation_failed
 from app.services.retrieval_metrics import record_citations
 from app.services.span_store import persist_cited_spans
@@ -42,10 +50,15 @@ from app.services.tutor_pipeline.contracts import PresentationPlan
 from app.services.tutor_pipeline.metrics import TWO_PASS_METRICS
 from app.services.tutor_pipeline.shadow import ShadowJob, effective_mode
 from app.services.tutor_pipeline.shadow import run_shadow as run_shadow_job
+from app.services.v1_checks.legacy_guard import guard_contained
 
 TUTOR_LOGGER = logging.getLogger("qcai.tutor")
 # The reply follows the learner's message by this much, and each turn follows the thread's latest message by it.
 MESSAGE_TICK = timedelta(microseconds=1)
+# A thread read returns its first THREAD_MESSAGES messages; their replies belong to at most half as many turns, so
+# reading the first THREAD_TURNS turns finds each reply's turn.
+THREAD_MESSAGES = 100
+THREAD_TURNS = 100
 
 
 def _utc_now() -> datetime:
@@ -83,7 +96,7 @@ def _withdrawn(message: TutorMessage) -> bool:
     return message.role == "assistant" and stored_before_containment(message.created_at)
 
 
-def _message_read(message: TutorMessage) -> TutorMessageRead:
+def _message_read(message: TutorMessage, conflicts: list[EvidenceConflict] | None = None) -> TutorMessageRead:
     # A reply the uncontained build stored is withheld; the learner's own messages stay (R-16).
     withdrawn = _withdrawn(message)
     return TutorMessageRead(
@@ -92,7 +105,40 @@ def _message_read(message: TutorMessage) -> TutorMessageRead:
         content=WITHDRAWN_ANSWER if withdrawn else message.content,
         created_at=message.created_at,
         withdrawn=withdrawn,
+        conflicts=None if withdrawn else conflicts,
     )
+
+
+def _reply_conflicts(db: Session, thread_id: str, messages: list[TutorMessage], package) -> dict[str, list[EvidenceConflict]]:
+    """The V1.7 labels of each stored reply whose quoted passages conflict, by message id: the evidence panel's rule
+    over the citations of the reply's turn (AC-4-6 where a reply is shown again; Phase 4 spec 4.15).
+
+    A reply's turn is the thread's turn stamped one MESSAGE_TICK before it (chat() sets both times, Phase 3 spec M5),
+    or, for a reply the database clock stamped (before chat() set the times), the turn stamped at the same instant. An
+    instant two turns share links neither. Only a turn that answered is read, and only the first THREAD_TURNS turns,
+    which hold every reply of the first 100 messages."""
+    replies = [message for message in messages if message.role == "assistant" and not _withdrawn(message)]
+    if package.v1 is None or not replies:
+        return {}
+    turns = db.execute(
+        select(TutorTurn.created_at, TutorTurn.decision, TutorTurn.citations)
+        .where(TutorTurn.thread_id == thread_id)
+        .order_by(TutorTurn.created_at.asc(), TutorTurn.id.asc())
+        .limit(THREAD_TURNS)
+    ).all()
+    by_time: dict[datetime, list[tuple[str, list]]] = {}
+    for created_at, decision, citations in turns:
+        by_time.setdefault(_as_utc(created_at), []).append((decision, citations or []))
+    found: dict[str, list[EvidenceConflict]] = {}
+    for reply in replies:
+        stamped = _as_utc(reply.created_at)
+        linked = by_time.get(stamped - MESSAGE_TICK) or by_time.get(stamped) or []
+        if len(linked) != 1 or linked[0][0] != "answer":
+            continue
+        conflicts = stored_conflicts(linked[0][1], package)
+        if conflicts:
+            found[reply.id] = conflicts
+    return found
 
 
 class TutorOrchestrator:
@@ -117,15 +163,17 @@ class TutorOrchestrator:
 
     def read_thread(self, db: Session, user: AuthUser, thread_id: str) -> TutorThreadDetail:
         thread = self._require_thread(db, user, thread_id)
-        messages = db.scalars(
+        messages = list(db.scalars(
             select(TutorMessage)
             .where(TutorMessage.thread_id == thread.id)
             .order_by(TutorMessage.created_at.asc(), TutorMessage.id.asc())
-            .limit(100)
-        ).all()
+            .limit(THREAD_MESSAGES)
+        ).all())
+        # AC-4-6 where a reply is shown again: its V1.7 labels, whatever EVIDENCE_PANEL_ENABLED says (spec 4.15).
+        conflicts = _reply_conflicts(db, thread.id, messages, get_config_package(self.settings))
         return TutorThreadDetail(
             **self._thread_read(thread).model_dump(),
-            messages=[_message_read(message) for message in messages],
+            messages=[_message_read(message, conflicts.get(message.id)) for message in messages],
         )
 
     def chat(
@@ -151,6 +199,13 @@ class TutorOrchestrator:
         # an abstention reach the learner, never candidate.answer itself.
         registry = get_corpus_registry(self.settings)
         contained = contain_answer(candidate.citations, registry, self._span_registry(), settings=self.settings)
+        # Plan Phase 4 L: V1.1 and V1.2 stay enforced on every delivery path, in every V1_PIPELINE mode (no flag).
+        # AC-4-6: conflicting quotations are labelled by the evidence panel when it is shown and the package's conflict
+        # policy is disclose, else withheld (V1.7); when read_thread shows the stored reply again, and the ledger route
+        # its record, each labels it by the package in force at read time.
+        package = get_config_package(self.settings)
+        contained = guard_contained(contained, store=self._store(), package=package, surface="tutor",
+                                    disclosure_shown=self.settings.evidence_panel_enabled).contained
         record_citations("tutor", len(contained.citations), contained.dropped_unresolved, 0)
         turn_id = f"turn-{uuid4()}"
         user_message_id = f"message-{uuid4()}"
@@ -208,11 +263,13 @@ class TutorOrchestrator:
         )
         if self.settings.evidence_panel_enabled:
             response.evidence = build_evidence_panel(
-                decision=contained.decision, citations=contained.citations, retrieval_mode=candidate.retrieval_mode, settings=self.settings
+                decision=contained.decision, citations=contained.citations, retrieval_mode=candidate.retrieval_mode, settings=self.settings,
+                conflicts=panel_conflicts(contained, package),
             )
         response._followups = TurnFollowups(
             legacy=self._legacy_followup(turn_id, candidate, contained, registry),
-            shadow=self._shadow_followup(turn_id, thread.id, user_message_id, payload.lesson_slug, presentation_plan),
+            shadow=self._shadow_followup(turn_id, thread.id, user_message_id, payload.lesson_slug, presentation_plan,
+                                         legacy_decision=contained.decision),
         )
         return response
 
@@ -248,7 +305,8 @@ class TutorOrchestrator:
         )
 
     def _shadow_followup(
-        self, turn_id: str, thread_id: str, user_message_id: str, lesson_slug: str | None, presentation_plan: str | None
+        self, turn_id: str, thread_id: str, user_message_id: str, lesson_slug: str | None, presentation_plan: str | None,
+        *, legacy_decision: str | None = None,
     ) -> ShadowJob | None:
         try:
             package = get_config_package(self.settings)
@@ -262,6 +320,7 @@ class TutorOrchestrator:
                 user_message_id=user_message_id,
                 lesson_slug=lesson_slug,
                 presentation=PresentationPlan(plan_id=plan_id, source="request" if presentation_plan else "default"),
+                legacy_decision=legacy_decision if legacy_decision in ("answer", "abstain") else None,
             )
         except Exception as exc:  # noqa: BLE001 - the shadow never changes the learner's answer
             TWO_PASS_METRICS.failed("pipeline")

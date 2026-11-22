@@ -328,7 +328,8 @@ def test_a_lone_surrogate_in_a_note_anchor_is_refused():
     lesson = "nisq-reality-overview"
     response = client.post(
         f"/content/lessons/{lesson}/notes",
-        content=b'{"body":"note","anchor_type":"section","anchor_value":"\ud800"}',
+        # A raw literal: the body holds the six characters of the JSON escape \ud800 (a lone surrogate).
+        content=rb'{"body":"note","anchor_type":"section","anchor_value":"\ud800"}',
         headers={"content-type": "application/json", "origin": TRUSTED_ORIGIN, "x-qcai-csrf": csrf, **_source()},
     )
     assert response.status_code == 422, response.text

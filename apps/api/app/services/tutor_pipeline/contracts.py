@@ -2,8 +2,9 @@
 
 Every contract is frozen and refuses unknown fields (extra="forbid"), so a learner-state field can never ride along
 on a retrieval request or an evidential envelope (AC-3-1, R-41) and a generator cannot smuggle text past the claim
-plan (R-11). The committed JSON schemas (app/config_package/schemas/*.v1.schema.json) are generated from these
-models and pinned by sha256 in configuration package v2.
+plan (R-11). The committed JSON schemas (app/config_package/schemas/: the eight *.v1.schema.json, and
+ledger-entry.v2.schema.json for LedgerEntryV2) are generated from these models and pinned by sha256 in the shipped
+configuration package (v3 since Phase 4, all nine; v2, still readable, pins the eight v1 schemas).
 
 Channels:
 - evidential: ResolvedQuestion -> RetrievalRequest -> EvidenceBundle -> EvidentialEnvelope -> ClaimPlan ->
@@ -27,8 +28,9 @@ CLAIM_ID = r"^claim-[0-9a-f]{32}$"
 # learner; the record matches the asker's Q&A row by its answer hash while that row exists, spec 18.6 D10).
 RESPONSE_ID = r"^(turn|shadow|qa)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 
-# Phase 4 sets this True together with its V1 module (plan 13.6: nothing whose verification has not completed is
-# delivered). While it is False no code path builds a "delivered" ledger entry or returns two-pass text (AC-3-6).
+# The Phase 4 exit sets this True together with the delivered two-pass path (DI-59; plan 13.6: nothing whose
+# verification has not completed is delivered). V1 runs inside the shadow until then. While it is False no code path
+# builds a "delivered" ledger entry or returns two-pass text (AC-3-6).
 TWO_PASS_DELIVERY_IMPLEMENTED = False
 
 # Two reasons for an empty evidential envelope (spec 18.11 I1; evidential.no_envelope_reason):
@@ -58,8 +60,10 @@ ABSTENTION_REASONS = (
     "budget_exceeded",
 )
 # The legacy contained path's own abstention reason (contained_answers.contain_answer). A legacy ledger record keeps
-# it only for a gate that matched passages none of which could be quoted (not approved under D-31, or not verified);
-# when the gate itself returned nothing, the record carries the gate's reason.
+# it when the gate matched passages none of which could be quoted (not approved under D-31, or not verified), and when
+# the Phase 4 legacy guard withheld the contained answer (V1.1, V1.2, or V1.7 conflict_withheld; its
+# tutor.v1.legacy_guard_withheld line tells the two apart); when the gate itself returned nothing, the record carries
+# the gate's reason.
 LEGACY_ABSTENTION_REASON = "no_approved_span"
 # The Phase 2 retrieval gate's own abstention reasons (lexical_index.Reason without "evidence").
 GATE_ABSTENTION_REASONS = ("no_query_terms", "no_match", "insufficient_coverage", "below_floor")
@@ -195,7 +199,7 @@ class EvidenceBundle(Contract):
     @classmethod
     def _no_conflicts_before_phase_4(cls, value: tuple[str, ...]) -> tuple[str, ...]:
         if value:
-            raise ValueError("conflict detection (V1.7) is Phase 4; a Phase 3 bundle carries no conflicts")
+            raise ValueError("V1.7 (Phase 4) records conflicts on the verification record (DisclosureBlock), never on an evidence bundle")
         return value
 
 
@@ -497,7 +501,7 @@ class LedgerEntry(Contract):
             problems.append("delivered two-pass records are refused before the Phase 4 exit (AC-3-6)")
         if (self.decision == "abstain") != (self.abstention_reason is not None):
             problems.append("an abstention, and only an abstention, has an abstention_reason")
-        if self.abstention_reason is not None and self.abstention_reason not in (*ABSTENTION_REASONS, LEGACY_ABSTENTION_REASON):
+        if self.abstention_reason is not None and self.abstention_reason not in ACCEPTED_ABSTENTION_REASONS[self.entry_schema]:
             problems.append(f"unknown abstention_reason {self.abstention_reason!r}")
         if self.decision == "answer" and (not self.claims or self.rendered_text_sha256 is None):
             problems.append("an answer has claims and a rendered_text_sha256")
@@ -533,5 +537,307 @@ SCHEMA_MODELS: dict[str, type[Contract]] = {
     "PresentationPlan": PresentationPlan,
     "LedgerEntry": LedgerEntry,
 }
-# verify_response_ledger dispatches on a row's entry_schema; Phase 4 adds ledger-entry-v2.
-ENTRY_SCHEMAS: dict[str, type[LedgerEntry]] = {"ledger-entry-v1": LedgerEntry}
+
+
+# ------------------------------------------------------------------------------------------------- V1 (Phase 4)
+#
+# Plan Phase 4 D: nine synchronous pre-delivery checks; "HARD = final". The vocabulary below is what every CheckResult
+# is validated against, so a check cannot record an outcome its reason does not have (Phase 4 spec 3.1-3.2).
+
+CHECK_IDS = ("V1.1", "V1.2", "V1.3", "V1.4", "V1.5", "V1.6", "V1.7", "V1.8", "V1.9")
+CheckId = Literal["V1.1", "V1.2", "V1.3", "V1.4", "V1.5", "V1.6", "V1.7", "V1.8", "V1.9"]
+Outcome = Literal["pass", "flag", "hard_fail", "abstain", "mark"]
+EhmfType = Literal["A", "B", "C", "D", "E"]
+# Plan Phase 4 D table, EHMF column (verbatim).
+EHMF_BY_CHECK = {"V1.1": ("B",), "V1.2": ("A", "B"), "V1.3": ("A", "B", "C"), "V1.4": ("D", "E"), "V1.5": ("A",),
+                 "V1.6": ("E",), "V1.7": ("D",), "V1.8": ("C",), "V1.9": ("E",)}
+STAGES_BY_CHECK = {"V1.1": ("pre_render",), "V1.2": ("pre_render",), "V1.3": ("pre_render",), "V1.4": ("post_render",),
+                   "V1.5": ("pre_render",), "V1.6": ("post_render",), "V1.7": ("pre_render",), "V1.8": ("pre_render",),
+                   "V1.9": ("pre_render", "post_render")}
+SUBSET_PROBLEM_CODES = ("empty", "text_not_segments", "unmapped_factual_sentence", "duplicate_claim", "citation_outside_locked_set",
+                        "citation_not_on_claim", "citation_marker_mismatch", "no_claim_rendered", "claim_uncited",
+                        "citation_list_mismatch")   # == claim_gate.PROBLEM_CODES (package_check and a test compare)
+# V1.2's polarity drop codes: a claim whose bind passed but whose quantities or negation cues differ from its span.
+V1_DROP_REASONS = ("quantity_mismatch", "negation_mismatch")
+# Every claim of a final candidate V1.1 hard-failed: V1.1 judges the candidate whole, so none of its claims is bound
+# (an enforce record's counts; Phase 3 counts the same plan per claim, as outside_bundle).
+UNRESOLVABLE_CANDIDATE = "unresolvable_citation"
+V1_COUNT_REASONS = (*V1_DROP_REASONS, UNRESOLVABLE_CANDIDATE)
+REASON_OUTCOMES: dict[str, dict[str, str]] = {
+    "V1.1": {"resolved": "pass", "unresolvable": "hard_fail", "malformed_span_id": "hard_fail", "content_hash_mismatch": "hard_fail"},
+    "V1.2": {"bound": "pass", "merged": "pass", "duplicate": "pass", **{code: "hard_fail" for code in BINDING_FAILURES},
+             **{code: "hard_fail" for code in V1_DROP_REASONS}, "no_bound_claims": "abstain"},
+    "V1.3": {"supported": "pass", "no_checker": "flag", "not_enough_info": "flag", "contradicted": "flag",
+             "below_support_threshold": "flag", "checker_unavailable": "abstain"},
+    "V1.4": {"mapped": "pass", "render_failed": "hard_fail", **{code: "hard_fail" for code in SUBSET_PROBLEM_CODES}},
+    "V1.5": {"answer": "pass", "near_miss": "mark", **{code: "abstain" for code in (*GATE_ABSTENTION_REASONS, "corpus_version_mismatch",
+                                                                                  NO_QUOTABLE_EVIDENCE)}},
+    "V1.6": {"not_assessment": "pass", "key_absent": "pass", "short_key_unmatchable": "pass", "keyed_answer_present": "hard_fail"},
+    "V1.7": {"no_conflict": "pass", "conflict_disclosed": "flag", "conflict_withheld": "flag"},
+    "V1.8": {"no_match": "pass", "misconception_match": "flag"},
+    "V1.9": {"schema_valid": "pass", "claim_plan_invalid": "hard_fail", "generator_mismatch": "hard_fail",
+             "response_envelope_invalid": "hard_fail", "within_band": "pass", "below_band": "flag", "above_band": "flag"},
+}
+# Abstention reasons only an enforce-mode V1 decision gives (LedgerEntryV2 accepts them; ABSTENTION_REASONS is unchanged).
+V1_ABSTENTION_REASONS = ("unresolvable_citation", "checker_unavailable", "keyed_answer_leak", "readability_out_of_band",
+                         "response_envelope_invalid")
+V1_WITHHOLD_REASONS = ("d20_interim_withhold", "conflict_withheld")
+ACCEPTED_ABSTENTION_REASONS = {
+    "ledger-entry-v1": (*ABSTENTION_REASONS, LEGACY_ABSTENTION_REASON),
+    "ledger-entry-v2": (*ABSTENTION_REASONS, LEGACY_ABSTENTION_REASON, *V1_ABSTENTION_REASONS),
+}
+# Claim-scoped results: these checks judge one claim (claim_id set), except the response-level reasons listed.
+_CLAIM_SCOPED = {"V1.2": ("no_bound_claims",), "V1.3": ("checker_unavailable",), "V1.8": ()}
+_RESPONSE_SCOPED = ("V1.1", "V1.4", "V1.5", "V1.6", "V1.7", "V1.9")
+# A delivered claim's own results may hold only these outcomes, besides V1.7's labelling flags (spec 3.2, conflict 32).
+DELIVERABLE_OUTCOMES = ("pass", "mark")
+
+
+def _sorted_unique(values: tuple[str, ...]) -> bool:
+    return list(values) == sorted(set(values))
+
+
+class CheckResult(Contract):
+    check_id: CheckId
+    stage: Literal["pre_render", "post_render"]
+    attempt: int = Field(ge=1, le=3)
+    outcome: Outcome
+    ehmf_types: tuple[EhmfType, ...]
+    reason_code: str
+    claim_id: str | None = Field(default=None, pattern=CLAIM_ID)
+    checker_model_id: str | None = None
+
+    @model_validator(mode="after")
+    def _consistent(self) -> "CheckResult":
+        problems = []
+        outcomes = REASON_OUTCOMES[self.check_id]
+        if self.reason_code not in outcomes:
+            problems.append(f"{self.check_id} has no reason {self.reason_code!r}")
+        elif outcomes[self.reason_code] != self.outcome:
+            problems.append(f"{self.check_id} {self.reason_code} is outcome {outcomes[self.reason_code]}, not {self.outcome}")
+        if self.ehmf_types != EHMF_BY_CHECK[self.check_id]:
+            problems.append(f"{self.check_id} EHMF types are {EHMF_BY_CHECK[self.check_id]}")
+        if self.stage not in STAGES_BY_CHECK[self.check_id]:
+            problems.append(f"{self.check_id} does not run at {self.stage}")
+        if (self.checker_model_id is not None) != (self.check_id == "V1.3"):
+            problems.append("checker_model_id is set on V1.3 results only")
+        if self.check_id in _CLAIM_SCOPED:
+            response_level = self.reason_code in _CLAIM_SCOPED[self.check_id]
+            if response_level and self.claim_id is not None:
+                problems.append(f"{self.check_id} {self.reason_code} is a response-level result (no claim_id)")
+            if not response_level and self.claim_id is None:
+                problems.append(f"{self.check_id} {self.reason_code} names its claim")
+        elif self.claim_id is not None:
+            problems.append(f"{self.check_id} results are response-level (no claim_id)")
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
+
+class V3Intent(Contract):
+    queue: Literal["pending_v3"] = "pending_v3"
+    reasons: tuple[Literal["v1_3_flag", "v1_8_misconception", "x4_margin"], ...] = Field(min_length=1)
+    trigger: Literal["X4"] | None = None
+    gold_label_id: None = None
+
+    @model_validator(mode="after")
+    def _consistent(self) -> "V3Intent":
+        if not _sorted_unique(self.reasons):
+            raise ValueError("V3 intent reasons are sorted and unique")
+        if (self.trigger == "X4") != ("x4_margin" in self.reasons):
+            raise ValueError("the X4 trigger is set exactly when x4_margin is a reason")
+        return self
+
+
+class ConflictPair(Contract):
+    kind: Literal["version_of_same_asset", "number_disagreement", "negation_disagreement"]
+    span_ids: tuple[str, ...] = Field(min_length=2, max_length=12)
+    item_ids: tuple[str, str]
+    claim_ids: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def _consistent(self) -> "ConflictPair":
+        if not _sorted_unique(self.span_ids) or not _sorted_unique(self.claim_ids):
+            raise ValueError("a conflict's span_ids and claim_ids are sorted and unique")
+        if list(self.item_ids) != sorted(self.item_ids) or self.item_ids[0] == self.item_ids[1]:
+            raise ValueError("a conflict names two distinct items, sorted")
+        return self
+
+
+class DisclosureBlock(Contract):
+    block_schema: Literal["conflict-disclosure-v1"] = "conflict-disclosure-v1"
+    policy: Literal["disclose", "withhold"]
+    conflicts: tuple[ConflictPair, ...] = Field(min_length=1, max_length=20)
+
+
+class ClaimVerdict(Contract):
+    claim_id: str = Field(pattern=CLAIM_ID)
+    v1: tuple[CheckResult, ...]
+    v2: None = None
+    v3: V3Intent | None = None
+    final: Literal["deliver", "correct", "withhold", "abstain"]
+    cycle_count: int = Field(ge=0, le=4)
+
+
+class V1Policy(Contract):
+    rules_version: str
+    rules_hash: str = Field(pattern=HEX64)
+    checker_hosting: str = Field(min_length=1, max_length=64)
+    checker_model_id: str = Field(min_length=1, max_length=128)
+    misconception_library_version: str
+    misconception_library_sha256: str = Field(pattern=HEX64)
+    d20_interim: Literal["withhold-all-flagged-v1"]
+
+
+class V1Comparison(Contract):
+    phase3_decision: Literal["answer", "abstain"] | None
+    legacy_decision: Literal["answer", "abstain"] | None
+    v1_outcome: Literal["answer", "abstain"]
+    agrees_phase3: bool | None
+    agrees_legacy: bool | None
+
+
+def _deliverable(result: CheckResult) -> bool:
+    """A delivered claim's own V1 results: pass or mark, and V1.7's labelling flags (a disclosed conflict is
+    deliverable; a withheld one names its claims, which the withheld-conflict rule refuses separately)."""
+    return result.outcome in DELIVERABLE_OUTCOMES or result.check_id == "V1.7"
+
+
+class VerificationRecord(Contract):
+    verification_schema: Literal["v1-verification-v1"] = "v1-verification-v1"
+    mode: Literal["shadow", "enforce"]
+    policy: V1Policy
+    generation_attempts: int = Field(ge=0, le=3)
+    render_attempts: int = Field(ge=0, le=3)
+    cycle_count: int = Field(ge=0, le=4)
+    claim_set_hash: str | None = Field(default=None, pattern=HEX64)
+    checks: tuple[CheckResult, ...] = Field(max_length=256)
+    verdicts: tuple[ClaimVerdict, ...] = Field(max_length=20)
+    labels: tuple[Literal["near_floor", "conflict_disclosed"], ...] = ()
+    disclosure: DisclosureBlock | None = None
+    final: Literal["deliver", "correct", "withhold", "abstain"]
+    final_reason: str | None
+    replacement: Literal["extractive_d19", "abstention", "unknown", "none"]
+    hard_fail: bool
+    comparison: V1Comparison
+
+    @model_validator(mode="after")
+    def _rules(self) -> "VerificationRecord":
+        problems = []
+        cycles = max(self.generation_attempts - 1, 0) + max(self.render_attempts - 1, 0)
+        if self.cycle_count != cycles or any(verdict.cycle_count != cycles for verdict in self.verdicts):
+            problems.append("cycle_count is the regenerations made (generation and render), on the record and on every verdict")
+        if self.final == "correct":
+            problems.append("no V1 decision is 'correct' before V2 exists (Phase 5)")
+        if (self.final == "withhold") != (self.replacement != "none"):
+            problems.append("a withheld response, and only one, names its replacement")
+        if self.final == "withhold":
+            expected = {"answer": "extractive_d19", "abstain": "abstention", None: "unknown"}[self.comparison.legacy_decision]
+            if self.replacement != expected:
+                problems.append(f"a withheld response's replacement follows the legacy decision ({expected})")
+        finals = [verdict.final for verdict in self.verdicts]
+        if self.final == "deliver" and "deliver" not in finals:
+            problems.append("a delivered response delivers at least one claim")
+        if self.final == "withhold" and (not finals or "deliver" in finals):
+            problems.append("a withheld response has claims and delivers none")
+        if self.final == "abstain" and any(final != "abstain" for final in finals):
+            problems.append("an abstention abstains on every claim")
+        if self.final != "abstain" and "abstain" in finals:
+            problems.append("a claim abstains only when the response abstains")
+        if self.hard_fail and self.final != "abstain":
+            problems.append("a V1 hard fail is final: the response abstains")
+        if (self.final_reason is None) != (self.final == "deliver"):
+            problems.append("every response but a delivered one has a final_reason")
+        if self.final_reason is not None and self.final_reason not in (*ABSTENTION_REASONS, *V1_ABSTENTION_REASONS, *V1_WITHHOLD_REASONS):
+            problems.append(f"unknown final_reason {self.final_reason!r}")
+        for verdict in self.verdicts:
+            if verdict.final == "deliver" and not all(_deliverable(result) for result in verdict.v1):
+                problems.append(f"{verdict.claim_id} is delivered despite a V1 result that is not pass (invariant 6; 13.6)")
+        if self.disclosure is not None and self.disclosure.policy == "withhold":
+            named = {claim_id for pair in self.disclosure.conflicts for claim_id in pair.claim_ids}
+            if any(verdict.final == "deliver" and verdict.claim_id in named for verdict in self.verdicts):
+                problems.append("a claim of a withheld conflict is never delivered")
+        disclosed = self.disclosure is not None and self.disclosure.policy == "disclose"
+        if ("conflict_disclosed" in self.labels) != disclosed:
+            problems.append("the conflict_disclosed label is set exactly when a disclosure block is disclosed")
+        marked = any(result.check_id == "V1.5" and result.outcome == "mark" for result in self.checks)
+        if ("near_floor" in self.labels) != marked:
+            problems.append("the near_floor label is set exactly when V1.5 marked the response")
+        if self.comparison.v1_outcome != ("abstain" if self.final == "abstain" else "answer"):
+            problems.append("comparison.v1_outcome is abstain exactly when the response abstains")
+        for reference, agrees in ((self.comparison.phase3_decision, self.comparison.agrees_phase3),
+                                  (self.comparison.legacy_decision, self.comparison.agrees_legacy)):
+            if (reference is None) != (agrees is None) or (reference is not None and agrees != (reference == self.comparison.v1_outcome)):
+                problems.append("each comparison agrees_* is null exactly when its reference is, else reference == v1_outcome")
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
+
+class ProvenanceV2(Provenance):
+    v1_3_checker_model_id: str = Field(min_length=1, max_length=128)
+
+
+class ClaimLedgerEntryV2(ClaimLedgerEntry):
+    entailment_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    provenance: ProvenanceV2
+
+
+class PipelineCountsV2(PipelineCounts):
+    """PipelineCounts that also accept V1's own reasons (V1_COUNT_REASONS: V1.2's polarity drops, and a V1.1
+    hard-failed candidate's claims); the arithmetic rule is unchanged."""
+
+    @model_validator(mode="after")
+    def _reconciles(self) -> "PipelineCountsV2":
+        unknown = sorted(set(self.dropped) - set(DROP_REASONS) - set(V1_COUNT_REASONS))
+        if unknown:
+            raise ValueError(f"unknown drop reasons {unknown}")
+        if any(count < 1 for count in self.dropped.values()):
+            raise ValueError("a drop reason is listed only with a positive count")
+        if self.proposed_claims != self.bound_claims + sum(self.dropped.values()):
+            raise ValueError("proposed_claims must equal bound_claims plus the dropped claims")
+        return self
+
+
+class LedgerEntryV2(LedgerEntry):
+    entry_schema: Literal["ledger-entry-v2"] = "ledger-entry-v2"
+    claims: tuple[ClaimLedgerEntryV2, ...]
+    provenance: ProvenanceV2
+    verification: VerificationRecord
+    counts: PipelineCountsV2
+
+    @model_validator(mode="after")
+    def _v1_rules(self) -> "LedgerEntryV2":
+        problems = []
+        verification = self.verification
+        if self.delivery != "shadow":
+            problems.append("only shadow records carry a V1 verification before the Phase 4 exit (DI-59)")
+        checker = verification.policy.checker_model_id
+        if self.provenance.v1_3_checker_model_id != checker:
+            problems.append("provenance.v1_3_checker_model_id is the policy's checker")
+        if any(result.check_id == "V1.3" and result.checker_model_id != checker for result in verification.checks):
+            problems.append("every V1.3 result names the policy's checker")
+        if (checker == "none" or verification.mode == "shadow") and any(claim.entailment_score is not None for claim in self.claims):
+            problems.append("an entailment_score is recorded only from a real checker in enforce mode")
+        if verification.mode == "enforce":
+            if (self.decision == "abstain") != (verification.final == "abstain"):
+                problems.append("in enforce, the record abstains exactly when V1 does")
+            if [verdict.claim_id for verdict in verification.verdicts] != [claim.claim_id for claim in self.claims]:
+                problems.append("in enforce, the verdicts name the recorded claims, in order")
+            if verification.claim_set_hash != self.claim_set_hash:
+                problems.append("in enforce, the verification names the recorded claim set")
+        else:
+            if verification.comparison.phase3_decision != self.decision:
+                problems.append("in shadow, the record is the Phase 3 decision and the comparison names it")
+            if self.abstention_reason is not None and self.abstention_reason not in (*ABSTENTION_REASONS, LEGACY_ABSTENTION_REASON):
+                problems.append("in shadow, the abstention reason is a Phase 3 reason")
+            if set(self.counts.dropped) & set(V1_COUNT_REASONS):
+                problems.append("in shadow, the counts are the Phase 3 composition's (no V1 count reason)")
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
+
+SCHEMA_MODELS["LedgerEntryV2"] = LedgerEntryV2
+# verify_response_ledger, export and restore dispatch on a row's entry_schema.
+ENTRY_SCHEMAS: dict[str, type[LedgerEntry]] = {"ledger-entry-v1": LedgerEntry, "ledger-entry-v2": LedgerEntryV2}

@@ -198,8 +198,14 @@ def test_repeated_failures_lock_the_email_even_for_the_right_password():
     assert locked.status_code == 429
     assert 0 < int(locked.headers["retry-after"]) <= get_settings().auth_lockout_window_seconds
     with SessionLocal() as db:
+        # In seq (append) order: without ORDER BY, PostgreSQL returns rows in physical order, which differs once a
+        # retention purge has freed space in earlier pages.
         lockouts = list(
-            db.scalars(select(SecurityEvent).where(SecurityEvent.seq > start, SecurityEvent.event_type == "auth.lockout"))
+            db.scalars(
+                select(SecurityEvent)
+                .where(SecurityEvent.seq > start, SecurityEvent.event_type == "auth.lockout")
+                .order_by(SecurityEvent.seq)
+            )
         )
     assert [event.outcome for event in lockouts] == ["warning", "denied"]
     assert all(email not in str(event.details) for event in lockouts)

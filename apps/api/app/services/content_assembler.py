@@ -43,6 +43,7 @@ from app.services.spans import (
     check_library_versions,
     make_splitter,
 )
+from app.services.quiz_keys import QuizKey, QuizKeyStore
 from app.services.text_utils import lead_sentence, truncate_display_excerpt
 from app.services.transcripts import load_video_chapters
 
@@ -923,6 +924,8 @@ class CourseStore:
         self.entry_by_span_id: dict[str, IndexEntry] = {}
         self.items: dict[str, CanonicalItem] = {}
         self.span_registry = SpanRegistry()
+        # The quiz answer keys, server-side only: public lessons carry QuizQuestion without them (Phase 4 spec 4.14).
+        self.quiz_keys = QuizKeyStore(())
         self.duplicate_span_ids = 0
         self.gate: str = settings.retrieval_gate or "p1-floor"
         self.corpus_version = ""
@@ -993,6 +996,7 @@ class CourseStore:
 
         modules: list[ModuleSummary] = []
         lessons: dict[str, LessonDetail] = {}
+        quiz_keys: list[QuizKey] = []
         attachments: dict[str, list[tuple[str, int]]] = {}
         first_position: dict[str, int] = {}
         lesson_position = 0
@@ -1008,6 +1012,8 @@ class CourseStore:
                 lesson_sections = self._build_lesson_sections(matched_sections)
                 video_asset = next((asset for asset in bound_video_assets if asset.filename == lesson_blueprint["video_file"]), None)
                 chapters = load_video_chapters(settings.transcripts_dir, video_asset.filename) if video_asset else []
+                questions, keys = self._build_quiz(lesson_slug, lesson_blueprint.get("quiz", []))
+                quiz_keys.extend(keys)
 
                 lesson = LessonDetail(
                     slug=lesson_slug,
@@ -1028,7 +1034,7 @@ class CourseStore:
                     video_asset=video_asset,
                     chapters=chapters,
                     flashcards=self._build_flashcards(lesson_slug, lesson_blueprint.get("flashcards", [])),
-                    quiz_questions=self._build_quiz(lesson_slug, lesson_blueprint.get("quiz", [])),
+                    quiz_questions=questions,
                 )
                 lessons[lesson_slug] = lesson
                 lesson_slugs.append(lesson_slug)
@@ -1069,6 +1075,7 @@ class CourseStore:
         self.modules = {module.slug: module for module in modules}
         self._populate_related_lessons(lessons)
         self.lessons = lessons
+        self.quiz_keys = QuizKeyStore(quiz_keys)
         self.items = items
         self.span_registry = span_registry
         self.duplicate_span_ids = span_registry.duplicate_ids + (len(entries) - len({entry.span_id for entry in entries}))
@@ -1281,19 +1288,18 @@ class CourseStore:
             for index, (difficulty, prompt, answer) in enumerate(cards, start=1)
         ]
 
-    def _build_quiz(self, lesson_slug: str, quiz_items: list[dict[str, Any]]) -> list[QuizQuestion]:
-        return [
-            QuizQuestion(
-                id=f"{lesson_slug}-quiz-{index}",
-                question_type=item["type"],
-                prompt=item["prompt"],
-                choices=item.get("choices", []),
-                answer=item["answer"],
-                explanation=item.get("explanation", item["answer"]),
-                difficulty=item["difficulty"],
-            )
-            for index, item in enumerate(quiz_items, start=1)
-        ]
+    def _build_quiz(self, lesson_slug: str, quiz_items: list[dict[str, Any]]) -> tuple[list[QuizQuestion], list[QuizKey]]:
+        """The public questions (no key) and their server-side keys (R-42; Phase 4 spec 4.14)."""
+        questions: list[QuizQuestion] = []
+        keys: list[QuizKey] = []
+        for index, item in enumerate(quiz_items, start=1):
+            question_id = f"{lesson_slug}-quiz-{index}"
+            choices = list(item.get("choices", []))
+            questions.append(QuizQuestion(id=question_id, question_type=item["type"], prompt=item["prompt"], choices=choices,
+                                          difficulty=item["difficulty"]))
+            keys.append(QuizKey(id=question_id, lesson_slug=lesson_slug, question_type=item["type"], prompt=item["prompt"],
+                                choices=tuple(choices), answer=item["answer"], explanation=item.get("explanation", item["answer"])))
+        return questions, keys
 
     def _populate_related_lessons(self, lessons: dict[str, LessonDetail]) -> None:
         lesson_topics = {slug: self._lesson_topics(lesson) for slug, lesson in lessons.items()}

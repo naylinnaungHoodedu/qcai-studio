@@ -9,7 +9,10 @@ unrecorded_reason "earlier_image" for a turn an image that keeps no ledger creat
 during a rollback window or before traffic moved to a Phase 3 revision); unrecorded_reason "ledger_disabled" for a
 turn made while TUTOR_LEDGER_ENABLED was off; "missing" for a turn that expected a record and has none (an append
 that failed, was refused, or was deferred and then failed), so a lost record is never shown as a pre-ledger turn
-(plan L, "a ledger write fails"; spec 18.7 E6). The reviewer role (LEDGER_READER_ROLES; plan 7.3
+(plan L, "a ledger write fails"; spec 18.7 E6). A legacy record whose delivered quotations conflict under the V1.7 rule
+of the package in force at read time carries their labels (`conflicts`, evidence_panel.record_conflicts; AC-4-6,
+Phase 4 spec 4.15 item 3), for its owner and for the reviewer alike; the record's versions name the package in force
+at delivery, and nothing stores the labels that delivery showed (DI-68). The reviewer role (LEDGER_READER_ROLES; plan 7.3
 "owner or reviewer", nothing wider) reads any record, shadow records included, with the chain fields; each such
 read is a security event (plan 7.6). Any other role, admin included, is an owner reader only. A learner never sees
 a shadow record (AC-3-6): every miss is the same 404 with Cache-Control: no-store.
@@ -28,12 +31,15 @@ from sqlalchemy.orm import Session
 from app.core.auth import AuthUser, get_current_user
 from app.core.authorization import LEDGER_READER_ROLES
 from app.core.config import get_settings
+from app.core.config_package import get_config_package
 from app.core.db import get_db
 from app.core.rate_limit import limiter
 from app.db_models import ResponseLedgerRecord, TutorTurn
 from app.schemas import LedgerClaimRead, LedgerRecordRead, LedgerResponseRead
+from app.services.evidence_panel import record_conflicts
 from app.services.ledger import _utc
 from app.services.security_log import record_security_event, route_template
+from app.services.store import get_course_store
 from app.services.tutor_pipeline.contracts import RESPONSE_ID
 
 router = APIRouter(prefix="/ledger", tags=["ledger"])
@@ -54,6 +60,11 @@ def _unrecorded(response_id: str, turn: TutorTurn) -> LedgerResponseRead:
 
 def _record(row: ResponseLedgerRecord, *, reviewer: bool) -> LedgerRecordRead:
     entry = json.loads(row.entry)
+    conflicts = None
+    if row.delivery == "legacy":
+        spans = get_course_store().span_registry
+        conflicts = record_conflicts(entry, get_config_package(get_settings()),
+                                     item_of=lambda span_id: getattr(spans.get(span_id), "item_id", None))
     return LedgerRecordRead(
         response_id=row.response_id,
         delivery=row.delivery,
@@ -68,6 +79,7 @@ def _record(row: ResponseLedgerRecord, *, reviewer: bool) -> LedgerRecordRead:
         provenance=entry.get("provenance") or {},
         versions=entry.get("versions") or {},
         resolved_question=entry.get("resolved_question"),
+        conflicts=conflicts,
         seq=row.seq if reviewer else None,
         prev_hash=row.prev_hash if reviewer else None,
         record_hash=row.record_hash if reviewer else None,

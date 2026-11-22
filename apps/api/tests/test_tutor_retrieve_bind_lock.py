@@ -99,7 +99,10 @@ def test_sufficiency_abstains_on_no_result_marks_near_miss_from_the_gates_flag_a
         bundle = retrieve(engine, RetrievalRequest(text=query, corpus_version=store.corpus_version), top_k=4, registry=registry)
         expected = "near_miss" if response.results[0].near_floor else "answer"
         assert bundle.sufficiency.decision == expected, query
-        assert bundle.sufficiency.score == response.results[0].score
+        # The top result's score at the gate's own precision (the 9 digits near_floor is computed on); the result's
+        # display score is that score rounded to 4 (Phase 4 spec 4.6).
+        assert bundle.sufficiency.score == response.gate_scores[response.results[0].span_id]
+        assert round(bundle.sufficiency.score, 4) == response.results[0].score
         seen[expected] += 1
     assert seen["answer"] > 100 and seen["near_miss"] >= 1, seen
 
@@ -269,7 +272,7 @@ def test_the_lock_hash_is_stable_and_stamped():
     again = lock(drafts, bundle=bundle, generator=REF, evidential_prompt_hash=REF.prompt_hash, pedagogical_prompt_hash=pedagogical_prompt_hash(),
                  resolver=RESOLVER, package=PACKAGE)
     assert first == again and first.claim_set_hash == again.claim_set_hash
-    assert (first.corpus_version, first.index_version, first.config_package.version) == (store.corpus_version, store.index_version, "2.0.0")
+    assert (first.corpus_version, first.index_version, first.config_package.version) == (store.corpus_version, store.index_version, PACKAGE.package_version)
     # The sentence's own place in the item (spec 18.10 H2; it was the span's start until then).
     (first_sentence,) = [sentence for sentence in whole_sentences(record, store, min_words=PARAMS.min_sentence_words,
                                                                   max_chars=PARAMS.max_sentence_chars) if sentence.text == _sentences(record)[0]]

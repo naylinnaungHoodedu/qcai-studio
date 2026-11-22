@@ -14,7 +14,7 @@ Provider failure cannot remove the evidence path. Semantic retrieval is an optim
 
 ## Revision 2026-11-19 (Phase 2: corpus, span identity and retrieval integrity)
 
-Status: accepted for Phase 2 engineering; the thresholds are **provisional until Phase 4** and "no threshold is final before the E1 freeze" (plan Phase 2 H). Implements plan tasks 2.1 and 2.5-2.7. The full design is `docs/architecture/phase2-implementation-spec.md`; the original decision above stays as history.
+Status: accepted for Phase 2 engineering; the thresholds are **provisional** (until Phase 4 in configuration packages v1 and v2; package v3, the shipped one, keeps them provisional until Q-22 sets them, `abstention.provisional_until` `Q-22 (DI-52)`) and "no threshold is final before the E1 freeze" (plan Phase 2 H). Implements plan tasks 2.1 and 2.5-2.7. The full design is `docs/architecture/phase2-implementation-spec.md`; the original decision above stays as history.
 
 ### Context
 - **E-25:** 459 chunks shared 215 chunk ids, and those ids keyed fusion and vectors.
@@ -29,7 +29,7 @@ Status: accepted for Phase 2 engineering; the thresholds are **provisional until
      - It drops stopwords (`stopwords-v1`, 210 words, hashed in the package) and does no stemming (conflict 5).
      - It has no module or lesson boost. Ties break on `span_id`.
      - It applies the `coverage-v1` sufficiency rule, then the provisional abstention floor 2.35 with margin 2.40 (`abstention-p2-v1`).
-     - A result within the margin above the floor is marked `near_floor`, the later X4 trigger. There is no runner-up test (conflict 4; Phase 4).
+     - A result within the margin above the floor is marked `near_floor`, the later X4 trigger. There is no runner-up test (conflict 4; Phase 4 did not add one, DI-67).
    - **`p1-floor`** is the approved P1 floor applied to the span index. In the governed D-31 configuration it returns exactly the pre-migration results (`test_ac_2_5_the_p1_floor_gate_on_the_governed_index_equals_todays_search`).
 4. **Default gate.**
    - `RETRIEVAL_GATE` defaults to `bm25f-v1` in development and `p1-floor` everywhere else (conflict 26). The reason is measured: `bm25f-v1` is not strictly more conservative.
@@ -48,7 +48,7 @@ Status: accepted for Phase 2 engineering; the thresholds are **provisional until
 ### Provisional deviations from plan 11.3 (need Principal Investigator or Research Lead ratification)
 These are engineering defaults applied under P1-D-18; they depart from the plan's text, so an engineering decision alone does not settle them. They are recorded in configuration package v1 (`owner_decisions.PLAN-11.3`, `ratified: false`).
 - **No stemming.** Plan 11.3 asks for "a stemmed, stopword-filtered BM25-style index". Package v1 sets `stemmer: "none"`: an S-stemmer raised out-of-scope leakage (all-approved maximum 8.2) (spec conflict 5).
-- **The margin labels; it does not test a runner-up.** Plan 11.3 asks for "a sufficiency gate (floor plus runner-up margin) before any generator call". The margin marks `near_floor` results (floor ≤ score < floor + margin, D6 and plan V1.5) and drops none; there is no runner-up comparison (spec conflict 4; Phase 4, DI-28).
+- **The margin labels; it does not test a runner-up.** Plan 11.3 asks for "a sufficiency gate (floor plus runner-up margin) before any generator call". The margin marks `near_floor` results (floor ≤ score < floor + margin, D6 and plan V1.5) and drops none; there is no runner-up comparison (spec conflict 4; DI-28, carried as DI-67).
 
 ### D-17: the long-term public corpus model (hold H5, "ADR revision")
 - **Provisional choice:** option (a), "interim, migrate by Phase 11", the plan's 18.3 recommendation. It was applied under P1-D-18 (owner delegation, 2026-11-19) and is **provisional, pending ratification**.

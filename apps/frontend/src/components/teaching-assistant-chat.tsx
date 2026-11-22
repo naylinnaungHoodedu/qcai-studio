@@ -3,10 +3,10 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
-import { EvidencePanel } from "@/components/evidence-panel";
+import { ConflictDisclosure, EvidencePanel } from "@/components/evidence-panel";
 import { normalizeAssistantHistory } from "@/lib/assistant-chat";
 import { chatWithTeachingAssistant, fetchTutorThread, fetchTutorThreads, postAnalyticsEvent } from "@/lib/api";
-import { AssistantChatMessage, AssistantChatResponse } from "@/lib/types";
+import { AssistantChatMessage, AssistantChatResponse, EvidenceConflictPayload } from "@/lib/types";
 
 type ChatBubble = {
   id: string;
@@ -16,6 +16,9 @@ type ChatBubble = {
   citations?: AssistantChatResponse["citations"];
   // Phase 3 (task 3.8): the evidence panel, only when the API sends one; stored history bubbles have none.
   evidence?: AssistantChatResponse["evidence"];
+  // Phase 4 (V1.7, AC-4-6): a stored reply's conflict labels, which the thread read returns with it; the bubble shows
+  // them as its disclosure (a live reply's are in its panel).
+  conflicts?: EvidenceConflictPayload[] | null;
   isError?: boolean;
 };
 
@@ -136,6 +139,7 @@ export function TeachingAssistantChat() {
               role: message.role,
               content: message.content,
               createdAt: message.created_at,
+              conflicts: message.conflicts ?? null,
             })),
           );
         }
@@ -321,7 +325,7 @@ export function TeachingAssistantChat() {
                       ))}
                     </div>
                   ) : null}
-                  {message.evidence ? <EvidencePanel evidence={message.evidence} /> : null}
+                  {message.evidence ? <EvidencePanel evidence={message.evidence} /> : <ConflictDisclosure conflicts={message.conflicts} />}
                   <time className="assistant-bubble-time" dateTime={message.createdAt}>
                     {formatTimestamp(message.createdAt)}
                   </time>

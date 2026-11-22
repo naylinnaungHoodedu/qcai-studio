@@ -9,6 +9,7 @@ abstention floor (the latent hybrid bypass found on 2026-11-17). Nothing here ta
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from functools import cached_property
 import logging
@@ -52,6 +53,10 @@ class RetrievalResponse:
     floor: float = 0.0
     margin: float = 0.0
     near_floor: int = field(default=0)
+    # Span id -> the gate score of each result (ScoredEntry.gate_score: the score the gate compared with its floor, at
+    # its precision), so a sufficiency records the score the floor applies to, not a result's display or ranking score
+    # (retrieve.sufficiency_of; Phase 4 spec 4.6, M11).
+    gate_scores: dict[str, float] = field(default_factory=dict)
 
 
 class PineconeSemanticBackend:
@@ -177,6 +182,11 @@ class PineconeSemanticBackend:
         return results
 
 
+def _gate_scores(scored: "Iterable[ScoredEntry]") -> dict[str, float]:
+    """Span id -> gate score of gated results (RetrievalResponse.gate_scores)."""
+    return {item.entry.span_id: item.gate_score for item in scored if item.gate_score is not None}
+
+
 class RetrievalEngine:
     def __init__(self, store: CourseStore, settings: Settings):
         self.store = store
@@ -241,12 +251,15 @@ class RetrievalEngine:
             floor=decision.floor,
             margin=decision.margin,
             near_floor=sum(1 for result in results if result.near_floor),
+            gate_scores=_gate_scores(decision.results),
         )
 
     def _search(self, query: str, lesson_slug: str | None, top_k: int) -> RetrievalResponse:
         decision = self.store.evaluate(query, lesson_slug=lesson_slug, top_k=max(top_k * 2, top_k))
         lexical = [self.store.to_search_result(scored, lesson_slug) for scored in decision.results]
-        common = {"gate": decision.gate, "index_version": self.store.index_version, "floor": decision.floor, "margin": decision.margin}
+        gate_scores = _gate_scores(decision.results)
+        common = {"gate": decision.gate, "index_version": self.store.index_version, "floor": decision.floor, "margin": decision.margin,
+                  "gate_scores": gate_scores}
 
         def lexical_response(mode: str) -> RetrievalResponse:
             results = lexical[:top_k]
@@ -274,6 +287,7 @@ class RetrievalEngine:
             gated = self.store.index.gate_entry(query, entry, lesson_slug)
             if gated is None:  # the floor applies to every result, whatever the mode
                 continue
+            gate_scores.update(_gate_scores((gated,)))
             semantic.append(self.store.to_search_result(gated, lesson_slug))
         if not semantic:
             return lexical_response("lexical-fallback")

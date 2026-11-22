@@ -1,8 +1,9 @@
 """What a route does after a tutor turn commits (Phase 3 spec 7.12; conflicts 3 and 29).
 
 1. The legacy ledger record, synchronously, so the record exists before the answer leaves (plan I "ledger writes
-   100% of deliveries"). The route waits at most the append budget plus the wait grace (configuration package v2
-   tutor_pipeline.budgets: 1500 + 250 ms; TUTOR_LEDGER_APPEND_BUDGET_MS overrides the budget), whatever the database does
+   100% of deliveries"). The route waits at most the append budget plus the wait grace (the shipped configuration
+   package's tutor_pipeline.budgets, v3 since Phase 4: 1500 + 250 ms; TUTOR_LEDGER_APPEND_BUDGET_MS overrides the
+   budget), whatever the database does
    (pool checkout included); the append fails open and is counted (ledger.record_legacy_delivery). The delivery counts
    as attempted here, after the commit, never while it is prepared, so a turn that rolls back is no attempt (18.7 E5).
 2. The two-pass shadow, as a background task that runs after the response body is sent; it never raises.

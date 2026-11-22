@@ -7,8 +7,17 @@
 
 Learner state reaches neither pass: the evidential pass takes the resolved text, the lesson scope and the corpus
 version; the renderer takes a PresentationPlan from a request hint or the package default (AC-3-1, invariant 1).
-Phase 3 has no delivered two-pass path (spec R-a): run() refuses any delivery but "shadow" while
-TWO_PASS_DELIVERY_IMPLEMENTED is False, and nothing it returns reaches a learner (AC-3-6).
+There is no delivered two-pass path (Phase 3 spec R-a; Phase 4 spec R-a): run() refuses any delivery but "shadow"
+while TWO_PASS_DELIVERY_IMPLEMENTED is False, and nothing it returns reaches a learner (AC-3-6).
+
+V1 (Phase 4 spec 4.13) runs inside the shadow, by v1_checks.mode:
+  off      the Phase 3 composition exactly; the record is a ledger-entry-v1
+  shadow   the Phase 3 composition decides the record; the V1 track runs alongside on the same bundle and envelope
+           (reusing the generator's first proposal) and its VerificationRecord, with the comparison against the
+           Phase 3 decision and the legacy decision, is the record's verification (ledger-entry-v2)
+  enforce  retrieve, bundle and envelope as in Phase 3, then the V1 track decides the record: its claims, rendering,
+           counts and decision (ledger-entry-v2); decision "answer" means a rendering passed V1, and whether any of it
+           may be delivered is verification.final
 """
 
 from __future__ import annotations
@@ -35,15 +44,19 @@ from app.services.tutor_pipeline import contracts
 from app.services.tutor_pipeline.bind import bind
 from app.services.tutor_pipeline.contracts import (
     ClaimLedgerEntry,
+    ClaimLedgerEntryV2,
     ClaimPlan,
     EvidenceBundle,
     EvidentialEnvelope,
     LedgerEntry,
+    LedgerEntryV2,
     LockedClaimSet,
     PipelineCounts,
+    PipelineCountsV2,
     PresentationPlan,
     PresentationRecord,
     Provenance,
+    ProvenanceV2,
     RenderedResponse,
     ResolvedQuestion,
     ResolvedQuestionRef,
@@ -82,6 +95,9 @@ class PipelineInput:
     response_id: str
     delivery: Literal["shadow"]
     shadowed_response_id: str
+    # The decision of the legacy contained answer the learner received for the shadowed turn (V1's comparison and
+    # D-20 replacement; Phase 4 spec 4.13). None for replay and fixture runs.
+    legacy_decision: Literal["answer", "abstain"] | None = None
 
 
 @dataclass(frozen=True)
@@ -98,7 +114,33 @@ class PipelineResult:
     render_attempts: int
     entry: LedgerEntry
     appended: AppendedRecord | None
-    # No learner-facing text: the rendered response is internal and never returned to a learner in Phase 3.
+    # No learner-facing text: the rendered response is internal and never returned to a learner.
+    # The V1 run (v1_checks.runner.V1Run) when V1 ran (shadow or enforce), else None.
+    v1: Any = None
+
+
+@dataclass(frozen=True)
+class RenderAttempt:
+    """One render attempt as the V1 post_render hook sees it (Phase 4 spec 4.11): the presentation and omitted
+    claims it used, the coerced rendering (None when the renderer raised or its envelope was invalid), the subset
+    check's result on it, the step that raised (render or subset_check) and the V1.9 envelope reason."""
+
+    attempt: int
+    presentation: PresentationPlan
+    omit: frozenset[str]
+    rendered: RenderedResponse | None
+    subset: Any
+    fault: str | None
+    envelope_error: str | None
+
+
+@dataclass(frozen=True)
+class HookVerdict:
+    accept: bool
+    next_presentation: PresentationPlan | None = None
+    next_omit: frozenset[str] | None = None
+    reason: str | None = None
+    stop: bool = False
 
 
 def rendered_claim_ids(rendered: RenderedResponse) -> tuple[str, ...]:
@@ -119,6 +161,8 @@ def render_checked(
     *,
     max_regenerations: int,
     over: Callable[[], bool] | None = None,
+    post_render: Callable[[RenderAttempt], HookVerdict] | None = None,
+    omit: frozenset[str] = frozenset(),
 ) -> tuple[RenderedResponse | None, int, str | None]:
     """Plan 3.7: render, subset-check; on an unmapped factual sentence re-render, at most max_regenerations times,
     then abstain. Returns (the passing rendering or None, attempts made, abstention reason or None).
@@ -127,7 +171,17 @@ def render_checked(
     not a subset-check failure: it logs tutor.two_pass.render_failed with the step and the error class, and when every
     attempt raised the run abstains with render_failed, never subset_check_failed (spec 18.12 J3). So a crashing
     renderer is told apart from the plan J case of a renderer that adds a claim, in the record and in "abstention by
-    reason". A tampered locked set still propagates."""
+    reason". A tampered locked set still propagates.
+
+    With post_render (the V1 track, Phase 4 spec 4.11) each attempt's output is first re-validated as a
+    RenderedResponse (V1.9 envelope; an invalid one is not a fault and is not subset-checked), then subset-checked
+    through this module's check_subset, and the hook decides: accept, or reject with a reason, a next presentation
+    plan and next omitted claims, or stop. The reason returned is the hook's for the last rejected attempt that was not
+    a fault (render_failed when every attempt raised). omit is passed to the renderer only when it is not empty. With
+    neither post_render nor omit the behaviour is Phase 3's exactly."""
+    if post_render is not None or omit:
+        return _render_with_hook(renderer, locked, presentation, max_regenerations=max_regenerations, over=over,
+                                 post_render=post_render, omit=omit)
     attempts = 1 + max_regenerations
     faults = 0
     for attempt in range(1, attempts + 1):
@@ -152,6 +206,53 @@ def render_checked(
     return None, attempts, contracts.RENDER_FAILED if faults == attempts else "subset_check_failed"
 
 
+def _render_with_hook(renderer, locked, presentation, *, max_regenerations, over, post_render, omit):
+    from app.services.v1_checks.v1_9_schema_readability import check_v1_9_envelope
+
+    attempts = 1 + max_regenerations
+    current, current_omit = presentation, frozenset(omit)
+    reason: str | None = None
+    for attempt in range(1, attempts + 1):
+        rendered = subset = fault = envelope_error = None
+        step = "render"
+        try:
+            options = {"omit_claim_ids": current_omit} if current_omit else {}
+            candidate = renderer.render(locked, current, attempt=attempt, **options)
+            envelope, rendered = check_v1_9_envelope(candidate, attempt=attempt)
+            if rendered is None:
+                envelope_error = envelope.reason_code
+            else:
+                step = "subset_check"
+                subset = check_subset(rendered, locked)
+        except contracts.LockedClaimSetTampered:
+            raise
+        except Exception as exc:  # noqa: BLE001 - a fault is a failed attempt, logged and counted apart (spec 18.12 J3)
+            fault, rendered, subset = step, None, None
+            LOGGER.error(
+                "Two-pass render attempt raised",
+                extra={FIELDS: {"event": "tutor.two_pass.render_failed", "step": step, "render_attempt": attempt, "error": type(exc).__name__}},
+            )
+        verdict = post_render(RenderAttempt(attempt, current, current_omit, rendered, subset, fault, envelope_error)) if post_render else (
+            HookVerdict(accept=subset is not None and subset.passed, reason=None if fault else "subset_check_failed"))
+        if verdict.accept and rendered is not None:
+            return rendered, attempt, None
+        if verdict.reason is not None:
+            reason = verdict.reason
+        if verdict.stop:
+            return None, attempt, reason
+        if verdict.next_presentation is not None:
+            current = verdict.next_presentation
+        if verdict.next_omit is not None:
+            current_omit = frozenset(verdict.next_omit)
+        if attempt < attempts and over is not None and over():
+            return None, attempt, "budget_exceeded"
+    return None, attempts, reason or contracts.RENDER_FAILED
+
+
+# A shadow run whose Phase 3 composition never called the generator: the V1 track proposes itself.
+_NO_RAW = object()
+
+
 class TwoPassPipeline:
     def __init__(
         self,
@@ -162,6 +263,10 @@ class TwoPassPipeline:
         renderer: Renderer | None = None,
         session_factory: Callable[[], Session] = SessionLocal,
         clock: Callable[[], float] = time.perf_counter,
+        checker: Any = None,
+        keyed_items: Any = None,
+        misconceptions: Any = None,
+        v2_hook: Any = None,
     ) -> None:
         self.package = get_config_package(settings)
         if self.package.tutor_pipeline is None:
@@ -177,51 +282,96 @@ class TwoPassPipeline:
         self.renderer: Renderer = renderer if renderer is not None else TemplateRenderer(self.package)
         self.session_factory = session_factory
         self.clock = clock
+        # Phase 4 (spec 4.13): the V1 track's checker, keyed items and misconception library. A package without a v1
+        # block (v1 or v2) runs Phase 3 only.
+        self.v1_params = self.package.v1
+        self.v2_hook = v2_hook
+        # The clock V1.3 times a checker call with (tests and the fixture runner inject one).
+        self.v1_clock: Callable[[], float] = time.monotonic
+        self.checker, self.keyed_items, self.misconceptions = checker, keyed_items, misconceptions
+        if self.v1_params is not None:
+            from app.services.quiz_keys import QuizKeySource, QuizKeyStore
+            from app.services.v1_checks.v1_3_entailment import get_checker
+            from app.services.v1_checks.v1_8_misconceptions import load_library
 
-    def _over(self, started: float, budget_ms: int | None, step: str) -> bool:
+            if self.checker is None:
+                self.checker = get_checker(self.package)
+            if self.keyed_items is None:
+                self.keyed_items = QuizKeySource(getattr(self.store, "quiz_keys", None) or QuizKeyStore(()))
+            if self.misconceptions is None:
+                self.misconceptions = load_library(self.package)
+
+    def _over(self, started: float, budget_ms: int | None, step: str, *, event: str = "tutor.two_pass.budget_exceeded") -> bool:
+        """Whether the shadow budget is spent at `step`, logging `event` when it is. The record's own composition logs
+        tutor.two_pass.budget_exceeded; a shadow-mode V1 track, which runs after the Phase 3 decision is fixed, logs
+        tutor.v1.budget_exceeded, so the Phase 3 signal still means the record itself overran (spec 4.13, 10.4)."""
         if budget_ms is None:
             return False
         elapsed_ms = (self.clock() - started) * 1000
         if elapsed_ms <= budget_ms:
             return False
+        message = "Two-pass shadow exceeded its budget" if event == "tutor.two_pass.budget_exceeded" else "The shadow V1 track exceeded its budget"
         LOGGER.warning(
-            "Two-pass shadow exceeded its budget",
-            extra={FIELDS: {"event": "tutor.two_pass.budget_exceeded", "step": step, "elapsed_ms": round(elapsed_ms, 3), "budget_ms": budget_ms}},
+            message,
+            extra={FIELDS: {"event": event, "step": step, "elapsed_ms": round(elapsed_ms, 3), "budget_ms": budget_ms}},
         )
         return True
 
-    def _propose(self, envelope: EvidentialEnvelope) -> ClaimPlan:
-        raw = self.generator.propose(envelope)
+    def _propose(self, envelope: EvidentialEnvelope, *, keep: list | None = None) -> ClaimPlan:
+        """The generator's plan, re-validated. With `keep`, the raw output (or the generator's exception) is appended,
+        so a shadow V1 track judges the same first proposal (spec 4.13)."""
+        try:
+            raw = self.generator.propose(envelope)
+        except Exception as exc:
+            if keep is not None:
+                keep.append(exc)
+            raise
+        if keep is not None:
+            keep.append(raw)
         plan = ClaimPlan.model_validate(raw.model_dump(mode="json") if isinstance(raw, BaseModel) else raw)
         if plan.generator != self.generator.ref:
             raise ValueError("the claim plan names another generator")
         return plan
 
+    def _envelope(self, request: RetrievalRequest, bundle: EvidenceBundle, started: float, budget_ms: int | None) -> tuple[EvidentialEnvelope | None, str | None]:
+        """Phase 3 steps 2-3: the gate's abstention, the retrieve budget, then the envelope or why there is none."""
+        if bundle.sufficiency.decision == "abstain":
+            return None, bundle.sufficiency.reason
+        if self._over(started, budget_ms, "retrieve"):
+            return None, "budget_exceeded"
+        envelope = build_envelope(request, bundle, store=self.store, params=self.params)
+        if envelope is None:
+            # no_quotable_evidence or no_whole_sentence: which cause emptied the envelope (spec 18.11 I1).
+            return None, no_envelope_reason(bundle, store=self.store)
+        return envelope, None
+
     def run(self, item: PipelineInput, *, budget_ms: int | None = None, record: bool = True) -> PipelineResult:
         if item.delivery != "shadow" and not contracts.TWO_PASS_DELIVERY_IMPLEMENTED:
             raise DeliveryNotImplemented("two-pass output is delivered only after the Phase 4 exit (AC-3-6); run it in shadow")
+        from app.services import v1_checks
+
+        mode = v1_checks.mode(self.settings, self.package)
         params = self.params
         started = self.clock()
         request = build_request(item.resolved, lesson_slug=item.lesson_slug, corpus_version=self.store.corpus_version)
         bundle = retrieve(self.engine, request, top_k=params.top_k, registry=self.registry)
-        envelope: EvidentialEnvelope | None = None
+        envelope, reason = self._envelope(request, bundle, started, budget_ms)
+        if mode == "enforce":
+            v1 = self._v1(item, bundle, envelope, reason, started, budget_ms, mode="enforce", phase3_decision=None)
+            decision: Literal["answer", "abstain"] = "answer" if v1.rendered is not None else "abstain"
+            reason = None if decision == "answer" else v1.decision.abstention_reason
+            entry = self._entry_v2(item, decision, reason, bundle, v1.locked, v1.rendered, v1.record.render_attempts, v1.proposed,
+                                   v1.dropped, budget_ms, v1=v1, presentation=v1.presentation)
+            return self._finish(item, entry, decision, reason, request, bundle, envelope, v1.plan, v1.locked, v1.rendered,
+                                v1.record.render_attempts, record, v1=v1)
+        raws: list = []
         plan: ClaimPlan | None = None
         drafts: tuple = ()
         dropped: Counter = Counter()
         proposed = 0
-        reason: str | None = None
-        if bundle.sufficiency.decision == "abstain":
-            reason = bundle.sufficiency.reason
-        elif self._over(started, budget_ms, "retrieve"):
-            reason = "budget_exceeded"
-        if reason is None:
-            envelope = build_envelope(request, bundle, store=self.store, params=params)
-            if envelope is None:
-                # no_quotable_evidence or no_whole_sentence: which cause emptied the envelope (spec 18.11 I1).
-                reason = no_envelope_reason(bundle, store=self.store)
         if reason is None and envelope is not None:
             try:
-                plan = self._propose(envelope)
+                plan = self._propose(envelope, keep=raws)
             except Exception:  # noqa: BLE001 - any generator fault or malformed plan abstains (R-11)
                 reason = "claim_plan_invalid"
             else:
@@ -259,8 +409,38 @@ class TwoPassPipeline:
                 max_regenerations=params.max_regenerations,
                 over=lambda: self._over(started, budget_ms, "render"),
             )
-        decision: Literal["answer", "abstain"] = "answer" if rendered is not None and reason is None else "abstain"
-        entry = self._entry(item, decision, reason, bundle, locked, rendered, attempts, proposed, dropped, budget_ms)
+        decision = "answer" if rendered is not None and reason is None else "abstain"
+        if mode == "off":
+            entry = self._entry(item, decision, reason, bundle, locked, rendered, attempts, proposed, dropped, budget_ms)
+            return self._finish(item, entry, decision, reason, request, bundle, envelope, plan, locked, rendered, attempts, record)
+        # shadow: the record is the Phase 3 composition's; the V1 track judges the same bundle and first proposal.
+        first_raw = raws[0] if raws else _NO_RAW
+        no_envelope = bundle.sufficiency.reason if bundle.sufficiency.decision == "abstain" else (reason if envelope is None else None)
+        v1 = self._v1(item, bundle, envelope, no_envelope, started, budget_ms, mode="shadow", phase3_decision=decision, first_raw=first_raw)
+        entry = self._entry_v2(item, decision, reason, bundle, locked, rendered, attempts, proposed, dropped, budget_ms, v1=v1,
+                               presentation=item.presentation)
+        return self._finish(item, entry, decision, reason, request, bundle, envelope, plan, locked, rendered, attempts, record, v1=v1)
+
+    def _v1(self, item: PipelineInput, bundle, envelope, envelope_reason, started, budget_ms, *, mode, phase3_decision, first_raw=_NO_RAW):
+        from app.services.v1_checks.runner import _UNSET, V1Context, V1Track
+
+        track = V1Track(self, checker=self.checker, keyed_items=self.keyed_items, library=self.misconceptions, v2_hook=self.v2_hook,
+                        clock=self.v1_clock)
+        context = V1Context(resolved=item.resolved, lesson_slug=item.lesson_slug, presentation=item.presentation,
+                            legacy_decision=item.legacy_decision)
+        # In enforce the V1 track is the record's composition; in shadow it runs after the record's decision.
+        event = "tutor.two_pass.budget_exceeded" if mode == "enforce" else "tutor.v1.budget_exceeded"
+        return track.run(
+            context, bundle, envelope,
+            envelope_reason=envelope_reason,
+            first_raw=_UNSET if first_raw is _NO_RAW else first_raw,
+            budget_over=lambda step: self._over(started, budget_ms, step, event=event),
+            mode=mode,
+            phase3_decision=phase3_decision,
+        )
+
+    def _finish(self, item, entry, decision, reason, request, bundle, envelope, plan, locked, rendered, attempts, record, *, v1=None) -> PipelineResult:
+        params = self.params
         appended: AppendedRecord | None = None
         if record:
             LEDGER_METRICS.attempt(item.delivery)
@@ -283,24 +463,24 @@ class TwoPassPipeline:
             render_attempts=attempts,
             entry=entry,
             appended=appended,
+            v1=v1,
         )
 
-    def _entry(self, item, decision, reason, bundle, locked, rendered, attempts, proposed, dropped, budget_ms) -> LedgerEntry:
+    def _provenance(self, bundle) -> Provenance:
         params = self.params
-        package = self.package
-        provenance = Provenance(
+        return Provenance(
             generator_model_id=self.generator.ref.model_id,
             evidential_prompt_hash=self.generator.ref.prompt_hash,
             pedagogical_prompt_hash=params.pedagogical_prompt_hash,
             corpus_version=bundle.corpus_version,
             threshold_set_version=bundle.sufficiency.threshold_version,
         )
-        claims = tuple(
-            ClaimLedgerEntry(claim_id=claim.claim_id, response_id=item.response_id, text=claim.text, span_ids=claim.span_ids, provenance=provenance)
-            for claim in locked.claims
-        )
+
+    def _entry_fields(self, item, decision, reason, bundle, locked, rendered, attempts, budget_ms, presentation: PresentationPlan) -> dict:
+        """The fields a v1 and a v2 record share (everything but claims, provenance, verification and counts)."""
+        package = self.package
         sufficiency = bundle.sufficiency
-        return LedgerEntry(
+        return dict(
             response_id=item.response_id,
             delivery=item.delivery,
             shadowed_response_id=item.shadowed_response_id,
@@ -321,12 +501,11 @@ class TwoPassPipeline:
                 evidence=bundle.spans,
             ),
             claim_set_hash=locked.claim_set_hash,
-            claims=claims,
             span_ids=locked.span_ids,
             presentation=(
                 PresentationRecord(
-                    plan_id=item.presentation.plan_id,
-                    source=item.presentation.source,
+                    plan_id=presentation.plan_id,
+                    source=presentation.source,
                     renderer_id=self.renderer.renderer_id,
                     attempts=attempts,
                     subset_check="passed" if rendered is not None else "failed",
@@ -339,7 +518,6 @@ class TwoPassPipeline:
                 else None
             ),
             rendered_text_sha256=sha256_hex(rendered.text if decision == "answer" and rendered is not None else ABSTENTION),
-            provenance=provenance,
             versions=VersionStamps(
                 pipeline_version=PIPELINE_VERSION,
                 code_sha=self.settings.git_sha,
@@ -354,6 +532,18 @@ class TwoPassPipeline:
                 renderer_id=self.renderer.renderer_id,
                 budgets=budget_stamp(self.settings, package, shadow_ms=budget_ms),
             ),
+        )
+
+    def _entry(self, item, decision, reason, bundle, locked, rendered, attempts, proposed, dropped, budget_ms) -> LedgerEntry:
+        provenance = self._provenance(bundle)
+        claims = tuple(
+            ClaimLedgerEntry(claim_id=claim.claim_id, response_id=item.response_id, text=claim.text, span_ids=claim.span_ids, provenance=provenance)
+            for claim in locked.claims
+        )
+        return LedgerEntry(
+            **self._entry_fields(item, decision, reason, bundle, locked, rendered, attempts, budget_ms, item.presentation),
+            claims=claims,
+            provenance=provenance,
             counts=PipelineCounts(
                 proposed_claims=proposed,
                 bound_claims=len(locked.claims),
@@ -361,3 +551,29 @@ class TwoPassPipeline:
                 render_attempts=attempts,
             ),
         )
+
+    def _entry_v2(self, item, decision, reason, bundle, locked, rendered, attempts, proposed, dropped, budget_ms, *, v1,
+                  presentation: PresentationPlan) -> LedgerEntryV2:
+        """A ledger-entry-v2 record (Phase 4 spec 4.13): the v1 fields, ProvenanceV2 naming the V1.3 checker, claims with
+        their entailment score (enforce only, from a real checker), the V1 VerificationRecord and PipelineCountsV2."""
+        base = self._provenance(bundle)
+        provenance = ProvenanceV2(**base.model_dump(exclude={"v1_3_checker_model_id"}), v1_3_checker_model_id=v1.record.policy.checker_model_id)
+        scores = v1.scores if v1.record.mode == "enforce" else {}
+        claims = tuple(
+            ClaimLedgerEntryV2(claim_id=claim.claim_id, response_id=item.response_id, text=claim.text, span_ids=claim.span_ids,
+                               entailment_score=scores.get(claim.claim_id), provenance=provenance)
+            for claim in locked.claims
+        )
+        return LedgerEntryV2(
+            **self._entry_fields(item, decision, reason, bundle, locked, rendered, attempts, budget_ms, presentation),
+            claims=claims,
+            provenance=provenance,
+            verification=v1.record,
+            counts=PipelineCountsV2(
+                proposed_claims=proposed,
+                bound_claims=len(locked.claims),
+                dropped=dict(sorted(dropped.items())),
+                render_attempts=attempts,
+            ),
+        )
+

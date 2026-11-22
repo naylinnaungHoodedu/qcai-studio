@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { QuizPanel } from "@/components/quiz-panel";
 import { fetchLesson } from "@/lib/api";
 import { buildPageMetadata } from "@/lib/metadata";
+import { publicQuestions } from "@/lib/quiz-feedback";
 
 type QuizPageProps = {
   params: Promise<{ lessonSlug: string }>;
@@ -40,9 +41,10 @@ export default async function QuizPage({ params }: QuizPageProps) {
       <section className="section-block">
         <p className="eyebrow">Quiz</p>
         <h1>{lesson.title}</h1>
-        <p className="hero-text">Work through the questions before revealing the model answers and rubrics.</p>
+        <p className="hero-text">Work through the questions, then save an attempt to see the model answers and rubrics.</p>
       </section>
-      <QuizPanel lessonSlug={lesson.slug} questions={lesson.quiz_questions} />
+      {/* Only the public fields reach the client component, so no answer key is serialised into the page (R-42). */}
+      <QuizPanel lessonSlug={lesson.slug} questions={publicQuestions(lesson.quiz_questions)} />
     </div>
   );
 }

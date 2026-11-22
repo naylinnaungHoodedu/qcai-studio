@@ -351,3 +351,60 @@ def test_the_verify_script_reports_coverage_and_refuses_an_export_inside_the_rep
     assert module.main(["--database-url", fresh_database_url, "--export", str(REPO_ROOT / "ledger-export.jsonl")]) == 2
     assert not (REPO_ROOT / "ledger-export.jsonl").exists()
     assert module.main(["--database-url", fresh_database_url, "--expect-head", "not-a-head"]) == 2
+
+
+# --- Phase 4: ledger-entry-v2 (Phase 4 spec 7.9, 8) ---
+
+
+def _v2_entries(factory):
+    from v1_fakes import MULTI_CLAIM, AlwaysSupportedChecker, dev_pipeline, run
+
+    pipeline = dev_pipeline(session_factory=factory)
+    answered = run(pipeline, MULTI_CLAIM, legacy_decision="answer", record=True)
+    checked = run(dev_pipeline(session_factory=factory, checker=AlwaysSupportedChecker()), MULTI_CLAIM, record=True)
+    return answered, checked
+
+
+def test_v2_records_dispatch_on_their_entry_schema_and_verify_beside_v1(isolated):
+    _, factory = isolated
+    assert append_ledger_entry(make_entry(), session_factory=factory, budget_ms=5000).seq == 1
+    answered, checked = _v2_entries(factory)
+    assert (answered.entry.entry_schema, checked.entry.entry_schema) == ("ledger-entry-v2", "ledger-entry-v2")
+    with factory() as db:
+        check = verify_response_ledger(db)
+        assert check.ok and check.count == 3, check.problems
+        rows = {row.entry_schema for row in db.query(ResponseLedgerRecord)}
+    assert rows == {"ledger-entry-v1", "ledger-entry-v2"}
+
+
+def test_the_provenance_audit_checks_a_v2_record_s_checker_and_rules_hash(isolated):
+    from app.services.ledger import _provenance_problems, ledger_params
+
+    _, factory = isolated
+    package = get_config_package(Settings())
+    answered, _ = _v2_entries(factory)
+    entry = answered.entry.model_dump(mode="json")
+    params = ledger_params(package)
+    assert _provenance_problems(1, entry, params, package.v1) == []
+    entry["verification"]["policy"]["rules_hash"] = "0" * 64
+    assert any("rules_hash" in problem for problem in _provenance_problems(1, entry, params, package.v1))
+    assert any("no v1 block" in problem for problem in _provenance_problems(1, entry, params, None))
+    with factory() as db:
+        audit = ledger.ledger_provenance(db, package)
+    # The second record names a test checker, not the package's ("none"), and the audit says so; the first is clean.
+    assert audit["checked"] == 2 and audit["problems"] == ["seq 2 provenance.v1_3_checker_model_id is not the package pin"]
+
+
+def test_pending_v3_intents_lists_the_flagged_claims_without_text(isolated):
+    _, factory = isolated
+    answered, checked = _v2_entries(factory)
+    with factory() as db:
+        intents = ledger.pending_v3_intents(db)
+        later = ledger.pending_v3_intents(db, after_seq=intents[-1]["seq"]) if intents else []
+    flagged = [v for v in answered.entry.verification.verdicts if v.v3 is not None]
+    assert len(intents) == len(flagged) >= 1 and later == []
+    assert all(set(item) == {"seq", "response_id", "claim_id", "reasons", "trigger"} for item in intents)
+    assert {item["claim_id"] for item in intents} == {v.claim_id for v in flagged} and all(item["reasons"] == ["v1_3_flag"] for item in intents)
+    texts = [claim.text for claim in answered.entry.claims]
+    assert not any(text in json.dumps(intents) for text in texts)
+
