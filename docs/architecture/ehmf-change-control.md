@@ -52,7 +52,7 @@ MODEL_GATEWAY=on, EHMF=on) and the development fake adapters. It is a change-con
 not a revert of the stop: it turns EHMF off (`/ready` `ehmf` null, no stop read). Record the stops first
 (`python -m app.workers.ehmf status`; under a package without an ehmf block it logs `ehmf.status_refused` with the rows
 and exits 2). Nothing writes configuration automatically (D-05): the rising-A/B stop only reports "revert required" on
-`/ready` and raises the audit draw to 1/5; the revert is the operator's.
+`/ready` and raises the audit draw to 1/5; the revert is the operator's (plan L's automatic revert is DI-114).
 
 ## The library edit path
 
@@ -70,3 +70,27 @@ label of an applied V3 item (`misconception-proposal-v1`: the claim id, its span
 content_owner`; no gold label, rationale or reviewer data). A proposal is never applied automatically: the Content Owner
 writes the paraphrase and applies it as a library edit above (DI-113). B2/D spans enter the retrieval penalty lists the
 same way (`ehmf.retrieval_penalty`, empty as shipped; D-06 owns the factor).
+
+## Renumbering the Phase 7 package
+
+Phase 8 is built in parallel (branch `phase8/learner-record-privacy`) and also wants the next package number and
+Alembic head. If it reaches `main` first and takes v6 or adds an Alembic revision after `20261122_phase6_v3_audit`, the Phase 7 branch
+merges `main` and renumbers before its pull request (Phase 7 spec 0.1, E16):
+
+1. Rename `apps/api/app/config_package/v6.json` (and its sidecar) to the next free number, say `v7.json`; set its
+   `package_version` to `7.0.0`, its `schema_version` to 7 and its `supersedes` to the package now on `main` (its
+   version, path and sha256); carry over what that package added.
+2. Set the two constants that hold the number, which must stay equal (`test_the_phase_7_package_number_is_read_from_one_constant_per_side`):
+   `app.core.config_package.EHMF_SCHEMA_VERSION` (every schema-dependent rule of the loader, the package checks and
+   `scripts/config_package.py` compares with it) and `app.services.ehmf.vocabulary.EHMF_FIRST_MAJOR` (the first major
+   whose records read as their own `config_version`); set `ehmf.config_version.first_package` to `7.0.0`, and point
+   `DEFAULT_PACKAGE_PATH` at the new file.
+3. Alembic: set `down_revision` of `apps/api/alembic/versions/20261123_phase7_ehmf.py` to the head now on `main`,
+   update `ledger.SCHEMA_REVISION` and the single-head and rollback tests, and run the suite on SQLite and on PostgreSQL
+   under psycopg and pg8000.
+4. Run `python scripts/config_package.py --rehash`, then rewrite the records: the golden run
+   (`python scripts/run_golden_set.py --write docs/evaluation/phase7/golden_run_v1.json --allow-dirty`) and the
+   fixture, replay and residual reports with their own scripts.
+5. Edit every text naming v6 or 6.0.0 for Phase 7 (this document, the Phase 7 spec, ADR-010, the runbooks, the test
+   strategy, the env example). Tests read the shipped version from the package (`ehmf_fakes.SHIPPED_VERSION`,
+   `NEXT_PATCH`, `NEXT_MINOR`), so no test literal changes except the doc tests that quote file names.

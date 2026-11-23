@@ -27,7 +27,7 @@ decision) and E-95 (the library holds public-corpus paraphrases, never licensed 
   from v6 on and `pre-phase-7` before it, mapped at read time.
 - The span penalty hook ranks only, under EHMF=on, with factor 1 outside development and empty lists.
 - The rising-A/B stop is computed state: it reports "revert required" and raises the audit draw to 1/5; the revert is the
-  operator's.
+  operator's (plan L's "reverts it" would be an automatic production configuration write, which D-05 forbids; DI-114).
 - The source-fidelity check reads the 12 DOCX read-only and reports the plan's measured mismatches; engineering edits no
   DOCX.
 - EHMF is off outside development (D-05).
@@ -50,5 +50,5 @@ compared, so a conflict with a source outside the public corpus is not detected.
   discrepancies) is unresolved;
 - no item carries source metadata, so precedence never names a winner, and it is recorded only (DI-107, DI-111);
 - the misconception library is empty (Q-14, A-18; DI-106);
-- the stop is inert outside development, where no typed record is written (DI-111);
+- the stop is inert outside development, where no typed record is written (DI-111), and nothing reverts automatically (DI-114);
 - per-type rates are telemetry, not E2 results (plan H).
