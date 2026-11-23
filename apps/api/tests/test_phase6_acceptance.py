@@ -1344,3 +1344,28 @@ def test_phase6_docs_the_spec_ends_in_one_review_history_table():
         assert all(name in names for name in re.findall(r"`(test_[a-z0-9_]+)`", findings)), round_name
     # A review round is named only in section 18 (a gold label's "round 2" is a domain term here, so it is allowed).
     assert re.findall(r"\b[Rr]eview \d+\b(?![/.\d])", head) == []
+
+
+def test_phase6_docs_the_records_name_the_merge_and_the_cited_main_run():
+    # PR #38 was squash-merged as 31343c8 (tree identical to 1c49b74); main run 45180967316 passed every job and is the
+    # cited run (Phase 7 design E15). The spec's DI-89 row, its section 17 exit bullet and the test strategy's Phase 6 exit
+    # paragraph name the merge, the merged tree and that run, none keeps a pre-merge phrase, and the exit stays not passed.
+    spec = spec_text()
+    head, history = spec.split("\n## 18. Review history\n", 1)
+    exit_block = head.split("**Exit (plan P).**", 1)[1]
+    strategy = (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
+    texts = {
+        "DI-89": next(line for line in head.splitlines() if line.startswith("| DI-89 |")),
+        "spec 17": next(line for line in exit_block.splitlines() if line.startswith("- The AC tests are done in code.")),
+        "test strategy": next(line for line in strategy.split("## Phase 6 acceptance map", 1)[1].splitlines() if line.startswith("**Exit gate.**")),
+    }
+    for name, text in texts.items():
+        for fact in ("`31343c8`", "`1c49b74`", "45180967316"):
+            assert fact in text, (name, fact)
+        for stale in ("no run on `main` exists before the merge", "each later commit needs its own run", "the cited run must be on `main`",
+                      "the cited CI run must be on `main`"):
+            assert stale.lower() not in text.lower(), (name, stale)
+    assert "The exit is not passed." in texts["DI-89"] and texts["DI-89"].endswith("| Eng / PI | Open |")
+    assert "The exit is not passed." in texts["test strategy"]
+    assert "- `phase6_exit_passed` stays `false`. The exit is not passed." in exit_block
+    assert "| Converge 2 | `1c49b74` |" in history and "| Merge | `31343c8` |" in history
