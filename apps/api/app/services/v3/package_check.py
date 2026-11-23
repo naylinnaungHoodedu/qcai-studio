@@ -47,8 +47,10 @@ def check_v3_package(package: Any, *, structural: bool) -> list[str]:
     if set(v3.schemas) != set(V3_SCHEMA_MODELS):
         problems.append("v3.schemas does not name the V3 contracts")
     expected = {
-        "version": (v3.version, rules.V3_VERSION), "trigger_registry_version": (v3.trigger_registry_version, rules.TRIGGER_REGISTRY_VERSION),
-        "trigger_rules": (dict(v3.trigger_rules), rules.TRIGGER_RULES), "queue_reasons": (tuple(v3.queue_reasons), rules.QUEUE_REASONS),
+        # Package v6 (Phase 7 spec conflict 3) names x-triggers-v2; v5 keeps x-triggers-v1.
+        "version": (v3.version, rules.V3_VERSION),
+        "trigger_registry_version": (v3.trigger_registry_version, rules.TRIGGER_REGISTRY_VERSION_V2 if package.schema_version >= 6 else rules.TRIGGER_REGISTRY_VERSION),
+        "trigger_rules": (dict(v3.trigger_rules), rules.TRIGGER_RULES_V2 if package.schema_version >= 6 else rules.TRIGGER_RULES), "queue_reasons": (tuple(v3.queue_reasons), rules.QUEUE_REASONS),
         "counted": (tuple(v3.counted), rules.V3_COUNTED), "priority_rule": (v3.priority_rule, rules.PRIORITY_RULE),
         "exposure_rule": (v3.exposure_rule, rules.EXPOSURE_RULE), "claim_set_key_rule": (v3.claim_set_key_rule, rules.CLAIM_SET_KEY_RULE),
         "k_rule": (v3.k_rule, rules.K_RULE), "tie_break": (tuple(v3.tie_break), rules.TIE_BREAK), "draw_rule": (v3.draw_rule, rules.DRAW_RULE),

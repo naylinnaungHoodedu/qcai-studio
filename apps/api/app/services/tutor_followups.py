@@ -2,7 +2,7 @@
 
 1. The legacy ledger record, synchronously, so the record exists before the answer leaves (plan I "ledger writes
    100% of deliveries"). The route waits at most the append budget plus the wait grace (the shipped configuration
-   package's tutor_pipeline.budgets, v5 since Phase 6 and v4 since Phase 5: 1500 + 250 ms; TUTOR_LEDGER_APPEND_BUDGET_MS overrides the
+   package's tutor_pipeline.budgets, v6 since Phase 7, v5 since Phase 6 and v4 since Phase 5: 1500 + 250 ms; TUTOR_LEDGER_APPEND_BUDGET_MS overrides the
    budget), whatever the database does
    (pool checkout included); the append fails open and is counted (ledger.record_legacy_delivery). The delivery counts
    as attempted here, after the commit, never while it is prepared, so a turn that rolls back is no attempt (18.7 E5).

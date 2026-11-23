@@ -83,6 +83,12 @@ def main(argv: list[str] | None = None) -> int:
         manifest = with_all_public_approved(manifest)
     if args.check:
         current = existing if existing is not None else {}
+        from app.core.manifest_v2 import source_metadata_problems
+
+        metadata = source_metadata_problems(current)
+        if metadata:
+            print("source metadata is malformed (Phase 7 spec 5.4):\n" + "\n".join(f"- {problem}" for problem in metadata), file=sys.stderr)
+            return 1
         differences = item_diff(current, manifest)
         if differences:
             print(f"{args.output} is not current; run python scripts/generate_manifest.py", file=sys.stderr)

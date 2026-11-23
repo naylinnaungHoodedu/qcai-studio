@@ -4,8 +4,8 @@ and the contracts can import it.
 Configuration package v5's v3 block repeats these ids, and the loader refuses a package whose rule ids, trigger rules,
 queue reasons or counting rule differ from the code's (plan 7.2: rules live in versioned configuration; invariant 10).
 The plan's EHMF weights (plan 6.3 "A=1.0, B=1.0, C=0.6, D=0.6, E=0.4 await expert elicitation") are configuration too;
-PLAN_SEVERITY holds them as decimal strings only so that the loader can bind the package's values to them while D-06 is
-open (PD-34).
+ehmf.vocabulary.PLAN_WEIGHTS holds them as decimal strings only so that the loader can bind the package's values to them
+while the decisions are open (PD-34, PD-41). Package v6 (Phase 7) moves X2 to x-triggers-v2: every X2 escalation fires.
 """
 
 from __future__ import annotations
@@ -21,12 +21,14 @@ X1_TIERS = (1, 2, 3)
 X1_WITHHOLD_TIER = 1
 V3_COUNTED = ("X1", "X2", "X3", "X4")            # plan 15.3 "V-3 numerator counts X1-X4 only; audits are proof tests" (PD-37)
 QUEUE_REASONS = ("v1_3_flag", "v1_8_misconception", "v2_correction_exhausted", "v2_degraded_withheld")
-X2_TYPES = ("A", "B")
+X2_TYPES = ("A", "B")                            # x-triggers-v1 (package v5) only
+TRIGGER_REGISTRY_VERSION_V2 = "x-triggers-v2"
+TRIGGER_RULES_V2 = {**TRIGGER_RULES, "X2": "v2-exhausted-any-type-v2"}   # package v6 (Phase 7 spec conflict 3; PD-44)
 SUBJECTS = ("claim", "response")
 STORED_STATES = ("queued", "adjudicated", "applied")      # "claimed" = queued with a live lease for the current round
 WORKFLOW_STATES = ("queued", "claimed", "adjudicated", "applied")
 VERDICTS = ("SUPPORTED", "CONTRADICTED", "NOT_ENOUGH_INFO")
-EHMF_TYPES = ("A", "B", "C", "D", "E")
+from app.services.ehmf.vocabulary import EHMF_TYPES  # noqa: E402 - the one definition (Phase 7 spec 3.1)
 ABSTENTION_LABELS = ("correct", "missed_answer")
 MAX_ROUNDS = 3
 DRAW_RULE = "seeded-sha256-bernoulli-v1"
@@ -35,7 +37,6 @@ DELIVERIES = ("delivered", "legacy")
 PRIORITY_RULE, EXPOSURE_RULE, K_RULE = "severity-exposure-one-minus-k-v1", "learner-deliveries-of-claim-set-v1", "panel-support-share-v1"
 CLAIM_SET_KEY_RULE = "sorted-claim-ids-sha256-v1"
 TIE_BREAK = ("enqueued_at", "item_id")
-PLAN_SEVERITY = {"A": "1.0", "B": "1.0", "C": "0.6", "D": "0.6", "E": "0.4"}   # plan L682, as decimal strings (exact Fractions)
 GOLD_SCHEMA, GOLD_CHAIN = "v3-gold-label-v1", "v3-gold"
 GOLD_RECORD_HASH_RULE = "sha256(canonical{chain,seq,created_at,prev_hash,entry_sha256})-v1"
 GOLD_GENESIS = "0" * 64

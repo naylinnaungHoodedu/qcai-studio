@@ -232,3 +232,29 @@ The service events log on `qcai.v3`, the V2 track's on `qcai.tutor`, the worker'
 | Reviewer actions | security events `v3.queue_read`, `v3.scan_run`, `v3.item_read`, `v3.item_claimed`, `v3.item_adjudicated`, `v3.item_applied` and `v3.metrics_read` (on `qcai.security`; outcome success; `route` and the call's counts or item id, the actor role and the subject digest): counters |
 | Reviewer refusals | security event `authz.denied` (on `qcai.security`; outcome denied; `route`, `required` `role:reviewer`, or `reviewer_pool:D-18` outside development while D-18 is open, `provider`): a counter |
 | Security event `config.override` | the details name `v3_queue_shadow` (the V3 queue in shadow outside development) or `v3_queue_on` (refused outside development before the Phase 6 exit; a line means a package claiming the exit): an alert on any line |
+
+## Phase 7 SLIs: EHMF (plan Phase 7 I)
+
+Not set up yet: no log-based metric, alert policy, dashboard or scheduled job exists (each is a cloud write under D-05; DI-110). The SLIs are computed by `app.services.ehmf.metrics.slis` over the typed (`ledger-entry-v4`) records, grouped by `config_version`, served on the reviewer-only `GET /v3/metrics` (`ehmf`) and logged by `python -m app.workers.ehmf status`; `/ready` carries `config_version` and static EHMF values only. Outside development no typed record is written, so the SLIs are empty there until EHMF runs (DI-111). Telemetry, not E2 results (plan Phase 7 H).
+
+| SLI | Definition |
+|---|---|
+| Per-type rate per 100 claims | for A, B1, B2, C, D, E: typed claims with a finding of that type over typed claims, as an exact `k/n` |
+| Per-type rate per 100 responses | for each type: typed records with a response-level finding of that type over typed records (V1.1 B1 makes "zero delivered Type B1" visible) |
+| Type D disclosure share | disclosed conflicts over detected conflicts |
+| Correction-cycle distribution | typed records by V2 cycles: 0, 1, 2, and exhausted (an X2 emitted) |
+| X2 emissions, set-changed refusals, detector-down records | counts |
+| The stop | the latest `ehmf_stops` row's state (`clear`, `rising_ab`, `reverted`) |
+
+| Event, logger and severity | Fields |
+|---|---|
+| `tutor.ehmf.record` on `qcai.tutor`, INFO | `mode`, `per_type`, `conflicts`, `disclosed`, `x2`, `cycles`, `detector_down`, `config_version` |
+| `tutor.ehmf.detector_down` on `qcai.tutor`, WARNING | `detector` |
+| `tutor.ehmf.correction_refused` on `qcai.tutor`, WARNING | `cycle`, `reason` (`cycle_limit`, `set_changed`) |
+| `ehmf.stop` on `qcai.ehmf`, WARNING | `from_config_version`, `to_config_version`, `before_claims`, `before_ab`, `after_claims`, `after_ab` |
+| `ehmf.stop_unread` on `qcai.ehmf`, WARNING | none |
+| `ehmf.unavailable` on `qcai.ehmf`, WARNING | `reason` (start-up) |
+| `ehmf.status` and `ehmf.proposals_exported` on `qcai.worker`, INFO | the mode and SLIs; `count` |
+| `ehmf.proposals_export_refused` on `qcai.worker`, WARNING | `reason` |
+
+The two override keys: `config.override` logs `ehmf_shadow` and `ehmf_on` when either is set outside development.

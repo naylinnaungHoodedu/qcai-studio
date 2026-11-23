@@ -694,6 +694,30 @@ class V3Event(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class EhmfStop(Base):
+    # Phase 7 (spec 4.10, 8): one row per EHMF rising-A/B stop, the change of configuration version it follows and the
+    # counts that fired it. scan.open_windows reads it as an X5-like window of raised audit rate from detected_seq, and
+    # /ready reports "revert required" from the latest row. Append-only; no learner identifier.
+    __tablename__ = "ehmf_stops"
+    __table_args__ = (
+        UniqueConstraint("from_config_version", "to_config_version", "change_seq", name="uq_ehmf_stops_change"),
+        Index("ix_ehmf_stops_to_config_version", "to_config_version"),
+    )
+
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    from_config_version: Mapped[str] = mapped_column(String(32))
+    to_config_version: Mapped[str] = mapped_column(String(32))
+    change_seq: Mapped[int] = mapped_column(Integer)
+    detected_seq: Mapped[int] = mapped_column(Integer)
+    before_claims: Mapped[int] = mapped_column(Integer)
+    before_ab: Mapped[int] = mapped_column(Integer)
+    after_claims: Mapped[int] = mapped_column(Integer)
+    after_ab: Mapped[int] = mapped_column(Integer)
+    window_deliveries: Mapped[int] = mapped_column(Integer)
+    package_sha256: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class V3ModelVersion(Base):
     # Every model version the scan has seen per model key (registry and records), so a version change is an X5 event.
     # Append-only; model ids and versions only.

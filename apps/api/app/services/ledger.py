@@ -19,7 +19,10 @@ few milliseconds earlier, so anyone who can read both tables can match the two (
 retention, deletes that row, and the record can then no longer be tied to anyone. Every shadow run of the two-pass
 pipeline is recorded with delivery "shadow" and a shadow- id naming the turn it shadowed. "delivered" waits for the
 delivered two-pass path (DI-59). A shadow record is a ledger-entry-v1 (V1 off), a ledger-entry-v2 (the V1
-verification) or a ledger-entry-v3 (the V2 panel's verdicts beside it; Phase 5).
+verification), a ledger-entry-v3 (the V2 panel's verdicts beside it; Phase 5) or a ledger-entry-v4 (the EHMF typing,
+precedence, disclosure and X2 list beside those, in development; Phase 7). Records from the Phase 7 release stamp
+configuration package v6; a record's config_version (config_version_of) is its package version from v6 on and
+"pre-phase-7" before it (plan Phase 7 G), mapped at read time and never written back.
 
 A legacy record's abstention_reason says why the delivery abstained (plan I "abstention by reason"; spec 18.8 F1):
 the retrieval gate's own reason when the gate returned nothing (no_query_terms, no_match, insufficient_coverage,
@@ -111,7 +114,7 @@ RECORD_HASH_RULE = "sha256(canonical{chain,seq,created_at,prev_hash,entry_sha256
 # retried within the remaining budget like an IntegrityError (spec 18.8 F8).
 RETRYABLE_SQLSTATES = frozenset({"40P01", "40001"})
 # The Alembic revision this code expects (tested against the single head); stamped on every record (plan 13.5).
-SCHEMA_REVISION = "20261122_phase6_v3_audit"
+SCHEMA_REVISION = "20261123_phase7_ehmf"
 # The legacy contained path's ids and rule hash, stamped on every legacy record (the only records production writes).
 # Configuration package v2 pins all four (tutor_pipeline.legacy) and package_check requires them to agree, so the
 # provenance audit (ledger_provenance) has a pinned reference value (DI-49).
@@ -649,7 +652,7 @@ def _provenance_problems(seq: int, entry: dict[str, Any], params: TutorPipelineP
         }
         if versions.get("generator_id") not in params.generators_allowed:
             problems.append(f"seq {seq} versions.generator_id is not a generator the package allows")
-        if entry.get("entry_schema") in ("ledger-entry-v2", "ledger-entry-v3"):
+        if entry.get("entry_schema") in ("ledger-entry-v2", "ledger-entry-v3", "ledger-entry-v4"):
             verification = entry.get("verification") if isinstance(entry.get("verification"), dict) else {}
             policy = verification.get("policy") if isinstance(verification.get("policy"), dict) else {}
             if v1 is None:
@@ -657,7 +660,7 @@ def _provenance_problems(seq: int, entry: dict[str, Any], params: TutorPipelineP
             else:
                 expected["provenance.v1_3_checker_model_id"] = (provenance.get("v1_3_checker_model_id"), v1.checker_model_id)
                 expected["verification.policy.rules_hash"] = (policy.get("rules_hash"), v1.rules_hash)
-        if entry.get("entry_schema") == "ledger-entry-v3":
+        if entry.get("entry_schema") in ("ledger-entry-v3", "ledger-entry-v4"):
             verification = entry.get("verification") if isinstance(entry.get("verification"), dict) else {}
             block = verification.get("v2") if isinstance(verification.get("v2"), dict) else {}
             if phase5 is None:
@@ -695,6 +698,7 @@ def ledger_provenance(db: Session, package: ConfigPackage) -> dict[str, Any]:
     params = ledger_params(package)
     problems: list[str] = []
     records = checked = other_package = 0
+    config_versions: dict[str, int] = {}
     rows = db.execute(select(ResponseLedgerRecord.seq, ResponseLedgerRecord.entry).order_by(ResponseLedgerRecord.seq).execution_options(yield_per=500))
     for seq, raw in rows:
         records += 1
@@ -706,6 +710,8 @@ def ledger_provenance(db: Session, package: ConfigPackage) -> dict[str, Any]:
             problems.append(f"seq {seq} entry is not a JSON object")
             continue
         versions = entry.get("versions") if isinstance(entry.get("versions"), dict) else {}
+        version = config_version_of(versions)
+        config_versions[version] = config_versions.get(version, 0) + 1
         if versions.get("config_package_sha256") != package.sha256:
             other_package += 1
             continue
@@ -717,6 +723,7 @@ def ledger_provenance(db: Session, package: ConfigPackage) -> dict[str, Any]:
         "records": records,
         "checked": checked,
         "other_package": other_package,
+        "config_versions": dict(sorted(config_versions.items())),
         "problem_count": len(problems),
         "problems": problems[:_MAX_REPORTED_PROBLEMS],
     }
@@ -728,14 +735,14 @@ def phase5_blocks(package: ConfigPackage) -> Any:
 
 
 def pending_v3_intents(db: Session, *, after_seq: int = 0, limit: int = 1000) -> list[dict[str, Any]]:
-    """The V3 queue intents on ledger-entry-v2 and ledger-entry-v3 records (Phase 4 spec 7.9, conflict 28; Phase 5 spec
+    """The V3 queue intents on ledger-entry-v2, ledger-entry-v3 and ledger-entry-v4 records (Phase 4 spec 7.9, conflict 28; Phase 5 spec
     7.3): one item per claim verdict with a v3 intent, in seq order, after `after_seq`; a v3 record's items also carry
     its escalation (X2 or null). Read-only; filtered on entry_schema in SQL and parsed in Python, so it behaves alike on
     SQLite, psycopg and pg8000. Ids, claim ids and enumerations only, never text. A read-only helper; the Phase 6 scan reads
     the records itself (app.services.v3.scan)."""
     rows = db.execute(
         select(ResponseLedgerRecord.seq, ResponseLedgerRecord.response_id, ResponseLedgerRecord.entry_schema, ResponseLedgerRecord.entry)
-        .where(ResponseLedgerRecord.entry_schema.in_(("ledger-entry-v2", "ledger-entry-v3")), ResponseLedgerRecord.seq > int(after_seq))
+        .where(ResponseLedgerRecord.entry_schema.in_(("ledger-entry-v2", "ledger-entry-v3", "ledger-entry-v4")), ResponseLedgerRecord.seq > int(after_seq))
         .order_by(ResponseLedgerRecord.seq)
         .limit(int(limit))
     )
@@ -751,14 +758,37 @@ def pending_v3_intents(db: Session, *, after_seq: int = 0, limit: int = 1000) ->
             if isinstance(intent, dict):
                 item = {"seq": int(seq), "response_id": response_id, "claim_id": verdict.get("claim_id"),
                         "reasons": list(intent.get("reasons") or []), "trigger": intent.get("trigger")}
-                if entry_schema == "ledger-entry-v3":
+                if entry_schema in ("ledger-entry-v3", "ledger-entry-v4"):
                     item["escalation"] = intent.get("escalation")
                 intents.append(item)
     return intents
 
 
+def config_version_of(versions: Any) -> str:
+    """A record's config_version (plan Phase 7 G; Phase 7 spec R-e, 4.9): its config_package_version when that
+    version's major is at least EHMF_FIRST_MAJOR (6, the first package with an ehmf block), else "pre-phase-7". A
+    malformed version reads as major 0. Applied at read time; no row is rewritten."""
+    from app.services.ehmf.vocabulary import EHMF_FIRST_MAJOR, PRE_PHASE_7
+
+    version = str(versions.get("config_package_version", "0")) if isinstance(versions, dict) else "0"
+    try:
+        major = int(version.split(".")[0] or 0)
+    except ValueError:
+        major = 0
+    return version if major >= EHMF_FIRST_MAJOR else PRE_PHASE_7
+
+
+def _config_version_of_entry(entry_text: str) -> str:
+    try:
+        entry = json.loads(entry_text)
+    except (TypeError, ValueError):
+        return config_version_of(None)
+    return config_version_of(entry.get("versions") if isinstance(entry, dict) else None)
+
+
 def export_ledger(db: Session, path: Path) -> int:
-    """Every record as one JSON object per line (the step before an Alembic downgrade); returns the row count.
+    """Every record as one JSON object per line (the step before an Alembic downgrade); returns the row count. Each line
+    also names the record's config_version (config_version_of, read-time; restore ignores it).
 
     The file holds corpus text, turn ids and, on shadow rows, the resolver's source message ids: pseudonymous data
     linked to learners while their turns exist. Its handling rule is in infra/cloudrun/deployment.md (Phase 3)."""
@@ -770,6 +800,7 @@ def export_ledger(db: Session, path: Path) -> int:
                 "shadowed_response_id": row.shadowed_response_id, "claim_set_hash": row.claim_set_hash,
                 "entry_schema": row.entry_schema, "entry": row.entry, "entry_sha256": row.entry_sha256,
                 "prev_hash": row.prev_hash, "record_hash": row.record_hash, "created_at": _utc(row.created_at).isoformat(),
+                "config_version": _config_version_of_entry(row.entry),
             }, ensure_ascii=False, sort_keys=True) + "\n")
             count += 1
     return count

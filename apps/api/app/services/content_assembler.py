@@ -1082,16 +1082,19 @@ class CourseStore:
         self.chunks = entries
         self.entry_by_span_id = {entry.span_id: entry for entry in entries}
         self.gate = settings.retrieval_gate or "p1-floor"
-        self.index = LexicalIndex(entries, self.package.retrieval, self.package.abstention, gate=self.gate)
+        self.penalties = _span_penalties(settings, self.package)
+        self.index = LexicalIndex(entries, self.package.retrieval, self.package.abstention, gate=self.gate, penalties=self.penalties)
         self.corpus_version = registry.corpus_version
-        self.index_version = "index-" + canonical_sha256(
-            {
-                "corpus_version": self.corpus_version,
-                "gate": self.gate,
-                "retrieval_sha256": self.package.retrieval_sha256,
-                "entries": sorted([[entry.span_id, sorted(entry.lesson_slugs)] for entry in entries]),
-            }
-        )[:16]
+        payload = {
+            "corpus_version": self.corpus_version,
+            "gate": self.gate,
+            "retrieval_sha256": self.package.retrieval_sha256,
+            "entries": sorted([[entry.span_id, sorted(entry.lesson_slugs)] for entry in entries]),
+        }
+        if self.penalties:
+            # Only when a penalty acts, so index_version is byte-identical whenever none does (Phase 7 spec 4.7).
+            payload["penalties_sha256"] = canonical_sha256(sorted([span_id, str(factor)] for span_id, factor in self.penalties.items()))
+        self.index_version = "index-" + canonical_sha256(payload)[:16]
 
     @staticmethod
     def _entry(record: SpanRecord, bound: list[tuple[str, int]]) -> IndexEntry:
@@ -1351,3 +1354,15 @@ class CourseStore:
 def _format_timestamp(seconds: int) -> str:
     minutes, secs = divmod(seconds, 60)
     return f"{minutes:02d}:{secs:02d}"
+
+
+def _span_penalties(settings: Any, package: Any) -> dict:
+    """The span penalties of the shared index (Phase 7 spec 4.7; PD-45): the environment's registry from package v6 only
+    when EHMF is on, else none. They depend on span ids and the environment only, never on a learner (invariant 1)."""
+    if getattr(package, "ehmf", None) is None or getattr(settings, "ehmf", None) != "on":
+        return {}
+    from app.services import ehmf
+
+    if ehmf.mode(settings, package) != "on":
+        return {}
+    return dict(package.ehmf.penalties_for(settings.environment))

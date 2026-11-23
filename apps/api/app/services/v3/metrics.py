@@ -122,7 +122,15 @@ def slis(db: Session, package: Any, *, now: datetime) -> dict:
         for (entry,) in db.execute(select(V3GoldLabelRecord.entry).where(V3GoldLabelRecord.seq.in_(finals))):
             claims_labelled += len(json.loads(entry).get("claim_labels") or [])
     windows = open_windows(db)
+    ehmf = None
+    if getattr(package, "ehmf", None) is not None:
+        # Phase 7 (spec 4.11): the EHMF SLIs over the typed records, with the stop state read in this session.
+        from app.services.ehmf.metrics import slis as ehmf_slis
+        from app.services.ehmf.stop import stop_state as ehmf_stop_state
+
+        ehmf = ehmf_slis(db, package, stop=ehmf_stop_state(db, package))
     return {
+        "ehmf": ehmf,
         "escalation_share": {"deliveries": deliveries, "escalated": escalated, "share": _ratio(escalated, deliveries),
                              "max": _ratio(share_max.numerator, share_max.denominator),
                              "above_max": bool(deliveries) and escalated * share_max.denominator > share_max.numerator * deliveries,

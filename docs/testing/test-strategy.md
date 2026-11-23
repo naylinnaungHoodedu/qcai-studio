@@ -234,3 +234,41 @@ Tests are in `apps/api/tests/test_phase6_acceptance.py` unless named otherwise; 
 | `test_v2_panel.py` | The V3 stop runs tier 1 through the pre-verified-only path and is read through the pipeline's own database, and `critical_for` reads the environment's registry. |
 
 **Exit gate.** The Phase 6 exit needs AC-6-1 to AC-6-7 green, one staging audit cycle and D-25 filed (plan Phase 6 P: "AC-6-1 to AC-6-7 green; one staging audit cycle; [Decision D-25] filed."). The AC tests are done in code and passed in branch push run 45081528107 at `da00224` (every job green; release-artifacts skipped by design). PR #38 was squash-merged on 2026-11-23 as `31343c8` (tree identical to `1c49b74`); PR run 45178938501 and branch push run 45177067116 at `1c49b74` passed every job (release-artifacts skipped by design), and main run 45180967316 at `31343c8` passed every job and is the cited run for AC-6-1 to AC-6-7 (DI-89). The staging audit cycle needs a deployment and a staffed reviewer pool (DI-92, DI-91), D-25 is an owner decision (DI-90), and holds H4 and H10 stay held (DI-91, DI-94). `phase6_exit_passed` stays false in the package. The exit is not passed.
+
+## Phase 7 acceptance map (plan Phase 7 K)
+
+Tests are in `apps/api/tests/test_phase7_acceptance.py` unless named otherwise; the fakes are in `apps/api/tests/ehmf_fakes.py`. Every file runs on SQLite in `api-and-evaluation` and on PostgreSQL 16 in `api-postgres` (psycopg and pg8000). No test touches the network or calls a provider: verifiers are the development fake adapters, scripted where a test needs a verdict. Package copies (`ehmf_fakes.package_copy`) and DOCX copies are written in `tmp_path`, and no test writes into the checkout (`conftest.py`'s `_the_checkout_stays_unchanged`).
+
+| AC | Tests |
+|---|---|
+| AC-7-1 A negated-claim fixture is tagged Type A and not delivered | `test_ac_7_1_a_negated_claim_fixture_is_tagged_type_a_and_not_delivered` |
+| AC-7-2 An unresolvable citation is B1 and final; no vote or label makes it deliverable | `test_ac_7_2_an_unresolvable_citation_is_b1_final_whatever_the_votes_or_a_gold_label` |
+| AC-7-3 Contradicting spans are disclosed and the disclosed conflict weighs 0 | `test_ac_7_3_contradicting_spans_are_disclosed_and_the_disclosed_conflict_weighs_zero` |
+| AC-7-4 A corrected Type E finding leaves the claim and span sets unchanged | `test_ac_7_4_a_corrected_type_e_finding_leaves_the_claim_and_span_sets_unchanged`, `test_ac_7_4_the_engine_refuses_a_re_render_that_changes_the_claim_or_span_set` |
+| AC-7-5 A third correction attempt: abstain and X2 | `test_ac_7_5_a_third_correction_attempt_is_refused_the_claim_abstains_and_x2_is_emitted` |
+| AC-7-6 A package edit without a golden-set run fails the CI check | `test_ac_7_6_a_package_edit_without_a_golden_set_run_fails_the_ci_check` |
+| Plan J fixtures per type and detector down | `test_plan_j_fixtures_per_type_are_typed_as_the_routing_table_says`, `test_plan_j_detector_down_withholds_the_claim`, `test_plan_j_a_raising_checker_keeps_checker_unavailable_and_off_keeps_phase_6` |
+| Plan F, G, H, I, L, P and task 3, 5 rows; the freeze; the vocabulary guard; plan E | the `test_plan_*`, `test_freeze_*`, `test_the_ehmf_vocabulary_lives_in_one_module` and `test_golden_set_*` tests |
+
+### Phase 7 test files
+
+| File | Covers |
+|---|---|
+| `test_phase7_acceptance.py` | AC-7-1 to AC-7-6, the plan F, G, H, I, J, L and P rows, tasks 3 and 5, the freeze, the vocabulary guard, the Phase 7 revision and the Phase 7 doc tests |
+| `test_ehmf_units.py` | the routing table's totality and split, typing by failure mode, the primary order, the correction guard and set hashes, the library pin and sidecar, the v6 loader's refusals, a later 6.x package, the stop's integer boundary, the golden runner's exit codes and the fidelity checker's refusals and a corrected copy |
+| `ehmf_fakes.py` | not a test module: the typed record, the negating and unresolvable generators, scripted and leaking adapters, the package-directory copy |
+
+### Phase 7 changes to existing test modules
+
+| File | Change (intent kept) |
+|---|---|
+| `test_config_package.py` | The shipped package is v6 (6.0.0); the v5 assertions read `V5_PACKAGE_PATH` (readable for one release, DI-112). |
+| `test_v1_8_misconceptions.py` | The inline library v0 tests read package v5; the shipped v6 library is v1 and empty. |
+| `test_configuration_overrides.py` | `ehmf_shadow` and `ehmf_on` are recorded overrides. |
+| `test_phase2_acceptance.py` | `LexicalIndex(penalties=...)` is not learner state (span ids and the environment only). |
+| `test_phase3_acceptance.py`, `test_response_ledger_migrations.py` | The Phase 7 revision and its table: the downgrade path goes through it first. |
+| `test_phase6_acceptance.py` | The Phase 3 rollback's head is `20261123_phase7_ehmf`; the default package's `/ready` and trigger registry; the E15 merge-facts test. |
+| `test_response_ledger_provenance.py` | The provenance audit reports `config_versions`. |
+| `v1_fakes.py`, `v2_fakes.py` | `temp_package` copies the library folder and leaves the v6 pin; `v2_pipeline` defaults to `EHMF=off`, so the Phase 5 and 6 tests keep judging the ledger-entry-v3 record they test. |
+
+**Exit gate.** The Phase 7 exit needs AC-7-1 to AC-7-6 green, package v1's hash in the ledger and the R-18 closure evidence (plan Phase 7 P: "AC-7-1 to AC-7-6 green; package v1 hash in the ledger; R-18 closure evidence in Section 5: corrected DOCX values and the source-fidelity CI job over the 12 DOCX passing (Phase 11 task 3 and AC-11-3 brought forward to this exit)."). The AC tests are done in code; the cited CI run must be on `main` after the merge (DI-104). R-18 stays open: the DOCX are the Content Owner's to correct (DI-105), and CI runs the source-fidelity `--check` with 3 mismatches. The EHMF weights await the PI (DI-108). `phase7_exit_passed` stays false in the package. The exit is not passed.

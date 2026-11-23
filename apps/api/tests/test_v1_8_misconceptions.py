@@ -8,17 +8,22 @@ import json
 import pytest
 
 from app.core.config import Settings
-from app.core.config_package import DEFAULT_PACKAGE_PATH, ConfigPackageError, get_config_package, misconception_library_sha256, parse_config_package
+from app.core.config_package import (DEFAULT_PACKAGE_PATH, V5_PACKAGE_PATH, ConfigPackageError, get_config_package, load_config_package,
+                                     misconception_library_sha256, parse_config_package)
 from app.services.v1_checks.v1_8_misconceptions import check_v1_8, load_library
 from v1_fakes import MULTI_CLAIM, AlwaysSupportedChecker, dev_pipeline, fixture_library, run
 
 PACKAGE = get_config_package(Settings())
-RAW = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
+# The inline library v0 tests read package v5 (readable for one release, DI-112); package v6 pins the library v1 file
+# (Phase 7 spec 3.5), whose rules test_ehmf_units.py and test_phase7_acceptance.py test.
+RAW = json.loads(V5_PACKAGE_PATH.read_text(encoding="utf-8"))
+V5 = load_config_package(V5_PACKAGE_PATH, governed=True)
 
 
 def test_library_v0_ships_empty_and_hashed():
-    library = load_library(PACKAGE)
+    library = load_library(V5)
     assert (library.version, library.entries) == ("v0", ())
+    assert (load_library(PACKAGE).version, load_library(PACKAGE).entries) == ("v1", ())  # package v6: library v1, empty (DI-106)
     assert library.sha256 == misconception_library_sha256(RAW["v1"]["v1_8"]["library"])
     assert PACKAGE.owner_decisions["Q-14"]["state"] == "unavailable"
 
@@ -60,7 +65,7 @@ def test_a_malformed_or_rehashed_library_is_refused(edit):
         library["sha256"] = misconception_library_sha256(library)
     raw["owner_decisions"]["Q-14"]["state"] = "available-for-this-test"
     with pytest.raises(ConfigPackageError):
-        parse_config_package(raw, path=DEFAULT_PACKAGE_PATH, sha256="", hash_verified=False)
+        parse_config_package(raw, path=V5_PACKAGE_PATH, sha256="", hash_verified=False)
 
 
 def test_entries_are_refused_while_q_14_is_unavailable():
@@ -69,7 +74,7 @@ def test_entries_are_refused_while_q_14_is_unavailable():
     library["entries"] = [{"id": "MC-1", "terms": ["a", "b"]}]
     library["sha256"] = misconception_library_sha256(library)
     with pytest.raises(ConfigPackageError, match="Q-14"):
-        parse_config_package(raw, path=DEFAULT_PACKAGE_PATH, sha256="", hash_verified=False)
+        parse_config_package(raw, path=V5_PACKAGE_PATH, sha256="", hash_verified=False)
     raw["owner_decisions"]["Q-14"]["state"] = "available-for-this-test"
-    parsed = parse_config_package(raw, path=DEFAULT_PACKAGE_PATH, sha256="", hash_verified=False)
+    parsed = parse_config_package(raw, path=V5_PACKAGE_PATH, sha256="", hash_verified=False)
     assert [entry.entry_id for entry in parsed.v1.library_entries] == ["MC-1"]

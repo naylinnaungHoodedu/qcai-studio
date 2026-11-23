@@ -184,6 +184,7 @@ def _check_tutor_pipeline_package(package) -> None:
     _check_v1_package(package)
     _check_gateway_package(package)
     _check_v3_package(package)
+    _check_ehmf_package(package)
     if package.tutor_pipeline is None:
         tutor_shadow.PIPELINE_UNAVAILABLE_REASON = None
         return
@@ -251,6 +252,30 @@ def _check_v3_package(package) -> None:
         raise ConfigPackageError(f"v3: {reason}")
     v3_service.V3_UNAVAILABLE_REASON = reason
     logging.getLogger("qcai.v3").warning("The V3 audit is unavailable; the V3 mode stays off", extra={FIELDS: {"event": "v3.unavailable", "reason": reason}})
+
+
+def _check_ehmf_package(package) -> None:
+    """Package v6's ehmf block against the EHMF code (Phase 7 spec 4.13, 10.1). Without an ehmf block (a v1 to v5 package)
+    EHMF is off. A problem stops a governed build when EHMF is requested (EHMF not off); otherwise EHMF is reported
+    unavailable (/ready ehmf.available false), its mode stays off and ehmf.unavailable is logged. Outside development EHMF
+    is off, so such a problem never stops a production start-up. Reads only the package and the committed files beside it
+    (never docs/ or apps/api/tests/, which the image does not hold); writes nothing."""
+    from app.services import ehmf as ehmf_service
+
+    if package.ehmf is None:
+        ehmf_service.EHMF_UNAVAILABLE_REASON = None
+        return
+    from app.services.ehmf.package_check import check_ehmf_package
+
+    problems = check_ehmf_package(package, structural=False)
+    if not problems:
+        ehmf_service.EHMF_UNAVAILABLE_REASON = None
+        return
+    reason = "; ".join(problems)[:500]
+    if settings.enforce_corpus_governance and settings.ehmf != "off":
+        raise ConfigPackageError(f"ehmf: {reason}")
+    ehmf_service.EHMF_UNAVAILABLE_REASON = reason
+    logging.getLogger("qcai.ehmf").warning("EHMF is unavailable; its mode stays off", extra={FIELDS: {"event": "ehmf.unavailable", "reason": reason}})
 
 
 def _warn_retired_provider_settings() -> None:
@@ -397,6 +422,10 @@ def _record_configuration_overrides() -> None:
             # path, and no reviewer is admitted there while D-18 is open).
             ("v3_queue_shadow", settings.v3_queue == "shadow"),
             ("v3_queue_on", settings.v3_queue == "on"),
+            # Phase 7: EHMF outside development (on is refused before the Phase 7 exit; shadow changes no learner path,
+            # since the two-pass pipeline and V2 are off there).
+            ("ehmf_shadow", settings.ehmf == "shadow"),
+            ("ehmf_on", settings.ehmf == "on"),
         )
         if active
     }
@@ -625,6 +654,49 @@ def _build_fields() -> dict:
         "v3_queue_setting": settings.v3_queue,
         "phase6_exit_passed": bool(package.flag_policy.phase6_exit_passed),
         "v3": _v3_fields(package),
+        # Phase 7 (plan Phase 7 I; spec 10.2): config_version (the package version from v6 on, "pre-phase-7" before it),
+        # the EHMF mode in force, the setting and the package's static EHMF values. The one read beside the gateway state
+        # is the cached EHMF stop row ("revert required"), only when EHMF is not off: no count, rate, window or seq.
+        "config_version": _config_version(package),
+        "ehmf_mode": _ehmf_mode(package),
+        "ehmf_setting": settings.ehmf,
+        "phase7_exit_passed": bool(package.flag_policy.phase7_exit_passed),
+        "ehmf": _ehmf_fields(package),
+    }
+
+
+def _config_version(package) -> str:
+    from app.services.ledger import config_version_of
+
+    return config_version_of({"config_package_version": package.package_version})
+
+
+def _ehmf_mode(package) -> str:
+    from app.services import ehmf as ehmf_service
+
+    return ehmf_service.mode(settings, package)
+
+
+def _ehmf_fields(package) -> dict | None:
+    from app.services import ehmf as ehmf_service
+    from app.services.ehmf.stop import process_stop_state
+
+    params = package.ehmf
+    if params is None:
+        return None
+    mode = ehmf_service.mode(settings, package)
+    environment = settings.environment.lower()
+    registry = environment if environment in params.penalty_registries else "default"
+    factor, spans = params.penalty_registries[registry]
+    stop = process_stop_state(settings, package)
+    return {
+        "version": params.version, "routing": params.routing_version, "routing_sha256": params.routing_sha256,
+        "weights": params.weight_strings(), "weights_provisional": True, "precedence": params.precedence,
+        "disclosure_template": params.disclosure_template_id,
+        "library": {"version": package.v1.library_version, "entries": len(package.v1.library_entries), "sha256": package.v1.library_sha256},
+        "golden_set": {"version": "golden-set-v1", "items": params.golden_set_items}, "max_cycles": params.max_cycles,
+        "retrieval_penalty": {"environment": registry, "factor": str(factor), "spans": len(spans), "active": mode == "on"},
+        "stop": {"revert_required": stop.revert_required}, "available": ehmf_service.EHMF_UNAVAILABLE_REASON is None,
     }
 
 

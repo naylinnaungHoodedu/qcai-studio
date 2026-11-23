@@ -973,7 +973,8 @@ def test_ac_2_9_retrieval_abstention_and_resolver_take_no_learner_state_input():
     from app.services import contained_answers, lexical_index, retrieval_engine, span_resolver, spans
 
     allowed = {"self", "query", "lesson_slug", "top_k", "surface", "terms", "entry", "scored", "span_id", "db", "citation",
-               "citations", "registry", "spans", "settings", "refresh", "store", "entries", "params", "abstention", "gate", "text"}
+               "citations", "registry", "spans", "settings", "refresh", "store", "entries", "params", "abstention", "gate", "text",
+               "penalties"}  # Phase 7: span id -> factor from the package and the environment, never learner state (spec 4.7)
     callables = [
         lexical_index.LexicalIndex.__init__, lexical_index.LexicalIndex.evaluate, lexical_index.LexicalIndex.query_terms,
         lexical_index.LexicalIndex.score_entry, lexical_index.LexicalIndex.p1_score_entry, lexical_index.LexicalIndex.p1_scores,

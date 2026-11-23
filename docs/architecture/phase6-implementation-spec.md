@@ -253,6 +253,7 @@ Each resolution is a refinement. None reverses a fixed decision.
 11. **X2 "Type A/B unresolved after two cycles"** against Phase 5's X2 marking of every exhausted claim (Phase 5 conflict 6). **Resolution (E1):**
     - The X2 trigger needs the recorded X2 escalation and an objecting family verdict of EHMF type A or B.
     - Every other exhausted claim is still queued, with reason `v2_correction_exhausted` and no X trigger, and is not counted in V-3.
+    - With package v6 (Phase 7 spec conflict 3) the registry is x-triggers-v2 and X2 fires on every exhausted claim; v5 keeps x-triggers-v1.
 12. **"10% double review" with one maintainer (A-9, E-63).** An independent second review needs a second reviewer. **Resolution:** a double-review item stays queued until another reviewer adjudicates it. With fewer than two reviewers it never closes and stays held (plan J). This needs no code beyond 4.5.
 13. **Plan 7.3 "mutations carry client keys".** **Resolution:**
     - Adjudication and apply carry a `client_key`.
@@ -532,7 +533,7 @@ SUBJECTS = ("claim", "response")
 STORED_STATES = ("queued", "adjudicated", "applied")      # "claimed" = queued with a live lease for the current round
 WORKFLOW_STATES = ("queued", "claimed", "adjudicated", "applied")
 VERDICTS = ("SUPPORTED", "CONTRADICTED", "NOT_ENOUGH_INFO")
-EHMF_TYPES = ("A", "B", "C", "D", "E")
+# EHMF_TYPES and the plan weights (PLAN_WEIGHTS) live in ehmf.vocabulary (Phase 7)
 ABSTENTION_LABELS = ("correct", "missed_answer")
 MAX_ROUNDS = 3
 DRAW_RULE = "seeded-sha256-bernoulli-v1"
@@ -541,7 +542,6 @@ DELIVERIES = ("delivered", "legacy")
 PRIORITY_RULE, EXPOSURE_RULE, K_RULE = "severity-exposure-one-minus-k-v1", "learner-deliveries-of-claim-set-v1", "panel-support-share-v1"
 CLAIM_SET_KEY_RULE = "sorted-claim-ids-sha256-v1"
 TIE_BREAK = ("enqueued_at", "item_id")
-PLAN_SEVERITY = {"A": "1.0", "B": "1.0", "C": "0.6", "D": "0.6", "E": "0.4"}   # plan L682, as decimal strings (exact Fractions)
 GOLD_SCHEMA, GOLD_CHAIN = "v3-gold-label-v1", "v3-gold"
 GOLD_RECORD_HASH_RULE = "sha256(canonical{chain,seq,created_at,prev_hash,entry_sha256})-v1"
 GOLD_GENESIS = "0" * 64
@@ -1046,7 +1046,7 @@ def item_view(db: Session, row: Any, *, store: Any, corpus_registry: Any, now: d
 - Priority:
   - rule ids other than the code's (`PRIORITY_RULE`, `EXPOSURE_RULE`, `CLAIM_SET_KEY_RULE`, `K_RULE`);
   - severity keys other than A-E, `unknown` and `disclosed_conflict`, or a weight outside [0, 1];
-  - while D-06 is open, A-E weights other than the plan's 6.3 values (`PLAN_SEVERITY`), or `disclosed_conflict` other than 0;
+  - while D-06 is open, A-E weights other than the plan's 6.3 values (`ehmf.vocabulary.PLAN_WEIGHTS`), or `disclosed_conflict` other than 0;
   - a `tie_break` other than `TIE_BREAK`.
 - Draw:
   - a rule other than `DRAW_RULE`;
