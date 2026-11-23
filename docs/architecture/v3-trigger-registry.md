@@ -37,7 +37,7 @@ Rule `severity-exposure-one-minus-k-v1`: priority = severity x exposure x (1 - K
 
 ## Draw
 
-Rule `seeded-sha256-bernoulli-v1`, seed `qcai-x6-v1`: a delivery is drawn at rate num/den when the first 8 bytes of sha256("x6-draw-v1|seed|response_id") as an integer u satisfy u x den < num x 2^64. X6 at 1/20; while an X5 window is open, 1/5 (below 1/20 is X6, between 1/20 and 1/5 is X5); a window covers the 1500 learner deliveries after its event. Every learner delivery (legacy or delivered) is considered once, at its first scan; deliveries before the ledger are not auditable.
+Rule `seeded-sha256-bernoulli-v1`, seed `qcai-x6-v1`: a delivery is drawn at rate num/den when the first 8 bytes of sha256("x6-draw-v1|seed|response_id") as an integer u satisfy u x den < num x 2^64. X6 at 1/20; while an X5 window is open, 1/5 (below 1/20 is X6, between 1/20 and 1/5 is X5); a window covers the 1500 learner deliveries after its event. Every learner delivery (legacy or delivered) is considered once, at its first scan; deliveries before the ledger are not auditable. The seed is public by design: the key is the response id the server mints at delivery (`turn-{uuid4()}`, `qa-{uuid4()}`), so knowing the seed lets no caller choose which deliveries are audited.
 
 ## Workflow, SLO and stop
 

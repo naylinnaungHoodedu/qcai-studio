@@ -691,9 +691,10 @@ def test_plan_h_reviewers_see_public_quotable_spans_only_and_no_learner_identifi
     assert all(item["reviewable"] and all(claim["text"] for claim in item["claims"]) for item in payloads[1:])
     forbidden = [r"turn-[0-9a-f]{8}-", r"shadow-[0-9a-f]{8}-", r"qa-[0-9a-f]{8}-", r"thread-", r"message-", r"\bp6-", r"@", r"synthetic-a"]
     assert not [pattern for pattern in forbidden if re.search(pattern, flat)], flat[:300]
-    keys = set()
-    for payload in payloads[1:]:
+    keys = set(payloads[0])
+    for payload in payloads[0]["items"] + payloads[1:]:          # the queue's items and each item read
         keys |= set(payload)
+    assert len(payloads[0]["items"]) == 2
     assert not keys & {"ledger_seq", "severity", "exposure", "k", "priority", "votes", "objection_types", "final", "user_id", "response_id",
                        "support_share", "claim_labels"}
     # Over a governed store (D-31: no asset approved) no span is shown, so no item is reviewable.
@@ -1270,6 +1271,12 @@ def test_phase6_docs_the_test_strategy_maps_every_test_module_the_phase_added():
     expected |= {"apps/frontend/tests/v3-review.integration.test.ts"}
     assert sorted(rows) == sorted(expected), sorted(set(rows) ^ expected)
     assert sorted(changed) == sorted(PHASE6_EXTENDED_MODULES), sorted(set(changed) ^ set(PHASE6_EXTENDED_MODULES))
+    # The modules Phase 6 changed are all here, and each carries Phase 6 content (no row maps a module Phase 6 left alone).
+    assert {"test_authorization.py", "test_config_package.py", "test_configuration_overrides.py", "test_response_ledger_migrations.py",
+            "test_v2_correction.py", "test_v2_panel.py", "conftest.py"} <= set(PHASE6_EXTENDED_MODULES)
+    markers = ("Phase 6", "v3_fakes", "app.services.v3", "V3_QUEUE", "v3_queue", "PHASE6")
+    for name in PHASE6_EXTENDED_MODULES:
+        assert any(marker in (tests / name).read_text(encoding="utf-8") for marker in markers), name
     for name, text_ in {**rows, **changed}.items():
         assert len(text_) > 80, name
     names = set()
