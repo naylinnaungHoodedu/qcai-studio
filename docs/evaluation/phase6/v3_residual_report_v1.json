@@ -1,13 +1,13 @@
 {
  "report": "qcai-v3-residual-report",
  "format_version": 1,
- "created_at": "2026-11-23T00:24:53+00:00",
- "commit": "da00224b1884b451d0b68b6e3324bcd961b19ebb-dirty",
+ "created_at": "2026-11-23T22:16:59+00:00",
+ "commit": "cabe561ede40a68519143c219f259ff97db012e1",
  "evidence_class": "synthetic telemetry, not research results (plan Phase 6 H: audit counts are telemetry, not research results)",
  "public_corpus_only": true,
  "config_package": {
-  "version": "5.0.0",
-  "sha256": "ed91a98f8f3cca200e2164381da966ce9ec8f8a2de2120d2c2fc6fd77e9b2e68"
+  "version": "6.0.0",
+  "sha256": "fdfb5afe08858c77a6cb01f482a9b35cc1af77c929b565e0cd65296ce5cac8be"
  },
  "deliveries": {
   "count": 6070,
@@ -78,7 +78,7 @@
   "rows": 323,
   "verified": true,
   "head_seq": 323,
-  "head_record_hash": "ca0a2545d2c8770a69103f103097fdf6f213930dc01630102094f568ca0a1cb1"
+  "head_record_hash": "2e5f4c48041afde1209b5a0838a2984537a8f1aae05fdf74ee2b54bbbca972c0"
  },
  "ledger_unchanged": true,
  "result": "pass",
@@ -88,18 +88,20 @@
   "files": {
    "apps/api/app/__init__.py": "a45661633011b095a62071507cf3309e100424dd64d34feabf2cc6d084696348",
    "apps/api/app/core/client_identity.py": "ebba54c74b9b28abe10deddfc3b1f300738de3be3ac49a437cf08de16f338f8a",
-   "apps/api/app/core/config.py": "fe84009da57e67ef9e68efe6d34f077504a7600ff469c24652644a430b40b3c4",
-   "apps/api/app/core/config_package.py": "21de37f0b71162f581f5890f5414a157891f06cb2b3a8cb57595aa0aceed8566",
+   "apps/api/app/core/config.py": "d3f63450990bca2d616318e6a299ccb7762edd7e0d92d6bd31baaec56d66649f",
+   "apps/api/app/core/config_package.py": "9951cb19caf8848c72d57f08ccc36279b2af9bb1db5ca77b1748fca77f74ea3f",
    "apps/api/app/core/corpus_governance.py": "39153061b8d613ca0298a5210b4d9abeb4da2298608b1b471c0cf659a7f9a4fd",
    "apps/api/app/core/data_planes.py": "195f35a4a4a01cabeb32d48a0d81c1beb0ca714e943d7c154abe3e96a35a5976",
    "apps/api/app/core/db.py": "81d5e54a250dc4e3d6d477ad33bb37f78cee4a98854330e39e223f1ab44b6014",
+   "apps/api/app/core/guest_tokens.py": "669ff47886948bad02563610fbb42c856459544ef11cc03a5169591b98e8a319",
    "apps/api/app/core/log_redaction.py": "ac76ce9520ac9b42986775b36bb803b00105edb9a6b256748f541022437582c3",
    "apps/api/app/core/manifest_v2.py": "993892df5fb5e97fa34d5e8bd645eabca4d2960b7cf8959383064d2de10087a3",
+   "apps/api/app/core/phase8_settings.py": "65b11586f9a096de9ef63ccb7400e62f93dd1cdeb60eb831f933238039de43ee",
    "apps/api/app/core/safe_input.py": "6f0475c6c09062c0103f7f973f65706a88a8605a0430a0e54c581ac3876023fb",
    "apps/api/app/core/schema_upgrades.py": "f95c75b1550ffabe7a19068a18ec39548013ccd9ee5127446e0f26ee73f1431b",
    "apps/api/app/core/source_assets.py": "1889e9d025697c0d928b6e068325c0569adc7b8a802394a6dd3750f451e39ce5",
    "apps/api/app/core/structured_logging.py": "854ef58ab42efdb665dc20cff8595e296241ccd63c5322eb77bcb7830b691ea1",
-   "apps/api/app/db_models.py": "1383ab8db1e56c665fffcab3414fe93c4deb7433617f9ecf97851a79a25b0005",
+   "apps/api/app/db_models.py": "24883b570e9bc87e07db661b9c43e935b7bdcd83856228fd17a092414352e7c2",
    "apps/api/app/gateway/__init__.py": "f30aa888d009d0bfc94f7be7dcd0a67f371e323e2f2a33ade73b0a06e1b568f2",
    "apps/api/app/gateway/adapters.py": "982c5d6c9932d7b702db9269ed3decba2bb08e6a409f50bc68c237c286eed977",
    "apps/api/app/gateway/contracts.py": "f026234f38ecf07749f6356afe4bf5248f8099cd55279c7bc847fe24423bf969",
@@ -108,20 +110,22 @@
    "apps/api/app/gateway/pinning.py": "287551250014af40b3655c83a02e57998515422fd05f55b112351b9bbe2b4594",
    "apps/api/app/gateway/registry.py": "c7ebbbb02cebe0977afa9e3235b01cb9af9775ce1d810cb0f64fba685292bed4",
    "apps/api/app/gateway/retired.py": "e5744df75d606a0d80cbf2ad51f13cbe9c6fd4684532df8ea917d83dc968b015",
-   "apps/api/app/schemas.py": "dd4318765e3928f76aa533a77cfcc91678e84c7531f07875e057594a1cc94f4e",
+   "apps/api/app/schemas.py": "0ea45aa7f7fd117ef92cd5358a41a22f4e52922bc576060bbc28bdab7573bb65",
    "apps/api/app/services/citation_migration.py": "15968f9b4d25c3d5fe16dd93d4bb2c58c5a6ce8be78e221262bb2fa29a6d357e",
    "apps/api/app/services/claim_gate.py": "dd3fa79d6a39f3cf30141471622e0f487059eaa80669332c1eab7d5adbe6ca28",
    "apps/api/app/services/contained_answers.py": "b32a28b65f294fb7de09229679ca2503666de9c45e8179f1f4f52c0302c96e99",
    "apps/api/app/services/content_assembler.py": "0ec184c9f538361ac85040a864ee32aa6536f4be0222c519b0431e1ca3450d68",
    "apps/api/app/services/docx_parser.py": "c0b549050d0381f0bf14a26052fa66d082e9d470ca284b35e9529ed872274bd1",
-   "apps/api/app/services/erasure.py": "c10befb09d853a7c785f9547576a5a94d41e22b1e1e0882114cd6c55ea9196cb",
+   "apps/api/app/services/erasure.py": "2bfb344af3e9c5b95f93a30b021325641ab0dc525b969547ce8f88f142efd49c",
    "apps/api/app/services/evidence_panel.py": "847fd155b1c1ceb12b9f1f336ed0df7d6efae107554b5a3f53049720718f3f45",
-   "apps/api/app/services/ledger.py": "023932511960019cfec237b8bd9583cc74a789e72e25c526446cf307ff39919d",
+   "apps/api/app/services/guest_sessions.py": "cd9be94c5cc3fc22c1004ae982004039322447286093487732859e98bb2e5729",
+   "apps/api/app/services/learner_record_lock.py": "b7efdce8cb18edb2d3655bbbad160ff95877bfc16221f4a20fc746e002685b3e",
+   "apps/api/app/services/ledger.py": "36f013dae623dfa9c2306400c8143df75b79121f40074d406d3f3f93f21a6965",
    "apps/api/app/services/lexical_index.py": "fc0a773296b4033b759f6046fd024c612d11e237a11db119305ceba873892a95",
    "apps/api/app/services/provenance.py": "cbea0a9970dac7fe17b653e1308d26b99846e92d0c9e04b5b15be4c3a96e5857",
    "apps/api/app/services/qa_engine.py": "678ab941468f21da8376ec305a82cc904ee16bc0da2551165146eebd0d4a41ca",
    "apps/api/app/services/quiz_keys.py": "c839f3da7fce2abada021d5a454cada57ed209474db93abf479fc6a6ad538131",
-   "apps/api/app/services/retention.py": "c457468e79f6d1d3c5ae5fea4ba13506b8cdce30039598fadcd15e412972dec2",
+   "apps/api/app/services/retention.py": "1d779d1daf9f247187e9dddcf5f87b2f029f15fd4c633204d55c38c4e1012e4a",
    "apps/api/app/services/retrieval_engine.py": "052ec247b23a534be350623d0d85fce6351b8db03e8a6e012a5ebe67f912de1b",
    "apps/api/app/services/retrieval_metrics.py": "58428daac4565b8df6b77bf424442a21ee647a64f19701649cb6751042be603d",
    "apps/api/app/services/retrieval_p1.py": "a15a1431407ba90d04ba7a2c089fee9f3f4d66d6c1a9030a7680cb6194c7cb37",
@@ -130,9 +134,9 @@
    "apps/api/app/services/spans.py": "c470878066ef33a5a92c907476f5f7e303b5bc00df4b65adea6a85ace261647e",
    "apps/api/app/services/text_utils.py": "dd37e0c66bb965d3183b46b727ae523f059737eee577614f83da58eae55153af",
    "apps/api/app/services/transcripts.py": "1a55f3f5b7e0ce0b9f74999691b50fa3ebb9aeb63bc1051f2bc16b334bd8f053",
-   "apps/api/app/services/tutor_pipeline/__init__.py": "36adeb39f65cd0502eb48f400fce63ef2a8f7c75058564287552070f612d9b40",
+   "apps/api/app/services/tutor_pipeline/__init__.py": "4621eb18780f6063f0973d68790ab1e186aa7835785e63f8c0d714bb5eedeae0",
    "apps/api/app/services/tutor_pipeline/bind.py": "dd2903f4bfba727863030bb62b647c4b3594fd4037dfe3b740ac41beef283597",
-   "apps/api/app/services/tutor_pipeline/contracts.py": "38c7ec3d14f239617c33958ea2c5032c045c91f8cd5d048bfbdf69a2f4dd21cd",
+   "apps/api/app/services/tutor_pipeline/contracts.py": "16b5cc18fe8e3ca90b2f3d1f057d4a3db190739454136a9c1a85566ddaaf30b8",
    "apps/api/app/services/tutor_pipeline/metrics.py": "525b2c52c517d84b6dd642b4a3ac9a92e19c4cdce3415b4d7ca3b1a01a6e3f18",
    "apps/api/app/services/tutor_pipeline/render.py": "7eb1cc2d2e05fed9f180af24feaa159f268abe8055275dcb87e902bc4fdcc42d",
    "apps/api/app/services/tutor_pipeline/retrieve.py": "ba49590036813559da98f6b9a083ba37701f83797fb00fcfc8c0ce26ed8462a8",
@@ -161,6 +165,6 @@
    "apps/api/app/services/v3/triggers.py": "eff326fab3d4a120ccdfdef5da271d2e67783a8402b114341beec95bd8f6bbed",
    "scripts/run_v3_residual_report.py": "31922c148d8234f48722aaa9e05476aa9a7ce4e9ada99ba6d1899276f1de437e"
   },
-  "sha256": "66867455246116cad1577f28c2a0fb42187df2a706522e757637824f9c9ab069"
+  "sha256": "f5eda7c4322ed95f3e3a3a017783343ee3ad7f2136cfd0dadb08b9722f03d671"
  }
 }

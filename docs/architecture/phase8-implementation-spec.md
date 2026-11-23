@@ -245,14 +245,15 @@ The merged SQLite leg ran `apps/api/tests evaluation/tests`. Both PostgreSQL leg
 
 Sync wiring verification ran four API modules, `test_phase8_sync.py`, `test_cs595_increment.py`, `test_authorization.py`, and `test_malformed_input.py`, with 154 passed per SQLite, psycopg, and pg8000. This targeted selection has no template or release-artifact tests. Frontend lint, type checking and all 154 integration tests passed.
 
-The inherited records and the two Phase 8 reports were generated from clean build `cb142b1`. Fresh checks passed and all 1,192 frozen public bodies matched. The invariance report covers 299 public items, three mastery levels, three distinct presentation choices, zero violations, and zero learner-state fields. The erasure proof verifies all four synthetic principal scenarios.
+The inherited records and the two Phase 8 reports were generated from clean integration commit `cabe561`. The invariance report covers 299 public items, three mastery levels, 148 items with distinct rendered presentations, zero evidence differences, and zero learner-state fields. The erasure proof verifies four principal types plus bound and claimed accounts.
 
 | Record | Input SHA-256 |
 |---|---|
-| Phase 3 tutor replay | `8f0be832bc86ae86e113b94db95b5b3bf331e91390b54bcc31c73c7b5845a563` |
-| Phase 4 V1 fixtures | `f0378f1e2fc9810b9f9b03cc9e52e710d3ee33b354dc835bff390e52781dee09` |
-| Phase 5 V2 fixtures | `89adc37f863e72fbd2de7e13d4c4391ec0d9efb15f779a46a099e2559493a96a` |
-| Phase 8 invariance | `4fb3e45f03df4e4814501ff5d4a2bbd299c1f5b3a5078825548ee938773af8b0` |
+| Phase 3 tutor replay | `d9a1b3041ad7c831c5ed51fdf67202b44387c99de0040d0ca9affdf6278a8245` |
+| Phase 4 V1 fixtures | `beeec26464c9fa2dfc1b9b9848eab50829eddd21f165b63d456a661bd1b83a16` |
+| Phase 5 V2 fixtures | `a2b2db1843bc5224a8dd96fa5370877058d9b28415eee7fc525a37fe086a9d88` |
+| Phase 6 V3 residual proof | `f5eda7c4322ed95f3e3a3a017783343ee3ad7f2136cfd0dadb08b9722f03d671` |
+| Phase 8 invariance | `0151605d3720dd5ba5c0514b35656c0fe3f1f26b180e4e52c90ef188834c410b` |
 
 The erasure proof deliberately omits module hashes. Each scenario pins its table set and verifies the corresponding receipt digest in the scratch database.
 
