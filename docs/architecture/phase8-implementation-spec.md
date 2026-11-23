@@ -1,12 +1,12 @@
 # QC+AI Studio: Phase 8 implementation spec
 
-Learner adaptation and privacy-preserving record, upgrade plan lines 1557-1614. The branch was cut at `98f7cc4` and its current integration base is `c34a8c1`.
+Learner adaptation and privacy-preserving record, upgrade plan lines 1557-1614. The branch was cut at `98f7cc4` and its current integration base is `31343c8`.
 
 Sections 0-17 describe the behaviour the code has and identify deferred integration work. Section 18 holds one history-table row per review round. This file is LF in every checkout (`.gitattributes`).
 
 ## 0. Ground rules, measured facts, readings
 
-Apply the branch rules and the Phase 8 handoff's shared-file restrictions. Keep smoke and acceptance fixtures synthetic and run verification offline. The verified Phase 5 integration base is `c34a8c1033e86072b8c0129440e42afea64285ee` (PR #37, main CI run 45044415408, reported green by the owner). The shipped package is v4. The current Alembic head is `20261122_phase5_gateway_controls`.
+Apply the branch rules and the Phase 8 handoff's shared-file restrictions. Keep smoke and acceptance fixtures synthetic and run verification offline. The verified Phase 6 integration base is `31343c86c23007cec227b38413e0e53140f714a5` (PR #38, main CI run 45180967316, reported green by the owner). The branch ships package v6 and Alembic head `20261123_phase8_learner`. Phase 6 added package v5, migration `20261122_phase6_v3_audit`, and the user-keyed `v3_claims` and `v3_flags` tables. Their erasure and retention scope is explicit.
 
 Phase 5 added `gateway_budget_days`, `gateway_stops`, and `evidential_cache_entries` to the shared ORM and updated the migration chain. The retrieval engine delegates embedding egress to `app/gateway/embeddings.py`. Its import guard allows only the Pinecone index SDK exception in the retrieval engine. The handoff's Phase 5 snapshot of untouched database files and its earlier embedding exception no longer describe the integrated code. Phase 8 uses the existing shared-file ownership limits and treats the added gateway tables and embedding implementation as Phase 5-owned.
 
@@ -71,7 +71,7 @@ The consent service stores a current row and erasable change history. Analytics 
 
 ## 5. Configuration package
 
-Defer the package bump until after Phase 6 is merged into this branch and the Phase 8 implementation is ready for hand-back. Extend the then-current shipped package at the next free version with the learner settings, an exit flag set to false, and the decision entries. Preserve the hash chain and prior-version readability. The existing evidence and gateway contract pins continue to control their respective paths.
+Package v6 (6.0.0) supersedes v5 (5.0.0, SHA-256 `ed91a98f8f3cca200e2164381da966ce9ec8f8a2de2120d2c2fc6fd77e9b2e68`). It adds the provisional learner settings, `phase8_exit_passed: false`, and the D-26 and D-27 entries. V5's D-08 and all prior decision entries are preserved. The evidence, gateway, and V3 contract pins carry forward. DI-317 identifies the v5 readability step. Phase 7 must renumber if Phase 8 merges first, and Phase 8 must renumber if Phase 7 takes v6 on main first.
 
 ## 6. Settings
 
@@ -102,7 +102,7 @@ All default to off outside development. Settings reject every non-off value outs
 
 ## 8. Database
 
-Introduce additive ORM models for new Phase 8 tables and preserve discoverability of every subject-keyed table by erasure. Add any required startup registration for columns on existing tables. Defer the one reversible Alembic revision until after Phase 6 lands and the implementation is ready for hand-back. Select its parent from the actual merged head. Verify fresh and existing-row paths on SQLite and PostgreSQL, including both PostgreSQL drivers.
+Revision `20261123_phase8_learner` follows `20261122_phase6_v3_audit` and adds the ten Phase 8 tables. Upgrade accepts tables already built from matching ORM metadata. Downgrade verifies that Phase 8 tables are empty before removing the schema. An image rollback leaves the database and protection markers intact. Verify fresh and existing-row paths on SQLite and both PostgreSQL drivers.
 
 ## 9. Routes and request-path behaviour
 
@@ -128,7 +128,7 @@ Settings fail startup on refused values. Phase 8 records the following signals:
 | `learner.erasure` | Digest-only security event with refusal status or deleted row total. |
 | `subject.claimed`, `subject.claim_refused` | Claim outcome and transferred-row total on success. |
 
-Runtime evidence and tool handling stays within the existing gateway and verifier boundaries. The pipeline records its refusal events without exposing learner values. §8.1 reserves changes to those implementations for the main track. Production F-3 and cloud metrics remain deferred under DI-300 and DI-305.
+Readiness appends `phase8_exit_passed`, each learner setting and effective value, and development-only `learner_slis`. The only new readiness query reads the shared adaptation stop when the planner is enabled. The operator keys are `learner_sync_on`, `learner_identity_on`, `learner_privacy_on`, `learner_planner_shadow`, and `learner_planner_on`. Runtime evidence and tool handling stays within the existing gateway and verifier boundaries. DI-318 tracks dedicated runtime refusal counters. Production F-3 and cloud metrics remain deferred under DI-300 and DI-305.
 
 ## 11. Frontend
 
@@ -177,7 +177,7 @@ Add authorization, retention, export, failover, stop persistence, migration, and
 
 ## 14. CI changes
 
-Use the existing test jobs first. After integration, add the package readability and harness verification steps at the prescribed locations. Preserve the existing public-payload golden record.
+The API and evaluation job checks v5 readability and the committed invariance report. Its existing pytest step verifies the erasure proof. PostgreSQL jobs verify the API suite with both drivers. The existing public-payload golden record remains the freeze boundary.
 
 ## 15. Docs and evidence
 
@@ -220,6 +220,7 @@ The following defaults are provisional. Implementation locations in this section
 | DI-315 | Re-review R-51 at the Phase 8 exit. Production carries the existing client mastery path until `LEARNER_SYNC` is enabled. Blocked by: open D-24, D-05, and DI-300. | Product Owner | Open |
 | DI-316 | Closed 2026-11-22 by owner decision P2-12-D-05 following the rule-12 question. Account erasure keeps independently submitted support requests on the 540-day rule. `services/learner_record_privacy.py` and `services/erasure.py` record and enforce that scope. | Product Owner | Closed |
 | DI-317 | Remove v5 and its readability check after one release. Blocked by: a production release after the Phase 8 merge, under D-05. | Engineering | Deferred |
+| DI-318 | Dedicated counters at runtime evidential contract refusals and `ToolNotVisible` in `tutor_pipeline/contracts.py` and `gateway/tools.py`. The isolated harness and sync signals are implemented. Stopped under rule 12 and §8.1, which reserve these shared paths. | Engineering (main track) | Stopped |
 
 Plan M: "[Risk R-01][Risk R-08][Risk R-41][Risk R-42][Risk R-51]; residual: backups keep erased rows for a window."
 
@@ -257,7 +258,7 @@ The erasure proof deliberately omits module hashes. Each scenario pins its table
 
 The final pre-integration lifecycle run passed 222 tests per backend on SQLite, PostgreSQL with psycopg, and PostgreSQL with pg8000. Each leg ran these eight files under `apps/api/tests`: `test_phase8_identity.py`, `test_phase8_privacy.py`, `test_phase8_sync.py`, `test_phase8_evidence.py`, `test_authorization.py`, `test_erasure_retention.py`, `test_api.py`, and `test_gateway_egress_guard.py`. This selection had no deselections. An earlier 219-case run deselected only `test_plan_f_the_committed_erasure_proof_matches_a_fresh_run` until the report was generated. The final run includes that test and two additional report/schema checks. The eight named template cases passed separately on SQLite. Ten Python-source guards and the three Phase 3-5 test-map guards passed separately. The boundary path scan passed.
 
-The next integration waits for the announced Phase 6 merge. Adopt the next free package version and the actual main Alembic head. The expected predecessor is package v5 and revision `20261122_phase6_v3_audit`. Readiness, CI command registration, and the full final 9.1 run belong to that integration. DI-300 remains open.
+The integration merged Phase 6 in `45eb393` and used package v5 and revision `20261122_phase6_v3_audit` as predecessors. The full §9.1 runs cover this integrated tree. DI-300 remains open.
 
 ## 18. Review history
 
@@ -267,4 +268,4 @@ The rows below record what each round fixed, in order. They may describe behavio
 |---|---|---|
 | Spec (pre-code) | - | Initial design and verification map. |
 | Build | `cb142b1` | Settings, synchronization, identity, privacy lifecycle, shadow planner, and engineering evidence. Regression guards include `test_settings_phase8_defaults_and_refusals`, `test_ac_8_1_concurrent_trusted_updates_preserve_each_mastery_value`, `test_plan_j_a_forged_or_revoked_guest_token_cannot_claim`, `test_plan_f_the_committed_erasure_proof_matches_a_fresh_run`, and `test_plan_p_the_committed_invariance_report_matches_a_fresh_run`. |
-| Review 1 | Round 1 fix set | Route ownership and PD register guards, serialized cutover and erasure, claim and privacy HTTP coverage, active replica lifecycle, measurable invariance, retention, and spec controls. See `test_phase8_route_policies_form_one_block_after_the_learner_record_rows`, `test_phase8_docs_pd_204_states_the_engineering_constants_in_code`, `test_phase8_erasure_refuses_an_in_flight_subject_rebind`, `test_phase8_privacy_http_consent_export_erasure_and_assessment`, and `test_ac_8_4_a_learner_value_in_an_evidential_payload_is_detected`. |
+| Review 1 | `8c7b7d4` | Route ownership and PD register guards, serialized cutover and erasure, claim and privacy HTTP coverage, active replica lifecycle, measurable invariance, retention, and spec controls. See `test_phase8_route_policies_form_one_block_after_the_learner_record_rows`, `test_phase8_docs_pd_204_states_the_engineering_constants_in_code`, `test_phase8_erasure_refuses_an_in_flight_subject_rebind`, `test_phase8_privacy_http_consent_export_erasure_and_assessment`, and `test_ac_8_4_a_learner_value_in_an_evidential_payload_is_detected`. |

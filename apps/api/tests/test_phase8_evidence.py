@@ -178,3 +178,49 @@ def test_phase8_durable_stop_is_visible_to_a_new_session(fresh_database_url):
             assert shadow_presentation(third, "demo", subject, ("first", "second"), "concise").plan_id == "socratic"
     finally:
         engine.dispose()
+
+
+def test_phase8_readiness_reports_effective_and_configured_modes(monkeypatch):
+    from app import main
+    from app.core.config_package import get_config_package
+    from app.core.db import SessionLocal
+
+    settings = Settings(_env_file=None, learner_planner="shadow")
+    monkeypatch.setattr(main, "settings", settings)
+    package = get_config_package(settings)
+    with SessionLocal() as db:
+        clear_adaptation_stop(db)
+        db.commit()
+        try:
+            active = main._phase8_fields(package)
+            assert active["learner_planner"] == active["learner_planner_setting"] == "shadow"
+            stop_adaptation(db, "invariance")
+            db.commit()
+            stopped = main._phase8_fields(package)
+            assert stopped["learner_planner"] == "off" and stopped["learner_planner_setting"] == "shadow"
+            assert stopped["phase8_exit_passed"] is False and "learner_slis" in stopped
+        finally:
+            clear_adaptation_stop(db)
+            db.commit()
+
+
+def test_phase8_migration_retains_existing_tables_and_refuses_data_loss(fresh_database_url):
+    from app.db_models import LearnerWriteGuard
+    from test_response_ledger_migrations import PHASE6_REVISION, PHASE8_REVISION, PHASE8_TABLES, _alembic, _tables
+
+    engine = create_engine(fresh_database_url)
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as db:
+            db.add(LearnerWriteGuard(key_digest=uuid4().hex, erased=True))
+            db.commit()
+        engine.dispose()
+        assert _alembic(fresh_database_url, "stamp", PHASE6_REVISION).returncode == 0
+        upgraded = _alembic(fresh_database_url, "upgrade", PHASE8_REVISION)
+        assert upgraded.returncode == 0, upgraded.stderr[-1800:]
+        assert PHASE8_TABLES <= _tables(engine)
+        refused = _alembic(fresh_database_url, "downgrade", PHASE6_REVISION)
+        assert refused.returncode != 0 and "contain records" in refused.stderr
+        assert PHASE8_TABLES <= _tables(engine)
+    finally:
+        engine.dispose()

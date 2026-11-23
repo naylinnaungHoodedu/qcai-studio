@@ -743,13 +743,16 @@ def test_plan_g_the_phase_6_revision_is_additive_reversible_and_keeps_its_rows(f
 
     from app.core.db import Base
     from app.services.ledger import SCHEMA_REVISION
+    from test_response_ledger_migrations import PHASE8_TABLES
 
-    assert ScriptDirectory.from_config(Config(str(API_ROOT / "alembic.ini"))).get_heads() == [SCHEMA_REVISION] == [PHASE6_REVISION]
+    scripts = ScriptDirectory.from_config(Config(str(API_ROOT / "alembic.ini")))
+    assert scripts.get_heads() == [SCHEMA_REVISION]
+    assert scripts.get_revision(SCHEMA_REVISION).down_revision == PHASE6_REVISION
     connect_args = {"check_same_thread": False} if fresh_database_url.startswith("sqlite") else {}
     engine = create_engine(fresh_database_url, connect_args=connect_args)
     try:
         Base.metadata.create_all(engine)
-        Base.metadata.drop_all(engine, tables=[Base.metadata.tables[name] for name in V3_TABLES])
+        Base.metadata.drop_all(engine, tables=[Base.metadata.tables[name] for name in V3_TABLES | PHASE8_TABLES])
         others = set(sa_inspect(engine).get_table_names())
         engine.dispose()
         assert _alembic(fresh_database_url, "stamp", PHASE5_REVISION).returncode == 0
@@ -758,6 +761,10 @@ def test_plan_g_the_phase_6_revision_is_additive_reversible_and_keeps_its_rows(f
         checked = _alembic(fresh_database_url, "check")
         assert checked.returncode == 0 and "No new upgrade operations detected" in (checked.stdout + checked.stderr), checked.stderr[-2000:]
         assert V3_TABLES <= set(sa_inspect(engine).get_table_names())
+        engine.dispose()
+        down_to_v3 = _alembic(fresh_database_url, "downgrade", PHASE6_REVISION)
+        assert down_to_v3.returncode == 0, down_to_v3.stderr[-2000:]
+        assert not PHASE8_TABLES & set(sa_inspect(engine).get_table_names())
         engine.dispose()
         # A CUSUM alarm (from outside the ledger) keeps the tables too; a model_change event (derived from the records and
         # the registry) is not counted: one of each gives "1 cusum_alarm rows".
@@ -848,7 +855,8 @@ def test_plan_i_ready_reports_package_v5_and_the_v3_fields_and_no_count():
     finally:
         event.remove(engine, "before_cursor_execute", seen)
     assert after == before
-    assert all(statement.startswith("SELECT gateway_stops.reason FROM gateway_stops") for statement in statements), statements
+    allowed = ("SELECT gateway_stops.reason FROM gateway_stops", "SELECT learner_adaptation_stops.reason FROM learner_adaptation_stops")
+    assert all(statement.startswith(allowed) for statement in statements), statements
     staging = v3_fakes.staging_settings()
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(main_module, "settings", staging)
@@ -1319,8 +1327,9 @@ def test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_h
 
     runbook = (REPO_ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8")
     step = runbook.split("3. **Check the stamp:** `alembic current`.", 1)[1].split("\n4. ", 1)[0]
-    assert re.findall(r"`([0-9a-z_]+) \(head\)`", step) == [SCHEMA_REVISION] == ["20261122_phase6_v3_audit"]
+    assert re.findall(r"`([0-9a-z_]+) \(head\)`", step) == [SCHEMA_REVISION] == ["20261123_phase8_learner"]
     head_bullet = next(line for line in step.splitlines() if f"`{SCHEMA_REVISION} (head)`" in line)
+    assert "alembic downgrade 20261122_phase6_v3_audit" in head_bullet
     assert "allow_v3_drop=true downgrade 20261122_phase5_gateway_controls" in head_bullet and "export-gold --all" in head_bullet
     assert "alembic downgrade 20261119_phase3_response_ledger" in head_bullet
     assert any(line.strip().startswith("- `20261122_phase5_gateway_controls`:") for line in step.splitlines())

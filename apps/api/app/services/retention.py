@@ -24,7 +24,7 @@ _GUEST_CREATED_TABLES = (
     "learner_consent_changes", "learner_issued_replicas", "learner_profiles", "learner_record_operations",
     "learner_records", "learner_replicas", "learning_pulses", "notes", "project_submissions", "public_handles",
     "qa_interactions", "quiz_attempts", "tutor_threads", "tutor_turn_idempotency", "learner_assessment_facts",
-    "peer_reviews", "tutor_turns",
+    "peer_reviews", "tutor_turns", "v3_flags",
 )
 _RETENTION_CLASSES = {
     **dict.fromkeys(_GUEST_CREATED_TABLES, "guest-created/durable-until-erasure"),
@@ -34,6 +34,7 @@ _RETENTION_CLASSES = {
     "learner_subjects": "until-erasure",
     "user_accounts": "until-erasure",
     "user_sessions": "session-expiry",
+    "v3_claims": "until-erasure",
 }
 
 

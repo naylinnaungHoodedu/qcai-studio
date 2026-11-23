@@ -111,7 +111,7 @@ RECORD_HASH_RULE = "sha256(canonical{chain,seq,created_at,prev_hash,entry_sha256
 # retried within the remaining budget like an IntegrityError (spec 18.8 F8).
 RETRYABLE_SQLSTATES = frozenset({"40P01", "40001"})
 # The Alembic revision this code expects (tested against the single head); stamped on every record (plan 13.5).
-SCHEMA_REVISION = "20261122_phase6_v3_audit"
+SCHEMA_REVISION = "20261123_phase8_learner"
 # The legacy contained path's ids and rule hash, stamped on every legacy record (the only records production writes).
 # Configuration package v2 pins all four (tutor_pipeline.legacy) and package_check requires them to agree, so the
 # provenance audit (ledger_provenance) has a pinned reference value (DI-49).

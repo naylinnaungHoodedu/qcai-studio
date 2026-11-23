@@ -36,3 +36,5 @@ The retention register covers every user-keyed table. Durable records stay until
 | `tutor_turns` | `guest-created/durable-until-erasure` |
 | `user_accounts` | `until-erasure` |
 | `user_sessions` | `session-expiry` |
+| `v3_claims` | `until-erasure` |
+| `v3_flags` | `guest-created/durable-until-erasure` |

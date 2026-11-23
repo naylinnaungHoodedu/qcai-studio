@@ -1671,9 +1671,8 @@ def test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode(monkeypatch
     finally:
         event.remove(engine, "before_cursor_execute", seen)
     assert fields["two_pass_tutor"] == "shadow" and fields["tutor_pipeline"]["version"] == "two-pass-v1"
-    # No session read; since Phase 5 the only statements are the shared gateway stop's reads, where the V2 mode is not
-    # off by settings (development): the V2 mode and the gateway state adopt the registry's stop (Phase 5 spec 10.2).
-    assert statements and all(statement.startswith("SELECT gateway_stops.reason FROM gateway_stops") for statement in statements), statements
+    allowed = ("SELECT gateway_stops.reason FROM gateway_stops", "SELECT learner_adaptation_stops.reason FROM learner_adaptation_stops")
+    assert statements and all(statement.startswith(allowed) for statement in statements), statements
     assert main_module._ledger_head() == {"chain": "tutor-responses", "status": "unavailable"}  # fails open
 
 
@@ -1714,6 +1713,9 @@ def test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_emp
         with engine.connect() as connection:
             assert compare_metadata(MigrationContext.configure(connection, opts={"compare_type": True}), Base.metadata) == []
         append_ledger_entry(make_entry(), session_factory=sessionmaker(bind=engine), budget_ms=5000)
+        engine.dispose()
+        down = _alembic(fresh_database_url, "downgrade", "20261122_phase6_v3_audit")
+        assert down.returncode == 0, down.stderr[-2000:]
         engine.dispose()
         # One revision at a time: the Phase 6 step drops its own (empty) tables only, then the Phase 5 step its own, and the
         # Phase 3 revision is the current one.

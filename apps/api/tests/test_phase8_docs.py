@@ -29,6 +29,9 @@ PHASE8_MODELS = (
 PHASE8_EXTENDED_MODULES = {
     "test_api.py", "test_authorization.py", "test_cs595_increment.py", "test_erasure_retention.py",
     "test_malformed_input.py", "apps/frontend/tests/privacy-inventory.integration.test.ts",
+    "test_config_package.py", "test_configuration_overrides.py", "test_phase3_acceptance.py",
+    "test_phase4_acceptance.py", "test_phase5_acceptance.py", "test_phase6_acceptance.py",
+    "test_response_ledger_migrations.py",
 }
 API_EXPORTS_AT_PHASE5 = """
     getApiBaseUrl getClientApiBaseUrl fetchCourseOverview fetchCourseProgress fetchModule
@@ -116,11 +119,12 @@ def test_phase8_docs_spec_headings_shapes_and_plan_quotes():
     assert "Flags for planner and sync. Stop: any harness violation blocks adaptation (never evidence)." in _section(6)
     assert "residual: backups keep erased rows for a window." in _section(16)
     assert "AC-8-1 to AC-8-7 green; harness in CI." in _section(17)
-    for number in range(300, 317):
+    for number in range(300, 319):
         assert _row(f"DI-{number}")
     retention = (ROOT / "infra" / "cloudrun" / "retention-job.md").read_text(encoding="utf-8").split("\n## Phase 8\n")[1]
     for flag in PHASE8_FLAGS:
         assert flag.upper() in retention and flag.upper() in _section(6)
+        assert flag.upper() in (ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8").split("\n## Phase 8: ", 1)[1]
 
 
 def test_phase8_docs_the_test_strategy_maps_every_test_module_the_phase_added():

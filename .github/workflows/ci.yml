@@ -43,6 +43,8 @@ jobs:
       - run: python scripts/run_v2_fixtures.py --check docs/evaluation/phase5/v2_fixture_report_v1.json
       # E12: the shipped non-development learner answer bodies equal Phase 4's (sha256 only; no corpus text committed).
       - run: python scripts/capture_public_payloads.py --check apps/api/tests/data/phase4_public_payloads_v1.json
+      # Plan Phase 8 P: engineering invariance over public fixtures. Erasure proof runs in the API suite.
+      - run: python scripts/run_invariance_harness.py --check docs/evaluation/phase8/invariance_harness_report_v1.json
       # Plan Phase 4 F/H/K: the hashed adversarial fixture set and its report (fixture measurements, not research
       # results). Exit 3 is a plan L stop (answer-rate floor, V1 composition, or V1 p95 budget); exit 5 an adversarial
       # case delivered.

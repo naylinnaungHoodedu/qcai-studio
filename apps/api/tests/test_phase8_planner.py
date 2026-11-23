@@ -106,3 +106,39 @@ def _assert_shadow(model, package, uuid4, session_factory, auth_user):
                                        db=db, learner=auth_user(f"demo-{uuid4().hex}", None, "learner", "demo"))
         assert result is not None and result.presentation.plan_id == package.tutor_pipeline.default_plan
         assert db.scalar(text("SELECT 1")) == 1
+
+
+def test_phase8_shadow_planner_failure_leaves_the_http_answer_and_job_intact(monkeypatch):
+    from uuid import uuid4
+
+    from fastapi.testclient import TestClient
+
+    from app.api.routes import assistant
+    from app.core.config import get_settings
+    from app.core.config_package import get_config_package
+    from app.main import app
+    from app.services import learner_record_shadow
+
+    def fault(*args):
+        raise RuntimeError("fixture fault")
+
+    jobs = []
+    monkeypatch.setattr(learner_record_shadow, "shadow_presentation", fault)
+    monkeypatch.setattr(assistant, "run_turn_followups", lambda response, *_: jobs.append(response._followups.shadow))
+    settings = get_settings()
+    browser = TestClient(app)
+    bodies = []
+    for mode in ("off", "shadow"):
+        monkeypatch.setattr(settings, "learner_planner", mode)
+        headers = {"x-demo-user": f"fixture-{uuid4().hex}", "x-demo-role": "learner"}
+        response = browser.post("/assistant/chat", json={"message": "Why does routing depth matter?"}, headers=headers)
+        assert response.status_code == 200
+        value = response.json()
+        assert browser.get(f"/assistant/threads/{value['thread_id']}", headers=headers).status_code == 200
+        bodies.append(value)
+    common = {"thread_id", "turn_id", "message_id", "created_at"}
+    assert [{k: v for k, v in body.items() if k not in common} for body in bodies][0] == {
+        k: v for k, v in bodies[1].items() if k not in common
+    }
+    default = get_config_package(settings).tutor_pipeline.default_plan
+    assert [job.presentation.plan_id for job in jobs] == [default, default]

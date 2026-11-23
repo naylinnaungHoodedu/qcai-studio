@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from slowapi.errors import RateLimitExceeded
 from slowapi.extension import _rate_limit_exceeded_handler
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.exc import DataError, DBAPIError, OperationalError
 
 from app.api.routes import admin, analytics, arena, assets, assistant, auth, builder, content, insights, learner_record, ledger, projects, qa, search, spans, support, tutor, v3
@@ -397,6 +397,11 @@ def _record_configuration_overrides() -> None:
             # path, and no reviewer is admitted there while D-18 is open).
             ("v3_queue_shadow", settings.v3_queue == "shadow"),
             ("v3_queue_on", settings.v3_queue == "on"),
+            ("learner_sync_on", settings.learner_sync == "on"),
+            ("learner_identity_on", settings.learner_identity == "on"),
+            ("learner_privacy_on", settings.learner_privacy == "on"),
+            ("learner_planner_shadow", settings.learner_planner == "shadow"),
+            ("learner_planner_on", settings.learner_planner == "on"),
         )
         if active
     }
@@ -625,7 +630,30 @@ def _build_fields() -> dict:
         "v3_queue_setting": settings.v3_queue,
         "phase6_exit_passed": bool(package.flag_policy.phase6_exit_passed),
         "v3": _v3_fields(package),
+        **_phase8_fields(package),
     }
+
+
+def _phase8_fields(package) -> dict:
+    from app.core.phase8_settings import PHASE8_FLAGS
+    from app.db_models import LearnerAdaptationStop
+    from app.services.learner_record_metrics import snapshot
+
+    phase8 = {"phase8_exit_passed": package.raw.get("flag_policy", {}).get("phase8_exit_passed") is True}
+    for key in PHASE8_FLAGS:
+        phase8[f"{key}_setting"] = phase8[key] = getattr(settings, key)
+    if phase8["learner_planner"] != "off":
+        try:
+            with engine.connect() as connection:
+                stopped = connection.scalar(select(LearnerAdaptationStop.reason).where(
+                    LearnerAdaptationStop.control_id == "planner"
+                ))
+            if stopped is not None:
+                phase8["learner_planner"] = "off"
+        except DBAPIError:
+            phase8["learner_planner"] = "off"
+    phase8["learner_slis"] = snapshot() if settings.environment.lower() == "development" else {}
+    return phase8
 
 
 def _v3_mode(package) -> str:

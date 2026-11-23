@@ -232,3 +232,12 @@ The service events log on `qcai.v3`, the V2 track's on `qcai.tutor`, the worker'
 | Reviewer actions | security events `v3.queue_read`, `v3.scan_run`, `v3.item_read`, `v3.item_claimed`, `v3.item_adjudicated`, `v3.item_applied` and `v3.metrics_read` (on `qcai.security`; outcome success; `route` and the call's counts or item id, the actor role and the subject digest): counters |
 | Reviewer refusals | security event `authz.denied` (on `qcai.security`; outcome denied; `route`, `required` `role:reviewer`, or `reviewer_pool:D-18` outside development while D-18 is open, `provider`): a counter |
 | Security event `config.override` | the details name `v3_queue_shadow` (the V3 queue in shadow outside development) or `v3_queue_on` (refused outside development before the Phase 6 exit; a line means a package claiming the exit): an alert on any line |
+
+## Phase 8 SLIs: learner record and privacy
+
+`/ready` reports the settings and effective modes for the four learner switches and `phase8_exit_passed`. A shared adaptation stop makes the planner's effective mode off. The `learner_slis` counters are available in development only.
+
+- F-3 uses `learner.record.updated` with interaction start and commit time. Keep the production measure on the DI-305 evidence path until authorized.
+- `learner.sync.conflict` records the reason from version, counter, ownership, replay, and untrusted-write checks. `learner.harness.violation` records failed engineering invariants and the CLI exits with the stop status.
+- `learner.erasure` uses the security log for password refusal and committed deletion counts. Claim and export events carry digests and counts only. `analytics.consent_withheld` measures withheld events without recording their contents.
+- Outside development, `learner_sync_on`, `learner_identity_on`, `learner_privacy_on`, `learner_planner_shadow`, and `learner_planner_on` are recognized `config.override` details.

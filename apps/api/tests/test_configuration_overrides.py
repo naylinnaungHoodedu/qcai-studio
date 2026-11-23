@@ -91,7 +91,12 @@ PACKAGE_RELAXATIONS = {"config_package_path_overridden": {"is_default_path": Fal
 # still names it, should a build ever run with it, so it has its own case (built without validation).
 # Phase 5: MODEL_GATEWAY=on, refused outside development before the Phase 5 exit (and without V1_PIPELINE=enforce).
 # Phase 6: V3_QUEUE=on, refused outside development before the Phase 6 exit.
-REFUSED_RELAXATIONS = {"v1_pipeline_enforce": {"v1_pipeline": "enforce"}, "model_gateway_on": {"model_gateway": "on"}, "v3_queue_on": {"v3_queue": "on"}}
+REFUSED_RELAXATIONS = {
+    "v1_pipeline_enforce": {"v1_pipeline": "enforce"}, "model_gateway_on": {"model_gateway": "on"},
+    "v3_queue_on": {"v3_queue": "on"}, "learner_sync_on": {"learner_sync": "on"},
+    "learner_identity_on": {"learner_identity": "on"}, "learner_privacy_on": {"learner_privacy": "on"},
+    "learner_planner_shadow": {"learner_planner": "shadow"}, "learner_planner_on": {"learner_planner": "on"},
+}
 
 
 def _override_details(monkeypatch, settings: Settings, package=None) -> dict | None:

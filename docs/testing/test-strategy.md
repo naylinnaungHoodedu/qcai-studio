@@ -275,5 +275,12 @@ Phase 8 uses synthetic principals, local databases, and public engineering fixtu
 | `test_erasure_retention.py` | Metadata fixtures seed assessment references and distinguish stable bindings and credential retention from the guest study age rule. |
 | `test_malformed_input.py` | Both flag modes exercise invalid values, including the historical backend-specific nonfinite behavior and the guarded uniform rejection. |
 | `apps/frontend/tests/privacy-inventory.integration.test.ts` | The two inventory assertions explicitly identify AC-8-7 and continue to compare exactly the discovered keys and cookie names. |
+| `test_config_package.py` | Repoints v5's preserved contract checks and the shipped version and unsupported-schema checks across the v6 package chain. |
+| `test_configuration_overrides.py` | Adds one case for each Phase 8 override key and preserves the production-default check. |
+| `test_phase3_acceptance.py` | Traverses the Phase 8 migration before earlier downgrades and verifies that public readiness reads only the narrow stop controls. |
+| `test_phase4_acceptance.py` | Repoints the shipped-version and loader-tuple pins while preserving the fixture, schema, and code-text checks. |
+| `test_phase5_acceptance.py` | Reconciles the readiness SQL documentation with the separate Phase 8 stop read. |
+| `test_phase6_acceptance.py` | Preserves the V3 read and downgrade behavior while testing the shipped package and the successor revision. |
+| `test_response_ledger_migrations.py` | Verifies absolute upgrade and downgrade targets across the Phase 8 head while retaining the existing ledger refusal checks. |
 
 **Exit gate.** `phase8_exit_passed` stays false. See DI-300 for the main CI, owner decisions, and production evidence.
