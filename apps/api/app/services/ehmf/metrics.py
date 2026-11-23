@@ -2,7 +2,8 @@
 4.11, 10.4).
 
 Over the last window_records typed records (ledger-entry-v4), grouped by config_version: the per-type rate per 100 claims
-and per 100 responses (as exact "k/n" strings, never a float), the Type D disclosure share, the correction-cycle
+and per 100 responses (100*k/n as an exact reduced fraction string such as "50" or "100/3", never a float; null when the
+denominator is 0) with the counts k beside them, the Type D disclosure share (an exact "k/n"), the correction-cycle
 distribution, X2 emissions, set-changed refusals and detector-down records, the stop and the config_version in force.
 A typed claim is a claim entry or a dropped proposal (a response finding with a claim id, V1.2), as the stop counts it
 (stop._typed_counts); a response counts each type among its response findings, dropped proposals included.
@@ -14,6 +15,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import asdict
+from fractions import Fraction
 import json
 from typing import Any
 
@@ -27,6 +29,11 @@ EVIDENCE_CLASS = "telemetry, not E2 results (plan Phase 7 H: per-type rates are 
 
 def _share(numerator: int, denominator: int) -> str:
     return f"{numerator}/{denominator}"
+
+
+def _per_100(count: int, total: int) -> str | None:
+    """The rate per 100 as an exact reduced fraction string (100*count/total), or None when total is 0."""
+    return str(Fraction(100 * count, total)) if total else None
 
 
 def _empty() -> dict[str, Any]:
@@ -76,9 +83,12 @@ def slis(db: Session, package: Any, *, window_records: int = 1000, stop: Any = N
     by_version = {}
     for version, group in sorted(groups.items()):
         by_version[version] = {
-            "per_100_claims": {**{name: _share(group["claim_types"][name], group["claims"]) for name in FINDING_TYPES}, "claims": group["claims"]},
-            "per_100_responses": {**{name: _share(group["response_types"][name], group["responses"]) for name in FINDING_TYPES},
+            "per_100_claims": {**{name: _per_100(group["claim_types"][name], group["claims"]) for name in FINDING_TYPES},
+                               "claims": group["claims"]},
+            "per_100_responses": {**{name: _per_100(group["response_types"][name], group["responses"]) for name in FINDING_TYPES},
                                   "responses": group["responses"]},
+            "claim_type_counts": {name: group["claim_types"][name] for name in FINDING_TYPES},
+            "response_type_counts": {name: group["response_types"][name] for name in FINDING_TYPES},
             "type_d_disclosure_share": {"disclosed": group["disclosed"], "conflicts": group["conflicts"],
                                         "share": _share(group["disclosed"], group["conflicts"])},
             "correction_cycles": {key: group["cycles"][key] for key in ("0", "1", "2", "exhausted")},

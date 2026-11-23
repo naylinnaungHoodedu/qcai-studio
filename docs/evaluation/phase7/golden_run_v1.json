@@ -1,8 +1,8 @@
 {
  "report": "qcai-ehmf-golden-run",
  "format_version": 1,
- "created_at": "2026-11-23T19:18:13+00:00",
- "commit": "3cb627119b9045df4d551b39cc65fc24fcd0bd50",
+ "created_at": "2026-11-23T21:36:14+00:00",
+ "commit": "3df0dd9689c160f414237ee8a96902ebade1d8d4-dirty",
  "evidence_class": "change-control gate, not research results (plan Phase 7 H; 12.5)",
  "pins": {
   "config_package": {
@@ -535,7 +535,7 @@
    "apps/api/app/gateway/retired.py": "e5744df75d606a0d80cbf2ad51f13cbe9c6fd4684532df8ea917d83dc968b015",
    "apps/api/app/gateway/secrets.py": "a173c7fd21226b1e4d28d5abc1349986502be8e873a32bae0ec14ca350161f5e",
    "apps/api/app/gateway/tools.py": "391ad72fcfe11684811684d7d0e19134bf6a9f8ffac41edfb0af164928a460a4",
-   "apps/api/app/main.py": "7dceea4c0e2de372b06b94c7e1d1891f4f839d09e188559d29d3372fef960638",
+   "apps/api/app/main.py": "793476a23781753e4c10eebe53fc9b71cf1e80d81dd6e6d69daf264ba3231941",
    "apps/api/app/schemas.py": "dd4318765e3928f76aa533a77cfcc91678e84c7531f07875e057594a1cc94f4e",
    "apps/api/app/services/answer_history.py": "10b8e776d6149f453dfbe7ec8fe4d4219b6a45e5afc636327d9de29875a4a49f",
    "apps/api/app/services/arena_engine.py": "8cc33ed89b83803a7171d156e9d367b18eb0bb3820c5e2678e8e6195be30bd18",
@@ -549,9 +549,9 @@
    "apps/api/app/services/ehmf/classify.py": "05df39d211f363e1705db980c183ce6a07963ed03b14dd34afb0fa43d54d58fc",
    "apps/api/app/services/ehmf/conflicts.py": "9a2e26b6b7dad2d0bf2259a22e94ade814b05bee6f2d7637cb8ceff48ecac1ba",
    "apps/api/app/services/ehmf/correction.py": "7bcd135de5216643a05daa956366e6fb129d2572e250c29af2cb65101502145c",
-   "apps/api/app/services/ehmf/detectors.py": "7e5d3e38a1240ffb5dac7934bdc6adc4dfe405e5e2a82863294a4f6534ef0315",
-   "apps/api/app/services/ehmf/library.py": "0e59e2ca25face0b675517473fa6788f23cfb5854b58363a1e64a6be03bfdfdf",
-   "apps/api/app/services/ehmf/metrics.py": "1259708389ab6c555470b7ef44ec1cc22c49b76555d90f45a70579a7ef8729be",
+   "apps/api/app/services/ehmf/detectors.py": "5e107a762440000cac2322fb8e839f0f7e6df98bfe81b39ab1d7e2e3076a3227",
+   "apps/api/app/services/ehmf/library.py": "aac4cabddd18c10899a907e57937b8e59179f6ddfcf68a7fca01e0fc775971ea",
+   "apps/api/app/services/ehmf/metrics.py": "37d9cb82895c25cd5ca4f5130c01ac9bbe153fdf07ca976be038970870e31d89",
    "apps/api/app/services/ehmf/package_check.py": "2b40c64a3e5c1c287a7821f351adeac5f7ce5e9ccfa084f7a347e4cfea9a3add",
    "apps/api/app/services/ehmf/record.py": "fe848ac6ad533f7a262489e05f527aa2bd35a7e0fb1c892f4da37e94912773e2",
    "apps/api/app/services/ehmf/routing.py": "9ef0d00d92ed6295255f7ef6384d424fa2acf7554ca49afd4a1f5e8fd92bb4bd",
@@ -610,7 +610,7 @@
    "apps/api/app/services/v1_checks/package_check.py": "90fc427c8007a092a558b41a23d30412452587c99d27eacf40730667fac4ae63",
    "apps/api/app/services/v1_checks/results.py": "e8ee833e645c37bdae2cb573945fb660a22640db4ec2a37562cde3fd8483c5b2",
    "apps/api/app/services/v1_checks/rules.py": "cde0927e58dfb3ff624d305f9da45796cfd447bbc97eb1e77db50c3c363a66da",
-   "apps/api/app/services/v1_checks/runner.py": "06bab717068c45ca436890ee3813c037accad804d3c36dbe3eb4e0ae404192a8",
+   "apps/api/app/services/v1_checks/runner.py": "e48ada7180aa9f956bb2db69ad13385409a1c9fd358c0ba303f0f5fafe44f62c",
    "apps/api/app/services/v1_checks/v1_1_resolution.py": "75b723c7f0d7646b91a8d88a7fa097d33ec3b994d48ce0b0ed8b2389db5a7785",
    "apps/api/app/services/v1_checks/v1_2_binding.py": "f3e1160729b8d5ba088c3f852cab066b60af800266c3745d94ad73efd88d632b",
    "apps/api/app/services/v1_checks/v1_3_entailment.py": "56caccc59f98c2dcf2428f71c89d77a7790a75cd6d9f6efb0d20abbafcc7a637",
@@ -660,9 +660,9 @@
    "apps/api/app/workers/security_log.py": "0cc6510fe1ef2cc812a4d8fe609e02215e8b7dac2a4e5087e258d18502cacc1d",
    "apps/api/app/workers/seed_demo.py": "7b17f3d52dea863c46c6dd83436300afcea0a0f6bee87c94b8eb0ddb8ce3dea8",
    "apps/api/app/workers/v3_queue.py": "a51a17c0fe3962d01e207e5ac35e1fdd8e284fcb3c91c3534cae9070e2b16daf",
-   "scripts/run_golden_set.py": "074179f99b090551c767fb28a2120a4926912e9850373f5682c189e874fec679",
+   "scripts/run_golden_set.py": "bcfe93be124d1778e0a616ba221e58a557c590b3174839bcf45a405c86a5cd44",
    "scripts/run_v1_fixtures.py": "9b9d59106859db8251783ac8d6d963a8453d0b90cd8573f5461a903b1efb616e"
   },
-  "sha256": "c7708ec002a6254bcae314487dc3260ae462ff3e2346b62ed3eb422ce780af79"
+  "sha256": "f2c41d1b284c136d8ca24639d8ffaa5eb33d2cd3be4139d67b52263b0a83d716"
  }
 }

@@ -36,7 +36,8 @@ decision) and E-95 (the library holds public-corpus paraphrases, never licensed 
 
 - Development records carry per-finding types, so per-type rates, the Type D disclosure share and the correction-cycle
   distribution are measurable (`GET /v3/metrics`, `python -m app.workers.ehmf status`); `/ready` reports
-  `config_version` and static EHMF values only.
+  `config_version`, the static EHMF values and the cached stop state (`ehmf.stop.revert_required`, read at most once
+  every 60 s (`ehmf.stop.refresh_s`) per process and only when EHMF is not off), and no count or rate.
 - Any package, library, routing or golden-set change needs a golden-set run committed with it, or CI fails.
 - Production behaviour is unchanged until EHMF is enabled there after the Phase 7 exit (DI-111).
 

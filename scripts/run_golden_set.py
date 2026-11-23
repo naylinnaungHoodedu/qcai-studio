@@ -1,8 +1,8 @@
 """The EHMF golden-set gate (plan Phase 7 D task 6 "each change passes the Stage 11 golden-set gate", K AC-7-6; plan 12.5;
 Phase 7 spec 4.8; PD-47).
 
-Run: python scripts/run_golden_set.py --write docs/evaluation/phase7/golden_run_v1.json [--allow-dirty] [--package PATH]
-     python scripts/run_golden_set.py --check docs/evaluation/phase7/golden_run_v1.json [--package PATH]
+Run: python scripts/run_golden_set.py --write docs/evaluation/phase7/golden_run_v1.json [--allow-dirty] [--package PATH] [--history PATH]
+     python scripts/run_golden_set.py --check docs/evaluation/phase7/golden_run_v1.json [--package PATH] [--history PATH]
 
 The golden set (docs/evaluation/phase7/golden_set_v1.json, golden-set-v1) holds public-corpus or synthetic items only,
 disjoint from ULQS (R-25; anything under lqs/ is refused). The runner builds its own in-memory SQLite database (never the
@@ -18,15 +18,20 @@ the golden set; --check, in order:
   1. pins: any of the four differing from the record exits 6 (a package, library, routing or golden-set edit without a
      golden-set run: AC-7-6);
   2. the package's own pin: ehmf.golden_set.sha256 differing from the file exits 6;
-  3. a fresh run: an unmet expectation or an unresolved delivered citation exits 3 (13.9(a) "citation resolution 100%");
+  3. the package version history (docs/evaluation/phase7/package_versions.json, committed, append-only): the package's
+     package_version absent from it, or recorded there with a different sha256, exits 6 (a package edit that keeps its
+     package_version fails here whatever record file is checked);
+  4. a fresh run: an unmet expectation or an unresolved delivered citation exits 3 (13.9(a) "citation resolution 100%");
      outcomes or inputs differing from the record (created_at and commit aside) exit 1 (drift blocks promotion, 12.5).
---write refuses (exit 6) to replace a record whose configuration package has the same package_version and a different
-sha256: every package edit (a threshold, weight, routing, library or golden-set change re-pins the package) needs a new
-package_version, because config_version is the package version and the rising-A/B stop finds a change only where it
-differs (plan Phase 7 L; docs/architecture/ehmf-change-control.md).
+--write refuses (exit 6) a package whose package_version the history records with a different sha256, or that is new but
+not newer than the history's newest entry, and a package whose sha256 differs from the replaced record's under the same
+package_version; on a passing run it appends the package's (version, sha256) to the history when absent, then writes the
+record. Every package edit (a threshold, weight, routing, library or golden-set change re-pins the package) therefore
+needs a new package_version, because config_version is the package version and the rising-A/B stop finds a change only
+where it differs (plan Phase 7 L; docs/architecture/ehmf-change-control.md). A missing or malformed history exits 2.
 Exit codes: 0 pass; 1 drift; 2 usage or refusal; 3 an unmet expectation or an unresolved delivered citation; 4 a dirty
-tree on --write; 6 a pin mismatch, or on --write a package edit that keeps the recorded package_version. The record is
-a change-control gate, not research results (plan Phase 7 H; 12.5).
+tree on --write; 6 a pin mismatch, or a package edit that keeps its package_version. The record is a change-control
+gate, not research results (plan Phase 7 H; 12.5).
 """
 
 from __future__ import annotations
@@ -51,6 +56,8 @@ from app.core.config import Settings  # noqa: E402
 from app.core.config_package import DEFAULT_PACKAGE_PATH, canonical_sha256, load_config_package  # noqa: E402
 
 DEFAULT_RECORD = REPO_ROOT / "docs" / "evaluation" / "phase7" / "golden_run_v1.json"
+DEFAULT_HISTORY = REPO_ROOT / "docs" / "evaluation" / "phase7" / "package_versions.json"
+HISTORY_NAME = "qcai-config-package-versions"
 EVIDENCE_CLASS = "change-control gate, not research results (plan Phase 7 H; 12.5)"
 EXIT_OK, EXIT_DRIFT, EXIT_USAGE, EXIT_UNMET, EXIT_DIRTY, EXIT_PIN = 0, 1, 2, 3, 4, 6
 SELF = "scripts/run_golden_set.py"
@@ -281,6 +288,58 @@ def same_version_edit(record: dict, package) -> tuple[int, str] | None:
     return None
 
 
+def _version_key(version: str) -> tuple[int, ...]:
+    parts = str(version).split(".")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts):
+        raise ValueError(f"package_version {version!r} is not MAJOR.MINOR.PATCH")
+    return tuple(int(part) for part in parts)
+
+
+def load_history(path: Path) -> dict:
+    """The append-only package version history; ValueError when it is missing or malformed."""
+    try:
+        history = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"the package version history cannot be read: {exc}") from exc
+    if not isinstance(history, dict) or history.get("history") != HISTORY_NAME:
+        raise ValueError(f"the package version history is not {HISTORY_NAME}")
+    entries = history.get("entries")
+    if not isinstance(entries, list) or not all(
+            isinstance(entry, dict) and set(entry) == {"version", "sha256"} and isinstance(entry["sha256"], str)
+            and len(entry["sha256"]) == 64 for entry in entries):
+        raise ValueError("the package version history's entries are {version, sha256} objects")
+    keys = [_version_key(entry["version"]) for entry in entries]
+    if keys != sorted(set(keys)):
+        raise ValueError("the package version history lists each package_version once, oldest first")
+    return history
+
+
+def history_problem(history: dict, package) -> tuple[int, str] | None:
+    """A package whose package_version the history lacks, or records with a different sha256 (a same-version edit)."""
+    recorded = {entry["version"]: entry["sha256"] for entry in history["entries"]}
+    version = package.package_version
+    if version not in recorded:
+        return EXIT_PIN, (f"golden-set gate: package_version {version} is not in the package version history: rerun "
+                          "scripts/run_golden_set.py --write (it appends the version) and commit the history with the record")
+    if recorded[version] != package.sha256:
+        return EXIT_PIN, (f"golden-set gate: package_version {version} is recorded in the package version history with sha256 "
+                          f"{recorded[version]}, but the package's sha256 is {package.sha256}: bump package_version (config_version "
+                          "is the package version, and the rising-A/B stop sees a change only where it differs), then rehash and "
+                          "rerun --write")
+    return None
+
+
+def append_problem(history: dict, package) -> tuple[int, str] | None:
+    """--write's refusal: a recorded version with a different sha256, or a new version not newer than the newest entry."""
+    if package.package_version in {entry["version"] for entry in history["entries"]}:
+        return history_problem(history, package)
+    newest = history["entries"][-1]["version"] if history["entries"] else None
+    if newest is not None and _version_key(package.package_version) <= _version_key(newest):
+        return EXIT_PIN, (f"golden-set gate: package_version {package.package_version} is not newer than the newest recorded "
+                          f"package_version {newest}: the package version history is append-only")
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     """The CLI; the qcai loggers are quietened for the run and restored after it (an in-process call leaves no trace)."""
     logger = logging.getLogger("qcai")
@@ -298,6 +357,7 @@ def _main(argv: list[str] | None = None) -> int:
     mode.add_argument("--check", type=Path)
     parser.add_argument("--allow-dirty", action="store_true", help="--write from a working tree that differs from HEAD")
     parser.add_argument("--package", type=Path, default=DEFAULT_PACKAGE_PATH, help="the configuration package (default: the shipped v6)")
+    parser.add_argument("--history", type=Path, default=DEFAULT_HISTORY, help="the append-only package version history")
     try:
         args = parser.parse_args(argv)
     except SystemExit:
@@ -317,13 +377,22 @@ def _main(argv: list[str] | None = None) -> int:
     if package.ehmf is None:
         print("refused: the package has no ehmf block", file=sys.stderr)
         return EXIT_USAGE
+    try:
+        _refuse_lqs(args.history)
+        history = load_history(args.history)
+    except SystemExit as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+    except ValueError as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return EXIT_USAGE
     if args.check:
         try:
             committed = json.loads(args.check.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             print(f"refused: the golden run record cannot be read: {exc}", file=sys.stderr)
             return EXIT_USAGE
-        mismatch = check_pins(committed, package)
+        mismatch = check_pins(committed, package) or history_problem(history, package)
         if mismatch is not None:
             print(mismatch[1], file=sys.stderr)
             return mismatch[0]
@@ -336,12 +405,15 @@ def _main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError) as exc:
             print(f"refused: the golden run record cannot be read: {exc}", file=sys.stderr)
             return EXIT_USAGE
-        refusal = same_version_edit(previous, package) if isinstance(previous, dict) else None
+        refusal = (same_version_edit(previous, package) if isinstance(previous, dict) else None) or append_problem(history, package)
         if refusal is not None:
             print(refusal[1], file=sys.stderr)
             return refusal[0]
     fresh = _finish_inputs(compute(package_path=args.package))
     if args.write:
+        if fresh["result"] == "pass" and package.package_version not in {entry["version"] for entry in history["entries"]}:
+            history["entries"].append({"version": package.package_version, "sha256": package.sha256})
+            args.history.write_text(json.dumps(history, indent=1, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
         args.write.parent.mkdir(parents=True, exist_ok=True)
         args.write.write_text(json.dumps(fresh, indent=1, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
         print(f"wrote {args.write}: result {fresh['result']}; {len(fresh['outcomes'])} items; citations {fresh['citation_resolution']['share']}")

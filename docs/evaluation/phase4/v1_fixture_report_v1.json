@@ -1,8 +1,8 @@
 {
  "report": "qcai-v1-fixture-report",
  "format_version": 1,
- "created_at": "2026-11-23T19:20:07+00:00",
- "commit": "3cb627119b9045df4d551b39cc65fc24fcd0bd50-dirty",
+ "created_at": "2026-11-23T21:37:30+00:00",
+ "commit": "3df0dd9689c160f414237ee8a96902ebade1d8d4-dirty",
  "evidence_class": "fixture measurements, not research results (plan Phase 4 H)",
  "public_corpus_only": true,
  "fixtures": {
@@ -1258,7 +1258,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 4.37,
+    "p95_ms": 5.642,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2485,7 +2485,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 3.142,
+    "p95_ms": 5.653,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2539,7 +2539,7 @@
   "contained": true
  },
  "latency": {
-  "p95_ms": 3.222,
+  "p95_ms": 5.135,
   "budget_ms": 250,
   "within_budget": true
  },
@@ -2573,8 +2573,8 @@
    "apps/api/app/services/content_assembler.py": "f7ac4499fe077f3b540323eceff37de5a80e59fabc510ddaec93e688458914fa",
    "apps/api/app/services/docx_parser.py": "c0b549050d0381f0bf14a26052fa66d082e9d470ca284b35e9529ed872274bd1",
    "apps/api/app/services/ehmf/__init__.py": "e82e8b2e8fdc9423bc7d1deb3cf12aeadd002ae24a20a560975ecd7f29c940bd",
-   "apps/api/app/services/ehmf/detectors.py": "7e5d3e38a1240ffb5dac7934bdc6adc4dfe405e5e2a82863294a4f6534ef0315",
-   "apps/api/app/services/ehmf/library.py": "0e59e2ca25face0b675517473fa6788f23cfb5854b58363a1e64a6be03bfdfdf",
+   "apps/api/app/services/ehmf/detectors.py": "5e107a762440000cac2322fb8e839f0f7e6df98bfe81b39ab1d7e2e3076a3227",
+   "apps/api/app/services/ehmf/library.py": "aac4cabddd18c10899a907e57937b8e59179f6ddfcf68a7fca01e0fc775971ea",
    "apps/api/app/services/ehmf/routing.py": "9ef0d00d92ed6295255f7ef6384d424fa2acf7554ca49afd4a1f5e8fd92bb4bd",
    "apps/api/app/services/ehmf/vocabulary.py": "66325cd0a261e5ad7163cc96b33068d38b1ab86def36c70758ec5959c265b89e",
    "apps/api/app/services/ledger.py": "bee94a1cc0042b07d8c5a81978c4378acdad2e679b1d68d583dbaf792fef564c",
@@ -2607,7 +2607,7 @@
    "apps/api/app/services/v1_checks/package_check.py": "90fc427c8007a092a558b41a23d30412452587c99d27eacf40730667fac4ae63",
    "apps/api/app/services/v1_checks/results.py": "e8ee833e645c37bdae2cb573945fb660a22640db4ec2a37562cde3fd8483c5b2",
    "apps/api/app/services/v1_checks/rules.py": "cde0927e58dfb3ff624d305f9da45796cfd447bbc97eb1e77db50c3c363a66da",
-   "apps/api/app/services/v1_checks/runner.py": "06bab717068c45ca436890ee3813c037accad804d3c36dbe3eb4e0ae404192a8",
+   "apps/api/app/services/v1_checks/runner.py": "e48ada7180aa9f956bb2db69ad13385409a1c9fd358c0ba303f0f5fafe44f62c",
    "apps/api/app/services/v1_checks/v1_1_resolution.py": "75b723c7f0d7646b91a8d88a7fa097d33ec3b994d48ce0b0ed8b2389db5a7785",
    "apps/api/app/services/v1_checks/v1_2_binding.py": "f3e1160729b8d5ba088c3f852cab066b60af800266c3745d94ad73efd88d632b",
    "apps/api/app/services/v1_checks/v1_3_entailment.py": "56caccc59f98c2dcf2428f71c89d77a7790a75cd6d9f6efb0d20abbafcc7a637",
@@ -2626,6 +2626,6 @@
    "apps/api/app/services/v3/rules.py": "bcc960dc344571871449d9724130ec0f4532cc8b87d973ffa699d806473e53c2",
    "scripts/run_v1_fixtures.py": "9b9d59106859db8251783ac8d6d963a8453d0b90cd8573f5461a903b1efb616e"
   },
-  "sha256": "b9083ea9c3beedc564e456dc0fbf55477820394defb3270297a7d5b18d706cae"
+  "sha256": "b87eec4a77d1dbd37b540edaef1024f0fa8b9d83088729b64d4bbff29f62dfa7"
  }
 }

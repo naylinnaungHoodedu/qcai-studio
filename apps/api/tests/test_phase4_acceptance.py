@@ -1346,7 +1346,7 @@ def test_phase4_docs_the_phase3_spec_states_what_phase4_changed():
     from app.core.config_package import EHMF_SCHEMA_VERSION, ConfigPackageError, parse_config_package
 
     source = (API_ROOT / "app" / "core" / "config_package.py").read_text(encoding="utf-8")
-    assert "1 <= schema_version <= EHMF_SCHEMA_VERSION" in source and EHMF_SCHEMA_VERSION == 6
+    assert "1 <= schema_version <= EHMF_SCHEMA_VERSION" in source and EHMF_SCHEMA_VERSION == PACKAGE.raw["schema_version"]
     for refused_version in (0, EHMF_SCHEMA_VERSION + 1, True):
         with pytest.raises(ConfigPackageError, match="schema_version"):
             parse_config_package({**PACKAGE.raw, "schema_version": refused_version}, path=PACKAGE.path, sha256="", hash_verified=False)

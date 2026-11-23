@@ -13,7 +13,7 @@ from collections.abc import Callable
 from typing import TypeVar
 
 T = TypeVar("T")
-DETECTORS = ("V1.1", "V1.2", "V1.3", "V1.4", "V1.6", "V1.7", "V1.8", "V1.9", "V2", "alignment")
+DETECTORS = ("V1.1", "V1.2", "V1.3", "V1.4", "V1.5", "V1.6", "V1.7", "V1.8", "V1.9", "V2", "alignment")
 
 
 class DetectorDown(RuntimeError):

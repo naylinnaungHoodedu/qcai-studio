@@ -14,18 +14,27 @@ drift blocks promotion"). PD-47.
 - the golden set (`docs/evaluation/phase7/golden_set_v1.json`, `golden-set-v1`, 40 public-corpus or synthetic items,
   disjoint from ULQS).
 
+Beside it, `docs/evaluation/phase7/package_versions.json` is the package version history: one `{version, sha256}` entry
+per `package_version` of a package with an ehmf block, oldest first, append-only (a recorded sha256 never changes).
+
 CI runs `python scripts/run_golden_set.py --check docs/evaluation/phase7/golden_run_v1.json`:
 
 1. any pinned sha256 differing from the record exits 6 (a change without a golden-set run);
 2. the package's own `ehmf.golden_set.sha256` differing from the file exits 6;
-3. a fresh run: an unmet expectation, or a delivered citation that does not resolve (13.9(a): 100%), exits 3; outcomes or
+3. the package's `package_version` absent from the version history, or recorded there with a different sha256, exits 6:
+   a package edit that keeps its version fails here whatever record file is checked (deleting the committed record and
+   writing a fresh one, or writing one elsewhere and copying it over, does not get past it);
+4. a fresh run: an unmet expectation, or a delivered citation that does not resolve (13.9(a): 100%), exits 3; outcomes or
    inputs differing from the record exit 1 (drift blocks promotion).
 
-`--write` refuses (exit 6) to replace a record whose package has the same `package_version` and a different sha256: a
-record's `config_version` is its package version, and the rising-A/B stop (plan Phase 7 L) finds a change only where
-`config_version` differs between records, so an edit that kept the version could never be compared before and after.
+A missing or malformed history exits 2. `--write` refuses (exit 6) a package whose sha256 differs from the replaced
+record's under the same `package_version`, a package whose version the history records with another sha256, and a new
+version that is not newer than the history's newest entry; on a passing run it appends the package's version and sha256
+to the history, then writes the record. A record's `config_version` is its package version, and the rising-A/B stop
+(plan Phase 7 L) finds a change only where `config_version` differs between records, so an edit that kept the version
+could never be compared before and after.
 
-`--write` refuses (exit 4) a working tree that differs from HEAD unless `--allow-dirty` is passed. The record is committed in the same change as the code it covers, so it is written before that commit exists: run `--write` with `--allow-dirty` on the finished change, and the record's `commit` names the parent commit with the suffix `-dirty` (the tree it ran on differed from that commit). The code it ran is identified by `inputs.sha256` (every application module and the two runner scripts, LF-normalised), which `--check` compares with a fresh run. On a tree equal to HEAD (a record rewritten after its code was committed) `commit` is that commit, with no suffix.
+`--write` has two modes. It refuses (exit 4) a working tree that differs from HEAD unless `--allow-dirty` is passed. With `--allow-dirty` on the finished change, the record is written before its own commit exists and committed in the same commit as the code it covers; its `commit` names the parent commit with the suffix `-dirty` (the tree it ran on differed from that commit). On a tree equal to HEAD (the record written after its code was committed, and committed in a later commit) `commit` is that commit, with no suffix. Either way the code it ran is identified by `inputs.sha256` (every application module and the two runner scripts, LF-normalised), which `--check` compares with a fresh run. The committed record was written the `--allow-dirty` way, on the finished review-3 change, and names `3df0dd9` with `-dirty`.
 
 The run uses its own in-memory database, the all-public-approved store, development settings (V1 enforce,
 MODEL_GATEWAY=on, EHMF=on) and the development fake adapters. It is a change-control gate, not research results.
@@ -34,11 +43,15 @@ MODEL_GATEWAY=on, EHMF=on) and the development fake adapters. It is a change-con
 
 1. Edit the package, the library, the routing, a weight, the golden set or a threshold, and bump the package's
    `package_version` (every one of these edits changes the package's sha256: the library, routing and golden set are
-   pinned in it). The version is the record's `config_version`; `--write` refuses an edit that keeps it (exit 6).
+   pinned in it). The version is the record's `config_version`; `--write` and `--check` refuse an edit that keeps it
+   (exit 6).
 2. Rerun the golden set: `python scripts/config_package.py --rehash` (when the package or the library changed), then
    `python scripts/run_golden_set.py --write docs/evaluation/phase7/golden_run_v1.json --allow-dirty` on the finished
-   change (the record names the parent commit with `-dirty`; its `inputs.sha256` identifies the code).
-3. Commit the new record in the same commit or pull request as the change.
+   change (the record names the parent commit with `-dirty`), or `--write` without `--allow-dirty` once the change is
+   committed (the record names that commit); its `inputs.sha256` identifies the code. `--write` appends the new version
+   to `docs/evaluation/phase7/package_versions.json`.
+3. Commit the new record and the history in the same commit or pull request as the change. Never edit or remove a
+   history entry: the history is append-only.
 4. CI is green (`--check`, and every other validator).
 5. The pull request review approves. With one maintainer the approver is the owner (P1-D-18); "the X6 auditor MUST NOT
    audit their own change" stays DI-99.
@@ -46,8 +59,10 @@ MODEL_GATEWAY=on, EHMF=on) and the development fake adapters. It is a change-con
 ## Rollback
 
 "Reload the prior package" (plan Phase 7 L): a stop only follows a change between two packages with an ehmf block
-(6.x to 6.y), so the prior package is the earlier 6.x file the stop names in `from_config_version`: set
-`CONFIG_PACKAGE_PATH` to it, or deploy the prior image digest. With it in force the stop state reads `reverted` and
+(6.x to 6.y), so the prior package is the earlier 6.x package the stop names in `from_config_version`. The procedure
+edits the package in place (the tree and the image hold only the current 6.x file), so the prior package is the one in
+the prior image: deploy the prior image digest. `/ready` then reports its `config_package_version` and
+`config_package_sha256`, which the version history records for that version. With it in force the stop state reads `reverted` and
 `/ready` reports `ehmf.stop.revert_required` false. Reloading v5 (readable for one release, DI-112; no ehmf block) is
 not a revert of the stop: it turns EHMF off (`/ready` `ehmf` null, no stop read). Record the stops first
 (`python -m app.workers.ehmf status`; under a package without an ehmf block it logs `ehmf.status_refused` with the rows
@@ -85,12 +100,21 @@ merges `main` and renumbers before its pull request (Phase 7 spec 0.1, E16):
    `scripts/config_package.py` compares with it) and `app.services.ehmf.vocabulary.EHMF_FIRST_MAJOR` (the first major
    whose records read as their own `config_version`); set `ehmf.config_version.first_package` to `7.0.0`, and point
    `DEFAULT_PACKAGE_PATH` at the new file.
-3. Alembic: set `down_revision` of `apps/api/alembic/versions/20261123_phase7_ehmf.py` to the head now on `main`,
-   update `ledger.SCHEMA_REVISION` and the single-head and rollback tests, and run the suite on SQLite and on PostgreSQL
-   under psycopg and pg8000.
-4. Run `python scripts/config_package.py --rehash`, then rewrite the records: the golden run
+3. Alembic: set `down_revision` of `apps/api/alembic/versions/20261123_phase7_ehmf.py` to the head now on `main` and
+   update the single-head and rollback tests that name the parent, and run the suite on SQLite and on PostgreSQL under
+   psycopg and pg8000. `ledger.SCHEMA_REVISION` names this revision's own id, so it is unchanged unless the revision id
+   itself is renamed.
+4. Run `python scripts/config_package.py --rehash`. The version history's entries have not reached `main`, so replace
+   its `6.0.0` entry with the renumbered version (`7.0.0` and the new sha256) in this one step; after the merge it is
+   append-only. Then rewrite the records: the golden run
    (`python scripts/run_golden_set.py --write docs/evaluation/phase7/golden_run_v1.json --allow-dirty`) and the
    fixture, replay and residual reports with their own scripts.
 5. Edit every text naming v6 or 6.0.0 for Phase 7 (this document, the Phase 7 spec, ADR-010, the runbooks, the test
-   strategy, the env example). Tests read the shipped version from the package (`ehmf_fakes.SHIPPED_VERSION`,
-   `NEXT_PATCH`, `NEXT_MINOR`), so no test literal changes except the doc tests that quote file names.
+   strategy, the env example, and the Phase 3 and Phase 4 specs' "since Phase 7" lines). Test code reads the shipped
+   version and schema from the package and the constants (`ehmf_fakes.SHIPPED_VERSION`, `NEXT_PATCH`, `NEXT_MINOR`,
+   `EHMF_SCHEMA_VERSION`, the package's `schema_version`). The doc tests that quote that prose change with it: in
+   `test_phase4_acceptance.py`, `test_phase4_docs_the_phase3_spec_states_what_phase4_changed` ("v6 since Phase 7",
+   "for Phase 7's v6", "6 since Phase 7") and `test_phase4_docs_the_code_texts_name_the_shipped_package` ("v6 since
+   Phase 7", the `v6` path key); in `test_phase6_acceptance.py`, `test_phase6_docs_the_texts_phase6_made_false_state_the_current_code`
+   ("6 since Phase 7", "`.../v6.json` with Phase 7", "`v6.json` with Phase 7"); and the Phase 7 doc tests that quote
+   file names. Comments naming v6 (for example in `test_config_package.py`) are edited with the text.

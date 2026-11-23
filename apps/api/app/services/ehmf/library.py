@@ -153,10 +153,10 @@ def read_library_file(path: Path, *, expected_sha256: str, shipped: bool, store:
     return LibraryFile(version=raw["version"], sha256=digest, entries=entries, raw=raw), []
 
 
-def proposals_from_gold(db: Any, *, store: Any = None) -> list[dict]:
-    """One proposal per Type C claim label of an applied item's final gold row (spec 4.5): the claim id, its span ids and
-    its text only when every span is public and quotable in the given store (else null; the gold row holds no claim text,
-    only its hash, so the text is read from the corpus). A proposal is never applied here."""
+def proposals_from_gold(db: Any) -> list[dict]:
+    """One proposal per Type C claim label of an applied item's final gold row (spec 4.5): its source v3:<record_hash>, the
+    claim id and its span ids. claim_text is always null (spec conflict 27): the gold row holds only the claim's hash, and
+    the Content Owner writes the entry's paraphrase. A proposal is never applied here."""
     from sqlalchemy import select
 
     from app.db_models import V3GoldLabelRecord, V3QueueItem

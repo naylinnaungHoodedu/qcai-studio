@@ -6,6 +6,7 @@ package copies and the committed records; nothing is written into the checkout.
 from __future__ import annotations
 
 import ast
+from fractions import Fraction
 import json
 import logging
 from pathlib import Path
@@ -359,6 +360,59 @@ def test_ac_7_6_a_package_edit_that_keeps_its_version_is_refused_at_write(tmp_pa
     assert golden.same_version_edit(committed, bumped) is None
 
 
+def test_ac_7_6_a_same_version_edit_fails_the_ci_check_whatever_record_is_checked(tmp_path, capsys):
+    # The committed package version history (append-only) pins each package_version's sha256, and --check (the CI step)
+    # verifies it: a record re-written for an edited package that keeps its package_version (the committed record deleted
+    # first, or written to a new path and copied over) still exits 6, and --write to a fresh path is refused too.
+    golden = scripts_module("run_golden_set")
+    edited_path = package_copy(tmp_path / "a", lambda raw: raw["ehmf"]["stop"].update(window_claims=201))
+    edited = load_config_package(edited_path, governed=False)
+    assert edited.package_version == PACKAGE.package_version and edited.sha256 != PACKAGE.sha256
+    fresh = json.loads(RECORD.read_text(encoding="utf-8"))
+    fresh["pins"] = golden.pins(edited)
+    assert golden.check_pins(fresh, edited) is None
+    fresh_path = tmp_path / "fresh.json"
+    fresh_path.write_text(json.dumps(fresh), encoding="utf-8")
+    assert golden.main(["--check", str(fresh_path), "--package", str(edited_path)]) == golden.EXIT_PIN
+    assert "recorded in the package version history" in capsys.readouterr().err
+    history = tmp_path / "history.json"
+    history.write_bytes(golden.DEFAULT_HISTORY.read_bytes())
+    target = tmp_path / "new.json"
+    assert golden.main(["--write", str(target), "--package", str(edited_path), "--history", str(history), "--allow-dirty"]) == golden.EXIT_PIN
+    assert "recorded in the package version history" in capsys.readouterr().err
+    assert not target.exists() and history.read_bytes() == golden.DEFAULT_HISTORY.read_bytes()
+    # The CI step reads the committed history, which records the shipped package.
+    assert golden.DEFAULT_HISTORY == REPO_ROOT / "docs" / "evaluation" / "phase7" / "package_versions.json"
+    entries = golden.load_history(golden.DEFAULT_HISTORY)["entries"]
+    assert {"version": PACKAGE.package_version, "sha256": PACKAGE.sha256} in entries
+    # A version the history lacks, a new version not newer than the newest entry, and a missing or malformed history.
+    bumped = load_config_package(package_copy(tmp_path / "b", lambda raw: (raw["ehmf"]["stop"].update(window_claims=201),
+                                                                           raw.update(package_version=NEXT_PATCH))), governed=False)
+    recorded = golden.load_history(golden.DEFAULT_HISTORY)
+    assert golden.history_problem(recorded, bumped)[0] == golden.EXIT_PIN and golden.append_problem(recorded, bumped) is None
+    ahead = {**recorded, "entries": [*recorded["entries"], {"version": NEXT_MINOR, "sha256": "0" * 64}]}
+    assert "not newer" in golden.append_problem(ahead, bumped)[1]
+    assert golden.main(["--check", str(RECORD), "--history", str(tmp_path / "absent.json")]) == golden.EXIT_USAGE
+    duplicated = {**recorded, "entries": recorded["entries"] * 2}
+    history.write_text(json.dumps(duplicated), encoding="utf-8")
+    assert golden.main(["--check", str(RECORD), "--history", str(history)]) == golden.EXIT_USAGE
+    assert "each package_version once" in capsys.readouterr().err
+
+
+def test_ac_7_6_write_appends_a_new_package_version_to_the_history(tmp_path):
+    golden = scripts_module("run_golden_set")
+    bumped_path = package_copy(tmp_path / "a", lambda raw: raw.update(package_version=NEXT_PATCH))
+    bumped = load_config_package(bumped_path, governed=False)
+    history = tmp_path / "history.json"
+    history.write_bytes(golden.DEFAULT_HISTORY.read_bytes())
+    target = tmp_path / "run.json"
+    assert golden.main(["--write", str(target), "--package", str(bumped_path), "--history", str(history), "--allow-dirty"]) == golden.EXIT_OK
+    entries = golden.load_history(history)["entries"]
+    assert entries[:-1] == golden.load_history(golden.DEFAULT_HISTORY)["entries"]
+    assert entries[-1] == {"version": NEXT_PATCH, "sha256": bumped.sha256}
+    assert json.loads(target.read_text(encoding="utf-8"))["pins"]["config_package"] == {"version": NEXT_PATCH, "sha256": bumped.sha256}
+
+
 def test_plan_j_fixtures_per_type_are_typed_as_the_routing_table_says():
     # Plan J "Fixtures per type (negation, invented citation, analogy, conflict, leakage)": the analogy fixture is the
     # golden set's misconception class (Type C, a V1.8 library match; spec section 1, resolution 28).
@@ -375,8 +429,18 @@ def test_plan_j_fixtures_per_type_are_typed_as_the_routing_table_says():
     assert record["result"] == "pass"
 
 
-@pytest.mark.parametrize("detector", ["V1.1", "V1.2", "V1.4", "V1.6", "V1.7", "V1.8", "V1.9", "V2", "alignment"])
+DETECTOR_CASES = ("V1.1", "V1.2", "V1.3", "V1.4", "V1.5", "V1.6", "V1.7", "V1.8", "V1.9", "V2", "alignment")
+
+
+def test_plan_j_every_guarded_detector_has_a_detector_down_case():
+    from app.services.ehmf.detectors import DETECTORS
+
+    assert DETECTOR_CASES == DETECTORS
+
+
+@pytest.mark.parametrize("detector", DETECTOR_CASES)
 def test_plan_j_detector_down_withholds_the_claim(detector, monkeypatch, caplog):
+    # Every name in ehmf.detectors.DETECTORS is exercised (the test above pins DETECTOR_CASES to it).
     # V1.4's detector is the post-render subset checker (pipeline.check_subset, guarded through V1Track._subset_check);
     # V1.4, V1.6 and V1.9 run in the post-render hook, whose DetectorDown must leave the render loop (never a render fault).
     from app.services.tutor_pipeline import pipeline
@@ -391,6 +455,10 @@ def test_plan_j_detector_down_withholds_the_claim(detector, monkeypatch, caplog)
         monkeypatch.setattr(runner, "check_v1_1", boom)
     elif detector == "V1.2":
         monkeypatch.setattr(runner, "check_v1_2", boom)
+    elif detector == "V1.3":
+        monkeypatch.setattr(runner, "check_v1_3", boom)   # a fault in check_v1_3 itself, outside the checker call
+    elif detector == "V1.5":
+        monkeypatch.setattr(runner, "check_v1_5", boom)
     elif detector == "V1.4":
         monkeypatch.setattr(pipeline, "check_subset", boom)
     elif detector == "V1.6":
@@ -602,9 +670,12 @@ def test_plan_i_per_type_rates_disclosure_share_and_correction_cycles():
         with factory() as db:
             body = slis(db, PACKAGE)
     group = body["by_config_version"][SHIPPED]
-    assert group["per_100_responses"]["B1"] == "1/2" and group["per_100_responses"]["responses"] == 2
+    # per_100_* hold the rate per 100 (100*k/n as an exact fraction), with the counts k beside them.
+    assert group["per_100_responses"]["B1"] == "50" and group["per_100_responses"]["responses"] == 2
+    assert group["response_type_counts"]["B1"] == 1
     claims = group["per_100_claims"]["claims"]
-    assert claims >= 1 and group["per_100_claims"]["A"].endswith(f"/{claims}")
+    count = group["claim_type_counts"]["A"]
+    assert claims >= 1 and count >= 1 and group["per_100_claims"]["A"] == str(Fraction(100 * count, claims))
     assert group["correction_cycles"]["exhausted"] == 1 and group["x2_emissions"] >= 1
     assert body["evidence_class"] == EVIDENCE_CLASS and body["config_version"] == SHIPPED
     assert group["type_d_disclosure_share"] == {"disclosed": 0, "conflicts": 0, "share": "0/0"}
@@ -636,8 +707,9 @@ def test_plan_i_a_dropped_proposal_is_a_typed_claim_in_the_per_type_rates_as_the
         append_all(factory, [entry])
         with factory() as db:
             group = slis(db, PACKAGE)["by_config_version"][SHIPPED]
-    assert group["per_100_claims"]["claims"] == claims and group["per_100_claims"]["A"] == f"1/{claims}"
-    assert group["per_100_responses"]["A"] == "1/1"
+    assert group["per_100_claims"]["claims"] == claims and group["per_100_claims"]["A"] == str(Fraction(100, claims))
+    assert group["claim_type_counts"]["A"] == 1 and group["per_100_responses"]["A"] == "100"
+    assert group["per_100_claims"]["B1"] == "0" and group["response_type_counts"]["B1"] == 0
 
 
 def test_plan_i_an_unreadable_stop_table_leaves_the_v3_slis_and_the_status_worker_working(fresh_database_url, monkeypatch, caplog):
@@ -852,6 +924,29 @@ def test_plan_l_ehmf_defaults_and_refusals():
     assert PACKAGE.raw["flag_policy"]["ehmf"]["default_elsewhere"] == EHMF_DEFAULT_ELSEWHERE
     source = (API_ROOT / "app" / "main.py").read_text(encoding="utf-8")
     assert '("ehmf_shadow", settings.ehmf == "shadow")' in source and '("ehmf_on", settings.ehmf == "on")' in source
+
+
+
+def test_plan_l_a_package_problem_stops_a_production_start_up_only_under_the_recorded_shadow_override(monkeypatch):
+    # Outside development the default (EHMF off) never stops a start-up: EHMF is reported unavailable. The recorded
+    # EHMF=shadow override (config.override ehmf_shadow) asks for EHMF, so a governed start-up with a package problem stops.
+    import inspect
+
+    from app import main
+    from app.services.ehmf import package_check
+
+    monkeypatch.setattr(package_check, "check_ehmf_package", lambda package, structural=False: ["a seeded ehmf problem"])
+    production = {"environment": "production", "allowed_origins": ["https://qantumlearn.academy"]}
+    monkeypatch.setattr(main, "settings", Settings(**production))
+    assert main.settings.enforce_corpus_governance and main.settings.ehmf == "off"
+    main._check_ehmf_package(PACKAGE)
+    assert ehmf.EHMF_UNAVAILABLE_REASON == "a seeded ehmf problem"
+    monkeypatch.setattr(main, "settings", Settings(**production, ehmf="shadow"))
+    with pytest.raises(ConfigPackageError, match="a seeded ehmf problem"):
+        main._check_ehmf_package(PACKAGE)
+    doc = " ".join(inspect.getdoc(main._check_ehmf_package).split())
+    assert "never stops a production start-up" not in doc
+    assert "the default (EHMF off) never stops a start-up" in doc and "a recorded EHMF=shadow override" in doc
 
 
 # ===================================================================================================== task 5
@@ -1162,6 +1257,42 @@ def test_phase7_docs_quote_the_plan_and_state_the_current_rules():
     renumbering = control.split("## Renumbering the Phase 7 package", 1)[1]
     for name in ("EHMF_SCHEMA_VERSION", "EHMF_FIRST_MAJOR", "first_package", "down_revision", "supersedes", "--rehash", "--write"):
         assert name in renumbering, name
+
+
+def test_phase7_docs_name_every_modified_file_and_the_ready_stop_read():
+    spec = SPEC_PATH.read_text(encoding="utf-8")
+    modified = spec.split("### 7.3 MOD", 1)[1].split("### 7.4", 1)[0]
+    for name in ("`api/routes/v3.py`", "`workers/v3_queue.py`", "`services/tutor_followups.py`", "`services/tutor_pipeline/__init__.py`",
+                 "the Phase 3, 4, 5 and 6 specs", "`docs/architecture/v3-trigger-registry.md`"):
+        assert name in modified, name
+    assert "`app/workers/v3_queue.py` are unchanged" not in modified and "`app/api/routes/ledger.py` is unchanged." in modified
+    texts = spec.split("### 7.4", 1)[1].split("## 8.", 1)[0]
+    assert "The Phase 3 spec names" in texts and "the Phase 4 spec names" in texts and "`x-triggers-v2` (package v6)" in texts
+    m17 = next(line for line in spec.splitlines() if line.startswith("- **M17. Registers.**"))
+    assert "DI-104..DI-114" in m17
+    detector = next(line for line in spec.splitlines() if line.startswith("- **R-c. Detector.**"))
+    assert "V1.5's sufficiency check" in detector
+    change = spec.split("### 4.8", 1)[1].split("### 4.9", 1)[0]
+    assert "so it is written with `--allow-dirty` and its `commit` names the parent commit" not in change
+    for phrase in ("package_versions.json", "`history_problem`", "Two write modes", "on a tree equal to HEAD", "prior image digest"):
+        assert phrase in change, phrase
+    # /ready carries the cached stop state, not only static values (ADR-010, the observability runbook).
+    adr = " ".join((REPO_ROOT / "docs" / "adr" / "ADR-010-ehmf-operationalization.md").read_text(encoding="utf-8").split())
+    observability = (REPO_ROOT / "infra" / "cloudrun" / "observability.md").read_text(encoding="utf-8")
+    for text in (adr, observability):
+        assert "static EHMF values only" not in text and "`ehmf.stop.revert_required`" in text
+    # The change-control doc: the history, both write modes, the image-digest rollback, the renumbering steps that change tests.
+    control = (REPO_ROOT / "docs" / "architecture" / "ehmf-change-control.md").read_text(encoding="utf-8")
+    runbook = (REPO_ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8")
+    for text in (control, runbook):
+        assert "set `CONFIG_PACKAGE_PATH` to it" not in text and "deploy the prior image digest" in text and "package_versions.json" in text
+    renumbering = control.split("## Renumbering the Phase 7 package", 1)[1]
+    assert "so no test literal changes except the doc tests that quote file names" not in renumbering
+    assert "`ledger.SCHEMA_REVISION` names this revision's own id, so it is unchanged" in renumbering
+    for test in ("test_phase4_docs_the_phase3_spec_states_what_phase4_changed", "test_phase4_docs_the_code_texts_name_the_shipped_package",
+                 "test_phase6_docs_the_texts_phase6_made_false_state_the_current_code"):
+        assert test in renumbering, test
+    assert "`--write` has two modes." in control and "with no suffix" in control
 
 
 def test_phase7_docs_the_test_strategy_maps_every_test_module_the_phase_added():

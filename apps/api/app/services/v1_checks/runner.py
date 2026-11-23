@@ -324,7 +324,7 @@ class V1Track:
         v1 = self.v1
         pipeline = self.pipeline
         results = state.results
-        sufficiency = check_v1_5(bundle.sufficiency, x4_margin=v1.x4_margin[bundle.sufficiency.gate])
+        sufficiency = self._guard("V1.5", check_v1_5, bundle.sufficiency, x4_margin=v1.x4_margin[bundle.sufficiency.gate])
         results.append(sufficiency)
         if sufficiency.outcome == "abstain":
             return V1Abstained(results=tuple(results), generation_attempts=0, render_attempts=0, abstention_reason=bundle.sufficiency.reason)

@@ -1,8 +1,8 @@
 {
  "report": "qcai-v3-residual-report",
  "format_version": 1,
- "created_at": "2026-11-23T19:21:14+00:00",
- "commit": "3cb627119b9045df4d551b39cc65fc24fcd0bd50-dirty",
+ "created_at": "2026-11-23T21:36:50+00:00",
+ "commit": "3df0dd9689c160f414237ee8a96902ebade1d8d4-dirty",
  "evidence_class": "synthetic telemetry, not research results (plan Phase 6 H: audit counts are telemetry, not research results)",
  "public_corpus_only": true,
  "config_package": {
@@ -115,7 +115,7 @@
    "apps/api/app/services/content_assembler.py": "f7ac4499fe077f3b540323eceff37de5a80e59fabc510ddaec93e688458914fa",
    "apps/api/app/services/docx_parser.py": "c0b549050d0381f0bf14a26052fa66d082e9d470ca284b35e9529ed872274bd1",
    "apps/api/app/services/ehmf/__init__.py": "e82e8b2e8fdc9423bc7d1deb3cf12aeadd002ae24a20a560975ecd7f29c940bd",
-   "apps/api/app/services/ehmf/library.py": "0e59e2ca25face0b675517473fa6788f23cfb5854b58363a1e64a6be03bfdfdf",
+   "apps/api/app/services/ehmf/library.py": "aac4cabddd18c10899a907e57937b8e59179f6ddfcf68a7fca01e0fc775971ea",
    "apps/api/app/services/ehmf/routing.py": "9ef0d00d92ed6295255f7ef6384d424fa2acf7554ca49afd4a1f5e8fd92bb4bd",
    "apps/api/app/services/ehmf/stop.py": "5af4b09f5c4b7a92e76d48238b756047aed678e38070ea4cdcd841316c704cab",
    "apps/api/app/services/ehmf/vocabulary.py": "66325cd0a261e5ad7163cc96b33068d38b1ab86def36c70758ec5959c265b89e",
@@ -166,6 +166,6 @@
    "apps/api/app/services/v3/triggers.py": "7634c7eb14f7c98aab3516648e2c7a597b51e8a8fa1232cdf430e43ea32b89e0",
    "scripts/run_v3_residual_report.py": "03996c3f3f5b102ba6cb38e9328fcfd8107856d3e0782f4fb26dfbd46832adbd"
   },
-  "sha256": "968d3775a5392ff59e01d3db669f1366f8d697091f195373a15333afd0ad2657"
+  "sha256": "bbe25c5eb7a6f8350efa2f668d1bf07a5e6df7e87a12f24ae74a8b81feb432dc"
  }
 }

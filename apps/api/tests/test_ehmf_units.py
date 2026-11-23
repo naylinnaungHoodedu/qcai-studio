@@ -104,6 +104,18 @@ def test_the_library_pin_resolves_next_to_the_package_file_and_its_sidecar(tmp_p
     assert load_config_package(synthetic, governed=False).v1.library_entries == ()
 
 
+def test_library_proposals_take_only_the_session_and_say_claim_text_is_always_null():
+    # Spec 4.5 and conflict 27: a proposal's claim_text is null (the gold row holds only the claim's hash); the function
+    # reads no store, and its docstring says so (P2-12-D-03).
+    import inspect
+
+    from app.services.ehmf.library import proposals_from_gold
+
+    assert list(inspect.signature(proposals_from_gold).parameters) == ["db"]
+    doc = " ".join(inspect.getdoc(proposals_from_gold).split())
+    assert "claim_text is always null" in doc and "quotable" not in doc
+
+
 def test_a_package_file_copied_without_its_library_folder_loads_only_the_library_its_pin_names(tmp_path):
     # A package file copied alone (no misconceptions/ folder beside it) reads the shipped library, which must still equal
     # the pin: a copy whose pin names another library is refused, never loaded with the shipped library in its place.
