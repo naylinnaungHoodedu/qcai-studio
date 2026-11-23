@@ -2,7 +2,7 @@
 
 Learner adaptation and privacy-preserving record, upgrade plan lines 1557-1614. The branch was cut at `98f7cc4` and its current integration base is `c34a8c1`.
 
-Sections 0-17 describe the behaviour the code has once implemented. During the pre-code stage they specify the proposed behavior and identify pending checks. Section 18 holds one history-table row per review round. This file is LF in every checkout (`.gitattributes`).
+Sections 0-17 describe the behaviour the code has and identify deferred integration work. Section 18 holds one history-table row per review round. This file is LF in every checkout (`.gitattributes`).
 
 ## 0. Ground rules, measured facts, readings
 
@@ -114,8 +114,11 @@ Add authorization, retention, export, failover, stop persistence, migration, and
 | Test module | Coverage implemented |
 |---|---|
 | `test_phase8_settings.py` | Development and production defaults, pre-exit startup refusal, verified package requirement, D-27, and DI-312. |
-| `test_phase8_sync.py` | No INSERT on read, stale and duplicate operations, cross-subject ownership, server namespace, and write conflict with retry. Route and trusted assessment coverage are pending. |
-| `test_phase8_planner.py` | Provisional mastery bands, deterministic lesson ordering, and static fallback. The cross-channel invariance harness remains pending. |
+| `test_phase8_sync.py` | No INSERT on read, stale and duplicate operations, cross-subject ownership, server namespace, compare-and-set retry, bounded quota and replica issuance, and concurrent trusted mastery updates. |
+| `test_phase8_planner.py` | Provisional mastery bands, deterministic lesson ordering, and static fallback. |
+| `test_phase8_identity.py` | Provider-scoped subject continuity, guest proof requirements, claim transfer, revocation, and the audit record. |
+| `test_phase8_privacy.py` | Consent denial and research refusal, mapped and legacy export, cross-subject isolation, transactional erasure, and receipt verification across principal types. |
+| `test_phase8_evidence.py` | Invariance, F-2 import isolation, report checks, consent schema, retention map, disclosure inventory, and adaptation stop persistence. |
 
 ## 14. CI changes
 
@@ -123,7 +126,7 @@ Use the existing test jobs first. After integration, add the package readability
 
 ## 15. Docs and evidence
 
-Document subject linking and consent, generate the consent schema and authorization matrix, update the acceptance map and runbooks, and regenerate dependent fixture records once the tree is clean. Record current code behavior in sections 0-17 and review history in section 18.
+Subject linking and consent have security documentation, with a generated consent record schema. The authorization matrix, acceptance map, and retention runbook cover the new interfaces. The inherited Phase 3-5 records and the two Phase 8 reports are generated from a clean build. The proposal to pin the consent schema remains for main-track review.
 
 ## 16. Provisional defaults and deferred items
 
@@ -164,7 +167,7 @@ Plan M: "[Risk R-01][Risk R-08][Risk R-41][Risk R-42][Risk R-51]; residual: back
 
 Start with the baseline, then implement identity and synchronization, the privacy lifecycle, and the planner and harness. Run offline tests and validators with isolated scratch files. Repeat the applicable SQLite, PostgreSQL, frontend, and integration checks against the final branch after the Phase 6 integration. Plan P: "AC-8-1 to AC-8-7 green; harness in CI." `phase8_exit_passed` stays false while DI-300 remains open.
 
-The Phase 5 merged baseline passed 8 separately isolated template tests, 1,593 SQLite tests (2 skipped, 9 deselected, 3 xfailed), and 1,591 tests per PostgreSQL driver (9 deselected, 3 xfailed each). Frontend lint, type checking, and 154 integration tests passed. The existing validators passed, including package v1 through v4, the V2 fixture report, and all 1,192 frozen public payload bodies. The path boundary scan passed. Licensed-passage scanning requires the fingerprint input. The Phase 8 invariance harness and erasure-proof scripts are pending.
+The Phase 5 merged baseline passed 8 separately isolated template tests, 1,593 SQLite tests (2 skipped, 9 deselected, 3 xfailed), and 1,591 tests per PostgreSQL driver (9 deselected, 3 xfailed each). Frontend lint, type checking, and 154 integration tests passed. The existing validators passed, including package v1 through v4, the V2 fixture report, and all 1,192 frozen public payload bodies. The path boundary scan passed. Licensed-passage scanning requires the fingerprint input. The two Phase 8 validators were added after this baseline run.
 
 The first build passed 43 targeted tests on each database backend, including the Phase 8 modules and existing learner-record, erasure, and gateway egress tests. The freeze, planner threshold, and version-conflict tests failed under their respective in-process mutations. The setup install reported 11 moderate npm advisories. Package and lock files retain the integrated versions.
 
@@ -181,7 +184,20 @@ The merged SQLite leg ran `apps/api/tests evaluation/tests`. Both PostgreSQL leg
 
 Sync wiring verification ran four API modules, `test_phase8_sync.py`, `test_cs595_increment.py`, `test_authorization.py`, and `test_malformed_input.py`, with 154 passed per SQLite, psycopg, and pg8000. This targeted selection has no template or release-artifact tests. Frontend lint, type checking and all 154 integration tests passed.
 
-The Phase 3 replay and Phase 4 and 5 fixture records were regenerated from the clean sync wiring commit. Their respective input digests are `6029c8cec97c131c948da8ba6651cd84e4666cfd6f54ed1b75961b459baec38a`, `4a3d343a6686d56769b672a2581aa6798a9d2a70912d8719e8de882275af975e`, and `c4e31e147608da6fad98ce15f6eb82f89e60f65745b75e451a4fde9769010f24`. Fresh record checks passed and the frozen public payload check matched all 1,192 bodies again.
+The inherited records and the two Phase 8 reports were generated from clean build `cb142b1`. Fresh checks passed and all 1,192 frozen public bodies matched. The invariance report covers 299 public items, three mastery levels, three distinct presentation choices, zero violations, and zero learner-state fields. The erasure proof verifies all four synthetic principal scenarios.
+
+| Record | Input SHA-256 |
+|---|---|
+| Phase 3 tutor replay | `8f0be832bc86ae86e113b94db95b5b3bf331e91390b54bcc31c73c7b5845a563` |
+| Phase 4 V1 fixtures | `f0378f1e2fc9810b9f9b03cc9e52e710d3ee33b354dc835bff390e52781dee09` |
+| Phase 5 V2 fixtures | `89adc37f863e72fbd2de7e13d4c4391ec0d9efb15f779a46a099e2559493a96a` |
+| Phase 8 invariance | `4fb3e45f03df4e4814501ff5d4a2bbd299c1f5b3a5078825548ee938773af8b0` |
+
+The erasure proof deliberately omits module hashes. Each scenario pins its table set and verifies the corresponding receipt digest in the scratch database.
+
+The final pre-integration lifecycle run passed 222 tests per backend on SQLite, PostgreSQL with psycopg, and PostgreSQL with pg8000. Each leg ran these eight files under `apps/api/tests`: `test_phase8_identity.py`, `test_phase8_privacy.py`, `test_phase8_sync.py`, `test_phase8_evidence.py`, `test_authorization.py`, `test_erasure_retention.py`, `test_api.py`, and `test_gateway_egress_guard.py`. This selection had no deselections. An earlier 219-case run deselected only `test_plan_f_the_committed_erasure_proof_matches_a_fresh_run` until the report was generated. The final run includes that test and two additional report/schema checks. The eight named template cases passed separately on SQLite. Ten Python-source guards and the three Phase 3-5 test-map guards passed separately. The boundary path scan passed.
+
+The next integration waits for the announced Phase 6 merge. Adopt the next free package version and the actual main Alembic head. The expected predecessor is package v5 and revision `20261122_phase6_v3_audit`. Readiness, CI command registration, and the full final 9.1 run belong to that integration. DI-300 remains open.
 
 ## 18. Review history
 
@@ -190,4 +206,4 @@ The rows below record what each round fixed, in order. They may describe behavio
 | Round | Commit | Findings fixed (one line each, with their tests) |
 |---|---|---|
 | Spec (pre-code) | - | Initial design and verification map. |
-| Build | `9d1417c` | Initial settings, read path, sync services, and pure planner, covered by `test_settings_phase8_defaults_and_refusals`, `test_phase8_sync_read_issues_no_insert`, `test_phase8_sync_parallel_replicas_conflict_and_retry_without_losing_updates`, and `test_phase8_planner_uses_the_provisional_mastery_bands`. |
+| Build | `cb142b1` | Settings, synchronization, identity, privacy lifecycle, shadow planner, and engineering evidence. Regression guards include `test_settings_phase8_defaults_and_refusals`, `test_ac_8_1_concurrent_trusted_updates_preserve_each_mastery_value`, `test_plan_j_a_forged_or_revoked_guest_token_cannot_claim`, `test_plan_f_the_committed_erasure_proof_matches_a_fresh_run`, and `test_plan_p_the_committed_invariance_report_matches_a_fresh_run`. |
