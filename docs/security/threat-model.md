@@ -4,7 +4,7 @@
 | --- | --- | --- | --- |
 | OIDC authorization | State/PKCE theft or callback mix-up | Server-side state/verifier cookies, S256 challenge, issuer/audience/JWKS validation | Auth route and callback regression tests. |
 | Local sessions | Token theft/fixation/CSRF | Opaque hashed token, secure/HttpOnly/SameSite cookie, origin + CSRF double-submit validation, logout revocation | Auth abuse/session tests. |
-| Learner Record | Stale replica overwrites completion or replay double-counts | Operation ID hash, replica/logical counter, set/max/G-counter merge semantics | Randomized interleaving and replay tests. |
+| Learner Record | Stale replicas, untrusted mastery, and replay double-counting | Operation receipt hashes, server-issued active replicas, monotonic counters, compare-and-set, trusted assessment facts, and convergent merge. | Concurrent writer and conflict retry tests, including flag rollback. |
 | Tutor | Learner-state information treated as cited fact | Pedagogical/evidence channel separation, provenance, claim gate | RQ2 invariance and leakage-negative tests. |
 | Corpus | Licensed text served/released publicly | Reviewed public manifest, production fail-close, release preflight, private storage policy | Corpus validator + release preflight. |
 | AI/provider | Prompt injection, model/provider failure, fabricated claim | Sanitization, bounded history, retrieval only, lexical fallback, claim gate/abstention | Integration and four-arm evaluation. |

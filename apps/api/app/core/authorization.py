@@ -74,11 +74,6 @@ ROUTE_POLICIES: dict[tuple[str, str], RoutePolicy] = {
     ("POST", "/auth/logout"): _p(PUBLIC, CALLER, "Ends the session named by the caller's own cookie."),
     ("DELETE", "/auth/account"): _p(PRINCIPAL, CALLER, "Local accounts only, with password confirmation."),
     ("POST", "/auth/guest-upgrade"): _p(SERVICE, NONE, "Legacy guest migration: closed by default, windowed, rate-limited (Action 20)."),
-    ("POST", "/auth/guest-claim"): _p(DURABLE_LEARNER, CALLER, "Phase 8. Also requires a verified guest session."),
-    ("GET", "/auth/learner-consent"): _p(PRINCIPAL, CALLER, "Phase 8 provisional consent."),
-    ("PUT", "/auth/learner-consent"): _p(PRINCIPAL, CALLER, "Phase 8 provisional consent."),
-    ("GET", "/auth/learner-export"): _p(PRINCIPAL, CALLER, "Phase 8 local learner data."),
-    ("POST", "/auth/learner-erasure"): _p(PRINCIPAL, CALLER, "Phase 8 local erasure and receipt."),
     # Course content
     ("GET", "/content/course"): _p(PUBLIC),
     ("HEAD", "/content/course"): _p(PUBLIC),
@@ -150,7 +145,12 @@ ROUTE_POLICIES: dict[tuple[str, str], RoutePolicy] = {
     # Learner record
     ("GET", "/learner-record"): _p(DURABLE_LEARNER, CALLER),
     ("POST", "/learner-record/operations"): _p(DURABLE_LEARNER, CALLER),
-    ("POST", "/learner-record/replicas"): _p(DURABLE_LEARNER, CALLER),
+    ("POST", "/learner-record/replicas"): _p(DURABLE_LEARNER, CALLER, "Phase 8 replica issuance."),
+    ("POST", "/auth/guest-claim"): _p(DURABLE_LEARNER, CALLER, "Phase 8. Also requires a verified guest session."),
+    ("GET", "/auth/learner-consent"): _p(PRINCIPAL, CALLER, "Phase 8 provisional consent."),
+    ("PUT", "/auth/learner-consent"): _p(PRINCIPAL, CALLER, "Phase 8 provisional consent."),
+    ("GET", "/auth/learner-export"): _p(PRINCIPAL, CALLER, "Phase 8 local learner data."),
+    ("POST", "/auth/learner-erasure"): _p(PRINCIPAL, CALLER, "Phase 8 local erasure and receipt."),
     # Projects
     ("GET", "/projects/catalog"): _p(PUBLIC),
     ("GET", "/projects/my-submissions"): _p(PRINCIPAL, CALLER),

@@ -318,10 +318,6 @@ export async function postLearnerRecordOperations(
   });
 }
 
-export async function issueLearnerRecordReplica(): Promise<{ replica_id: string }> {
-  return apiFetch("/learner-record/replicas", { method: "POST" });
-}
-
 export async function fetchQAHistory(
   lessonSlug?: string,
   options: { limit?: number; offset?: number } = {},

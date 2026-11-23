@@ -17,12 +17,19 @@ from app.services.learner_record import (
     apply_learner_record_operations,
     materialize_record,
 )
+from app.services.learner_record_lock import lock_learner_write
+from app.services.learner_record_metrics import record_signal
 
 
 MAX_ISSUED_REPLICAS = 16
 SERVER_REPLICA = "server-content-v1"
 ASSESSMENT_LIMIT = 12
 ASSESSMENT_WINDOW = timedelta(minutes=15)
+
+
+def _refuse(reason: str, status: int, detail: str | dict) -> None:
+    record_signal("learner.sync.conflict", reason=reason)
+    raise HTTPException(status, detail)
 
 
 def begin_server_assessment(db: Session, user_id: str, lesson_slug: str, *, attempt_owner: str | None = None) -> int:
@@ -46,6 +53,7 @@ def begin_server_assessment(db: Session, user_id: str, lesson_slug: str, *, atte
 
 def lock_learner_record(db: Session, user_id: str) -> LearnerRecord:
     """Serialize writers for an existing or first record, until the caller commits."""
+    lock_learner_write(db, user_id)
     insert = sqlite_insert if db.get_bind().dialect.name == "sqlite" else postgres_insert
     db.execute(insert(LearnerRecord).values(user_id=user_id).on_conflict_do_nothing(index_elements=["user_id"]))
     # The same write lock works on both supported databases and leaves the version and timestamp intact.
@@ -61,15 +69,25 @@ def lock_learner_record(db: Session, user_id: str) -> LearnerRecord:
     return record
 
 
-def issue_learner_replica(db: Session, user_id: str) -> str:
+def issue_learner_replica(db: Session, user_id: str, preferred: str | None = None) -> str:
     lock_learner_record(db, user_id)
-    count = db.scalar(
-        select(func.count()).select_from(LearnerIssuedReplica).where(LearnerIssuedReplica.user_id == user_id)
-    )
-    if count is not None and count >= MAX_ISSUED_REPLICAS:
-        raise HTTPException(409, "Issued replica limit reached.")
+    issued = list(db.scalars(
+        select(LearnerIssuedReplica).where(
+            LearnerIssuedReplica.user_id == user_id, LearnerIssuedReplica.retired.is_(False),
+        ).order_by(
+            func.coalesce(LearnerIssuedReplica.last_used_at, LearnerIssuedReplica.created_at),
+            LearnerIssuedReplica.created_at, LearnerIssuedReplica.replica_id,
+        )
+    ))
+    now = datetime.now(UTC)
+    for replica in issued:
+        if replica.replica_id == preferred:
+            replica.last_used_at = now
+            return replica.replica_id
+    for replica in issued[:max(0, len(issued) - MAX_ISSUED_REPLICAS + 1)]:
+        replica.retired = True
     replica_id = f"replica-{uuid4().hex}"
-    db.add(LearnerIssuedReplica(replica_id=replica_id, user_id=user_id))
+    db.add(LearnerIssuedReplica(replica_id=replica_id, user_id=user_id, last_used_at=now))
     db.flush()
     return replica_id
 
@@ -92,12 +110,15 @@ def synchronize_client_operations(
 ) -> tuple[list[dict[str, str]], LearnerRecordRead]:
     """Validate a batch and reuse the existing operation merge in the same transaction."""
     record = lock_learner_record(db, user_id)
-    issued = set(db.scalars(
-        select(LearnerIssuedReplica.replica_id).where(LearnerIssuedReplica.user_id == user_id)
-    ))
+    replicas = {
+        replica.replica_id: replica for replica in db.scalars(
+            select(LearnerIssuedReplica).where(LearnerIssuedReplica.user_id == user_id)
+        )
+    }
+    active = {key for key, replica in replicas.items() if not replica.retired}
     clocks = dict(db.execute(
         select(LearnerReplica.replica_id, LearnerReplica.last_logical_counter)
-        .where(LearnerReplica.user_id == user_id, LearnerReplica.replica_id.in_(issued))
+        .where(LearnerReplica.user_id == user_id, LearnerReplica.replica_id.in_(replicas))
     ).all())
     receipts = {
         row.operation_id: row.payload_hash
@@ -111,11 +132,11 @@ def synchronize_client_operations(
     expected = record.record_version
     for op in operations:
         if op.replica_id == SERVER_REPLICA or op.operation_id.startswith("quiz-"):
-            raise HTTPException(422, "Server operation namespace is reserved.")
+            _refuse("server_namespace_refused", 422, "Server operation namespace is reserved.")
         if op.operation_type == "mastery_set":
-            raise HTTPException(422, "Mastery is recorded by server-scored assessments.")
-        if op.replica_id not in issued or not op.causal_vector.keys() <= issued:
-            raise HTTPException(409, "Replica was not issued to this learner.")
+            _refuse("client_mastery_refused", 422, "Mastery is recorded by server-scored assessments.")
+        if op.replica_id not in replicas or not op.causal_vector.keys() <= replicas.keys():
+            _refuse("unissued_replica", 409, "Replica was not issued to this learner.")
         try:
             json.dumps(op.payload, allow_nan=False)
         except ValueError as exc:
@@ -123,16 +144,19 @@ def synchronize_client_operations(
         digest = _payload_hash(op)
         if op.operation_id in receipts:
             if digest != receipts[op.operation_id]:
-                raise HTTPException(409, "Operation ID was replayed with a different payload.")
+                _refuse("payload_mismatch", 409, "Operation ID was replayed with a different payload.")
             continue
+        if op.replica_id not in active:
+            _refuse("unissued_replica", 409, "Replica was retired.")
         if expected_version != expected:
-            raise HTTPException(409, {"reason": "cas_conflict", "record_version": expected})
+            _refuse("cas_conflict", 409, {"reason": "cas_conflict", "record_version": expected})
         if op.logical_counter <= clocks.get(op.replica_id, 0):
-            raise HTTPException(409, "Replica counter must increase for a new operation.")
+            _refuse("counter_regressed", 409, "Replica counter must increase for a new operation.")
         if any(counter > clocks.get(replica, 0) for replica, counter in op.causal_vector.items()):
-            raise HTTPException(409, "Causal vector contains an unobserved counter.")
+            _refuse("unissued_replica", 409, "Causal vector contains an unobserved counter.")
         clocks[op.replica_id] = op.logical_counter
         receipts[op.operation_id] = digest
+        replicas[op.replica_id].last_used_at = datetime.now(UTC)
     unique = {op.operation_id: op for op in operations}
     applied, current = apply_learner_record_operations(db, user_id, list(unique.values()))
     outcomes = {receipt["operation_id"]: receipt["status"] for receipt in applied}

@@ -53,11 +53,11 @@ function retentionFor(dataClass: string): string {
   return item.retention;
 }
 
-test("every cookie the code sets or reads is in the privacy page cookie inventory, and nothing else", () => {
+test("AC-8-7: the privacy page lists exactly the cookies the code sets or reads", () => {
   assert.deepEqual([...COOKIE_INVENTORY.map((item) => item.name)].sort(), codeCookieNames());
 });
 
-test("every browser-storage key the code uses is in the privacy page storage inventory, and nothing else", () => {
+test("AC-8-7: the privacy page lists exactly the browser-storage keys the code uses", () => {
   assert.deepEqual([...BROWSER_STORAGE_INVENTORY.map((item) => item.key)].sort(), codeStorageKeys());
 });
 

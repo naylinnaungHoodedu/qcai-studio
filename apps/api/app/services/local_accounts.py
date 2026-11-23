@@ -154,12 +154,14 @@ def delete_local_account(db: Session, user_id: str, password: str) -> AccountEra
     # Every user-keyed table, found from the schema (task 1.5); this replaces a hand-kept list that
     # had missed the learner-record and tutor tables.
     started = time.monotonic()
-    counts = erase_user(db, user_id)
-    from app.services.learner_record_identity import find_subject
+    from app.services.learner_record_identity import find_subject, mark_erased_subjects
+    from app.services.learner_record_lock import has_write_guard
 
     subject = find_subject(db, "local", user_id)
-    if subject and subject != user_id:
-        for table, count in erase_user(db, subject).items():
+    identifiers = mark_erased_subjects(db, "local", user_id) if subject or has_write_guard(db, user_id) else (user_id,)
+    counts = {}
+    for identifier in identifiers:
+        for table, count in erase_user(db, identifier).items():
             counts[table] = counts.get(table, 0) + count
     db.commit()
     return AccountErasure(rows=counts, duration_ms=round((time.monotonic() - started) * 1000))

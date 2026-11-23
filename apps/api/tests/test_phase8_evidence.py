@@ -3,6 +3,7 @@
 import ast
 import json
 import re
+from string import Formatter
 from pathlib import Path
 from uuid import uuid4
 
@@ -16,7 +17,7 @@ from app.services.erasure import user_keyed_tables
 from app.services.learner_record_privacy import retention_classes, set_consent
 from app.services.learner_record_shadow import clear_adaptation_stop, shadow_presentation, stop_adaptation
 from scripts.prove_erasure import compute as prove_erasure
-from scripts.run_invariance_harness import compute as run_harness
+from scripts.run_invariance_harness import LEARNER_FIELDS, compute as run_harness
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -27,6 +28,76 @@ def test_ac_8_3_three_mastery_levels_yield_identical_claim_set_cited_spans_and_d
     assert proof["items"] >= 3 and len(set(proof["plans"])) == 3
     assert not proof["violations"] and not proof["f2_fields"]
     assert len(set(proof["observation_sha256"])) == 1
+    assert proof["items_with_distinct_rendering"] > 0
+
+
+def test_ac_8_4_evidential_prompts_and_the_abstention_configuration_hold_zero_learner_state_fields():
+    from app.services.tutor_pipeline.evidential import EXTRACTIVE_RULE
+
+    slots = {field for _, field, _, _ in Formatter().parse(EXTRACTIVE_RULE) if field}
+    assert not slots & LEARNER_FIELDS
+    assert not run_harness(subset=3)["f2_fields"]
+
+
+def test_ac_8_4_a_learner_value_in_an_evidential_payload_is_detected(monkeypatch):
+    from app.services.tutor_pipeline import pipeline
+
+    original = pipeline.build_envelope
+
+    def builder(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if result is None:
+            return None
+        instructions = result.instructions.model_copy(update={"rule_id": "fixture stepwise"})
+        return result.model_copy(update={"instructions": instructions})
+
+    monkeypatch.setattr(pipeline, "build_envelope", builder)
+    assert "learner-value" in run_harness(subset=3)["f2_fields"]
+
+
+def test_plan_p_the_harness_takes_the_item_set_and_the_generation_design_as_inputs(tmp_path):
+    from scripts.replay_tutor_plans import fixture_items
+
+    path = tmp_path / "public-pair.json"
+    path.write_text(json.dumps([query for _, query in fixture_items()[:2]]), encoding="utf-8")
+    report = run_harness(items_path=path, design="two-pass")
+    assert report["items"] == 2 and report["item_set"] == path.name and report["design"] == "two-pass"
+
+
+def test_plan_i_a_harness_violation_writes_a_shared_stop_and_security_event(tmp_path, monkeypatch, caplog):
+    import sys
+    from sqlalchemy import select
+    from app.core.structured_logging import FIELDS
+    from app.db_models import SecurityEvent
+    from scripts import run_invariance_harness as harness
+
+    path = tmp_path / "dev-stop.sqlite"
+    engine = create_engine(f"sqlite:///{path.as_posix()}")
+    try:
+        Base.metadata.create_all(engine)
+        monkeypatch.setattr(sys, "argv", ["harness", "--probe", "--stop-sqlite", str(path)])
+        monkeypatch.setattr(harness, "compute", lambda *args, **kwargs: {
+            "items": 1, "violations": [{"fields": ["evidence"]}], "f2_fields": [], "plans": ["concise"],
+            "items_with_distinct_rendering": 0,
+        })
+        caplog.set_level("INFO")
+        assert harness.main() == 3
+        with Session(engine) as db:
+            assert db.get(LearnerAdaptationStop, "planner").reason == "invariance"
+            assert db.scalar(select(SecurityEvent.event_type).order_by(SecurityEvent.seq)) == "learner.harness.stop"
+        assert {"event": "learner.harness.violation", "reason": "invariance"} in [
+            getattr(row, FIELDS, None) for row in caplog.records
+        ]
+    finally:
+        engine.dispose()
+
+
+def test_plan_d_task_4_leaves_one_learner_state_presentation_path():
+    from app.services import learner_record
+
+    assert not hasattr(learner_record, "build_pedagogical_context")
+    for name in ("adr/ADR-001-grounding-separation.md", "architecture/phase3-implementation-spec.md"):
+        assert "build_pedagogical_context" not in (ROOT / "docs" / name).read_text(encoding="utf-8")
 
 
 def test_ac_8_4_no_evidential_or_verifier_module_imports_a_phase8_module():

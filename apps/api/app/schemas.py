@@ -497,6 +497,10 @@ class LearnerReplicaIssued(BaseModel):
     replica_id: str
 
 
+class LearnerReplicaRequest(BaseModel):
+    preferred_replica_id: str | None = Field(default=None, pattern=r"^replica-[a-f0-9]{32}$")
+
+
 class LearnerConsentUpdate(BaseModel):
     consent_class: Literal["adaptation", "analytics", "research"]
     granted: bool = Field(strict=True)

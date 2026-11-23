@@ -7,17 +7,18 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.config_package import canonical_sha256, get_config_package
-from app.db_models import GuestRevocation, LearnerConsent, LearnerConsentChange, LearnerErasureAudit, LearnerGuestRevocation
+from app.db_models import Base, GuestRevocation, LearnerConsent, LearnerConsentChange, LearnerErasureAudit, LearnerGuestRevocation
 from app.schemas import LearnerConsentRecord
-from app.services.erasure import USER_KEY_COLUMNS, erase_user, user_keyed_tables
+from app.services.erasure import USER_KEY_COLUMNS, erase_user, erasure_verification_conditions, learner_table_conditions
 from app.services.guest_sessions import guest_credential_digest
-from app.services.learner_record_identity import _insert_for, find_subject
-from app.services.learner_record_sync import lock_learner_record
+from app.services.learner_record_identity import find_subject, mark_erased_subjects, write_subject
+from app.services.learner_record_lock import insert_for
+from app.services.retention import retention_classes
 
 
 CONSENT_VERSION = "d27-unresolved-v1"
@@ -27,20 +28,6 @@ _PRIVATE_COLUMNS = frozenset(USER_KEY_COLUMNS) | {
     "claim_token", "payload_hash", "request_sha256",
 }
 _CREDENTIAL_TABLES = {"user_sessions", "guest_revocations", "guest_legacy_upgrades", "learner_subjects"}
-
-
-def retention_classes() -> dict[str, str]:
-    overrides = {
-        "user_sessions": "session-expiry",
-        "guest_revocations": "credential-protection",
-        "guest_legacy_upgrades": "guest-legacy-window",
-        "learner_subjects": "subject-binding-until-erasure",
-        "learner_consents": "guest-study-from-update",
-    }
-    return {
-        table.name: overrides.get(table.name, "guest-study-from-creation" if "created_at" in table.c else "erasure-only")
-        for table in user_keyed_tables()
-    }
 
 
 def subject_identifiers(db: Session, provider: str, identifier: str) -> tuple[str, ...]:
@@ -67,13 +54,13 @@ def set_consent(
         raise HTTPException(422, "Unknown consent class.")
     if granted and (kind == "research" or settings.environment.lower() != "development"):
         raise HTTPException(409, "Consent class is unavailable under D-27.")
-    subject = subject_identifiers(db, provider, identifier)[-1]
+    subject = write_subject(db, provider, identifier, bind=False, guarded=True)
     record = LearnerConsentRecord(
         user_id=subject, consent_class=kind, consent_version=CONSENT_VERSION, granted=granted,
         updated_at=datetime.now(UTC), source="self-service",
     )
     values = record.model_dump(exclude={"user_id", "consent_class"})
-    db.execute(_insert_for(db)(LearnerConsent).values(user_id=subject, consent_class=kind, **values)
+    db.execute(insert_for(db)(LearnerConsent).values(user_id=subject, consent_class=kind, **values)
                .on_conflict_do_update(index_elements=["user_id", "consent_class"], set_=values))
     db.add(LearnerConsentChange(
         id=f"consent-{uuid4().hex}", user_id=subject, consent_class=kind,
@@ -84,15 +71,15 @@ def set_consent(
 
 def iter_export(db: Session, provider: str, identifier: str):
     identifiers = subject_identifiers(db, provider, identifier)
-    for table in user_keyed_tables():
+    for name, ownership in learner_table_conditions(identifiers, export=True).items():
+        table = Base.metadata.tables[name]
         if table.name in _CREDENTIAL_TABLES:
             yield json.dumps({"table": table.name, "visibility": "credential-metadata withheld"}) + "\n"
             continue
-        ownership = [table.c[key].in_(identifiers) for key in USER_KEY_COLUMNS if key in table.c and key != "opponent_id"]
         columns = [column for column in table.c if column.name not in _PRIVATE_COLUMNS]
-        if not columns or not ownership:
+        if not columns:
             continue
-        rows = db.execute(select(*columns).where(or_(*ownership)).order_by(*table.primary_key.columns))
+        rows = db.execute(select(*columns).where(ownership).order_by(*table.primary_key.columns))
         for row in rows.mappings():
             yield json.dumps({"table": table.name, "record": _finite_json(jsonable_encoder(dict(row)))}, allow_nan=False) + "\n"
 
@@ -108,22 +95,20 @@ def _finite_json(value):
 
 
 def erase_subject(db: Session, provider: str, identifier: str, settings: Settings) -> dict:
-    identifiers = subject_identifiers(db, provider, identifier)
-    for subject in sorted(identifiers):
-        lock_learner_record(db, subject)
+    identifiers = mark_erased_subjects(db, provider, identifier)
+    verification = erasure_verification_conditions(db, identifiers)
     if provider == "guest":
-        db.execute(_insert_for(db)(LearnerGuestRevocation).values(credential_digest=guest_credential_digest(identifier))
+        db.execute(insert_for(db)(LearnerGuestRevocation).values(credential_digest=guest_credential_digest(identifier))
                    .on_conflict_do_nothing(index_elements=["credential_digest"]))
         db.execute(delete(GuestRevocation).where(GuestRevocation.guest_id == identifier))
 
     deleted_total = sum(sum(erase_user(db, subject).values()) for subject in identifiers)
     zero_counts = {}
-    for table in user_keyed_tables():
-        columns = [table.c[key] for key in USER_KEY_COLUMNS if key in table.c]
-        count = db.scalar(select(func.count()).select_from(table).where(or_(*(column.in_(identifiers) for column in columns))))
+    for name, condition in verification.items():
+        count = db.scalar(select(func.count()).select_from(Base.metadata.tables[name]).where(condition))
         if count:
-            raise RuntimeError(f"Erasure verification failed for {table.name}.")
-        zero_counts[table.name] = 0
+            raise RuntimeError(f"Erasure verification failed for {name}.")
+        zero_counts[name] = count
 
     package = get_config_package(settings)
     gateway = package.gateway
@@ -142,9 +127,11 @@ def erase_subject(db: Session, provider: str, identifier: str, settings: Setting
             "response_ledger": "retained and unlinkable after tutor-turn erasure",
             "evidential_cache": "holds no learner data",
             "external_processing": "historical egress unverified; external processors are outside this erasure",
-            "identity_provider": "account retained at issuer",
+            "identity_provider": "account retained at issuer (DI-306)" if provider == "auth0" else "no external identity provider",
+            "audit_retention": "linking and erasure digests and counts are retained for 365 days",
+            "credential_protection": "revocation and erased-principal guards remain to prevent recreation",
             "backups": "deleted rows may remain through the backup window",
-            "support_requests": "independently submitted records follow their support retention rule",
+            "support_requests": "independently submitted records follow their 540-day support retention rule (P2-12-D-05)",
         },
     }
     db.add(LearnerErasureAudit(

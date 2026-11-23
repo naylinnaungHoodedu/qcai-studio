@@ -5,8 +5,6 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlalchemy import case, delete, or_, select, update
-from sqlalchemy.dialects.postgresql import insert as postgres_insert
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.core.safe_input import text_matches
@@ -14,12 +12,13 @@ from app.core.client_identity import keyed_digest
 from app.core.config import Settings
 from app.core.guest_tokens import verify_guest_token
 from app.db_models import (
-    LearnerClaimAudit, LearnerGuestRevocation, LearnerRecord, LearnerRecordOperation,
-    LearnerReplica, LearnerSubject, TutorTurnIdempotency,
+    GuestLegacyUpgrade, LearnerClaimAudit, LearnerGuestRevocation, LearnerRecord, LearnerRecordOperation,
+    LearnerReplica, LearnerSubject, TutorTurnIdempotency, UserAccount,
 )
 from app.services.erasure import USER_KEY_COLUMNS, user_keyed_tables
 from app.services.guest_sessions import _was_ever_public, guest_credential_digest, is_guest_revoked
 from app.services.learner_record import _wins
+from app.services.learner_record_lock import has_write_guard, insert_for, lock_learner_write
 from app.services.learner_record_sync import lock_learner_record
 
 
@@ -43,10 +42,6 @@ def find_subject(db: Session, provider: str, identifier: str) -> str | None:
     return binding.user_id if binding else None
 
 
-def _insert_for(db: Session):
-    return sqlite_insert if db.get_bind().dialect.name == "sqlite" else postgres_insert
-
-
 def _merge_numeric(target: dict, source: dict) -> dict:
     return {key: max(target.get(key, 0), source.get(key, 0)) for key in target.keys() | source.keys()}
 
@@ -57,7 +52,10 @@ def _merge_records(db: Session, former: str, target: str) -> int:
         return 0
     new = db.get(LearnerRecord, target)
     if new is None:
-        raise RuntimeError("Claim target must be locked before merging.")
+        # Moving the initial record changes its owner key, not the version the caller read.
+        old.user_id = target
+        db.flush()
+        return 1
     new.mastery = _merge_numeric(new.mastery, old.mastery)
     new.completed_items = sorted(set(new.completed_items) | set(old.completed_items))
     new.attempt_counters = {
@@ -86,7 +84,7 @@ def _discard_duplicate_key(db: Session, model, key, former: str, target: str) ->
 def _transfer(db: Session, former: str, target: str, *, learner_only: bool) -> dict[str, int]:
     moved = {}
     if learner_only:
-        lock_learner_record(db, target)
+        lock_learner_write(db, target)
         moved["learner_records"] = _merge_records(db, former, target)
         for row in db.scalars(select(LearnerReplica).where(LearnerReplica.user_id == former)):
             existing = db.scalar(select(LearnerReplica).where(
@@ -116,40 +114,80 @@ def _transfer(db: Session, former: str, target: str, *, learner_only: bool) -> d
     return moved
 
 
-def bind_subject(db: Session, provider: str, identifier: str) -> str:
+def _require_existing_local_account(db: Session, provider: str, identifier: str) -> None:
+    if provider == "local" and db.get(UserAccount, identifier, populate_existing=True) is None:
+        raise HTTPException(401, "Authentication required.")
+
+
+def bind_subject(db: Session, provider: str, identifier: str, *, verify_account: bool = False) -> str:
+    lock_learner_write(db, identifier)
+    if verify_account:
+        _require_existing_local_account(db, provider, identifier)
     digest = principal_digest(provider, identifier)
     candidate = f"subj-{uuid4().hex}"
     db.execute(
-        _insert_for(db)(LearnerSubject).values(principal_digest=digest, user_id=candidate, provider=provider)
+        insert_for(db)(LearnerSubject).values(principal_digest=digest, user_id=candidate, provider=provider)
         .on_conflict_do_nothing(index_elements=["principal_digest"])
     )
     subject = find_subject(db, provider, identifier)
     if subject is None:
         raise RuntimeError("Learner subject unavailable after binding.")
-    if subject == candidate:
+    if subject == candidate or db.get(LearnerRecord, identifier) is not None:
         _transfer(db, identifier, subject, learner_only=True)
+    # Materialize version zero only on a write, and hold this lock across the caller's write.
+    lock_learner_record(db, subject)
     return subject
+
+
+def write_subject(db: Session, provider: str, identifier: str, *, bind: bool, guarded: bool) -> str:
+    if bind:
+        return bind_subject(db, provider, identifier, verify_account=True)
+    subject = find_subject(db, provider, identifier)
+    if guarded or subject or has_write_guard(db, identifier):
+        lock_learner_write(db, identifier)
+        _require_existing_local_account(db, provider, identifier)
+        # Binding and erasure both use the principal lock.
+        subject = find_subject(db, provider, identifier)
+        if subject:
+            lock_learner_write(db, subject)
+    return subject or identifier
+
+
+def mark_erased_subjects(db: Session, provider: str, identifier: str) -> tuple[str, ...]:
+    lock_learner_write(db, identifier, erase=True)
+    binding = db.scalar(select(LearnerSubject).where(
+        LearnerSubject.principal_digest == principal_digest(provider, identifier),
+    ).with_for_update().execution_options(populate_existing=True))
+    if binding is None or binding.user_id == identifier:
+        return (identifier,)
+    lock_learner_write(db, binding.user_id, erase=True)
+    return (identifier, binding.user_id)
 
 
 def claim_guest(
     db: Session, provider: str, identifier: str, token: str | None, csrf: str | None, settings: Settings,
+    *, verify_account: bool = False,
 ) -> dict[str, int]:
     guest = verify_guest_token(token, settings)
     if provider not in {"local", "auth0"} or guest is None or not csrf or not text_matches(guest.csrf, csrf):
         raise HTTPException(403, "Guest claim requires both verified credentials.")
+    lock_learner_write(db, guest.guest_id)
     digest = guest_credential_digest(guest.guest_id)
     if is_guest_revoked(db, guest.guest_id, include_phase8=True) or _was_ever_public(db, guest.guest_id):
         raise HTTPException(409, "Guest record is unavailable for claim.")
     # Insert the one-shot tombstone in the same transaction as the transfer and its audit.
     accepted = db.scalar(
-        _insert_for(db)(LearnerGuestRevocation).values(credential_digest=digest)
+        insert_for(db)(LearnerGuestRevocation).values(credential_digest=digest)
         .on_conflict_do_nothing(index_elements=["credential_digest"])
         .returning(LearnerGuestRevocation.credential_digest)
     )
     if accepted is None:
         raise HTTPException(409, "Guest record is unavailable for claim.")
-    subject = bind_subject(db, provider, identifier)
+    subject = bind_subject(db, provider, identifier, verify_account=verify_account)
     formerly_bound = find_subject(db, "guest", guest.guest_id)
+    lock_learner_write(db, guest.guest_id, erase=True)
+    if formerly_bound:
+        lock_learner_write(db, formerly_bound, erase=True)
     moved = _transfer(db, formerly_bound or guest.guest_id, subject, learner_only=True)
     for table in user_keyed_tables():
         if table.name in {"learner_consents", "learner_consent_changes"}:
@@ -159,6 +197,7 @@ def claim_guest(
             moved[name] = moved.get(name, 0) + count
         db.execute(delete(LearnerSubject).where(LearnerSubject.user_id == formerly_bound))
     moved.update(_transfer(db, guest.guest_id, identifier, learner_only=False))
+    db.execute(delete(GuestLegacyUpgrade).where(GuestLegacyUpgrade.guest_id == guest.guest_id))
     db.add(LearnerClaimAudit(
         id=f"claim-{uuid4().hex}", guest_digest=keyed_digest(guest.guest_id, "claim-guest"),
         subject_digest=keyed_digest(subject, "claim-subject"), transferred=moved,

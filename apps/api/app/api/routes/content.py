@@ -23,7 +23,8 @@ from app.schemas import (
     LearnerRecordOperationInput,
 )
 from app.services.learner_record import apply_learner_record_operations
-from app.services.learner_record_identity import bind_subject
+from app.services.learner_record_identity import write_subject
+from app.services.learner_record_metrics import record_signal
 from app.services.learner_record_sync import SERVER_REPLICA, begin_server_assessment
 from app.services.learner_progress import build_course_progress
 from app.services.quiz_keys import score_attempt
@@ -165,9 +166,9 @@ def record_quiz_attempt(
     score, responses, feedback = score_attempt(keys, payload.responses)
     durable = user.provider not in {"guest", "demo"}
     sync_enabled = get_settings().learner_sync == "on"
-    subject = (
-        bind_subject(db, user.provider, user.user_id)
-        if durable and sync_enabled and get_settings().learner_identity == "on" else user.user_id
+    subject = write_subject(
+        db, user.provider, user.user_id,
+        bind=durable and get_settings().learner_identity == "on", guarded=sync_enabled,
     )
     server_clock = (
         begin_server_assessment(db, subject, payload.lesson_slug, attempt_owner=user.user_id)
@@ -221,6 +222,7 @@ def record_quiz_attempt(
         _, updated_record = apply_learner_record_operations(db, subject, operations)
     db.commit()
     if durable and sync_enabled:
+        record_signal("learner.record.committed")
         logger.info("Learner record updated", extra={FIELDS: {
             "event": "learner.record.updated", "interaction_started_at": started_at.isoformat(),
             "record_committed_at": datetime.now(UTC).isoformat(), "record_version": updated_record.record_version,

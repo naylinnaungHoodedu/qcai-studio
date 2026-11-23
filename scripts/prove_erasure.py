@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,15 +15,17 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 if __name__ == "__main__":
     os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text, create_engine, select
+from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text, create_engine, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.config_package import canonical_sha256
+from app.core.guest_tokens import guest_csrf_for, issue_guest_token
 from app.core.schema_upgrades import run_schema_upgrades
-from app.db_models import Base, LearnerErasureAudit
+from app.db_models import Base, GuestLegacyUpgrade, LearnerErasureAudit, LearnerRecord
 from app.services.erasure import USER_KEY_COLUMNS, user_keyed_tables
 from app.services.learner_record_privacy import erase_subject
+from app.services.learner_record_identity import bind_subject, claim_guest, find_subject
 
 
 def _value(column):
@@ -43,10 +46,12 @@ def _value(column):
     raise TypeError(f"Unsupported fixture column {column.table.name}.{column.name}")
 
 
-def _seed(db, subject):
+def _seed(db, subject, *, existing=None, exclude=()):
     covered = {table.name for table in user_keyed_tables()}
-    keys = {}
+    keys = dict(existing or {})
     for table in Base.metadata.sorted_tables:
+        if table.name in keys or table.name in exclude:
+            continue
         if table.name not in covered and not any(fk.column.table.name in keys for fk in table.foreign_keys):
             continue
         values = {}
@@ -73,29 +78,70 @@ def _present(db, keys):
     ).scalar_one_or_none() is not None)
 
 
+def independently_remaining(db, identifiers):
+    return sorted(
+        table.name for table in user_keyed_tables()
+        if db.scalar(select(func.count()).select_from(table).where(or_(*(
+            table.c[name].in_(identifiers) for name in USER_KEY_COLUMNS if name in table.c
+        ))))
+    )
+
+
+def seed_bound(db, provider, principal):
+    subject = bind_subject(db, provider, principal)
+    raw = _seed(db, principal, exclude={"learner_subjects", "guest_revocations"})
+    binding_key = db.scalar(select(Base.metadata.tables["learner_subjects"].c.principal_digest).where(
+        Base.metadata.tables["learner_subjects"].c.user_id == subject
+    ))
+    bound = _seed(db, subject, existing={
+        "learner_records": {"user_id": subject}, "learner_subjects": {"principal_digest": binding_key},
+    }, exclude={"guest_revocations"})
+    return subject, raw, bound
+
+
+def seed_claimed(db, settings, principal):
+    # A valid claim cannot start with a public guest record or a revoked credential.
+    guest = f"guest-{uuid4()}"
+    db.add_all([GuestLegacyUpgrade(guest_id=guest), LearnerRecord(user_id=guest, mastery={"fixture": 0.4})])
+    db.flush()
+    now = int(time.time())
+    claim_guest(db, "local", principal, issue_guest_token(settings.guest_token_secret, guest, now),
+                guest_csrf_for(settings.guest_token_secret, guest, now), settings)
+    return guest
+
+
 def compute():
     settings = Settings(_env_file=None, environment="development", database_url="sqlite:///:memory:")
     scenarios = {}
-    for provider in ("local", "guest", "auth0", "demo"):
+    for scenario in ("local", "guest", "auth0", "demo", "bound-local", "claimed-local"):
+        provider = scenario.split("-")[-1]
         engine = create_engine("sqlite:///:memory:")
         try:
             Base.metadata.create_all(engine)
             run_schema_upgrades(engine)
             with Session(engine, autoflush=False) as db:
                 subject = f"{provider}-{uuid4().hex}"
-                rows = _seed(db, subject)
+                if scenario == "claimed-local":
+                    guest = seed_claimed(db, settings, subject)
+                    assert find_subject(db, "local", subject)
+                else:
+                    guest = None
+                if scenario in {"bound-local", "claimed-local"}:
+                    bound, raw_rows, bound_rows = seed_bound(db, provider, subject)
+                    snapshots = (raw_rows, bound_rows)
+                else:
+                    bound = None
+                    snapshots = (_seed(db, subject, exclude={"guest_revocations"} if provider != "guest" else ()),)
                 controls = _seed(db, f"{provider}-{uuid4().hex}")
-                # The legacy guest revocation is retired only by a guest erasure.
-                legacy = Base.metadata.tables["guest_revocations"]
-                if provider != "guest":
-                    db.execute(legacy.delete().where(legacy.c.guest_id == subject))
-                    rows.pop("guest_revocations")
                 db.commit()
                 receipt = erase_subject(db, provider, subject, settings)
                 db.commit()
                 persisted = db.get(LearnerErasureAudit, receipt["id"])
-                scenarios[provider] = {
-                    "seeded_tables": len(rows), "remaining_tables": _present(db, rows),
+                owned = tuple(identifier for identifier in (subject, bound, guest) if identifier is not None)
+                remaining = set(independently_remaining(db, owned))
+                remaining.update(table for rows in snapshots for table in _present(db, rows))
+                scenarios[scenario] = {
+                    "seeded_rows": sum(map(len, snapshots)), "remaining_tables": sorted(remaining),
                     "control_tables": len(controls), "control_tables_remaining": len(_present(db, controls)),
                     "zero_counts": receipt["zero_counts"],
                     "receipt_verified": persisted.receipt_digest == canonical_sha256(receipt),

@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 
-from app.db_models import Base, LearnerIssuedReplica, LearnerRecord, LearnerRecordOperation, LearnerReplica, QuizAttempt
+from app.db_models import Base, LearnerIssuedReplica, LearnerRecord, LearnerRecordOperation, LearnerReplica, LearnerWriteGuard, QuizAttempt
 from app.schemas import LearnerRecordOperationInput
 from app.services.learner_record import apply_learner_record_operations
 from app.services.learner_record_sync import (
@@ -29,7 +29,7 @@ def sync_engine(fresh_database_url):
     engine = create_engine(fresh_database_url)
     tables = [
         model.__table__
-        for model in (LearnerRecord, LearnerReplica, LearnerRecordOperation, LearnerIssuedReplica, QuizAttempt)
+        for model in (LearnerRecord, LearnerReplica, LearnerRecordOperation, LearnerIssuedReplica, LearnerWriteGuard, QuizAttempt)
     ]
     try:
         Base.metadata.create_all(engine, tables=tables)
@@ -156,16 +156,57 @@ def test_phase8_sync_parallel_first_writes_create_one_record(sync_engine):
         assert db.query(LearnerRecord).filter_by(user_id=subject).count() == 1
 
 
-def test_phase8_sync_limits_replica_issuance_per_subject(sync_engine):
+@pytest.mark.parametrize("write", [False, True])
+def test_phase8_sync_the_replica_cap_never_locks_a_learner_out(sync_engine, write):
     subject, other = (f"subj-{uuid4().hex}" for _ in range(2))
     with Session(sync_engine, autoflush=False) as db:
-        issued = {issue_learner_replica(db, subject) for _ in range(MAX_ISSUED_REPLICAS)}
-        db.commit()
-        assert len(issued) == MAX_ISSUED_REPLICAS
-        with pytest.raises(HTTPException, match="replica limit"):
-            issue_learner_replica(db, subject)
+        issued = []
+        for index in range(MAX_ISSUED_REPLICAS + 1):
+            replica = issue_learner_replica(db, subject)
+            issued.append(replica)
+            if write:
+                synchronize_client_operations(db, subject, index, [complete(replica, 1, f"lesson-{index}")])
+            db.commit()
+        assert len(set(issued)) == MAX_ISSUED_REPLICAS + 1
+        assert issue_learner_replica(db, subject, issued[-1]) == issued[-1]
+        assert db.query(LearnerIssuedReplica).filter_by(user_id=subject, retired=False).count() == MAX_ISSUED_REPLICAS
+        with pytest.raises(HTTPException, match="retired"):
+            synchronize_client_operations(db, subject, int(write) * len(issued), [complete(issued[0], 2, "retired")])
         db.rollback()
-        assert issue_learner_replica(db, other) not in issued
+        assert issue_learner_replica(db, other, issued[-1]) not in issued
+
+
+def test_plan_i_each_sync_refusal_logs_and_counts_its_reason(sync_engine, caplog):
+    from app.core.structured_logging import FIELDS
+    from app.services.learner_record_metrics import snapshot
+
+    subject = f"subj-{uuid4().hex}"
+    caplog.set_level("INFO")
+    with Session(sync_engine, autoflush=False) as db:
+        replica = issue_learner_replica(db, subject)
+        saved = complete(replica, 1, "saved")
+        synchronize_client_operations(db, subject, 0, [saved])
+        db.commit()
+        fresh = complete(replica, 2, "fresh")
+        cases = {
+            "cas_conflict": (0, fresh),
+            "counter_regressed": (1, complete(replica, 1, "regressed")),
+            "unissued_replica": (1, complete(f"replica-{uuid4().hex}", 1, "unissued")),
+            "payload_mismatch": (1, saved.model_copy(update={"payload": {"item_id": "changed"}})),
+            "client_mastery_refused": (1, fresh.model_copy(update={"operation_type": "mastery_set"})),
+            "server_namespace_refused": (1, fresh.model_copy(update={"replica_id": SERVER_REPLICA})),
+        }
+        for reason, (version, op) in cases.items():
+            caplog.clear()
+            key = f"learner.sync.conflict.{reason}"
+            previous = snapshot().get(key, 0)
+            with pytest.raises(HTTPException):
+                synchronize_client_operations(db, subject, version, [op])
+            assert snapshot()[key] == previous + 1
+            assert [getattr(log, FIELDS) for log in caplog.records if hasattr(log, FIELDS)] == [
+                {"event": "learner.sync.conflict", "reason": reason}
+            ]
+            db.rollback()
 
 
 def test_phase8_assessment_quota_and_server_clock_are_subject_scoped(sync_engine):

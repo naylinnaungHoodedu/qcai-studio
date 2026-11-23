@@ -341,6 +341,7 @@ CALLER_READS = [
 ]
 # Reads where the owner's own response must show the marker, so the check above is not vacuous.
 MARKER_EXPECTED = {
+    "/auth/learner-export",
     "/content/lessons/{lesson_slug}/notes",
     "/content/progress",
     "/assistant/threads",
@@ -360,6 +361,9 @@ def _local_account() -> tuple[TestClient, dict[str, str]]:
 
 
 def _write_everything(browser: TestClient, headers: dict[str, str], marker: str) -> None:
+    consent = browser.put("/auth/learner-consent", json={"consent_class": "analytics", "granted": True},
+                          headers={**headers, **_source()})
+    assert consent.status_code == 200
     issued = browser.post("/learner-record/replicas", headers={**headers, **_source()})
     assert issued.status_code == 201
     replica_id = issued.json()["replica_id"]
@@ -391,6 +395,8 @@ def _write_everything(browser: TestClient, headers: dict[str, str], marker: str)
     for method, path, body in writes:
         response = browser.request(method, path, json=body, headers={**headers, **_source()})
         assert response.status_code in {200, 201}, (path, response.status_code, response.text)
+    export = browser.get("/auth/learner-export")
+    assert any(marker in line and '"analytics_events"' in line for line in export.text.splitlines())
     response = browser.post(
         "/projects/submissions",
         json={

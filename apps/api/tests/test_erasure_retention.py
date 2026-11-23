@@ -143,8 +143,8 @@ def test_retention_removes_stale_guest_rows_in_every_table_and_keeps_the_rest():
 
         timestamped = {table.name for table in _covered_tables() if "created_at" in table.c}
         everything = {table.name for table in _covered_tables()}
-        # Stable subject bindings live until explicit erasure, even after aged rows expire.
-        assert _surviving(db, stale_rows) == (everything - timestamped) | {"learner_subjects"}
+        # Binding, account, and unexpired credentials have scope-specific retention.
+        assert _surviving(db, stale_rows) == (everything - timestamped) | {"learner_subjects", "user_accounts", "user_sessions"}
         assert _surviving(db, fresh_rows) == everything
         assert _surviving(db, account_rows) == everything
     assert {"tutor_threads", "tutor_messages", "notes"} <= set(counts)

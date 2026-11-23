@@ -36,7 +36,7 @@ from app.services.local_accounts import (
 from app.services.guest_sessions import upgrade_legacy_guest
 from app.services.learner_record_identity import claim_guest
 from app.services.learner_record_privacy import CONSENT_VERSION, erase_subject, iter_export, read_consent, set_consent
-from app.db_models import UserAccount
+from app.db_models import LearnerErasureAudit, UserAccount
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -75,16 +75,23 @@ def get_learner_export(
 
 
 @router.post("/learner-erasure", dependencies=[Depends(require_privacy_enabled)])
+@limiter.limit(lambda: get_settings().auth_login_rate_limit)
 def post_learner_erasure(
-    payload: LearnerPrivacyErasureRequest, response: Response,
+    request: Request, payload: LearnerPrivacyErasureRequest, response: Response,
     user: AuthUser = Depends(get_current_user), db: Session = Depends(get_db),
 ):
     if user.provider == "local":
         account = db.get(UserAccount, user.user_id)
         if account is None or not payload.password or not verify_password(payload.password, account.password_hash):
+            db.rollback()
+            record_security_event("learner.erasure", "failure", connection=request, actor_role=user.role,
+                                  subject=user.user_id, details={"status": 401})
             raise HTTPException(401, "Password confirmation failed.")
     receipt = erase_subject(db, user.provider, user.user_id, get_settings())
+    deleted_total = db.get(LearnerErasureAudit, receipt["id"]).deleted_total
     db.commit()
+    record_security_event("learner.erasure", "success", connection=request, actor_role=user.role,
+                          subject=user.user_id, details={"rows": deleted_total})
     _clear_auth_cookies(response)
     response.delete_cookie(GUEST_TOKEN_COOKIE, path="/")
     response.headers["Cache-Control"] = "no-store"
@@ -109,7 +116,7 @@ def claim_guest_record(
     try:
         moved = claim_guest(
             db, user.provider, user.user_id, request.cookies.get(GUEST_TOKEN_COOKIE),
-            request.headers.get("x-guest-claim-csrf"), settings,
+            request.headers.get("x-guest-claim-csrf"), settings, verify_account=True,
         )
         db.commit()
     except HTTPException:
