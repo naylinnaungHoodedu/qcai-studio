@@ -324,7 +324,7 @@ Items: `{"id", "class", "source": "phase4:<case id>" | "synthetic", "query", "at
 
 `{"report": "qcai-ehmf-golden-run", "format_version", "created_at", "commit", "evidence_class", "pins": {"config_package", "misconception_library", "routing", "golden_set"}, "configuration", "outcomes": [{"id", "delivered", "final", "types", "x2", "disclosed", "met"}], "citation_resolution", "per_type", "result", "problems", "inputs"}`.
 
-`created_at` and `commit` are informational: `--check` compares every other key. `commit` is the HEAD the record was written from, with the suffix `-dirty` when the tree differed from it; the committed record is written with `--allow-dirty` on the finished change, before its own commit exists, so it names the parent commit with `-dirty` (4.8). `inputs` (rule `application-modules-and-runner-scripts-sha256-lf-v1`) is the sha256 of every `apps/api/app` module and the two runner scripts (`scripts/run_golden_set.py`, `scripts/run_v1_fixtures.py`), LF-normalised: a fixed file set, so an in-process `--check` and a CLI run agree, and any application code change is drift (exit 1) until the record is rewritten.
+`created_at` and `commit` are informational: `--check` compares every other key. `commit` is the HEAD the record was written from, with the suffix `-dirty` when the tree differed from it: a record written with `--allow-dirty` on the finished change, before its own commit exists, names the parent commit with `-dirty` (4.8); one written on a tree equal to HEAD after its code was committed names that commit. The committed record was written on the tree of `3cb6271` (the review-2 code and documents) and names it. `inputs` (rule `application-modules-and-runner-scripts-sha256-lf-v1`) is the sha256 of every `apps/api/app` module and the two runner scripts (`scripts/run_golden_set.py`, `scripts/run_v1_fixtures.py`), LF-normalised: a fixed file set, so an in-process `--check` and a CLI run agree, and any application code change is drift (exit 1) until the record is rewritten.
 
 ### 3.8 Source-fidelity register and report (`docs/evaluation/phase7/`)
 
@@ -513,7 +513,7 @@ No change. `apps/frontend` is untouched.
 
 ### 12.1 New records
 
-`docs/evaluation/phase7/golden_run_v1.json` (written on the finished change with `--write --allow-dirty` and committed with it: its `commit` names the parent commit with `-dirty`, its `inputs.sha256` the code, 4.8), `source_fidelity_report_v1.json` (3 mismatches), `golden_set_v1.json`, `source_fidelity_register.json` and `README.md`.
+`docs/evaluation/phase7/golden_run_v1.json` (written with `--write` and committed in the commit after the code it covers: its `commit` names the commit it ran on, 3.7, and its `inputs.sha256` the code, 4.8), `source_fidelity_report_v1.json` (3 mismatches), `golden_set_v1.json`, `source_fidelity_register.json` and `README.md`.
 
 ### 12.2 Records re-written at the last code commit
 

@@ -1,8 +1,8 @@
 {
  "report": "qcai-v1-fixture-report",
  "format_version": 1,
- "created_at": "2026-11-23T17:11:00+00:00",
- "commit": "c8a1981b8a3589e00cc1fb181c1fc44b97b5bd0a-dirty",
+ "created_at": "2026-11-23T19:20:07+00:00",
+ "commit": "3cb627119b9045df4d551b39cc65fc24fcd0bd50-dirty",
  "evidence_class": "fixture measurements, not research results (plan Phase 4 H)",
  "public_corpus_only": true,
  "fixtures": {
@@ -1258,7 +1258,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 3.877,
+    "p95_ms": 4.37,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2485,7 +2485,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 4.486,
+    "p95_ms": 3.142,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2539,7 +2539,7 @@
   "contained": true
  },
  "latency": {
-  "p95_ms": 3.264,
+  "p95_ms": 3.222,
   "budget_ms": 250,
   "within_budget": true
  },
@@ -2550,7 +2550,7 @@
   "files": {
    "apps/api/app/__init__.py": "a45661633011b095a62071507cf3309e100424dd64d34feabf2cc6d084696348",
    "apps/api/app/core/config.py": "24b05787401ae696734fc3bee483d89a4b7108ef25ce88cc761a3e24c83d8899",
-   "apps/api/app/core/config_package.py": "6c67674663b2838156e2e54b2de98bab639b51a78ce76286f2995ee6d5ce9a50",
+   "apps/api/app/core/config_package.py": "c0143500e92b1c1b68a9d700065890f8a3472f3b3cd6176dcf8e8884a311de0d",
    "apps/api/app/core/corpus_governance.py": "39153061b8d613ca0298a5210b4d9abeb4da2298608b1b471c0cf659a7f9a4fd",
    "apps/api/app/core/data_planes.py": "195f35a4a4a01cabeb32d48a0d81c1beb0ca714e943d7c154abe3e96a35a5976",
    "apps/api/app/core/db.py": "81d5e54a250dc4e3d6d477ad33bb37f78cee4a98854330e39e223f1ab44b6014",
@@ -2626,6 +2626,6 @@
    "apps/api/app/services/v3/rules.py": "bcc960dc344571871449d9724130ec0f4532cc8b87d973ffa699d806473e53c2",
    "scripts/run_v1_fixtures.py": "9b9d59106859db8251783ac8d6d963a8453d0b90cd8573f5461a903b1efb616e"
   },
-  "sha256": "8f303b8a622fee793532d855ea52ccc1432965e63d4124294f20ed674ecb45e6"
+  "sha256": "b9083ea9c3beedc564e456dc0fbf55477820394defb3270297a7d5b18d706cae"
  }
 }

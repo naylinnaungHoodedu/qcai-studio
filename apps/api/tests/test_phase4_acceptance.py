@@ -1341,8 +1341,15 @@ def test_phase4_docs_the_phase3_spec_states_what_phase4_changed():
     # loader accepts; the frontend row quotes the chat's render expression; 4.3 names the sufficiency's score.
     assert "`RAW` now reads v2" not in phase3 and "`RAW` reads the shipped package (v6 since Phase 7) and `V2_RAW` reads v2" in phase3
     assert "a copy of `v2.json`" not in phase3
-    accepted = re.search(r"_require\(schema_version in \((\d), (\d), (\d), (\d), (\d), (\d)\)", (API_ROOT / "app" / "core" / "config_package.py").read_text(encoding="utf-8"))
-    assert accepted and accepted.groups() == ("1", "2", "3", "4", "5", "6")
+    # The loader accepts schema versions 1 to EHMF_SCHEMA_VERSION (Phase 7 reads the bound from one constant, E16):
+    # load a copy of the shipped package at each bound and one past it.
+    from app.core.config_package import EHMF_SCHEMA_VERSION, ConfigPackageError, parse_config_package
+
+    source = (API_ROOT / "app" / "core" / "config_package.py").read_text(encoding="utf-8")
+    assert "1 <= schema_version <= EHMF_SCHEMA_VERSION" in source and EHMF_SCHEMA_VERSION == 6
+    for refused_version in (0, EHMF_SCHEMA_VERSION + 1, True):
+        with pytest.raises(ConfigPackageError, match="schema_version"):
+            parse_config_package({**PACKAGE.raw, "schema_version": refused_version}, path=PACKAGE.path, sha256="", hash_verified=False)
     assert "accepts `schema_version` 1 or 2. For 1" not in phase3 and "accepts `schema_version` 1 or 2, 3 since Phase 4, 4 since Phase 5, 5 since Phase 6, and 6 since Phase 7" in phase3
     chat = (REPO_ROOT / "apps" / "frontend" / "src" / "components" / "teaching-assistant-chat.tsx").read_text(encoding="utf-8")
     render = next(line.strip() for line in chat.splitlines() if "<EvidencePanel evidence={message.evidence} />" in line)
