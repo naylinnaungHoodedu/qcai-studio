@@ -11,7 +11,8 @@ transaction (on PostgreSQL under a transaction-scoped advisory lock), and for ea
   4. for a learner delivery (legacy or delivered) inserts its v3_draws row (primary key: its seq, so each delivery is
      considered exactly once) at 1/20, or 1/5 while an X5 window is open, and a drawn delivery gets an X6 or X5 response
      item; then it raises the exposure of any item already on the record (an X3 flag that came first) to the record's
-     full count (queue.refresh_exposure), so an item's exposure never depends on which path created it;
+     full count (queue.refresh_exposure); a flag takes this scan's advisory lock on PostgreSQL (feedback.record_flag),
+     so an item's exposure never depends on which path created it;
   5. upserts each item (queue.upsert_item).
 Then it appends the v3_scans row and logs v3.scan. Write order: model versions and events, then draws, then queue
 items, then the scan row (the guard's lock order). The ledger is read only: no ledger row changes. On SQLite a

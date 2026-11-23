@@ -15,6 +15,30 @@ from pathlib import Path
 from uuid import UUID
 
 FIXED_NOW = datetime(2026, 11, 20, 12, 0, 0, tzinfo=UTC)
+REPOSITORY = Path(__file__).resolve().parents[3]
+UNTRACKED_DIRECTORIES = frozenset({".git", "node_modules", ".next", "__pycache__", ".pytest_cache"})
+
+
+def repository_tree(root: Path = REPOSITORY) -> frozenset[tuple[str, int, int]]:
+    """Every file of the checkout as (path, size, mtime_ns), skipping the git store, dependency and build trees and
+    bytecode: two equal trees mean no test, script or mutation run wrote into the checkout (Phase 6 spec 0.1)."""
+    import os
+
+    files = set()
+    for directory, names, filenames in os.walk(root):
+        names[:] = sorted(name for name in names if name not in UNTRACKED_DIRECTORIES)
+        for filename in filenames:
+            if filename.endswith(".pyc"):
+                continue
+            path = Path(directory) / filename
+            status = path.stat()
+            files.add((path.relative_to(root).as_posix(), status.st_size, status.st_mtime_ns))
+    return frozenset(files)
+
+
+def tree_changes(before: frozenset, after: frozenset) -> list[str]:
+    """The paths that were added, removed or rewritten between two repository_tree() snapshots."""
+    return sorted({path for path, *_ in before ^ after})
 QUERIES_PATH = Path(__file__).resolve().parent / "data" / "score_floor_queries.json"
 CRITICAL_QUERY_INDEX = 30
 CRITICAL_CLAIMS = ("claim-5986f3f1a2e538431cad1eba9de377a7", "claim-f7a69a03bf419134f7104233b637aed6", "claim-71143cadf24a121f65b59a75a9b9ec53")
@@ -143,23 +167,35 @@ def reviewable_deliveries(n: int, *, start: int = 1, decision: str = "answer") -
     return synthetic_deliveries(n, start=start, decision=decision, text=text, span_id=span_id)
 
 
-def seed_items(factory, entries, *, package, now, trigger: str = "X6", double_review: bool | None = None) -> list[str]:
-    """Append the entries and give each record a response item with `trigger`; returns the item ids."""
-    from sqlalchemy import update
+@contextmanager
+def double_review_selection(selected: bool | None) -> Iterator[None]:
+    """Items created inside the block are (or are not) selected for double review, whatever the seeded rule draws on their
+    id; None keeps the rule. The queue's guard refuses a later change of double_review (Phase 6 spec 8), so a test picks
+    the selection when the item is created."""
+    from unittest import mock
 
-    from app.db_models import V3QueueItem
+    from app.services.v3 import queue
+
+    if selected is None:
+        yield
+        return
+    with mock.patch.object(queue, "bernoulli", lambda purpose, seed, key, rate: bool(selected)):
+        yield
+
+
+def seed_items(factory, entries, *, package, now, trigger: str = "X6", double_review: bool | None = None) -> list[str]:
+    """Append the entries and give each record a response item with `trigger` (selected for double review as
+    `double_review` says, or by the seeded rule when None); returns the item ids."""
     from app.services.v3 import queue
     from app.services.v3.triggers import response_spec
 
     appended = append_all(factory, entries)
     ids = []
-    with factory() as db:
+    with factory() as db, double_review_selection(double_review):
         for record in appended:
             row = queue.record_row(db, record.seq)
             entry = queue.parse_entry(row)
             item_id, _ = queue.upsert_item(db, record_row=row, spec=response_spec(entry, trigger), entry=entry, package=package, now=now)
-            if double_review is not None:
-                db.execute(update(V3QueueItem).where(V3QueueItem.item_id == item_id).values(double_review=double_review))
             ids.append(item_id)
         db.commit()
     return ids

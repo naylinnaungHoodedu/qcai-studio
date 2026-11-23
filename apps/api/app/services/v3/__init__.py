@@ -17,8 +17,9 @@ enumerations, counts, item ids, model keys, seq numbers and hashes only.
 
 mode() is the V3 mode:
   off     the package has no v3 block, the start-up check found a v3 problem, or V3_QUEUE is off (the default outside
-          development): no scan, no draw, no item, no flag intake (the flag route answers 404); the reviewer routes
-          answer 404 to an admitted reviewer, after the role and pool checks that refuse every other caller with 403
+          development): no scan, no draw, no item, no flag intake (the flag route answers an authenticated caller
+          404); the reviewer routes answer 404 to an admitted reviewer, after the role and pool checks that refuse
+          every other authenticated caller with 403 (a caller without a credential gets 401 where demo auth is off)
   shadow  the scan, triggers, queue, draw, gold store, workflow, reviewer routes and metrics run (development default)
   on      as shadow; the delivered path's consumption of the holds is DI-97
 """

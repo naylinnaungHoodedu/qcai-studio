@@ -2,15 +2,18 @@
 Phase 6 spec section 9).
 
 Always registered, so the authorization matrix stays static. The reviewer routes need the closed role `reviewer`
-(app.core.reviewer_access), a dependency that runs before the route's body: a caller of any other role, a guest
-included, gets 403 and one authz.denied security event in every environment and whatever V3_QUEUE says, and outside
-development every caller gets 403 and authz.denied while the reviewer pool (D-18) is unstaffed. Only an admitted
-reviewer (development) reaches the body, which answers 404 unless V3_QUEUE is shadow or on. Reviewers see claim text and
-public, quotable span text, span ids and keyed digests only, never a learner identifier. A successful reviewer call
-records one v3.* security event; a 404, 409, 422 or 503 outcome records none. The learner flag route (POST /v3/flags)
-answers 404 unless the environment is development and V3_QUEUE is shadow or on: the caller's own tutor turn (another
-learner's, a missing and a pre-ledger turn get the same 404); it sets F_i = 0 and queues the response (X3), and changes
-no verdict and no ledger row. Mutations carry client keys (plan 7.3): adjudicate and apply take a client_key (a repeat
+(app.core.reviewer_access), a dependency that runs before the route's body: an authenticated caller of any other role,
+a guest included, gets 403 and one authz.denied security event in every environment and whatever V3_QUEUE says, and
+outside development every authenticated caller gets 403 and authz.denied while the reviewer pool (D-18) is unstaffed.
+Authentication comes first: without a credential the caller gets 401 and no security event where demo auth is off (the
+default outside development), a rejected bearer or guest token gets 401 with auth.credential_rejected, and the CSRF
+guard (main.py) answers a POST whose session or guest cookie fails it (an invalid cookie, no matching CSRF header or an
+untrusted Origin) with 403 and request.forbidden before routing. Only an admitted reviewer (development) reaches the body, which answers 404 unless V3_QUEUE is shadow or on.
+Reviewers see claim text and public, quotable span text, span ids and keyed digests only, never a learner identifier. A
+successful reviewer call records one v3.* security event; a 404, 409, 422 or 503 outcome records none. The learner flag
+route (POST /v3/flags) answers an authenticated caller 404 unless the environment is development and V3_QUEUE is
+shadow or on: the caller's own tutor turn (another learner's, a missing and a pre-ledger turn get the same 404); it sets
+F_i = 0 and queues the response (X3), and changes no verdict and no ledger row. Mutations carry client keys (plan 7.3): adjudicate and apply take a client_key (a repeat
 returns duplicate true and writes nothing); a flag is idempotent per learner and turn; a claim is idempotent for its
 lease holder. A write the database kept refusing (queue.V3Busy: a SQLite lock that outlasted the retries) answers 503.
 Every response is Cache-Control: no-store.

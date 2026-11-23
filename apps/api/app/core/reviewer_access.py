@@ -5,9 +5,11 @@ require_reviewer is the one dependency of every V3 reviewer route. Its sub-depen
 the role first, so a caller whose role is not reviewer (a guest's is learner) gets 403 and one authz.denied security
 event (required "role:reviewer") in every environment; the authorization matrix reads its allowed_roles. Then
 reviewer_admitted: true in development, where reviewers are synthetic demo identities; elsewhere only when the package's
-v3.reviewer_pool is staffed, which it is not while D-18 is open, so outside development every caller is refused with
-403 and an authz.denied event (required "reviewer_pool:D-18"), whatever role a token or header carries. No in-app grant
-of any role exists (provisioning is DI-91 with DI-38). The ledger route's reviewer branch reads the same gate.
+v3.reviewer_pool is staffed, which it is not while D-18 is open, so outside development a reviewer-role caller is
+refused too, with 403 and an authz.denied event (required "reviewer_pool:D-18"), whatever token or header carries the
+role. Authentication (get_current_user) runs before both checks: without a credential a caller gets 401 and no security
+event where demo auth is off (the default outside development). No in-app grant of any role exists (provisioning is
+DI-91 with DI-38). The ledger route's reviewer branch reads the same gate.
 """
 
 from __future__ import annotations

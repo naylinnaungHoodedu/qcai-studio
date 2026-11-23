@@ -187,6 +187,31 @@ def test_every_v3_route_answers_404_while_v3_is_off():
         assert client.post("/v3/flags", headers=learner, json={"response_id": f"turn-{uuid4()}"}).status_code == 404
 
 
+@pytest.mark.parametrize("setting", ["off", "shadow"])
+def test_outside_development_a_caller_without_a_credential_gets_401_and_no_security_event(setting, monkeypatch):
+    # Demo auth is off outside development (its default), so authentication refuses an anonymous caller before any role
+    # or pool check: every V3 route, the flag route included, answers 401 "Authentication required." and records no
+    # security event of any kind (the runbook's unauthenticated check reads 401, not 403).
+    from app import main as main_module
+    from app.core import authorization as authz
+
+    staging = v3_fakes.staging_settings(v3_queue=setting, enable_demo_auth=False)
+    monkeypatch.setattr(main_module, "settings", staging)          # the CSRF and origin guard reads the process settings
+    app.dependency_overrides[get_settings] = lambda: staging
+    try:
+        routes = [(method, path) for (method, path) in authz.ROUTE_POLICIES if path.startswith("/v3/")]
+        assert len(routes) == 8
+        anonymous = TestClient(app)
+        for method, path in routes:
+            body = {"response_id": f"turn-{uuid4()}"} if path == "/v3/flags" else ({} if method == "POST" else None)
+            start = _head()
+            response = anonymous.request(method, path.replace("{item_id}", "v3i-" + "0" * 24), json=body)
+            assert (response.status_code, response.json()) == (401, {"detail": "Authentication required."}), path
+            assert _head() == start, path
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
+
+
 def test_the_scan_route_scans_and_is_a_security_event():
     start = _head()
     response = client.post("/v3/scan", headers=v3_fakes.reviewer("a"))

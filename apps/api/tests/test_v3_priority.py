@@ -58,32 +58,107 @@ def test_exposure_counts_the_claim_set_s_deliveries_up_to_the_record_and_is_at_l
     assert exposures == [1, 1, 2, 3, 1, 1]
 
 
+FLAGGER = "guest-synthetic-flagger"
+
+
+def _turn_for(factory, seq: int) -> str:
+    """A synthetic learner's tutor turn for ledger record `seq` (the flag route's precondition); returns its id."""
+    from app.db_models import TutorThread, TutorTurn
+
+    with factory() as db:
+        response_id = queue.record_row(db, seq).response_id
+        db.add(TutorThread(id=f"thread-synthetic-{seq}", user_id=FLAGGER, title="t"))
+        db.flush()
+        db.add(TutorTurn(id=response_id, thread_id=f"thread-synthetic-{seq}", user_id=FLAGGER, resolved_query="q", retrieval_mode="lexical",
+                         provider="p", model="m", decision="answer", decision_reason="r", citations=[], claims=[], corpus_version="c",
+                         policy_version="p", ledger_record_expected=True))
+        db.commit()
+    return response_id
+
+
+def _flag(factory, response_id: str):
+    from app.services.v3.feedback import record_flag
+
+    with factory() as db:
+        return record_flag(db, user_id=FLAGGER, response_id=response_id, settings=SETTINGS, package=PACKAGE, now=v3_fakes.FIXED_NOW)
+
+
 def test_an_item_s_exposure_and_priority_do_not_depend_on_whether_a_flag_or_the_scan_came_first():
-    # Twenty learner deliveries of one claim set; an X3 response item on the twentieth, created by the flag path
-    # (queue.upsert_item with the X3 spec, as feedback.record_flag does) before or after the scan reaches the record.
-    from app.services.v3.triggers import response_spec
-
-    def flag(factory, seq):
-        with factory() as db:
-            row = queue.record_row(db, seq)
-            entry = queue.parse_entry(row)
-            queue.upsert_item(db, record_row=row, spec=response_spec(entry, "X3"), entry=entry, package=PACKAGE, now=v3_fakes.FIXED_NOW)
-            db.commit()
-
+    # Twenty learner deliveries of one claim set; the learner flag path (feedback.record_flag) puts an X3 response item
+    # on the twentieth before or after the scan reaches the record.
     outcomes = {}
     for order in ("flag_then_scan", "scan_then_flag", "flag_scan_flag"):
         with v3_fakes.fresh_v3_sessions() as (factory, _engine):
             v3_fakes.append_all(factory, v3_fakes.synthetic_deliveries(20))
+            response_id = _turn_for(factory, 20)
             if order != "scan_then_flag":
-                flag(factory, 20)
+                _flag(factory, response_id)
             run_scan(settings=SETTINGS, package=PACKAGE, session_factory=factory, now=v3_fakes.FIXED_NOW)
             if order != "flag_then_scan":
-                flag(factory, 20)
+                _flag(factory, response_id)
             with factory() as db:
                 item = queue.get_item(db, queue.item_id_for(20, ""))
                 outcomes[order] = (item.exposure, item.priority, "X3" in queue.split(item.triggers))
     # The record's exposure is its 20 deliveries of the claim set; K is 0 and the unknown type weighs 1.
     assert set(outcomes.values()) == {(20, 20.0, True)}, outcomes
+
+
+def test_a_flag_that_races_the_scan_gets_the_record_s_exposure(fresh_database_url, monkeypatch):
+    # The flag path runs in a second session while the scan's transaction is open: after the scan drew the twentieth
+    # record and refreshed its items, before it committed (spec 4.7). On PostgreSQL the flag waits on the scan's advisory
+    # lock; on SQLite on the database lock. Either way it counts committed draws only, so the item gets the record's
+    # exposure, never a count from a snapshot without the scan's draws (priority 1 instead of 20).
+    import threading
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.core.db import Base
+    from app.core.schema_upgrades import run_schema_upgrades
+    from app.services.v3 import scan as scan_module
+
+    connect_args = {"check_same_thread": False, "timeout": 30} if fresh_database_url.startswith("sqlite") else {}
+    engine = create_engine(fresh_database_url, connect_args=connect_args)
+    try:
+        Base.metadata.create_all(engine)
+        run_schema_upgrades(engine)
+        factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+        v3_fakes.append_all(factory, v3_fakes.synthetic_deliveries(20))
+        response_id = _turn_for(factory, 20)
+        refreshed, release, outcomes = threading.Event(), threading.Event(), {}
+        real = scan_module.refresh_exposure
+
+        def paused(db, *, record_row, entry, package):
+            raised = real(db, record_row=record_row, entry=entry, package=package)
+            if int(record_row.seq) == 20:
+                refreshed.set()
+                release.wait(60)            # the scan's transaction stays open with its 20 draws uncommitted
+            return raised
+
+        def run(name, call):
+            try:
+                outcomes[name] = call()
+            except Exception as exc:  # noqa: BLE001 - reported by the assertion below
+                outcomes[name] = exc
+
+        monkeypatch.setattr(scan_module, "refresh_exposure", paused)
+        scan = lambda: run_scan(settings=SETTINGS, package=PACKAGE, session_factory=factory, now=v3_fakes.FIXED_NOW)  # noqa: E731
+        scanner = threading.Thread(target=run, args=("scan", scan))
+        scanner.start()
+        assert refreshed.wait(60)
+        flagger = threading.Thread(target=run, args=("flag", lambda: _flag(factory, response_id)))
+        flagger.start()
+        flagger.join(2)
+        release.set()
+        scanner.join(60)
+        flagger.join(60)
+        assert not scanner.is_alive() and not flagger.is_alive()
+        assert outcomes["flag"] == (20, False) and outcomes["scan"].deliveries == 20, outcomes
+        with factory() as db:
+            item = queue.get_item(db, queue.item_id_for(20, ""))
+            assert (item.exposure, item.priority, "X3" in queue.split(item.triggers)) == (20, 20.0, True)
+    finally:
+        engine.dispose()
 
 
 def test_priority_orders_an_exhaustive_grid_as_the_exact_products_do():

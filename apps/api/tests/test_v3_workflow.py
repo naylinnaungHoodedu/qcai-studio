@@ -157,22 +157,20 @@ def test_double_review_selection_is_the_seeded_rule_on_the_item_id():
 
 
 def test_independence_survives_a_guest_secret_rotation(seeded, monkeypatch):
-    factory, ids, request = seeded
-    from sqlalchemy import update
-
+    factory, _ids, request = seeded
+    # An item selected for double review when it is created (the queue's guard refuses a later change of the selection).
+    (item_id,) = v3_fakes.seed_items(factory, v3_fakes.reviewable_deliveries(1, start=10), package=PACKAGE, now=NOW, double_review=True)
     with factory() as db:
-        db.execute(update(V3QueueItem).where(V3QueueItem.item_id == ids[1]).values(double_review=True))
-        db.commit()
-        queue.claim_item(db, ids[1], user_id=A, now=NOW, package=PACKAGE)
-        queue.adjudicate(db, ids[1], request("key-4444a"), user_id=A, now=NOW, package=PACKAGE)
+        queue.claim_item(db, item_id, user_id=A, now=NOW, package=PACKAGE)
+        queue.adjudicate(db, item_id, request("key-4444a"), user_id=A, now=NOW, package=PACKAGE)
     # The keyed digests rotate with the guest secret; the round records do not.
     monkeypatch.setattr(get_settings(), "guest_token_secret", "rotated-" + "x" * 40)
     with factory() as db:
-        _conflict("independent_review_required", lambda: queue.claim_item(db, ids[1], user_id=A, now=NOW, package=PACKAGE))
-        queue.claim_item(db, ids[1], user_id=B, now=NOW, package=PACKAGE)
-        queue.adjudicate(db, ids[1], request("key-4444b"), user_id=B, now=NOW, package=PACKAGE)
-        _conflict("adjudicator_cannot_apply", lambda: queue.apply_item(db, ids[1], ApplyRequest(client_key="apply-4444"), user_id=A, now=NOW))
-        digests = [row[0] for row in db.execute(select(V3GoldLabelRecord.reviewer_digest).where(V3GoldLabelRecord.item_id == ids[1]))]
+        _conflict("independent_review_required", lambda: queue.claim_item(db, item_id, user_id=A, now=NOW, package=PACKAGE))
+        queue.claim_item(db, item_id, user_id=B, now=NOW, package=PACKAGE)
+        queue.adjudicate(db, item_id, request("key-4444b"), user_id=B, now=NOW, package=PACKAGE)
+        _conflict("adjudicator_cannot_apply", lambda: queue.apply_item(db, item_id, ApplyRequest(client_key="apply-4444"), user_id=A, now=NOW))
+        digests = [row[0] for row in db.execute(select(V3GoldLabelRecord.reviewer_digest).where(V3GoldLabelRecord.item_id == item_id))]
     assert len(set(digests)) == 2
 
 

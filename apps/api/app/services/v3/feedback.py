@@ -5,9 +5,12 @@ record_flag is the intake behind POST /v3/flags, in development only until DI-97
 privacy disclosure: the caller's own tutor turn (anyone else's, or a missing one, is the same V3NotFound), its legacy
 ledger record (a pre-ledger turn is not auditable), one flag per learner and record (v3_flags, user-keyed, so erasure
 and guest retention delete it), and, once triggers.x3_fires holds for the record's stored flags, the record's response
-item with trigger X3. It writes no ledger row and changes no
-verdict. f_i reads the queue: 0.0 for a record with an X3 item, None otherwise, so F_i outlives the learner's erasure
-and never names a learner. No ledger schema holds a learner rating or flag (invariant 5's schema test).
+item with trigger X3. On PostgreSQL its transaction first takes the scan's advisory lock (scan.V3_SCAN_LOCK_KEY), so a
+flag never computes its item's exposure while a scan's draws are uncommitted: it runs wholly before the scan (whose
+refresh_exposure then raises the item) or wholly after it (when every draw it counts is committed). On SQLite the two
+writers serialise on the database lock. It writes no ledger row and changes no verdict. f_i reads the queue: 0.0 for a
+record with an X3 item, None otherwise, so F_i outlives the learner's erasure and never names a learner. No ledger
+schema holds a learner rating or flag (invariant 5's schema test).
 """
 
 from __future__ import annotations
@@ -16,13 +19,14 @@ from datetime import datetime
 import logging
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.core.structured_logging import FIELDS
 from app.services import v3
 from app.services.v3 import triggers as trig
 from app.services.v3.queue import V3Conflict, V3NotFound, _dialect, _retrying, parse_entry, record_row, split, upsert_item, utc
+from app.services.v3.scan import V3_SCAN_LOCK_KEY
 
 LOGGER = logging.getLogger("qcai.v3")
 
@@ -35,6 +39,9 @@ def record_flag(db: Session, *, user_id: str, response_id: str, settings: Any, p
         raise v3.V3Off("the flag intake is development-only (DI-97)")
 
     def body() -> tuple[int, bool]:
+        if db.get_bind().dialect.name == "postgresql":
+            # The scan's lock (released at commit or rollback): exposure_for counts committed draws only (Phase 6 spec 4.7).
+            db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": V3_SCAN_LOCK_KEY})
         turn = db.get(TutorTurn, response_id)
         if turn is None or turn.user_id != user_id:
             raise V3NotFound(response_id)

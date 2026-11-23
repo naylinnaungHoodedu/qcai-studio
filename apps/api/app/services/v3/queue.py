@@ -9,8 +9,9 @@ and priority recomputed; it never writes state, review_round, closed_at or final
 is never undone, and a trigger on a closed item is recorded and the item is not reopened (v3.trigger_after_close).
 Exposure is the record's (priority.exposure_for): an item created before the scan considered its record (an X3 flag)
 counts the deliveries considered so far, and refresh_exposure, which the scan runs once it has drawn the record (every
-earlier delivery considered), raises it to the full count, so the final exposure and priority never depend on which
-path created the item.
+earlier delivery considered), raises it to the full count. On PostgreSQL the flag takes the scan's advisory lock first
+(feedback.record_flag), so it never counts while a scan's draws are uncommitted; on SQLite the writers serialise. The
+final exposure and priority therefore never depend on which path created the item.
 
 Workflow. "claimed" is derived: a queued item whose current round has a live lease (v3_claims, user-keyed). claim_item
 takes a 30-minute lease (idempotent for its holder; an expired lease is replaced). adjudicate appends exactly one gold row

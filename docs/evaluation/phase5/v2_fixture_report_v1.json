@@ -1,8 +1,8 @@
 {
  "report": "qcai-v2-fixture-report",
  "format_version": 1,
- "created_at": "2026-11-22T22:02:21+00:00",
- "commit": "6c94032cfbee07cc124d2993a775d1755b162d83-dirty",
+ "created_at": "2026-11-23T00:24:27+00:00",
+ "commit": "da00224b1884b451d0b68b6e3324bcd961b19ebb-dirty",
  "evidence_class": "fixture measurements, not research results (plan Phase 5 H: V-2, V-4 are E2 results, never claimed from fixtures)",
  "public_corpus_only": true,
  "config_package": {
@@ -227,7 +227,7 @@
  "latency": {
   "p95_ms": {
    "gateway_call": 0.014,
-   "panel": 2.55
+   "panel": 2.43
   }
  },
  "result": "pass",
@@ -236,17 +236,17 @@
   "rule": "imported-repository-modules-sha256-lf-v1",
   "files": {
    "apps/api/app/__init__.py": "a45661633011b095a62071507cf3309e100424dd64d34feabf2cc6d084696348",
-   "apps/api/app/core/config.py": "8ed6b8b4ab03b9236f1d21534b3a1895f5f2ca63a99766a067be5acb8b97860a",
+   "apps/api/app/core/config.py": "fe84009da57e67ef9e68efe6d34f077504a7600ff469c24652644a430b40b3c4",
    "apps/api/app/core/config_package.py": "21de37f0b71162f581f5890f5414a157891f06cb2b3a8cb57595aa0aceed8566",
    "apps/api/app/core/corpus_governance.py": "39153061b8d613ca0298a5210b4d9abeb4da2298608b1b471c0cf659a7f9a4fd",
    "apps/api/app/core/data_planes.py": "195f35a4a4a01cabeb32d48a0d81c1beb0ca714e943d7c154abe3e96a35a5976",
    "apps/api/app/core/db.py": "81d5e54a250dc4e3d6d477ad33bb37f78cee4a98854330e39e223f1ab44b6014",
    "apps/api/app/core/log_redaction.py": "ac76ce9520ac9b42986775b36bb803b00105edb9a6b256748f541022437582c3",
    "apps/api/app/core/manifest_v2.py": "993892df5fb5e97fa34d5e8bd645eabca4d2960b7cf8959383064d2de10087a3",
-   "apps/api/app/core/schema_upgrades.py": "c00a9abd1a8836826ef8b751ad31ee2c44cd4005dcf6455f3d14f26e14ff4865",
+   "apps/api/app/core/schema_upgrades.py": "f95c75b1550ffabe7a19068a18ec39548013ccd9ee5127446e0f26ee73f1431b",
    "apps/api/app/core/source_assets.py": "1889e9d025697c0d928b6e068325c0569adc7b8a802394a6dd3750f451e39ce5",
    "apps/api/app/core/structured_logging.py": "854ef58ab42efdb665dc20cff8595e296241ccd63c5322eb77bcb7830b691ea1",
-   "apps/api/app/db_models.py": "0b38de090fe6c581b7570d4d2a297af664a854415414ccc5709e6649c155d8a8",
+   "apps/api/app/db_models.py": "1383ab8db1e56c665fffcab3414fe93c4deb7433617f9ecf97851a79a25b0005",
    "apps/api/app/gateway/__init__.py": "f30aa888d009d0bfc94f7be7dcd0a67f371e323e2f2a33ade73b0a06e1b568f2",
    "apps/api/app/gateway/adapters.py": "982c5d6c9932d7b702db9269ed3decba2bb08e6a409f50bc68c237c286eed977",
    "apps/api/app/gateway/budget.py": "5a9a6c6f4f200a058731b4e380a66ca5e15f6f60ce80dcc00f62771ee83bcd6a",
@@ -316,12 +316,12 @@
    "apps/api/app/services/v2_panel/tiers.py": "14a45d171e62abec02a6df39d278801a311e52401176b727e761bd1c02e2f5e7",
    "apps/api/app/services/v2_panel/track.py": "cacbc0debfee1dfd02007bbec14ad54f5656256a1d0c735f101deb6a7e114bf3",
    "apps/api/app/services/v2_panel/voting.py": "369859a4c5808e23c4a84306d14b7b594693d4755e4bb23132f14292905bff78",
-   "apps/api/app/services/v3/__init__.py": "9df8e7a7af2d0a547ac9dd1afed574652b2d9ae7a35696d49d64a3a758636dec",
+   "apps/api/app/services/v3/__init__.py": "3204eb7822e72a4aad9bc5c06f99346d874f96b29c879e496fc141c57a336c2c",
    "apps/api/app/services/v3/contracts.py": "e5b6b798e2b6c6e3570827606085a3fdf31f18d4b08ec5b588ac32d324036fb7",
    "apps/api/app/services/v3/rules.py": "fcd33c73424d797816ef8d0f13bde6ba224ee15be6ce3423dc1c995fa6b8958a",
    "apps/api/app/services/v3/stop.py": "a846ccc64ff5122a5327374b6220976cd0bef9e8aacf7ae8d81ec6131535ca6c",
    "scripts/run_v2_fixtures.py": "3cf0ba9977a90f890f9e5b4f716217bc4711041f6525c6f95c76529358a7ff44"
   },
-  "sha256": "e1a27bfaf48f36eaa3886317c6e97820e8918f000d80148c07b758c58c7fddfe"
+  "sha256": "70ccc367090e0657a0862c3cc67f043be9054b1656cd785340e84565869a5bc3"
  }
 }

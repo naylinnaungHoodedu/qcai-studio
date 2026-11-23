@@ -308,6 +308,38 @@ def test_ac_6_4_an_adjudication_appends_one_gold_row_and_changes_no_ledger_row()
         assert _ledger_rows(factory) == before
 
 
+def test_plan_h_the_v3_export_and_residual_report_paths_leave_the_repository_tree_unchanged(residual_report, tmp_path, monkeypatch):
+    # Plan L627-628: gold labels "MUST NOT enter the public repository". The residual report's in-process run (the module
+    # fixture) and the gold export, through the service and the worker command, write only to their target outside the
+    # checkout: the repository tree is the same before and after, and an export aimed at the checkout is refused (exit 2)
+    # and writes nothing.
+    from app.services.v3.gold import export_gold
+    from app.workers import v3_queue as worker
+
+    assert RESIDUAL_RUN_TREES and v3_fakes.tree_changes(RESIDUAL_RUN_TREES["before"], RESIDUAL_RUN_TREES["after"]) == []
+    before = v3_fakes.repository_tree()
+    with v3_fakes.fresh_v3_sessions() as (factory, _engine):
+        entries = v3_fakes.reviewable_deliveries(1)
+        (item_id,) = v3_fakes.seed_items(factory, entries, package=PACKAGE, now=NOW, double_review=False)
+        with factory() as db:
+            queue.claim_item(db, item_id, user_id="synthetic-reviewer-a", now=NOW, package=PACKAGE)
+            queue.adjudicate(db, item_id, v3_fakes.supported_labels(entries[0])("hygiene-key-1"), user_id="synthetic-reviewer-a", now=NOW,
+                             package=PACKAGE)
+            queue.apply_item(db, item_id, ApplyRequest(client_key="hygiene-apply"), user_id="synthetic-reviewer-b", now=NOW)
+            assert export_gold(db, tmp_path / "applied.jsonl") == 1 and export_gold(db, tmp_path / "all.jsonl", applied_only=False) == 1
+        monkeypatch.setattr(worker, "SessionLocal", factory)
+        assert worker.main(["export-gold", "--path", str(tmp_path / "worker.jsonl"), "--all"]) == 0
+        targets = (v3_fakes.REPOSITORY / "gold.jsonl", v3_fakes.REPOSITORY / "docs" / "evaluation" / "phase6" / "gold.jsonl")
+        try:
+            for target in targets:
+                assert worker.main(["export-gold", "--path", str(target), "--all"]) == 2 and not target.exists(), target
+        finally:                                    # an export that was let through never stays in the checkout
+            for target in targets:
+                target.unlink(missing_ok=True)
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["all.jsonl", "applied.jsonl", "worker.jsonl"]
+    assert v3_fakes.tree_changes(before, v3_fakes.repository_tree()) == []
+
+
 # ==================================================================================================== AC-6-5
 
 
@@ -318,10 +350,16 @@ def _residual_module():
     return module
 
 
+RESIDUAL_RUN_TREES: dict = {}
+
+
 @pytest.fixture(scope="module")
 def residual_report():
     module = _residual_module()
-    return module, module.run(commit_source=lambda: "test")
+    before = v3_fakes.repository_tree()
+    report = module.run(commit_source=lambda: "test")
+    RESIDUAL_RUN_TREES.update(before=before, after=v3_fakes.repository_tree())   # read by the checkout-hygiene test
+    return module, report
 
 
 def test_ac_6_5_zero_errors_in_300_audited_items_bound_the_residual_below_1_3_percent(residual_report):
@@ -720,7 +758,12 @@ def test_plan_g_the_phase_6_revision_is_additive_reversible_and_keeps_its_rows(f
         assert checked.returncode == 0 and "No new upgrade operations detected" in (checked.stdout + checked.stderr), checked.stderr[-2000:]
         assert V3_TABLES <= set(sa_inspect(engine).get_table_names())
         engine.dispose()
-        for table, statement in (("v3_flags", "INSERT INTO v3_flags (user_id, ledger_seq, created_at) VALUES ('guest-synthetic', 1, CURRENT_TIMESTAMP)"),
+        # A CUSUM alarm (from outside the ledger) keeps the tables too; a model_change event (derived from the records and
+        # the registry) is not counted: one of each gives "1 cusum_alarm rows".
+        events = ("INSERT INTO v3_events (kind, payload, from_ledger_seq, window_deliveries, created_at) "
+                  "VALUES ('model_change', '{}', 0, 1500, CURRENT_TIMESTAMP), ('cusum_alarm', '{}', 0, 1500, CURRENT_TIMESTAMP)")
+        for table, statement in (("v3_events", events),
+                                 ("v3_flags", "INSERT INTO v3_flags (user_id, ledger_seq, created_at) VALUES ('guest-synthetic', 1, CURRENT_TIMESTAMP)"),
                                  ("v3_queue_items", None), ("v3_gold_labels", None)):
             with engine.begin() as connection:
                 if statement:
@@ -736,7 +779,8 @@ def test_plan_g_the_phase_6_revision_is_additive_reversible_and_keeps_its_rows(f
                         entry="{}", entry_sha256="0" * 64, prev_hash="0" * 64, record_hash="0" * 64, created_at=NOW))
             engine.dispose()
             refused = _alembic(fresh_database_url, "downgrade", PHASE5_REVISION)
-            assert refused.returncode != 0 and "export first" in refused.stderr and f"{table} holds 1 rows" in refused.stderr, refused.stderr[-800:]
+            named = "v3_events holds 1 cusum_alarm rows" if table == "v3_events" else f"{table} holds 1 rows"
+            assert refused.returncode != 0 and "export first" in refused.stderr and named in refused.stderr, refused.stderr[-800:]
             assert "allow_v3_drop=true" in refused.stderr and "export-gold --all" in refused.stderr
         dropped = _alembic(fresh_database_url, "-x", "allow_v3_drop=true", "downgrade", PHASE5_REVISION)
         assert dropped.returncode == 0, dropped.stderr[-2000:]
@@ -839,10 +883,10 @@ def test_plan_i_v3_slis_report_the_escalation_share_queue_age_draws_agreement_an
                 seq = db.scalar(select(ResponseLedgerRecord.seq).where(ResponseLedgerRecord.response_id == record.response_id))
                 assert db.scalar(select(V3Draw.drawn).where(V3Draw.ledger_seq == seq)) is None
                 row = queue.record_row(db, seq)
-                item_id, created = queue.upsert_item(db, record_row=row, spec=response_spec(queue.parse_entry(row), trigger), entry=queue.parse_entry(row),
-                                                     package=PACKAGE, now=NOW - timedelta(hours=8))
+                with v3_fakes.double_review_selection(False):   # one round each (the selection is fixed when an item is created)
+                    item_id, created = queue.upsert_item(db, record_row=row, spec=response_spec(queue.parse_entry(row), trigger),
+                                                         entry=queue.parse_entry(row), package=PACKAGE, now=NOW - timedelta(hours=8))
                 assert created
-                db.execute(V3QueueItem.__table__.update().where(V3QueueItem.item_id == item_id).values(double_review=False))
                 uncounted[item_id] = record
             db.commit()
         pair_ids = v3_fakes.seed_items(factory, v3_fakes.reviewable_deliveries(2, start=900), package=PACKAGE, now=NOW - timedelta(hours=7),
@@ -1131,6 +1175,48 @@ def test_phase6_docs_quote_the_plan_and_state_the_current_rules():
     from test_phase3_docs import NARRATIVE
 
     assert NARRATIVE.findall(head) == []
+
+
+def test_phase6_docs_state_what_each_caller_of_a_v3_route_gets():
+    # What the code answers (test_ac_6_7_a_guest_on_every_reviewer_route_gets_403_and_one_access_log_entry,
+    # test_plan_b_no_reviewer_is_admitted_outside_development_while_d_18_is_open,
+    # test_outside_development_a_caller_without_a_credential_gets_401_and_no_security_event): a reviewer route gives an
+    # authenticated caller of another role 403 and authz.denied in every environment (outside development every
+    # authenticated caller), 404 only to an admitted reviewer while V3 is off, and 401 with no security event to a caller
+    # without a credential where demo auth is off; the flag route gives an authenticated caller 404 outside development.
+    # Each text an operator reads says so, and none says that every /v3 route answers 404.
+    import inspect
+
+    from app.api.routes import v3 as v3_routes
+    from app.services import v3 as v3_package
+
+    flat = lambda value: " ".join(value.split())  # noqa: E731
+    head = spec_text().split("\n## 18. Review history\n", 1)[0]
+    runbook = (REPO_ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8").split("## Phase 6: V3 audit and adjudication (runbook)", 1)[1]
+    example = (REPO_ROOT / "infra" / "cloudrun" / "api-production.env.example.yaml").read_text(encoding="utf-8")
+    example = example.split("# Phase 6 (V3 audit and adjudication", 1)[1].split('V3_QUEUE: "off"', 1)[0]
+    config = (API_ROOT / "app" / "core" / "config.py").read_text(encoding="utf-8")
+    config = config.split("# Phase 6 (V3 audit and adjudication", 1)[1].split("v3_queue: Literal", 1)[0]
+    texts = {"spec": head, "runbook": runbook, "env example": example.replace("#", " "), "matrix note": authz.V3_REVIEWER_NOTE,
+             "routes": inspect.getdoc(v3_routes), "package": inspect.getdoc(v3_package), "setting": config.replace("#", " ")}
+    stale = re.compile(r"every (?:`?/v3`? )?route answers 404|reviewer routes answer 404(?! (?:only )?to an admitted reviewer)"
+                       r"|security event to every caller|every caller gets 403")
+    for name, value in texts.items():
+        value = flat(value)
+        assert not stale.search(value), (name, stale.search(value))
+        assert "401" in value and "403" in value, name
+    for name in ("spec", "runbook", "env example", "matrix note", "routes"):
+        assert "authz.denied" in texts[name] and "no security event" in flat(texts[name]), name
+    assert "An admitted reviewer gets 404 unless V3_QUEUE is shadow or on" in authz.V3_REVIEWER_NOTE
+    assert "reads 401, not 403" in flat(runbook)
+    # The draw's seed is public by design (spec 4.2): the server mints every response id the draw keys on.
+    assert 'turn_id = f"turn-{uuid4()}"' in (API_ROOT / "app" / "services" / "tutor_orchestrator.py").read_text(encoding="utf-8")
+    assert 'response_id=f"qa-{uuid4()}"' in (API_ROOT / "app" / "services" / "qa_engine.py").read_text(encoding="utf-8")
+    draw = head.split("### 4.2 The draw", 1)[1].split("### 4.3", 1)[0]
+    assert "**The seed is public by design.**" in draw and "no caller can choose or change which deliveries are drawn" in flat(draw)
+    # AC-6-7's reading: the API's reviewer routes; the development console over them is not a gate (spec conflict 5).
+    conflict_5 = flat(head.split("5. **AC-6-7 \"an access-log entry\".**", 1)[1].split("\n6. ", 1)[0])
+    assert "AC-6-7's \"reviewer route\" is read as the API's reviewer routes" in conflict_5 and "`reviewerHeaders`" in conflict_5
 
 
 def test_phase6_docs_name_the_logger_each_phase6_event_logs_on():

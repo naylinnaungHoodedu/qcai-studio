@@ -208,9 +208,10 @@ class Settings(BaseSettings):
     # Phase 6 (V3 audit and adjudication; docs/architecture/phase6-implementation-spec.md section 6). Plan Phase 6 L:
     # "Disabling V3 MUST NOT release withheld items." None = "shadow" in development and "off" elsewhere
     # (V3_QUEUE_DEFAULT_DEVELOPMENT, V3_QUEUE_DEFAULT_ELSEWHERE, which package v5 flag_policy.v3_queue must name). Off
-    # runs no scan, no draw, no item and no flag intake: the flag route answers 404, and the reviewer routes answer 404 to
-    # an admitted reviewer (development) after their role and pool checks, which refuse everyone else with 403 (outside
-    # development every caller while D-18 is open); the holds and the stop are
+    # runs no scan, no draw, no item and no flag intake: the flag route answers an authenticated caller 404, and the
+    # reviewer routes answer 404 to an admitted reviewer (development) after their role and pool checks, which refuse
+    # every other authenticated caller with 403 (outside development every authenticated caller while D-18 is open; a
+    # caller without a credential gets 401 first where demo auth is off); the holds and the stop are
     # computed from the records and the stored queue whatever it says, so switching it off releases nothing. "on" is
     # refused outside development while the package says flag_policy.phase6_exit_passed is false, and runs as shadow:
     # nothing in Phase 6 reaches a learner (DI-97). Shadow outside development is a recorded override that changes no

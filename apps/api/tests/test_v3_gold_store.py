@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 import json
 
 import pytest
-from sqlalchemy import create_engine, insert, select, text
+from sqlalchemy import create_engine, insert, select, text, update
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import sessionmaker
 
@@ -125,6 +125,73 @@ def test_the_other_append_only_v3_tables_refuse_update_and_delete_and_the_queue_
             db.execute(text("UPDATE v3_queue_items SET state = 'adjudicated'"))   # the workflow moves an item's state
             db.commit()
             assert db.scalar(text("SELECT state FROM v3_queue_items")) == "adjudicated"
+    finally:
+        engine.dispose()
+
+
+def test_the_queue_moves_an_item_forward_only(fresh_database_url):
+    # The queue's guard (Phase 6 spec 8): an UPDATE keeps an item's identity and its double-review selection, sets each
+    # closing column once, never lowers its exposure or round, never clears held, never drops a trigger, reason or EHMF
+    # type, and moves state queued -> adjudicated -> applied only. The workflow's own writes pass (the rest of the V3
+    # suite runs through them); a direct rewrite of the evidence F_i, the holds' queue and the export read is refused.
+    factory, engine = _sessions(fresh_database_url)
+    later = NOW + timedelta(hours=1)
+
+    def refused(**changes) -> None:
+        with factory() as db:
+            with pytest.raises((DBAPIError, IntegrityError)) as raised:
+                db.execute(update(V3QueueItem).values(**changes))
+                db.commit()
+            db.rollback()
+        assert "moves forward only" in str(raised.value), (changes, str(raised.value)[:300])
+
+    def allowed(**changes) -> None:
+        with factory() as db:
+            db.execute(update(V3QueueItem).values(**changes))
+            db.commit()
+
+    try:
+        with factory() as db:
+            db.execute(insert(V3QueueItem).values(item_id="v3i-" + "9" * 24, ledger_seq=1, claim_key="", subject="response", record_kind="delivery",
+                                                  response_digest="d" * 32, triggers="X3,X6", reasons="v1_3_flag", ehmf_types="A,C", held=True,
+                                                  severity=1.0, exposure=2, k=0.0, priority=2.0, state="queued", review_round=1, double_review=False,
+                                                  enqueued_at=NOW, package_version="5.0.0", package_sha256="x"))
+            db.commit()
+            before = tuple(db.execute(select(V3QueueItem.__table__)).first())
+        for changes in (
+            {"state": "applied"},                     # skips adjudicated
+            {"held": False},                          # releases a hold
+            {"triggers": "X6"},                       # drops X3 (F_i)
+            {"reasons": ""},
+            {"ehmf_types": "C"},
+            {"exposure": 1},
+            {"ledger_seq": 2},                        # re-points the item at another record
+            {"claim_key": "claim-x"},
+            {"double_review": True},
+            {"enqueued_at": later},
+            {"k": 0.5},
+        ):
+            refused(**changes)
+        with factory() as db:
+            assert tuple(db.execute(select(V3QueueItem.__table__)).first()) == before
+        allowed(triggers="X1,X3,X6", reasons="v1_3_flag,v2_degraded_withheld", ehmf_types="A,B,C", priority=3.0)
+        allowed(exposure=5, priority=5.0)
+        allowed(review_round=2)
+        allowed(state="adjudicated", closed_at=later, final_gold_seq=7)
+        allowed(state=V3QueueItem.state)              # a no-op write
+        for changes in (
+            {"final_gold_seq": 8},                    # re-points the final label
+            {"closed_at": later + timedelta(hours=1)},
+            {"state": "queued"},
+            {"review_round": 1},
+        ):
+            refused(**changes)
+        allowed(state="applied", applied_at=later, applied_by_digest="a" * 32, applied_client_key="apply-key-1")
+        for changes in ({"applied_client_key": "apply-key-2"}, {"applied_by_digest": "b" * 32}, {"state": "adjudicated"}):
+            refused(**changes)
+        with factory() as db:
+            row = db.execute(select(V3QueueItem.__table__)).first()
+        assert (row.state, row.final_gold_seq, row.applied_client_key, row.triggers, bool(row.held)) == ("applied", 7, "apply-key-1", "X1,X3,X6", True)
     finally:
         engine.dispose()
 

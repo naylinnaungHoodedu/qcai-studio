@@ -30,6 +30,20 @@ _initialize_database()
 SESSION_STARTED = datetime.now(UTC)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _the_checkout_stays_unchanged():
+    """No test, script or mutation run writes into the repository checkout (Phase 6 spec 0.1): the tree after the
+    session equals the tree before it, outside the git store, dependency and build trees and bytecode (a test writes to
+    its tmp_path; an export refuses the checkout)."""
+    import v3_fakes
+
+    before = v3_fakes.repository_tree()
+    yield
+    changed = v3_fakes.tree_changes(before, v3_fakes.repository_tree())
+    if changed:
+        pytest.fail(f"the test session wrote into the repository checkout: {changed[:10]}")
+
+
 @pytest.fixture(autouse=True)
 def _no_network_attempt():
     """Fails the test that tried to reach a non-loopback host, even when the code under test caught the refusal."""

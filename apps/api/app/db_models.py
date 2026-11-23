@@ -573,8 +573,10 @@ class EvidentialCacheEntry(Base):
 class V3QueueItem(Base):
     # One V3 queue item per (ledger record, claim) or per record (claim_key ""): its triggers and reasons, its priority
     # (severity x exposure x (1 - K)), whether it holds its claim (X1) and its workflow state. Items are never deleted
-    # (triggers refuse DELETE and TRUNCATE): an item's holds and F_i outlive any switch (plan Phase 6 L). Ids, digests,
-    # enumerations and numbers only.
+    # (triggers refuse DELETE and TRUNCATE) and move forward only (an UPDATE that rewrites an identity column or the
+    # double-review selection, resets a closing column, lowers the exposure or round, clears held, drops a trigger,
+    # reason or EHMF type, or moves state backwards is refused): an item's holds and F_i outlive any switch (plan Phase 6
+    # L). Ids, digests, enumerations and numbers only.
     __tablename__ = "v3_queue_items"
     __table_args__ = (
         UniqueConstraint("ledger_seq", "claim_key", name="uq_v3_queue_items_subject"),

@@ -74,10 +74,14 @@ def _p(access: str, ownership: str = NONE, note: str = "") -> RoutePolicy:
 
 
 V3_REVIEWER_NOTE = (
-    "Reviewer role only (403 and authz.denied for any other role, in every environment); outside development every caller "
-    "gets 403 and authz.denied while the reviewer pool (D-18) is unstaffed. An admitted reviewer gets 404 unless V3_QUEUE "
-    "is shadow or on (development only by default). Claim text, public quotable span text, span ids and keyed digests "
-    "only, never a learner identifier; a successful call is a v3.* security event."
+    "Reviewer role only: an authenticated caller of any other role gets 403 and authz.denied in every environment, and "
+    "outside development every authenticated caller gets 403 and authz.denied while the reviewer pool (D-18) is "
+    "unstaffed. Authentication comes first: a caller without a credential gets 401 and no security event where demo auth "
+    "is off (the default outside development), a rejected bearer or guest token gets 401 with auth.credential_rejected, "
+    "and a POST whose session or guest cookie fails the CSRF guard (an invalid cookie, no matching CSRF header or an "
+    "untrusted Origin) gets 403 with request.forbidden before routing. An admitted reviewer gets 404 "
+    "unless V3_QUEUE is shadow or on (development only by default). Claim text, public quotable span text, span ids and "
+    "keyed digests only, never a learner identifier; a successful call is a v3.* security event."
 )
 
 
@@ -135,7 +139,8 @@ ROUTE_POLICIES: dict[tuple[str, str], RoutePolicy] = {
     ("POST", "/v3/flags"): _p(
         PRINCIPAL,
         OWNER,
-        "404 outside development, and unless V3_QUEUE is shadow or on. The caller's own tutor turn only: another learner's, "
+        "404 to every authenticated caller outside development, and unless V3_QUEUE is shadow or on (a caller without a "
+        "credential gets 401 where demo auth is off). The caller's own tutor turn only: another learner's, "
         "a missing and a pre-ledger turn get the same 404. Sets F_i = 0 and queues the response (X3); changes no verdict and "
         "no ledger row. Rate-limited.",
     ),

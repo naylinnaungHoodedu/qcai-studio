@@ -5,9 +5,9 @@ Additive and reversible (expand step, plan 13.3). No table holds learner text or
 v3_flags hold a person's id as user_id, which erasure removes (app.services.erasure), and the gold store holds keyed
 digests only. Start-up's schema upgrades add the triggers (app.core.schema_upgrades._guard_v3_tables): the gold store,
 the draws, the events, the model versions and the scan log refuse UPDATE, DELETE and TRUNCATE, a gold insert must
-extend its chain, and the queue refuses DELETE and TRUNCATE. The downgrade refuses while v3_gold_labels, v3_queue_items
-or v3_flags holds rows (append-only evidence, R-22; the queue and the flags carry F_i and the holds' queue), unless run
-as
+extend its chain, and the queue refuses DELETE and TRUNCATE and moves an item forward only. The downgrade refuses while
+v3_gold_labels, v3_queue_items or v3_flags holds rows (append-only evidence, R-22; the queue and the flags carry F_i
+and the holds' queue) or v3_events holds a cusum_alarm row (an X5 window no ledger row rebuilds), unless run as
     alembic -x allow_v3_drop=true downgrade 20261122_phase5_gateway_controls
 (an absolute target, never -1; check `alembic current` first) after
 `python -m app.workers.v3_queue export-gold --all --path <path outside the application tree and the repository checkout>`.
@@ -171,10 +171,15 @@ def downgrade() -> None:
     allow = context.get_x_argument(as_dictionary=True).get("allow_v3_drop") == "true"
     bind = op.get_bind()
     counts = {table: int(bind.execute(sa.text(f"SELECT COUNT(*) FROM {table}")).scalar() or 0) for table in KEPT_TABLES}
-    if any(counts.values()) and not allow:
+    # A CUSUM alarm (Phase 9's, through events.record_cusum_alarm) is a signal from outside the ledger, so nothing derives
+    # it again; a model_change event is derived from the ledger's and the registry's model versions.
+    alarms = int(bind.execute(sa.text("SELECT COUNT(*) FROM v3_events WHERE kind = 'cusum_alarm'")).scalar() or 0)
+    if (any(counts.values()) or alarms) and not allow:
         held = ", ".join(f"{table} holds {count} rows" for table, count in counts.items())
+        held += f", v3_events holds {alarms} cusum_alarm rows"
         raise RuntimeError(
-            f"{held} (append-only evidence, R-22; the queue and learner flags carry F_i and the holds' queue); export first with "
+            f"{held} (append-only evidence, R-22; the queue and learner flags carry F_i and the holds' queue; a CUSUM alarm's X5 "
+            "window comes from no ledger row); export first with "
             "python -m app.workers.v3_queue export-gold --all --path <path outside the application tree and the repository checkout>, then: "
             "alembic -x allow_v3_drop=true downgrade 20261122_phase5_gateway_controls"
         )

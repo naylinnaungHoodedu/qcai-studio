@@ -1,8 +1,8 @@
 {
  "report": "qcai-v3-residual-report",
  "format_version": 1,
- "created_at": "2026-11-22T22:02:47+00:00",
- "commit": "6c94032cfbee07cc124d2993a775d1755b162d83-dirty",
+ "created_at": "2026-11-23T00:24:53+00:00",
+ "commit": "da00224b1884b451d0b68b6e3324bcd961b19ebb-dirty",
  "evidence_class": "synthetic telemetry, not research results (plan Phase 6 H: audit counts are telemetry, not research results)",
  "public_corpus_only": true,
  "config_package": {
@@ -88,7 +88,7 @@
   "files": {
    "apps/api/app/__init__.py": "a45661633011b095a62071507cf3309e100424dd64d34feabf2cc6d084696348",
    "apps/api/app/core/client_identity.py": "ebba54c74b9b28abe10deddfc3b1f300738de3be3ac49a437cf08de16f338f8a",
-   "apps/api/app/core/config.py": "8ed6b8b4ab03b9236f1d21534b3a1895f5f2ca63a99766a067be5acb8b97860a",
+   "apps/api/app/core/config.py": "fe84009da57e67ef9e68efe6d34f077504a7600ff469c24652644a430b40b3c4",
    "apps/api/app/core/config_package.py": "21de37f0b71162f581f5890f5414a157891f06cb2b3a8cb57595aa0aceed8566",
    "apps/api/app/core/corpus_governance.py": "39153061b8d613ca0298a5210b4d9abeb4da2298608b1b471c0cf659a7f9a4fd",
    "apps/api/app/core/data_planes.py": "195f35a4a4a01cabeb32d48a0d81c1beb0ca714e943d7c154abe3e96a35a5976",
@@ -96,10 +96,10 @@
    "apps/api/app/core/log_redaction.py": "ac76ce9520ac9b42986775b36bb803b00105edb9a6b256748f541022437582c3",
    "apps/api/app/core/manifest_v2.py": "993892df5fb5e97fa34d5e8bd645eabca4d2960b7cf8959383064d2de10087a3",
    "apps/api/app/core/safe_input.py": "6f0475c6c09062c0103f7f973f65706a88a8605a0430a0e54c581ac3876023fb",
-   "apps/api/app/core/schema_upgrades.py": "c00a9abd1a8836826ef8b751ad31ee2c44cd4005dcf6455f3d14f26e14ff4865",
+   "apps/api/app/core/schema_upgrades.py": "f95c75b1550ffabe7a19068a18ec39548013ccd9ee5127446e0f26ee73f1431b",
    "apps/api/app/core/source_assets.py": "1889e9d025697c0d928b6e068325c0569adc7b8a802394a6dd3750f451e39ce5",
    "apps/api/app/core/structured_logging.py": "854ef58ab42efdb665dc20cff8595e296241ccd63c5322eb77bcb7830b691ea1",
-   "apps/api/app/db_models.py": "0b38de090fe6c581b7570d4d2a297af664a854415414ccc5709e6649c155d8a8",
+   "apps/api/app/db_models.py": "1383ab8db1e56c665fffcab3414fe93c4deb7433617f9ecf97851a79a25b0005",
    "apps/api/app/gateway/__init__.py": "f30aa888d009d0bfc94f7be7dcd0a67f371e323e2f2a33ade73b0a06e1b568f2",
    "apps/api/app/gateway/adapters.py": "982c5d6c9932d7b702db9269ed3decba2bb08e6a409f50bc68c237c286eed977",
    "apps/api/app/gateway/contracts.py": "f026234f38ecf07749f6356afe4bf5248f8099cd55279c7bc847fe24423bf969",
@@ -149,18 +149,18 @@
    "apps/api/app/services/v2_panel/__init__.py": "96defa2b4d23cfc85aa69381e6f98f94e8ec8a9fbef0e73a6110630ecd02e63c",
    "apps/api/app/services/v2_panel/rules.py": "67d9bfeed5851fb1868982da075d08ff5695afdd551df74faef21962b5fea9f8",
    "apps/api/app/services/v2_panel/voting.py": "369859a4c5808e23c4a84306d14b7b594693d4755e4bb23132f14292905bff78",
-   "apps/api/app/services/v3/__init__.py": "9df8e7a7af2d0a547ac9dd1afed574652b2d9ae7a35696d49d64a3a758636dec",
+   "apps/api/app/services/v3/__init__.py": "3204eb7822e72a4aad9bc5c06f99346d874f96b29c879e496fc141c57a336c2c",
    "apps/api/app/services/v3/contracts.py": "e5b6b798e2b6c6e3570827606085a3fdf31f18d4b08ec5b588ac32d324036fb7",
    "apps/api/app/services/v3/draw.py": "dd3993817be1689f921bc608977079c29ab4b02181c240fe1c9d5aac8ee0522e",
    "apps/api/app/services/v3/gold.py": "62fb1feb4b0ca737f2b493aa421355e1830c98de8d1fe9aa86a0d2a3d6fd4553",
    "apps/api/app/services/v3/priority.py": "5db9e0cddc3d6f0a46d7b190704a93e16a94029546e26515c653dee1c67a871e",
-   "apps/api/app/services/v3/queue.py": "b8454feec31cb7a0ba5cae725138a1a3a0b7974079d141af54491b8846b7699a",
+   "apps/api/app/services/v3/queue.py": "a052d0f6dc2fa7510f4e2f8c1cb7d19ba9c028ca2685a267fd1c4552e0c82e4a",
    "apps/api/app/services/v3/residual.py": "0910041ed6682f7c1005c8be9ced6d2526b535224cae5c814395377d84a259d8",
    "apps/api/app/services/v3/rules.py": "fcd33c73424d797816ef8d0f13bde6ba224ee15be6ce3423dc1c995fa6b8958a",
-   "apps/api/app/services/v3/scan.py": "5c97393423d7a6cc3b7cde69680818baa456067a8620c40d7ced4e1fe02f3c26",
+   "apps/api/app/services/v3/scan.py": "5861633c2a0e5643db6848506348e14382f71ff54a2241780ce9a89b982a3ef1",
    "apps/api/app/services/v3/triggers.py": "eff326fab3d4a120ccdfdef5da271d2e67783a8402b114341beec95bd8f6bbed",
    "scripts/run_v3_residual_report.py": "31922c148d8234f48722aaa9e05476aa9a7ce4e9ada99ba6d1899276f1de437e"
   },
-  "sha256": "0ac83a60c97573a4b3e1446ac3e0e7fabd945019c549ec2bee10719e857bd8cc"
+  "sha256": "66867455246116cad1577f28c2a0fb42187df2a706522e757637824f9c9ab069"
  }
 }
