@@ -86,7 +86,7 @@ def rehash(path: Path) -> str:
     words = sorted(set(payload["retrieval"]["stopwords"]["words"]))
     payload["retrieval"]["stopwords"]["words"] = words
     payload["retrieval"]["stopwords"]["sha256"] = stopwords_sha256(words)
-    if payload.get("schema_version") in (3, 4, 5):
+    if payload.get("schema_version") in (3, 4, 5, 6):
         from app.core.config_package import misconception_library_sha256
         from app.services.v1_checks.package_check import fixture_set_sha256, repository_root
 
@@ -98,16 +98,16 @@ def rehash(path: Path) -> str:
             cases = json.loads(fixtures_path.read_text(encoding="utf-8"))["cases"]
             v1["fixtures"]["set_sha256"] = fixture_set_sha256(cases)
             v1["fixtures"]["cases"] = len(cases)
-    if payload.get("schema_version") in (4, 5):
+    if payload.get("schema_version") in (4, 5, 6):
         from app.services.v2_panel.rules import alignment_prompt_hash, verifier_prompt_hash
 
         payload["tools"]["sha256"] = canonical_sha256(json.loads((path.parent / payload["tools"]["path"]).read_text(encoding="utf-8")))
         payload["v2"]["prompt"]["verifier_prompt_hash"] = verifier_prompt_hash()
         payload["v2"]["prompt"]["alignment_prompt_hash"] = alignment_prompt_hash()
-    if payload.get("schema_version") == 5:
+    if payload.get("schema_version") in (5, 6):
         for pin in payload["v3"]["schemas"].values():
             pin["sha256"] = canonical_sha256(json.loads((path.parent / pin["path"]).read_text(encoding="utf-8")))
-    if payload.get("schema_version") in (2, 3, 4, 5):
+    if payload.get("schema_version") in (2, 3, 4, 5, 6):
         from app.services.tutor_pipeline.evidential import evidential_prompt_hash
         from app.services.tutor_pipeline.render import pedagogical_prompt_hash
         from app.services.tutor_pipeline.resolve import resolver_prompt_hash
@@ -123,7 +123,7 @@ def rehash(path: Path) -> str:
         from app.services.ledger import LEGACY_CONTAINMENT_RULE_HASH
 
         tutor["legacy"]["containment_rule_hash"] = LEGACY_CONTAINMENT_RULE_HASH
-    if payload.get("schema_version") in (3, 4, 5):
+    if payload.get("schema_version") in (3, 4, 5, 6):
         from app.services.v1_checks.rules import v1_rules_hash
 
         payload["v1"]["rules_hash"] = v1_rules_hash(parse_config_package(payload, path=path, sha256="", hash_verified=False))

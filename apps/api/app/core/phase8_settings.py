@@ -15,6 +15,49 @@ PHASE8_FLAGS = {
 }
 
 
+def check_phase8_package(raw: Mapping) -> None:
+    """Validate the package's Phase 8 release policy against its runtime switches."""
+    from app.core.config_package import ConfigPackageError
+
+    def require(condition, field):
+        if not condition:
+            raise ConfigPackageError(f"Configuration package: invalid Phase 8 {field}.")
+
+    policy = raw.get("flag_policy")
+    require(isinstance(policy, Mapping), "flag_policy")
+    require(policy.get("provisional") is True and "PD-203" in str(policy.get("authority")), "flag authority")
+    exit_passed = policy.get("phase8_exit_passed")
+    evidence = policy.get("phase8_exit_evidence")
+    require(type(exit_passed) is bool, "exit flag")
+    require(isinstance(evidence, str) and bool(evidence.strip()) if exit_passed else evidence is None, "exit evidence")
+    for name, (values, development_default) in PHASE8_FLAGS.items():
+        entry = policy.get(name)
+        require(isinstance(entry, Mapping), name)
+        require(
+            entry.get("values") == list(values)
+            and entry.get("default_development") == development_default
+            and entry.get("default_elsewhere") == "off"
+            and entry.get("on_requires") == "phase8_exit_passed",
+            name,
+        )
+    learner = raw.get("learner")
+    require(isinstance(learner, Mapping) and learner.get("provisional") is True, "learner policy")
+    classes = learner.get("consent_classes")
+    require(isinstance(classes, Mapping), "learner consent classes")
+    decision = raw["owner_decisions"].get("D-27")
+    require(isinstance(decision, Mapping), "D-27 owner decision")
+    if decision.get("state") == "open":
+        require(
+            decision.get("ratified") is False and learner.get("consent_version") == "d27-unresolved-v1"
+            and classes == {
+                "adaptation": {"development": "synthetic-grant", "elsewhere": "refused"},
+                "analytics": {"development": "synthetic-grant", "elsewhere": "refused"},
+                "research": {"development": "refused", "elsewhere": "refused"},
+            },
+            "D-27 provisional consent",
+        )
+
+
 def resolve_phase8_settings(settings: "Settings") -> None:
     development = settings.environment.lower() == "development"
     active = {}

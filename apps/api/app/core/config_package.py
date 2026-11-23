@@ -58,7 +58,7 @@ from app.core.structured_logging import FIELDS
 
 LOGGER = logging.getLogger("qcai.config_package")
 PACKAGE_DIRECTORY = Path(__file__).resolve().parents[1] / "config_package"
-DEFAULT_PACKAGE_PATH = PACKAGE_DIRECTORY / "v5.json"
+DEFAULT_PACKAGE_PATH = PACKAGE_DIRECTORY / "v6.json"
 # Readable for one release after the Phase 6 merge (DI-100), the Phase 5 merge (DI-84), the Phase 4 merge (DI-63) and
 # the Phase 3 merge (DI-42); CI checks each with config_package.py --check --path.
 V4_PACKAGE_PATH = PACKAGE_DIRECTORY / "v4.json"
@@ -1456,7 +1456,7 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
     _require(isinstance(raw, dict), "the file must hold a JSON object")
     _require(raw.get("package") == PACKAGE_NAME, f"'package' must be '{PACKAGE_NAME}'")
     schema_version = raw.get("schema_version")
-    _require(schema_version in (1, 2, 3, 4, 5) and not isinstance(schema_version, bool), "'schema_version' must be 1, 2, 3, 4 or 5")
+    _require(schema_version in (1, 2, 3, 4, 5, 6) and not isinstance(schema_version, bool), "'schema_version' must be 1, 2, 3, 4, 5 or 6")
     package_version = _text(raw, "package_version")
 
     identity = _mapping(raw, "span_identity")
@@ -1590,6 +1590,10 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
             tool_params = _parse_tools(raw)
         if schema_version >= 5:
             v3_params = _parse_v3(raw, decisions=decisions, v2=v2_params)
+        if schema_version >= 6:
+            from app.core.phase8_settings import check_phase8_package
+
+            check_phase8_package(raw)
         d12 = decisions.get("D-12")
         _require(isinstance(d12, dict), "owner_decisions.D-12 must be an object in package v2")
         if d12.get("state") == "open":

@@ -822,7 +822,7 @@ def test_plan_i_ready_reports_package_v5_and_the_v3_fields_and_no_count():
     from app.core.db import engine
 
     body = client.get("/ready").json()
-    assert body["config_package_version"] == "5.0.0" and body["v3_queue"] == "shadow" and body["v3_queue_setting"] == "shadow"
+    assert body["config_package_version"] == PACKAGE.package_version and body["v3_queue"] == "shadow" and body["v3_queue_setting"] == "shadow"
     assert body["phase6_exit_passed"] is False
     fields = body["v3"]
     assert fields == {

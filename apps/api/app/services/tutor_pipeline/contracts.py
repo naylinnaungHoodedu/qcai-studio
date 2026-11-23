@@ -4,7 +4,7 @@ Every contract is frozen and refuses unknown fields (extra="forbid"), so a learn
 on a retrieval request or an evidential envelope (AC-3-1, R-41) and a generator cannot smuggle text past the claim
 plan (R-11). The committed JSON schemas (app/config_package/schemas/: the eight *.v1.schema.json,
 ledger-entry.v2.schema.json for LedgerEntryV2 and ledger-entry.v3.schema.json for LedgerEntryV3) are generated from
-these models and pinned by sha256 in the shipped configuration package (v5 since Phase 6, which pins the same fourteen
+these models and pinned by sha256 in the shipped configuration package (v6 since Phase 8, which pins the same fourteen
 schemas as v4 and, in its v3 block, the two V3 contracts of app.services.v3.contracts; v4 since Phase 5, which also pins
 the four gateway request and verdict schemas; v3, still readable, pins nine, and v2 the eight v1 schemas).
 

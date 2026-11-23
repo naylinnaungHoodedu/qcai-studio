@@ -42,7 +42,7 @@ client = TestClient(app)
 
 
 def write_package(tmp_path: Path, edit) -> Path:
-    """A copy of the shipped package (DEFAULT_PACKAGE_PATH, package v5 since Phase 6) under its own name, with `edit`
+    """A copy of the shipped package (DEFAULT_PACKAGE_PATH, package v6 since Phase 8) under its own name, with `edit`
     applied, its sidecar rewritten and its schema files alongside."""
     payload = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
     edit(payload)

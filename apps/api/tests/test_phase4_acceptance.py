@@ -1330,18 +1330,18 @@ def test_phase4_docs_the_phase3_spec_states_what_phase4_changed():
     assert "Phase 4 adds ledger-entry-v2." not in phase3
     shipped = re.search(r'^DEFAULT_PACKAGE_PATH = .*?"(v\d+\.json)"', (API_ROOT / "app" / "core" / "config_package.py").read_text(encoding="utf-8"),
                         flags=re.MULTILINE).group(1)
-    assert shipped == DEFAULT_PACKAGE_PATH.name and f"`.../{shipped}` with Phase 6" in phase3
+    assert shipped == DEFAULT_PACKAGE_PATH.name and f"`.../{shipped}` with Phase 8" in phase3
     assert "`DEFAULT_PACKAGE_PATH` becomes `.../v2.json`" not in phase3
     assert '`config_package_version == "2.0.0"`' not in phase3 and 'asserts `package_version == "2.0.0"`' not in phase3
     for test in ("test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode", "test_the_shipped_package_validates_and_matches_its_hash"):
         line = next(line for line in phase3.splitlines() if f"`{test}`" in line or f"::{test}`" in line)
-        assert f"{PACKAGE.package_version} for Phase 6's v5" in line, test
+        assert f"{PACKAGE.package_version} for Phase 8's v6" in line, test
     # 13.3 item 1 and 13.1 test 25 name the package their tests read; 5.2's parsing names every schema version the
     # loader accepts; the frontend row quotes the chat's render expression; 4.3 names the sufficiency's score.
-    assert "`RAW` now reads v2" not in phase3 and "`RAW` reads the shipped package (v5 since Phase 6) and `V2_RAW` reads v2" in phase3
+    assert "`RAW` now reads v2" not in phase3 and "`RAW` reads the shipped package (v6 since Phase 8) and `V2_RAW` reads v2" in phase3
     assert "a copy of `v2.json`" not in phase3
-    accepted = re.search(r"_require\(schema_version in \((\d), (\d), (\d), (\d), (\d)\)", (API_ROOT / "app" / "core" / "config_package.py").read_text(encoding="utf-8"))
-    assert accepted and accepted.groups() == ("1", "2", "3", "4", "5")
+    accepted = re.search(r"_require\(schema_version in \((\d), (\d), (\d), (\d), (\d), (\d)\)", (API_ROOT / "app" / "core" / "config_package.py").read_text(encoding="utf-8"))
+    assert accepted and accepted.groups() == ("1", "2", "3", "4", "5", "6")
     assert "accepts `schema_version` 1 or 2. For 1" not in phase3 and "accepts `schema_version` 1 or 2, 3 since Phase 4, 4 since Phase 5, and 5 since Phase 6" in phase3
     chat = (REPO_ROOT / "apps" / "frontend" / "src" / "components" / "teaching-assistant-chat.tsx").read_text(encoding="utf-8")
     render = next(line.strip() for line in chat.splitlines() if "<EvidencePanel evidence={message.evidence} />" in line)
@@ -1354,7 +1354,7 @@ def test_phase4_docs_the_phase3_spec_states_what_phase4_changed():
     shape = phase3.split("**Report shape**", 1)[1].split("- **Exit codes:**", 1)[0]
     assert record["config_package"]["version"] == PACKAGE.package_version
     assert '"config_package": {"version": "2.0.0"' not in shape and '"config_package": {"version": "...", "sha256": "..."}' in shape
-    assert f"{record['config_package']['version']} for Phase 6's v5, which the committed record holds" in shape
+    assert f"{record['config_package']['version']} for Phase 8's v6, which the committed record holds" in shape
     assert "7.17's three-plan replay report shape" in _spec_head().split("### 7.14", 1)[1].split("### 7.15", 1)[0]
 
 
@@ -1591,20 +1591,20 @@ def test_phase4_docs_the_code_texts_name_the_shipped_package():
     assert raw["tutor_pipeline"]["budgets"] == v2["tutor_pipeline"]["budgets"] == v3["tutor_pipeline"]["budgets"] == v4["tutor_pipeline"]["budgets"]
     v2_schema = "schemas/ledger-entry.v2.schema.json"
     paths = {name: {entry["path"] for entry in package["tutor_pipeline"]["schemas"].values()}
-             for name, package in (("v5", raw), ("v4", v4), ("v3", v3), ("v2", v2))}
+             for name, package in (("v6", raw), ("v4", v4), ("v3", v3), ("v2", v2))}
     assert v2_schema in paths["v3"] and v2_schema not in paths["v2"] and len(paths["v3"]) == len(paths["v2"]) + 1
-    assert paths["v3"] < paths["v4"] and len(paths["v4"]) == len(paths["v3"]) + 5 and paths["v4"] == paths["v5"]
+    assert paths["v3"] < paths["v4"] and len(paths["v4"]) == len(paths["v3"]) + 5 and paths["v4"] == paths["v6"]
     texts = {"contracts": inspect.getdoc(contracts), "package_check": inspect.getdoc(package_check),
              "ledger": inspect.getdoc(ledger), "tutor_followups": inspect.getdoc(tutor_followups),
              "tutor_pipeline": inspect.getdoc(tutor_pipeline)}
     flat = {name: _flat(text) for name, text in texts.items()}
     assert "pinned by sha256 in configuration package v2." not in flat["contracts"]
-    assert "ledger-entry.v2.schema.json" in flat["contracts"] and "the shipped configuration package (v5 since Phase 6" in flat["contracts"]
+    assert "ledger-entry.v2.schema.json" in flat["contracts"] and "the shipped configuration package (v6 since Phase 8" in flat["contracts"]
     assert not flat["package_check"].startswith("Consistency of configuration package v2 with")
-    assert "schema 2 or later" in flat["package_check"] and "v5 since Phase 6, the shipped package" in flat["package_check"]
+    assert "schema 2 or later" in flat["package_check"] and "v6 since Phase 8, the shipped package" in flat["package_check"]
     assert "come from configuration package v2" not in flat["ledger"] and "come from the shipped configuration package" in flat["ledger"]
     assert "(configuration package v2 tutor_pipeline.budgets" not in flat["tutor_followups"]
-    assert "the shipped configuration package's tutor_pipeline.budgets, v5 since Phase 6" in flat["tutor_followups"]
+    assert "the shipped configuration package's tutor_pipeline.budgets, v6 since Phase 8" in flat["tutor_followups"]
     assert "package_check (configuration package v2)" not in flat["tutor_pipeline"]
     example = _comments((REPO_ROOT / "infra" / "cloudrun" / "api-production.env.example.yaml").read_text(encoding="utf-8"))
     assert "configuration package v2 tutor_pipeline.budgets" not in example

@@ -1092,7 +1092,7 @@ def item_view(db: Session, row: Any, *, store: Any, corpus_registry: Any, now: d
 
 ### 5.3 Scripts (`scripts/config_package.py`)
 
-- The default path is v5, and the module docstring names "the shipped package v5; v4, v3, v2 and v1 stay readable".
+- The default path is v6 with Phase 8. Phase 6's v5 and the earlier package versions remain readable.
 - `--check` for schema 5 also runs `check_v3_package(package, structural=True)` and prints a V3 summary: the trigger registry, the draw rate, the double review, the registry sizes per environment and `phase6_exit_passed`.
 - `--rehash` for schema 5 also recomputes the two v3 schema pins.
 - `--write-schemas` for v5 writes the two v3 schemas. The v4 schema files come out byte-identical in content.
