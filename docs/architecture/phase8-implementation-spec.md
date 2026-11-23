@@ -261,6 +261,22 @@ The final pre-integration lifecycle run passed 222 tests per backend on SQLite, 
 
 The integration merged Phase 6 in `45eb393` and used package v5 and revision `20261122_phase6_v3_audit` as predecessors. The full §9.1 runs cover this integrated tree. DI-300 remains open.
 
+### 17.1 Round 1 integrated verification
+
+The source and evidence tree tested was `1779690`. Frontend lint, type checking, and 167 integration tests passed. The first database runs hit the checkout-integrity guard because concurrent TypeScript compilation wrote its incremental cache. The full database reruns below completed successfully after all frontend commands finished. PostgreSQL used the isolated UTF-8 PostgreSQL 17 cluster with a fresh database for each driver. Branch CI uses PostgreSQL 16.
+
+| Local leg | Main test paths | Passed | Skipped | Deselected | Expected failures | Template tests passed separately | Combined passed |
+|---|---|---:|---:|---:|---:|---:|---:|
+| SQLite | `apps/api/tests evaluation/tests` | 1978 | 2 | 11 | 3 | 10 | 1988 |
+| PostgreSQL psycopg | `apps/api/tests` | 1976 | 0 | 11 | 3 | 10 | 1986 |
+| PostgreSQL pg8000 | `apps/api/tests` | 1976 | 0 | 11 | 3 | 10 | 1986 |
+
+The eleven deselections are precisely the eight template tests listed above, two Phase 6 template tests, and `test_deployment_artifacts.py::test_release_artifacts_exist_and_describe_seeded_demo_transparency` under the release-only marker. The two Phase 6 IDs are `test_phase6_acceptance.py::test_phase6_docs_quote_the_plan_and_state_the_current_rules` and `test_phase6_acceptance.py::test_phase6_docs_state_what_each_caller_of_a_v3_route_gets`. All ten template tests passed by ID with `--tb=no -rN -q` on every backend. The SQLite selection has four evaluation tests and two database-specific skips. The PostgreSQL jobs use the API-only selection, which accounts for the two-test difference in combined passes.
+
+Package v1 through v6 checks, authorization matrix, manifest and calibration, public corpus and recall controls, draft LQS, all six evidence reports, all 1,192 frozen public payloads, and the repository and Docker-context path boundary checks passed. Licensed-passage scanning requires its fingerprint input. The built-image scan and dependency audits are CI checks. The previously recorded 11 moderate npm advisories carry forward without dependency changes.
+
+Forty process-local Python mutation cases and one frontend mutation case produced the failures their regressions are intended to catch. The isolated mutation runs made no source changes. DI-318 records the remaining shared-file stop under R1-07. The engineering harness and local evidence do not pass the formal Phase 8 exit.
+
 ## 18. Review history
 
 The rows below record what each round fixed, in order. They may describe behaviour that a later round superseded. Sections 0-17 are authoritative after implementation. Each finding is one line naming the tests that fail if its defect comes back.
