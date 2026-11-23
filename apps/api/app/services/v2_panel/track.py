@@ -18,6 +18,10 @@ The claim item carries the claim text, one bound span (its id and resolved text,
 the fixed instructions: never the resolved question, another claim, the generator's identity or another vote (E5).
 align(rendering) sends the alignment item to every remaining member (rule 1ooN-leakage-v1: fail iff any member flags
 leakage; ratings are recorded and never gate). Every step logs enumerations and counts only.
+A claim's verdict records whether the claim is critical (tiers.critical_for over the environment's registry, Phase 6).
+At a tier-1 response's first consult the track reads the V3 stop (v3_stop: v3.stop.tier1_withheld over the pipeline's
+own database by default; plan Phase 6 L): while it holds, the response runs Phase 5's pre_verified_only path, with no
+call, every claim withheld in ZERO (under on the record abstains and queues them), and tutor.v2.v3_stop is logged.
 """
 
 from __future__ import annotations
@@ -101,7 +105,7 @@ class V2Track:
 
     def __init__(self, pipeline: Any, ctx: Any, *, mode: Literal["shadow", "on"], gateway: Any, adapter_registry: Any, cache: Any,
                  tools: Any, settings: Any, budget_over: Callable[[str], bool] = lambda step: False,
-                 clock: Callable[[], float] = time.monotonic, package: Any = None) -> None:
+                 clock: Callable[[], float] = time.monotonic, package: Any = None, v3_stop: Callable[[], bool] | None = None) -> None:
         self.pipeline = pipeline
         self.ctx = ctx
         self.mode = mode
@@ -131,6 +135,8 @@ class V2Track:
         self.latency_ms = 0.0
         self.budget_exceeded = False
         self.consults = 0
+        self.v3_stop = v3_stop if v3_stop is not None else (lambda: False)
+        self.v3_stopped = False
 
     # ----------------------------------------------------------------------------------------------- panel
 
@@ -176,6 +182,12 @@ class V2Track:
         pipeline = self.pipeline
         items = assessment_items(self.ctx.resolved.text, pipeline.keyed_items, v1=pipeline.v1_params, stopwords=self.package.retrieval.stopwords)
         tier = tier_for(items, self.package)
+        if self.consults == 1 and tier == 1 and self.v3_stop():
+            # Plan Phase 6 L: the V3 stop limits tier 1 to pre-verified content; with no pre-verified source (PD-30) the
+            # pre_verified_only path withholds every claim with no call (conflict 9 of the Phase 6 spec).
+            self.kill_switch, self.members, self.start_members, self.v3_stopped = "pre_verified_only", [], (), True
+            LOGGER.warning("The V3 stop holds: tier 1 runs pre-verified-only", extra={FIELDS: {
+                "event": "tutor.v2.v3_stop", "tier": tier, "policy": "pre_verified_only"}})
         excluded = v1_excluded(passed, items, pipeline.v1_params)
         claims: dict[str, V2ClaimVerdict] = {}
         for claim in passed.locked.claims:
@@ -229,7 +241,7 @@ class V2Track:
             rule = self.table[mode][tier]
             families = tuple(sorted(member.family for member in members))
             common = dict(tier=tier, rule=rule, generator_family=self.generator_family, mode=mode, members=families,
-                          critical=critical_for(claim.claim_id, self.package), cycle=self.cycle)
+                          critical=critical_for(claim.claim_id, self.package, environment=self.settings.environment), cycle=self.cycle)
             if rule == "withhold-queue-v3":
                 return V2ClaimVerdict(**common, votes=(), objections=0, split=False, outcome="withheld")
             lost = False

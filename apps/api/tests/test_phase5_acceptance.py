@@ -1212,7 +1212,8 @@ def test_plan_i_ready_reports_package_v4_and_the_gateway_state_and_no_per_run_ou
     from app import main as main_module
 
     body = client.get("/ready").json()
-    assert body["config_package_version"] == "4.0.0" and body["model_gateway"] == "shadow" and body["model_gateway_setting"] == "shadow"
+    # The shipped package's version (4.0.0 with Phase 5, 5.0.0 since Phase 6); the gateway fields are v4's, which v5 keeps.
+    assert body["config_package_version"] == PACKAGE.package_version and body["model_gateway"] == "shadow" and body["model_gateway_setting"] == "shadow"
     assert body["phase5_exit_passed"] is False
     gateway = body["gateway"]
     assert {key: gateway[key] for key in ("version", "registry", "state", "budget_daily_units", "tool_contract_version", "provisional",
@@ -1539,7 +1540,7 @@ def test_phase5_docs_the_runbooks_and_registers_state_the_gateway_s_operations_e
     # The Phase 3 spec's test 31 and the Phase 4 spec's loader line state the current code; the cache keeps no learner text.
     phase4 = (REPO_ROOT / "docs" / "architecture" / "phase4-implementation-spec.md").read_text(encoding="utf-8")
     assert "`_build_fields()` makes no DB call." not in phase3 and "its only statements are the shared gateway stop's reads" in phase3
-    assert "`schema_version in (1, 2, 3)`, and 4 since Phase 5" in phase4
+    assert "`schema_version in (1, 2, 3)`, and 4 since Phase 5 and 5 since Phase 6" in phase4
     cache_doc = " ".join((API_ROOT / "app" / "services" / "v2_panel" / "cache.py").read_text(encoding="utf-8").split('"""', 2)[1].split())
     assert "or any text: keys are hashes" not in cache_doc and "whose only text is corpus text" in cache_doc
     # A stopped instance never reopens: no text says the stop ends at the operator's clear (spec 4.5).
@@ -1732,6 +1733,30 @@ def test_phase5_docs_the_spec_ends_in_one_review_history_table():
             assert names or files, (round_name, finding[:60])
             assert all(name in functions for name in names), (round_name, names)
     assert re.findall(r"\b[Rr]eview \d+\b|\bround \d+\b", head) == []
+
+
+def test_phase5_docs_the_records_name_the_merge_and_the_cited_main_run():
+    # PR #37 was squash-merged as c34a8c1 (tree identical to 8aa4ff1); main run 45044415408 passed every job and is the
+    # cited run (Phase 6 design E15). The spec's DI-74 row, its section 17 exit bullet and the test strategy's Phase 5 exit
+    # paragraph name the merge, the merged tree and that run, none keeps a pre-merge phrase, and the exit stays not passed.
+    spec = spec_text()
+    head = spec.split("\n## 18. Review history\n", 1)[0]
+    exit_block = head.split("**Exit (plan P).**", 1)[1]
+    strategy = (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
+    texts = {
+        "DI-74": next(line for line in head.splitlines() if line.startswith("| DI-74 |")),
+        "spec 17": next(line for line in exit_block.splitlines() if line.startswith("- The AC tests and F-1")),
+        "test strategy": next(line for line in strategy.split("## Phase 5 acceptance map", 1)[1].splitlines() if line.startswith("**Exit gate.**")),
+    }
+    for name, text in texts.items():
+        for fact in ("`c34a8c1`", "`8aa4ff1`", "45044415408"):
+            assert fact in text, (name, fact)
+        for stale in ("the cited run follows the merge", "each later commit needs its own run", "the cited run must be on `main`"):
+            assert stale not in text, (name, stale)
+    assert "The exit is not passed." in texts["DI-74"] and texts["DI-74"].endswith("| Eng / PI | Open |")
+    assert "The exit is not passed." in texts["test strategy"]
+    assert "- `phase5_exit_passed` stays `false`." in exit_block
+    assert "| Merge | `c34a8c1` |" in spec.split("\n## 18. Review history\n", 1)[1]
 
 
 # ===================================================================================================== plan 13.6

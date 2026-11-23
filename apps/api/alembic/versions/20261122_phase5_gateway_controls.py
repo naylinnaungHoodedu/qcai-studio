@@ -8,7 +8,7 @@ and dropping gateway_stops also drops a recorded stop, so set MODEL_GATEWAY=off 
 this revision (infra/cloudrun/deployment.md, Phase 5). Downgrade with an absolute target, never -1:
     alembic downgrade 20261119_phase3_response_ledger
 The chain still cannot build an empty database (test_alembic_head_builds_the_orm_schema stays a strict xfail until the
-production baseline lands).
+production baseline lands). 20261122_phase6_v3_audit (the V3 audit's tables) follows it.
 
 Revision ID: 20261122_phase5_gateway_controls
 Revises: 20261119_phase3_response_ledger

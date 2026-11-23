@@ -30,6 +30,11 @@ jobs:
       - run: python scripts/config_package.py --check --path apps/api/app/config_package/v2.json
       # Phase 5: configuration package v3 stays readable for one release (DI-84).
       - run: python scripts/config_package.py --check --path apps/api/app/config_package/v3.json
+      # Phase 6: configuration package v4 stays readable for one release (DI-100).
+      - run: python scripts/config_package.py --check --path apps/api/app/config_package/v4.json
+      # Plan Phase 6 F/K: the residual report (synthetic telemetry, not research results): the seeded draw over 6070 synthetic
+      # deliveries, the Wilson bound of 0 errors in 300 audited items below 1.3% (AC-6-5), the gold chain and an unchanged ledger.
+      - run: python scripts/run_v3_residual_report.py --check docs/evaluation/phase6/v3_residual_report_v1.json
       # Plan Phase 5 P/J: F-1 (ledger verdicts for 100% of fixture responses) and fault injection, one to three
       # providers down, on development fakes (fixture measurements, not E2 results). Exit 3 is an F-1 or matrix stop;
       # exit 5 a V2 call after a V1 fail or a delivery without a passing vote.

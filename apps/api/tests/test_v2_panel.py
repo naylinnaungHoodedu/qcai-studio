@@ -142,3 +142,75 @@ def test_each_shadow_budget_stop_logs_its_own_event_and_message(caplog):
     assert lines == [("Two-pass shadow exceeded its budget", "tutor.two_pass.budget_exceeded", "render"),
                      ("The shadow V1 track exceeded its budget", "tutor.v1.budget_exceeded", "bind"),
                      ("The V2 panel exceeded the shadow budget", "tutor.v2.budget_exceeded", "verify")]
+
+
+
+# ----------------------------------------------------------------------------------------------- Phase 6: V3 stop
+
+
+def test_the_v3_stop_runs_tier_1_through_the_pre_verified_only_path(caplog):
+    import v3_fakes
+
+    caplog.set_level("WARNING", logger="qcai.tutor")
+    registry = make_registry(("fake-alpha", "fake-beta", "fake-gamma"))
+    adapters = adapters_of(registry)
+    stopped = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters), registry=registry, v3_stop=lambda: True), v3_fakes.CRITICAL_QUERY).entry
+    block = stopped.verification.v2
+    assert block.kill_switch == "pre_verified_only" and block.calls == 0 and block.members == ()
+    assert stopped.verification.final == "abstain" and stopped.verification.final_reason == "v2_kill_switch"
+    assert all(verdict.v2.outcome == "withheld" and verdict.v2.mode == "ZERO" for verdict in stopped.verification.verdicts if verdict.v2)
+    assert all(adapter.calls == 0 for adapter in adapters.values())
+    assert [record for record in caplog.records if "tier 1 runs pre-verified-only" in record.getMessage()]
+    # Tier 2 never reads the stop.
+    calls = []
+    tier2 = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters_of(registry)), registry=registry,
+                            v3_stop=lambda: calls.append(1) or True), TIER2).entry
+    assert tier2.verification.v2.kill_switch == "none" and tier2.verification.v2.calls > 0 and calls == []
+
+
+def test_the_v3_stop_reads_the_pipeline_s_own_database():
+    # The default stop is the queue-age stop over the pipeline's session factory, never the process database: a pipeline
+    # over a fresh database whose queue is aged is stopped while the shared database (young items only) is clear.
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import insert
+
+    from app.core.config_package import get_config_package
+    from app.core.db import SessionLocal
+    from app.db_models import V3QueueItem
+    from app.services.v3.queue import item_id_for
+    from app.services.v3.stop import tier1_withheld
+    import v3_fakes
+
+    package = get_config_package(Settings())
+    with v3_fakes.fresh_v3_sessions() as (factory, _engine):
+        with factory() as db:
+            db.execute(insert(V3QueueItem).values(
+                item_id=item_id_for(1, ""), ledger_seq=1, claim_key="", subject="response", record_kind="delivery", response_digest="d" * 32,
+                triggers="X6", reasons="", ehmf_types="", held=False, severity=1.0, exposure=1, k=0.0, priority=1.0, state="queued", review_round=1,
+                double_review=False, enqueued_at=datetime.now(UTC) - timedelta(days=30), package_version="5.0.0", package_sha256="x"))
+            db.commit()
+        assert tier1_withheld(Settings(), package, session_factory=factory) is True
+        assert tier1_withheld(Settings(), package, session_factory=SessionLocal) is False
+        registry = make_registry(("fake-alpha", "fake-beta", "fake-gamma"))
+        stopped = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters_of(registry)), registry=registry, session_factory=factory),
+                      v3_fakes.CRITICAL_QUERY).entry
+        clear = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters_of(registry)), registry=registry), v3_fakes.CRITICAL_QUERY).entry
+    assert stopped.verification.v2.kill_switch == "pre_verified_only" and clear.verification.v2.kill_switch == "none"
+
+
+def test_critical_for_reads_the_environment_s_registry():
+    from app.core.config_package import V4_PACKAGE_PATH, get_config_package, load_config_package
+    from app.services.v2_panel.tiers import critical_for
+    import v3_fakes
+
+    package = get_config_package(Settings())
+    claim = v3_fakes.CRITICAL_CLAIMS[0]
+    assert critical_for(claim, package, environment="development") and critical_for(claim, package, environment="DEVELOPMENT")
+    assert not any(critical_for(claim, package, environment=name) for name in ("staging", "production", "preview"))
+    v4 = load_config_package(V4_PACKAGE_PATH, governed=True)
+    assert not critical_for(claim, v4, environment="development")   # v4's empty v2.correction.critical_registry
+    registry = make_registry(("fake-alpha", "fake-beta", "fake-gamma"))
+    entry = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters_of(registry)), registry=registry), v3_fakes.CRITICAL_QUERY).entry
+    marked = {verdict.claim_id for verdict in entry.verification.verdicts if verdict.v2 is not None and verdict.v2.critical}
+    assert marked == set(v3_fakes.CRITICAL_CLAIMS)

@@ -20,9 +20,13 @@ With the Phase 5 V2 track as its hook (v2_panel.track.V2Track; Phase 5 spec 4.13
             hook; a "re_render" cycle when every failing claim is such a claim); any other failing claim is revised
             through the generator's optional revise(), else re-verified unchanged, every pair a cache hit (a "revise"
             cycle); a changed plan is a new candidate that every V1 check judges from the start, with fresh state;
-            still failing after two cycles, a claim abstains with escalation X2. Then the final rendering of the
-            deliverable claims (fresh post-render hook), and the alignment item, whose failure is type E and
-            re-renders only (sharing the two cycles)
+            still failing after two cycles, a claim abstains with escalation X2. A claim the V2 track marks critical at
+            tier 1 that fails in any cycle is held for the rest of the response (the X1 sticky hold, Phase 6 spec 4.13):
+            it is never given to revise(), it stays pending in every later cycle even when a later tally passes (an
+            objector that left the panel), and after the last cycle it ends abstained with X2, or withheld when its last
+            outcome is V2-withheld; its objection stays in the record. Then the final rendering of the deliverable
+            claims (fresh post-render hook), and the alignment item, whose failure is type E and re-renders only (sharing
+            the two cycles)
     -> build_record_v2 -> VerificationRecordV2
 The generation-1 claim plan is read from and written to the evidential cache (v2_panel.cache) when a V2 track runs in
 enforce; a regeneration and a correction candidate bypass it, and a cached plan whose candidate hard-fails V1.9 or
@@ -422,25 +426,32 @@ class V1Track:
         state = _RunState(empty=self._lock((), bundle, ctx, has_plan=False))
         decision = self._decide(ctx, bundle, envelope, envelope_reason, first_raw, budget_over, state)
         outcome, cycles, corrections, exhausted = None, 0, [], frozenset()
+        held: set[str] = set()
         while True:
             track.cycle = cycles
             outcome = v2_outcome(track, decision)
             if outcome is None or outcome.mode == "shadow":
                 break
             failing = outcome.failing()
-            if not failing:
+            # The X1 sticky hold (Phase 6 spec 4.13): a critical tier-1 claim that failed in any cycle stays pending
+            # while its outcome is a pass, so a later tally that passes (its objector left the panel) never delivers it.
+            held |= {claim_id for claim_id in failing if outcome.claims[claim_id].critical and outcome.claims[claim_id].tier == 1}
+            pending = frozenset(failing) | frozenset(claim_id for claim_id in held
+                                                    if claim_id in outcome.claims and outcome.claims[claim_id].outcome == "pass")
+            if not pending:
                 break
             if cycles == MAX_CORRECTION_CYCLES:
-                exhausted = frozenset(failing)
+                exhausted = pending
                 break
             cycles += 1
             correction_started = time.perf_counter()
-            # Plan 5.8 "Type E re-renders only": a claim whose objections are all type E (presentation) is never revised.
-            presentation = frozenset(claim_id for claim_id in failing if presentation_only(outcome.objection_types(claim_id)))
-            content = tuple(claim_id for claim_id in failing if claim_id not in presentation)
+            # Plan 5.8 "Type E re-renders only": a claim whose objections are all type E (presentation) is never revised;
+            # a held claim is never revised either (it is re-verified unchanged).
+            presentation = frozenset(claim_id for claim_id in failing if claim_id not in held and presentation_only(outcome.objection_types(claim_id)))
+            content = tuple(claim_id for claim_id in failing if claim_id not in presentation and claim_id not in held)
             plan, revised = self._correction_plan(decision, content, outcome) if content else (None, [])
-            corrections.append(V2Correction(cycle=cycles, kind="revise" if content else "re_render", failed_claim_ids=tuple(sorted(failing)),
-                                            revised_claim_ids=tuple(sorted(revised))))
+            corrections.append(V2Correction(cycle=cycles, kind="revise" if content or pending & held else "re_render",
+                                            failed_claim_ids=tuple(sorted(pending)), revised_claim_ids=tuple(sorted(revised))))
             if revised:
                 # A new candidate, judged by every V1 check from the start with fresh state (Phase 4 R-d); a hard fail
                 # or an abstention ends the loop with no further V2 call. Its rendering re-renders the type E claims too.

@@ -20,7 +20,12 @@ ASSET_READER = "asset_reader"
 DURABLE_LEARNER = "durable_learner"
 STAFF = "staff"
 ADMIN = "admin"
+REVIEWER = "reviewer"
 ARENA_TICKET = "arena_ticket"
+
+# The closed role set (Phase 6 spec 4.12): every role a route's dependencies name is one of these. A guest principal has
+# role learner; no in-app grant of any role exists (reviewer provisioning is DI-91 with DI-38).
+ROLES = ("learner", "instructor", "admin", "reviewer")
 
 ACCESS_LEVELS = {
     PUBLIC: "Anyone; no credential is read.",
@@ -30,6 +35,7 @@ ACCESS_LEVELS = {
     DURABLE_LEARNER: "A signed-in account (local or Auth0, not guest or demo) whose role is learner or admin.",
     STAFF: "A verified principal whose role is instructor or admin.",
     ADMIN: "A verified principal whose role is admin.",
+    REVIEWER: "A verified principal whose role is reviewer; outside development no caller is admitted while the reviewer pool (D-18) is unstaffed.",
     ARENA_TICKET: "A WebSocket from a trusted Origin offering a valid single-use Arena ticket (task 1.4).",
 }
 
@@ -43,7 +49,8 @@ PUBLIC_HANDLES = "public_handles"
 # Roles that read any tutor ledger record, shadow records included: the plan's "reviewer" and nothing wider (plan 7.3
 # "GET /ledger/responses/{response_id} (owner or reviewer)"). Each such read is a security event (plan 7.6 "reviewer
 # access is logged"). No reviewer is provisioned yet (DI-38). Outside development LEDGER_ROUTE_ENABLED is false, so
-# the route answers 404 to everyone, owners included (PD-12).
+# the route answers 404 to everyone, owners included (PD-12); and while the reviewer pool (D-18) is unstaffed a
+# reviewer reads there as an owner (app.core.reviewer_access.reviewer_admitted, Phase 6).
 LEDGER_READER_ROLES = ("reviewer",)
 
 OWNERSHIP_SCOPES = {
@@ -64,6 +71,18 @@ class RoutePolicy:
 
 def _p(access: str, ownership: str = NONE, note: str = "") -> RoutePolicy:
     return RoutePolicy(access, ownership, note)
+
+
+V3_REVIEWER_NOTE = (
+    "Reviewer role only: an authenticated caller of any other role gets 403 and authz.denied in every environment, and "
+    "outside development every authenticated caller gets 403 and authz.denied while the reviewer pool (D-18) is "
+    "unstaffed. Authentication comes first: a caller without a credential gets 401 and no security event where demo auth "
+    "is off (the default outside development), a rejected bearer or guest token gets 401 with auth.credential_rejected, "
+    "and a POST whose session or guest cookie fails the CSRF guard (an invalid cookie, no matching CSRF header or an "
+    "untrusted Origin) gets 403 with request.forbidden before routing. An admitted reviewer gets 404 "
+    "unless V3_QUEUE is shadow or on (development only by default). Claim text, public quotable span text, span ids and "
+    "keyed digests only, never a learner identifier; a successful call is a v3.* security event."
+)
 
 
 ROUTE_POLICIES: dict[tuple[str, str], RoutePolicy] = {
@@ -113,8 +132,21 @@ ROUTE_POLICIES: dict[tuple[str, str], RoutePolicy] = {
         OWNER,
         "404 unless LEDGER_ROUTE_ENABLED. The turn's owner reads its legacy record (a pre-ledger turn reads as "
         "no-verdict); the reviewer role reads any record, shadow records included, and each such read is a security "
-        "event. Any other role, admin included, reads only its own turns. A learner never sees a shadow record (AC-3-6).",
+        "event; outside development while the reviewer pool (D-18) is unstaffed, a reviewer reads as an owner. Any other "
+        "role, admin included, reads only its own turns. A learner never sees a shadow record (AC-3-6).",
     ),
+    # V3 audit and adjudication (Phase 6)
+    ("POST", "/v3/flags"): _p(
+        PRINCIPAL,
+        OWNER,
+        "404 to every authenticated caller outside development, and unless V3_QUEUE is shadow or on (a caller without a "
+        "credential gets 401 where demo auth is off). The caller's own tutor turn only: another learner's, "
+        "a missing and a pre-ledger turn get the same 404. Sets F_i = 0 and queues the response (X3); changes no verdict and "
+        "no ledger row. Rate-limited.",
+    ),
+    **{key: _p(REVIEWER, NONE, V3_REVIEWER_NOTE) for key in (
+        ("GET", "/v3/queue"), ("POST", "/v3/scan"), ("GET", "/v3/items/{item_id}"), ("POST", "/v3/items/{item_id}/claim"),
+        ("POST", "/v3/items/{item_id}/adjudicate"), ("POST", "/v3/items/{item_id}/apply"), ("GET", "/v3/metrics"))},
     # Analytics
     ("POST", "/analytics/events"): _p(PRINCIPAL, CALLER),
     ("POST", "/analytics/public-web-vitals"): _p(PUBLIC, NONE, "Anonymous browser metrics; rate-limited."),

@@ -562,3 +562,184 @@ class EvidentialCacheEntry(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(Text)
     used_at: Mapped[float] = mapped_column(Float, index=True)
+
+
+# ------------------------------------------------------------------------------- V3 audit and adjudication (Phase 6)
+# docs/architecture/phase6-implementation-spec.md section 8; app.services.v3. No table here holds a learner identifier,
+# learner text or a private-plane span, except the two user-keyed tables (v3_claims, v3_flags), whose user_id the
+# metadata-driven erasure removes (app.services.erasure). Response and reviewer ids appear only as keyed digests.
+
+
+class V3QueueItem(Base):
+    # One V3 queue item per (ledger record, claim) or per record (claim_key ""): its triggers and reasons, its priority
+    # (severity x exposure x (1 - K)), whether it holds its claim (X1) and its workflow state. Items are never deleted
+    # (triggers refuse DELETE and TRUNCATE) and move forward only (an UPDATE that rewrites an identity column or the
+    # double-review selection, resets a closing column, lowers the exposure or round, clears held, drops a trigger,
+    # reason or EHMF type, or moves state backwards is refused): an item's holds and F_i outlive any switch (plan Phase 6
+    # L). Ids, digests, enumerations and numbers only.
+    __tablename__ = "v3_queue_items"
+    __table_args__ = (
+        UniqueConstraint("ledger_seq", "claim_key", name="uq_v3_queue_items_subject"),
+        CheckConstraint("subject IN ('claim', 'response')", name="ck_v3_queue_items_subject"),
+        CheckConstraint("state IN ('queued', 'adjudicated', 'applied')", name="ck_v3_queue_items_state"),
+        Index("ix_v3_queue_items_state_priority", "state", "priority"),
+        Index("ix_v3_queue_items_enqueued_at", "enqueued_at"),
+        Index("ix_v3_queue_items_closed_at", "closed_at"),
+    )
+
+    item_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    ledger_seq: Mapped[int] = mapped_column(Integer)
+    claim_key: Mapped[str] = mapped_column(String(48))
+    subject: Mapped[str] = mapped_column(String(16))
+    record_kind: Mapped[str] = mapped_column(String(16))
+    response_digest: Mapped[str] = mapped_column(String(32))
+    triggers: Mapped[str] = mapped_column(String(32))
+    reasons: Mapped[str] = mapped_column(String(128))
+    ehmf_types: Mapped[str] = mapped_column(String(16))
+    held: Mapped[bool] = mapped_column(Boolean)
+    severity: Mapped[float] = mapped_column(Float)
+    exposure: Mapped[int] = mapped_column(Integer)
+    k: Mapped[float] = mapped_column(Float)
+    priority: Mapped[float] = mapped_column(Float)
+    state: Mapped[str] = mapped_column(String(16))
+    review_round: Mapped[int] = mapped_column(Integer)
+    double_review: Mapped[bool] = mapped_column(Boolean)
+    enqueued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    final_gold_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    applied_by_digest: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    applied_client_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    package_version: Mapped[str] = mapped_column(String(32))
+    package_sha256: Mapped[str] = mapped_column(String(64))
+
+
+class V3Claim(Base):
+    # A reviewer's lease on one review round of an item, kept as that round's record once adjudicated. User-keyed:
+    # erasure deletes a reviewer's leases (the item reads queued again) and round records. No foreign key (the erasure
+    # tests seed every user-keyed table on its own).
+    __tablename__ = "v3_claims"
+    __table_args__ = (
+        UniqueConstraint("item_id", "review_round", name="uq_v3_claims_item_round"),
+        Index("ix_v3_claims_user_id", "user_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    item_id: Mapped[str] = mapped_column(String(32))
+    review_round: Mapped[int] = mapped_column(Integer)
+    user_id: Mapped[str] = mapped_column(String(255))
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    adjudicated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class V3Draw(Base):
+    # The audit draw's record of every learner delivery the scan considered, once (primary key: its ledger seq): the
+    # rate used, whether an X5 window was open, and the record's claim-set key (exposure). Append-only.
+    __tablename__ = "v3_draws"
+    __table_args__ = (
+        Index("ix_v3_draws_delivered_at", "delivered_at"),
+        Index("ix_v3_draws_claim_set_key", "claim_set_key"),
+    )
+
+    ledger_seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    delivered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    claim_set_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rate_numerator: Mapped[int] = mapped_column(Integer)
+    rate_denominator: Mapped[int] = mapped_column(Integer)
+    x5_active: Mapped[bool] = mapped_column(Boolean)
+    drawn: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    rule: Mapped[str] = mapped_column(String(48))
+    package_sha256: Mapped[str] = mapped_column(String(64))
+    considered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class V3GoldLabelRecord(Base):
+    # The gold store: one row per adjudication round, append-only and hash-chained like the response ledger (plan 7.4
+    # AuditEvent {prev_hash, hash, actor_role, action, payload_digest}; R-22). entry is the canonical JSON of a GoldLabel
+    # (claim and span ids, text hashes, enumerations, keyed digests), entry_sha256 its payload digest. Triggers refuse
+    # UPDATE, DELETE and TRUNCATE and an insert that does not extend the chain. reviewer_digest is a keyed digest, never a
+    # user id: the store must outlive an erasure (DI-99).
+    __tablename__ = "v3_gold_labels"
+    __table_args__ = (
+        UniqueConstraint("item_id", "review_round", name="uq_v3_gold_labels_item_round"),
+        Index("ix_v3_gold_labels_item_id", "item_id"),
+        Index("ix_v3_gold_labels_reviewer_digest", "reviewer_digest"),
+    )
+
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    item_id: Mapped[str] = mapped_column(String(32))
+    review_round: Mapped[int] = mapped_column(Integer)
+    actor_role: Mapped[str] = mapped_column(String(32))
+    action: Mapped[str] = mapped_column(String(16))
+    reviewer_digest: Mapped[str] = mapped_column(String(32))
+    entry: Mapped[str] = mapped_column(Text)
+    entry_sha256: Mapped[str] = mapped_column(String(64))
+    prev_hash: Mapped[str] = mapped_column(String(64))
+    record_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class V3Event(Base):
+    # X5 events: a model-version change or a CUSUM alarm (app.services.v3.events), each opening a window of raised audit
+    # rate over the next window_deliveries learner deliveries after from_ledger_seq. Append-only.
+    __tablename__ = "v3_events"
+    __table_args__ = (CheckConstraint("kind IN ('model_change', 'cusum_alarm')", name="ck_v3_events_kind"),)
+
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    payload: Mapped[str] = mapped_column(Text)
+    from_ledger_seq: Mapped[int] = mapped_column(Integer)
+    window_deliveries: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class V3ModelVersion(Base):
+    # Every model version the scan has seen per model key (registry and records), so a version change is an X5 event.
+    # Append-only; model ids and versions only.
+    __tablename__ = "v3_model_versions"
+    __table_args__ = (Index("ix_v3_model_versions_model_key", "model_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    model_key: Mapped[str] = mapped_column(String(255))
+    model_version: Mapped[str] = mapped_column(String(255))
+    first_seen_seq: Mapped[int] = mapped_column(Integer)
+    source: Mapped[str] = mapped_column(String(16))
+    seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class V3Flag(Base):
+    # A learner's "looks wrong" flag on their own tutor turn's ledger record (X3; development only until DI-97).
+    # User-keyed: erasure and guest retention delete it; F_i lives on the X3 item, which holds no learner id.
+    __tablename__ = "v3_flags"
+    __table_args__ = (
+        UniqueConstraint("user_id", "ledger_seq", name="uq_v3_flags_user_record"),
+        Index("ix_v3_flags_user_id", "user_id"),
+        Index("ix_v3_flags_ledger_seq", "ledger_seq"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(255))
+    ledger_seq: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class V3Scan(Base):
+    # One row per V3 scan: the ledger range it read (the next scan starts after the largest to_seq) and its counts.
+    # Append-only.
+    __tablename__ = "v3_scans"
+
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    from_seq: Mapped[int] = mapped_column(Integer)
+    to_seq: Mapped[int] = mapped_column(Integer)
+    records: Mapped[int] = mapped_column(Integer)
+    deliveries: Mapped[int] = mapped_column(Integer)
+    drawn_x6: Mapped[int] = mapped_column(Integer)
+    drawn_x5: Mapped[int] = mapped_column(Integer)
+    items_created: Mapped[int] = mapped_column(Integer)
+    items_updated: Mapped[int] = mapped_column(Integer)
+    model_changes: Mapped[int] = mapped_column(Integer)
+    unparsed: Mapped[int] = mapped_column(Integer)
+    package_version: Mapped[str] = mapped_column(String(32))
+    package_sha256: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
