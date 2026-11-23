@@ -541,7 +541,9 @@ def test_ac_5_8_a_repeated_claim_span_pair_hits_the_cache_and_a_configuration_bu
     assert all(not vote.cached for verdict in judged(first).values() for vote in verdict.votes)
     assert all(vote.cached for verdict in judged(second).values() for vote in verdict.votes)
     assert {name: adapter.calls - calls[name] for name, adapter in adapters.items()} == {name: 1 for name in adapters}  # alignment only
-    bumped = temp_package(tmp_path, edit=lambda raw: raw.update(package_version="6.0.1"))  # a bump within the shipped major (v6, Phase 7)
+    from ehmf_fakes import NEXT_PATCH
+
+    bumped = temp_package(tmp_path, edit=lambda raw: raw.update(package_version=NEXT_PATCH))  # a bump within the shipped major
     settings = Settings(model_gateway="on", config_package_path=str(bumped))
     other = v2_pipeline(settings, gateway=fresh_gateway(adapters=adapters), registry=THREE, cache=cache)
     assert other.package.sha256 != pipeline.package.sha256

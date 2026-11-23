@@ -19,6 +19,7 @@ from pydantic import ValidationError
 from app.core.config import Settings
 from app.core.config_package import (
     DEFAULT_PACKAGE_PATH,
+    EHMF_SCHEMA_VERSION,
     V5_PACKAGE_PATH,
     ConfigPackageError,
     get_config_package,
@@ -33,7 +34,10 @@ from app.services.ledger import config_version_of
 from app.services.tutor_pipeline.contracts import LedgerEntryV3, LedgerEntryV4, VerificationRecordV4
 from ehmf_fakes import (
     INVENTED,
+    NEXT_MINOR,
+    NEXT_PATCH,
     REPO_ROOT,
+    SHIPPED_VERSION as SHIPPED,
     TIER2,
     UnresolvableThenCleanGenerator,
     ehmf_settings,
@@ -50,6 +54,14 @@ SPEC_PATH = REPO_ROOT / "docs" / "architecture" / "phase7-implementation-spec.md
 RECORD = REPO_ROOT / "docs" / "evaluation" / "phase7" / "golden_run_v1.json"
 GOLDEN = REPO_ROOT / "docs" / "evaluation" / "phase7" / "golden_set_v1.json"
 PACKAGE = get_config_package(Settings())
+# Every test module Phase 7 added or changed (git diff --name-only 31343c8 -- apps/api/tests, plus this review's
+# additions); docs/testing/test-strategy.md's Phase 7 map names each with what it proves.
+PHASE7_TEST_MODULES = (
+    "test_phase7_acceptance.py", "test_ehmf_units.py", "ehmf_fakes.py", "conftest.py", "v1_fakes.py", "v2_fakes.py",
+    "test_phase2_acceptance.py", "test_phase3_acceptance.py", "test_phase4_acceptance.py", "test_phase5_acceptance.py",
+    "test_phase6_acceptance.py", "test_config_package.py", "test_configuration_overrides.py", "test_v1_8_misconceptions.py",
+    "test_v2_ledger_records.py", "test_response_ledger_migrations.py", "test_response_ledger_provenance.py",
+)
 
 
 def spec_text() -> str:
@@ -343,7 +355,7 @@ def test_ac_7_6_a_package_edit_that_keeps_its_version_is_refused_at_write(tmp_pa
     committed = json.loads(RECORD.read_text(encoding="utf-8"))
     assert golden.same_version_edit(committed, PACKAGE) is None
     bumped = load_config_package(package_copy(tmp_path / "b", lambda raw: (raw["ehmf"]["stop"].update(window_claims=201),
-                                                                           raw.update(package_version="6.0.1"))), governed=False)
+                                                                           raw.update(package_version=NEXT_PATCH))), governed=False)
     assert golden.same_version_edit(committed, bumped) is None
 
 
@@ -507,7 +519,7 @@ def test_plan_g_earlier_ledger_rows_read_as_config_version_pre_phase_7(tmp_path)
     from v3_fakes import append_all, fresh_v3_sessions
 
     assert config_version_of({"config_package_version": "5.0.0"}) == "pre-phase-7"
-    assert config_version_of({"config_package_version": "6.0.1"}) == "6.0.1"
+    assert config_version_of({"config_package_version": NEXT_PATCH}) == NEXT_PATCH
     assert config_version_of({"config_package_version": "bad"}) == "pre-phase-7" and config_version_of(None) == "pre-phase-7"
     legacy = make_entry("turn-00000000-0000-0000-0000-000000000001")
     legacy5 = legacy.model_copy(update={"versions": legacy.versions.model_copy(update={"config_package_version": "5.0.0"})})
@@ -526,7 +538,7 @@ def test_plan_g_earlier_ledger_rows_read_as_config_version_pre_phase_7(tmp_path)
             path = tmp_path / "export.jsonl"
             ledger.export_ledger(db, path)
     versions = [json.loads(line)["config_version"] for line in path.read_text(encoding="utf-8").splitlines()]
-    assert versions == ["pre-phase-7", "6.0.0", "6.0.0"]
+    assert versions == ["pre-phase-7", SHIPPED, SHIPPED]
 
 
 def test_plan_g_v5_stays_readable_and_v6_parses_v1_to_v4_records():
@@ -537,7 +549,7 @@ def test_plan_g_v5_stays_readable_and_v6_parses_v1_to_v4_records():
     assert check_tutor_pipeline_package(v5, structural=True) == []
     v4 = load_config_package(V5_PACKAGE_PATH.with_name("v4.json"), governed=True)
     assert check_tutor_pipeline_package(v4, structural=True) == []
-    assert DEFAULT_PACKAGE_PATH.name == "v6.json" and PACKAGE.package_version == "6.0.0" and PACKAGE.v3.trigger_registry_version == "x-triggers-v2"
+    assert DEFAULT_PACKAGE_PATH.name == f"v{EHMF_SCHEMA_VERSION}.json" and PACKAGE.schema_version == EHMF_SCHEMA_VERSION == vocabulary.EHMF_FIRST_MAJOR and PACKAGE.v3.trigger_registry_version == "x-triggers-v2"
     assert check_tutor_pipeline_package(PACKAGE, structural=True) == []
 
 
@@ -551,7 +563,7 @@ def test_plan_i_ready_reports_config_version_and_the_ehmf_fields_and_no_count():
 
     with TestClient(app) as client:
         body = client.get("/ready").json()
-    assert body["config_package_version"] == "6.0.0" and body["config_version"] == "6.0.0"
+    assert body["config_package_version"] == SHIPPED and body["config_version"] == SHIPPED
     assert {"ehmf_mode", "ehmf_setting", "phase7_exit_passed", "ehmf"} <= set(body) and body["phase7_exit_passed"] is False
     fields = body["ehmf"]
     assert fields["routing"] == "ehmf-routing-v1" and fields["weights"]["D_disclosed"] == "0" and fields["weights"]["C"] == "3/5"
@@ -559,6 +571,24 @@ def test_plan_i_ready_reports_config_version_and_the_ehmf_fields_and_no_count():
     assert set(fields["stop"]) == {"revert_required"}
     flat = json.dumps(fields)
     assert "count" not in flat and "rate" not in flat
+    assert fields["weights_provisional"] is PACKAGE.raw["ehmf"]["weights"]["provisional"] is True
+    assert fields["golden_set"]["version"] == PACKAGE.raw["ehmf"]["golden_set"]["version"] == vocabulary.GOLDEN_SET_VERSION
+
+
+def test_plan_i_ready_reads_the_ehmf_values_from_the_package_in_force(monkeypatch):
+    # /ready states the package's own ehmf values (weights_provisional, the golden-set version), never a literal: a
+    # package whose values differ is reported as it is.
+    import dataclasses
+    from types import SimpleNamespace
+
+    from app import main
+    from app.services.ehmf import stop
+
+    monkeypatch.setattr(stop, "process_stop_state", lambda *_args, **_kwargs: stop.StopState(None, "not_evaluated", None, None))
+    other = dataclasses.replace(PACKAGE, ehmf=dataclasses.replace(PACKAGE.ehmf, weights_provisional=False, golden_set_version="golden-set-v9"))
+    fields = main._ehmf_fields(other, SimpleNamespace(penalty_active=False))
+    assert fields["weights_provisional"] is False and fields["golden_set"]["version"] == "golden-set-v9"
+    assert main._ehmf_fields(PACKAGE, SimpleNamespace(penalty_active=False))["weights_provisional"] is True
 
 
 def test_plan_i_per_type_rates_disclosure_share_and_correction_cycles():
@@ -571,12 +601,12 @@ def test_plan_i_per_type_rates_disclosure_share_and_correction_cycles():
         append_all(factory, entries)
         with factory() as db:
             body = slis(db, PACKAGE)
-    group = body["by_config_version"]["6.0.0"]
+    group = body["by_config_version"][SHIPPED]
     assert group["per_100_responses"]["B1"] == "1/2" and group["per_100_responses"]["responses"] == 2
     claims = group["per_100_claims"]["claims"]
     assert claims >= 1 and group["per_100_claims"]["A"].endswith(f"/{claims}")
     assert group["correction_cycles"]["exhausted"] == 1 and group["x2_emissions"] >= 1
-    assert body["evidence_class"] == EVIDENCE_CLASS and body["config_version"] == "6.0.0"
+    assert body["evidence_class"] == EVIDENCE_CLASS and body["config_version"] == SHIPPED
     assert group["type_d_disclosure_share"] == {"disclosed": 0, "conflicts": 0, "share": "0/0"}
     # The Type D disclosure share over the AC-7-3 conflict run: every detected conflict is disclosed.
     conflict = _conflict_run().entry
@@ -585,7 +615,7 @@ def test_plan_i_per_type_rates_disclosure_share_and_correction_cycles():
     with fresh_v3_sessions() as (factory, _engine):
         append_all(factory, [conflict])
         with factory() as db:
-            share = slis(db, PACKAGE)["by_config_version"]["6.0.0"]["type_d_disclosure_share"]
+            share = slis(db, PACKAGE)["by_config_version"][SHIPPED]["type_d_disclosure_share"]
     assert share == {"disclosed": detected, "conflicts": detected, "share": f"{detected}/{detected}"}
 
 
@@ -605,7 +635,7 @@ def test_plan_i_a_dropped_proposal_is_a_typed_claim_in_the_per_type_rates_as_the
     with fresh_v3_sessions() as (factory, _engine):
         append_all(factory, [entry])
         with factory() as db:
-            group = slis(db, PACKAGE)["by_config_version"]["6.0.0"]
+            group = slis(db, PACKAGE)["by_config_version"][SHIPPED]
     assert group["per_100_claims"]["claims"] == claims and group["per_100_claims"]["A"] == f"1/{claims}"
     assert group["per_100_responses"]["A"] == "1/1"
 
@@ -671,21 +701,21 @@ def test_plan_l_a_rising_a_b_rate_after_a_change_requires_a_revert_and_raises_th
     from app.services.ehmf.stop import _fires, detect, stop_state
     from v3_fakes import fresh_v3_sessions
 
-    copy = package_copy(tmp_path, lambda raw: raw.update(package_version="6.0.1"))
-    package601 = load_config_package(copy, governed=False)
+    copy = package_copy(tmp_path, lambda raw: raw.update(package_version=NEXT_PATCH))
+    package_next = load_config_package(copy, governed=False)
     params = PACKAGE.ehmf
     assert _fires(120, 2, 100, 10, params) and not _fires(120, 2, 100, 1, params) and not _fires(0, 0, 100, 10, params)
     assert not _fires(120, 20, 100, 10, params)
     with fresh_v3_sessions() as (factory, _engine):
         _seed_stop_simple(factory)
         with factory() as db:
-            seq = detect(db, package601, now=datetime.now(UTC))
+            seq = detect(db, package_next, now=datetime.now(UTC))
             db.commit()
         assert seq is not None
         with factory() as db:
-            state = stop_state(db, package601)
+            state = stop_state(db, package_next)
             assert state.revert_required is True and state.reason == "rising_ab"
-            assert detect(db, package601, now=datetime.now(UTC)) is None
+            assert detect(db, package_next, now=datetime.now(UTC)) is None
             from app.services.v3.scan import open_windows
 
             assert any(remaining > 0 for _start, remaining in open_windows(db))
@@ -694,13 +724,13 @@ def test_plan_l_a_rising_a_b_rate_after_a_change_requires_a_revert_and_raises_th
 
 
 def _seed_stop_simple(factory) -> None:
-    """Typed rows: 60 records of 2 claims at 6.0.0 (one A/B record), then 50 at 6.0.1 (five A/B records)."""
+    """Typed rows: 60 records of 2 claims at the shipped version (one A/B record), then 50 at its next patch (five A/B records)."""
     from app.services.ledger import append_ledger_entry
 
     clean = typed_record(settings=ehmf_settings("shadow")).entry.model_dump(mode="json")
     bad = typed_record(adapters=scripted_adapters(("CONTRADICTED", "A"))).entry.model_dump(mode="json")
     index = 0
-    for version, count, ab in (("6.0.0", 60, 1), ("6.0.1", 50, 5)):
+    for version, count, ab in ((SHIPPED, 60, 1), (NEXT_PATCH, 50, 5)):
         for number in range(count):
             raw = json.loads(json.dumps(bad if number < ab else clean))
             index += 1
@@ -714,8 +744,9 @@ def _seed_stop_simple(factory) -> None:
 
 
 def test_plan_l_reloading_the_prior_package_clears_the_revert_state(tmp_path, monkeypatch, caplog):
-    # A stop follows a 6.x -> 6.y change: /ready's cached state reads revert_required true under the package the stop
-    # followed (6.0.1) and false, reason reverted, once the prior 6.x package (6.0.0) is in force. Reloading v5 (no ehmf
+    # A stop follows a change between two packages with an ehmf block: /ready's cached state reads revert_required true
+    # under the package the stop followed (the next patch) and false, reason reverted, once the prior package (the shipped
+    # version) is in force. Reloading v5 (no ehmf
     # block) turns EHMF off: not_evaluated with no read, and the worker's status refuses but still logs the stop rows.
     from datetime import UTC, datetime
 
@@ -724,21 +755,21 @@ def test_plan_l_reloading_the_prior_package_clears_the_revert_state(tmp_path, mo
     from app.workers import ehmf as worker
     from v3_fakes import fresh_v3_sessions
 
-    package601 = load_config_package(package_copy(tmp_path, lambda raw: raw.update(package_version="6.0.1")), governed=False)
+    package_next = load_config_package(package_copy(tmp_path, lambda raw: raw.update(package_version=NEXT_PATCH)), governed=False)
     settings = ehmf_settings("shadow")
     v5 = load(V5_PACKAGE_PATH, governed=True)
     with fresh_v3_sessions() as (factory, _engine):
         _seed_stop_simple(factory)
         with factory() as db:
-            assert detect(db, package601, now=datetime.now(UTC)) is not None
+            assert detect(db, package_next, now=datetime.now(UTC)) is not None
             db.commit()
         try:
             reset_stop_cache()
-            state = process_stop_state(settings, package601, session_factory=factory)
+            state = process_stop_state(settings, package_next, session_factory=factory)
             assert (state.revert_required, state.reason) == (True, "rising_ab")
             reset_stop_cache()
             state = process_stop_state(settings, PACKAGE, session_factory=factory)
-            assert (state.revert_required, state.reason, state.from_config_version) == (False, "reverted", "6.0.0")
+            assert (state.revert_required, state.reason, state.from_config_version) == (False, "reverted", SHIPPED)
             reset_stop_cache()
             assert process_stop_state(settings, v5, session_factory=factory).reason == "not_evaluated"
         finally:
@@ -749,7 +780,7 @@ def test_plan_l_reloading_the_prior_package_clears_the_revert_state(tmp_path, mo
             assert worker.main(["status"]) == worker.EXIT_USAGE
         refused = [getattr(r, FIELDS) for r in caplog.records if getattr(r, FIELDS, {}).get("event") == "ehmf.status_refused"]
         assert len(refused) == 1 and refused[0]["reason"] == "no_ehmf_block"
-        assert [(row["from_config_version"], row["to_config_version"]) for row in refused[0]["stops"]] == [("6.0.0", "6.0.1")]
+        assert [(row["from_config_version"], row["to_config_version"]) for row in refused[0]["stops"]] == [(SHIPPED, NEXT_PATCH)]
     state = process_stop_state(Settings(environment="production", allowed_origins=["https://qantumlearn.academy"]), PACKAGE)
     assert state.revert_required is None and state.reason == "not_evaluated"
     reset_stop_cache()
@@ -781,14 +812,14 @@ def datetime_now():
 
 def test_plan_l_a_change_point_whose_before_window_the_scan_cut_never_fires_without_a_rise():
     # The shipped stop (200 typed claims per window, 100 after, 2 A/B, rise 3/2, scan 5000 records): 400 records at
-    # 6.0.0 then records at 6.1.0, A/B on exactly every tenth record in both versions (no rise). As records arrive the
+    # the shipped version then records at its next minor, A/B on exactly every tenth record in both versions (no rise). As records arrive the
     # change point slides to the start of the scan; once its old-version window is cut it is skipped, never fired.
     from app.services.ehmf.stop import detect
     from v3_fakes import fresh_v3_sessions
 
     params = PACKAGE.ehmf
     assert (params.stop_window_claims, params.stop_min_claims, params.stop_min_ab, params.stop_scan_records) == (200, 100, 2, 5000)
-    rows = [("6.0.0", index % 10 == 0) for index in range(400)] + [("6.1.0", index % 10 == 0) for index in range(4998)]
+    rows = [(SHIPPED, index % 10 == 0) for index in range(400)] + [(NEXT_MINOR, index % 10 == 0) for index in range(4998)]
     with fresh_v3_sessions() as (factory, _engine):
         _insert_typed_rows(factory, rows[:700])
         with factory() as db:
@@ -802,7 +833,7 @@ def test_plan_l_a_change_point_whose_before_window_the_scan_cut_never_fires_with
 
             assert db.execute(select(EhmfStop.seq)).first() is None
     # A real rise with whole windows still fires: 400 records at 1/10 A/B, then 200 at 1/2.
-    rising = [("6.0.0", index % 10 == 0) for index in range(400)] + [("6.1.0", index % 2 == 0) for index in range(200)]
+    rising = [(SHIPPED, index % 10 == 0) for index in range(400)] + [(NEXT_MINOR, index % 2 == 0) for index in range(200)]
     with fresh_v3_sessions() as (factory, _engine):
         _insert_typed_rows(factory, rising)
         with factory() as db:
@@ -899,24 +930,38 @@ def test_plan_p_the_source_fidelity_check_reports_the_quen_transposition():
 # ===================================================================================================== golden set, routing
 
 
-def test_golden_set_is_public_or_synthetic_and_disjoint_from_ulqs():
-    golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
-    fixtures = json.loads((REPO_ROOT / golden["phase4_fixtures"]).read_text(encoding="utf-8"))
-    ids = {case["id"] for case in fixtures["cases"]}
+def _norm(text: str) -> str:
+    return " ".join(text.casefold().split())
 
-    def norm(text: str) -> str:
-        return " ".join(text.casefold().split())
 
+def _ulqs_overlap(golden: dict, manifest: Path) -> list[str]:
+    """The golden items whose query, normalised, is a ULQS question (the schema's `question` field) in `manifest`."""
     ulqs = set()
-    for line in (REPO_ROOT / "lqs" / "manifest.jsonl").read_text(encoding="utf-8").splitlines():
+    for line in manifest.read_text(encoding="utf-8").splitlines():
         if line.strip():
             row = json.loads(line)
             for key in ("question", "prompt", "text", "query"):
                 if isinstance(row.get(key), str):
-                    ulqs.add(norm(row[key]))
+                    ulqs.add(_norm(row[key]))
+    return [item["id"] for item in golden["items"] if _norm(item["query"]) in ulqs]
+
+
+def test_golden_set_is_public_or_synthetic_and_disjoint_from_ulqs(tmp_path):
+    golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    fixtures = json.loads((REPO_ROOT / golden["phase4_fixtures"]).read_text(encoding="utf-8"))
+    ids = {case["id"] for case in fixtures["cases"]}
+    # The committed ULQS manifest holds no validated item yet (validate_lqs.py --allow-draft: 0 items), so disjointness
+    # is checked against it as it grows, and the check itself is proven on a seeded copy holding one golden query.
+    schema = json.loads((REPO_ROOT / "lqs" / "schema.json").read_text(encoding="utf-8"))
+    assert "question" in schema["required"] and "question" in schema["properties"]
+    assert _ulqs_overlap(golden, REPO_ROOT / "lqs" / "manifest.jsonl") == []
+    seeded = tmp_path / "manifest.jsonl"
+    seeded.write_text(json.dumps({"id": "seeded", "question": "  " + golden["items"][0]["query"].upper() + " "}) + "\n", encoding="utf-8")
+    same_query = [item["id"] for item in golden["items"] if _norm(item["query"]) == _norm(golden["items"][0]["query"])]
+    assert _ulqs_overlap(golden, seeded) == same_query and golden["items"][0]["id"] in same_query
     for item in golden["items"]:
         assert item["source"] == "synthetic" or item["source"].split(":", 1)[1] in ids
-        assert norm(item["query"]) not in ulqs and "lqs/" not in json.dumps(item)
+        assert "lqs/" not in json.dumps(item)
     covered = {t for item in golden["items"] for t in item["expect"]["types"]}
     assert covered == set(vocabulary.FINDING_TYPES)
     from app.core.config_package import canonical_sha256
@@ -1095,15 +1140,47 @@ def test_phase7_docs_quote_the_plan_and_state_the_current_rules():
         assert "EHMF" in text
     for number in range(40, 50):
         assert f"PD-{number}" in spec
-    for number in range(104, 114):
+    for number in range(104, 115):
         assert f"DI-{number}" in spec
+    # Plan L's automatic revert is not implemented (D-05): conflict 7 and its deferred row say so, and PD-46 calls the
+    # revert the operator's, never an applied value.
+    section_16 = spec.split("## 16. Provisional defaults and deferred items", 1)[1].split("## 17.", 1)[0]
+    di114 = next(line for line in section_16.splitlines() if line.startswith("| DI-114 |"))
+    assert "reverts it and sets audit to 20%" in di114 and "D-05" in di114
+    assert "DI-114" in spec.split("\n7. **Plan L", 1)[1].split("\n8. ", 1)[0]
+    pd46 = next(line for line in section_16.splitlines() if line.startswith("| PD-46 |"))
+    assert "the revert, which is the operator's" in pd46 and "DI-114" in pd46
+    pd44 = next(line for line in section_16.splitlines() if line.startswith("| PD-44 |"))
+    assert "spec conflict 3" in pd44
+    # 3.7 states the golden-run record's informational keys, the --allow-dirty procedure and the runner's inputs rule.
+    golden = scripts_module("run_golden_set")
+    record_shape = spec.split("### 3.7", 1)[1].split("### 3.8", 1)[0]
+    for phrase in ("`created_at` and `commit` are informational", "`--allow-dirty`", "`-dirty`", f"`{golden.INPUTS_RULE}`", *golden.INPUT_SCRIPTS):
+        assert phrase in record_shape, phrase
+    # E16: the renumbering procedure (package number and Alembic parent) is written in the change-control doc.
+    control = (REPO_ROOT / "docs" / "architecture" / "ehmf-change-control.md").read_text(encoding="utf-8")
+    renumbering = control.split("## Renumbering the Phase 7 package", 1)[1]
+    for name in ("EHMF_SCHEMA_VERSION", "EHMF_FIRST_MAJOR", "first_package", "down_revision", "supersedes", "--rehash", "--write"):
+        assert name in renumbering, name
 
 
 def test_phase7_docs_the_test_strategy_maps_every_test_module_the_phase_added():
     strategy = (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
-    section = strategy.split("## Phase 7 acceptance map (plan Phase 7 K)", 1)[1]
+    section = strategy.split("## Phase 7 acceptance map (plan Phase 7 K)", 1)[1].split("\n## ", 1)[0]
+    added, changed = section.split("### Phase 7 test files", 1)[1].split("### Phase 7 changes to existing test modules", 1)
+    rows = {}
+    for part in (added, changed):
+        for line in part.splitlines():
+            if line.startswith("| `"):
+                for name in re.findall(r"`([a-z0-9_]+\.py)`", line.split(" | ", 1)[0]):
+                    rows[name] = line.split(" | ", 1)[1].strip(" |")
+    # Every module the phase added or changed is mapped, with what it proves; each one exists.
+    for name in PHASE7_TEST_MODULES:
+        assert rows.get(name), name
+        assert (API_ROOT / "tests" / name).is_file(), name
+    assert set(rows) <= set(PHASE7_TEST_MODULES), set(rows) - set(PHASE7_TEST_MODULES)
     for name in ("test_phase7_acceptance.py", "test_ehmf_units.py", "ehmf_fakes.py"):
-        assert f"`{name}`" in section
+        assert f"| `{name}` |" in added, name
     assert "**Exit gate.**" in section and "The exit is not passed." in section
 
 

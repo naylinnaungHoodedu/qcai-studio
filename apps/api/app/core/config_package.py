@@ -61,6 +61,11 @@ from app.core.structured_logging import FIELDS
 LOGGER = logging.getLogger("qcai.config_package")
 PACKAGE_DIRECTORY = Path(__file__).resolve().parents[1] / "config_package"
 DEFAULT_PACKAGE_PATH = PACKAGE_DIRECTORY / "v6.json"
+# The first package schema with an ehmf block (Phase 7), equal to ehmf.vocabulary.EHMF_FIRST_MAJOR (the first package major
+# whose records read as their own config_version). Every schema-dependent rule of the loader, the package checks and
+# scripts/config_package.py reads this constant, so renumbering the Phase 7 package (E16) edits these two constants, the
+# file names and the Alembic parent (docs/architecture/ehmf-change-control.md "Renumbering the Phase 7 package").
+EHMF_SCHEMA_VERSION = 6
 # Package v5 stays readable for one release after the Phase 7 merge (DI-112; its own CI step).
 V5_PACKAGE_PATH = PACKAGE_DIRECTORY / "v5.json"
 # Readable for one release after the Phase 6 merge (DI-100), the Phase 5 merge (DI-84), the Phase 4 merge (DI-63) and
@@ -460,7 +465,7 @@ def _schema_path(value: Any, name: str) -> str:
 def _parse_tutor_pipeline(raw: Mapping[str, Any], *, schema_version: int = 2) -> TutorPipelineParams:
     tutor = _mapping(raw, "tutor_pipeline")
     schemas_raw = _mapping(tutor, "schemas")
-    names = (TUTOR_SCHEMA_NAMES_V6 if schema_version >= 6 else TUTOR_SCHEMA_NAMES_V4 if schema_version >= 4
+    names = (TUTOR_SCHEMA_NAMES_V6 if schema_version >= EHMF_SCHEMA_VERSION else TUTOR_SCHEMA_NAMES_V4 if schema_version >= 4
              else TUTOR_SCHEMA_NAMES_V3 if schema_version >= 3 else TUTOR_SCHEMA_NAMES)
     _require(set(schemas_raw) == set(names), f"tutor_pipeline.schemas must name exactly {', '.join(names)}")
     schemas: dict[str, SchemaPin] = {}
@@ -530,7 +535,7 @@ def _parse_tutor_pipeline(raw: Mapping[str, Any], *, schema_version: int = 2) ->
         _require(unused == (), f"tutor_pipeline.unused_provenance_fields must be empty in package v{schema_version} (its entry schema, "
                                f"{ledger.get('entry_schema')}, fills every provenance field)")
         _require(ledger.get("legacy_entry_schema") == "ledger-entry-v1", "tutor_pipeline.ledger.legacy_entry_schema must be 'ledger-entry-v1'")
-        expected = LEDGER_ENTRY_SCHEMAS_V6 if schema_version >= 6 else LEDGER_ENTRY_SCHEMAS_V4
+        expected = LEDGER_ENTRY_SCHEMAS_V6 if schema_version >= EHMF_SCHEMA_VERSION else LEDGER_ENTRY_SCHEMAS_V4
         _require(ledger.get("entry_schemas") == list(expected), f"tutor_pipeline.ledger.entry_schemas must be [{', '.join(expected)}]")
     elif schema_version >= 3:
         # ledger.entry_schema is compared with the LedgerEntryV2 contract by package_check, as every rule id is.
@@ -746,7 +751,7 @@ def _parse_v1(raw: Mapping[str, Any], *, tutor: TutorPipelineParams, schema_vers
             _require(item not in families, f"v1.v1_7 item {item} is in two families")
             families[item] = name
     v1_8 = _mapping(v1, "v1_8")
-    if schema_version >= 6:
+    if schema_version >= EHMF_SCHEMA_VERSION:
         library_version, library_sha256, entries = _parse_library_pin(v1_8.get("library"), path=path)
     else:
         library_version, library_sha256, entries = _parse_library(v1_8.get("library"))
@@ -919,7 +924,7 @@ def _parse_flag_policy(raw: Mapping[str, Any], *, schema_version: int = 2) -> Fl
         _require(isinstance(evidence6, str) and bool(evidence6.strip()), "flag_policy.phase6_exit_passed true needs a phase6_exit_evidence string")
     else:
         _require(evidence6 is None or isinstance(evidence6, str), "flag_policy.phase6_exit_evidence must be null or a string")
-    if schema_version < 6:
+    if schema_version < EHMF_SCHEMA_VERSION:
         return FlagPolicy(phase4_exit_passed=passed, phase4_exit_evidence=evidence, phase5_exit_passed=passed5, phase5_exit_evidence=evidence5,
                           phase6_exit_passed=passed6, phase6_exit_evidence=evidence6)
     _require(all(name in str(policy.get("authority")) for name in ("PD-48", "DI-109")),
@@ -1377,7 +1382,7 @@ def _parse_v3(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], v2: "V2Pa
     from app.services.ehmf.vocabulary import EHMF_TYPES, PLAN_WEIGHTS
 
     triggers = _mapping(v3, "triggers")
-    registry_version, registry_rules = ((TRIGGER_REGISTRY_VERSION_V2, TRIGGER_RULES_V2) if schema_version >= 6
+    registry_version, registry_rules = ((TRIGGER_REGISTRY_VERSION_V2, TRIGGER_RULES_V2) if schema_version >= EHMF_SCHEMA_VERSION
                                         else (TRIGGER_REGISTRY_VERSION, TRIGGER_RULES))
     _require(triggers.get("version") == registry_version and triggers.get("rules") == registry_rules,
              f"v3.triggers must be the code's trigger registry {registry_version} and its rules")
@@ -1386,7 +1391,7 @@ def _parse_v3(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], v2: "V2Pa
                     "hold": "sticky_for_the_response"},
              "v3.triggers.x1 must fire at tiers [1, 2, 3] with min_objections 1 (AC-5-4: critical claims follow X1) and withhold at tier 1:"
              " withhold_tier 1, withholds true, revision never, hold sticky_for_the_response (task 1 \"withheld at tier 1\"; AC-6-1)")
-    if schema_version >= 6:
+    if schema_version >= EHMF_SCHEMA_VERSION:
         # Phase 7 spec conflict 3 (PD-44): X2 fires on every X2 escalation the correction engine emits (AC-7-5).
         _require(_mapping(triggers, "x2") == {"fires_on": "every_x2_escalation", "emitted_by": "ehmf.correction"},
                  "v3.triggers.x2 must fire on every_x2_escalation emitted by ehmf.correction (x-triggers-v2; AC-7-5)")
@@ -1410,7 +1415,7 @@ def _parse_v3(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], v2: "V2Pa
     for key, code in (("rule", PRIORITY_RULE), ("exposure_rule", EXPOSURE_RULE), ("claim_set_key_rule", CLAIM_SET_KEY_RULE), ("k_rule", K_RULE)):
         _require(priority.get(key) == code, f"v3.priority.{key} must be '{code}'")
     weights = _mapping(priority, "severity")
-    if schema_version >= 6:
+    if schema_version >= EHMF_SCHEMA_VERSION:
         # Package v6: V3 severity is built from ehmf.weights (A-E, disclosed_conflict = D_disclosed; PD-41).
         _require(dict(weights) == {"source": "ehmf.weights", "unknown": 1.0},
                  "v3.priority.severity must be {source: ehmf.weights, unknown: 1.0} in package v6")
@@ -1571,8 +1576,11 @@ class EhmfParams:
     golden_set_path: str
     golden_set_sha256: str
     golden_set_items: int
+    golden_set_version: str
     library_paraphrase_max_chars: int
     library_paraphrase_max_shared_words: int
+    # ehmf.weights.provisional as the package states it (/ready reports it; the loader refuses false while EHMF-WEIGHTS is open).
+    weights_provisional: bool = True
 
     def penalties_for(self, environment: str) -> Mapping[str, Fraction]:
         """span id -> factor of an environment's registry (its own when the package names it, else default)."""
@@ -1626,7 +1634,7 @@ def _parse_ehmf(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], v2: "V2
     )
 
     for name in EHMF_OWNER_DECISIONS:
-        _require(isinstance(decisions.get(name), dict), f"owner_decisions.{name} must be an object in package v6")
+        _require(isinstance(decisions.get(name), dict), f"owner_decisions.{name} must be an object in package v{EHMF_SCHEMA_VERSION}")
     weights_open = _bool_state(decisions, "EHMF-WEIGHTS", ("open",))
     d06_open = _bool_state(decisions, "D-06", ("open",))
     ehmf = _mapping(raw, "ehmf")
@@ -1752,7 +1760,8 @@ def _parse_ehmf(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], v2: "V2
         disclosure_template_sha256=template_sha, max_cycles=v2.max_cycles, penalty_registries=registries,
         stop_window_claims=window_claims, stop_min_claims=min_claims, stop_min_ab=min_ab, stop_rise=Fraction(numerator, denominator),
         stop_scan_records=scan_records, stop_refresh_s=refresh_s, golden_set_path=golden_path, golden_set_sha256=golden_sha,
-        golden_set_items=golden_items, library_paraphrase_max_chars=max_chars, library_paraphrase_max_shared_words=max_shared,
+        golden_set_items=golden_items, golden_set_version=golden["version"], library_paraphrase_max_chars=max_chars,
+        library_paraphrase_max_shared_words=max_shared, weights_provisional=_mapping(ehmf, "weights")["provisional"] is True,
     )
 
 
@@ -1760,7 +1769,8 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
     _require(isinstance(raw, dict), "the file must hold a JSON object")
     _require(raw.get("package") == PACKAGE_NAME, f"'package' must be '{PACKAGE_NAME}'")
     schema_version = raw.get("schema_version")
-    _require(schema_version in (1, 2, 3, 4, 5, 6) and not isinstance(schema_version, bool), "'schema_version' must be 1, 2, 3, 4, 5 or 6")
+    _require(isinstance(schema_version, int) and not isinstance(schema_version, bool) and 1 <= schema_version <= EHMF_SCHEMA_VERSION,
+             f"'schema_version' must be an integer from 1 to {EHMF_SCHEMA_VERSION}")
     package_version = _text(raw, "package_version")
 
     identity = _mapping(raw, "span_identity")
@@ -1893,7 +1903,7 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
             gateway_params = _parse_gateway(raw, decisions=decisions, tutor=tutor_pipeline)
             v2_params = _parse_v2(raw, decisions=decisions, gateway=gateway_params)
             tool_params = _parse_tools(raw)
-        if schema_version >= 6:
+        if schema_version >= EHMF_SCHEMA_VERSION:
             ehmf_params = _parse_ehmf(raw, decisions=decisions, v2=v2_params, package_version=package_version)
         if schema_version >= 5:
             v3_params = _parse_v3(raw, decisions=decisions, v2=v2_params, schema_version=int(schema_version),

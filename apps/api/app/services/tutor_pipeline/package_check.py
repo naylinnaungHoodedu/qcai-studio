@@ -25,7 +25,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from app.core.config_package import WIRED_GENERATORS, ConfigPackage, canonical_sha256
+from app.core.config_package import EHMF_SCHEMA_VERSION, WIRED_GENERATORS, ConfigPackage, canonical_sha256
 
 
 def schema_path(package: ConfigPackage, relative: str) -> Path:
@@ -145,10 +145,10 @@ def check_tutor_pipeline_package(package: ConfigPackage, *, structural: bool) ->
     # spec 5.2): a ledger-entry-v4. Each package names the entry schemas of its own version (v4 and v5 keep naming the
     # three they knew, so they stay readable for one release, DI-112).
     version = package.schema_version
-    entry_model = LedgerEntryV4 if version >= 6 else LedgerEntryV3 if version >= 4 else LedgerEntryV2 if version >= 3 else LedgerEntry
+    entry_model = LedgerEntryV4 if version >= EHMF_SCHEMA_VERSION else LedgerEntryV3 if version >= 4 else LedgerEntryV2 if version >= 3 else LedgerEntry
     if version >= 3:
         named = list(((package.raw.get("tutor_pipeline") or {}).get("ledger") or {}).get("entry_schemas") or [])
-        expected = ["ledger-entry-v1", "ledger-entry-v2", *(["ledger-entry-v3"] if version >= 4 else []), *(["ledger-entry-v4"] if version >= 6 else [])]
+        expected = ["ledger-entry-v1", "ledger-entry-v2", *(["ledger-entry-v3"] if version >= 4 else []), *(["ledger-entry-v4"] if version >= EHMF_SCHEMA_VERSION else [])]
         if named != expected:
             problems.append(f"tutor_pipeline.ledger.entry_schemas in the package ({', '.join(named)}) differ from the code's ({', '.join(expected)})")
     # The rule ids and names the package records must be the code's: a rule changed under its old id is a silent

@@ -16,6 +16,7 @@ import pytest
 from app.core.config import Settings
 from app.core.config_package import (
     DEFAULT_PACKAGE_PATH,
+    EHMF_SCHEMA_VERSION,
     V1_PACKAGE_PATH,
     V2_PACKAGE_PATH,
     V3_PACKAGE_PATH,
@@ -49,13 +50,14 @@ def _write(tmp_path: Path, payload: dict, *, sidecar: str | None = None) -> Path
 
 
 def test_the_shipped_package_validates_and_matches_its_hash():
-    # Phase 7: the shipped package is v6 (6.0.0, with the ehmf block); the 5.0.0 assertions are
+    # Phase 7: the shipped package is the first with an ehmf block (v6, 6.0.0: schema and major EHMF_SCHEMA_VERSION, read
+    # from the loader so a renumbering edits one constant, E16); the 5.0.0 assertions are
     # test_v5_keeps_every_v4_value_but_the_listed_changes's (v5 read explicitly); the 4.0.0, 3.0.0, 2.0.0 and 1.0.0 assertions are
     # test_v4_stays_readable_for_one_release's, test_v3_stays_readable_for_one_release's,
     # test_v2_stays_readable_for_one_release's and test_v1_stays_readable_for_one_release's.
     package = load_config_package(DEFAULT_PACKAGE_PATH, governed=True)
-    assert package.hash_verified and package.is_default_path and package.package_version == "6.0.0"
-    assert package.schema_version == 6 and package.tutor_pipeline is not None and package.v1 is not None
+    assert package.hash_verified and package.is_default_path and package.package_version == f"{EHMF_SCHEMA_VERSION}.0.0"
+    assert package.schema_version == EHMF_SCHEMA_VERSION and package.tutor_pipeline is not None and package.v1 is not None
     assert package.gateway is not None and package.v2 is not None and package.tools is not None and package.v3 is not None
     assert package.ehmf is not None and RAW["supersedes"]["sha256"] == canonical_sha256(V5_RAW)
     assert package.sha256 == recorded_sha256(DEFAULT_PACKAGE_PATH) == canonical_sha256(RAW)
@@ -603,7 +605,7 @@ def test_v4_structural_errors_always_stop_the_load(tmp_path, edit):
         payload = json.loads(json.dumps(base))
         edit(payload)
         if base is V5_RAW and payload.get("schema_version") == 5:
-            payload["schema_version"] = 6
+            payload["schema_version"] = EHMF_SCHEMA_VERSION
         path = _write(tmp_path, payload)
         for governed in (True, False):
             with pytest.raises(ConfigPackageError):
@@ -810,7 +812,7 @@ def _duplicate_development_entry(payload: dict) -> None:
         lambda p: p["flag_policy"].update(phase6_exit_passed="no"),
         lambda p: p["flag_policy"].update(phase6_exit_passed=True),
         lambda p: p["flag_policy"].update(authority=V4_RAW["flag_policy"]["authority"]),
-        lambda p: p.update(schema_version=6),
+        lambda p: p.update(schema_version=EHMF_SCHEMA_VERSION),
     ],
 )
 def test_v5_structural_errors_always_stop_the_load(tmp_path, edit):
@@ -848,7 +850,7 @@ def _the_unedited_copies_load(tmp_path: Path) -> None:
 def test_the_v5_edits_v6_changes_are_exactly_the_three_it_makes():
     edits = next(mark.args[1] for mark in test_v5_structural_errors_always_stop_the_load.pytestmark if mark.name == "parametrize")
     assert len([edit for edit in edits if not _v5_edit_applies_to_v6(edit)]) == 3
-    assert RAW["v3"]["triggers"]["version"] == "x-triggers-v2" and RAW["schema_version"] == 6
+    assert RAW["v3"]["triggers"]["version"] == "x-triggers-v2" and RAW["schema_version"] == EHMF_SCHEMA_VERSION
     assert "E" not in RAW["v3"]["priority"]["severity"] and RAW["v3"]["priority"]["severity"]["source"] == "ehmf.weights"
 
 

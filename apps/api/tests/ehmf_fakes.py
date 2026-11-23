@@ -20,6 +20,18 @@ from app.services.tutor_pipeline.contracts import ClaimPlan, ProposedClaim
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TIER2 = "Why do the sources repeatedly emphasize hybrid loops instead of end-to-end quantum models?"
 INVENTED = "span-" + "0" * 64
+# The shipped package's own version, read from the file, so that no test names the Phase 7 package number (E16: the
+# package is renumbered if Phase 8 reaches main first; docs/architecture/ehmf-change-control.md).
+SHIPPED_VERSION = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))["package_version"]
+
+
+def bumped(version: str = SHIPPED_VERSION, *, part: str = "patch") -> str:
+    """A later version within the same major: the next patch, or the next minor with part="minor"."""
+    major, minor, patch = (int(number) for number in version.split("."))
+    return f"{major}.{minor + 1}.0" if part == "minor" else f"{major}.{minor}.{patch + 1}"
+
+
+NEXT_PATCH, NEXT_MINOR = bumped(), bumped(part="minor")
 
 
 def scripts_module(name: str):
@@ -146,7 +158,7 @@ def leaking_alignment() -> dict:
 
 
 def package_copy(tmp_path: Path, edit=None, *, library_edit=None) -> Path:
-    """A copy of the shipped package directory (v6.json, misconceptions/, schemas/) in tmp_path: edit(raw) changes the
+    """A copy of the shipped package directory (the package file, misconceptions/, schemas/) in tmp_path: edit(raw) changes the
     package, library_edit(raw) the library (its sidecar and the package pin re-hashed); the package sidecar is re-hashed."""
     source = DEFAULT_PACKAGE_PATH.parent
     target = tmp_path / "package"

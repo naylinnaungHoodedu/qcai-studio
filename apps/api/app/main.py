@@ -690,10 +690,10 @@ def _ehmf_fields(package, store) -> dict | None:
     stop = process_stop_state(settings, package)
     return {
         "version": params.version, "routing": params.routing_version, "routing_sha256": params.routing_sha256,
-        "weights": params.weight_strings(), "weights_provisional": True, "precedence": params.precedence,
+        "weights": params.weight_strings(), "weights_provisional": params.weights_provisional, "precedence": params.precedence,
         "disclosure_template": params.disclosure_template_id,
         "library": {"version": package.v1.library_version, "entries": len(package.v1.library_entries), "sha256": package.v1.library_sha256},
-        "golden_set": {"version": "golden-set-v1", "items": params.golden_set_items}, "max_cycles": params.max_cycles,
+        "golden_set": {"version": params.golden_set_version, "items": params.golden_set_items}, "max_cycles": params.max_cycles,
         # active: what the shared index applies (fixed when the store was built), not the mode recomputed now: a gateway
         # that stops later turns the mode off but leaves the index as built.
         "retrieval_penalty": {"environment": registry, "factor": str(factor), "spans": len(spans), "active": bool(store.penalty_active)},

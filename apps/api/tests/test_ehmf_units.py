@@ -12,11 +12,18 @@ from pathlib import Path
 import pytest
 
 from app.core.config import Settings
-from app.core.config_package import ConfigPackageError, get_config_package, load_config_package
+from app.core.config_package import (
+    DEFAULT_PACKAGE_PATH,
+    EHMF_SCHEMA_VERSION,
+    ConfigPackageError,
+    canonical_sha256,
+    get_config_package,
+    load_config_package,
+)
 from app.services.ehmf import classify, routing, vocabulary
 from app.services.ehmf.correction import CorrectionGuard, CorrectionLimit, claim_set_sha256, span_set_sha256
 from app.services.tutor_pipeline import contracts
-from ehmf_fakes import REPO_ROOT, package_copy, scripts_module
+from ehmf_fakes import NEXT_PATCH, REPO_ROOT, SHIPPED_VERSION, package_copy, scripts_module
 
 PACKAGE = get_config_package(Settings())
 
@@ -97,6 +104,49 @@ def test_the_library_pin_resolves_next_to_the_package_file_and_its_sidecar(tmp_p
     assert load_config_package(synthetic, governed=False).v1.library_entries == ()
 
 
+def test_a_package_file_copied_without_its_library_folder_loads_only_the_library_its_pin_names(tmp_path):
+    # A package file copied alone (no misconceptions/ folder beside it) reads the shipped library, which must still equal
+    # the pin: a copy whose pin names another library is refused, never loaded with the shipped library in its place.
+    raw = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
+    alone = tmp_path / "alone" / DEFAULT_PACKAGE_PATH.name
+    alone.parent.mkdir()
+    (alone.parent / "schemas").mkdir()
+    for schema in (DEFAULT_PACKAGE_PATH.parent / "schemas").iterdir():
+        (alone.parent / "schemas" / schema.name).write_bytes(schema.read_bytes())
+    alone.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+    assert not (alone.parent / "misconceptions").exists()
+    loaded = load_config_package(alone, governed=False)
+    assert loaded.v1.library_sha256 == PACKAGE.v1.library_sha256 == raw["v1"]["v1_8"]["library"]["sha256"]
+    other = json.loads(json.dumps(raw))
+    other["v1"]["v1_8"]["library"]["sha256"] = canonical_sha256({"another": "library"})
+    alone.write_text(json.dumps(other, indent=2), encoding="utf-8")
+    with pytest.raises(ConfigPackageError, match="v1.v1_8.library"):
+        load_config_package(alone, governed=False)
+    other["v1"]["v1_8"]["library"]["version"] = "v2"
+    other["v1"]["v1_8"]["library"]["sha256"] = raw["v1"]["v1_8"]["library"]["sha256"]
+    alone.write_text(json.dumps(other, indent=2), encoding="utf-8")
+    with pytest.raises(ConfigPackageError, match="library file's version"):
+        load_config_package(alone, governed=False)
+
+
+def test_the_phase_7_package_number_is_read_from_one_constant_per_side():
+    # E16: the Phase 7 package may be renumbered (Phase 8 takes v6 if it reaches main first). The loader's schema rules
+    # read EHMF_SCHEMA_VERSION and the ledger's config_version reads EHMF_FIRST_MAJOR; the two are equal, and the shipped
+    # package is that schema and that major.
+    assert EHMF_SCHEMA_VERSION == vocabulary.EHMF_FIRST_MAJOR == PACKAGE.schema_version == int(SHIPPED_VERSION.split(".")[0])
+    assert PACKAGE.raw["ehmf"]["config_version"]["first_package"] == f"{vocabulary.EHMF_FIRST_MAJOR}.0.0"
+    loader = (REPO_ROOT / "apps" / "api" / "app" / "core" / "config_package.py").read_text(encoding="utf-8")
+    script = (REPO_ROOT / "scripts" / "config_package.py").read_text(encoding="utf-8")
+    checks = [(REPO_ROOT / "apps" / "api" / "app" / "services" / name / "package_check.py").read_text(encoding="utf-8")
+              for name in ("v3", "tutor_pipeline")]
+    import re
+
+    literal = re.compile(rf"\b(?:schema_)?version\s*(?:>=|<|==)\s*{EHMF_SCHEMA_VERSION}\b"
+                         rf"|\b(?:schema_)?version in \([^)]*\b{EHMF_SCHEMA_VERSION}\)")
+    for source in (loader, script, *checks):
+        assert literal.search(source) is None, literal.search(source).group(0)
+
+
 @pytest.mark.parametrize("edit, match", [
     (lambda raw: raw["ehmf"]["weights"].update(C=0.5), "plan's 6.3 weights"),
     (lambda raw: raw["ehmf"]["weights"].update(D_disclosed=0.1), "D_disclosed"),
@@ -105,7 +155,7 @@ def test_the_library_pin_resolves_next_to_the_package_file_and_its_sidecar(tmp_p
     (lambda raw: raw["ehmf"]["correction"].update(third_cycle="allowed"), "third_cycle"),
     (lambda raw: raw["ehmf"]["retrieval_penalty"]["registries"]["production"].update(spans=[{"span_id": "span-" + "1" * 64, "reason": "B2", "gold": "synthetic"}]), "synthetic|no span"),
     (lambda raw: raw["ehmf"]["stop"].update(rise={"numerator": 1, "denominator": 1}), "rise"),
-    (lambda raw: raw["ehmf"]["config_version"].update(first_package="6.0.1"), "first_package"),
+    (lambda raw: raw["ehmf"]["config_version"].update(first_package=NEXT_PATCH), "first_package"),
     (lambda raw: raw["ehmf"].update(provisional=False), "provisional"),
     (lambda raw: raw["owner_decisions"].pop("EHMF-WEIGHTS"), "EHMF-WEIGHTS"),
     (lambda raw: raw["flag_policy"]["ehmf"].update(default_elsewhere="shadow"), "default_elsewhere"),
@@ -117,8 +167,8 @@ def test_v6_the_loader_refuses_what_the_plan_or_the_code_fixes(tmp_path, edit, m
 
 
 def test_v6_a_later_6_x_package_loads_and_v5_v4_still_parse(tmp_path):
-    later = load_config_package(package_copy(tmp_path, lambda raw: raw.update(package_version="6.0.1")), governed=False)
-    assert later.package_version == "6.0.1" and later.ehmf is not None
+    later = load_config_package(package_copy(tmp_path, lambda raw: raw.update(package_version=NEXT_PATCH)), governed=False)
+    assert later.package_version == NEXT_PATCH and later.ehmf is not None
     v5 = load_config_package(PACKAGE.path.with_name("v5.json"), governed=True)
     assert v5.v3.x2_types == ("A", "B") and PACKAGE.v3.x2_types is None
     assert PACKAGE.v3.severity["disclosed_conflict"] == 0 and PACKAGE.v3.severity["C"] == Fraction(3, 5)
@@ -178,5 +228,5 @@ def test_the_fidelity_checker_refuses_a_moved_location_and_matches_a_corrected_c
     corrected = tmp_path / "corrected.docx"
     document.save(str(corrected))
     report = fidelity.compute(docx_paths={name: corrected})
-    assert report["mismatches"] == 0 or [e["id"] for e in report["entries"] if not e["match"]] == ["gea-alignment-wording"]
-    assert all(entry["match"] for entry in report["entries"] if entry["id"].startswith("quen"))
+    # every register entry matches the corrected copy: the two QUEN cells and the GEA wording
+    assert report["mismatches"] == 0 and [entry["match"] for entry in report["entries"]] == [True, True, True]
