@@ -1,8 +1,8 @@
 {
  "report": "qcai-v2-fixture-report",
  "format_version": 1,
- "created_at": "2026-11-23T21:37:11+00:00",
- "commit": "3df0dd9689c160f414237ee8a96902ebade1d8d4-dirty",
+ "created_at": "2026-11-23T23:35:25+00:00",
+ "commit": "51f4ba0d48e93639762349812f1ed43fbd118571-dirty",
  "evidence_class": "fixture measurements, not research results (plan Phase 5 H: V-2, V-4 are E2 results, never claimed from fixtures)",
  "public_corpus_only": true,
  "config_package": {
@@ -226,8 +226,8 @@
  },
  "latency": {
   "p95_ms": {
-   "gateway_call": 0.024,
-   "panel": 4.047
+   "gateway_call": 0.017,
+   "panel": 2.987
   }
  },
  "result": "pass",
@@ -268,7 +268,7 @@
    "apps/api/app/services/docx_parser.py": "c0b549050d0381f0bf14a26052fa66d082e9d470ca284b35e9529ed872274bd1",
    "apps/api/app/services/ehmf/__init__.py": "e82e8b2e8fdc9423bc7d1deb3cf12aeadd002ae24a20a560975ecd7f29c940bd",
    "apps/api/app/services/ehmf/correction.py": "7bcd135de5216643a05daa956366e6fb129d2572e250c29af2cb65101502145c",
-   "apps/api/app/services/ehmf/detectors.py": "5e107a762440000cac2322fb8e839f0f7e6df98bfe81b39ab1d7e2e3076a3227",
+   "apps/api/app/services/ehmf/detectors.py": "ac3a4137b9e7b2190a61f6876a1eca791cf0d2788e446a0e1529b1d88b658a8e",
    "apps/api/app/services/ehmf/library.py": "aac4cabddd18c10899a907e57937b8e59179f6ddfcf68a7fca01e0fc775971ea",
    "apps/api/app/services/ehmf/routing.py": "9ef0d00d92ed6295255f7ef6384d424fa2acf7554ca49afd4a1f5e8fd92bb4bd",
    "apps/api/app/services/ehmf/vocabulary.py": "66325cd0a261e5ad7163cc96b33068d38b1ab86def36c70758ec5959c265b89e",
@@ -328,6 +328,6 @@
    "apps/api/app/services/v3/stop.py": "a846ccc64ff5122a5327374b6220976cd0bef9e8aacf7ae8d81ec6131535ca6c",
    "scripts/run_v2_fixtures.py": "91e6bb9cd4c68ba695556f95f63f49f76d7c7d6be3aefff1fd7f40f46b6bd584"
   },
-  "sha256": "7f7452ee8572109d6588de246a7141f2e2b00b08c32c84e7fa4fd0d3dce18763"
+  "sha256": "5ea21ba3a8c995b4563d0686849a639c34003c3453c0a9be5bc92539c87a890f"
  }
 }

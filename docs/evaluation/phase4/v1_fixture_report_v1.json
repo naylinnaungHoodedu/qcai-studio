@@ -1,8 +1,8 @@
 {
  "report": "qcai-v1-fixture-report",
  "format_version": 1,
- "created_at": "2026-11-23T21:37:30+00:00",
- "commit": "3df0dd9689c160f414237ee8a96902ebade1d8d4-dirty",
+ "created_at": "2026-11-23T23:35:42+00:00",
+ "commit": "51f4ba0d48e93639762349812f1ed43fbd118571-dirty",
  "evidence_class": "fixture measurements, not research results (plan Phase 4 H)",
  "public_corpus_only": true,
  "fixtures": {
@@ -1258,7 +1258,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 5.642,
+    "p95_ms": 4.581,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2485,7 +2485,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 5.653,
+    "p95_ms": 4.286,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2539,7 +2539,7 @@
   "contained": true
  },
  "latency": {
-  "p95_ms": 5.135,
+  "p95_ms": 3.894,
   "budget_ms": 250,
   "within_budget": true
  },
@@ -2573,7 +2573,7 @@
    "apps/api/app/services/content_assembler.py": "f7ac4499fe077f3b540323eceff37de5a80e59fabc510ddaec93e688458914fa",
    "apps/api/app/services/docx_parser.py": "c0b549050d0381f0bf14a26052fa66d082e9d470ca284b35e9529ed872274bd1",
    "apps/api/app/services/ehmf/__init__.py": "e82e8b2e8fdc9423bc7d1deb3cf12aeadd002ae24a20a560975ecd7f29c940bd",
-   "apps/api/app/services/ehmf/detectors.py": "5e107a762440000cac2322fb8e839f0f7e6df98bfe81b39ab1d7e2e3076a3227",
+   "apps/api/app/services/ehmf/detectors.py": "ac3a4137b9e7b2190a61f6876a1eca791cf0d2788e446a0e1529b1d88b658a8e",
    "apps/api/app/services/ehmf/library.py": "aac4cabddd18c10899a907e57937b8e59179f6ddfcf68a7fca01e0fc775971ea",
    "apps/api/app/services/ehmf/routing.py": "9ef0d00d92ed6295255f7ef6384d424fa2acf7554ca49afd4a1f5e8fd92bb4bd",
    "apps/api/app/services/ehmf/vocabulary.py": "66325cd0a261e5ad7163cc96b33068d38b1ab86def36c70758ec5959c265b89e",
@@ -2626,6 +2626,6 @@
    "apps/api/app/services/v3/rules.py": "bcc960dc344571871449d9724130ec0f4532cc8b87d973ffa699d806473e53c2",
    "scripts/run_v1_fixtures.py": "9b9d59106859db8251783ac8d6d963a8453d0b90cd8573f5461a903b1efb616e"
   },
-  "sha256": "b87eec4a77d1dbd37b540edaef1024f0fa8b9d83088729b64d4bbff29f62dfa7"
+  "sha256": "9354f86ab0d83f950a405943b8c9923cbb1cee2fd36ef0cabaf9ec283c46672b"
  }
 }

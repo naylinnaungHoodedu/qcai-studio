@@ -413,6 +413,81 @@ def test_ac_7_6_write_appends_a_new_package_version_to_the_history(tmp_path):
     assert json.loads(target.read_text(encoding="utf-8"))["pins"]["config_package"] == {"version": NEXT_PATCH, "sha256": bumped.sha256}
 
 
+def test_ac_7_6_a_same_version_edit_hidden_by_editing_the_history_fails_the_ci_check_against_the_base(tmp_path, capsys):
+    # A same-version package edit whose history entry is rewritten to the edited sha256 (or removed, so --write
+    # appends it again) passes without a base. With the base branch's committed history (CI: --base-ref) the history
+    # must start with the base's entries unchanged, so both exit 6 at --check and are refused at --write.
+    golden = scripts_module("run_golden_set")
+    edited_path = package_copy(tmp_path / "a", lambda raw: raw["ehmf"]["stop"].update(window_claims=201))
+    edited = load_config_package(edited_path, governed=False)
+    assert edited.package_version == PACKAGE.package_version and edited.sha256 != PACKAGE.sha256
+    base = tmp_path / "base.json"
+    base.write_bytes(golden.DEFAULT_HISTORY.read_bytes())
+    shipped = golden.load_history(base)
+    history = tmp_path / "history.json"
+    history.write_text(json.dumps({**shipped, "entries": [{"version": PACKAGE.package_version, "sha256": edited.sha256}]}), encoding="utf-8")
+    record = tmp_path / "run.json"
+    common = ["--package", str(edited_path), "--history", str(history)]
+    assert golden.main(["--write", str(record), *common, "--allow-dirty"]) == golden.EXIT_OK
+    assert golden.main(["--check", str(record), *common]) == golden.EXIT_OK
+    capsys.readouterr()
+    assert golden.main(["--check", str(record), *common, "--base-history", str(base)]) == golden.EXIT_PIN
+    assert f"rewrites or removes the base branch's entries ({PACKAGE.package_version})" in capsys.readouterr().err
+    written = record.read_bytes()
+    assert golden.main(["--write", str(record), *common, "--allow-dirty", "--base-history", str(base)]) == golden.EXIT_PIN
+    assert record.read_bytes() == written
+    # Removed: an emptied history, which --write alone would re-fill with the edited sha256.
+    history.write_text(json.dumps({**shipped, "entries": []}), encoding="utf-8")
+    fresh = tmp_path / "fresh.json"
+    assert golden.main(["--write", str(fresh), *common, "--allow-dirty", "--base-history", str(base)]) == golden.EXIT_PIN
+    assert not fresh.exists() and golden.load_history(history)["entries"] == []
+    # Appending a newer version keeps the base as a prefix; reordering or dropping it does not.
+    newer = {**shipped, "entries": [*shipped["entries"], {"version": NEXT_PATCH, "sha256": "1" * 64}]}
+    assert golden.base_problem(shipped, newer) is None and golden.base_problem(None, {**shipped, "entries": []}) is None
+    assert golden.base_problem(newer, shipped)[0] == golden.EXIT_PIN
+    assert golden.base_problem(newer, {**newer, "entries": newer["entries"][::-1]})[0] == golden.EXIT_PIN
+
+
+def test_ac_7_6_the_base_ref_reads_the_committed_history_and_ci_passes_the_base_branch(monkeypatch, capsys):
+    # --base-ref reads the history committed at the ref (git show, file content, so a squash merge does not matter);
+    # a ref without the file has no entries (before the first merge) and an unknown ref is a refusal, never a pass.
+    golden = scripts_module("run_golden_set")
+    at_head = golden.base_history_at("HEAD")
+    assert at_head is not None and golden.base_problem(at_head, golden.load_history(golden.DEFAULT_HISTORY)) is None
+    assert golden.main(["--check", str(RECORD), "--base-ref", "no-such-branch-x"]) == golden.EXIT_USAGE
+    assert "is not a commit in this clone" in capsys.readouterr().err
+    assert golden.main(["--check", str(RECORD), "--base-ref", "HEAD"]) == golden.EXIT_OK
+    real = golden._git
+
+    def without_file(*args):
+        if args[0] == "cat-file":
+            return subprocess.CompletedProcess(["git", *args], 128, "", "")
+        return real(*args)
+
+    monkeypatch.setattr(golden, "_git", without_file)
+    assert golden.base_history_at("HEAD") is None
+    workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "BASE_REF: ${{ github.base_ref || 'main' }}" in workflow
+    assert 'git fetch --no-tags --depth=1 origin "$BASE_REF"' in workflow
+    assert "python scripts/run_golden_set.py --check docs/evaluation/phase7/golden_run_v1.json --base-ref FETCH_HEAD" in workflow
+
+
+def test_ac_7_6_a_package_version_that_is_not_major_minor_patch_is_a_refusal_not_a_traceback(tmp_path, capsys):
+    # The loader checks only the major part of package_version, so "6.1.0-rc1" loads; the gate refuses it (exit 2) in
+    # both modes instead of raising, and writes nothing.
+    golden = scripts_module("run_golden_set")
+    odd_path = package_copy(tmp_path / "a", lambda raw: raw.update(package_version="6.1.0-rc1"))
+    assert load_config_package(odd_path, governed=False).package_version == "6.1.0-rc1"
+    history = tmp_path / "history.json"
+    history.write_bytes(golden.DEFAULT_HISTORY.read_bytes())
+    target = tmp_path / "run.json"
+    assert golden.main(["--write", str(target), "--package", str(odd_path), "--history", str(history), "--allow-dirty"]) == golden.EXIT_USAGE
+    assert "is not MAJOR.MINOR.PATCH" in capsys.readouterr().err
+    assert not target.exists() and history.read_bytes() == golden.DEFAULT_HISTORY.read_bytes()
+    assert golden.main(["--check", str(RECORD), "--package", str(odd_path), "--history", str(history)]) == golden.EXIT_USAGE
+    assert "is not MAJOR.MINOR.PATCH" in capsys.readouterr().err
+
+
 def test_plan_j_fixtures_per_type_are_typed_as_the_routing_table_says():
     # Plan J "Fixtures per type (negation, invented citation, analogy, conflict, leakage)": the analogy fixture is the
     # golden set's misconception class (Type C, a V1.8 library match; spec section 1, resolution 28).
@@ -432,10 +507,48 @@ def test_plan_j_fixtures_per_type_are_typed_as_the_routing_table_says():
 DETECTOR_CASES = ("V1.1", "V1.2", "V1.3", "V1.4", "V1.5", "V1.6", "V1.7", "V1.8", "V1.9", "V2", "alignment")
 
 
+GUARD_CALLS = {"_guard", "guarded", "DetectorDown"}
+RUNNER = "app/services/v1_checks/runner.py"
+
+
+def _guarded_names() -> tuple[set[str], list[str]]:
+    """The detector names the application passes to a guard (V1Track._guard, guarded, DetectorDown, and in the V1
+    runner the post-render hook's local alias guard = self.track._guard) as string literals, and every call site that
+    passes anything else."""
+    literal, other = set(), []
+    for path in sorted((API_ROOT / "app").rglob("*.py")):
+        relative = path.relative_to(API_ROOT).as_posix()
+        names = GUARD_CALLS | ({"guard"} if relative == RUNNER else set())
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            name = node.func.id if isinstance(node.func, ast.Name) else node.func.attr if isinstance(node.func, ast.Attribute) else None
+            if name not in names:
+                continue
+            first = node.args[0]
+            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                literal.add(first.value)
+            else:
+                other.append(f"{relative}:{node.lineno}:{ast.unparse(first)}")
+    return literal, other
+
+
 def test_plan_j_every_guarded_detector_has_a_detector_down_case():
-    from app.services.ehmf.detectors import DETECTORS
+    # The cases equal DETECTORS, every detector name a guard call site passes is in DETECTORS (and each one is
+    # passed), and the guard refuses a name outside DETECTORS, so a new or renamed guard needs a case here.
+    from app.services.ehmf.detectors import DETECTORS, DetectorDown, guarded
 
     assert DETECTOR_CASES == DETECTORS
+    literal, other = _guarded_names()
+    assert literal == set(DETECTORS), literal ^ set(DETECTORS)
+    # The only non-literal names are the wrappers forwarding their own detector argument.
+    assert sorted(site.split(":", 2)[0] + ":" + site.split(":", 2)[2] for site in other) == [
+        "app/services/ehmf/detectors.py:detector", "app/services/v1_checks/runner.py:detector"], other
+    with pytest.raises(ValueError, match="not a guarded EHMF detector"):
+        guarded("V1.10", lambda: None)
+    with pytest.raises(ValueError, match="not a guarded EHMF detector"):
+        DetectorDown("V1.10")
+    assert guarded("V1.1", lambda: 7) == 7 and DetectorDown("V2").detector == "V2"
 
 
 @pytest.mark.parametrize("detector", DETECTOR_CASES)
@@ -710,6 +823,29 @@ def test_plan_i_a_dropped_proposal_is_a_typed_claim_in_the_per_type_rates_as_the
     assert group["per_100_claims"]["claims"] == claims and group["per_100_claims"]["A"] == str(Fraction(100, claims))
     assert group["claim_type_counts"]["A"] == 1 and group["per_100_responses"]["A"] == "100"
     assert group["per_100_claims"]["B1"] == "0" and group["response_type_counts"]["B1"] == 0
+
+
+def test_plan_i_a_per_100_rate_over_a_zero_denominator_is_null_not_zero():
+    # A config_version group whose typed records carry no typed claim (a response finding without a claim id only):
+    # every per_100_claims rate is null (no claim to divide by), never "0", while the per-response rates are counted.
+    from app.db_models import ResponseLedgerRecord
+    from app.services.ehmf.metrics import slis
+    from v3_fakes import fresh_v3_sessions
+
+    entry = json.dumps({"versions": {"config_package_version": PACKAGE.package_version},
+                        "verification": {"ehmf": {"claims": [], "response_findings": [{"type": "E", "claim_id": None}]}}})
+    row = dict(seq=1, response_id="shadow-1", delivery="shadow", decision="abstain", entry_schema="ledger-entry-v4", entry=entry,
+               entry_sha256="0" * 64, prev_hash="0" * 64, record_hash="0" * 64, created_at=datetime_now())
+    with fresh_v3_sessions() as (factory, _engine):
+        with factory() as db:
+            db.execute(ResponseLedgerRecord.__table__.insert(), [row])
+            db.commit()
+        with factory() as db:
+            group = slis(db, PACKAGE)["by_config_version"][SHIPPED]
+    assert group["per_100_claims"]["claims"] == 0
+    assert all(group["per_100_claims"][name] is None for name in vocabulary.FINDING_TYPES)
+    assert group["per_100_responses"]["responses"] == 1 and group["per_100_responses"]["E"] == "100"
+    assert group["per_100_responses"]["A"] == "0" and group["claim_type_counts"]["E"] == 0
 
 
 def test_plan_i_an_unreadable_stop_table_leaves_the_v3_slis_and_the_status_worker_working(fresh_database_url, monkeypatch, caplog):
@@ -1293,6 +1429,28 @@ def test_phase7_docs_name_every_modified_file_and_the_ready_stop_read():
                  "test_phase6_docs_the_texts_phase6_made_false_state_the_current_code"):
         assert test in renumbering, test
     assert "`--write` has two modes." in control and "with no suffix" in control
+    # The runbook's rollback reaches the prior 6.x package only through the prior image digest (no package file is kept
+    # to reload), and a prior Phase 7 image reads ehmf_stops; the change procedure commits the history too.
+    rollback = next(line for line in runbook.splitlines() if line.startswith("**Rollback.** Set `EHMF=off`"))
+    assert "reload the prior 6.x package" not in rollback and "the earlier image reads no Phase 7 table" not in rollback
+    assert "deploy the prior image digest" in rollback and "A prior Phase 7 image keeps the `20261123_phase7_ehmf` schema and reads `ehmf_stops`" in rollback
+    procedure = next(line for line in runbook.splitlines() if line.startswith("**Change procedure.**"))
+    assert "commit the record and the package version history" in procedure
+    # Append-only is enforced against the base branch, and the renumbering step is the one sanctioned hand edit.
+    readme = (REPO_ROOT / "docs" / "evaluation" / "phase7" / "README.md").read_text(encoding="utf-8")
+    history_row = next(line for line in readme.splitlines() if line.startswith("| `package_versions.json` |"))
+    assert "except renumbering step 4" in history_row and "--base-ref" in history_row
+    for text in (control, change):
+        assert "--base-ref" in text
+    flat_control, flat_renumbering = " ".join(control.split()), " ".join(renumbering.split())
+    assert "The one sanctioned hand edit is renumbering step 4" in flat_control
+    assert "this is the one sanctioned hand edit of the history" in flat_renumbering
+    # 13.4 lists only mutation-checked fixes.
+    mutations = spec.split("### 13.4", 1)[1].split("## 14.", 1)[0]
+    assert "the shipped-schema comparison in the Phase 4 doc test;" not in mutations and "Review 4:" in mutations
+    # The V3 SLI docstring describes the EHMF per-100 rates, which are not k/n.
+    v3_metrics = (API_ROOT / "app" / "services" / "v3" / "metrics.py").read_text(encoding="utf-8")
+    assert 'Ratios are "k/n" strings, so' not in v3_metrics and "100*k/n reduced" in v3_metrics
 
 
 def test_phase7_docs_the_test_strategy_maps_every_test_module_the_phase_added():

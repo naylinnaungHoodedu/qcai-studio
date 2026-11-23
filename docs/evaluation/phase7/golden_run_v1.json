@@ -1,8 +1,8 @@
 {
  "report": "qcai-ehmf-golden-run",
  "format_version": 1,
- "created_at": "2026-11-23T21:36:14+00:00",
- "commit": "3df0dd9689c160f414237ee8a96902ebade1d8d4-dirty",
+ "created_at": "2026-11-23T23:29:57+00:00",
+ "commit": "51f4ba0d48e93639762349812f1ed43fbd118571-dirty",
  "evidence_class": "change-control gate, not research results (plan Phase 7 H; 12.5)",
  "pins": {
   "config_package": {
@@ -549,7 +549,7 @@
    "apps/api/app/services/ehmf/classify.py": "05df39d211f363e1705db980c183ce6a07963ed03b14dd34afb0fa43d54d58fc",
    "apps/api/app/services/ehmf/conflicts.py": "9a2e26b6b7dad2d0bf2259a22e94ade814b05bee6f2d7637cb8ceff48ecac1ba",
    "apps/api/app/services/ehmf/correction.py": "7bcd135de5216643a05daa956366e6fb129d2572e250c29af2cb65101502145c",
-   "apps/api/app/services/ehmf/detectors.py": "5e107a762440000cac2322fb8e839f0f7e6df98bfe81b39ab1d7e2e3076a3227",
+   "apps/api/app/services/ehmf/detectors.py": "ac3a4137b9e7b2190a61f6876a1eca791cf0d2788e446a0e1529b1d88b658a8e",
    "apps/api/app/services/ehmf/library.py": "aac4cabddd18c10899a907e57937b8e59179f6ddfcf68a7fca01e0fc775971ea",
    "apps/api/app/services/ehmf/metrics.py": "37d9cb82895c25cd5ca4f5130c01ac9bbe153fdf07ca976be038970870e31d89",
    "apps/api/app/services/ehmf/package_check.py": "2b40c64a3e5c1c287a7821f351adeac5f7ce5e9ccfa084f7a347e4cfea9a3add",
@@ -636,7 +636,7 @@
    "apps/api/app/services/v3/feedback.py": "c1edf38c434edd073b3753b9c33a110058708620d00c7b1d7e0fdbc7a5cd0bb6",
    "apps/api/app/services/v3/gold.py": "62fb1feb4b0ca737f2b493aa421355e1830c98de8d1fe9aa86a0d2a3d6fd4553",
    "apps/api/app/services/v3/holds.py": "23eed4681fb4e7680dbbf960879ffa19a93a6b22a57082db1e3cf9236825c527",
-   "apps/api/app/services/v3/metrics.py": "c53f3e0719b3082197c7798cd4398e1659c84def76e21572606f91728ffeb666",
+   "apps/api/app/services/v3/metrics.py": "8f49cea1a45bff24f2927384c3c6ef5f9044f2ba26e8ae19bf1557c4836c4f44",
    "apps/api/app/services/v3/package_check.py": "d29d4ccf842e57198c7277cf35adb105d140186e2fef7edc4c5135d4de8e6dde",
    "apps/api/app/services/v3/priority.py": "5db9e0cddc3d6f0a46d7b190704a93e16a94029546e26515c653dee1c67a871e",
    "apps/api/app/services/v3/queue.py": "a052d0f6dc2fa7510f4e2f8c1cb7d19ba9c028ca2685a267fd1c4552e0c82e4a",
@@ -660,9 +660,9 @@
    "apps/api/app/workers/security_log.py": "0cc6510fe1ef2cc812a4d8fe609e02215e8b7dac2a4e5087e258d18502cacc1d",
    "apps/api/app/workers/seed_demo.py": "7b17f3d52dea863c46c6dd83436300afcea0a0f6bee87c94b8eb0ddb8ce3dea8",
    "apps/api/app/workers/v3_queue.py": "a51a17c0fe3962d01e207e5ac35e1fdd8e284fcb3c91c3534cae9070e2b16daf",
-   "scripts/run_golden_set.py": "bcfe93be124d1778e0a616ba221e58a557c590b3174839bcf45a405c86a5cd44",
+   "scripts/run_golden_set.py": "194283073551e1c7e37b31ba23d6c610c6bfdd0e7b759439484fc2936194bed4",
    "scripts/run_v1_fixtures.py": "9b9d59106859db8251783ac8d6d963a8453d0b90cd8573f5461a903b1efb616e"
   },
-  "sha256": "f2c41d1b284c136d8ca24639d8ffaa5eb33d2cd3be4139d67b52263b0a83d716"
+  "sha256": "c077408f61c4475fc23471d52346e79ed99f6ded556ce698f4c9d73a847f1eaf"
  }
 }

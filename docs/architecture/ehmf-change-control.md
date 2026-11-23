@@ -16,25 +16,34 @@ drift blocks promotion"). PD-47.
 
 Beside it, `docs/evaluation/phase7/package_versions.json` is the package version history: one `{version, sha256}` entry
 per `package_version` of a package with an ehmf block, oldest first, append-only (a recorded sha256 never changes).
+CI enforces append-only: it fetches the pull request's base branch (else `main`) and passes `--base-ref FETCH_HEAD`, and
+the history must start with the base branch's committed history, every entry unchanged and in order.
 
-CI runs `python scripts/run_golden_set.py --check docs/evaluation/phase7/golden_run_v1.json`:
+CI runs `git fetch --no-tags --depth=1 origin "$BASE_REF"` and then
+`python scripts/run_golden_set.py --check docs/evaluation/phase7/golden_run_v1.json --base-ref FETCH_HEAD`:
 
 1. any pinned sha256 differing from the record exits 6 (a change without a golden-set run);
 2. the package's own `ehmf.golden_set.sha256` differing from the file exits 6;
 3. the package's `package_version` absent from the version history, or recorded there with a different sha256, exits 6:
    a package edit that keeps its version fails here whatever record file is checked (deleting the committed record and
    writing a fresh one, or writing one elsewhere and copying it over, does not get past it);
-4. a fresh run: an unmet expectation, or a delivered citation that does not resolve (13.9(a): 100%), exits 3; outcomes or
+4. the history not starting with the base branch's history unchanged exits 6: rewriting the edited version's entry to
+   the new sha256, or removing it so that `--write` appends it again, does not get past step 3 either. The base history
+   is read with `git show` (file content at the ref, so a squash merge does not matter); a base without the file (before
+   the history first reaches `main`) has no entries, and an unknown ref or a malformed base history exits 2;
+5. a fresh run: an unmet expectation, or a delivered citation that does not resolve (13.9(a): 100%), exits 3; outcomes or
    inputs differing from the record exit 1 (drift blocks promotion).
 
-A missing or malformed history exits 2. `--write` refuses (exit 6) a package whose sha256 differs from the replaced
+A missing or malformed history, and a `package_version` that is not MAJOR.MINOR.PATCH (the loader checks only its major
+part), exit 2. `--write` refuses (exit 6) a package whose sha256 differs from the replaced
 record's under the same `package_version`, a package whose version the history records with another sha256, and a new
-version that is not newer than the history's newest entry; on a passing run it appends the package's version and sha256
+version that is not newer than the history's newest entry, and (given `--base-ref` or `--base-history`) a history that
+does not start with the base's; on a passing run it appends the package's version and sha256
 to the history, then writes the record. A record's `config_version` is its package version, and the rising-A/B stop
 (plan Phase 7 L) finds a change only where `config_version` differs between records, so an edit that kept the version
 could never be compared before and after.
 
-`--write` has two modes. It refuses (exit 4) a working tree that differs from HEAD unless `--allow-dirty` is passed. With `--allow-dirty` on the finished change, the record is written before its own commit exists and committed in the same commit as the code it covers; its `commit` names the parent commit with the suffix `-dirty` (the tree it ran on differed from that commit). On a tree equal to HEAD (the record written after its code was committed, and committed in a later commit) `commit` is that commit, with no suffix. Either way the code it ran is identified by `inputs.sha256` (every application module and the two runner scripts, LF-normalised), which `--check` compares with a fresh run. The committed record was written the `--allow-dirty` way, on the finished review-3 change, and names `3df0dd9` with `-dirty`.
+`--write` has two modes. It refuses (exit 4) a working tree that differs from HEAD unless `--allow-dirty` is passed. With `--allow-dirty` on the finished change, the record is written before its own commit exists and committed in the same commit as the code it covers; its `commit` names the parent commit with the suffix `-dirty` (the tree it ran on differed from that commit). On a tree equal to HEAD (the record written after its code was committed, and committed in a later commit) `commit` is that commit, with no suffix. Either way the code it ran is identified by `inputs.sha256` (every application module and the two runner scripts, LF-normalised), which `--check` compares with a fresh run. The committed record was written the `--allow-dirty` way, on the finished review-4 change, and names `51f4ba0` with `-dirty`.
 
 The run uses its own in-memory database, the all-public-approved store, development settings (V1 enforce,
 MODEL_GATEWAY=on, EHMF=on) and the development fake adapters. It is a change-control gate, not research results.
@@ -46,12 +55,14 @@ MODEL_GATEWAY=on, EHMF=on) and the development fake adapters. It is a change-con
    pinned in it). The version is the record's `config_version`; `--write` and `--check` refuse an edit that keeps it
    (exit 6).
 2. Rerun the golden set: `python scripts/config_package.py --rehash` (when the package or the library changed), then
-   `python scripts/run_golden_set.py --write docs/evaluation/phase7/golden_run_v1.json --allow-dirty` on the finished
+   `python scripts/run_golden_set.py --write docs/evaluation/phase7/golden_run_v1.json --allow-dirty --base-ref origin/main` on the finished
    change (the record names the parent commit with `-dirty`), or `--write` without `--allow-dirty` once the change is
    committed (the record names that commit); its `inputs.sha256` identifies the code. `--write` appends the new version
    to `docs/evaluation/phase7/package_versions.json`.
 3. Commit the new record and the history in the same commit or pull request as the change. Never edit or remove a
-   history entry: the history is append-only.
+   history entry: the history is append-only, and CI refuses a history that does not start with the base branch's. The
+   one sanctioned hand edit is renumbering step 4 below, made before the history reaches `main` (the base branch then
+   has no history file, so nothing is rewritten that `main` holds).
 4. CI is green (`--check`, and every other validator).
 5. The pull request review approves. With one maintainer the approver is the owner (P1-D-18); "the X6 auditor MUST NOT
    audit their own change" stays DI-99.
@@ -105,8 +116,9 @@ merges `main` and renumbers before its pull request (Phase 7 spec 0.1, E16):
    psycopg and pg8000. `ledger.SCHEMA_REVISION` names this revision's own id, so it is unchanged unless the revision id
    itself is renamed.
 4. Run `python scripts/config_package.py --rehash`. The version history's entries have not reached `main`, so replace
-   its `6.0.0` entry with the renumbered version (`7.0.0` and the new sha256) in this one step; after the merge it is
-   append-only. Then rewrite the records: the golden run
+   its `6.0.0` entry with the renumbered version (`7.0.0` and the new sha256) by hand in this one step (`--write` only
+   appends, so it would keep `6.0.0` beside `7.0.0`); this is the one sanctioned hand edit of the history (procedure
+   step 3), and CI's base check passes because `main` has no history file yet. After the merge it is append-only. Then rewrite the records: the golden run
    (`python scripts/run_golden_set.py --write docs/evaluation/phase7/golden_run_v1.json --allow-dirty`) and the
    fixture, replay and residual reports with their own scripts.
 5. Edit every text naming v6 or 6.0.0 for Phase 7 (this document, the Phase 7 spec, ADR-010, the runbooks, the test

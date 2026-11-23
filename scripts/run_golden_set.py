@@ -2,7 +2,9 @@
 Phase 7 spec 4.8; PD-47).
 
 Run: python scripts/run_golden_set.py --write docs/evaluation/phase7/golden_run_v1.json [--allow-dirty] [--package PATH] [--history PATH]
+         [--base-ref REF | --base-history PATH]
      python scripts/run_golden_set.py --check docs/evaluation/phase7/golden_run_v1.json [--package PATH] [--history PATH]
+         [--base-ref REF | --base-history PATH]
 
 The golden set (docs/evaluation/phase7/golden_set_v1.json, golden-set-v1) holds public-corpus or synthetic items only,
 disjoint from ULQS (R-25; anything under lqs/ is refused). The runner builds its own in-memory SQLite database (never the
@@ -21,14 +23,20 @@ the golden set; --check, in order:
   3. the package version history (docs/evaluation/phase7/package_versions.json, committed, append-only): the package's
      package_version absent from it, or recorded there with a different sha256, exits 6 (a package edit that keeps its
      package_version fails here whatever record file is checked);
-  4. a fresh run: an unmet expectation or an unresolved delivered citation exits 3 (13.9(a) "citation resolution 100%");
+  4. append-only, when a base is given: the base branch's history (--base-ref REF reads the committed history at REF
+     with git show; --base-history PATH reads a file) must be an unchanged prefix of the history, so an entry rewritten
+     or removed (a same-version edit hidden by also editing the history) exits 6. A REF with no history file has no
+     entries (before the first merge); an unknown REF or a malformed base exits 2. CI passes --base-ref with the pull
+     request's base branch, so append-only is checked against the base branch, not only by review;
+  5. a fresh run: an unmet expectation or an unresolved delivered citation exits 3 (13.9(a) "citation resolution 100%");
      outcomes or inputs differing from the record (created_at and commit aside) exit 1 (drift blocks promotion, 12.5).
 --write refuses (exit 6) a package whose package_version the history records with a different sha256, or that is new but
-not newer than the history's newest entry, and a package whose sha256 differs from the replaced record's under the same
-package_version; on a passing run it appends the package's (version, sha256) to the history when absent, then writes the
+not newer than the history's newest entry, a package whose sha256 differs from the replaced record's under the same
+package_version, and (with a base) a history that is not an extension of the base's; on a passing run it appends the package's (version, sha256) to the history when absent, then writes the
 record. Every package edit (a threshold, weight, routing, library or golden-set change re-pins the package) therefore
 needs a new package_version, because config_version is the package version and the rising-A/B stop finds a change only
-where it differs (plan Phase 7 L; docs/architecture/ehmf-change-control.md). A missing or malformed history exits 2.
+where it differs (plan Phase 7 L; docs/architecture/ehmf-change-control.md). A missing or malformed history, and a
+package_version that is not MAJOR.MINOR.PATCH (the loader checks only its major part), exit 2 in both modes.
 Exit codes: 0 pass; 1 drift; 2 usage or refusal; 3 an unmet expectation or an unresolved delivered citation; 4 a dirty
 tree on --write; 6 a pin mismatch, or a package edit that keeps its package_version. The record is a change-control
 gate, not research results (plan Phase 7 H; 12.5).
@@ -57,6 +65,7 @@ from app.core.config_package import DEFAULT_PACKAGE_PATH, canonical_sha256, load
 
 DEFAULT_RECORD = REPO_ROOT / "docs" / "evaluation" / "phase7" / "golden_run_v1.json"
 DEFAULT_HISTORY = REPO_ROOT / "docs" / "evaluation" / "phase7" / "package_versions.json"
+HISTORY_REPO_PATH = "docs/evaluation/phase7/package_versions.json"
 HISTORY_NAME = "qcai-config-package-versions"
 EVIDENCE_CLASS = "change-control gate, not research results (plan Phase 7 H; 12.5)"
 EXIT_OK, EXIT_DRIFT, EXIT_USAGE, EXIT_UNMET, EXIT_DIRTY, EXIT_PIN = 0, 1, 2, 3, 4, 6
@@ -298,8 +307,17 @@ def _version_key(version: str) -> tuple[int, ...]:
 def load_history(path: Path) -> dict:
     """The append-only package version history; ValueError when it is missing or malformed."""
     try:
-        history = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"the package version history cannot be read: {exc}") from exc
+    return parse_history(text)
+
+
+def parse_history(text: str) -> dict:
+    """A package version history from its JSON text; ValueError when it is malformed."""
+    try:
+        history = json.loads(text)
+    except ValueError as exc:
         raise ValueError(f"the package version history cannot be read: {exc}") from exc
     if not isinstance(history, dict) or history.get("history") != HISTORY_NAME:
         raise ValueError(f"the package version history is not {HISTORY_NAME}")
@@ -326,6 +344,36 @@ def history_problem(history: dict, package) -> tuple[int, str] | None:
                           f"{recorded[version]}, but the package's sha256 is {package.sha256}: bump package_version (config_version "
                           "is the package version, and the rising-A/B stop sees a change only where it differs), then rehash and "
                           "rerun --write")
+    return None
+
+
+def base_history_at(ref: str) -> dict | None:
+    """The committed package version history at a git ref (CI: the pull request's base branch), or None when the ref
+    has no history file (before the first merge). ValueError for an unknown ref, a failed read or a malformed file.
+    git show reads file content at the ref, so a squash merge does not matter."""
+    try:
+        if _git("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}").returncode != 0:
+            raise ValueError(f"the base ref {ref!r} is not a commit in this clone (fetch it first)")
+        if _git("cat-file", "-e", f"{ref}:{HISTORY_REPO_PATH}").returncode != 0:
+            return None
+        shown = _git("show", f"{ref}:{HISTORY_REPO_PATH}")
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError(f"the base history at {ref!r} cannot be read: {exc}") from exc
+    if shown.returncode != 0:
+        raise ValueError(f"the base history at {ref!r} cannot be read: {shown.stderr.strip()}")
+    return parse_history(shown.stdout)
+
+
+def base_problem(base: dict | None, history: dict) -> tuple[int, str] | None:
+    """Append-only against the base: every entry of the base's history, in order and unchanged, starts the history."""
+    if base is None:
+        return None
+    expected = base["entries"]
+    if history["entries"][:len(expected)] != expected:
+        changed = [entry["version"] for entry in expected if entry not in history["entries"]]
+        return EXIT_PIN, (f"golden-set gate: the package version history rewrites or removes the base branch's entries "
+                          f"({', '.join(changed) or 'their order'}): the history is append-only, so a package edit needs a "
+                          "new package_version; restore the base entries and rerun --write")
     return None
 
 
@@ -358,6 +406,9 @@ def _main(argv: list[str] | None = None) -> int:
     parser.add_argument("--allow-dirty", action="store_true", help="--write from a working tree that differs from HEAD")
     parser.add_argument("--package", type=Path, default=DEFAULT_PACKAGE_PATH, help="the configuration package (default: the shipped v6)")
     parser.add_argument("--history", type=Path, default=DEFAULT_HISTORY, help="the append-only package version history")
+    base_source = parser.add_mutually_exclusive_group()
+    base_source.add_argument("--base-ref", help="a git ref whose committed history must be an unchanged prefix (CI: the base branch)")
+    base_source.add_argument("--base-history", type=Path, help="a history file that must be an unchanged prefix")
     try:
         args = parser.parse_args(argv)
     except SystemExit:
@@ -378,8 +429,18 @@ def _main(argv: list[str] | None = None) -> int:
         print("refused: the package has no ehmf block", file=sys.stderr)
         return EXIT_USAGE
     try:
+        _version_key(package.package_version)
+    except ValueError as exc:
+        print(f"refused: {exc} (the package version history orders versions as MAJOR.MINOR.PATCH)", file=sys.stderr)
+        return EXIT_USAGE
+    try:
         _refuse_lqs(args.history)
         history = load_history(args.history)
+        if args.base_history is not None:
+            _refuse_lqs(args.base_history)
+            base = load_history(args.base_history)
+        else:
+            base = base_history_at(args.base_ref) if args.base_ref else None
     except SystemExit as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -392,7 +453,7 @@ def _main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError) as exc:
             print(f"refused: the golden run record cannot be read: {exc}", file=sys.stderr)
             return EXIT_USAGE
-        mismatch = check_pins(committed, package) or history_problem(history, package)
+        mismatch = check_pins(committed, package) or history_problem(history, package) or base_problem(base, history)
         if mismatch is not None:
             print(mismatch[1], file=sys.stderr)
             return mismatch[0]
@@ -405,7 +466,8 @@ def _main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError) as exc:
             print(f"refused: the golden run record cannot be read: {exc}", file=sys.stderr)
             return EXIT_USAGE
-        refusal = (same_version_edit(previous, package) if isinstance(previous, dict) else None) or append_problem(history, package)
+        refusal = ((same_version_edit(previous, package) if isinstance(previous, dict) else None) or base_problem(base, history)
+                   or append_problem(history, package))
         if refusal is not None:
             print(refusal[1], file=sys.stderr)
             return refusal[0]

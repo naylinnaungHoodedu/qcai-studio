@@ -37,8 +37,14 @@ jobs:
       # Plan Phase 7 D task 6, K AC-7-6 and 12.5: the golden-set gate. Exit 6 when the package, the misconception library,
       # the routing table or the golden set differs from the committed golden run (a change without a run), or when the
       # package's version is missing from docs/evaluation/phase7/package_versions.json or recorded there with another
-      # sha256 (a package edit that keeps its package_version); exit 1 on drift.
-      - run: python scripts/run_golden_set.py --check docs/evaluation/phase7/golden_run_v1.json
+      # sha256 (a package edit that keeps its package_version), or when that history does not start with the base
+      # branch's committed history unchanged (append-only: a rewritten or removed entry); exit 1 on drift. The base
+      # branch is fetched by name (the pull request's base, else main) and read with git show, not by ancestry.
+      - env:
+          BASE_REF: ${{ github.base_ref || 'main' }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          python scripts/run_golden_set.py --check docs/evaluation/phase7/golden_run_v1.json --base-ref FETCH_HEAD
       # Plan Phase 7 P (R-18) and Phase 11 task 3: the source-fidelity check over the 12 DOCX. --check proves the committed report
       # (3 mismatches) is current; --require-zero (AC-11-3) joins CI once the Content Owner corrects the DOCX at source (DI-105).
       - run: python scripts/check_source_fidelity.py --check docs/evaluation/phase7/source_fidelity_report_v1.json

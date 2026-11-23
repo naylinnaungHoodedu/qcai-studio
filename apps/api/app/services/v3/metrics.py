@@ -18,7 +18,8 @@ slis(db, package, now) reports, from the stored queue, draws, gold rows and ledg
   stop, x5          the stop (stop.stop_state) and the X5 windows
   ehmf              the EHMF SLIs (ehmf.metrics.slis, Phase 7 spec 4.11) when settings are given and EHMF is not off;
                     else null (no EHMF read)
-Ratios are "k/n" strings, so no float rounding is published. Counts only: no id, no digest, no text. Served on the
+Ratios are exact fraction strings ("k/n", or 100*k/n reduced, such as "50" or "100/3", for the EHMF per-100 rates,
+null over a zero denominator), so no float rounding is published. Counts only: no id, no digest, no text. Served on the
 reviewer-only GET /v3/metrics (development only while D-18 is open: outside development it refuses every caller) and the
 worker's status line (python -m app.workers.v3_queue status), the only source outside development; never on the public
 /ready. The alerts and the scheduled status job are DI-95.
