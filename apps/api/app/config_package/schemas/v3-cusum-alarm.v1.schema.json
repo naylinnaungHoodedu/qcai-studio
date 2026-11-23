@@ -1,0 +1,68 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "alarm_schema": {
+      "const": "cusum-alarm-v1",
+      "default": "cusum-alarm-v1",
+      "title": "Alarm Schema",
+      "type": "string"
+    },
+    "h": {
+      "exclusiveMinimum": 0,
+      "title": "H",
+      "type": "number"
+    },
+    "observations": {
+      "minimum": 1,
+      "title": "Observations",
+      "type": "integer"
+    },
+    "p0": {
+      "exclusiveMaximum": 1,
+      "exclusiveMinimum": 0,
+      "title": "P0",
+      "type": "number"
+    },
+    "p1": {
+      "exclusiveMaximum": 1,
+      "exclusiveMinimum": 0,
+      "title": "P1",
+      "type": "number"
+    },
+    "raised_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$",
+      "title": "Raised At",
+      "type": "string"
+    },
+    "source": {
+      "enum": [
+        "phase9-cusum",
+        "synthetic-test"
+      ],
+      "title": "Source",
+      "type": "string"
+    },
+    "statistic": {
+      "minimum": 0,
+      "title": "Statistic",
+      "type": "number"
+    },
+    "stream": {
+      "pattern": "^[a-z0-9][a-z0-9:._-]{0,95}$",
+      "title": "Stream",
+      "type": "string"
+    }
+  },
+  "required": [
+    "stream",
+    "p0",
+    "p1",
+    "h",
+    "statistic",
+    "observations",
+    "raised_at",
+    "source"
+  ],
+  "title": "CusumAlarm",
+  "type": "object"
+}

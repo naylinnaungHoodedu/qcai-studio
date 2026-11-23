@@ -4,7 +4,9 @@ Tier 1 when the turn is an assessment context (V1.6's assessment_items over the 
 package's default tier (2, the default tutor answer). Tier 3 is the paper's opt-in expert mode, which does not exist
 (v2.tiers.expert_mode is null), so no shipped claim is tier 3. Learner state never sets a tier (invariant 1); the
 paper's novice-learner tier waits for the Phase 8 learner model (DI-82). Every claim of a response has the same tier.
-critical_for is false while D-25's critical-claim registry is empty (PD-29): critical claims follow X1 in Phase 6.
+critical_for reads package v5's v3.critical_claims registry for the environment (empty outside development while D-25 is
+open; synthetic in development, PD-33), and package v4's v2.correction.critical_registry for a package without a v3
+block; X1 is Phase 6's trigger (app.services.v3.triggers).
 """
 
 from __future__ import annotations
@@ -24,5 +26,7 @@ def tier_for(items: Any, package: "ConfigPackage", *, expert: bool = False) -> i
     return v2.default_tier
 
 
-def critical_for(claim_id: str, package: "ConfigPackage") -> bool:
+def critical_for(claim_id: str, package: "ConfigPackage", *, environment: str) -> bool:
+    if package.v3 is not None:
+        return claim_id in set(package.v3.critical_registry_for(environment.lower()))
     return claim_id in set(package.v2.critical_registry)

@@ -71,6 +71,8 @@ def run_schema_upgrades(engine: Engine) -> None:
                 column_type = "TIMESTAMP WITH TIME ZONE" if connection.dialect.name == "postgresql" else "DATETIME"
                 connection.exec_driver_sql(f"ALTER TABLE response_ledger_head ADD COLUMN started_at {column_type}")
             _guard_response_ledger(connection)
+        if set(V3_GUARDED_TABLES) <= tables:
+            _guard_v3_tables(connection)
 
 
 def _guard_security_events(connection: Connection) -> None:
@@ -326,3 +328,125 @@ def _guard_response_ledger(connection: Connection) -> None:
             "BEGIN SELECT RAISE(ABORT, 'response_ledger_head moves forward only: DELETE refused'); END",
         ):
             connection.exec_driver_sql(statement)
+
+
+# The V3 tables (Phase 6 spec 8): the gold store, the draws, the X5 events, the model versions seen and the scan log are
+# append-only (UPDATE, DELETE and TRUNCATE refused); a gold insert must extend its chain (the response ledger's rule);
+# the queue keeps every item (DELETE and TRUNCATE refused) and moves it forward only: an UPDATE keeps the item's
+# identity, sets each closing column once, never lowers its exposure or round, never clears held, never drops a
+# trigger, reason or EHMF type, and moves state queued -> adjudicated -> applied only (the workflow's own writes:
+# queue.upsert_item, refresh_exposure, adjudicate, apply_item). The two user-keyed tables (v3_claims, v3_flags) have no
+# trigger, so erasure deletes their rows.
+V3_APPEND_ONLY_TABLES = ("v3_model_versions", "v3_events", "v3_draws", "v3_gold_labels", "v3_scans")
+V3_GUARDED_TABLES = ("v3_model_versions", "v3_events", "v3_draws", "v3_queue_items", "v3_gold_labels", "v3_scans")
+V3_QUEUE_FIXED_COLUMNS = ("item_id", "ledger_seq", "claim_key", "subject", "record_kind", "response_digest", "k", "double_review",
+                          "enqueued_at", "package_version", "package_sha256")
+V3_QUEUE_WRITE_ONCE_COLUMNS = ("closed_at", "final_gold_seq", "applied_at", "applied_by_digest", "applied_client_key")
+V3_QUEUE_RISING_COLUMNS = ("exposure", "review_round")
+V3_QUEUE_STATE_MOVES = (("queued", "adjudicated"), ("adjudicated", "applied"))
+
+
+def _v3_queue_sets() -> dict[str, tuple[str, ...]]:
+    # The comma-joined set columns and their vocabularies (queue.join writes sorted, comma-joined members).
+    from app.services.v3.rules import EHMF_TYPES, QUEUE_REASONS, TRIGGERS
+
+    return {"triggers": TRIGGERS, "reasons": QUEUE_REASONS, "ehmf_types": EHMF_TYPES}
+
+
+def _v3_queue_forward_only_postgres() -> str:
+    """The conditions under which an UPDATE of v3_queue_items is a forward move (PostgreSQL)."""
+    moves = " OR ".join(f"(OLD.state = '{old}' AND NEW.state = '{new}')" for old, new in V3_QUEUE_STATE_MOVES)
+    return "\n       AND ".join((
+        *(f"NEW.{column} IS NOT DISTINCT FROM OLD.{column}" for column in V3_QUEUE_FIXED_COLUMNS),
+        *(f"(OLD.{column} IS NULL OR NEW.{column} IS NOT DISTINCT FROM OLD.{column})" for column in V3_QUEUE_WRITE_ONCE_COLUMNS),
+        *(f"NEW.{column} >= OLD.{column}" for column in V3_QUEUE_RISING_COLUMNS),
+        "(NEW.held OR NOT OLD.held)",
+        f"(NEW.state = OLD.state OR {moves})",
+        *(f"string_to_array(NEW.{column}, ',') @> string_to_array(OLD.{column}, ',')" for column in _v3_queue_sets()),
+    ))
+
+
+def _v3_queue_backward_sqlite() -> str:
+    """The conditions under which an UPDATE of v3_queue_items is refused (SQLite; the sets over their vocabularies)."""
+    moves = " OR ".join(f"(OLD.state = '{old}' AND NEW.state = '{new}')" for old, new in V3_QUEUE_STATE_MOVES)
+    return " OR ".join((
+        *(f"NEW.{column} IS NOT OLD.{column}" for column in V3_QUEUE_FIXED_COLUMNS),
+        *(f"(OLD.{column} IS NOT NULL AND NEW.{column} IS NOT OLD.{column})" for column in V3_QUEUE_WRITE_ONCE_COLUMNS),
+        *(f"NEW.{column} < OLD.{column}" for column in V3_QUEUE_RISING_COLUMNS),
+        "(OLD.held AND NOT NEW.held)",
+        f"NOT (NEW.state = OLD.state OR {moves})",
+        *(f"(instr(',' || OLD.{column} || ',', ',{member},') > 0 AND instr(',' || NEW.{column} || ',', ',{member},') = 0)"
+          for column, members in _v3_queue_sets().items() for member in members),
+    ))
+V3_FUNCTION_BODIES = {
+    "v3_append_only": (
+        "\n"
+        "BEGIN\n"
+        "    RAISE EXCEPTION USING MESSAGE = TG_TABLE_NAME || ' is append-only: ' || TG_OP || ' refused';\n"
+        "END\n"
+    ),
+    "v3_gold_links_to_chain": (
+        "\n"
+        "DECLARE last_seq integer; last_hash text;\n"
+        "BEGIN\n"
+        "    SELECT seq, record_hash INTO last_seq, last_hash FROM v3_gold_labels ORDER BY seq DESC LIMIT 1;\n"
+        "    IF last_seq IS NULL THEN last_seq := 0; last_hash := repeat('0', 64); END IF;\n"
+        "    IF NEW.seq <> last_seq + 1 OR NEW.prev_hash <> last_hash THEN\n"
+        "        RAISE EXCEPTION USING MESSAGE = 'v3_gold_labels appends must extend the chain';\n"
+        "    END IF;\n"
+        "    RETURN NEW;\n"
+        "END\n"
+    ),
+    "v3_queue_items_keep": (
+        "\n"
+        "BEGIN\n"
+        "    IF TG_OP <> 'UPDATE' THEN\n"
+        "        RAISE EXCEPTION USING MESSAGE = 'v3_queue_items keeps every item: ' || TG_OP || ' refused';\n"
+        "    END IF;\n"
+        f"    IF {_v3_queue_forward_only_postgres()} THEN\n"
+        "        RETURN NEW;\n"
+        "    END IF;\n"
+        "    RAISE EXCEPTION USING MESSAGE = 'v3_queue_items moves forward only: UPDATE refused';\n"
+        "END\n"
+    ),
+}
+V3_TRIGGERS = (
+    *(Trigger(f"{table}_append_only", table, ("UPDATE", "DELETE"), "ROW", "v3_append_only") for table in V3_APPEND_ONLY_TABLES),
+    *(Trigger(f"{table}_no_truncate", table, ("TRUNCATE",), "STATEMENT", "v3_append_only") for table in V3_APPEND_ONLY_TABLES),
+    Trigger("v3_gold_labels_links_to_chain", "v3_gold_labels", ("INSERT",), "ROW", "v3_gold_links_to_chain"),
+    Trigger("v3_queue_items_keep", "v3_queue_items", ("UPDATE", "DELETE"), "ROW", "v3_queue_items_keep"),
+    Trigger("v3_queue_items_no_truncate", "v3_queue_items", ("TRUNCATE",), "STATEMENT", "v3_queue_items_keep"),
+)
+V3_SQLITE_TRIGGERS = (
+    *(f"{table}_no_update" for table in V3_APPEND_ONLY_TABLES),
+    *(f"{table}_no_delete" for table in V3_APPEND_ONLY_TABLES),
+    "v3_gold_labels_links_to_chain",
+    "v3_queue_items_no_delete",
+    "v3_queue_items_forward_only",
+)
+
+
+def _guard_v3_tables(connection: Connection) -> None:
+    # Checked on every start and re-created only when not current, with the tables locked in the writers' order (the
+    # scan: model versions, events, draws, queue items, its scan row; an adjudication: queue items, then the gold store;
+    # spec 18.8 F8 of Phase 3). No '%' in these statements (psycopg and pg8000 parameter markers).
+    if connection.dialect.name == "postgresql":
+        _postgres_guard(connection, functions=V3_FUNCTION_BODIES, triggers=V3_TRIGGERS, lock_order=V3_GUARDED_TABLES)
+        return
+    if connection.dialect.name == "sqlite":
+        for name in V3_SQLITE_TRIGGERS:
+            connection.exec_driver_sql(f"DROP TRIGGER IF EXISTS {name}")
+        for table in V3_APPEND_ONLY_TABLES:
+            connection.exec_driver_sql(f"CREATE TRIGGER {table}_no_update BEFORE UPDATE ON {table} "
+                                       f"BEGIN SELECT RAISE(ABORT, '{table} is append-only: UPDATE refused'); END")
+            connection.exec_driver_sql(f"CREATE TRIGGER {table}_no_delete BEFORE DELETE ON {table} "
+                                       f"BEGIN SELECT RAISE(ABORT, '{table} is append-only: DELETE refused'); END")
+        connection.exec_driver_sql(
+            "CREATE TRIGGER v3_gold_labels_links_to_chain BEFORE INSERT ON v3_gold_labels "
+            "WHEN NEW.seq != (SELECT COALESCE(MAX(seq), 0) + 1 FROM v3_gold_labels) "
+            f"OR NEW.prev_hash != COALESCE((SELECT record_hash FROM v3_gold_labels ORDER BY seq DESC LIMIT 1), '{GENESIS}') "
+            "BEGIN SELECT RAISE(ABORT, 'v3_gold_labels appends must extend the chain'); END")
+        connection.exec_driver_sql("CREATE TRIGGER v3_queue_items_no_delete BEFORE DELETE ON v3_queue_items "
+                                   "BEGIN SELECT RAISE(ABORT, 'v3_queue_items keeps every item: DELETE refused'); END")
+        connection.exec_driver_sql(f"CREATE TRIGGER v3_queue_items_forward_only BEFORE UPDATE ON v3_queue_items WHEN {_v3_queue_backward_sqlite()} "
+                                   "BEGIN SELECT RAISE(ABORT, 'v3_queue_items moves forward only: UPDATE refused'); END")

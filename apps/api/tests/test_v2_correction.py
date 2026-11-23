@@ -148,3 +148,56 @@ def test_in_shadow_v1_withholds_and_renders_a_v1_3_flagged_claim_as_with_v2_off(
     assert [verdict.final for verdict in shadow.verification.verdicts] == [verdict.final for verdict in off.verification.verdicts]
     assert shadow.presentation.rendered_claim_ids == off.presentation.rendered_claim_ids and len(off.presentation.rendered_claim_ids) == 1
     assert shadow.rendered_text_sha256 == off.rendered_text_sha256
+
+
+
+# ------------------------------------------------------------------------------------- Phase 6: the X1 sticky hold
+
+
+def _critical_case():
+    import v3_fakes
+
+    base = dev_pipeline()
+    target = next(claim for claim in v3_fakes.critical_claims_of(base) if claim.claim_id == v3_fakes.CRITICAL_CLAIMS[0])
+    return base, target
+
+
+def test_a_critical_tier_1_claim_is_never_revised_and_ends_with_x2():
+    # Phase 6 spec 4.13: a claim the development registry marks critical at tier 1 that fails is held: never given to
+    # revise(), re-verified unchanged in every cycle, abstained with X2 after the last; the other claims are unaffected.
+    import v3_fakes
+
+    base, target = _critical_case()
+    sentence = target.text + " A revision the generator would offer."
+    generator = RevisingGenerator(ExtractiveD19Generator(base.package), {target.text: sentence})
+    registry = make_registry(("fake-alpha", "fake-beta", "fake-gamma"))
+    adapters = v3_fakes.objecting_adapters(registry, "fake-beta-v1", {target.text: tuple(target.span_ids)})
+    result = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters), registry=registry, generator=generator), v3_fakes.CRITICAL_QUERY)
+    verification = result.entry.verification
+    held = next(verdict for verdict in verification.verdicts if verdict.claim_id == target.claim_id)
+    assert generator.revised == [] and sentence not in {claim.text for claim in result.entry.claims}
+    assert held.v2.critical is True and held.v2.tier == 1 and held.final == "abstain" and held.v3.escalation == "X2"
+    assert verification.v2.cycles == 2 and [item.kind for item in verification.v2.corrections] == ["revise", "revise"]
+    assert all(item.failed_claim_ids == (target.claim_id,) and item.revised_claim_ids == () for item in verification.v2.corrections)
+    assert verification.final == "deliver" and {verdict.final for verdict in verification.verdicts if verdict.claim_id != target.claim_id} == {"deliver"}
+
+
+def test_a_critical_tier_1_claim_stays_held_when_its_objector_leaves_the_panel():
+    # The objector fails its next call and leaves the panel, so the claim's next tally passes 1oo2 (REDUCED-2): the hold
+    # keeps it pending to the last cycle and it abstains with X2 instead of being delivered (Phase 6 spec conflict 1).
+    import v3_fakes
+
+    base, target = _critical_case()
+    registry = make_registry(("fake-alpha", "fake-beta", "fake-gamma"))
+    adapters = v3_fakes.objecting_adapters(registry, "fake-beta-v1", {target.text: tuple(target.span_ids)}, fail_calls=(4,))
+    result = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters), registry=registry, cache=v3_fakes.NoCache()), v3_fakes.CRITICAL_QUERY)
+    verification = result.entry.verification
+    held = next(verdict for verdict in verification.verdicts if verdict.claim_id == target.claim_id)
+    assert (held.v2.mode, held.v2.outcome, held.v2.objections) == ("REDUCED-2", "pass", 0)
+    assert held.final == "abstain" and held.v3.escalation == "X2" and verification.v2.cycles == 2
+    assert target.claim_id not in {segment.claim_id for segment in result.rendered.segments if segment.kind == "claim"}
+    # A non-critical tier-2 claim whose objector leaves the panel is delivered once it passes, as in Phase 5.
+    claims = run(dev_pipeline(), TIER2).locked.claims
+    adapters = v3_fakes.objecting_adapters(registry, "fake-beta-v1", {claims[1].text: tuple(claims[1].span_ids)})
+    plain = run(v2_pipeline(gateway=fresh_gateway(adapters=adapters), registry=registry), TIER2).entry.verification
+    assert next(verdict for verdict in plain.verdicts if verdict.claim_id == claims[1].claim_id).v2.critical is False

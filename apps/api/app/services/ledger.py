@@ -35,7 +35,8 @@ long that takes while the process keeps its CPU, and ledger_coverage counts a tu
 than that horizon (spec 18.12 J5, J6).
 
 Budgets, attempts and the appender's size come from the shipped configuration package (tutor_pipeline.budgets; PD-11;
-v2 with the Phase 3 release, v3 from the Phase 4 release, v4 from the Phase 5 release, with the same values).
+v2 with the Phase 3 release, v3 from the Phase 4 release, v4 from the Phase 5 release, v5 from the Phase 6 release, with the
+same values).
 TUTOR_LEDGER_APPEND_BUDGET_MS and TWO_PASS_SHADOW_BUDGET_MS override the two budgets only; every record stamps
 the budgets in force and which of them differ from the package (versions.budgets), so a record names its budgets
 whether or not they were overridden (R-46), and an override outside development logs a config.override event.
@@ -110,7 +111,7 @@ RECORD_HASH_RULE = "sha256(canonical{chain,seq,created_at,prev_hash,entry_sha256
 # retried within the remaining budget like an IntegrityError (spec 18.8 F8).
 RETRYABLE_SQLSTATES = frozenset({"40P01", "40001"})
 # The Alembic revision this code expects (tested against the single head); stamped on every record (plan 13.5).
-SCHEMA_REVISION = "20261122_phase5_gateway_controls"
+SCHEMA_REVISION = "20261122_phase6_v3_audit"
 # The legacy contained path's ids and rule hash, stamped on every legacy record (the only records production writes).
 # Configuration package v2 pins all four (tutor_pipeline.legacy) and package_check requires them to agree, so the
 # provenance audit (ledger_provenance) has a pinned reference value (DI-49).
@@ -730,7 +731,8 @@ def pending_v3_intents(db: Session, *, after_seq: int = 0, limit: int = 1000) ->
     """The V3 queue intents on ledger-entry-v2 and ledger-entry-v3 records (Phase 4 spec 7.9, conflict 28; Phase 5 spec
     7.3): one item per claim verdict with a v3 intent, in seq order, after `after_seq`; a v3 record's items also carry
     its escalation (X2 or null). Read-only; filtered on entry_schema in SQL and parsed in Python, so it behaves alike on
-    SQLite, psycopg and pg8000. Ids, claim ids and enumerations only, never text. Phase 6 consumes it (DI-56)."""
+    SQLite, psycopg and pg8000. Ids, claim ids and enumerations only, never text. A read-only helper; the Phase 6 scan reads
+    the records itself (app.services.v3.scan)."""
     rows = db.execute(
         select(ResponseLedgerRecord.seq, ResponseLedgerRecord.response_id, ResponseLedgerRecord.entry_schema, ResponseLedgerRecord.entry)
         .where(ResponseLedgerRecord.entry_schema.in_(("ledger-entry-v2", "ledger-entry-v3")), ResponseLedgerRecord.seq > int(after_seq))

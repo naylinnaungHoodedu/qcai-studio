@@ -15,7 +15,7 @@ from slowapi.extension import _rate_limit_exceeded_handler
 from sqlalchemy import text
 from sqlalchemy.exc import DataError, DBAPIError, OperationalError
 
-from app.api.routes import admin, analytics, arena, assets, assistant, auth, builder, content, insights, learner_record, ledger, projects, qa, search, spans, support, tutor
+from app.api.routes import admin, analytics, arena, assets, assistant, auth, builder, content, insights, learner_record, ledger, projects, qa, search, spans, support, tutor, v3
 from app.core.config_package import ConfigPackageError, get_config_package
 from app.core.corpus_governance import CorpusGovernanceError, DriftReport, get_corpus_registry, p1_floor_recall_stop
 from app.core.config import get_settings
@@ -179,9 +179,11 @@ def _check_tutor_pipeline_package(package) -> None:
     problem with package v4's gateway, v2 or tools block stops a governed build only when the gateway is requested
     (MODEL_GATEWAY not off), else the V2 mode stays off. Then the tutor pipeline (Phase 3 spec 5.4, conflict 30): one
     of its problems stops a governed build only when the pipeline is requested (TWO_PASS_TUTOR not off); otherwise the
-    pipeline is reported unavailable (/ready tutor_pipeline.available false) and its effective mode stays off."""
+    pipeline is reported unavailable (/ready tutor_pipeline.available false) and its effective mode stays off. Between
+    the gateway and the pipeline, _check_v3_package (Phase 6 spec 4.15, 10.1)."""
     _check_v1_package(package)
     _check_gateway_package(package)
+    _check_v3_package(package)
     if package.tutor_pipeline is None:
         tutor_shadow.PIPELINE_UNAVAILABLE_REASON = None
         return
@@ -225,6 +227,30 @@ def _check_gateway_package(package) -> None:
         raise ConfigPackageError(f"gateway: {reason}")
     gateway.GATEWAY_UNAVAILABLE_REASON = reason
     TUTOR_LOGGER.warning("The model gateway is unavailable; the V2 mode stays off", extra={FIELDS: {"event": "tutor.v2.unavailable", "reason": reason}})
+
+
+def _check_v3_package(package) -> None:
+    """Package v5's v3 block against the V3 code (Phase 6 spec 4.15, 10.1). Without a v3 block (a v1 to v4 package) the V3
+    mode is off. A problem stops a governed build when V3 is requested (V3_QUEUE not off); otherwise V3 is reported
+    unavailable (/ready v3.available false), its mode stays off and v3.unavailable is logged. Outside development
+    V3_QUEUE is off, so such a problem never stops a production start-up. Reads only the package, the committed files
+    beside it and code values (never apps/api/tests/, which the image does not hold); writes nothing."""
+    from app.services import v3 as v3_service
+
+    if package.v3 is None:
+        v3_service.V3_UNAVAILABLE_REASON = None
+        return
+    from app.services.v3.package_check import check_v3_package
+
+    problems = check_v3_package(package, structural=False)
+    if not problems:
+        v3_service.V3_UNAVAILABLE_REASON = None
+        return
+    reason = "; ".join(problems)[:500]
+    if settings.enforce_corpus_governance and settings.v3_queue != "off":
+        raise ConfigPackageError(f"v3: {reason}")
+    v3_service.V3_UNAVAILABLE_REASON = reason
+    logging.getLogger("qcai.v3").warning("The V3 audit is unavailable; the V3 mode stays off", extra={FIELDS: {"event": "v3.unavailable", "reason": reason}})
 
 
 def _warn_retired_provider_settings() -> None:
@@ -367,6 +393,10 @@ def _record_configuration_overrides() -> None:
             ("model_gateway_shadow", settings.model_gateway == "shadow"),
             ("model_gateway_on", settings.model_gateway == "on"),
             ("model_egress_opt_in", bool(settings.model_egress_providers)),
+            # Phase 6: the V3 queue outside development (on is refused before the Phase 6 exit; shadow changes no learner
+            # path, and no reviewer is admitted there while D-18 is open).
+            ("v3_queue_shadow", settings.v3_queue == "shadow"),
+            ("v3_queue_on", settings.v3_queue == "on"),
         )
         if active
     }
@@ -406,6 +436,7 @@ ROUTERS = (
     assistant.router,
     tutor.router,
     ledger.router,
+    v3.router,
     analytics.router,
     admin.router,
     arena.router,
@@ -588,6 +619,38 @@ def _build_fields() -> dict:
         "model_gateway_setting": settings.model_gateway,
         "phase5_exit_passed": bool(package.flag_policy.phase5_exit_passed),
         "gateway": _gateway_fields(package),
+        # Phase 6 (plan Phase 6 I; spec 10.2): the V3 mode in force, the setting, and the package's static V3 values. No
+        # count, queue depth, stop state, seed or gold head is public (the SLIs are on the reviewer-only /v3/metrics).
+        "v3_queue": _v3_mode(package),
+        "v3_queue_setting": settings.v3_queue,
+        "phase6_exit_passed": bool(package.flag_policy.phase6_exit_passed),
+        "v3": _v3_fields(package),
+    }
+
+
+def _v3_mode(package) -> str:
+    from app.services import v3 as v3_service
+
+    return v3_service.mode(settings, package)
+
+
+def _v3_fields(package) -> dict | None:
+    params = package.v3
+    if params is None:
+        return None
+    from app.services import v3 as v3_service
+
+    environment = settings.environment.lower()
+    registry = environment if environment in params.critical_registries else "default"
+    return {
+        "version": params.version, "trigger_registry": params.trigger_registry_version, "triggers": sorted(params.trigger_rules),
+        "draw": {"rule": params.draw_rule, "rate": f"{params.draw_rate.numerator}/{params.draw_rate.denominator}",
+                 "x5_rate": f"{params.x5_rate.numerator}/{params.x5_rate.denominator}", "x5_window_deliveries": params.x5_window_deliveries},
+        "double_review": f"{params.double_review_rate.numerator}/{params.double_review_rate.denominator}",
+        "queue_age_slo_s": params.queue_age_slo_s, "stop_window_s": params.stop_window_s, "stop_measure": params.stop_measure,
+        "critical_registry": {"environment": registry, "entries": len(params.critical_registry_for(environment))},
+        "reviewer_pool": params.reviewer_pool, "gold_schema": params.gold_schema, "provisional": True,
+        "available": v3_service.V3_UNAVAILABLE_REASON is None,
     }
 
 

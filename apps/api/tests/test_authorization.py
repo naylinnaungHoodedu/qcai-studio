@@ -25,7 +25,7 @@ PROJECT_SLUG = "routing-rescue-playbook"
 SERVED = authz.served_routes(app, ROUTERS)
 ROUTE_KEYS = authz.route_keys(SERVED)
 
-KINDS = ("anonymous", "guest", "local_learner", "demo_learner", "demo_instructor", "demo_admin")
+KINDS = ("anonymous", "guest", "local_learner", "demo_learner", "demo_instructor", "demo_admin", "demo_reviewer")
 ALLOWED_KINDS = {
     authz.PUBLIC: set(KINDS),
     authz.SERVICE: set(KINDS),
@@ -34,6 +34,8 @@ ALLOWED_KINDS = {
     authz.DURABLE_LEARNER: {"local_learner"},
     authz.STAFF: {"demo_instructor", "demo_admin"},
     authz.ADMIN: {"demo_admin"},
+    # Phase 6: the V3 reviewer routes (in development, where the reviewer gate admits a synthetic demo reviewer).
+    authz.REVIEWER: {"demo_reviewer"},
 }
 
 
@@ -70,6 +72,8 @@ def _actual_access(route) -> str:
         return authz.ADMIN
     if role_sets == {frozenset({"instructor", "admin"})}:
         return authz.STAFF
+    if role_sets == {frozenset({"reviewer"})}:
+        return authz.REVIEWER
     assert not role_sets, f"{route.path}: unrecognised role set {role_sets}"
     if "require_durable_learner" in names:
         return authz.DURABLE_LEARNER
@@ -78,6 +82,18 @@ def _actual_access(route) -> str:
     if "get_current_user" in names:
         return authz.PRINCIPAL
     return "none"
+
+
+def test_every_route_names_roles_of_the_closed_role_set():
+    # Phase 6 spec 4.12: roles are a closed set; a dependency naming any other role would be a role nobody can hold.
+    named = set()
+    for route in SERVED:
+        if isinstance(route, APIWebSocketRoute):
+            continue
+        for call in _dependency_calls(route.dependant):
+            named |= set(getattr(call, "allowed_roles", ()))
+    assert named and named <= set(authz.ROLES), sorted(named - set(authz.ROLES))
+    assert "reviewer" in named and authz.LEDGER_READER_ROLES == ("reviewer",)
 
 
 def test_each_policy_matches_the_route_dependencies():
@@ -141,6 +157,7 @@ def _concrete(path: str) -> str:
         "filename": "none.pdf",
         "response_id": "turn-00000000-0000-0000-0000-000000000000",
         "span_id": "span-" + "0" * 64,
+        "item_id": "v3i-" + "0" * 24,
     }
     for name, value in values.items():
         path = path.replace("{" + name + "}", value)
@@ -187,10 +204,15 @@ def test_a_refused_caller_is_refused(method, path, kind, local_learner, monkeypa
 
 def test_there_are_negatives_for_every_restricted_access_level():
     levels = {authz.ROUTE_POLICIES[(method, path)].access for method, path, _ in DENIED}
-    assert levels == {authz.PRINCIPAL, authz.ASSET_READER, authz.DURABLE_LEARNER, authz.STAFF, authz.ADMIN}
+    assert levels == {authz.PRINCIPAL, authz.ASSET_READER, authz.DURABLE_LEARNER, authz.STAFF, authz.ADMIN, authz.REVIEWER}
 
 
-def test_a_role_denial_is_a_security_event():
+def test_a_role_denial_is_a_security_event(monkeypatch):
+    # A fresh denial cap (60 a minute per event type, M6 of the Phase 6 spec): the negatives above record more denials
+    # than one minute's cap, and a capped denial is dropped by design, so this test counts against its own cap.
+    from app.services import security_log
+
+    monkeypatch.setattr(security_log, "_caps", security_log._Caps())
     with SessionLocal() as db:
         start = db.scalar(select(func.max(SecurityEvent.seq))) or 0
     response = TestClient(app).post("/admin/guest-revocations", json={}, headers=_demo("learner"))
@@ -216,6 +238,7 @@ OWNERSHIP_TESTED = {
     ("GET", "/ledger/responses/{response_id}"),
     ("DELETE", "/projects/submissions/{submission_id}"),
     ("POST", "/projects/reviews"),
+    ("POST", "/v3/flags"),
 }
 
 
@@ -286,6 +309,26 @@ def test_another_learners_ledger_record_reads_as_missing():
     assert shadow_id is not None and shadow_id.startswith("shadow-")
     shadow = TestClient(app).get(f"/ledger/responses/{shadow_id}", headers=owner)
     assert (shadow.status_code, shadow.json()) == (404, {"detail": "Response not found."})
+
+
+def test_another_learners_turn_cannot_be_flagged():
+    # Phase 6 (AC-6-6's intake): a learner flags only their own tutor turn; another learner's turn and a missing one get
+    # the same 404, and neither records a flag.
+    from app.db_models import V3Flag
+
+    owner, intruder = _demo("learner"), _demo("learner")
+    chat = TestClient(app).post("/assistant/chat", json={"message": "Why does routing depth matter?"}, headers={**owner, **_source()})
+    assert chat.status_code == 200
+    turn_id = chat.json()["turn_id"]
+    with SessionLocal() as db:
+        before = db.scalar(select(func.count()).select_from(V3Flag))
+    theirs = TestClient(app).post("/v3/flags", json={"response_id": turn_id}, headers={**intruder, **_source()})
+    missing = TestClient(app).post("/v3/flags", json={"response_id": f"turn-{uuid4()}"}, headers={**intruder, **_source()})
+    assert (theirs.status_code, theirs.json()) == (missing.status_code, missing.json()) == (404, {"detail": "Not Found"})
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(V3Flag)) == before
+    own = TestClient(app).post("/v3/flags", json={"response_id": turn_id}, headers={**owner, **_source()})
+    assert own.status_code == 200 and own.json()["f_i"] == 0.0
 
 
 def _submission_for(headers: dict[str, str], title: str) -> int:

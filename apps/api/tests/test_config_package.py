@@ -1,5 +1,6 @@
 """Configuration package (plan Phase 2 P; decision D9; Phase 2 spec 2.5, 4.2; Phase 3 P "schemas in configuration
-package v2", Phase 3 spec section 5; Phase 4 P "fixture hashes in configuration package v3", Phase 4 spec section 5)."""
+package v2", Phase 3 spec section 5; Phase 4 P "fixture hashes in configuration package v3", Phase 4 spec section 5;
+Phase 5 spec section 5 (package v4); Phase 6 spec section 5 (package v5, the shipped package))."""
 
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ from app.core.config_package import (
     V1_PACKAGE_PATH,
     V2_PACKAGE_PATH,
     V3_PACKAGE_PATH,
+    V4_PACKAGE_PATH,
     WIRED_GENERATORS,
     ConfigPackageError,
     canonical_sha256,
@@ -33,6 +35,7 @@ IMAGE_APP = PurePosixPath("/app/app")
 RAW = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
 V2_RAW = json.loads(V2_PACKAGE_PATH.read_text(encoding="utf-8"))
 V3_RAW = json.loads(V3_PACKAGE_PATH.read_text(encoding="utf-8"))
+V4_RAW = json.loads(V4_PACKAGE_PATH.read_text(encoding="utf-8"))
 
 
 def _write(tmp_path: Path, payload: dict, *, sidecar: str | None = None) -> Path:
@@ -43,13 +46,13 @@ def _write(tmp_path: Path, payload: dict, *, sidecar: str | None = None) -> Path
 
 
 def test_the_shipped_package_validates_and_matches_its_hash():
-    # Phase 5: the shipped package is v4 (4.0.0); the 3.0.0, 2.0.0 and 1.0.0 assertions are
-    # test_v3_stays_readable_for_one_release's, test_v2_stays_readable_for_one_release's and
-    # test_v1_stays_readable_for_one_release's.
+    # Phase 6: the shipped package is v5 (5.0.0); the 4.0.0, 3.0.0, 2.0.0 and 1.0.0 assertions are
+    # test_v4_stays_readable_for_one_release's, test_v3_stays_readable_for_one_release's,
+    # test_v2_stays_readable_for_one_release's and test_v1_stays_readable_for_one_release's.
     package = load_config_package(DEFAULT_PACKAGE_PATH, governed=True)
-    assert package.hash_verified and package.is_default_path and package.package_version == "4.0.0"
-    assert package.schema_version == 4 and package.tutor_pipeline is not None and package.v1 is not None
-    assert package.gateway is not None and package.v2 is not None and package.tools is not None
+    assert package.hash_verified and package.is_default_path and package.package_version == "5.0.0"
+    assert package.schema_version == 5 and package.tutor_pipeline is not None and package.v1 is not None
+    assert package.gateway is not None and package.v2 is not None and package.tools is not None and package.v3 is not None
     assert package.sha256 == recorded_sha256(DEFAULT_PACKAGE_PATH) == canonical_sha256(RAW)
     assert package.span_scheme == "span-v2" and package.abstention.provisional is True
     # The image copies apps/api/app, so the package ships inside it (the Dockerfile has no other path for it).
@@ -388,8 +391,9 @@ def test_v3_keeps_every_v2_value_but_the_listed_changes():
     ],
 )
 def test_v3_structural_errors_always_stop_the_load(tmp_path, edit):
-    # Each refusal holds for v3.json, still readable, and for the shipped v4, which keeps every v3 block (Phase 5 spec 13.3).
-    for base in (V3_RAW, RAW):
+    # Each refusal holds for v3.json, still readable, for v4.json and for the shipped v5, which keep every v3 block (Phase 5
+    # spec 13.3; Phase 6 spec 13.3).
+    for base in (V3_RAW, V4_RAW, RAW):
         payload = json.loads(json.dumps(base))
         edit(payload)
         path = _write(tmp_path, payload)
@@ -481,18 +485,19 @@ def test_v3_stays_readable_for_one_release():
     package = load_config_package(V3_PACKAGE_PATH, governed=True)
     assert package.hash_verified and package.package_version == "3.0.0" and package.schema_version == 3 and not package.is_default_path
     assert package.gateway is None and package.v2 is None and package.tools is None and package.flag_policy.phase5_exit_passed is False
-    assert package.sha256 == recorded_sha256(V3_PACKAGE_PATH) == canonical_sha256(V3_RAW) == RAW["supersedes"]["sha256"]
+    assert package.sha256 == recorded_sha256(V3_PACKAGE_PATH) == canonical_sha256(V3_RAW) == V4_RAW["supersedes"]["sha256"]
     assert check_tutor_pipeline_package(package, structural=True) == [] and check_v1_package(package, structural=True) == []
 
 
 def test_v4_keeps_every_v3_value_but_the_listed_changes():
-    assert (RAW["package_version"], RAW["schema_version"], RAW["phase"]) == ("4.0.0", 4, "5")
-    assert RAW["supersedes"] == {"package_version": "3.0.0", "sha256": canonical_sha256(V3_RAW), "readable_until": "the release after the Phase 5 merge"}
-    assert set(RAW) == set(V3_RAW) | V4_NEW_BLOCKS
+    # Package v4 (v4.json, readable for one release after the Phase 6 merge, DI-100) against v3.
+    assert (V4_RAW["package_version"], V4_RAW["schema_version"], V4_RAW["phase"]) == ("4.0.0", 4, "5")
+    assert V4_RAW["supersedes"] == {"package_version": "3.0.0", "sha256": canonical_sha256(V3_RAW), "readable_until": "the release after the Phase 5 merge"}
+    assert set(V4_RAW) == set(V3_RAW) | V4_NEW_BLOCKS
     for key in V3_RAW:
         if key not in {"package_version", "schema_version", "phase", "created", "supersedes", "tutor_pipeline", "flag_policy", "owner_decisions"}:
-            assert RAW[key] == V3_RAW[key], key
-    tutor, v3_tutor = RAW["tutor_pipeline"], V3_RAW["tutor_pipeline"]
+            assert V4_RAW[key] == V3_RAW[key], key
+    tutor, v3_tutor = V4_RAW["tutor_pipeline"], V3_RAW["tutor_pipeline"]
     for key, value in v3_tutor.items():
         if key not in {"schemas", "ledger", "unused_provenance_fields"}:
             assert tutor[key] == value, key
@@ -502,24 +507,24 @@ def test_v4_keeps_every_v3_value_but_the_listed_changes():
     assert (ledger.pop("entry_schema"), ledger.pop("entry_schemas")) == ("ledger-entry-v3", ["ledger-entry-v1", "ledger-entry-v2", "ledger-entry-v3"])
     assert ledger == {key: value for key, value in v3_tutor["ledger"].items() if key not in {"entry_schema", "entry_schemas"}}
     assert tutor["unused_provenance_fields"] == []
-    policy = dict(RAW["flag_policy"])
+    policy = dict(V4_RAW["flag_policy"])
     assert policy.pop("model_gateway")["default_elsewhere"] == "off" and policy.pop("phase5_exit_passed") is False
     assert policy.pop("phase5_exit_evidence") is None
     authority = policy.pop("authority")
     assert authority.startswith(V3_RAW["flag_policy"]["authority"]) and "PD-28" in authority and "DI-76" in authority
     assert policy == {key: value for key, value in V3_RAW["flag_policy"].items() if key != "authority"}
-    decisions = RAW["owner_decisions"]
+    decisions = V4_RAW["owner_decisions"]
     assert set(decisions) == set(V3_RAW["owner_decisions"]) | {"D-07", "Q-09", "D-23", "D-29", "D-25", "A-15", "Q-15"}
     for name, decision in V3_RAW["owner_decisions"].items():
         if name != "Q-22":
             assert decisions[name] == decision, name
     assert decisions["Q-22"]["provisional_values"] == [*V3_RAW["owner_decisions"]["Q-22"]["provisional_values"], "v2.voting"]
     assert decisions["Q-22"]["record"] == "PD-15, PD-16, PD-18, PD-25; DI-52"
-    gateway = RAW["gateway"]
+    gateway = V4_RAW["gateway"]
     assert {name: len(members) for name, members in gateway["registries"].items()} == {"development": 4, "staging": 0, "production": 0, "default": 0}
     assert gateway["budgets"]["daily_units"] == {"development": 100000, "staging": 0, "production": 0, "default": 0} and gateway["terms"] is None
-    assert RAW["v2"]["degraded"]["pre_verified_source"] is None and RAW["v2"]["correction"]["critical_registry"] == []
-    assert RAW["v2"]["voting"]["provisional_until"] == "Q-22 (DI-52)"
+    assert V4_RAW["v2"]["degraded"]["pre_verified_source"] is None and V4_RAW["v2"]["correction"]["critical_registry"] == []
+    assert V4_RAW["v2"]["voting"]["provisional_until"] == "Q-22 (DI-52)"
 
 
 @pytest.mark.parametrize(
@@ -585,25 +590,31 @@ def test_v4_keeps_every_v3_value_but_the_listed_changes():
     ],
 )
 def test_v4_structural_errors_always_stop_the_load(tmp_path, edit):
-    payload = json.loads(json.dumps(RAW))
-    edit(payload)
-    path = _write(tmp_path, payload)
-    for governed in (True, False):
-        with pytest.raises(ConfigPackageError):
-            load_config_package(path, governed=governed)
+    # Each refusal holds for v4.json, still readable (DI-100), and for the shipped v5, which keeps every v4 block (Phase 6
+    # spec 13.3). On v5 the schema_version=5 edit is no edit, so schema_version=6 stands for it there.
+    for base in (V4_RAW, RAW):
+        payload = json.loads(json.dumps(base))
+        edit(payload)
+        if base is RAW and payload.get("schema_version") == 5:
+            payload["schema_version"] = 6
+        path = _write(tmp_path, payload)
+        for governed in (True, False):
+            with pytest.raises(ConfigPackageError):
+                load_config_package(path, governed=governed)
 
 
 def test_v4_names_the_entry_schema_whose_provenance_fields_it_fills(tmp_path):
     # unused_provenance_fields describes the package's entry schema (ledger-entry-v3 in v4), as in v1 to v3; a v2 record
     # written under v4 with MODEL_GATEWAY off keeps the three Phase 5 fields null.
-    payload = json.loads(json.dumps(RAW))
-    payload["tutor_pipeline"]["unused_provenance_fields"] = ["tool_contract_version"]
-    with pytest.raises(ConfigPackageError, match="its entry schema, ledger-entry-v3, fills every provenance field"):
-        load_config_package(_write(tmp_path, payload), governed=True)
-    assert RAW["tutor_pipeline"]["ledger"]["entry_schema"] == "ledger-entry-v3"
-    assert {RAW["gateway"][block]["scope"] for block in ("budgets", "cache", "stop")} == {"database"} and RAW["gateway"]["stop"]["clear"] == "operator"
-    assert RAW["flag_policy"]["model_gateway"]["stop"] == "off_until_cleared"
-    assert all(RAW["v2"][block]["provisional"] is True for block in ("tiers", "voting", "correction", "degraded", "alignment"))
+    for base in (V4_RAW, RAW):
+        payload = json.loads(json.dumps(base))
+        payload["tutor_pipeline"]["unused_provenance_fields"] = ["tool_contract_version"]
+        with pytest.raises(ConfigPackageError, match="its entry schema, ledger-entry-v3, fills every provenance field"):
+            load_config_package(_write(tmp_path, payload), governed=True)
+        assert base["tutor_pipeline"]["ledger"]["entry_schema"] == "ledger-entry-v3"
+        assert {base["gateway"][block]["scope"] for block in ("budgets", "cache", "stop")} == {"database"} and base["gateway"]["stop"]["clear"] == "operator"
+        assert base["flag_policy"]["model_gateway"]["stop"] == "off_until_cleared"
+        assert all(base["v2"][block]["provisional"] is True for block in ("tiers", "voting", "correction", "degraded", "alignment"))
 
 
 def test_gateway_package_check_problems():
@@ -613,6 +624,7 @@ def test_gateway_package_check_problems():
 
     package = load_config_package(DEFAULT_PACKAGE_PATH, governed=True)
     assert check_gateway_package(package, structural=True) == []
+    assert check_gateway_package(load_config_package(V4_PACKAGE_PATH, governed=True), structural=True) == []
     assert check_gateway_package(load_config_package(V3_PACKAGE_PATH, governed=True), structural=False) == [
         "the configuration package has no gateway, v2 or tools block (package v4 is required)"]
     cases = {
@@ -630,3 +642,213 @@ def test_gateway_package_check_problems():
     for expected, broken in cases.items():
         problems = check_gateway_package(broken, structural=False)
         assert any(expected in problem for problem in problems), (expected, problems)
+
+
+# --- Package v5 (Phase 6) ---
+
+V5_SCHEMAS = {"V3GoldLabel": "schemas/v3-gold-label.v1.schema.json", "V3CusumAlarm": "schemas/v3-cusum-alarm.v1.schema.json"}
+
+
+def test_v4_stays_readable_for_one_release():
+    from app.gateway.package_check import check_gateway_package
+    from app.services.tutor_pipeline.package_check import check_tutor_pipeline_package
+    from app.services.v1_checks.package_check import check_v1_package
+
+    package = load_config_package(V4_PACKAGE_PATH, governed=True)
+    assert package.hash_verified and package.package_version == "4.0.0" and package.schema_version == 4 and not package.is_default_path
+    assert package.v3 is None and package.flag_policy.phase6_exit_passed is False and package.gateway is not None
+    assert package.sha256 == recorded_sha256(V4_PACKAGE_PATH) == canonical_sha256(V4_RAW) == RAW["supersedes"]["sha256"]
+    assert package.sha256 == "9cb984081c89c6f0d3b44cc36b38d3332383b76038734b4e21983d319c23408c"
+    assert check_tutor_pipeline_package(package, structural=True) == [] and check_v1_package(package, structural=True) == []
+    assert check_gateway_package(package, structural=True) == []
+
+
+def test_v5_keeps_every_v4_value_but_the_listed_changes():
+    assert (RAW["package_version"], RAW["schema_version"], RAW["phase"]) == ("5.0.0", 5, "6")
+    assert RAW["supersedes"] == {"package_version": "4.0.0", "sha256": canonical_sha256(V4_RAW), "readable_until": "the release after the Phase 6 merge"}
+    assert set(RAW) == set(V4_RAW) | {"v3"}
+    for key in V4_RAW:
+        if key not in {"package_version", "schema_version", "phase", "created", "supersedes", "flag_policy", "owner_decisions"}:
+            assert RAW[key] == V4_RAW[key], key
+    assert RAW["v2"]["correction"]["critical_registry"] == []
+    policy = dict(RAW["flag_policy"])
+    queue = policy.pop("v3_queue")
+    assert (queue["default_development"], queue["default_elsewhere"], queue["on_requires"], queue["disable"]) == (
+        "shadow", "off", "phase6_exit_passed", "releases_nothing")
+    assert policy.pop("phase6_exit_passed") is False and policy.pop("phase6_exit_evidence") is None
+    authority = policy.pop("authority")
+    assert authority.startswith(V4_RAW["flag_policy"]["authority"]) and "PD-38" in authority and "DI-98" in authority
+    assert policy == {key: value for key, value in V4_RAW["flag_policy"].items() if key != "authority"}
+    decisions = RAW["owner_decisions"]
+    assert set(decisions) == set(V4_RAW["owner_decisions"]) | {"D-08", "D-14", "D-18"}
+    for name, decision in V4_RAW["owner_decisions"].items():
+        if name not in ("D-06", "D-25"):
+            assert decisions[name] == decision, name
+    assert {key: value for key, value in decisions["D-06"].items() if key not in ("operator_values", "record")} == {
+        key: value for key, value in V4_RAW["owner_decisions"]["D-06"].items() if key != "record"}
+    assert decisions["D-06"]["operator_values"] == ["v3.slo", "v3.workflow.double_review"] and decisions["D-06"]["record"] == "DI-52; PD-36, PD-37; DI-98"
+    assert decisions["D-25"]["state"] == "open" and decisions["D-25"]["registry"] == [] and decisions["D-25"]["record"] == "PD-29, PD-33; DI-90"
+    assert decisions["D-18"]["state"] == "open" and decisions["D-18"]["reviewer_pool"] == "unstaffed" and decisions["D-18"]["ratified"] is False
+    assert decisions["D-08"]["state"] == decisions["D-14"]["state"] == "open"
+    v3 = RAW["v3"]
+    assert v3["provisional"] is True and all(v3[block]["provisional"] is True for block in (
+        "triggers", "priority", "draw", "workflow", "critical_claims", "slo", "reviewers"))
+    assert {name: pin["path"] for name, pin in v3["schemas"].items()} == V5_SCHEMAS
+    registries = v3["critical_claims"]["registries"]
+    assert [len(registries[name]["claims"]) for name in ("development", "staging", "production", "default")] == [3, 0, 0, 0]
+    assert registries["development"]["synthetic"] is True
+    assert v3["draw"]["rate"] == {"numerator": 1, "denominator": 20} and v3["triggers"]["x5"]["audit_rate"] == {"numerator": 1, "denominator": 5}
+    assert v3["workflow"]["double_review"]["rate"] == {"numerator": 1, "denominator": 10} and v3["reviewers"]["pool"] == "unstaffed"
+    package = load_config_package(DEFAULT_PACKAGE_PATH, governed=True)
+    assert package.v3.critical_registry_for("development") == tuple(entry["claim_id"] for entry in registries["development"]["claims"])
+    assert package.v3.critical_registry_for("staging") == package.v3.critical_registry_for("production") == ()
+    assert package.v3.critical_registry_for("preview") == ()  # an unnamed environment reads the default registry
+
+
+def _v3_block(payload: dict) -> dict:
+    return payload["v3"]
+
+
+def _unmark(block: str):
+    return lambda p: _v3_block(p)[block].pop("provisional")
+
+
+def _duplicate_development_entry(payload: dict) -> None:
+    claims = _v3_block(payload)["critical_claims"]["registries"]["development"]["claims"]
+    claims.append(dict(claims[0]))
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        lambda p: p.pop("v3"),
+        lambda p: _v3_block(p).update(provisional=False),
+        lambda p: _v3_block(p).update(version="v3-audit-v2"),
+        *(_unmark(block) for block in ("triggers", "priority", "draw", "workflow", "critical_claims", "slo", "reviewers")),
+        lambda p: _v3_block(p)["triggers"].update(version="x-triggers-v2"),
+        lambda p: _v3_block(p)["triggers"]["rules"].update(X6="float-draw-v1"),
+        lambda p: _v3_block(p)["triggers"]["x1"].update(min_objections=2),
+        lambda p: _v3_block(p)["triggers"]["x1"].update(revision="allowed"),
+        lambda p: _v3_block(p)["triggers"]["x1"].update(hold="none"),
+        lambda p: _v3_block(p)["triggers"]["x2"].update(ehmf_types=["A", "B", "C"]),
+        lambda p: _v3_block(p)["triggers"]["x4"].update(margin_source="v1.v1_5.other"),
+        lambda p: _v3_block(p)["triggers"]["x5"].update(audit_rate={"numerator": 1, "denominator": 4}),
+        lambda p: _v3_block(p)["triggers"]["x5"].update(window_deliveries=0),
+        lambda p: _v3_block(p)["triggers"].update(counted=["X1", "X2", "X3", "X4", "X6"]),
+        lambda p: _v3_block(p)["triggers"].update(queue_reasons=["v1_3_flag"]),
+        lambda p: _v3_block(p)["priority"].update(rule="severity-only-v1"),
+        lambda p: _v3_block(p)["priority"].update(exposure_rule="one-v1"),
+        lambda p: _v3_block(p)["priority"]["severity"].update(C=0.7),
+        lambda p: _v3_block(p)["priority"]["severity"].update(disclosed_conflict=0.6),
+        lambda p: _v3_block(p)["priority"]["severity"].update(unknown=1.5),
+        lambda p: _v3_block(p)["priority"]["severity"].pop("E"),
+        lambda p: _v3_block(p)["priority"].update(tie_break=["item_id", "enqueued_at"]),
+        lambda p: _v3_block(p)["draw"].update(rule="float-bernoulli-v1"),
+        lambda p: _v3_block(p)["draw"].update(seed="Not A Seed"),
+        lambda p: _v3_block(p)["draw"].update(rate={"numerator": 1, "denominator": 10}),
+        lambda p: _v3_block(p)["draw"].update(population=["legacy"]),
+        lambda p: _v3_block(p)["workflow"].update(lease_s=10),
+        lambda p: _v3_block(p)["workflow"]["double_review"].update(rate={"numerator": 1, "denominator": 5}),
+        lambda p: _v3_block(p)["workflow"].update(max_rounds=2),
+        lambda p: _v3_block(p)["workflow"].update(self_review="allowed"),
+        lambda p: _v3_block(p)["workflow"].update(apply_by="adjudicator"),
+        lambda p: _v3_block(p)["workflow"].update(independence="reviewer_digest"),
+        lambda p: _v3_block(p)["workflow"].update(applies_to_ledger=True),
+        lambda p: _v3_block(p)["workflow"].update(releases_withheld=True),
+        lambda p: _v3_block(p)["workflow"].update(blind_to=["finals"]),
+        lambda p: _v3_block(p)["workflow"].update(unreviewable="claimable"),
+        lambda p: _v3_block(p)["gold_store"].update(append_only=False),
+        lambda p: _v3_block(p)["gold_store"].update(restore="import"),
+        lambda p: _v3_block(p)["gold_store"].update(chain="tutor-responses"),
+        # D-25 open: no registry outside development, and the development one is synthetic and well formed.
+        lambda p: _v3_block(p)["critical_claims"]["registries"]["staging"]["claims"].append({"claim_id": "claim-" + "a" * 32, "query_index": 1}),
+        lambda p: _v3_block(p)["critical_claims"]["registries"]["production"]["claims"].append({"claim_id": "claim-" + "a" * 32, "query_index": 1}),
+        lambda p: _v3_block(p)["critical_claims"]["registries"]["development"].pop("synthetic"),
+        lambda p: _v3_block(p)["critical_claims"]["registries"]["development"]["claims"].append({"claim_id": "claim-x", "query_index": 1}),
+        lambda p: _v3_block(p)["critical_claims"]["registries"]["development"]["claims"][0].pop("query_index"),
+        _duplicate_development_entry,
+        lambda p: _v3_block(p)["critical_claims"]["registries"].pop("default"),
+        lambda p: _v3_block(p)["critical_claims"].update(fixture="../outside.json"),
+        lambda p: p["v2"]["correction"].update(critical_registry=["claim-" + "b" * 32]),
+        # A decided D-25 passes the v2 rule (PD-29), and v5 still refuses a v2 registry: v3.critical_claims supersedes it.
+        lambda p: (p["owner_decisions"]["D-25"].update(state="decided"), p["v2"]["correction"].update(critical_registry=["claim-" + "b" * 32])),
+        lambda p: _v3_block(p)["slo"].update(queue_age_slo_s=60),
+        lambda p: _v3_block(p)["slo"].update(stop_window_s=86400),
+        lambda p: _v3_block(p)["slo"].update(stop_sample_s=7000),
+        lambda p: _v3_block(p)["slo"].update(stop_measure="queue_age_p90"),
+        lambda p: _v3_block(p)["slo"].update(stop_tier1="none"),
+        lambda p: _v3_block(p)["slo"].update(unreadable="clear"),
+        lambda p: _v3_block(p)["slo"].update(escalation_share_max={"numerator": 1, "denominator": 5}),
+        lambda p: _v3_block(p)["slo"].update(window_days=0),
+        lambda p: _v3_block(p)["residual"].update(population="every_delivery"),
+        lambda p: _v3_block(p)["reviewers"].update(pool="staffed"),
+        lambda p: _v3_block(p)["reviewers"].update(outside_development="admitted"),
+        lambda p: _v3_block(p)["reviewers"].update(flag_intake="everywhere"),
+        lambda p: _v3_block(p)["reviewers"].update(role="admin"),
+        lambda p: _v3_block(p)["schemas"].pop("V3CusumAlarm"),
+        lambda p: _v3_block(p)["schemas"]["V3GoldLabel"].update(sha256="xyz"),
+        lambda p: _v3_block(p)["schemas"]["V3GoldLabel"].update(path="../gold.json"),
+        lambda p: p["owner_decisions"].pop("D-18"),
+        lambda p: p["owner_decisions"].pop("D-08"),
+        lambda p: p["owner_decisions"].pop("D-14"),
+        lambda p: p["flag_policy"]["v3_queue"].update(default_elsewhere="shadow"),
+        lambda p: p["flag_policy"]["v3_queue"].update(default_development="on"),
+        lambda p: p["flag_policy"]["v3_queue"].update(on_requires="nothing"),
+        lambda p: p["flag_policy"]["v3_queue"].update(disable="releases_held"),
+        lambda p: p["flag_policy"].update(phase6_exit_passed="no"),
+        lambda p: p["flag_policy"].update(phase6_exit_passed=True),
+        lambda p: p["flag_policy"].update(authority=V4_RAW["flag_policy"]["authority"]),
+        lambda p: p.update(schema_version=6),
+    ],
+)
+def test_v5_structural_errors_always_stop_the_load(tmp_path, edit):
+    payload = json.loads(json.dumps(RAW))
+    edit(payload)
+    path = _write(tmp_path, payload)
+    for governed in (True, False):
+        with pytest.raises(ConfigPackageError):
+            load_config_package(path, governed=governed)
+
+
+def test_v3_package_check_problems():
+    import dataclasses
+
+    from app.services.v3.package_check import check_v3_package
+
+    package = load_config_package(DEFAULT_PACKAGE_PATH, governed=True)
+    assert check_v3_package(package, structural=True) == []
+    assert check_v3_package(load_config_package(V4_PACKAGE_PATH, governed=True), structural=False) == [
+        "the configuration package has no v3 block (package v5 is required)"]
+    pins = dict(package.v3.schemas)
+    cases = {
+        "does not match its pinned sha256": dataclasses.replace(package, v3=dataclasses.replace(
+            package.v3, schemas={**pins, "V3GoldLabel": dataclasses.replace(pins["V3GoldLabel"], sha256="0" * 64)})),
+        "is missing or not JSON": dataclasses.replace(package, v3=dataclasses.replace(
+            package.v3, schemas={**pins, "V3CusumAlarm": dataclasses.replace(pins["V3CusumAlarm"], path="schemas/missing.json")})),
+        "v3.trigger_rules": dataclasses.replace(package, v3=dataclasses.replace(package.v3, trigger_rules={**package.v3.trigger_rules, "X6": "other"})),
+        "v3.counted": dataclasses.replace(package, v3=dataclasses.replace(package.v3, counted=("X1", "X2", "X3", "X4", "X6"))),
+        "v3.draw_rule": dataclasses.replace(package, v3=dataclasses.replace(package.v3, draw_rule="float-v1")),
+    }
+    for expected, broken in cases.items():
+        problems = check_v3_package(broken, structural=False)
+        assert any(expected in problem for problem in problems), (expected, problems)
+    missing_fixture = dataclasses.replace(package, v3=dataclasses.replace(package.v3, critical_fixture="apps/api/tests/data/missing.json"))
+    assert any("missing" in problem for problem in check_v3_package(missing_fixture, structural=True))
+    assert check_v3_package(missing_fixture, structural=False) == []  # start-up never reads apps/api/tests/
+
+
+def test_the_v3_start_up_check_runs_from_the_image_layout(monkeypatch):
+    # In the image the V3 check is /app/app/services/v3/package_check.py: no checkout above /app and no apps/api/tests/.
+    # Start-up imports it (lifespan -> _initialize_database -> _check_tutor_pipeline_package -> _check_v3_package), so it
+    # must check the shipped package there without the development registry's fixture; only the structural check reads it.
+    from app import main as main_module
+    from app.services import v3 as v3_service
+
+    image = _image_module("services/v3/package_check.py", "app.services.v3.package_check")
+    monkeypatch.setitem(sys.modules, "app.services.v3.package_check", image)
+    monkeypatch.setattr(main_module, "settings", Settings(environment="production", v3_queue="shadow"))
+    package = load_config_package(DEFAULT_PACKAGE_PATH, governed=True)
+    main_module._check_v3_package(package)  # a governed build with V3 requested: any problem raises ConfigPackageError
+    assert v3_service.V3_UNAVAILABLE_REASON is None
+    assert image.check_v3_package(package, structural=False) == []
+    assert image.check_v3_package(package, structural=True) == [f"v3.critical_claims.fixture: {package.v3.critical_fixture} is missing"]
