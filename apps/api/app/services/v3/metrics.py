@@ -16,6 +16,8 @@ slis(db, package, now) reports, from the stored queue, draws, gold rows and ledg
                     no_audited_answers true, while none is audited)
   gold              rows, the head, the claims labelled (toward Dawid-Skene's 200, a non-goal before then, DI-102)
   stop, x5          the stop (stop.stop_state) and the X5 windows
+  ehmf              the EHMF SLIs (ehmf.metrics.slis, Phase 7 spec 4.11) when settings are given and EHMF is not off;
+                    else null (no EHMF read)
 Ratios are "k/n" strings, so no float rounding is published. Counts only: no id, no digest, no text. Served on the
 reviewer-only GET /v3/metrics (development only while D-18 is open: outside development it refuses every caller) and the
 worker's status line (python -m app.workers.v3_queue status), the only source outside development; never on the public
@@ -69,6 +71,12 @@ def non_auditable(db: Session, *, now: datetime | None = None) -> dict:
             "pending": int(coverage["pending"])}
 
 
+def _ehmf_mode(settings: Any, package: Any) -> str:
+    from app.services import ehmf
+
+    return ehmf.mode(settings, package)
+
+
 def _delivery_seqs(db: Session, items: list[tuple[int, str]]) -> set[int]:
     """The delivery seq of each (ledger_seq, record_kind) item: its own for a delivery, the shadowed delivery's for a
     shadow record (skipped when that record is absent)."""
@@ -84,7 +92,7 @@ def _delivery_seqs(db: Session, items: list[tuple[int, str]]) -> set[int]:
     return seqs
 
 
-def slis(db: Session, package: Any, *, now: datetime) -> dict:
+def slis(db: Session, package: Any, *, now: datetime, settings: Any = None) -> dict:
     from app.db_models import V3Claim, V3Draw, V3Event, V3GoldLabelRecord, V3QueueItem
     from app.services.v3.queue import split, utc
     from app.services.v3.residual import residual
@@ -123,8 +131,9 @@ def slis(db: Session, package: Any, *, now: datetime) -> dict:
             claims_labelled += len(json.loads(entry).get("claim_labels") or [])
     windows = open_windows(db)
     ehmf = None
-    if getattr(package, "ehmf", None) is not None:
-        # Phase 7 (spec 4.11): the EHMF SLIs over the typed records, with the stop state read in this session.
+    if getattr(package, "ehmf", None) is not None and settings is not None and _ehmf_mode(settings, package) != "off":
+        # Phase 7 (spec 4.11): the EHMF SLIs over the typed records, with the stop state read in this session (a SAVEPOINT
+        # on PostgreSQL), only when EHMF is not off: off is Phase 6 exactly, with no EHMF read and ehmf null.
         from app.services.ehmf.metrics import slis as ehmf_slis
         from app.services.ehmf.stop import stop_state as ehmf_stop_state
 

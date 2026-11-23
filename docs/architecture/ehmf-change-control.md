@@ -21,24 +21,38 @@ CI runs `python scripts/run_golden_set.py --check docs/evaluation/phase7/golden_
 3. a fresh run: an unmet expectation, or a delivered citation that does not resolve (13.9(a): 100%), exits 3; outcomes or
    inputs differing from the record exit 1 (drift blocks promotion).
 
+`--write` refuses (exit 6) to replace a record whose package has the same `package_version` and a different sha256: a
+record's `config_version` is its package version, and the rising-A/B stop (plan Phase 7 L) finds a change only where
+`config_version` differs between records, so an edit that kept the version could never be compared before and after.
+
+`--write` refuses (exit 4) a working tree that differs from HEAD unless `--allow-dirty` is passed. The record is committed in the same change as the code it covers, so it is written before that commit exists: run `--write` with `--allow-dirty` on the finished change, and the record's `commit` names the parent commit with the suffix `-dirty` (the tree it ran on differed from that commit). The code it ran is identified by `inputs.sha256` (every application module and the two runner scripts, LF-normalised), which `--check` compares with a fresh run. On a tree equal to HEAD (a record rewritten after its code was committed) `commit` is that commit, with no suffix.
+
 The run uses its own in-memory database, the all-public-approved store, development settings (V1 enforce,
 MODEL_GATEWAY=on, EHMF=on) and the development fake adapters. It is a change-control gate, not research results.
 
 ## The procedure
 
-1. Edit the package, the library, the routing, a weight, the golden set or a threshold.
+1. Edit the package, the library, the routing, a weight, the golden set or a threshold, and bump the package's
+   `package_version` (every one of these edits changes the package's sha256: the library, routing and golden set are
+   pinned in it). The version is the record's `config_version`; `--write` refuses an edit that keeps it (exit 6).
 2. Rerun the golden set: `python scripts/config_package.py --rehash` (when the package or the library changed), then
-   `python scripts/run_golden_set.py --write docs/evaluation/phase7/golden_run_v1.json` on a clean tree.
-3. Commit the new record in the same pull request.
+   `python scripts/run_golden_set.py --write docs/evaluation/phase7/golden_run_v1.json --allow-dirty` on the finished
+   change (the record names the parent commit with `-dirty`; its `inputs.sha256` identifies the code).
+3. Commit the new record in the same commit or pull request as the change.
 4. CI is green (`--check`, and every other validator).
 5. The pull request review approves. With one maintainer the approver is the owner (P1-D-18); "the X6 auditor MUST NOT
    audit their own change" stays DI-99.
 
 ## Rollback
 
-"Reload the prior package" (plan Phase 7 L): set `CONFIG_PACKAGE_PATH` to the prior file (v5 stays readable for one
-release, DI-112), or deploy the prior image digest. Nothing writes configuration automatically (D-05): the rising-A/B stop
-only reports "revert required" on `/ready` and raises the audit draw to 1/5; the revert is the operator's.
+"Reload the prior package" (plan Phase 7 L): a stop only follows a change between two packages with an ehmf block
+(6.x to 6.y), so the prior package is the earlier 6.x file the stop names in `from_config_version`: set
+`CONFIG_PACKAGE_PATH` to it, or deploy the prior image digest. With it in force the stop state reads `reverted` and
+`/ready` reports `ehmf.stop.revert_required` false. Reloading v5 (readable for one release, DI-112; no ehmf block) is
+not a revert of the stop: it turns EHMF off (`/ready` `ehmf` null, no stop read). Record the stops first
+(`python -m app.workers.ehmf status`; under a package without an ehmf block it logs `ehmf.status_refused` with the rows
+and exits 2). Nothing writes configuration automatically (D-05): the rising-A/B stop only reports "revert required" on
+`/ready` and raises the audit draw to 1/5; the revert is the operator's.
 
 ## The library edit path
 
@@ -46,7 +60,8 @@ The misconception library is edited only by the Content Owner or from V3 (plan t
 `content_owner` or `v3:<gold record hash>`; its `paraphrase` is a public-corpus paraphrase (never licensed text, E-95, at
 most 280 characters, sharing no run of more than 8 words with a cited span); its `span_ids` resolve in the public corpus.
 Library v1 ships with no production entries (Q-14 unavailable, A-18; DI-106). An edit is a change under this procedure:
-edit the file, rehash (the sidecar and the package pin), rerun the golden set, commit the record.
+edit the file, bump the package's `package_version`, rehash (the sidecar and the package pin), rerun the golden set,
+commit the record.
 
 ## The V3 proposal path
 

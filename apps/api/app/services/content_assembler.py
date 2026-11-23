@@ -1082,6 +1082,8 @@ class CourseStore:
         self.chunks = entries
         self.entry_by_span_id = {entry.span_id: entry for entry in entries}
         self.gate = settings.retrieval_gate or "p1-floor"
+        # Fixed for the life of the store: /ready reports penalty_active (what this index applies), never a recomputed mode.
+        self.penalty_active = _penalty_active(settings, self.package)
         self.penalties = _span_penalties(settings, self.package)
         self.index = LexicalIndex(entries, self.package.retrieval, self.package.abstention, gate=self.gate, penalties=self.penalties)
         self.corpus_version = registry.corpus_version
@@ -1356,13 +1358,18 @@ def _format_timestamp(seconds: int) -> str:
     return f"{minutes:02d}:{secs:02d}"
 
 
-def _span_penalties(settings: Any, package: Any) -> dict:
-    """The span penalties of the shared index (Phase 7 spec 4.7; PD-45): the environment's registry from package v6 only
-    when EHMF is on, else none. They depend on span ids and the environment only, never on a learner (invariant 1)."""
+def _penalty_active(settings: Any, package: Any) -> bool:
+    """Whether the shared index applies the environment's penalty registry: package v6 and EHMF on when the store is built."""
     if getattr(package, "ehmf", None) is None or getattr(settings, "ehmf", None) != "on":
-        return {}
+        return False
     from app.services import ehmf
 
-    if ehmf.mode(settings, package) != "on":
+    return ehmf.mode(settings, package) == "on"
+
+
+def _span_penalties(settings: Any, package: Any) -> dict:
+    """The span penalties of the shared index (Phase 7 spec 4.7; PD-45): the environment's registry from package v6 only
+    when EHMF is on at build, else none. They depend on span ids and the environment only, never on a learner (invariant 1)."""
+    if not _penalty_active(settings, package):
         return {}
     return dict(package.ehmf.penalties_for(settings.environment))

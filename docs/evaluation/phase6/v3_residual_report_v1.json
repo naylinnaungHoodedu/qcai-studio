@@ -1,8 +1,8 @@
 {
  "report": "qcai-v3-residual-report",
  "format_version": 1,
- "created_at": "2026-11-23T14:59:18+00:00",
- "commit": "31343c86c23007cec227b38413e0e53140f714a5-dirty",
+ "created_at": "2026-11-23T17:10:32+00:00",
+ "commit": "c8a1981b8a3589e00cc1fb181c1fc44b97b5bd0a-dirty",
  "evidence_class": "synthetic telemetry, not research results (plan Phase 6 H: audit counts are telemetry, not research results)",
  "public_corpus_only": true,
  "config_package": {
@@ -89,7 +89,7 @@
    "apps/api/app/__init__.py": "a45661633011b095a62071507cf3309e100424dd64d34feabf2cc6d084696348",
    "apps/api/app/core/client_identity.py": "ebba54c74b9b28abe10deddfc3b1f300738de3be3ac49a437cf08de16f338f8a",
    "apps/api/app/core/config.py": "24b05787401ae696734fc3bee483d89a4b7108ef25ce88cc761a3e24c83d8899",
-   "apps/api/app/core/config_package.py": "4ecd7e0b9a5b9957f4a611036c8732ca075b0a79179738e24adb46c0cb83dcaa",
+   "apps/api/app/core/config_package.py": "6c67674663b2838156e2e54b2de98bab639b51a78ce76286f2995ee6d5ce9a50",
    "apps/api/app/core/corpus_governance.py": "39153061b8d613ca0298a5210b4d9abeb4da2298608b1b471c0cf659a7f9a4fd",
    "apps/api/app/core/data_planes.py": "195f35a4a4a01cabeb32d48a0d81c1beb0ca714e943d7c154abe3e96a35a5976",
    "apps/api/app/core/db.py": "81d5e54a250dc4e3d6d477ad33bb37f78cee4a98854330e39e223f1ab44b6014",
@@ -112,13 +112,13 @@
    "apps/api/app/services/citation_migration.py": "15968f9b4d25c3d5fe16dd93d4bb2c58c5a6ce8be78e221262bb2fa29a6d357e",
    "apps/api/app/services/claim_gate.py": "dd3fa79d6a39f3cf30141471622e0f487059eaa80669332c1eab7d5adbe6ca28",
    "apps/api/app/services/contained_answers.py": "b32a28b65f294fb7de09229679ca2503666de9c45e8179f1f4f52c0302c96e99",
-   "apps/api/app/services/content_assembler.py": "915e1fd28ec5a633f3dd2812b622280b36b15d162050e67e349c345bbf1093b9",
+   "apps/api/app/services/content_assembler.py": "f7ac4499fe077f3b540323eceff37de5a80e59fabc510ddaec93e688458914fa",
    "apps/api/app/services/docx_parser.py": "c0b549050d0381f0bf14a26052fa66d082e9d470ca284b35e9529ed872274bd1",
    "apps/api/app/services/ehmf/__init__.py": "e82e8b2e8fdc9423bc7d1deb3cf12aeadd002ae24a20a560975ecd7f29c940bd",
    "apps/api/app/services/ehmf/library.py": "0e59e2ca25face0b675517473fa6788f23cfb5854b58363a1e64a6be03bfdfdf",
    "apps/api/app/services/ehmf/routing.py": "9ef0d00d92ed6295255f7ef6384d424fa2acf7554ca49afd4a1f5e8fd92bb4bd",
-   "apps/api/app/services/ehmf/stop.py": "60c46e9ab6cf2a459202623955e10dcc7a50c59f1b7320a853ecc7ae19597fb6",
-   "apps/api/app/services/ehmf/vocabulary.py": "964ad70589e3a06ca6609d6b59ccdd945a67dbff053d162c9019aa7b3b0d8c19",
+   "apps/api/app/services/ehmf/stop.py": "5af4b09f5c4b7a92e76d48238b756047aed678e38070ea4cdcd841316c704cab",
+   "apps/api/app/services/ehmf/vocabulary.py": "66325cd0a261e5ad7163cc96b33068d38b1ab86def36c70758ec5959c265b89e",
    "apps/api/app/services/erasure.py": "c10befb09d853a7c785f9547576a5a94d41e22b1e1e0882114cd6c55ea9196cb",
    "apps/api/app/services/evidence_panel.py": "847fd155b1c1ceb12b9f1f336ed0df7d6efae107554b5a3f53049720718f3f45",
    "apps/api/app/services/ledger.py": "bee94a1cc0042b07d8c5a81978c4378acdad2e679b1d68d583dbaf792fef564c",
@@ -166,6 +166,6 @@
    "apps/api/app/services/v3/triggers.py": "7634c7eb14f7c98aab3516648e2c7a597b51e8a8fa1232cdf430e43ea32b89e0",
    "scripts/run_v3_residual_report.py": "03996c3f3f5b102ba6cb38e9328fcfd8107856d3e0782f4fb26dfbd46832adbd"
   },
-  "sha256": "a3d7d41fb2cc2370e91d7d619f812b8f6b5d83469062c60506c35fcab5b350d3"
+  "sha256": "16370473d39d9e9e771c97ec05f783d911a61186917ca078e1f8c8814fa1bcf3"
  }
 }

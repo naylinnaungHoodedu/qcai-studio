@@ -4,7 +4,8 @@
 Computed state over the typed records (ledger-entry-v4), never a configuration write (D-05):
   ab_series   per typed record (seq, config_version, typed claims, A/B claims) of the last stop.scan_records records
   detect      for each change of config_version, the A/B claims among the first window_claims typed claims of the new
-              version against those among the last window_claims of the old one; active at min_claims new claims, at
+              version against those among the last window_claims of the old one, evaluated only while that old-version
+              window is whole (a change point pushed to the scan's start, its window cut, is skipped); active at min_claims new claims, at
               least min_ab A/B claims and a rate above rise times the old (integers only). It inserts one ehmf_stops row
               per change (ON CONFLICT DO NOTHING RETURNING seq); v3.scan.open_windows reads it as a window of raised
               audit rate (1/5, plan "sets audit to 20%") over the next v3 X5 window of learner deliveries after
@@ -56,14 +57,20 @@ def _typed_counts(entry: dict) -> tuple[int, int]:
 
 def ab_series(db: Session, *, limit_records: int) -> list[tuple[int, str, int, int]]:
     """(seq, config_version, typed claims, A/B claims) of the last limit_records ledger-entry-v4 records, in seq order."""
+    return _series(db, limit_records=limit_records)[0]
+
+
+def _series(db: Session, *, limit_records: int) -> tuple[list[tuple[int, str, int, int]], bool]:
+    """ab_series and whether earlier typed records exist beyond the scan (the series is cut at its start)."""
     from app.db_models import ResponseLedgerRecord
     from app.services.ledger import config_version_of
 
     rows = db.execute(select(ResponseLedgerRecord.seq, ResponseLedgerRecord.entry)
                       .where(ResponseLedgerRecord.entry_schema == "ledger-entry-v4")
-                      .order_by(ResponseLedgerRecord.seq.desc()).limit(int(limit_records))).all()
+                      .order_by(ResponseLedgerRecord.seq.desc()).limit(int(limit_records) + 1)).all()
+    cut = len(rows) > int(limit_records)
     series = []
-    for seq, raw in reversed(rows):
+    for seq, raw in reversed(rows[:int(limit_records)]):
         try:
             entry = json.loads(raw)
         except (TypeError, ValueError):
@@ -72,7 +79,7 @@ def ab_series(db: Session, *, limit_records: int) -> list[tuple[int, str, int, i
             continue
         typed, ab = _typed_counts(entry)
         series.append((int(seq), config_version_of(entry.get("versions")), typed, ab))
-    return series
+    return series, cut
 
 
 def _fires(before_claims: int, before_ab: int, after_claims: int, after_ab: int, params: Any) -> bool:
@@ -86,7 +93,7 @@ def detect(db: Session, package: Any, *, now: datetime) -> int | None:
     from app.db_models import EhmfStop
 
     params = package.ehmf
-    series = ab_series(db, limit_records=params.stop_scan_records)
+    series, cut = _series(db, limit_records=params.stop_scan_records)
     inserted = None
     for index in range(1, len(series)):
         if series[index][1] == series[index - 1][1]:
@@ -95,8 +102,17 @@ def detect(db: Session, package: Any, *, now: datetime) -> int | None:
         before_claims = before_ab = 0
         for _seq, version, typed, ab in reversed(series[:index]):
             if version != old_version or before_claims >= params.stop_window_claims:
+                complete = True
                 break
             before_claims, before_ab = before_claims + typed, before_ab + ab
+        else:
+            # The walk reached the series' start: whole only when it filled the window or no earlier record exists.
+            complete = before_claims >= params.stop_window_claims or not cut
+        if not complete:
+            # The before-window was cut by the scan's start (stop.scan_records): later records pushed the change point
+            # to the edge, so its old-version window is no longer the one the stop compares against. A scan that saw
+            # the whole window evaluated it; evaluating a truncated one would fire without any rise.
+            continue
         after_claims = after_ab = 0
         detected_seq = None
         for seq, version, typed, ab in series[index:]:
@@ -132,10 +148,18 @@ STOP_STATEMENT_COLUMNS = ("to_config_version", "from_config_version")
 
 
 def stop_state(db: Session, package: Any) -> StopState:
+    """The latest row's state. The read runs in a SAVEPOINT on PostgreSQL, so a failed read (a missing or unreadable
+    ehmf_stops) is rolled back to it and the caller's session stays usable (an aborted transaction would refuse every
+    later statement); SQLite does not abort a transaction on a failed statement."""
     from app.db_models import EhmfStop
 
+    statement = select(EhmfStop.to_config_version, EhmfStop.from_config_version).order_by(EhmfStop.seq.desc()).limit(1)
     try:
-        row = db.execute(select(EhmfStop.to_config_version, EhmfStop.from_config_version).order_by(EhmfStop.seq.desc()).limit(1)).first()
+        if db.get_bind().dialect.name == "postgresql":
+            with db.begin_nested():
+                row = db.execute(statement).first()
+        else:
+            row = db.execute(statement).first()
     except Exception:  # noqa: BLE001 - an unreadable state is reported as such, never as clear
         LOGGER.warning("The EHMF stop state could not be read", extra={FIELDS: {"event": "ehmf.stop_unread"}})
         return StopState(None, "unreadable", None, None)

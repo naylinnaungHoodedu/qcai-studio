@@ -523,10 +523,12 @@ def _parse_tutor_pipeline(raw: Mapping[str, Any], *, schema_version: int = 2) ->
     _require(ratio > 0, "tutor_pipeline.stop.phase2_bound_claim_ratio must be in (0, 1]")
     unused = tuple(tutor.get("unused_provenance_fields") or ())
     if schema_version >= 4:
-        # The list describes the package's entry schema (tutor_pipeline.ledger.entry_schema), as in v1 to v3: package v4's,
-        # ledger-entry-v3, fills every provenance field (plan 7.4). A ledger-entry-v2 record written under v4 with
-        # MODEL_GATEWAY off keeps the three Phase 5 fields null, as a v1 record under v3 kept v1_3_checker_model_id null.
-        _require(unused == (), "tutor_pipeline.unused_provenance_fields must be empty in package v4 (its entry schema, ledger-entry-v3, fills every provenance field)")
+        # The list describes the package's entry schema (tutor_pipeline.ledger.entry_schema), as in v1 to v3: package v4's
+        # and v5's, ledger-entry-v3, and v6's, ledger-entry-v4, fill every provenance field (plan 7.4). A ledger-entry-v2
+        # record written under v4 with MODEL_GATEWAY off keeps the three Phase 5 fields null, as a v1 record under v3 kept
+        # v1_3_checker_model_id null.
+        _require(unused == (), f"tutor_pipeline.unused_provenance_fields must be empty in package v{schema_version} (its entry schema, "
+                               f"{ledger.get('entry_schema')}, fills every provenance field)")
         _require(ledger.get("legacy_entry_schema") == "ledger-entry-v1", "tutor_pipeline.ledger.legacy_entry_schema must be 'ledger-entry-v1'")
         expected = LEDGER_ENTRY_SCHEMAS_V6 if schema_version >= 6 else LEDGER_ENTRY_SCHEMAS_V4
         _require(ledger.get("entry_schemas") == list(expected), f"tutor_pipeline.ledger.entry_schemas must be [{', '.join(expected)}]")

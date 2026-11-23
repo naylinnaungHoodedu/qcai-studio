@@ -109,6 +109,7 @@ def test_ac_7_2_an_unresolvable_citation_is_b1_final_whatever_the_votes_or_a_gol
     b1 = [f for f in record.ehmf.response_findings if f.type == "B1"]
     assert sorted({f.attempt for f in b1}) == list(range(1, record.generation_attempts + 1)) and record.generation_attempts >= 2
     assert all(verdict.v2 is None for verdict in record.verdicts) and record.v2.calls == 0
+    _a_gold_label_leaves_the_b1_record_final(result.entry)
     # (b) attempt 1 has one invented citation among valid claims: the whole candidate is discarded, attempt 2 is judged
     # from the start, and the record keeps the attempt-1 B1 finding (rule 3 reads the accepted attempt)
     result = typed_record(generator=UnresolvableThenCleanGenerator(), adapters=supported)
@@ -136,6 +137,34 @@ def test_ac_7_2_an_unresolvable_citation_is_b1_final_whatever_the_votes_or_a_gol
                                   "reported_type": None, "family": None})
         claim["primary"], claim["weight"] = "B1", "1"
     refused(VerificationRecordV4, good, b1_on_delivered, "B1 finding")
+
+
+def _a_gold_label_leaves_the_b1_record_final(entry) -> None:
+    """(c) a V3 gold label that calls every claim SUPPORTED and the abstention a missed answer, adjudicated and applied,
+    appends one gold row and changes no ledger row: the record stays abstain with its B1 findings (gold labels never
+    rewrite the ledger, Phase 6 AC-6-4)."""
+    from sqlalchemy import select
+
+    from app.db_models import ResponseLedgerRecord, V3GoldLabelRecord
+    from app.services.v3 import queue
+    from app.services.v3.contracts import ApplyRequest
+    from v3_fakes import FIXED_NOW, fresh_v3_sessions, seed_items, supported_labels
+
+    with fresh_v3_sessions() as (factory, _engine):
+        ids = seed_items(factory, [entry], package=PACKAGE, now=FIXED_NOW, double_review=False)
+        with factory() as db:
+            before = db.execute(select(ResponseLedgerRecord.entry, ResponseLedgerRecord.record_hash)).all()
+            request = supported_labels(entry)("ac72-gold").model_copy(update={"abstention_label": "missed_answer"})
+            queue.claim_item(db, ids[0], user_id="synthetic-reviewer-a", now=FIXED_NOW, package=PACKAGE)
+            queue.adjudicate(db, ids[0], request, user_id="synthetic-reviewer-a", now=FIXED_NOW, package=PACKAGE)
+            queue.apply_item(db, ids[0], ApplyRequest(client_key="ac72-apply"), user_id="synthetic-reviewer-b", now=FIXED_NOW)
+            assert len(db.execute(select(V3GoldLabelRecord.seq)).all()) == 1
+            after = db.execute(select(ResponseLedgerRecord.entry, ResponseLedgerRecord.record_hash)).all()
+        assert after == before
+        stored = LedgerEntryV4.model_validate_json(after[0][0]).verification
+        assert stored.final == "abstain" and stored.hard_fail is True
+        assert [f.type for f in stored.ehmf.response_findings if f.source == "V1.1"] and all(
+            f.type == "B1" for f in stored.ehmf.response_findings if f.source == "V1.1")
 
 
 # ===================================================================================================== AC-7-3
@@ -301,7 +330,26 @@ def test_ac_7_6_a_package_edit_without_a_golden_set_run_fails_the_ci_check(tmp_p
 # ===================================================================================================== plan J
 
 
+def test_ac_7_6_a_package_edit_that_keeps_its_version_is_refused_at_write(tmp_path, capsys):
+    # config_version is the package version and the rising-A/B stop sees a change only where it differs, so --write
+    # refuses (exit 6) a package whose sha256 differs from the record's under the same package_version.
+    golden = scripts_module("run_golden_set")
+    record = tmp_path / "golden_run.json"
+    record.write_text(RECORD.read_text(encoding="utf-8"), encoding="utf-8")
+    edited = package_copy(tmp_path / "a", lambda raw: raw["ehmf"]["stop"].update(window_claims=201))
+    assert golden.main(["--write", str(record), "--package", str(edited), "--allow-dirty"]) == golden.EXIT_PIN
+    assert "bump package_version" in capsys.readouterr().err
+    assert record.read_text(encoding="utf-8") == RECORD.read_text(encoding="utf-8")
+    committed = json.loads(RECORD.read_text(encoding="utf-8"))
+    assert golden.same_version_edit(committed, PACKAGE) is None
+    bumped = load_config_package(package_copy(tmp_path / "b", lambda raw: (raw["ehmf"]["stop"].update(window_claims=201),
+                                                                           raw.update(package_version="6.0.1"))), governed=False)
+    assert golden.same_version_edit(committed, bumped) is None
+
+
 def test_plan_j_fixtures_per_type_are_typed_as_the_routing_table_says():
+    # Plan J "Fixtures per type (negation, invented citation, analogy, conflict, leakage)": the analogy fixture is the
+    # golden set's misconception class (Type C, a V1.8 library match; spec section 1, resolution 28).
     record = json.loads(RECORD.read_text(encoding="utf-8"))
     golden = {item["id"]: item for item in json.loads(GOLDEN.read_text(encoding="utf-8"))["items"]}
     expected = {"negation": "A", "invented_citation": "B1", "non_supporting_citation": "B2", "misconception": "C", "conflict": "D", "leakage": "E"}
@@ -315,8 +363,11 @@ def test_plan_j_fixtures_per_type_are_typed_as_the_routing_table_says():
     assert record["result"] == "pass"
 
 
-@pytest.mark.parametrize("detector", ["V1.1", "V1.7", "V1.8", "V2", "alignment"])
+@pytest.mark.parametrize("detector", ["V1.1", "V1.2", "V1.4", "V1.6", "V1.7", "V1.8", "V1.9", "V2", "alignment"])
 def test_plan_j_detector_down_withholds_the_claim(detector, monkeypatch, caplog):
+    # V1.4's detector is the post-render subset checker (pipeline.check_subset, guarded through V1Track._subset_check);
+    # V1.4, V1.6 and V1.9 run in the post-render hook, whose DetectorDown must leave the render loop (never a render fault).
+    from app.services.tutor_pipeline import pipeline
     from app.services.v1_checks import runner
     from app.services.v2_panel.track import V2Track
 
@@ -326,6 +377,14 @@ def test_plan_j_detector_down_withholds_the_claim(detector, monkeypatch, caplog)
     library = None
     if detector == "V1.1":
         monkeypatch.setattr(runner, "check_v1_1", boom)
+    elif detector == "V1.2":
+        monkeypatch.setattr(runner, "check_v1_2", boom)
+    elif detector == "V1.4":
+        monkeypatch.setattr(pipeline, "check_subset", boom)
+    elif detector == "V1.6":
+        monkeypatch.setattr(runner, "check_v1_6", boom)
+    elif detector == "V1.9":
+        monkeypatch.setattr(runner, "check_v1_9_readability", boom)
     elif detector == "V1.7":
         monkeypatch.setattr(runner, "check_v1_7", boom)
     elif detector == "V1.8":
@@ -343,6 +402,16 @@ def test_plan_j_detector_down_withholds_the_claim(detector, monkeypatch, caplog)
     assert record.ehmf.detector_down == (detector,)
     assert not any(verdict.final == "deliver" for verdict in record.verdicts)
     assert [r for r in caplog.records if getattr(r, FIELDS, {}).get("event") == "tutor.ehmf.detector_down"]
+
+
+def test_plan_j_a_raising_subset_checker_is_a_render_fault_only_while_ehmf_is_not_on(monkeypatch):
+    # Under EHMF shadow (Phase 6 behaviour) a raising subset checker is a render fault: every attempt fails, the response
+    # abstains with render_failed and no detector is recorded down; under EHMF on it is DetectorDown("V1.4") (above).
+    from app.services.tutor_pipeline import pipeline
+
+    monkeypatch.setattr(pipeline, "check_subset", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("fault")))
+    record = typed_record(settings=ehmf_settings("shadow")).entry.verification
+    assert record.final == "abstain" and record.final_reason == "render_failed" and record.ehmf.detector_down == ()
 
 
 def test_plan_j_a_raising_checker_keeps_checker_unavailable_and_off_keeps_phase_6(monkeypatch):
@@ -508,6 +577,89 @@ def test_plan_i_per_type_rates_disclosure_share_and_correction_cycles():
     assert claims >= 1 and group["per_100_claims"]["A"].endswith(f"/{claims}")
     assert group["correction_cycles"]["exhausted"] == 1 and group["x2_emissions"] >= 1
     assert body["evidence_class"] == EVIDENCE_CLASS and body["config_version"] == "6.0.0"
+    assert group["type_d_disclosure_share"] == {"disclosed": 0, "conflicts": 0, "share": "0/0"}
+    # The Type D disclosure share over the AC-7-3 conflict run: every detected conflict is disclosed.
+    conflict = _conflict_run().entry
+    detected = len(conflict.verification.ehmf.conflicts)
+    assert detected >= 1 and all(item.disclosed for item in conflict.verification.ehmf.conflicts)
+    with fresh_v3_sessions() as (factory, _engine):
+        append_all(factory, [conflict])
+        with factory() as db:
+            share = slis(db, PACKAGE)["by_config_version"]["6.0.0"]["type_d_disclosure_share"]
+    assert share == {"disclosed": detected, "conflicts": detected, "share": f"{detected}/{detected}"}
+
+
+def test_plan_i_a_dropped_proposal_is_a_typed_claim_in_the_per_type_rates_as_the_stop_counts_it():
+    # AC-7-1's negated claim is dropped by V1.2 (a response finding with its claim id, Type A): the SLIs count it as a
+    # typed claim carrying A, and as a response with an A finding, as stop._typed_counts does for the rising-A/B stop.
+    from app.services.ehmf.metrics import slis
+    from app.services.ehmf.stop import _typed_counts
+    from v3_fakes import append_all, fresh_v3_sessions
+
+    entry = typed_record(generator=negating_generator()).entry
+    ehmf_record = entry.verification.ehmf
+    dropped = {f.claim_id for f in ehmf_record.response_findings if f.claim_id is not None}
+    assert len(dropped) == 1 and not any(f.type == "A" for claim in ehmf_record.claims for f in claim.findings)
+    claims = len(ehmf_record.claims) + 1
+    assert _typed_counts(entry.model_dump(mode="json")) == (claims, 1)
+    with fresh_v3_sessions() as (factory, _engine):
+        append_all(factory, [entry])
+        with factory() as db:
+            group = slis(db, PACKAGE)["by_config_version"]["6.0.0"]
+    assert group["per_100_claims"]["claims"] == claims and group["per_100_claims"]["A"] == f"1/{claims}"
+    assert group["per_100_responses"]["A"] == "1/1"
+
+
+def test_plan_i_an_unreadable_stop_table_leaves_the_v3_slis_and_the_status_worker_working(fresh_database_url, monkeypatch, caplog):
+    # ehmf_stops absent (an image ahead of its schema): with EHMF off the V3 SLIs carry ehmf null and read nothing of
+    # EHMF (Phase 6 exactly); with EHMF not off the stop reads unreadable and, on PostgreSQL, its failed read is rolled
+    # back to a SAVEPOINT, so the later queries of the same session (V3 residual, gold, stop, events) still run, and
+    # the EHMF status worker logs its line.
+    from datetime import UTC, datetime
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.core.db import Base
+    from app.services.v3.metrics import slis
+    from app.workers import ehmf as worker
+
+    connect_args = {"check_same_thread": False} if fresh_database_url.startswith("sqlite") else {}
+    engine = create_engine(fresh_database_url, connect_args=connect_args)
+    try:
+        Base.metadata.create_all(engine, tables=[table for name, table in Base.metadata.tables.items() if name != "ehmf_stops"])
+        factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+        now = datetime.now(UTC)
+        with factory() as db:
+            assert slis(db, PACKAGE, now=now, settings=ehmf_settings("off"))["ehmf"] is None
+            assert slis(db, PACKAGE, now=now)["ehmf"] is None
+            body = slis(db, PACKAGE, now=now, settings=ehmf_settings("shadow"))
+        assert body["ehmf"]["stop"]["reason"] == "unreadable" and body["ehmf"]["stop"]["revert_required"] is None
+        assert body["gold"]["rows"] == 0 and body["x5"]["events"] == 0
+        monkeypatch.setattr(worker, "get_settings", lambda: ehmf_settings("shadow"))
+        monkeypatch.setattr(worker, "get_config_package", lambda _settings: PACKAGE)
+        monkeypatch.setattr(worker, "SessionLocal", factory)
+        with caplog.at_level(logging.INFO, logger="qcai.worker"):
+            assert worker.main(["status"]) == worker.EXIT_OK
+        status = [getattr(r, FIELDS) for r in caplog.records if getattr(r, FIELDS, {}).get("event") == "ehmf.status"]
+        assert len(status) == 1 and status[0]["stop_state"]["reason"] == "unreadable" and status[0]["stops"] is None
+    finally:
+        engine.dispose()
+
+
+def test_plan_i_ready_reports_the_penalty_the_shared_index_applies(monkeypatch):
+    # retrieval_penalty.active is the store's (fixed when the index was built), never the mode recomputed per /ready: a
+    # gateway that stops after start-up turns the mode off but leaves the index as built.
+    from types import SimpleNamespace
+
+    from app import main
+    from app.services.store import get_course_store
+
+    assert get_course_store().penalty_active is False  # development default: EHMF shadow
+    monkeypatch.setattr(main, "settings", ehmf_settings("shadow"))
+    assert main._ehmf_fields(PACKAGE, SimpleNamespace(penalty_active=True))["retrieval_penalty"]["active"] is True
+    monkeypatch.setattr(main, "settings", ehmf_settings("on"))
+    assert main._ehmf_fields(PACKAGE, SimpleNamespace(penalty_active=False))["retrieval_penalty"]["active"] is False
 
 
 # ===================================================================================================== plan L
@@ -561,12 +713,100 @@ def _seed_stop_simple(factory) -> None:
             append_ledger_entry(LedgerEntryV4.model_validate(raw), session_factory=factory, budget_ms=60000, attempts=3)
 
 
-def test_plan_l_reloading_the_prior_package_clears_the_revert_state():
-    from app.services.ehmf.stop import process_stop_state, reset_stop_cache
+def test_plan_l_reloading_the_prior_package_clears_the_revert_state(tmp_path, monkeypatch, caplog):
+    # A stop follows a 6.x -> 6.y change: /ready's cached state reads revert_required true under the package the stop
+    # followed (6.0.1) and false, reason reverted, once the prior 6.x package (6.0.0) is in force. Reloading v5 (no ehmf
+    # block) turns EHMF off: not_evaluated with no read, and the worker's status refuses but still logs the stop rows.
+    from datetime import UTC, datetime
 
-    reset_stop_cache()
+    from app.core.config_package import load_config_package as load
+    from app.services.ehmf.stop import detect, process_stop_state, reset_stop_cache
+    from app.workers import ehmf as worker
+    from v3_fakes import fresh_v3_sessions
+
+    package601 = load_config_package(package_copy(tmp_path, lambda raw: raw.update(package_version="6.0.1")), governed=False)
+    settings = ehmf_settings("shadow")
+    v5 = load(V5_PACKAGE_PATH, governed=True)
+    with fresh_v3_sessions() as (factory, _engine):
+        _seed_stop_simple(factory)
+        with factory() as db:
+            assert detect(db, package601, now=datetime.now(UTC)) is not None
+            db.commit()
+        try:
+            reset_stop_cache()
+            state = process_stop_state(settings, package601, session_factory=factory)
+            assert (state.revert_required, state.reason) == (True, "rising_ab")
+            reset_stop_cache()
+            state = process_stop_state(settings, PACKAGE, session_factory=factory)
+            assert (state.revert_required, state.reason, state.from_config_version) == (False, "reverted", "6.0.0")
+            reset_stop_cache()
+            assert process_stop_state(settings, v5, session_factory=factory).reason == "not_evaluated"
+        finally:
+            reset_stop_cache()
+        monkeypatch.setattr(worker, "get_config_package", lambda _settings: v5)
+        monkeypatch.setattr(worker, "SessionLocal", factory)
+        with caplog.at_level(logging.WARNING, logger="qcai.worker"):
+            assert worker.main(["status"]) == worker.EXIT_USAGE
+        refused = [getattr(r, FIELDS) for r in caplog.records if getattr(r, FIELDS, {}).get("event") == "ehmf.status_refused"]
+        assert len(refused) == 1 and refused[0]["reason"] == "no_ehmf_block"
+        assert [(row["from_config_version"], row["to_config_version"]) for row in refused[0]["stops"]] == [("6.0.0", "6.0.1")]
     state = process_stop_state(Settings(environment="production", allowed_origins=["https://qantumlearn.academy"]), PACKAGE)
     assert state.revert_required is None and state.reason == "not_evaluated"
+    reset_stop_cache()
+
+
+def _insert_typed_rows(factory, rows: list[tuple[str, bool]], *, start: int = 1) -> None:
+    """Bare ledger-entry-v4 rows (one typed claim each, A when the flag is set) at the given config_versions: the stop
+    reads only versions and findings, so no full entry is needed. Fresh SQLite only (no chain is checked here)."""
+    from app.db_models import ResponseLedgerRecord
+
+    now = datetime_now()
+    values = []
+    for offset, (version, ab) in enumerate(rows):
+        seq = start + offset
+        entry = json.dumps({"versions": {"config_package_version": version},
+                            "verification": {"ehmf": {"claims": [{"findings": [{"type": "A"}] if ab else []}], "response_findings": []}}})
+        values.append(dict(seq=seq, response_id=f"shadow-{seq}", delivery="shadow", decision="answer", entry_schema="ledger-entry-v4",
+                           entry=entry, entry_sha256="0" * 64, prev_hash="0" * 64, record_hash="0" * 64, created_at=now))
+    with factory() as db:
+        db.execute(ResponseLedgerRecord.__table__.insert(), values)
+        db.commit()
+
+
+def datetime_now():
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC)
+
+
+def test_plan_l_a_change_point_whose_before_window_the_scan_cut_never_fires_without_a_rise():
+    # The shipped stop (200 typed claims per window, 100 after, 2 A/B, rise 3/2, scan 5000 records): 400 records at
+    # 6.0.0 then records at 6.1.0, A/B on exactly every tenth record in both versions (no rise). As records arrive the
+    # change point slides to the start of the scan; once its old-version window is cut it is skipped, never fired.
+    from app.services.ehmf.stop import detect
+    from v3_fakes import fresh_v3_sessions
+
+    params = PACKAGE.ehmf
+    assert (params.stop_window_claims, params.stop_min_claims, params.stop_min_ab, params.stop_scan_records) == (200, 100, 2, 5000)
+    rows = [("6.0.0", index % 10 == 0) for index in range(400)] + [("6.1.0", index % 10 == 0) for index in range(4998)]
+    with fresh_v3_sessions() as (factory, _engine):
+        _insert_typed_rows(factory, rows[:700])
+        with factory() as db:
+            assert detect(db, PACKAGE, now=datetime_now()) is None  # whole windows, no rise
+        _insert_typed_rows(factory, rows[700:], start=701)
+        with factory() as db:
+            # the before-window is 2 records (0 A/B) when 5398 records exist: cut by the scan, so skipped
+            assert detect(db, PACKAGE, now=datetime_now()) is None
+            from app.db_models import EhmfStop
+            from sqlalchemy import select
+
+            assert db.execute(select(EhmfStop.seq)).first() is None
+    # A real rise with whole windows still fires: 400 records at 1/10 A/B, then 200 at 1/2.
+    rising = [("6.0.0", index % 10 == 0) for index in range(400)] + [("6.1.0", index % 2 == 0) for index in range(200)]
+    with fresh_v3_sessions() as (factory, _engine):
+        _insert_typed_rows(factory, rising)
+        with factory() as db:
+            assert detect(db, PACKAGE, now=datetime_now()) is not None
 
 
 def test_plan_l_ehmf_defaults_and_refusals():
@@ -768,6 +1008,75 @@ def test_plan_e_the_phase_7_revision_is_additive_reversible_and_keeps_its_rows()
             with pytest.raises(Exception, match="append-only"):
                 with engine.begin() as connection:
                     connection.execute(text(statement))
+
+
+def _alembic(database_url: str, *args: str) -> subprocess.CompletedProcess:
+    import os
+
+    env = {**os.environ, "DATABASE_URL": database_url, "ENVIRONMENT": "development", "PYTHONUNBUFFERED": "1"}
+    env.pop("CLOUD_SQL_CONNECTION_NAME", None)
+    return subprocess.run([sys.executable, "-m", "alembic", *args], cwd=API_ROOT, env=env, capture_output=True, text=True, timeout=240)
+
+
+def test_plan_e_the_phase_7_downgrade_refuses_while_ehmf_stops_holds_rows_and_the_table_refuses_truncate(fresh_database_url):
+    # The runbook's rollback step, run: on the session's dialect (SQLite, or PostgreSQL with psycopg or pg8000) with the
+    # start-up triggers, UPDATE, DELETE and (PostgreSQL) TRUNCATE are refused; the downgrade to the Phase 6 revision
+    # refuses while a row exists and names allow_ehmf_drop; with -x allow_ehmf_drop=true it drops ehmf_stops and nothing else.
+    from datetime import UTC, datetime
+
+    from sqlalchemy import create_engine, text
+    from sqlalchemy import inspect as sa_inspect
+
+    from app.core.db import Base
+    from app.core.schema_upgrades import run_schema_upgrades
+    from app.services.ledger import SCHEMA_REVISION
+
+    assert SCHEMA_REVISION == "20261123_phase7_ehmf"
+    connect_args = {"check_same_thread": False} if fresh_database_url.startswith("sqlite") else {}
+    engine = create_engine(fresh_database_url, connect_args=connect_args)
+    try:
+        Base.metadata.create_all(engine)
+        run_schema_upgrades(engine)
+        others = set(sa_inspect(engine).get_table_names()) - {"ehmf_stops"}
+        with engine.begin() as connection:
+            connection.execute(text("INSERT INTO ehmf_stops (from_config_version, to_config_version, change_seq, detected_seq, before_claims, "
+                                    "before_ab, after_claims, after_ab, window_deliveries, package_sha256, created_at) VALUES "
+                                    "('6.0.0', '6.0.1', 1, 2, 3, 4, 5, 6, 7, :sha, :now)"), {"sha": "0" * 64, "now": datetime.now(UTC)})
+        statements = ["UPDATE ehmf_stops SET after_ab = 0", "DELETE FROM ehmf_stops"]
+        if engine.dialect.name == "postgresql":
+            statements.append("TRUNCATE ehmf_stops")
+        for statement in statements:
+            with pytest.raises(Exception, match="append-only"):
+                with engine.begin() as connection:
+                    connection.execute(text(statement))
+        engine.dispose()
+        assert _alembic(fresh_database_url, "stamp", SCHEMA_REVISION).returncode == 0
+        refused = _alembic(fresh_database_url, "downgrade", "20261122_phase6_v3_audit")
+        assert refused.returncode != 0 and "ehmf_stops holds 1 rows" in refused.stderr, refused.stderr[-2000:]
+        assert "allow_ehmf_drop=true" in refused.stderr and "python -m app.workers.ehmf status" in refused.stderr
+        assert "ehmf_stops" in sa_inspect(engine).get_table_names()
+        engine.dispose()
+        dropped = _alembic(fresh_database_url, "-x", "allow_ehmf_drop=true", "downgrade", "20261122_phase6_v3_audit")
+        assert dropped.returncode == 0, dropped.stderr[-2000:]
+        remaining = set(sa_inspect(engine).get_table_names())
+        assert "ehmf_stops" not in remaining and remaining - {"alembic_version"} == others - {"alembic_version"}
+    finally:
+        engine.dispose()
+
+
+def test_phase7_no_new_source_literal_starts_with_qcai_():
+    # Spec 0.1: the privacy guard reads a qcai_-prefixed name as a cookie name, so no Phase 7 source holds such a
+    # literal (an f-string's constant parts included). The prefix is built here so this test holds none either.
+    prefix = "qcai" + "_"
+    sources = [*(API_ROOT / "app" / "services" / "ehmf").glob("*.py"), API_ROOT / "app" / "workers" / "ehmf.py",
+               REPO_ROOT / "scripts" / "run_golden_set.py", REPO_ROOT / "scripts" / "check_source_fidelity.py",
+               API_ROOT / "tests" / "ehmf_fakes.py", API_ROOT / "tests" / "test_ehmf_units.py", Path(__file__)]
+    offenders = []
+    for path in sources:
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith(prefix):
+                offenders.append(f"{path.name}:{node.lineno}")
+    assert offenders == []
 
 
 # ===================================================================================================== docs

@@ -661,7 +661,7 @@ def _build_fields() -> dict:
         "ehmf_mode": _ehmf_mode(package),
         "ehmf_setting": settings.ehmf,
         "phase7_exit_passed": bool(package.flag_policy.phase7_exit_passed),
-        "ehmf": _ehmf_fields(package),
+        "ehmf": _ehmf_fields(package, store),
     }
 
 
@@ -677,14 +677,13 @@ def _ehmf_mode(package) -> str:
     return ehmf_service.mode(settings, package)
 
 
-def _ehmf_fields(package) -> dict | None:
+def _ehmf_fields(package, store) -> dict | None:
     from app.services import ehmf as ehmf_service
     from app.services.ehmf.stop import process_stop_state
 
     params = package.ehmf
     if params is None:
         return None
-    mode = ehmf_service.mode(settings, package)
     environment = settings.environment.lower()
     registry = environment if environment in params.penalty_registries else "default"
     factor, spans = params.penalty_registries[registry]
@@ -695,7 +694,9 @@ def _ehmf_fields(package) -> dict | None:
         "disclosure_template": params.disclosure_template_id,
         "library": {"version": package.v1.library_version, "entries": len(package.v1.library_entries), "sha256": package.v1.library_sha256},
         "golden_set": {"version": "golden-set-v1", "items": params.golden_set_items}, "max_cycles": params.max_cycles,
-        "retrieval_penalty": {"environment": registry, "factor": str(factor), "spans": len(spans), "active": mode == "on"},
+        # active: what the shared index applies (fixed when the store was built), not the mode recomputed now: a gateway
+        # that stops later turns the mode off but leaves the index as built.
+        "retrieval_penalty": {"environment": registry, "factor": str(factor), "spans": len(spans), "active": bool(store.penalty_active)},
         "stop": {"revert_required": stop.revert_required}, "available": ehmf_service.EHMF_UNAVAILABLE_REASON is None,
     }
 

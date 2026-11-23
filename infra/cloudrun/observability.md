@@ -239,12 +239,12 @@ Not set up yet: no log-based metric, alert policy, dashboard or scheduled job ex
 
 | SLI | Definition |
 |---|---|
-| Per-type rate per 100 claims | for A, B1, B2, C, D, E: typed claims with a finding of that type over typed claims, as an exact `k/n` |
-| Per-type rate per 100 responses | for each type: typed records with a response-level finding of that type over typed records (V1.1 B1 makes "zero delivered Type B1" visible) |
+| Per-type rate per 100 claims (`per_100_claims`) | for A, B1, B2, C, D, E: typed claims with a finding of that type over typed claims, as an exact `k/n` (a fraction, not a rate scaled to 100; `claims` is the denominator). A typed claim is a claim entry or a dropped proposal (a V1.2 response finding with a claim id, such as the AC-7-1 negated claim), as the stop counts it |
+| Per-type rate per 100 responses (`per_100_responses`) | for each type: typed records with a response-level finding of that type (dropped proposals included) over typed records, as an exact `k/n` (`responses` is the denominator; V1.1 B1 makes "zero delivered Type B1" visible) |
 | Type D disclosure share | disclosed conflicts over detected conflicts |
 | Correction-cycle distribution | typed records by V2 cycles: 0, 1, 2, and exhausted (an X2 emitted) |
 | X2 emissions, set-changed refusals, detector-down records | counts |
-| The stop | the latest `ehmf_stops` row's state (`clear`, `rising_ab`, `reverted`) |
+| The stop | `reason`: `clear` (no row, or the latest row names neither version in force; `revert_required` false), `rising_ab` (the latest row's `to_config_version` is the package in force; `revert_required` true), `reverted` (its `from_config_version` is the package in force; `revert_required` false), `unreadable` (the read failed; `revert_required` null: never read as clear) and `not_evaluated` (EHMF off or no ehmf block: nothing read; `revert_required` null) |
 
 | Event, logger and severity | Fields |
 |---|---|
@@ -256,5 +256,6 @@ Not set up yet: no log-based metric, alert policy, dashboard or scheduled job ex
 | `ehmf.unavailable` on `qcai.ehmf`, WARNING | `reason` (start-up) |
 | `ehmf.status` and `ehmf.proposals_exported` on `qcai.worker`, INFO | the mode and SLIs; `count` |
 | `ehmf.proposals_export_refused` on `qcai.worker`, WARNING | `reason` |
+| `ehmf.status_refused` on `qcai.worker`, WARNING | `reason` (`no_ehmf_block`: the package in force has no ehmf block, such as v5; the command exits 2, and `status` still logs every `ehmf_stops` row as `stops` when the table is readable) |
 
 The two override keys: `config.override` logs `ehmf_shadow` and `ehmf_on` when either is set outside development.

@@ -20,8 +20,13 @@ the golden set; --check, in order:
   2. the package's own pin: ehmf.golden_set.sha256 differing from the file exits 6;
   3. a fresh run: an unmet expectation or an unresolved delivered citation exits 3 (13.9(a) "citation resolution 100%");
      outcomes or inputs differing from the record (created_at and commit aside) exit 1 (drift blocks promotion, 12.5).
+--write refuses (exit 6) to replace a record whose configuration package has the same package_version and a different
+sha256: every package edit (a threshold, weight, routing, library or golden-set change re-pins the package) needs a new
+package_version, because config_version is the package version and the rising-A/B stop finds a change only where it
+differs (plan Phase 7 L; docs/architecture/ehmf-change-control.md).
 Exit codes: 0 pass; 1 drift; 2 usage or refusal; 3 an unmet expectation or an unresolved delivered citation; 4 a dirty
-tree on --write; 6 a pin mismatch. The record is a change-control gate, not research results (plan Phase 7 H; 12.5).
+tree on --write; 6 a pin mismatch, or on --write a package edit that keeps the recorded package_version. The record is
+a change-control gate, not research results (plan Phase 7 H; 12.5).
 """
 
 from __future__ import annotations
@@ -55,7 +60,7 @@ PIN_NAMES = ("misconception_library", "routing", "golden_set", "config_package")
 
 def _v1_fixtures():
     """scripts/run_v1_fixtures.py, loaded by path (the script is not a package module)."""
-    name = "qcai_golden_v1_fixtures"
+    name = "golden_v1_fixtures"
     if name in sys.modules:
         return sys.modules[name]
     spec = importlib.util.spec_from_file_location(name, REPO_ROOT / "scripts" / "run_v1_fixtures.py")
@@ -266,6 +271,16 @@ def check_pins(record: dict, package) -> tuple[int, str] | None:
     return None
 
 
+def same_version_edit(record: dict, package) -> tuple[int, str] | None:
+    """The refusal of a package edit that keeps the recorded package_version (a change the stop could never see)."""
+    recorded = (record.get("pins") or {}).get("config_package") or {}
+    if recorded.get("version") == package.package_version and recorded.get("sha256") != package.sha256:
+        return EXIT_PIN, (f"golden-set gate: the configuration package changed (sha256 {recorded.get('sha256')} != {package.sha256}) "
+                          f"but keeps package_version {package.package_version}: bump package_version (config_version is the package "
+                          "version, and the rising-A/B stop sees a change only where it differs), then rehash and rerun --write")
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     """The CLI; the qcai loggers are quietened for the run and restored after it (an in-process call leaves no trace)."""
     logger = logging.getLogger("qcai")
@@ -312,9 +327,19 @@ def _main(argv: list[str] | None = None) -> int:
         if mismatch is not None:
             print(mismatch[1], file=sys.stderr)
             return mismatch[0]
-    elif not args.allow_dirty and _commit().endswith("-dirty"):
-        print("refused: the working tree differs from HEAD; commit first, or pass --allow-dirty", file=sys.stderr)
-        return EXIT_DIRTY
+    else:
+        if not args.allow_dirty and _commit().endswith("-dirty"):
+            print("refused: the working tree differs from HEAD; commit first, or pass --allow-dirty", file=sys.stderr)
+            return EXIT_DIRTY
+        try:
+            previous = json.loads(args.write.read_text(encoding="utf-8")) if args.write.exists() else None
+        except (OSError, ValueError) as exc:
+            print(f"refused: the golden run record cannot be read: {exc}", file=sys.stderr)
+            return EXIT_USAGE
+        refusal = same_version_edit(previous, package) if isinstance(previous, dict) else None
+        if refusal is not None:
+            print(refusal[1], file=sys.stderr)
+            return refusal[0]
     fresh = _finish_inputs(compute(package_path=args.package))
     if args.write:
         args.write.parent.mkdir(parents=True, exist_ok=True)

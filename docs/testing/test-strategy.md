@@ -246,8 +246,8 @@ Tests are in `apps/api/tests/test_phase7_acceptance.py` unless named otherwise; 
 | AC-7-3 Contradicting spans are disclosed and the disclosed conflict weighs 0 | `test_ac_7_3_contradicting_spans_are_disclosed_and_the_disclosed_conflict_weighs_zero` |
 | AC-7-4 A corrected Type E finding leaves the claim and span sets unchanged | `test_ac_7_4_a_corrected_type_e_finding_leaves_the_claim_and_span_sets_unchanged`, `test_ac_7_4_the_engine_refuses_a_re_render_that_changes_the_claim_or_span_set` |
 | AC-7-5 A third correction attempt: abstain and X2 | `test_ac_7_5_a_third_correction_attempt_is_refused_the_claim_abstains_and_x2_is_emitted` |
-| AC-7-6 A package edit without a golden-set run fails the CI check | `test_ac_7_6_a_package_edit_without_a_golden_set_run_fails_the_ci_check` |
-| Plan J fixtures per type and detector down | `test_plan_j_fixtures_per_type_are_typed_as_the_routing_table_says`, `test_plan_j_detector_down_withholds_the_claim`, `test_plan_j_a_raising_checker_keeps_checker_unavailable_and_off_keeps_phase_6` |
+| AC-7-6 A package edit without a golden-set run fails the CI check | `test_ac_7_6_a_package_edit_without_a_golden_set_run_fails_the_ci_check`, `test_ac_7_6_a_package_edit_that_keeps_its_version_is_refused_at_write` |
+| Plan J fixtures per type and detector down | `test_plan_j_fixtures_per_type_are_typed_as_the_routing_table_says`, `test_plan_j_detector_down_withholds_the_claim`, `test_plan_j_a_raising_subset_checker_is_a_render_fault_only_while_ehmf_is_not_on`, `test_plan_j_a_raising_checker_keeps_checker_unavailable_and_off_keeps_phase_6` |
 | Plan F, G, H, I, L, P and task 3, 5 rows; the freeze; the vocabulary guard; plan E | the `test_plan_*`, `test_freeze_*`, `test_the_ehmf_vocabulary_lives_in_one_module` and `test_golden_set_*` tests |
 
 ### Phase 7 test files
@@ -262,13 +262,16 @@ Tests are in `apps/api/tests/test_phase7_acceptance.py` unless named otherwise; 
 
 | File | Change (intent kept) |
 |---|---|
-| `test_config_package.py` | The shipped package is v6 (6.0.0); the v5 assertions read `V5_PACKAGE_PATH` (readable for one release, DI-112). |
-| `test_v1_8_misconceptions.py` | The inline library v0 tests read package v5; the shipped v6 library is v1 and empty. |
+| `test_config_package.py` | The shipped package is v6 (6.0.0); the v5 assertions read `V5_PACKAGE_PATH` (readable for one release, DI-112). The v4 structural refusals run on v4, v5 and v6, the v5 ones on v5 and v6 (but for the three edits v6 makes, counted by a test), each after a control load; the provenance-fields refusal is also checked on v6 (ledger-entry-v4). |
+| `test_v1_8_misconceptions.py` | The inline library v0 tests read package v5; the shipped v6 library is v1 and empty, and an entry in v6's library file is refused while Q-14 is unavailable. |
+| `test_phase4_acceptance.py` | The development-default shadow records are `ledger-entry-v4`; the `/ready` library version is the package's; the doc tests name Phase 7's v6, schema version 6 and the v6 `LedgerEntryV4` pin. |
+| `test_phase5_acceptance.py` | AC-5-6 sets `EHMF=off` to judge its ledger-entry-v3 record; AC-5-8's bump is 6.0.1; plan G's shadow is a v4 that extends v3. |
 | `test_configuration_overrides.py` | `ehmf_shadow` and `ehmf_on` are recorded overrides. |
 | `test_phase2_acceptance.py` | `LexicalIndex(penalties=...)` is not learner state (span ids and the environment only). |
 | `test_phase3_acceptance.py`, `test_response_ledger_migrations.py` | The Phase 7 revision and its table: the downgrade path goes through it first. |
 | `test_phase6_acceptance.py` | The Phase 3 rollback's head is `20261123_phase7_ehmf`; the default package's `/ready` and trigger registry; the E15 merge-facts test. |
 | `test_response_ledger_provenance.py` | The provenance audit reports `config_versions`. |
 | `v1_fakes.py`, `v2_fakes.py` | `temp_package` copies the library folder and leaves the v6 pin; `v2_pipeline` defaults to `EHMF=off`, so the Phase 5 and 6 tests keep judging the ledger-entry-v3 record they test. |
+| `conftest.py` | Each test reads the EHMF stop afresh with EHMF available. |
 
 **Exit gate.** The Phase 7 exit needs AC-7-1 to AC-7-6 green, package v1's hash in the ledger and the R-18 closure evidence (plan Phase 7 P: "AC-7-1 to AC-7-6 green; package v1 hash in the ledger; R-18 closure evidence in Section 5: corrected DOCX values and the source-fidelity CI job over the 12 DOCX passing (Phase 11 task 3 and AC-11-3 brought forward to this exit)."). The AC tests are done in code; the cited CI run must be on `main` after the merge (DI-104). R-18 stays open: the DOCX are the Content Owner's to correct (DI-105), and CI runs the source-fidelity `--check` with 3 mismatches. The EHMF weights await the PI (DI-108). `phase7_exit_passed` stays false in the package. The exit is not passed.

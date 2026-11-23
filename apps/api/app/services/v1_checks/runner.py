@@ -266,6 +266,13 @@ class V1Track:
 
         return guarded(detector, fn, *args, **kwargs)
 
+    def _subset_check(self, rendered, locked):
+        """The post-render subset check (V1.4's detector), guarded under EHMF=on (Phase 7 spec 4.3): a raise is then
+        DetectorDown("V1.4"), never a render fault. Read from the pipeline module at call time."""
+        from app.services.tutor_pipeline import pipeline as pipeline_module
+
+        return self._guard("V1.4", pipeline_module.check_subset, rendered, locked)
+
     def _check_library(self) -> None:
         if self.ehmf_mode == "on" and (self.library is None or getattr(self.library, "available", True) is False):
             from app.services.ehmf.detectors import DetectorDown
@@ -419,7 +426,7 @@ class V1Track:
         start_presentation = presentation or ctx.presentation
         rendered, attempts, reason = render_checked(
             self.pipeline.renderer, locked, start_presentation, max_regenerations=v1.max_render_regenerations,
-            over=lambda: budget_over("render"), post_render=hook, omit=omit,
+            over=lambda: budget_over("render"), post_render=hook, omit=omit, subset_check=self._subset_check,
         )
         results.extend(hook.results)
         if rendered is not None:

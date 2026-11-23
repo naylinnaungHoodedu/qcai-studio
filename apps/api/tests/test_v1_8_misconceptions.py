@@ -68,6 +68,24 @@ def test_a_malformed_or_rehashed_library_is_refused(edit):
         parse_config_package(raw, path=V5_PACKAGE_PATH, sha256="", hash_verified=False)
 
 
+def test_v6_library_file_entries_are_refused_while_q_14_is_unavailable(tmp_path):
+    # Package v6 pins the library v1 file (Phase 7 spec 3.5): a well-formed entry in that file is refused while Q-14 is
+    # unavailable (A-18), and loads once Q-14 is not (the control).
+    from ehmf_fakes import package_copy
+
+    entry = {"id": "mc-synthetic-entry", "editor": "content_owner", "terms": ["alpha", "beta"],
+             "paraphrase": "A synthetic paraphrase for this test.", "span_ids": ["span-" + "1" * 64], "edited": "2026-11-23"}
+
+    def add_entry(library):
+        library["entries"] = [entry]
+
+    with pytest.raises(ConfigPackageError, match="Q-14"):
+        load_config_package(package_copy(tmp_path / "a", library_edit=add_entry), governed=False)
+    available = package_copy(tmp_path / "b", lambda raw: raw["owner_decisions"]["Q-14"].update(state="available-for-this-test"),
+                             library_edit=add_entry)
+    assert [item.entry_id for item in load_config_package(available, governed=False).v1.library_entries] == ["mc-synthetic-entry"]
+
+
 def test_entries_are_refused_while_q_14_is_unavailable():
     raw = copy.deepcopy(RAW)
     library = raw["v1"]["v1_8"]["library"]

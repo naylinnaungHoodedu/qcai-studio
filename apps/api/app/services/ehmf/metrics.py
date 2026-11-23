@@ -4,6 +4,8 @@
 Over the last window_records typed records (ledger-entry-v4), grouped by config_version: the per-type rate per 100 claims
 and per 100 responses (as exact "k/n" strings, never a float), the Type D disclosure share, the correction-cycle
 distribution, X2 emissions, set-changed refusals and detector-down records, the stop and the config_version in force.
+A typed claim is a claim entry or a dropped proposal (a response finding with a claim id, V1.2), as the stop counts it
+(stop._typed_counts); a response counts each type among its response findings, dropped proposals included.
 Counts and versions only. Served on the reviewer-only GET /v3/metrics and logged by `python -m app.workers.ehmf status`;
 /ready carries no count. Telemetry, not E2 results (plan Phase 7 H).
 """
@@ -48,11 +50,19 @@ def slis(db: Session, package: Any, *, window_records: int = 1000, stop: Any = N
         ehmf = verification.get("ehmf") or {}
         group = groups.setdefault(config_version_of(entry.get("versions")), _empty())
         group["responses"] += 1
-        for claim in ehmf.get("claims") or []:
-            group["claims"] += 1
-            for name in {finding.get("type") for finding in claim.get("findings") or []}:
+        claims = [{finding.get("type") for finding in claim.get("findings") or []} for claim in ehmf.get("claims") or []]
+        # A dropped proposal (a response finding with a claim id, V1.2) is a typed claim too, as the stop counts it
+        # (stop._typed_counts): one claim per dropped claim id, carrying the types of its findings.
+        dropped: dict[str, set] = {}
+        for finding in ehmf.get("response_findings") or []:
+            if finding.get("claim_id"):
+                dropped.setdefault(finding["claim_id"], set()).add(finding.get("type"))
+        claims.extend(dropped.values())
+        group["claims"] += len(claims)
+        for types in claims:
+            for name in types:
                 group["claim_types"][name] += 1
-        for name in {finding.get("type") for finding in ehmf.get("response_findings") or [] if finding.get("claim_id") is None}:
+        for name in {finding.get("type") for finding in ehmf.get("response_findings") or []}:
             group["response_types"][name] += 1
         conflicts = ehmf.get("conflicts") or []
         group["conflicts"] += len(conflicts)

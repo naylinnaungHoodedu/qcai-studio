@@ -24,7 +24,7 @@ INVENTED = "span-" + "0" * 64
 
 def scripts_module(name: str):
     """A script under scripts/, loaded by path (once per process)."""
-    key = f"qcai_test_{name}"
+    key = f"ehmf_test_{name}"
     if key not in sys.modules:
         spec = importlib.util.spec_from_file_location(key, REPO_ROOT / "scripts" / f"{name}.py")
         module = importlib.util.module_from_spec(spec)

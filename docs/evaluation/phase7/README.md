@@ -5,7 +5,7 @@ Change-control gate, not research results (plan Phase 7 H; 12.5).
 | File | What it is | Reproduce |
 |---|---|---|
 | `golden_set_v1.json` | golden-set-v1: 40 public-corpus or synthetic items, disjoint from ULQS (R-25), each with the EHMF finding types it must carry and whether an attacked claim is delivered, X2 is emitted or a conflict is disclosed | built once from the Phase 4 fixture file and in-domain queries of `apps/api/tests/data/score_floor_queries.json`; its canonical sha256 is pinned in package v6 `ehmf.golden_set` |
-| `golden_run_v1.json` | the committed golden run: the package, library, routing and golden-set sha256s it ran against and every item's outcome | `python scripts/run_golden_set.py --write docs/evaluation/phase7/golden_run_v1.json` on a clean tree; CI runs `--check` |
+| `golden_run_v1.json` | the committed golden run: the package, library, routing and golden-set sha256s it ran against and every item's outcome | `python scripts/run_golden_set.py --write docs/evaluation/phase7/golden_run_v1.json --allow-dirty` on the finished change, committed with it (its `commit` names the parent commit with `-dirty`; `inputs.sha256` identifies the code; `docs/architecture/ehmf-change-control.md`); CI runs `--check` |
 | `source_fidelity_register.json` | the plan's measured DOCX facts only (F-7, E-30): QUEN External Sens. and External FP Rate, and the "perfectly aligned" wording where GEA = 0.40 | edited only when a source fact is established (Q-11 is unresolved) |
 | `source_fidelity_report_v1.json` | the source-fidelity check over the 12 tracked DOCX: 3 mismatches | `python scripts/check_source_fidelity.py --write docs/evaluation/phase7/source_fidelity_report_v1.json`; CI runs `--check` |
 

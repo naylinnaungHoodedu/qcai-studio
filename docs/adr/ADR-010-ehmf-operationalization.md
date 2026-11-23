@@ -2,7 +2,7 @@
 
 ## Context
 
-Plan Phase 7 (L1500-1555) turns the error-handling-and-mitigation framework (EHMF; types A-E, E-87) from a per-check label
+Plan Phase 7 (L1500-1555) turns the Educational Hallucination Mitigation Framework (EHMF; types A-E, E-87) from a per-check label
 into routed, versioned behaviour. The evidence it rests on: E-27 (the plan's "lexical gate with hard-coded constants" is
 stale: the overlap ClaimGate, `evidence_digest` and `_STOPWORDS` were removed in Phase 3, and the lexical constants that
 remain are already versioned), E-30 (the DOCX transposition in F-7), E-62 (config_version on `/ready`), E-79

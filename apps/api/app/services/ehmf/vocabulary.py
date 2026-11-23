@@ -1,6 +1,6 @@
 """The EHMF vocabulary (plan Phase 7 D task 1; plan 6.3; plan Phase 4 D table; Phase 7 spec 3.1).
 
-The only definition of the five error-handling-and-mitigation-framework types and their subtypes: every other module
+The only definition of the five Educational Hallucination Mitigation Framework types and their subtypes: every other module
 imports them from here (a guard test scans the application for another definition). Standard library only, so the
 record contracts and the configuration-package loader can import it.
   A  a claim that contradicts or is not supported by its sources (revise or abstain)
