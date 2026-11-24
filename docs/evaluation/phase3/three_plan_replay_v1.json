@@ -1,8 +1,8 @@
 {
  "report": "qcai-three-plan-replay",
  "format_version": 1,
- "created_at": "2026-11-23T22:16:11+00:00",
- "commit": "cabe561ede40a68519143c219f259ff97db012e1",
+ "created_at": "2026-11-24T04:02:37+00:00",
+ "commit": "cb2a33ebd684953936f473a969d35661e9dd143d",
  "evidence_class": "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 evidence (plan Phase 3 H)",
  "public_corpus_only": true,
  "excluded_sources": [
@@ -22,7 +22,7 @@
  },
  "config_package": {
   "version": "6.0.0",
-  "sha256": "fdfb5afe08858c77a6cb01f482a9b35cc1af77c929b565e0cd65296ce5cac8be"
+  "sha256": "2728c9d83ad98b71d08889b23ed0c98b8e0331d35b0fcf6c8faee40547eb431d"
  },
  "tutor_pipeline": {
   "resolver": "thread-resolver-v1",
@@ -80,7 +80,7 @@
     "bound_claim_ratio": null
    },
    "stop": false,
-   "items_digest": "dac6512b058671973195d3f50f188884ec62d20f2ed63deba63ec5345b9c381e"
+   "items_digest": "5e2c2eef50156c582b51f0ad2a1b681e209d60ebcd2cdc3ca83a6e9621f2fcac"
   },
   {
    "name": "all_public_approved",
@@ -121,7 +121,7 @@
     "bound_claim_ratio": 1.0
    },
    "stop": false,
-   "items_digest": "217a29f8e6b19604f7cd58ed9adbf6af84f6425b56cc95a52b12c0d2ba997627"
+   "items_digest": "93ee38f84c6fdd8df71e92a28ca87b0fcc9b89a5fd2337b367a43748a45ebb07"
   },
   {
    "name": "all_public_approved",
@@ -161,7 +161,7 @@
     "bound_claim_ratio": 1.0
    },
    "stop": false,
-   "items_digest": "27d42689a6c0f46ed58965e2437d9ae336e775efc5f41068e485ece3994c1358"
+   "items_digest": "923214cd91e17f14ee4414896de8f639aaaec827a056c7194929f08f330098f2"
   }
  ],
  "result": "pass",
@@ -170,16 +170,16 @@
   "files": {
    "apps/api/app/__init__.py": "a45661633011b095a62071507cf3309e100424dd64d34feabf2cc6d084696348",
    "apps/api/app/core/config.py": "d3f63450990bca2d616318e6a299ccb7762edd7e0d92d6bd31baaec56d66649f",
-   "apps/api/app/core/config_package.py": "9951cb19caf8848c72d57f08ccc36279b2af9bb1db5ca77b1748fca77f74ea3f",
+   "apps/api/app/core/config_package.py": "8fac48171a3572375d3efa15500bc1934c7e58d6134eec41885adad36526b8e4",
    "apps/api/app/core/corpus_governance.py": "39153061b8d613ca0298a5210b4d9abeb4da2298608b1b471c0cf659a7f9a4fd",
    "apps/api/app/core/data_planes.py": "195f35a4a4a01cabeb32d48a0d81c1beb0ca714e943d7c154abe3e96a35a5976",
    "apps/api/app/core/db.py": "81d5e54a250dc4e3d6d477ad33bb37f78cee4a98854330e39e223f1ab44b6014",
    "apps/api/app/core/log_redaction.py": "ac76ce9520ac9b42986775b36bb803b00105edb9a6b256748f541022437582c3",
    "apps/api/app/core/manifest_v2.py": "993892df5fb5e97fa34d5e8bd645eabca4d2960b7cf8959383064d2de10087a3",
-   "apps/api/app/core/phase8_settings.py": "65b11586f9a096de9ef63ccb7400e62f93dd1cdeb60eb831f933238039de43ee",
+   "apps/api/app/core/phase8_settings.py": "8713daa60d6e362530c1fd6878fb953d43f1d297b2cc1ef881790d267a8fdf52",
    "apps/api/app/core/source_assets.py": "1889e9d025697c0d928b6e068325c0569adc7b8a802394a6dd3750f451e39ce5",
    "apps/api/app/core/structured_logging.py": "854ef58ab42efdb665dc20cff8595e296241ccd63c5322eb77bcb7830b691ea1",
-   "apps/api/app/db_models.py": "24883b570e9bc87e07db661b9c43e935b7bdcd83856228fd17a092414352e7c2",
+   "apps/api/app/db_models.py": "55fd2d707309df01d753d8f3b536561651be792df679b560377d3a1e637eea10",
    "apps/api/app/gateway/__init__.py": "f30aa888d009d0bfc94f7be7dcd0a67f371e323e2f2a33ade73b0a06e1b568f2",
    "apps/api/app/gateway/adapters.py": "982c5d6c9932d7b702db9269ed3decba2bb08e6a409f50bc68c237c286eed977",
    "apps/api/app/gateway/contracts.py": "f026234f38ecf07749f6356afe4bf5248f8099cd55279c7bc847fe24423bf969",
@@ -241,6 +241,6 @@
    "apps/api/app/services/v3/rules.py": "fcd33c73424d797816ef8d0f13bde6ba224ee15be6ce3423dc1c995fa6b8958a",
    "scripts/replay_tutor_plans.py": "287a264cea97c41d4e59c958c817c00d6a84e5b8f4d47dd76a867584cc11191a"
   },
-  "sha256": "d9a1b3041ad7c831c5ed51fdf67202b44387c99de0040d0ca9affdf6278a8245"
+  "sha256": "1054690f43ba5b5cbb8c6427137bcd47f8d44da2c136e8af7aa725fe03b7632b"
  }
 }

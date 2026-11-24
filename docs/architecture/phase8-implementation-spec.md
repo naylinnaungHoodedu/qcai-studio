@@ -335,6 +335,21 @@ Package v1 through v6 checks, authorization matrix, manifest and calibration, pu
 
 Forty process-local Python mutation cases and one frontend mutation case produced the failures their regressions are intended to catch. The isolated mutation runs made no source changes. DI-318 records the remaining shared-file stop under R1-07. The engineering harness and local evidence do not pass the formal Phase 8 exit.
 
+### 17.2 Round 2 evidence and verification
+
+All six reports were regenerated from clean source commit `cb2a33e`. The invariance harness ran 299 public fixture items at three synthetic mastery levels in the two-pass design. It found zero violations and zero learner-state fields and produced 148 items with distinct rendered presentations. This satisfies the engineering prerequisite for plan 15.2 (LQ-1). The erasure proof verifies six synthetic scenarios without module-hash inputs.
+
+| Record | SHA-256 |
+|---|---|
+| Phase 3 tutor replay | `1054690f43ba5b5cbb8c6427137bcd47f8d44da2c136e8af7aa725fe03b7632b` |
+| Phase 4 V1 fixtures | `7b5c93d1843af9fb14de728c4f05c0ed79e201349b06f946e7d76c27f1b165b3` |
+| Phase 5 V2 fixtures | `0852723b6e43f43ded0664253970361abd5c51f869fa2efdeddb7ccf4ef71d3d` |
+| Phase 6 V3 residual report | `05321c90b7563d7a7347f1df7eff088cc3010eeeafee932a8ffc54fe22f87e68` |
+| Phase 8 invariance | `dd2d2921445429a66480b00decb3bf652fb54b7228f68584760da2ea50b35602` |
+| Phase 8 erasure proof (report content) | `551caa3b40c7944b73ac355400947a54886f7d06d718a4b689c3ac4e5cf24204` |
+
+The regression checks detected 42 process-local mutations. The checks exercised the original retention signature and readiness constraints, erasure races and post-erasure recovery, quota scope, event fields, trusted mastery, package policy, and drift in the spec and runbooks. A separate hand-back check verifies the required response fields.
+
 ## 18. Review history
 
 The rows record the build and each review round in order. Sections 0–17 describe the current implementation. Each review row summarizes the changes and names representative regression tests.
@@ -344,4 +359,4 @@ The rows record the build and each review round in order. Sections 0–17 descri
 | Spec (pre-code) | - | Initial design and verification map. |
 | Build | `cb142b1` | Settings, synchronization, identity, privacy lifecycle, shadow planner, and engineering evidence. Regression guards include `test_settings_phase8_defaults_and_refusals`, `test_ac_8_1_concurrent_trusted_updates_preserve_each_mastery_value`, `test_phase8_claim_requires_guest_csrf_and_is_one_shot`, `test_plan_f_the_committed_erasure_proof_matches_a_fresh_run`, and `test_plan_p_the_committed_invariance_report_matches_a_fresh_run`. |
 | Review 1 | `8c7b7d4` | Route ownership and PD register guards, serialized cutover and erasure, claim and privacy HTTP coverage, active replica lifecycle, measurable invariance, retention, and spec controls. See `test_phase8_route_policies_form_one_block_after_the_learner_record_rows`, `test_phase8_docs_pd_204_states_the_engineering_constants_in_code`, `test_phase8_erasure_refuses_an_in_flight_subject_rebind`, `test_phase8_privacy_http_consent_export_erasure_and_assessment`, and `test_ac_8_4_a_learner_value_in_an_evidential_payload_is_detected`. |
-| Review 2 | Pending commit | Restored the §8.1 retention and readiness contracts. Verified erasure serialization, retained-principal recovery, guard expiry, F-3, trusted mastery, package-code equality, and documentation traceability. The owner assigned DI-318 to the main track. See `test_phase8_erase_stale_guest_rows_keeps_its_two_argument_signature`, `test_phase8_keeps_protected_acceptance_tests_at_the_phase6_baseline`, `test_phase8_erasure_serializes_with_unguarded_and_first_writers`, and `test_phase8_a_principal_erased_and_signing_in_again_gets_a_fresh_empty_record`. |
+| Review 2 | `cb2a33e` | Restored the §8.1 retention and readiness contracts. Verified erasure serialization, retained-principal recovery, guard expiry, F-3, trusted mastery, package-code equality, and documentation traceability. The owner assigned DI-318 to the main track. See `test_phase8_erase_stale_guest_rows_keeps_its_two_argument_signature`, `test_phase8_keeps_protected_acceptance_tests_at_the_phase6_baseline`, `test_phase8_erasure_serializes_with_unguarded_and_first_writers`, and `test_phase8_a_principal_erased_and_signing_in_again_gets_a_fresh_empty_record`. |
