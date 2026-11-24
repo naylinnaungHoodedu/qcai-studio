@@ -443,6 +443,18 @@ The seven reports were regenerated from clean source commit `c466957` under pack
 
 The focused erasure checks passed on SQLite, psycopg, and pg8000. The regression tests detected 30 process-local reverts covering all 14 upheld findings.
 
+The full local checklist passed on `e10b802`. Frontend lint, type checking, and 167 integration tests passed. Both PostgreSQL driver legs used the isolated local PostgreSQL 17 cluster. CI uses PostgreSQL 16.
+
+| Local leg | Main test paths | Passed | Skipped | Deselected | Expected failures | Template tests passed separately | Combined passed |
+|---|---|---:|---:|---:|---:|---:|---:|
+| SQLite | `apps/api/tests evaluation/tests` | 2120 | 2 | 12 | 3 | 11 | 2131 |
+| PostgreSQL psycopg | `apps/api/tests` | 2118 | 0 | 12 | 3 | 11 | 2129 |
+| PostgreSQL pg8000 | `apps/api/tests` | 2118 | 0 | 12 | 3 | 11 | 2129 |
+
+The eleven template-reading IDs listed in §17.3 passed separately on each backend. The single release-only test is the remaining exclusion after the runs are combined. SQLite includes four evaluation tests and skips two PostgreSQL-specific cases. Each backend gained 26 passes over round 2. The combined SQLite count is 184 higher than the Phase 7 main baseline of 1,947.
+
+All 24 local validators passed, including packages v1 through v7, the base-ref EHMF golden-set check, and all 1,192 frozen public response bodies. The source-fidelity check confirms the three recorded mismatches under DI-105. The repository and Docker-context path checks passed. Licensed-passage scanning requires fingerprint input, and CI runs the dependency audits and built-image boundary scan.
+
 ## 18. Review history
 
 The rows record the build and each review round in order. Sections 0–17 describe the current implementation. Each review row summarizes the changes and names representative regression tests.
