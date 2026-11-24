@@ -143,9 +143,14 @@ def test_a_package_file_copied_without_its_library_folder_loads_only_the_library
 
 def test_the_phase_7_package_number_is_read_from_one_constant_per_side():
     # E16: the Phase 7 package may be renumbered (Phase 8 takes v6 if it reaches main first). The loader's schema rules
-    # read EHMF_SCHEMA_VERSION and the ledger's config_version reads EHMF_FIRST_MAJOR; the two are equal, and the shipped
-    # package is that schema and that major.
-    assert EHMF_SCHEMA_VERSION == vocabulary.EHMF_FIRST_MAJOR == PACKAGE.schema_version == int(SHIPPED_VERSION.split(".")[0])
+    # read EHMF_SCHEMA_VERSION and the ledger's config_version reads EHMF_FIRST_MAJOR; the two are equal, and v6 (the first
+    # package with an ehmf block, read explicitly since Phase 9 ships v7) is that schema and that major. The shipped
+    # package's own number is test_ranking_units' (RANKING_SCHEMA_VERSION, Phase 9).
+    from app.core.config_package import V6_PACKAGE_PATH
+
+    v6 = json.loads(V6_PACKAGE_PATH.read_text(encoding="utf-8"))
+    assert EHMF_SCHEMA_VERSION == vocabulary.EHMF_FIRST_MAJOR == v6["schema_version"] == int(v6["package_version"].split(".")[0])
+    assert PACKAGE.schema_version >= EHMF_SCHEMA_VERSION and int(SHIPPED_VERSION.split(".")[0]) == PACKAGE.schema_version
     assert PACKAGE.raw["ehmf"]["config_version"]["first_package"] == f"{vocabulary.EHMF_FIRST_MAJOR}.0.0"
     loader = (REPO_ROOT / "apps" / "api" / "app" / "core" / "config_package.py").read_text(encoding="utf-8")
     script = (REPO_ROOT / "scripts" / "config_package.py").read_text(encoding="utf-8")

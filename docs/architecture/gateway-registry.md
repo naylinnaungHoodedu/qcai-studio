@@ -18,7 +18,7 @@ Hand-maintained from configuration package v4 (`apps/api/app/config_package/v4.j
 | `fake-gamma-v1` | `fake-gamma` | `fake-gamma-verifier` | 2026-11-21 | verify | 256 tokens, 500 ms, 1 retry | 1 unit |
 | `fake-delta-v1` | `fake-delta` | `fake-delta-verifier` | 2026-11-21 | generate, verify | 256 tokens, 500 ms, 1 retry | 1 unit |
 
-`fake-delta` is the spare family: eligibility precedes the panel, so it is drawn only when one of the first three is ineligible. The package's generator (`extractive-d19-v1`) has the family `extractive-d19`, which no registry member has.
+`fake-delta` is the spare family: eligibility precedes the panel, so it is drawn only when one of the first three is ineligible. From package v7 `fake-delta-v1` also names `fake.generate_rule` `extractive-clone-v1`: the Phase 9 ranking counts it a candidate generator, and development shadow generation (`RANKING_SHADOW_GENERATION`, off by default) may run the extractive clone under its identity, whose V2 panel then excludes `fake-delta`. The package's generator (`extractive-d19-v1`) has the family `extractive-d19`, which no registry member has.
 
 **Daily budgets** (PD-26; A-15 open, hold H9): development 100000 units; staging, production and default 0 (every adapter ineligible). Alert at 4/5. Each registry's budget is one row per UTC day in the application database, shared by every instance, and so is its stop. Every attempt an adapter sends reserves its cost, retries included.
 

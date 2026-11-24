@@ -43,6 +43,9 @@ from app.gateway.registry import AdapterSpec
 from app.services.v2_panel import rules
 
 WIRED_FAKE_RULES = frozenset({"verbatim-support-v1"})
+# Package v7 (Phase 9 spec 4.12): the one fake generate rule, the extractive clone (app.services.ranking.generators), which
+# runs only for development shadow generation (RANKING_SHADOW_GENERATION) and makes no gateway or network call.
+WIRED_FAKE_GENERATE_RULES = frozenset({"extractive-clone-v1"})
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 # "error" is the gateway's kind for an adapter that raised anything but an AdapterError.
 ERROR_KINDS = ("http_status", "timeout", "transport", "invalid_output", "invalid_request", "cost_overrun", "budget", "no_key", "down",

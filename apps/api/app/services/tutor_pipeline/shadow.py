@@ -7,7 +7,9 @@
 3. TwoPassPipeline.run refuses any delivery but "shadow", and LedgerEntry refuses "delivered".
 The shadow runs as a background task after the learner's response is sent: it writes a shadow ledger record and
 returns nothing to the learner. A shadow failure (an exception, the budget, a ledger write) is caught, counted and
-logged; it never changes the learner's response.
+logged; it never changes the learner's response. After a successful run, and only under RANKING_SHADOW_GENERATION
+(development only, off by default), the Phase 9 ranking hook may run one more undelivered shadow record for the ranking's
+challenger or incumbent (app.services.ranking.hook; its own try, so it never changes this run or the learner's response).
 """
 
 from __future__ import annotations
@@ -152,3 +154,7 @@ def run_shadow(
             }
         },
     )
+    if settings.ranking_shadow_generation:
+        from app.services.ranking.hook import guarded_after_shadow
+
+        guarded_after_shadow(job, result, pipeline_factory=pipeline_factory, settings=settings, session_factory=session_factory, started=started)

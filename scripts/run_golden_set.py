@@ -110,7 +110,7 @@ def pins(package) -> dict:
 def _settings(env, package_path: Path) -> Settings:
     return Settings(environment="development", enforce_corpus_governance=True, corpus_manifest_path=str(env.settings.corpus_manifest_path),
                     retrieval_gate="bm25f-v1", two_pass_tutor="shadow", v1_pipeline="enforce", model_gateway="on", ehmf="on",
-                    v3_queue="off", config_package_path=str(package_path))
+                    v3_queue="off", ranking="off", config_package_path=str(package_path))
 
 
 def _options(package, settings, sessions, *, verify=None, alignment_leakage=False) -> dict:
@@ -404,7 +404,7 @@ def _main(argv: list[str] | None = None) -> int:
     mode.add_argument("--write", type=Path)
     mode.add_argument("--check", type=Path)
     parser.add_argument("--allow-dirty", action="store_true", help="--write from a working tree that differs from HEAD")
-    parser.add_argument("--package", type=Path, default=DEFAULT_PACKAGE_PATH, help="the configuration package (default: the shipped v6)")
+    parser.add_argument("--package", type=Path, default=DEFAULT_PACKAGE_PATH, help="the configuration package (default: the shipped one)")
     parser.add_argument("--history", type=Path, default=DEFAULT_HISTORY, help="the append-only package version history")
     base_source = parser.add_mutually_exclusive_group()
     base_source.add_argument("--base-ref", help="a git ref whose committed history must be an unchanged prefix (CI: the base branch)")

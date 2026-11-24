@@ -7,14 +7,17 @@ id and of a reviewer, a client key and the package in force: never a learner ide
 a private-plane span (plan H; E-95). The reviewer's view (QueueItemView) holds public, quotable claim and span text only,
 and no vote, objection type, support share, severity, exposure, priority, final or other round's label (blind review,
 PD-36). CusumAlarm (cusum-alarm-v1) is the interface through which Phase 9's CUSUM statistic raises an X5 window (DI-96).
-V3_SCHEMA_MODELS names the two contracts configuration package v5 pins (v3.schemas).
+V3_SCHEMA_MODELS names the two contracts configuration package v5 pins (v3.schemas). A gold label's reasons include the
+ranking fallback's (ranking_empty_eligible_set, package schema 7; Phase 9 spec conflict 24): packages v5 and v6 pin the
+schema of the four Phase 6 reasons, which GoldLabelV6Schema reproduces, and package v7 pins the current one
+(v3_schema_models picks by the package's schema).
 """
 
 from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from app.services.tutor_pipeline.contracts import CLAIM_ID, HEX64, SPAN_ID, Contract
 
@@ -23,7 +26,8 @@ DIGEST = r"^[0-9a-f]{32}$"
 CLIENT_KEY = r"^[A-Za-z0-9_-]{8,64}$"
 UTC_TIME = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$"
 Trigger = Literal["X1", "X2", "X3", "X4", "X5", "X6"]
-QueueReason = Literal["v1_3_flag", "v1_8_misconception", "v2_correction_exhausted", "v2_degraded_withheld"]
+QueueReasonV6 = Literal["v1_3_flag", "v1_8_misconception", "v2_correction_exhausted", "v2_degraded_withheld"]
+QueueReason = Literal["v1_3_flag", "v1_8_misconception", "v2_correction_exhausted", "v2_degraded_withheld", "ranking_empty_eligible_set"]
 
 
 def _sorted_unique(values) -> bool:
@@ -75,7 +79,7 @@ class GoldLabel(Contract):
     review_round: int = Field(ge=1, le=3)
     subject: Literal["claim", "response"]
     triggers: tuple[Trigger, ...] = Field(max_length=6)
-    reasons: tuple[QueueReason, ...] = Field(max_length=4)
+    reasons: tuple[QueueReason, ...] = Field(max_length=5)
     ledger_seq: int = Field(ge=1)
     response_digest: str = Field(pattern=DIGEST)
     delivery_digest: str = Field(pattern=DIGEST)
@@ -176,4 +180,19 @@ class QueueItemView(Contract):
         return self
 
 
+# The gold label as packages v5 and v6 pin it (the four Phase 6 queue reasons): used only to check those pins (no docstring:
+# it would enter the schema as a description).
+class GoldLabelV6Schema(GoldLabel):
+    model_config = ConfigDict(title="GoldLabel")
+    reasons: tuple[QueueReasonV6, ...] = Field(max_length=4)
+
+
 V3_SCHEMA_MODELS = {"V3GoldLabel": GoldLabel, "V3CusumAlarm": CusumAlarm}
+V3_SCHEMA_MODELS_V6 = {"V3GoldLabel": GoldLabelV6Schema, "V3CusumAlarm": CusumAlarm}
+
+
+def v3_schema_models(schema_version: int) -> dict:
+    """The V3 contracts a package of this schema pins: package v7 (the ranking schema) and later the current ones."""
+    from app.core.config_package import RANKING_SCHEMA_VERSION
+
+    return V3_SCHEMA_MODELS if int(schema_version) >= RANKING_SCHEMA_VERSION else V3_SCHEMA_MODELS_V6

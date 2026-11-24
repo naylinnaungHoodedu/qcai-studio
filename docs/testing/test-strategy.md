@@ -276,3 +276,43 @@ Tests are in `apps/api/tests/test_phase7_acceptance.py` unless named otherwise; 
 | `conftest.py` | Each test reads the EHMF stop afresh with EHMF available (the stop cache and the availability reason are reset). |
 
 **Exit gate.** The Phase 7 exit needs AC-7-1 to AC-7-6 green, package v1's hash in the ledger and the R-18 closure evidence (plan Phase 7 P: "AC-7-1 to AC-7-6 green; package v1 hash in the ledger; R-18 closure evidence in Section 5: corrected DOCX values and the source-fidelity CI job over the 12 DOCX passing (Phase 11 task 3 and AC-11-3 brought forward to this exit)."). The AC tests are done in code. PR #39 was squash-merged on 2026-11-23 as `512b8a6` (tree identical to `4e682db`); PR run 45306759765 and branch push run 45306711241 at `4e682db` passed every job (release-artifacts skipped by design), and main run 45308186298 at `512b8a6` passed every job and is the cited run for AC-7-1 to AC-7-6 (DI-104). R-18 stays open: the DOCX are the Content Owner's to correct (DI-105), and CI runs the source-fidelity `--check` with 3 mismatches. The EHMF weights await the PI (DI-108). `phase7_exit_passed` stays false in the package. The exit is not passed.
+
+## Phase 9 acceptance map (plan Phase 9 K)
+
+Tests are in `apps/api/tests/test_phase9_acceptance.py` unless named otherwise; the fakes are in `apps/api/tests/ranking_fakes.py`. Every file runs on SQLite in `api-and-evaluation` and on PostgreSQL 16 in `api-postgres` (psycopg and pg8000). No test touches the network or calls a provider: the controller is tested on hand-built event logs folded by the pure controller, the scan on development shadow records in fresh in-memory databases, the generators are the extractive generator and its development clone, and the verifiers are the development fakes.
+
+| AC | Tests |
+|---|---|
+| AC-9-1 An event without a completed verdict leaves alpha, beta and Qbar unchanged | `test_ac_9_1_an_event_without_a_completed_verdict_leaves_alpha_beta_and_qbar_unchanged` (one real record per skip reason), `test_ac_9_1_y_is_one_only_for_an_uncorrected_first_pass` |
+| AC-9-2 A learner rating changes only F_i | `test_ac_9_2_a_learner_rating_changes_only_f_i`, `test_ac_9_2_a_shadow_record_has_f_missing_and_no_feedback_is_appended_for_it` |
+| AC-9-3 A challenger ahead by the deadband is promoted only after the debounce | `test_ac_9_3_a_challenger_ahead_by_the_active_deadband_is_promoted_only_after_the_active_debounce` |
+| AC-9-4 T(g, c) below the tier threshold: immediate demotion | `test_ac_9_4_trust_below_the_tier_threshold_demotes_immediately` |
+| AC-9-5 A model-version change: deflation, cap C until the golden regression passes | `test_ac_9_5_a_model_version_change_deflates_caps_at_c_and_raises_x5_until_the_golden_regression_passes`, `test_ac_9_5_the_ranking_reuses_v3_s_model_change_for_a_version_v3_already_saw`, `test_ac_9_5_the_x5_window_raises_the_next_delivery_s_draw_to_one_in_five` |
+| AC-9-6 An empty eligible set: no unverified text and a V3 item | `test_ac_9_6_an_empty_eligible_set_delivers_no_unverified_text_and_enqueues_a_v3_item` (down, stopped, kill switch, disabled, all D) |
+| AC-9-7 A CUSUM alarm: audit at the X5 rate and promotions hold | `test_ac_9_7_a_cusum_alarm_raises_the_audit_to_the_x5_rate_holds_promotions_and_never_demotes`, `test_ac_9_7_the_scan_records_the_alarm_through_phase_6_and_releases_the_hold_when_the_window_closes`, `test_ac_9_7_with_v3_off_the_hold_stays_open` |
+| AC-9-8 One event log replayed twice: byte-identical final states | `test_ac_9_8_one_event_log_replayed_twice_gives_byte_identical_final_states`, `test_ac_9_8_the_worker_replay_check_exits_1_on_a_mismatch_and_0_when_current` |
+| Plan J hand fixtures, flapping and outage | `test_plan_j_hand_fixtures_beta_95_5_and_190_10`, `test_plan_j_flapping_near_equal_models_switch_no_more_than_the_hysteresis_allows`, `test_plan_j_outage_makes_a_model_ineligible_and_recovery_is_only_through_promotion` |
+| Plan E, F, G, H, I, L rows, tasks 1, 2 and 6, the freeze | the `test_plan_*` and `test_freeze_*` tests |
+
+### Phase 9 test files
+
+| File | Covers |
+|---|---|
+| `test_phase9_acceptance.py` | AC-9-1 to AC-9-8, the plan E, F, G, H, I, J and L rows, tasks 1, 2 and 6, the freeze, the Phase 9 revision and the Phase 9 doc tests |
+| `test_ranking_units.py` | the unit tests of the ranking modules (spec 13.2): the Decimal numerics and the Beta quantile, K by vote entropy, quality, score, ratings and tier permissions, the tie-break and the seeded draw, the CUSUM, the tier source, every ranking-block refusal, the schema constants, the clone generator, the V3 helpers and the replay script's usage exits |
+| `ranking_fakes.py` | not a test module: ranking settings, a hand-built input log (`Log`), the pure fold, the two-family registry, the package copy, development shadow records, the commissioning input and the scan |
+
+### Phase 9 changes to existing test modules
+
+| File | Change (intent kept) |
+|---|---|
+| `test_config_package.py` | The shipped package is v7 (its schema and major read from `RANKING_SCHEMA_VERSION` and `LATEST_SCHEMA_VERSION`); the v6 assertions read `V6_PACKAGE_PATH` (readable for one release, DI-126); the v5 structural refusals run on v5, v6 and v7; `test_the_v6_edits_v7_changes_are_exactly_the_ones_it_makes`. |
+| `test_ehmf_units.py` | The Phase 7 number test reads v6 explicitly; the shipped package's number is the Phase 9 unit test's. |
+| `test_phase7_acceptance.py` | v5 and v6 read explicitly; the Phase 7 revision is followed by the Phase 9 one (the downgrade passes through it); the E15 merge-facts test. |
+| `test_phase6_acceptance.py` | The head is `20261123_phase9_ranking` (the Phase 3 rollback's bullet takes the Phase 9 step first); the Phase 6 walk drops the Phase 9 tables too; F_i is read by the V3 feedback service and, for the quality term, the ranking scan. |
+| `test_phase4_acceptance.py` | The doc tests name Phase 9's v7 and the loader bound `LATEST_SCHEMA_VERSION`. |
+| `test_phase3_acceptance.py`, `test_response_ledger_migrations.py` | The Phase 9 revision and its tables: the downgrade path goes through it first. |
+| `test_configuration_overrides.py` | `ranking_shadow` and `ranking_shadow_generation` are recorded overrides. |
+| `conftest.py` | Each test reads the ranking stop afresh with the ranking available. |
+
+**Exit gate.** The Phase 9 exit needs AC-9-1 to AC-9-8 green, a staging shadow run and live routing off pending E4 (plan Phase 9 P: "AC-9-1 to AC-9-8 green; staging shadow run; live routing OFF pending E4 [Decision D-28]."). The AC tests are done in code; the cited run must be on `main` (DI-115). No staging shadow run exists (no non-fake generate member, D-07, D-12; DI-120), and live routing is refused while D-28 is open. `phase9_exit_passed` stays false in the package. The exit is not passed.

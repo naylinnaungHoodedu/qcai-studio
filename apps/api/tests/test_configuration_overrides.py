@@ -87,6 +87,8 @@ SETTING_RELAXATIONS = {
     "v3_queue_shadow": {"v3_queue": "shadow"},
     # Phase 7: EHMF in shadow outside development (it changes no learner path; EHMF needs the V2 mode, off there).
     "ehmf_shadow": {"ehmf": "shadow"},
+    # Phase 9: the ranking in shadow outside development (it changes no learner path; it adds X5 audits and V3 items).
+    "ranking_shadow": {"ranking": "shadow"},
 }
 PACKAGE_RELAXATIONS = {"config_package_path_overridden": {"is_default_path": False}, "config_package_hash_unverified": {"hash_verified": False}}
 # Phase 4: a relaxation Settings refuse outside development before the Phase 4 exit (V1_PIPELINE=enforce). The alert
@@ -94,8 +96,9 @@ PACKAGE_RELAXATIONS = {"config_package_path_overridden": {"is_default_path": Fal
 # Phase 5: MODEL_GATEWAY=on, refused outside development before the Phase 5 exit (and without V1_PIPELINE=enforce).
 # Phase 6: V3_QUEUE=on, refused outside development before the Phase 6 exit.
 # Phase 7: EHMF=on, refused outside development before the Phase 7 exit.
+# Phase 9: RANKING_SHADOW_GENERATION, refused outside development (development-only shadow generation).
 REFUSED_RELAXATIONS = {"v1_pipeline_enforce": {"v1_pipeline": "enforce"}, "model_gateway_on": {"model_gateway": "on"}, "v3_queue_on": {"v3_queue": "on"},
-                       "ehmf_on": {"ehmf": "on"}}
+                       "ehmf_on": {"ehmf": "on"}, "ranking_shadow_generation": {"ranking_shadow_generation": True}}
 
 
 def _override_details(monkeypatch, settings: Settings, package=None) -> dict | None:

@@ -130,3 +130,23 @@ merges `main` and renumbers before its pull request (Phase 7 spec 0.1, E16):
    Phase 7", the `v6` path key); in `test_phase6_acceptance.py`, `test_phase6_docs_the_texts_phase6_made_false_state_the_current_code`
    ("6 since Phase 7", "`.../v6.json` with Phase 7", "`v6.json` with Phase 7"); and the Phase 7 doc tests that quote
    file names. Comments naming v6 (for example in `test_config_package.py`) are edited with the text.
+
+## The ranking block (Phase 9)
+
+Package v7's `ranking` block (`ranking-params-v1`, every value provisional, PD-50..PD-59) is under this change control:
+an edit bumps `package_version`, reruns the golden set (which appends the version to the history) and rewrites the
+ranking replay report (`python scripts/run_ranking_replay.py --write docs/evaluation/phase9/ranking_replay_v1.json`,
+which pins the package and the block's sha256; CI's `--check` exits 6 on a pin mismatch). The ranking scan appends a
+`config` event with the new block, so the controller and the replay read the block from the event log.
+
+## Renumbering the Phase 9 package
+
+If Phase 8 reaches `main` first with v7 and a revision after `20261123_phase7_ehmf`, the Phase 9 branch merges `main` and
+renumbers (Phase 9 spec 15, E16): rename `v7.json`, its sidecar and `schemas/v3-gold-label.v1.r7.schema.json` to the next
+free number; set `RANKING_SCHEMA_VERSION` and `app.services.ranking.vocabulary.RANKING_FIRST_MAJOR` to it
+(`LATEST_SCHEMA_VERSION` follows) and `DEFAULT_PACKAGE_PATH` to the new file, with `supersedes` naming Phase 8's package;
+set `down_revision` of `20261123_phase9_ranking.py` to Phase 8's head and update the downgrade-walk tests; take `main`'s
+`package_versions.json`, run `config_package.py --rehash` and `run_golden_set.py --write ... --base-ref origin/main`,
+rewrite the replay report and the fixture, replay and residual reports; and edit every text naming v7 or 7.0.0 for
+Phase 9 (the Phase 9 spec, ADR-011, the runbooks, the test strategy, the env example, the Phase 3 and Phase 4 specs'
+"since Phase 9" lines and the doc tests that quote them).

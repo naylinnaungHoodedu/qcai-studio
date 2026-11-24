@@ -203,7 +203,7 @@ def run(*, commit_source=None) -> dict:
     from evaluation.qcai_eval.statistics import wilson_interval as harness_wilson
 
     problems: list[str] = []
-    settings = Settings(environment="development", v3_queue="shadow", ehmf="off")
+    settings = Settings(environment="development", v3_queue="shadow", ehmf="off", ranking="off")
     package = get_config_package(settings)
     params = package.v3
     database = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)

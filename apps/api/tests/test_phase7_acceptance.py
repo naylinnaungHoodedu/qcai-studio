@@ -425,7 +425,8 @@ def test_ac_7_6_a_same_version_edit_hidden_by_editing_the_history_fails_the_ci_c
     base.write_bytes(golden.DEFAULT_HISTORY.read_bytes())
     shipped = golden.load_history(base)
     history = tmp_path / "history.json"
-    history.write_text(json.dumps({**shipped, "entries": [{"version": PACKAGE.package_version, "sha256": edited.sha256}]}), encoding="utf-8")
+    rewritten = [entry for entry in shipped["entries"] if entry["version"] != PACKAGE.package_version]
+    history.write_text(json.dumps({**shipped, "entries": [*rewritten, {"version": PACKAGE.package_version, "sha256": edited.sha256}]}), encoding="utf-8")
     record = tmp_path / "run.json"
     common = ["--package", str(edited_path), "--history", str(history)]
     assert golden.main(["--write", str(record), *common, "--allow-dirty"]) == golden.EXIT_OK
@@ -730,8 +731,13 @@ def test_plan_g_v5_stays_readable_and_v6_parses_v1_to_v4_records():
     assert check_tutor_pipeline_package(v5, structural=True) == []
     v4 = load_config_package(V5_PACKAGE_PATH.with_name("v4.json"), governed=True)
     assert check_tutor_pipeline_package(v4, structural=True) == []
-    assert DEFAULT_PACKAGE_PATH.name == f"v{EHMF_SCHEMA_VERSION}.json" and PACKAGE.schema_version == EHMF_SCHEMA_VERSION == vocabulary.EHMF_FIRST_MAJOR and PACKAGE.v3.trigger_registry_version == "x-triggers-v2"
-    assert check_tutor_pipeline_package(PACKAGE, structural=True) == []
+    # v6 (the first package with an ehmf block) is read explicitly since Phase 9 ships v7, which keeps every v6 rule.
+    from app.core.config_package import V6_PACKAGE_PATH
+
+    v6 = load_config_package(V6_PACKAGE_PATH, governed=True)
+    assert V6_PACKAGE_PATH.name == f"v{EHMF_SCHEMA_VERSION}.json" and v6.schema_version == EHMF_SCHEMA_VERSION == vocabulary.EHMF_FIRST_MAJOR
+    assert v6.v3.trigger_registry_version == "x-triggers-v2" and PACKAGE.v3.trigger_registry_version == "x-triggers-v2"
+    assert check_tutor_pipeline_package(v6, structural=True) == [] and check_tutor_pipeline_package(PACKAGE, structural=True) == []
 
 
 # ===================================================================================================== plan I
@@ -1264,7 +1270,8 @@ def test_plan_e_the_phase_7_revision_is_additive_reversible_and_keeps_its_rows()
     config = Config(str(API_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(API_ROOT / "alembic"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["20261123_phase7_ehmf"]
+    # The Phase 9 revision follows this one (the head since Phase 9).
+    assert script.get_revision(script.get_heads()[0]).down_revision == "20261123_phase7_ehmf"
     revision = script.get_revision("20261123_phase7_ehmf")
     assert revision.down_revision == "20261122_phase6_v3_audit"
     source = Path(revision.path).read_text(encoding="utf-8")
@@ -1307,7 +1314,8 @@ def test_plan_e_the_phase_7_downgrade_refuses_while_ehmf_stops_holds_rows_and_th
     from app.core.schema_upgrades import run_schema_upgrades
     from app.services.ledger import SCHEMA_REVISION
 
-    assert SCHEMA_REVISION == "20261123_phase7_ehmf"
+    assert SCHEMA_REVISION == "20261123_phase9_ranking"  # the head since Phase 9, which follows the Phase 7 revision
+    phase9 = {"ranking_events", "ranking_scans", "ranking_states", "ranking_incumbents"}
     connect_args = {"check_same_thread": False} if fresh_database_url.startswith("sqlite") else {}
     engine = create_engine(fresh_database_url, connect_args=connect_args)
     try:
@@ -1335,7 +1343,7 @@ def test_plan_e_the_phase_7_downgrade_refuses_while_ehmf_stops_holds_rows_and_th
         dropped = _alembic(fresh_database_url, "-x", "allow_ehmf_drop=true", "downgrade", "20261122_phase6_v3_audit")
         assert dropped.returncode == 0, dropped.stderr[-2000:]
         remaining = set(sa_inspect(engine).get_table_names())
-        assert "ehmf_stops" not in remaining and remaining - {"alembic_version"} == others - {"alembic_version"}
+        assert "ehmf_stops" not in remaining and remaining - {"alembic_version"} == others - {"alembic_version"} - phase9
     finally:
         engine.dispose()
 

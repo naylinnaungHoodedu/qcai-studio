@@ -1,0 +1,307 @@
+"""Phase 9 unit tests: the ranking numerics, signals, trust, quality, score, selection, CUSUM, the package loader's ranking
+rules and the V3 helpers the ranking scan uses (Phase 9 spec 13.2). Pure functions and fresh in-memory databases."""
+
+from __future__ import annotations
+
+import ast
+from decimal import Decimal, getcontext, localcontext
+import json
+import math
+
+import pytest
+
+from app.core.config_package import (
+    EHMF_SCHEMA_VERSION,
+    LATEST_SCHEMA_VERSION,
+    RANKING_SCHEMA_VERSION,
+    ConfigPackageError,
+    load_config_package,
+)
+from app.services.ranking import numeric
+from app.services.ranking.cusum import constants, update
+from app.services.ranking.numeric import D, beta_quantile, log_gamma, reg_inc_beta, to_str, uniform
+from app.services.ranking.quality import ewma, quality
+from app.services.ranking.score import cost_share, score
+from app.services.ranking.trust import permits, rating
+from app.services.ranking.vocabulary import CLUSTERS, EVENT_KINDS, RANKING_FIRST_MAJOR
+from ranking_fakes import BLOCK, PACKAGE, REPO_ROOT, Log, apply_all, model, package_copy
+
+API_ROOT = REPO_ROOT / "apps" / "api"
+PERMISSIONS = {"A": (1, 2, 3), "B": (2, 3), "C": (), "D": ()}
+RATINGS = {"A": Decimal("0.95"), "B": Decimal("0.90"), "C": Decimal("0.80")}
+
+
+# ------------------------------------------------------------------------------------------------- numerics
+
+
+def test_log_gamma_matches_math_lgamma():
+    for x in ("0.5", "1", "2.5", "7", "29.9", "41", "190.25", "1000"):
+        assert abs(float(log_gamma(x)) - math.lgamma(float(x))) < 1e-12, x
+
+
+def test_reg_inc_beta_endpoints_symmetry_and_the_quantile_is_monotone_and_bounded():
+    assert reg_inc_beta("0", "3", "4") == 0 and reg_inc_beta("1", "3", "4") == 1
+    for x in ("0.1", "0.4", "0.75"):
+        left = reg_inc_beta(x, "3.5", "2")
+        right = reg_inc_beta(str(1 - Decimal(x)), "2", "3.5")
+        assert abs(left + right - 1) < Decimal("1e-20")
+    previous = Decimal(0)
+    for alpha in (5, 20, 60, 200):
+        value = beta_quantile("0.05", alpha, 5)
+        assert previous < value < 1
+        previous = value
+    assert beta_quantile("0.05", 40, 5) > beta_quantile("0.05", 40, 10)
+    assert beta_quantile("0.05", 1, 1) == Decimal("0.05")
+
+
+def test_numeric_refuses_a_float_and_gives_the_same_bytes_under_another_ambient_context():
+    with pytest.raises(TypeError):
+        D(0.5)
+    with pytest.raises(TypeError):
+        D(True)
+    numeric._beta_quantile.cache_clear()
+    reference = (to_str(beta_quantile("0.05", "95.5", "5.25")), to_str(quality({"V": D("0.3333"), "K": D("0.7"), "H": D("0.1"), "S": None, "F": None},
+                                                                                  {k: D(v) for k, v in BLOCK["quality"]["weights"].items()})))
+    numeric._beta_quantile.cache_clear()
+    with localcontext() as ambient:
+        ambient.prec = 5
+        getcontext().rounding = "ROUND_DOWN"
+        again = (to_str(beta_quantile("0.05", "95.5", "5.25")), to_str(quality({"V": D("0.3333"), "K": D("0.7"), "H": D("0.1"), "S": None, "F": None},
+                                                                                {k: D(v) for k, v in BLOCK["quality"]["weights"].items()})))
+        state_a, _ = apply_all(Log().models(model("m-a", "f-a"), model("m-b", "f-b")).batch("m-a", 30, v="0.3").batch("m-b", 30).events)
+    assert again == reference
+    state_b, _ = apply_all(Log().models(model("m-a", "f-a"), model("m-b", "f-b")).batch("m-a", 30, v="0.3").batch("m-b", 30).events)
+    assert json.dumps(state_a, sort_keys=True) == json.dumps(state_b, sort_keys=True)
+    assert to_str(Decimal("-0")) == "0" and to_str(Decimal("0E-18")) == "0" and to_str(Decimal("1.50")) == "1.5"
+
+
+def test_the_bisection_takes_sixty_steps_and_the_draw_is_seeded():
+    assert numeric.BISECTION_STEPS == 60
+    assert uniform("seed", "a", "1") == uniform("seed", "a", "1") != uniform("seed", "a", "2")
+    assert Decimal(0) <= uniform("seed", "x") < 1
+    source = (API_ROOT / "app" / "services" / "ranking" / "numeric.py").read_text(encoding="utf-8")
+    assert "import random" not in source and "from random" not in source
+
+
+# ------------------------------------------------------------------------------------------------- signals, trust, quality, score
+
+
+def test_k_is_one_minus_the_normalised_vote_entropy():
+    from app.services.ranking.signals import vote_agreement
+
+    assert vote_agreement(["SUPPORTED", "SUPPORTED", "SUPPORTED"]) == 1
+    assert vote_agreement(["SUPPORTED", "CONTRADICTED", "NOT_ENOUGH_INFO"]) == 0
+    two_one = 1 - (-(Decimal(2) / 3 * (Decimal(2) / 3).ln() + Decimal(1) / 3 * (Decimal(1) / 3).ln())) / Decimal(3).ln()
+    assert abs(vote_agreement(["SUPPORTED", "SUPPORTED", "CONTRADICTED"]) - two_one) < Decimal("1e-17")
+
+
+def test_quality_renormalises_over_the_present_signals_and_the_score_subtracts_the_penalties():
+    weights = {k: D(v) for k, v in BLOCK["quality"]["weights"].items()}
+    assert quality({"V": D(1), "S": None, "K": D(0), "F": None, "H": None}, weights) == D("0.7")
+    assert quality({"V": D(1), "S": None, "K": D(1), "F": None, "H": D("0.5")}, weights) == D("0.5")
+    # Every value is quantised to 1e-18 (q()): a third stays at 18 places.
+    third = quality({"V": D(1), "S": None, "K": None, "F": None, "H": D("0.333333333333333333333333")}, weights)
+    assert third == D("0.666666666666666667") and third.as_tuple().exponent == -18
+    assert quality({"V": None, "S": None, "K": None, "F": None, "H": None}, weights) == 0
+    assert ewma("0.5", "1", "0.05") == D("0.525")
+    assert cost_share(1, 0) == 0 and cost_share(1, 4) == D("0.25")
+    assert score("0.9", "0.8", u="0.5", latency_excess="0", lambda_u="0.1", lambda_l="0") == D("0.67")
+
+
+def test_rating_and_tier_permissions_follow_sec_vii_b():
+    assert [rating(D(t), RATINGS, capped=False) for t in ("0.96", "0.95", "0.94", "0.90", "0.85", "0.80", "0.79")] == ["A", "A", "B", "B", "C", "C", "D"]
+    assert rating(D("0.99"), RATINGS, capped=True) == "C" and rating(D("0.5"), RATINGS, capped=True) == "D"
+    assert permits("A", 1, a_available=True, permissions=PERMISSIONS, b_tier_1_when_no_a=True)
+    assert permits("B", 1, a_available=False, permissions=PERMISSIONS, b_tier_1_when_no_a=True)
+    assert not permits("B", 1, a_available=True, permissions=PERMISSIONS, b_tier_1_when_no_a=True)
+    assert not permits("C", 3, a_available=False, permissions=PERMISSIONS, b_tier_1_when_no_a=True)
+
+
+def test_selection_breaks_ties_by_adapter_id_and_the_first_incumbent_is_no_switch():
+    from app.services.ranking.selection import argmax
+
+    assert argmax({"m-b": D(1), "m-a": D(1), "m-c": D("0.5")}) == "m-a"
+    state, derived = apply_all(Log().models(model("m-b", "f-b"), model("m-a", "f-a")).outcome("m-a").events)
+    selects = [payload for kind, payload in derived if kind == "select"]
+    assert selects[0]["model"] == "m-a" and state["counts"]["switches"] == 0
+    # The seeded Thompson draw repeats.
+    first, _ = apply_all(Log().models(model("m-a", "f-a"), model("m-b", "f-b")).batch("m-a", 200).events)
+    second, _ = apply_all(Log().models(model("m-a", "f-a"), model("m-b", "f-b")).batch("m-a", 200).events)
+    assert first["counts"]["explorations"] == second["counts"]["explorations"] > 0
+
+
+def test_cusum_constants_steps_reset_and_sustained():
+    a, b = constants("0.05", "0.15")
+    assert a == numeric.q(Decimal(3).ln()) and b == numeric.q((Decimal(17) / 19).ln())
+    assert update("0", 1, a, b) == a and update("0", 0, a, b) == 0
+    log = Log().models(model("m-a", "f-a"), model("m-b", "f-b"), clean=2000)
+    for _ in range(40):
+        log.outcome("m-a", 0)
+    state, derived = apply_all(log.events)
+    alarms = [payload for kind, payload in derived if kind == "alarm"]
+    model_alarms = [item for item in alarms if item["stream"] == "model:m-a"]
+    assert len(model_alarms) >= 2 and model_alarms[0]["sustained"] is False and model_alarms[1]["sustained"] is True
+    assert state["counts"]["sustained"] >= 1 and len([k for k, _p in derived if k == "hold"]) == 2  # one hold per stream
+
+
+def test_outcome_rule_order_cluster_and_tier():
+    from app.services.ranking.contexts import tier_for
+    from app.services.ranking.signals import NON_VERDICT_FINALS
+
+    assert NON_VERDICT_FINALS["checker_unavailable"] == "detector_down" and NON_VERDICT_FINALS["v2_degraded_withheld"] == "v2_withheld"
+
+    class Check:
+        def __init__(self, check_id, reason_code):
+            self.check_id, self.reason_code = check_id, reason_code
+
+    class Verification:
+        verdicts = ()
+        checks = (Check("V1.6", "keyed_answer_present"),)
+
+    class Entry:
+        verification = Verification()
+
+    assert tier_for(Entry(), PACKAGE) == (1, "v1_6")
+    Verification.checks = ()
+    assert tier_for(Entry(), PACKAGE) == (2, "default")
+
+
+# ------------------------------------------------------------------------------------------------- the package
+
+
+def test_the_ranking_schema_constants_agree_and_no_schema_rule_compares_with_a_literal_7():
+    assert RANKING_SCHEMA_VERSION == RANKING_FIRST_MAJOR == PACKAGE.schema_version == LATEST_SCHEMA_VERSION
+    assert EHMF_SCHEMA_VERSION == 6
+    for path in (API_ROOT / "app" / "core" / "config_package.py", API_ROOT / "app" / "services" / "v3" / "package_check.py",
+                 REPO_ROOT / "scripts" / "config_package.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Compare) and any(isinstance(c, ast.Constant) and c.value == 7 for c in [node.left, *node.comparators]):
+                raise AssertionError(f"{path.name}:{node.lineno} compares with 7")
+    from app.services.content_assembler import MODULE_BLUEPRINTS
+
+    assert tuple(module["slug"] for module in MODULE_BLUEPRINTS) == CLUSTERS
+    assert len(EVENT_KINDS) == 21 and max(len(kind) for kind in EVENT_KINDS) <= 17
+
+
+REFUSALS = [
+    (lambda r: r.update(provisional=False), "provisional"),
+    (lambda r: r.update(version="ranking-v2"), "ranking.version"),
+    (lambda r: r["contexts"].update(clusters=["unscoped"]), "MODULE_BLUEPRINTS"),
+    (lambda r: r["trust"].update(gamma="0.8"), "ranking.trust.gamma"),
+    (lambda r: r["trust"].update(gamma=0.995), "decimal string"),
+    (lambda r: r["trust"].update(quantile="0.6"), "ranking.trust.quantile"),
+    (lambda r: r["quality"]["weights"].update(V="0.5"), "sum to 1"),
+    (lambda r: r["quality"].update(eta="0"), "ranking.quality.eta"),
+    (lambda r: r["ratings"].update(B="0.96"), "strictly descending"),
+    (lambda r: r["selection"].update(eps_s="0.6"), "ranking.selection.eps_s"),
+    (lambda r: r["promotion"].update(delta="1"), "ranking.promotion.delta"),
+    (lambda r: r["promotion"].update(n_d=0), "n_d"),
+    (lambda r: r["micro_batch"].update(responses=0), "responses"),
+    (lambda r: r["micro_batch"].update(seconds=30), "seconds"),
+    (lambda r: r["cusum"].update(p0="0.2"), "p0 < p1"),
+    (lambda r: r["cusum"].update(h="0"), "ranking.cusum.h"),
+    (lambda r: r["recommission"].update(deflation="1.2"), "deflation"),
+    (lambda r: r["recommission"].update(cap="B"), "cap"),
+    (lambda r: r["recommission"].update(min_generated=0), "min_generated"),
+    (lambda r: r["recommission"].update(gateway_mode="on"), "gateway_mode"),
+    (lambda r: r["recommission"]["golden_set"].update(sha256="0" * 64), "ehmf.golden_set"),
+    (lambda r: r["penalties"].update(latency_target_ms=500), "latency target"),
+    (lambda r: r["fallback"].update(pre_verified_source="store"), "pre_verified_source"),
+    (lambda r: r["live_routing"].update(state="live"), "refused"),
+    (lambda r: r["replay"].update(stop_refresh_s=0), "stop_refresh_s"),
+    (lambda r: r.update(clean_rule="other"), "clean_rule"),
+    (lambda r: r["tier_permissions"].update(C=[3]), "tier_permissions"),
+    (lambda r: r.update(hand_fixtures=[]), "hand_fixtures"),
+]
+
+
+@pytest.mark.parametrize("edit, match", REFUSALS)
+def test_every_ranking_block_refusal(tmp_path, edit, match):
+    def change(payload):
+        edit(payload["ranking"])
+    with pytest.raises(ConfigPackageError, match=match):
+        load_config_package(package_copy(tmp_path, change), governed=False)
+
+
+def test_the_flag_policy_and_owner_decisions_the_ranking_needs(tmp_path):
+    cases = [
+        (lambda p: p["flag_policy"]["ranking"].update(default_elsewhere="shadow"), "default_elsewhere"),
+        (lambda p: p["flag_policy"].update(phase9_exit_passed=True), "phase9_exit_evidence"),
+        (lambda p: p["owner_decisions"].pop("D-28"), "D-28"),
+        (lambda p: p["owner_decisions"]["D-06"].update(operator_values=[]), "ranking.penalties"),
+        (lambda p: p["v3"]["triggers"].update(queue_reasons=p["v3"]["triggers"]["queue_reasons"][:4]), "queue reasons"),
+        (lambda p: next(m for m in p["gateway"]["registries"]["development"] if m["adapter_id"] == "fake-delta-v1")["fake"].pop("generate_rule"),
+         "generate_rule"),
+        (lambda p: next(m for m in p["gateway"]["registries"]["development"] if m["adapter_id"] == "fake-alpha-v1")["fake"].update(
+            generate_rule="extractive-clone-v1"), "only a fake member with generate"),
+    ]
+    for edit, match in cases:
+        with pytest.raises(ConfigPackageError, match=match):
+            load_config_package(package_copy(tmp_path / match.replace(" ", "_"), edit), governed=False)
+
+
+def test_package_v6_refuses_a_fake_generate_rule(tmp_path):
+    import shutil
+
+    from app.core.config_package import V6_PACKAGE_PATH, canonical_sha256
+
+    target = tmp_path / "config_package"
+    shutil.copytree(V6_PACKAGE_PATH.parent, target)
+    path = target / "v6.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    next(m for m in payload["gateway"]["registries"]["development"] if m["adapter_id"] == "fake-delta-v1")["fake"]["generate_rule"] = "extractive-clone-v1"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    path.with_name("v6.json.sha256").write_text(canonical_sha256(payload) + "\n", encoding="utf-8")
+    with pytest.raises(ConfigPackageError, match="needs package v7"):
+        load_config_package(path, governed=False)
+    v6 = load_config_package(V6_PACKAGE_PATH, governed=False)
+    assert v6.ranking is None and v6.v3.queue_reasons == ("v1_3_flag", "v1_8_misconception", "v2_correction_exhausted", "v2_degraded_withheld")
+    assert PACKAGE.v3.queue_reasons[-1] == "ranking_empty_eligible_set"
+
+
+# ------------------------------------------------------------------------------------------------- the V3 helpers and the clone
+
+
+def test_record_model_change_returns_its_seq_and_window_remaining_counts_the_draws():
+    from datetime import UTC, datetime
+
+    from app.services.v3 import triggers as trig
+    from app.services.v3.scan import record_model_change, window_remaining
+    from v3_fakes import fresh_v3_sessions
+
+    with fresh_v3_sessions() as (factory, _engine):
+        with factory() as db:
+            seq = record_model_change(db, trig.ModelChange("generator:x", "1", "2"), source="ranking", from_ledger_seq=0, window=3,
+                                      now=datetime.now(UTC))
+            db.commit()
+            assert isinstance(seq, int) and window_remaining(db, seq) == 3 and window_remaining(db, seq + 99) == 0
+
+
+def test_the_clone_generator_is_refused_outside_its_rule_and_development():
+    from dataclasses import replace
+
+    from app.core.config import Settings
+    from app.gateway.registry import registry_for
+    from app.services.ranking.generators import CloneGenerator, CloneUnavailable
+
+    development = Settings(environment="development")
+    spec = next(member for member in registry_for(PACKAGE, development).members if member.adapter_id == "fake-delta-v1")
+    generator = CloneGenerator(spec, PACKAGE, settings=development)
+    assert generator.ref.generator_id == "fake-delta-v1" and generator.ref.model_id == "fake-delta-verifier@2026-11-21"
+    for changed, settings in ((replace(spec, fake_generate_rule=None), development), (replace(spec, capabilities=("verify",)), development),
+                              (replace(spec, provider="openai"), development),
+                              (spec, Settings(environment="staging", allowed_origins=["https://staging.example.test"], guest_token_secret="s" * 32))):
+        with pytest.raises(CloneUnavailable):
+            CloneGenerator(changed, PACKAGE, settings=settings)
+
+
+def test_the_replay_script_exit_codes(tmp_path):
+    from test_phase9_acceptance import REPORT, scripts_module
+
+    script = scripts_module("run_ranking_replay")
+    assert script.main(["--check", str(tmp_path / "missing.json")]) == 2
+    assert script.main([]) == 2
+    (tmp_path / "bad.json").write_text("{", encoding="utf-8")
+    assert script.main(["--check", str(tmp_path / "bad.json")]) == 2
+    assert REPORT.is_file()

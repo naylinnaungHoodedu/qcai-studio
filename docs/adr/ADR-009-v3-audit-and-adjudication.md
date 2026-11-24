@@ -28,3 +28,19 @@ Nothing learner-facing changes outside development: V3 is off there, the flag in
 - The CUSUM statistic, "sustained", the stop-the-line and "promotions held" are Phase 9's (DI-96); Phase 6 tests the alarm interface with synthetic alarms only.
 - Applying gold labels to thresholds, weights or the registry, and releasing any withheld item, is Phase 7 change control (DI-93). Dawid-Skene weights wait for 200 gold claims (DI-102).
 - The delivered path's consumption of the holds and the stop, and a learner-facing "looks wrong" control with its privacy disclosure, wait for the delivered two-pass path (DI-97).
+
+## Revision 2026-11-23 (Phase 9: CUSUM alarms, model changes and the ranking fallback)
+
+- **CUSUM alarms.** The Phase 9 ranking scan raises its alarms (source `phase9-cusum`) through `record_cusum_alarm`, now
+  with `db=` so the alarm row commits with the ranking events that name it; each opens the X5 window as before. A hold on
+  promotions lasts until `v3.scan.window_remaining(db, v3_event_seq)` is 0 (open while V3 is off).
+- **Model changes from the ranking.** `record_model_change` returns the inserted seq. The ranking scan records a candidate's
+  version change under V3's lock with the key and version a record carries (`generator:<adapter_id>`,
+  `<model_id>@<model_version>`; `generator-prompt:<id>` for a static generator's prompt hash) and inserts the
+  `v3_model_versions` row, reusing V3's event when V3 already knows that version, so one change opens one window.
+- **The queue reason.** Package v7's `v3.triggers.queue_reasons` adds `ranking_empty_eligible_set` (`QUEUE_REASONS_V7`), the
+  ranking fallback's response item; it is not an X trigger, so `V3_COUNTED` is unchanged. Packages v5 and v6 keep the four
+  Phase 6 reasons. `GoldLabel.reasons` takes the five; the schema packages v5 and v6 pin is reproduced by
+  `GoldLabelV6Schema`, and package v7 pins `schemas/v3-gold-label.v1.r7.schema.json` (`v3_schema_models`).
+- **The ranking reads F_i** (`v3.feedback.f_i`) for the quality term of a record the learner was shown; F never enters
+  trust, the CUSUM or the selection.

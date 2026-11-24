@@ -85,16 +85,30 @@ def open_windows(db: Session) -> list[list[int]]:
     return windows
 
 
-def record_model_change(db: Session, change: trig.ModelChange, *, source: str, from_ledger_seq: int, window: int, now: datetime) -> None:
+def window_remaining(db: Session, v3_event_seq: int) -> int:
+    """The deliveries left in one X5 event's window: its window less the learner deliveries considered (v3_draws) after its
+    from_ledger_seq, at least 0. The ranking scan releases a hold whose window has closed (Phase 9 spec conflict 15)."""
+    from app.db_models import V3Draw, V3Event
+
+    row = db.execute(select(V3Event.from_ledger_seq, V3Event.window_deliveries).where(V3Event.seq == int(v3_event_seq))).first()
+    if row is None:
+        return 0
+    seen = db.scalar(select(func.count()).select_from(V3Draw).where(V3Draw.ledger_seq > int(row[0]))) or 0
+    return max(0, int(row[1]) - int(seen))
+
+
+def record_model_change(db: Session, change: trig.ModelChange, *, source: str, from_ledger_seq: int, window: int, now: datetime) -> int:
+    """Insert the X5 model_change event inside the caller's transaction; returns its seq."""
     from app.db_models import V3Event
 
     payload = json.dumps({"model_key": change.model_key, "from_version": change.from_version, "to_version": change.to_version,
                           "source": source}, sort_keys=True, separators=(",", ":"))
-    db.execute(insert(V3Event).values(kind="model_change", payload=payload, from_ledger_seq=int(from_ledger_seq), window_deliveries=int(window),
-                                      created_at=utc(now)))
+    result = db.execute(insert(V3Event).values(kind="model_change", payload=payload, from_ledger_seq=int(from_ledger_seq),
+                                               window_deliveries=int(window), created_at=utc(now)))
     LOGGER.warning("A model version changed: the audit rate is raised (X5)", extra={FIELDS: {
         "event": "v3.x5_event", "kind": "model_change", "model_key": change.model_key, "from_version": change.from_version,
         "to_version": change.to_version}})
+    return int(result.inserted_primary_key[0])
 
 
 def _sightings(db: Session, known: dict[str, str], sightings, *, source: str, seq: int, window: int, windows: list, now: datetime) -> int:

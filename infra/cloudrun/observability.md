@@ -259,3 +259,23 @@ Not set up yet: no log-based metric, alert policy, dashboard or scheduled job ex
 | `ehmf.status_refused` on `qcai.worker`, WARNING | `reason` (`no_ehmf_block`: the package in force has no ehmf block, such as v5; the command exits 2, and `status` still logs every `ehmf_stops` row as `stops` when the table is readable) |
 
 The two override keys: `config.override` logs `ehmf_shadow` and `ehmf_on` when either is set outside development.
+
+## Phase 9 SLIs: ranking (plan Phase 9 I)
+
+Plan Phase 9 I: "Micro-batch latency (F-3), switch rate (MR-3 is a Table XVII gate, EG/RC per Section 15 [Evidence E-107]), fallback rate, cost." The SLIs are `app.services.ranking.metrics.slis`, shown by `python -m app.workers.ranking status` (`ranking.status`) and, reviewer-only, under `ranking` in `GET /v3/metrics` (null when the ranking mode is off). They are telemetry, not E4 results (invariant 9): MR-3 is never reported as met. No alert, log-based metric, dashboard or schedule is created (DI-125).
+
+| SLI | Source and note |
+|---|---|
+| Micro-batch latency (F-3) | `micro_batch_latency_s.p50`, `.p95`: a `batch` row's `observed_at` minus its last outcome's ledger `created_at`; the scan runs on demand (no scheduler), so it includes the wait for the scan |
+| Switch rate | `switch_rate_per_1000` per context: incumbent changes per 1000 consumed requests (the first incumbent not counted); MR-3 (at most 2 per 1000 drift-free requests) is a Table XVII gate, reported only from the committed synthetic replay |
+| Fallback rate | `fallback_rate`: empty-eligible-set decisions per 1000 requests; each one enqueues a V3 item (`ranking_empty_eligible_set`) |
+| Cost | `cost_units_mean` per model (units, not USD; A-15); `latency` is null (no record carries one; DI-122) |
+| Drift | `cusum.statistics`, `cusum.alarms`, `alarms_per_1000_requests`, `sustained`; an alarm raises the X5 audit and holds promotions, never demotes |
+| Skips | `skipped` by reason; an event without a completed verdict changes nothing (AC-9-1) |
+| The stop | `replay.stopped`; `/ready` `ranking.stop.stopped` (cached for `ranking.replay.stop_refresh_s`, read only when the mode is not off); a replay mismatch stops the ranking until `clear-stop` |
+
+Log events (logger `qcai.ranking`): `ranking.scan` (INFO), `ranking.batch` (INFO), `ranking.promote` and `ranking.demote` (WARNING), `ranking.alarm` and `ranking.sustained_alarm` (WARNING), `ranking.model_change` (WARNING), `ranking.fallback` (WARNING), `ranking.stop` (ERROR), `ranking.unavailable` (WARNING), `ranking.stop_unread` (WARNING), `ranking.shadow_generation` (INFO) and `ranking.shadow_generation_failed` (WARNING); on `qcai.worker`: `ranking.status`, `ranking.replay_checked`, `ranking.commissioned`, `ranking.recommissioned`, `ranking.stop_cleared` (INFO) and `ranking.scan_refused` (WARNING). No line carries a learner identifier, a response id or text.
+
+| SLI or event | Log-based metric or alert |
+|---|---|
+| Security event `config.override` | the details name `ranking_shadow` (the ranking in shadow outside development: it changes no learner path and adds X5 audits and V3 items) or `ranking_shadow_generation` (refused outside development; a line means a build that bypassed the settings): an alert on any line |
