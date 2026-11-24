@@ -1453,6 +1453,29 @@ def test_phase7_docs_name_every_modified_file_and_the_ready_stop_read():
     assert 'Ratios are "k/n" strings, so' not in v3_metrics and "100*k/n reduced" in v3_metrics
 
 
+def test_phase7_docs_pd_47_states_the_version_bump_rule_the_history_and_the_image_digest_rollback():
+    # Spec 16.1 PD-47 (which the BEP register holds verbatim, check_records.py) states the change procedure the code and
+    # CI run: the same-version refusal (exit 6), the append-only history with its base-branch check, the procedure that
+    # commits the record and the history, and rollback by the prior image digest; the version-bump rule and the history
+    # are engineering parameters.
+    spec = SPEC_PATH.read_text(encoding="utf-8")
+    section = spec.split("## 16. Provisional defaults and deferred items", 1)[1].split("## 17.", 1)[0]
+    pd_47 = next(line for line in section.splitlines() if line.startswith("| PD-47 |"))
+    for phrase in (
+        "CI also fails (exit 6) on a package edit that keeps its `package_version`",
+        "`docs/evaluation/phase7/package_versions.json`, append-only",
+        "`--check --base-ref FETCH_HEAD`",
+        "edit, bump `package_version`, rehash, rerun, commit the record and the history in the same PR",
+        "the operator deploys the prior image digest (no separate package file is kept)",
+        "the exit codes, the version-bump rule, and the append-only history with its base-branch check.",
+    ):
+        assert phrase in pd_47, phrase
+    assert "commit the record in the same PR" not in pd_47 and "rollback is reloading the prior package." not in pd_47
+    # The text names what exists: the history file and CI's base-branch step.
+    assert (REPO_ROOT / "docs" / "evaluation" / "phase7" / "package_versions.json").is_file()
+    assert "--base-ref FETCH_HEAD" in (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+
 def test_phase7_docs_the_test_strategy_maps_every_test_module_the_phase_added():
     strategy = (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
     section = strategy.split("## Phase 7 acceptance map (plan Phase 7 K)", 1)[1].split("\n## ", 1)[0]
