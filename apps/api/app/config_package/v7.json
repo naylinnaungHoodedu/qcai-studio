@@ -1660,8 +1660,7 @@
     "recommission": {
       "deflation": "0.3",
       "cap": "C",
-      "pass_rule": "no-failed-first-pass-min-generated-v1",
-      "min_generated": 8,
+      "pass_rule": "every-item-generated-no-failed-first-pass-v1",
       "gateway_mode": "shadow",
       "commissioning_prior": "one-plus-clean-one-plus-failed-v1",
       "uncommissioned_prior": {

@@ -120,7 +120,7 @@ def clone_member(spec, *, version: str | None = None):
 
 
 def package_copy(tmp_path: Path, edit) -> Path:
-    """A copy of the shipped package directory with `edit` applied to v7.json (and its sidecar rewritten)."""
+    """A copy of the shipped package directory with `edit` applied to the shipped package file (and its sidecar rewritten)."""
     import shutil
 
     target = tmp_path / "config_package"

@@ -350,9 +350,13 @@ def test_ac_7_6_a_package_edit_that_keeps_its_version_is_refused_at_write(tmp_pa
     record = tmp_path / "golden_run.json"
     record.write_text(RECORD.read_text(encoding="utf-8"), encoding="utf-8")
     edited = package_copy(tmp_path / "a", lambda raw: raw["ehmf"]["stop"].update(window_claims=201))
-    assert golden.main(["--write", str(record), "--package", str(edited), "--allow-dirty"]) == golden.EXIT_PIN
+    # A copy of the history: a --write that got past its refusals would append to it, never to the committed one.
+    history = tmp_path / "history.json"
+    history.write_bytes(golden.DEFAULT_HISTORY.read_bytes())
+    assert golden.main(["--write", str(record), "--package", str(edited), "--history", str(history), "--allow-dirty"]) == golden.EXIT_PIN
     assert "bump package_version" in capsys.readouterr().err
     assert record.read_text(encoding="utf-8") == RECORD.read_text(encoding="utf-8")
+    assert history.read_bytes() == golden.DEFAULT_HISTORY.read_bytes()
     committed = json.loads(RECORD.read_text(encoding="utf-8"))
     assert golden.same_version_edit(committed, PACKAGE) is None
     bumped = load_config_package(package_copy(tmp_path / "b", lambda raw: (raw["ehmf"]["stop"].update(window_claims=201),
@@ -384,7 +388,11 @@ def test_ac_7_6_a_same_version_edit_fails_the_ci_check_whatever_record_is_checke
     # The CI step reads the committed history, which records the shipped package.
     assert golden.DEFAULT_HISTORY == REPO_ROOT / "docs" / "evaluation" / "phase7" / "package_versions.json"
     entries = golden.load_history(golden.DEFAULT_HISTORY)["entries"]
-    assert {"version": PACKAGE.package_version, "sha256": PACKAGE.sha256} in entries
+    # It ends with exactly one entry for the shipped package, whose sha256 is the committed package's (and its sidecar's).
+    sidecar = DEFAULT_PACKAGE_PATH.with_name(DEFAULT_PACKAGE_PATH.name + ".sha256").read_text(encoding="utf-8").strip()
+    assert PACKAGE.hash_verified and PACKAGE.sha256 == sidecar
+    assert entries[-1] == {"version": PACKAGE.package_version, "sha256": sidecar}
+    assert [entry["version"] for entry in entries].count(PACKAGE.package_version) == 1
     # A version the history lacks, a new version not newer than the newest entry, and a missing or malformed history.
     bumped = load_config_package(package_copy(tmp_path / "b", lambda raw: (raw["ehmf"]["stop"].update(window_claims=201),
                                                                            raw.update(package_version=NEXT_PATCH))), governed=False)
@@ -411,6 +419,27 @@ def test_ac_7_6_write_appends_a_new_package_version_to_the_history(tmp_path):
     assert entries[:-1] == golden.load_history(golden.DEFAULT_HISTORY)["entries"]
     assert entries[-1] == {"version": NEXT_PATCH, "sha256": bumped.sha256}
     assert json.loads(target.read_text(encoding="utf-8"))["pins"]["config_package"] == {"version": NEXT_PATCH, "sha256": bumped.sha256}
+
+
+def test_ac_7_6_no_test_runs_a_golden_set_write_against_the_committed_history():
+    # Test hygiene (Phase 9 D4): a --write that gets past its refusals appends to its --history, so every test call of the
+    # golden runner with --write names a temporary history (a literal "--history" or a starred list of arguments that holds
+    # one); otherwise a package mid-edit makes the test append a stray entry to the committed package_versions.json.
+    import ast
+
+    offenders = []
+    for path in sorted((API_ROOT / "tests").glob("test_*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "main"
+                    and isinstance(node.func.value, ast.Name) and node.func.value.id == "golden" and node.args
+                    and isinstance(node.args[0], ast.List)):
+                continue
+            items = node.args[0].elts
+            constants = [item.value for item in items if isinstance(item, ast.Constant)]
+            if "--write" in constants and "--history" not in constants and not any(isinstance(item, ast.Starred) for item in items):
+                offenders.append(f"{path.name}:{node.lineno}")
+    assert offenders == []
 
 
 def test_ac_7_6_a_same_version_edit_hidden_by_editing_the_history_fails_the_ci_check_against_the_base(tmp_path, capsys):

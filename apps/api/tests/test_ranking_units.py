@@ -11,6 +11,7 @@ import math
 import pytest
 
 from app.core.config_package import (
+    DEFAULT_PACKAGE_PATH,
     EHMF_SCHEMA_VERSION,
     LATEST_SCHEMA_VERSION,
     RANKING_SCHEMA_VERSION,
@@ -169,15 +170,24 @@ def test_outcome_rule_order_cluster_and_tier():
 # ------------------------------------------------------------------------------------------------- the package
 
 
-def test_the_ranking_schema_constants_agree_and_no_schema_rule_compares_with_a_literal_7():
+def test_the_ranking_schema_number_is_one_constant_and_no_schema_rule_compares_with_a_literal_number():
+    # E16: renumbering the Phase 9 package edits one constant (ranking.vocabulary.RANKING_FIRST_MAJOR); the loader's names
+    # and bound follow it, and the shipped package carries the same number as its schema and its major.
     assert RANKING_SCHEMA_VERSION == RANKING_FIRST_MAJOR == PACKAGE.schema_version == LATEST_SCHEMA_VERSION
+    assert PACKAGE.package_version == f"{RANKING_FIRST_MAJOR}.0.0" and DEFAULT_PACKAGE_PATH.name == f"v{RANKING_FIRST_MAJOR}.json"
     assert EHMF_SCHEMA_VERSION == 6
+    loader = ast.parse((API_ROOT / "app" / "core" / "config_package.py").read_text(encoding="utf-8"))
+    assigned = {target.id: node.value for node in loader.body if isinstance(node, ast.Assign) for target in node.targets
+                if isinstance(target, ast.Name)}
+    assert isinstance(assigned["RANKING_SCHEMA_VERSION"], ast.Name) and assigned["RANKING_SCHEMA_VERSION"].id == "RANKING_FIRST_MAJOR"
+    assert isinstance(assigned["LATEST_SCHEMA_VERSION"], ast.Name) and assigned["LATEST_SCHEMA_VERSION"].id == "RANKING_SCHEMA_VERSION"
     for path in (API_ROOT / "app" / "core" / "config_package.py", API_ROOT / "app" / "services" / "v3" / "package_check.py",
-                 REPO_ROOT / "scripts" / "config_package.py"):
+                 API_ROOT / "app" / "services" / "v3" / "contracts.py", REPO_ROOT / "scripts" / "config_package.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            if isinstance(node, ast.Compare) and any(isinstance(c, ast.Constant) and c.value == 7 for c in [node.left, *node.comparators]):
-                raise AssertionError(f"{path.name}:{node.lineno} compares with 7")
+            if isinstance(node, ast.Compare) and any(isinstance(c, ast.Constant) and c.value == RANKING_FIRST_MAJOR
+                                                     for c in [node.left, *node.comparators]):
+                raise AssertionError(f"{path.name}:{node.lineno} compares with {RANKING_FIRST_MAJOR}")
     from app.services.content_assembler import MODULE_BLUEPRINTS
 
     assert tuple(module["slug"] for module in MODULE_BLUEPRINTS) == CLUSTERS
@@ -203,7 +213,7 @@ REFUSALS = [
     (lambda r: r["cusum"].update(h="0"), "ranking.cusum.h"),
     (lambda r: r["recommission"].update(deflation="1.2"), "deflation"),
     (lambda r: r["recommission"].update(cap="B"), "cap"),
-    (lambda r: r["recommission"].update(min_generated=0), "min_generated"),
+    (lambda r: r["recommission"].update(min_generated=8), "min_generated is refused"),
     (lambda r: r["recommission"].update(gateway_mode="on"), "gateway_mode"),
     (lambda r: r["recommission"]["golden_set"].update(sha256="0" * 64), "ehmf.golden_set"),
     (lambda r: r["penalties"].update(latency_target_ms=500), "latency target"),
@@ -253,7 +263,7 @@ def test_package_v6_refuses_a_fake_generate_rule(tmp_path):
     next(m for m in payload["gateway"]["registries"]["development"] if m["adapter_id"] == "fake-delta-v1")["fake"]["generate_rule"] = "extractive-clone-v1"
     path.write_text(json.dumps(payload), encoding="utf-8")
     path.with_name("v6.json.sha256").write_text(canonical_sha256(payload) + "\n", encoding="utf-8")
-    with pytest.raises(ConfigPackageError, match="needs package v7"):
+    with pytest.raises(ConfigPackageError, match=f"needs package v{RANKING_SCHEMA_VERSION}"):
         load_config_package(path, governed=False)
     v6 = load_config_package(V6_PACKAGE_PATH, governed=False)
     assert v6.ranking is None and v6.v3.queue_reasons == ("v1_3_flag", "v1_8_misconception", "v2_correction_exhausted", "v2_degraded_withheld")

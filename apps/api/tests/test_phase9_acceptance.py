@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -218,6 +219,31 @@ def test_ac_9_1_y_is_one_only_for_an_uncorrected_first_pass():
     for name, case in cases.items():
         result = _outcome(case)
         assert not isinstance(result, Skip) and result.y == 0, name
+    # Conflict 27, both ways. The development record's only non-passing V1 results are V1.3 no_checker flags on a record
+    # whose EHMF block lists V1.3 as absent, and its claims carry the v1_3_flag reason: the checker's absence is no verdict.
+    verdict0 = entry.verification.verdicts[0]
+    assert entry.verification.ehmf.detector_absent == ("V1.3",)
+    assert {(r.check_id, r.outcome, r.reason_code) for v in entry.verification.verdicts for r in v.v1 if r.outcome not in ("pass", "mark")}         == {("V1.3", "flag", "no_checker")}
+    assert "v1_3_flag" in verdict0.v3.reasons and _outcome(entry).signals.V == Decimal(1)
+
+    def v1_3(case, reason_code):
+        return tuple(r.model_copy(update={"reason_code": reason_code}) if r.check_id == "V1.3" else r for r in case.verification.verdicts[0].v1)
+
+    # Every other V1.3 flag counts against the first pass.
+    for code in ("not_enough_info", "contradicted", "below_support_threshold"):
+        result = _outcome(_first_claim(entry, v1=v1_3(entry, code)))
+        assert not isinstance(result, Skip) and result.y == 0 and result.signals.V < Decimal(1), code
+    # A no_checker on a record whose EHMF block shows the V1.3 checker present is no absence: y = 0.
+    present = _verdict(entry, ehmf=entry.verification.ehmf.model_copy(update={"detector_absent": ()}))
+    assert _outcome(present).y == 0 and _outcome(present).signals.V == Decimal(0)
+    # A v1_3_flag reason with no no_checker flag behind it is an escalation: y = 0.
+    unexplained = _first_claim(entry, v1=tuple(r for r in verdict0.v1 if r.check_id != "V1.3"))
+    assert _outcome(unexplained).y == 0
+    # No EHMF block (a ledger-entry-v3 record): the no_checker flag alone still attests the absence.
+    from app.services.ranking import signals as signals_module
+
+    assert signals_module.checker_absent(SimpleNamespace(ehmf=None)) is True
+    assert signals_module.checker_absent(SimpleNamespace(ehmf=SimpleNamespace(detector_absent=()))) is False
     # X4 alone (a V1.5 near-floor mark) and X3 (a learner flag, which never touches the record) leave y = 1.
     mark = next(check for check in entry.verification.checks if check.check_id == "V1.5").model_copy(update={"outcome": "mark", "reason_code": "near_miss"})
     assert _outcome(_verdict(entry, checks=(*entry.verification.checks, mark))).y == 1
@@ -604,8 +630,10 @@ def test_ac_9_5_the_recommission_command_runs_the_golden_regression_and_only_its
     monkeypatch.setattr(worker, "get_settings", lambda: settings)
     monkeypatch.setattr(worker, "get_config_package", lambda _settings: bumped)
     queries = recommission.recommission_queries(bumped)
-    minimum = int(bumped.ranking.block["recommission"]["min_generated"])
-    assert len(queries) > minimum
+    rule = bumped.ranking.block["recommission"]
+    assert rule["pass_rule"] == "every-item-generated-no-failed-first-pass-v1" and "min_generated" not in rule
+    assert len(queries) == bumped.ranking.golden_set_items == 40
+    few = queries[:3]
 
     def regression(subset: list[str]) -> int:
         monkeypatch.setattr(recommission, "recommission_queries", lambda _package: list(subset))
@@ -627,18 +655,25 @@ def test_ac_9_5_the_recommission_command_runs_the_golden_regression_and_only_its
             return stored_state(factory)["models"][CLONE]["capped"]
 
         assert capped() is True
-        # Fewer generated records than min_generated: recommission_fail, exit 1, the cap stays.
-        assert regression(queries[: minimum - 1]) == 1
+        real_query = recommission._run_query
+        # One query without a completed verdict (a real record finalised budget_exceeded, a skip) and no failed first pass:
+        # the set did not pass (every item must give a verdict), recommission_fail, exit 1, the cap stays.
+        skipped = _verdict(_typed_entry(), final_reason="budget_exceeded")
+        monkeypatch.setattr(recommission, "_run_query", lambda pipeline, query, index: SimpleNamespace(entry=skipped) if index == 1
+                            else real_query(pipeline, query, index))
+        assert regression(few) == 1
         failed = events_of(factory, "recommission_fail")[-1]["payload"]
-        assert (failed["generated"], failed["failed"], failed["version"]) == (minimum - 1, 0, "2026-11-22") and capped() is True
-        # Enough records, but one first pass failed (the V1.3 checker contradicts every claim): fail.
+        assert (failed["generated"], failed["failed"], failed["version"]) == (len(few) - 1, 0, "2026-11-22") and capped() is True
+        monkeypatch.setattr(recommission, "_run_query", real_query)
+        # An empty query list never passes.
+        assert regression([]) == 1 and capped() is True
+        # One first pass failed (the V1.3 checker contradicts every claim): fail.
         real = pipeline_module.TwoPassPipeline
         monkeypatch.setattr(pipeline_module, "TwoPassPipeline", lambda *args, **kwargs: real(*args, checker=AlwaysContradictedChecker(), **kwargs))
-        assert regression(queries[:minimum]) == 1
+        assert regression(few) == 1
         assert events_of(factory, "recommission_fail")[-1]["payload"]["failed"] >= 1 and capped() is True
         monkeypatch.setattr(pipeline_module, "TwoPassPipeline", real)
-        # A record whose V2 corrections ran out (a real V2-on clone run) is a failed first pass, never a skip: with one
-        # more query than min_generated, a skip would have passed.
+        # A record whose V2 corrections ran out (a real V2-on clone run) is a failed first pass, never a skip.
         dev = Settings(environment="development", model_gateway="on", ehmf="off", config_package_path=str(bumped.path))
         spec = next(member for member in registry_for(bumped, dev).members if member.adapter_id == CLONE)
         claims = run(dev_pipeline(), queries[0]).locked.claims
@@ -648,18 +683,17 @@ def test_ac_9_5_the_recommission_command_runs_the_golden_regression_and_only_its
         exhausted = run(v2_pipeline(dev, gateway=fresh_gateway(adapters=contradicting), registry=registry,
                                     generator=CloneGenerator(spec, bumped, settings=dev)), queries[0]).entry
         assert exhausted.verification.final_reason == "v2_correction_exhausted" and exhausted.versions.generator_id == CLONE
-        real_query = recommission._run_query
         monkeypatch.setattr(recommission, "_run_query", lambda pipeline, query, index: SimpleNamespace(entry=exhausted) if index == 0
                             else real_query(pipeline, query, index))
-        assert regression(queries[: minimum + 1]) == 1
+        assert regression(few) == 1
         failed = events_of(factory, "recommission_fail")[-1]["payload"]
-        assert (failed["generated"], failed["failed"]) == (minimum + 1, 1) and capped() is True
+        assert (failed["generated"], failed["failed"]) == (len(few), 1) and capped() is True
         monkeypatch.setattr(recommission, "_run_query", real_query)
-        # A clean regression of at least min_generated records: recommission_pass, exit 0, the cap lifts.
-        assert regression(queries[:minimum]) == 0
+        # A clean regression in which every query gave a completed verdict: recommission_pass, exit 0, the cap lifts.
+        assert regression(few) == 0
         passed = events_of(factory, "recommission_pass")
-        assert len(passed) == 1 and (passed[0]["payload"]["generated"], passed[0]["payload"]["failed"]) == (minimum, 0) and capped() is False
-        assert len(events_of(factory, "recommission_fail")) == 3
+        assert len(passed) == 1 and (passed[0]["payload"]["generated"], passed[0]["payload"]["failed"]) == (len(few), 0) and capped() is False
+        assert len(events_of(factory, "recommission_fail")) == 4
 
 
 # ===================================================================================================== AC-9-6
@@ -1615,60 +1649,90 @@ def test_freeze_no_learner_path_changes_and_the_payload_golden_is_unchanged():
 
 
 def test_plan_g_shadow_generation_writes_only_undelivered_shadow_records(caplog, monkeypatch):
-    import time
-    from unittest import mock
+    from datetime import UTC, datetime
+    from uuid import uuid4
 
     from sqlalchemy import select
 
-    from app.db_models import ResponseLedgerRecord
+    from app.db_models import ResponseLedgerRecord, TutorMessage, TutorThread
     from app.services.ledger import clone_prompt_hashes, ledger_provenance
     from app.services.ranking import hook
-    from app.services.ranking.hook import guarded_after_shadow
+    from app.services.ranking.scan import append_inputs
+    from app.services.tutor_pipeline import resolve as resolve_module
     from app.services.tutor_pipeline.contracts import PresentationPlan
-    from app.services.tutor_pipeline.resolve import LearnerTurn, resolve_turns
+    from app.services.tutor_pipeline.shadow import ShadowJob, run_shadow
+    from app.services.v3.queue import parse_entry
     from v1_fakes import run
-    from v2_fakes import v2_pipeline
+    from v2_fakes import fresh_gateway, v2_pipeline
     from v3_fakes import fresh_v3_sessions
+
+    settings = ranking_settings(ranking_shadow_generation=True)
+    assert settings.environment == "development" and settings.ranking_shadow_generation is True
+
+    def job_for(thread_id: str, message_id: str) -> ShadowJob:
+        return ShadowJob(shadow_response_id=f"shadow-{uuid4()}", shadowed_response_id=f"turn-{uuid4()}", thread_id=thread_id,
+                         user_message_id=message_id, lesson_slug=None, presentation=PresentationPlan(plan_id="concise", source="request"),
+                         legacy_decision="answer")
+
+    def ledger_rows(factory) -> list:
+        with factory() as db:
+            return db.execute(select(ResponseLedgerRecord.seq, ResponseLedgerRecord.delivery, ResponseLedgerRecord.entry)
+                              .order_by(ResponseLedgerRecord.seq)).all()
 
     with fresh_v3_sessions() as (factory, _engine):
         commission_static(factory)
         clone = _candidates()[CLONE]
-        from app.services.ranking.scan import append_inputs
-        from v2_fakes import fresh_gateway
-
         with factory() as db:
             append_inputs(db, [("commission", {"adapter_id": CLONE, "version": clone.model_version, "clean": 200, "failed": 0, "generated": 200,
                                                "mean_q": "0.99", "run_sha256": "0" * 64})], settings=ranking_settings(), package=PACKAGE,
                           now=FIXED_NOW, gateway=fresh_gateway())
+            # A real tutor turn: a thread and the learner's message in the database (synthetic ids, no learner data); the
+            # shadow run reads it through resolve_thread, as the request path's background task does.
+            thread = TutorThread(id=f"thread-{uuid4()}", user_id=f"synthetic-{uuid4().hex[:12]}", title="t")
+            db.add(thread)
+            db.flush()
+            message = TutorMessage(id=f"message-{uuid4()}", thread_id=thread.id, role="user", content=TIER2, created_at=datetime.now(UTC))
+            db.add(message)
             db.commit()
-        result = shadow_record(factory)
-        settings = ranking_settings(ranking_shadow_generation=True)
-        decision = hook.select(hook.context_of(result.entry, package=PACKAGE), ledger_seq=result.appended.seq, settings=settings, package=PACKAGE,
-                               session_factory=factory)
-        # The incumbent is the clone (the higher commissioning prior), so the hook runs one clone shadow record.
-        assert decision.kind == "incumbent" and (decision.model == CLONE or decision.explore is not None), decision
+            thread_id, message_id = thread.id, message.id
+        resolved_calls = []
+        real_resolve = resolve_module.resolve_thread
 
-        class Job:
-            thread_id, user_message_id, lesson_slug, legacy_decision = "t", "m", None, "answer"
-            shadowed_response_id = result.entry.shadowed_response_id
-            presentation = PresentationPlan(plan_id="concise", source="request")
+        def recording_resolve(db, thread, message, *, package):
+            resolved_calls.append((thread, message))
+            return real_resolve(db, thread, message, package=package)
 
+        # A spy only: every call resolves the learner's turn from the database for real.
+        monkeypatch.setattr(resolve_module, "resolve_thread", recording_resolve)
         # The request path's factory returns one shared, cached pipeline (TeachingAssistantService.pipeline): the hook
         # must leave its generator as static assignment's.
         shared = v2_pipeline(Settings(environment="development", model_gateway="shadow", ehmf="shadow", ranking="shadow"), gateway=fresh_gateway(),
                              session_factory=factory, v3_stop=lambda: False)
         static_ref = shared.generator.ref
         assert static_ref.generator_id == STATIC
-        resolved = resolve_turns([], LearnerTurn("message-00000000-0000-0000-0000-000000000001", TIER2), package=PACKAGE)
-        with mock.patch("app.services.tutor_pipeline.resolve.resolve_thread", return_value=resolved):
-            guarded_after_shadow(Job, result, pipeline_factory=lambda: shared, settings=settings, session_factory=factory, started=time.perf_counter())
+        before = dict(hook.SHADOW_GENERATION)
+        job = job_for(thread_id, message_id)
+        run_shadow(job, pipeline_factory=lambda: shared, settings=settings, session_factory=factory)
+        # run_shadow resolved the learner's turn from the database twice: for its own run and for the hook's.
+        assert resolved_calls == [(thread_id, message_id), (thread_id, message_id)]
+        assert hook.SHADOW_GENERATION["runs"] == before["runs"] + 1 and hook.SHADOW_GENERATION["failed"] == before["failed"]
         assert shared.generator.ref == static_ref
+        rows = ledger_rows(factory)
+        entries = [json.loads(row.entry) for row in rows]
+        # The real turn's static record, then the hook's clone record: both undelivered shadow records of the same turn.
+        assert [row.delivery for row in rows] == ["shadow", "shadow"]
+        assert [entry["versions"]["generator_id"] for entry in entries] == [STATIC, CLONE]
+        assert {entry["shadowed_response_id"] for entry in entries} == {job.shadowed_response_id}
+        assert entries[0]["response_id"] == job.shadow_response_id and entries[1]["response_id"] != job.shadow_response_id
+        # The hook ran the incumbent, the clone (the higher commissioning prior), as its decision for the static record says.
+        with factory() as db:
+            static_entry = parse_entry(db.get(ResponseLedgerRecord, rows[0].seq))
+        decision = hook.select(hook.context_of(static_entry, package=PACKAGE), ledger_seq=rows[0].seq, settings=settings,
+                               package=PACKAGE, session_factory=factory)
+        assert decision.kind == "incumbent" and (decision.explore or decision.model) == CLONE, decision
         # The next ordinary shadow run through the shared pipeline is static assignment's.
         assert run(shared, TIER2, legacy_decision="answer", record=True).entry.versions.generator_id == STATIC
-        with factory() as db:
-            rows = db.execute(select(ResponseLedgerRecord.delivery, ResponseLedgerRecord.entry).order_by(ResponseLedgerRecord.seq)).all()
-        assert [row.delivery for row in rows] == ["shadow", "shadow", "shadow"]
-        assert [json.loads(row.entry)["versions"]["generator_id"] for row in rows] == [STATIC, CLONE, STATIC]
+        assert [json.loads(row.entry)["versions"]["generator_id"] for row in ledger_rows(factory)] == [STATIC, CLONE, STATIC]
         # The provenance audit accepts the clone record in development only; elsewhere (and by default) it is flagged.
         with factory() as db:
             assert ledger_provenance(db, PACKAGE, environment="development")["problems"] == []
@@ -1692,16 +1756,31 @@ def test_plan_g_shadow_generation_writes_only_undelivered_shadow_records(caplog,
                 monkeypatch.setattr(module, "get_settings", lambda chosen=chosen: chosen)
                 argv = ["--check-provenance"] if module is response_ledger else ["--database-url", "sqlite://", "--check-provenance"]
                 assert module.main(argv) == expected, (module.__name__, chosen.environment)
-        # A raising clone is logged and swallowed.
+        # A raising hook (the factory fails on the hook's call) is logged and swallowed; run_shadow's own record stands.
+        calls = []
+
+        def failing_factory():
+            calls.append(1)
+            if len(calls) > 1:
+                raise RuntimeError("boom")
+            return shared
+
+        second = job_for(thread_id, message_id)
+        failed = hook.SHADOW_GENERATION["failed"]
         with caplog.at_level(logging.WARNING, logger="qcai.ranking"):
-            guarded_after_shadow(Job, result, pipeline_factory=lambda: (_ for _ in ()).throw(RuntimeError("boom")), settings=settings,
-                                 session_factory=factory, started=time.perf_counter())
-        assert any(getattr(record, "event", None) == "ranking.shadow_generation_failed" or "shadow generation failed" in record.getMessage()
-                   for record in caplog.records)
-        # The scan's later select for the record draws what the hook drew.
+            run_shadow(second, pipeline_factory=failing_factory, settings=settings, session_factory=factory)
+        assert len(calls) == 2 and hook.SHADOW_GENERATION["failed"] == failed + 1
+        assert any(getattr(record, "json_fields", {}).get("event") == "ranking.shadow_generation_failed" for record in caplog.records)
+        last = json.loads(ledger_rows(factory)[-1].entry)
+        assert last["response_id"] == second.shadow_response_id and last["versions"]["generator_id"] == STATIC
+        # Without RANKING_SHADOW_GENERATION the same turn writes only its own record (the default request path).
+        count = len(ledger_rows(factory))
+        run_shadow(job_for(thread_id, message_id), pipeline_factory=lambda: shared, settings=ranking_settings(), session_factory=factory)
+        assert len(ledger_rows(factory)) == count + 1
+        # The scan's later select for the static record draws what the hook drew.
         scan(factory)
-        scanned = next(item for item in events_of(factory, "select") if item["ledger_seq"] == result.appended.seq)
-        assert scanned["payload"]["explore"] == decision.explore
+        scanned = next(item for item in events_of(factory, "select") if item["ledger_seq"] == rows[0].seq)
+        assert scanned["payload"]["explore"] == decision.explore and scanned["payload"]["model"] == decision.model
 
 
 # ===================================================================================================== plan E
@@ -1768,7 +1847,8 @@ def test_plan_e_the_phase_9_downgrade_refuses_while_ranking_events_holds_rows_an
                 connection.execute(text("INSERT INTO ranking_events (kind, payload, prev_sha256, sha256, observed_at) VALUES (:kind, '{}', :sha, :sha, :now)"),
                                    {"kind": kind, "sha": "0" * 64, "now": FIXED_NOW})
             connection.execute(text("INSERT INTO ranking_scans (from_seq, to_seq, records, outcomes, skipped, batches, alarms, fallbacks, package_version, "
-                                    "package_sha256, created_at) VALUES (0, 0, 0, 0, 0, 0, 0, 0, '7.0.0', :sha, :now)"), {"sha": "0" * 64, "now": FIXED_NOW})
+                                    "package_sha256, created_at) VALUES (0, 0, 0, 0, 0, 0, 0, 0, :version, :sha, :now)"),
+                               {"version": PACKAGE.package_version, "sha": "0" * 64, "now": FIXED_NOW})
         statements = ["UPDATE ranking_events SET note = 'x'", "DELETE FROM ranking_events", "UPDATE ranking_scans SET records = 1", "DELETE FROM ranking_scans"]
         if engine.dialect.name == "postgresql":
             statements += ["TRUNCATE ranking_events", "TRUNCATE ranking_scans"]
@@ -1916,6 +1996,18 @@ def test_phase9_docs_the_test_strategy_maps_every_test_module_the_phase_added():
     section = strategy.split("## Phase 9 acceptance map (plan Phase 9 K)", 1)[1]
     for name in PHASE9_TEST_MODULES:
         assert f"`{name}`" in section, name
+    # Each module the phase added or changed has its own row in the two file tables, saying what it covers or what changed;
+    # the tables name no other module, and every one exists.
+    tables = section.split("### Phase 9 test files", 1)[1].split("**Exit gate.**", 1)[0]
+    mapped = {}
+    for line in tables.splitlines():
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) == 2 and cells[0].startswith("`"):
+            for name in re.findall(r"`([a-z0-9_]+\.py)`", cells[0]):
+                mapped[name] = cells[1]
+    assert set(mapped) == set(PHASE9_TEST_MODULES), sorted(set(mapped) ^ set(PHASE9_TEST_MODULES))
+    for name, covers in mapped.items():
+        assert len(covers) >= 30 and (API_ROOT / "tests" / name).is_file(), name
     for ac in range(1, 9):
         assert f"AC-9-{ac}" in section
     assert "**Exit gate.**" in section

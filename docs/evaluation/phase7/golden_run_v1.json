@@ -1,13 +1,13 @@
 {
  "report": "qcai-ehmf-golden-run",
  "format_version": 1,
- "created_at": "2026-11-24T08:19:44+00:00",
- "commit": "fa1f01c7841a96d89d58d105a2e6eceb8628f9f3-dirty",
+ "created_at": "2026-11-24T10:05:56+00:00",
+ "commit": "40bdc57976dae70faed61b30cbdeaca1365f3e13-dirty",
  "evidence_class": "change-control gate, not research results (plan Phase 7 H; 12.5)",
  "pins": {
   "config_package": {
    "version": "7.0.0",
-   "sha256": "861226941263b010471de9f39ee5c50ae4b6938288e34abc275ad03af1ce074b"
+   "sha256": "30c65633a31a5f06d6f985f0bdc62af761171415fd43800ae4c43b4e8c0fd5e6"
   },
   "misconception_library": {
    "version": "v1",
@@ -502,7 +502,7 @@
    "apps/api/app/core/authorization.py": "1a767523e01902c0ec870388d8f8fcbf426a4605a4d1be4f99f7a48ef9a49407",
    "apps/api/app/core/client_identity.py": "ebba54c74b9b28abe10deddfc3b1f300738de3be3ac49a437cf08de16f338f8a",
    "apps/api/app/core/config.py": "a69ed0d3397185eb4cf67891aa9d63c7baacb173e03b5037210cf69ed5d28fe1",
-   "apps/api/app/core/config_package.py": "47305e6626e5ff29d962f0aa524e7256c453e87af3c3690a4a3b1d32a6583293",
+   "apps/api/app/core/config_package.py": "573502a002864d773136c3288fc67fedb901cba41de8e35e1679878ffa7258a4",
    "apps/api/app/core/corpus_governance.py": "39153061b8d613ca0298a5210b4d9abeb4da2298608b1b471c0cf659a7f9a4fd",
    "apps/api/app/core/data_planes.py": "195f35a4a4a01cabeb32d48a0d81c1beb0ca714e943d7c154abe3e96a35a5976",
    "apps/api/app/core/db.py": "81d5e54a250dc4e3d6d477ad33bb37f78cee4a98854330e39e223f1ab44b6014",
@@ -584,17 +584,17 @@
    "apps/api/app/services/ranking/numeric.py": "65f53c620bcef68c6f202b2d1466137eedfbf4cf4f8db87bfed828529fa57076",
    "apps/api/app/services/ranking/package_check.py": "ba3677ce5aa21a3fdd32b9d15ca71dd959eee120e17b940387b518baee814f78",
    "apps/api/app/services/ranking/quality.py": "6ac10964a71d3044f01df35fee1aafe3095099c5b870c7decd28a99f767fa52e",
-   "apps/api/app/services/ranking/recommission.py": "e10a4bf09c7c86dc042cb4ab01448e7315bfaf3ae04832f2a318804abb3b126b",
+   "apps/api/app/services/ranking/recommission.py": "0763fb40ed34c5fa344602a92fc7a6c695716514c830d1b106d61e4e8082a566",
    "apps/api/app/services/ranking/replay.py": "747ad144c4cbc4e7fc339f7abd7a4e2c4eb7917b5121ebbff544d149ec18cc67",
    "apps/api/app/services/ranking/scan.py": "b04730a2954a0169290548a83224c02e634fb68cf0ff84167d3775588e6e4a49",
    "apps/api/app/services/ranking/score.py": "1d46c752f2a78b1f5689b59f32e81901113bf286aa5e4cf5d7f6ea66ef196970",
    "apps/api/app/services/ranking/selection.py": "3fe91a08fbd69ec69bb5b1ae45b2e31a23e43ec901e5777201987f0399d7ec88",
-   "apps/api/app/services/ranking/signals.py": "944394ebaef46edd1d20d403990d4e20510e3c9da197bba2b75506e62079621d",
+   "apps/api/app/services/ranking/signals.py": "ff61080cf4b31661295e47f7a0f7d50c37fd7bd72e8664819e8a397395a5d88d",
    "apps/api/app/services/ranking/state.py": "2252bc516d72506fcdb8931a71ba0bad35e7ae3f09f94d5c33cd4fe549732561",
    "apps/api/app/services/ranking/synthetic.py": "29736e7b34ba0d5f2d0eef84dc50a2509f36a7cf5effc411d1e5e39714170177",
    "apps/api/app/services/ranking/trust.py": "400c9c4d1b59c5771e760b5154ce597f5fcca4773a0ea4e399c146e9f22389d6",
    "apps/api/app/services/ranking/types.py": "c6b5924d928108b6754e60389df31d39e527b9eb3447f4aac23ad2e737dcbd21",
-   "apps/api/app/services/ranking/vocabulary.py": "17820cf921619f6738deb591801d030f271dbf9387c1f289fb947a525042d216",
+   "apps/api/app/services/ranking/vocabulary.py": "76f8127a69de1b5049dedcf0016fa95e6b3591b3adf66107af3449ca62f72a58",
    "apps/api/app/services/retention.py": "c457468e79f6d1d3c5ae5fea4ba13506b8cdce30039598fadcd15e412972dec2",
    "apps/api/app/services/retrieval_engine.py": "052ec247b23a534be350623d0d85fce6351b8db03e8a6e012a5ebe67f912de1b",
    "apps/api/app/services/retrieval_legacy_p1.py": "d83c988921a832379001ef1dacfb433938f12ca1c4ff13bc6b3af6b0c5660ec1",
@@ -687,6 +687,6 @@
    "scripts/run_golden_set.py": "931d70dcfdc66f32a91ad9145eb85894c86c8ccd00ded6edc6ae533b4e506b08",
    "scripts/run_v1_fixtures.py": "eef14c4c906aa9abb209c97b83bf78c077ca7a6642febbc0d09b0665b86405bd"
   },
-  "sha256": "d1eb5945d4800ed8e09600ffab579dbe483a59e2bbff2a8849b1ea8748c5a4e5"
+  "sha256": "a021f89223504a62929fa321298064941b1815f71316f186357c2a5b3077b6d2"
  }
 }

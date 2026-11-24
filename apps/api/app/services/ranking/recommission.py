@@ -2,8 +2,8 @@
 
 A version change of a candidate multiplies its alpha and beta by the deflation (0.3) in every context and in its prior,
 caps its rating at C (shadow and verification only), resets both its charts and opens a hold. Only a recorded
-`recommission_pass` (a shadow golden regression with no failed first pass and at least min_generated generated records)
-lifts the cap; a failing one changes a counter only, and elapsed time never lifts it. `commission` sets the prior from a
+`recommission_pass` (a shadow golden regression in which every query gave a completed verdict and none failed its first
+pass: rule every-item-generated-no-failed-first-pass-v1) lifts the cap; a failing one changes a counter only, and elapsed time never lifts it. `commission` sets the prior from a
 commissioning run (alpha0 = 1 + clean, beta0 = 1 + failed, Qbar0 = its mean Q) and is refused for a model with outcomes.
 
 regression_run is the worker's shadow regression (impure: it runs the two-pass pipeline over the recommission queries with
@@ -152,7 +152,9 @@ def regression_run(model: Any, *, package: Any, queries: list[str] | None = None
         mean_q = to_str(q(total_q / generated)) if generated else to_str(params.block["quality"]["initial_qbar"])
     run_sha256 = canonical_sha256({"model": model.as_dict(), "package_sha256": package.sha256, "golden_set_sha256": params.golden_set_sha256,
                                    "outcomes": outcomes})
-    passed = failed == 0 and generated >= int(params.block["recommission"]["min_generated"])
+    # Rule every-item-generated-no-failed-first-pass-v1: the set passes only when every query gave a completed verdict
+    # (no skip of any reason) and no first pass failed.
+    passed = bool(queries) and failed == 0 and skipped == 0 and generated == len(queries)
     return RunResult(model.adapter_id, model.model_version, clean, failed, generated, skipped, mean_q, run_sha256, passed)
 
 

@@ -1,17 +1,17 @@
 {
  "report": "qcai-ranking-replay",
  "format_version": 1,
- "created_at": "2026-11-24T08:06:24Z",
- "commit": "fa1f01c7841a96d89d58d105a2e6eceb8628f9f3-dirty",
+ "created_at": "2026-11-24T10:07:39Z",
+ "commit": "40bdc57976dae70faed61b30cbdeaca1365f3e13-dirty",
  "evidence_class": "engineering measurement on synthetic streams, not E4 results (invariant 9; Table XVII MR-1..MR-3 not asserted)",
  "pins": {
   "config_package": {
    "version": "7.0.0",
-   "sha256": "861226941263b010471de9f39ee5c50ae4b6938288e34abc275ad03af1ce074b"
+   "sha256": "30c65633a31a5f06d6f985f0bdc62af761171415fd43800ae4c43b4e8c0fd5e6"
   },
   "ranking_parameters": {
    "version": "ranking-params-v1",
-   "sha256": "c06c239cb703959ee98f13aa3fc7f9cf5b5bc1c3885b94c1f7496673e5da0203"
+   "sha256": "4b93e983a326a778784b2786a400e707a7ac6402a59a2478a930b833384e4045"
   }
  },
  "scenarios": [
@@ -20,8 +20,8 @@
    "seed": "synthetic-flapping-v1",
    "events": 2026,
    "log_rows": 4107,
-   "events_sha256": "7fea4f93107a12551cc166dd027991fe7c55722a260dd57b527e845783400cd8",
-   "final_state_sha256": "e6d4c7fbeb7634dad3034e973c1a9c9eb617f17bd1f9aab9b1bd2cf2e0f1f121",
+   "events_sha256": "e6abde226e07078b1ab8cbf1143d0e999c6e94860481829af183689304aca12f",
+   "final_state_sha256": "f8b212df7d303be41c2a2feff5dca6f91bc642291877e837b9a50e7c9cf6edfc",
    "derived_sha256": "8a5907b89616be8e39445586b1692b299df16e5c5cb3b3f39f809ea639c5afd7",
    "replays_equal": true,
    "requests": 2000,
@@ -47,8 +47,8 @@
    "seed": "synthetic-promotion-v1",
    "events": 1218,
    "log_rows": 2468,
-   "events_sha256": "cf23edc53386f6efb2b93129d058338ffce39d0c77899584e927b5cc13d96126",
-   "final_state_sha256": "974545d0e329805d50eaba76bc8ac2845f84c9c83281a998307ed6c32a7dc568",
+   "events_sha256": "e9704fd59c3905e0bf5d2faca7599d35f4674bda5c17204f6a46068447a8d068",
+   "final_state_sha256": "ee7cf0f9fc3fc0778174a06d95b6fb2bb40f9faef97d1c96a652a0c9a25fce3f",
    "derived_sha256": "0249dd0d341ef30d375ee1c74b4f65a48cdc024d3b0dcbaf832427c7f34315fa",
    "replays_equal": true,
    "requests": 1200,
@@ -74,8 +74,8 @@
    "seed": "synthetic-outage-v1",
    "events": 917,
    "log_rows": 1856,
-   "events_sha256": "fb258b8d3e1ccdea1623905d9b3dcd028e872829c04acd5b2d469de9408e0886",
-   "final_state_sha256": "509d6b30fb8bd74a2230c1166b2ab83851909c916f4dc4dc1d6587564e6f13f2",
+   "events_sha256": "4ec2660a181b3c3cb3ce70079d9f2fb6a437ffaaa1a083cd6651b6caa8747a64",
+   "final_state_sha256": "1eaafea4bde57bb7411b6d0625624a280eb000ee71d2647bdc2769a987269f66",
    "derived_sha256": "344d03ec5edc63fb2844abec605d6b204129b9a94da8e029d7969b1636f2b202",
    "replays_equal": true,
    "requests": 900,
@@ -101,8 +101,8 @@
    "seed": "synthetic-drift-v1",
    "events": 1521,
    "log_rows": 3150,
-   "events_sha256": "868cf2d59362026705fbb4546d9602e613601aa163efe7ccf822611878389d69",
-   "final_state_sha256": "b47f4beeed12482d6563e18387fe5afaaeb5d14ff42de1e32ed60138fd36de83",
+   "events_sha256": "a8d6c53e30c8df1e08b8b78416804b36aed3bd4605d4984b591b7e876af935f5",
+   "final_state_sha256": "5586d016064b4153307f3f3b1f3afba9fe2bb4d1b16dbfba8e75926f5c3c3817",
    "derived_sha256": "023f4635b74b7fe67faa4b195bee3b6cc3b451f439ec3ba2fe6adb9620b42faa",
    "replays_equal": true,
    "requests": 1500,
@@ -129,8 +129,8 @@
    "seed": "synthetic-model_change-v1",
    "events": 514,
    "log_rows": 1036,
-   "events_sha256": "6c453716eb79387f3a235621b07dcaaf628d725dc95cddc193e6e91e72b590a7",
-   "final_state_sha256": "afd45a01e06e14e43baa81de89c9f53f2520fcb4825f8db4d8363a2f962ca38e",
+   "events_sha256": "b2de919ed20803f3c236760dbe93c255832cb3641ff0701a13b55b962d1d6181",
+   "final_state_sha256": "d2e60011e2e6fa4599c9deb6a3a14797320810ca8e2d8f891c408435597f7ce5",
    "derived_sha256": "549dbe1c73d344cd4d43ce1760d10739afe240a2ddc335405eb96546b33ed72a",
    "replays_equal": true,
    "requests": 500,
@@ -156,8 +156,8 @@
    "seed": "synthetic-empty_eligible-v1",
    "events": 209,
    "log_rows": 419,
-   "events_sha256": "84f36dc78b914373ad00b6b2300771930d748b21cead847f46ea8941e116256c",
-   "final_state_sha256": "d65116b2673e409dd2a1c42a3a670d3691b3b981bf0e6a38daf04dd51f4886d1",
+   "events_sha256": "3a4cbb1dca5ca27d7051e9b3e23ba5c9e0b77ad681e05df8a99e15daed33bfc4",
+   "final_state_sha256": "ece2602131a885bcd87c57ea5bf02142244f96e5264bca58bfc722a63b3f4995",
    "derived_sha256": "f4ff5671f5da76661c37b9e6d72a97664ead6c273527054e27e6f64716a74f0b",
    "replays_equal": true,
    "requests": 200,
@@ -183,8 +183,8 @@
    "seed": "synthetic-rating_only-v1",
    "events": 67,
    "log_rows": 130,
-   "events_sha256": "8253d2e72d70d1e07e72fb9ac4d39394f26cf0d213c5557c019b03f92cecaa94",
-   "final_state_sha256": "f87bad897e65582e1734a47c1574c50e9af039d4f16506be53c1fbcfb83b7ad2",
+   "events_sha256": "894aa81ef11edaefb41d969b489b553b443073fc9141a92794de12543613d220",
+   "final_state_sha256": "01cfe3835f385c9badb5e1d1962a9174f6203021632a565d33c6d6d773fd6d85",
    "derived_sha256": "bca29869b71af32f25ca821c662823e1859289ae860b913cef8213809003903f",
    "replays_equal": true,
    "requests": 60,
@@ -220,19 +220,19 @@
    "apps/api/app/services/ranking/numeric.py": "65f53c620bcef68c6f202b2d1466137eedfbf4cf4f8db87bfed828529fa57076",
    "apps/api/app/services/ranking/package_check.py": "ba3677ce5aa21a3fdd32b9d15ca71dd959eee120e17b940387b518baee814f78",
    "apps/api/app/services/ranking/quality.py": "6ac10964a71d3044f01df35fee1aafe3095099c5b870c7decd28a99f767fa52e",
-   "apps/api/app/services/ranking/recommission.py": "e10a4bf09c7c86dc042cb4ab01448e7315bfaf3ae04832f2a318804abb3b126b",
+   "apps/api/app/services/ranking/recommission.py": "0763fb40ed34c5fa344602a92fc7a6c695716514c830d1b106d61e4e8082a566",
    "apps/api/app/services/ranking/replay.py": "747ad144c4cbc4e7fc339f7abd7a4e2c4eb7917b5121ebbff544d149ec18cc67",
    "apps/api/app/services/ranking/scan.py": "b04730a2954a0169290548a83224c02e634fb68cf0ff84167d3775588e6e4a49",
    "apps/api/app/services/ranking/score.py": "1d46c752f2a78b1f5689b59f32e81901113bf286aa5e4cf5d7f6ea66ef196970",
    "apps/api/app/services/ranking/selection.py": "3fe91a08fbd69ec69bb5b1ae45b2e31a23e43ec901e5777201987f0399d7ec88",
-   "apps/api/app/services/ranking/signals.py": "944394ebaef46edd1d20d403990d4e20510e3c9da197bba2b75506e62079621d",
+   "apps/api/app/services/ranking/signals.py": "ff61080cf4b31661295e47f7a0f7d50c37fd7bd72e8664819e8a397395a5d88d",
    "apps/api/app/services/ranking/state.py": "2252bc516d72506fcdb8931a71ba0bad35e7ae3f09f94d5c33cd4fe549732561",
    "apps/api/app/services/ranking/synthetic.py": "29736e7b34ba0d5f2d0eef84dc50a2509f36a7cf5effc411d1e5e39714170177",
    "apps/api/app/services/ranking/trust.py": "400c9c4d1b59c5771e760b5154ce597f5fcca4773a0ea4e399c146e9f22389d6",
    "apps/api/app/services/ranking/types.py": "c6b5924d928108b6754e60389df31d39e527b9eb3447f4aac23ad2e737dcbd21",
-   "apps/api/app/services/ranking/vocabulary.py": "17820cf921619f6738deb591801d030f271dbf9387c1f289fb947a525042d216",
+   "apps/api/app/services/ranking/vocabulary.py": "76f8127a69de1b5049dedcf0016fa95e6b3591b3adf66107af3449ca62f72a58",
    "scripts/run_ranking_replay.py": "6830e5d2bd68ee395c406fde7f9d02a9829b65b8893fdbe8c3ae167fb1e7ed94"
   },
-  "sha256": "e8c88f85451e648c95cc27f594efb1a575217efe474ceefebe440b9729da04f9"
+  "sha256": "cd8e85767879df742baa3a0ae40d9a7376d7e800747f03d979dd76abd165259d"
  }
 }

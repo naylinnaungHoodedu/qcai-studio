@@ -690,9 +690,28 @@ def test_v6_stays_readable_for_one_release():
     assert package.ehmf is not None and package.ranking is None and V6_RAW["supersedes"]["sha256"] == canonical_sha256(V5_RAW)
     assert package.sha256 == recorded_sha256(V6_PACKAGE_PATH) == canonical_sha256(V6_RAW)
     # Its pinned V3 schemas are the four-reason gold label (Phase 9 spec conflict 28), so its structural check passes.
+    from app.services.v3.contracts import GoldLabelV6Schema, v3_schema_models
     from app.services.v3.package_check import check_v3_package
 
     assert check_v3_package(package, structural=True) == []
+    # Conflict 28: the schema split keeps the v5 and v6 gold-label pins exactly as Phase 6 and 7 committed them (the
+    # pinned file, its canonical sha256 and Phase 6's four reasons), and both packages keep their own sha256: v6's is the
+    # history's 6.0.0 entry and v7's supersedes pin, v5's is v6's supersedes pin and its own sidecar.
+    pin = {"version": "v3-gold-label-v1", "path": "schemas/v3-gold-label.v1.schema.json",
+           "sha256": "880a55b8e72e1d357629219b2166550dfa954ce21a343768ad79138f68e9fc57"}
+    assert V5_RAW["v3"]["schemas"]["V3GoldLabel"] == pin == V6_RAW["v3"]["schemas"]["V3GoldLabel"]
+    committed = json.loads((V6_PACKAGE_PATH.parent / pin["path"]).read_text(encoding="utf-8"))
+    assert canonical_sha256(committed) == pin["sha256"] and committed == GoldLabelV6Schema.model_json_schema(mode="validation")
+    assert committed["properties"]["reasons"]["maxItems"] == 4
+    for schema in (5, 6):
+        assert v3_schema_models(schema)["V3GoldLabel"] is GoldLabelV6Schema
+    assert v3_schema_models(RANKING_SCHEMA_VERSION)["V3GoldLabel"] is not GoldLabelV6Schema
+    assert RAW["v3"]["schemas"]["V3GoldLabel"]["path"] != pin["path"]
+    history = json.loads((REPO_ROOT / "docs" / "evaluation" / "phase7" / "package_versions.json").read_text(encoding="utf-8"))
+    assert history["entries"][0] == {"version": "6.0.0", "sha256": canonical_sha256(V6_RAW)} and RAW["supersedes"]["sha256"] == canonical_sha256(V6_RAW)
+    v5 = load_config_package(V5_PACKAGE_PATH, governed=False)
+    assert v5.hash_verified and v5.sha256 == canonical_sha256(V5_RAW) == V6_RAW["supersedes"]["sha256"]
+    assert check_v3_package(v5, structural=True) == []
 
 
 def test_the_v6_edits_v7_changes_are_exactly_the_ones_it_makes():

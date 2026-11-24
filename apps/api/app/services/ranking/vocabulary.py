@@ -11,8 +11,8 @@ RANKING_VERSION = "ranking-v1"
 PARAMETERS_VERSION = "ranking-params-v1"
 EVENT_SCHEMA = "ranking-event-v1"
 STATE_SCHEMA = "ranking-state-v1"
-# The first package major with a ranking block (Phase 9): equal to config_package.RANKING_SCHEMA_VERSION, which a unit
-# test compares. Renumbering the Phase 9 package (spec 15) edits both.
+# The first package schema and major with a ranking block (Phase 9). The one constant: config_package.RANKING_SCHEMA_VERSION
+# is this value, and LATEST_SCHEMA_VERSION follows it. Renumbering the Phase 9 package (spec 15) edits this line.
 RANKING_FIRST_MAJOR = 7
 
 CLUSTER_RULE = "cluster-module-v1"
@@ -82,7 +82,7 @@ RULES = {
     "micro_batch.time_trigger": "record-time-and-scan-tick-v1",
     "cusum.hold": "until-x5-window-closes-v1",
     "cusum.sustained": "second-alarm-while-held-v1",
-    "recommission.pass_rule": "no-failed-first-pass-min-generated-v1",
+    "recommission.pass_rule": "every-item-generated-no-failed-first-pass-v1",
     "recommission.commissioning_prior": "one-plus-clean-one-plus-failed-v1",
     "penalties.cost_rule": "cost-units-over-max-v1",
     "fallback.empty_eligible_set": "abstain_and_enqueue_v3",

@@ -10,17 +10,21 @@ Skip (no completed verdict: the controller only counts it, AC-9-1). The rules ap
     corpus_conflict; an abstention with a pre-generation reason (PRE_GENERATION: a gate reason, no_quotable_evidence,
     corpus_version_mismatch): not_generated
   6 a V1 first-pass failure gives y = 0: a hard fail, a regeneration or re-render (cycle_count > 0), a post-generation V1
-    abstention, or an accepted-attempt V1 result outside pass/mark other than V1.7's and V1.3's no_checker
+    abstention, or an accepted-attempt V1 result outside pass/mark other than V1.7's and the V1.3 checker's absence
   7 a post-generation V2 or EHMF abstention (FAILED_AFTER_GENERATION: v2_correction_exhausted, v2_alignment_failed,
     ehmf_set_changed) gives y = 0: the panel's corrections ran out, the alignment failed or a re-render was refused
   8 no V2 block: no_v2_verdict    9 the panel not reached: panel_not_reached
  10 a V1-passed claim without a V2 verdict, or withheld by V2: v2_withheld
  11 otherwise y = 1 when the first pass is clean (R-d), else 0.
 Clean (R-d): V1 passed with no regeneration; V2 cycles 0, every judged claim pass at cycle 0, the alignment item absent or
-pass; and no generator-attributable escalation (X1: a critical claim with an objection; X2; a V3 intent reason v1_3_flag
-from a V1.3 result other than no_checker, or v1_8_misconception). X3 feeds F only (AC-9-2); X4, X5, X6 and V1.7 are not
-the generator's. A V1.3 no_checker flag is the checker's absence (D-21; the record's ehmf.detector_absent), not a verdict
-on the generator (spec conflict 27). No field the generator writes about itself is read (no generator self-confidence).
+pass; and no generator-attributable escalation (X1: a critical claim with an objection; X2; v1_8_misconception; a V3
+intent reason v1_3_flag unless every V1.3 flag of that claim is the checker's absence). X3 feeds F only (AC-9-2); X4, X5,
+X6 and V1.7 are not the generator's. The checker's absence (spec conflict 27; D-21) is exactly a V1.3 result with outcome
+flag and reason no_checker on a record that does not show the checker present (no EHMF block, or an EHMF block whose
+detector_absent lists V1.3): it is not a verdict on the generator. Any other V1.3 flag (not_enough_info, contradicted,
+below_support_threshold), a no_checker on a record whose EHMF block lists V1.3 present, and a v1_3_flag reason with no
+no_checker flag behind it all count against the first pass. No field the generator writes about itself is read (no
+generator self-confidence).
 Signals (first pass): V the share of verdicts whose V1 results pass and whose V2 outcome is pass at cycle 0; K the mean
 over judged claims of 1 - H/ln 3 (H the entropy of the family verdicts); H (ledger-entry-v4 only) the mean primary EHMF
 weight of the claims, at most 1; S and F missing (D-21; F only for a record the learner was shown, conflict 12).
@@ -50,7 +54,7 @@ NON_VERDICT_FINALS = {"budget_exceeded": "budget_exceeded", "checker_unavailable
                       "v2_kill_switch": "kill_switch", "v2_degraded_withheld": "v2_withheld", "conflict_withheld": "corpus_conflict"}
 DELIVERABLE = ("pass", "mark")
 VERDICT_NAMES = ("SUPPORTED", "CONTRADICTED", "NOT_ENOUGH_INFO")
-CHECKER_ABSENT = ("V1.3", "no_checker")
+CHECKER_ABSENT = ("V1.3", "flag", "no_checker")
 
 
 def utc_text(value: datetime) -> str:
@@ -59,9 +63,20 @@ def utc_text(value: datetime) -> str:
     return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
-def _passes(result: Any) -> bool:
-    """A V1 result that is no failure of the generator's: pass or mark, V1.7's labelling flags, V1.3's no_checker."""
-    return result.outcome in DELIVERABLE or result.check_id == "V1.7" or (result.check_id, result.reason_code) == CHECKER_ABSENT
+def checker_absent(verification: Any) -> bool:
+    """The record does not show a V1.3 checker present: no EHMF block, or an EHMF block whose detector_absent lists V1.3."""
+    ehmf = getattr(verification, "ehmf", None)
+    return ehmf is None or "V1.3" in tuple(getattr(ehmf, "detector_absent", ()) or ())
+
+
+def _is_absence(result: Any, absent: bool) -> bool:
+    return absent and (result.check_id, result.outcome, result.reason_code) == CHECKER_ABSENT
+
+
+def _passes(result: Any, absent: bool) -> bool:
+    """A V1 result that is no failure of the generator's: pass or mark, V1.7's labelling flags, and the V1.3 checker's
+    absence (a no_checker flag on a record that does not show the checker present; spec conflict 27)."""
+    return result.outcome in DELIVERABLE or result.check_id == "V1.7" or _is_absence(result, absent)
 
 
 def _verdicts(verification: Any) -> tuple:
@@ -73,14 +88,15 @@ def _v1_failed(verification: Any) -> bool:
         return True
     if verification.final == "abstain" and verification.final_reason in POST_GENERATION_V1:
         return True
+    absent = checker_absent(verification)
     accepted = max(int(verification.generation_attempts), 1)
     for check in verification.checks:
-        if check.claim_id is None and check.attempt == accepted and not _passes(check):
+        if check.claim_id is None and check.attempt == accepted and not _passes(check, absent):
             return True
-    return any(not _passes(result) for verdict in _verdicts(verification) for result in verdict.v1)
+    return any(not _passes(result, absent) for verdict in _verdicts(verification) for result in verdict.v1)
 
 
-def _escalated(verdict: Any) -> bool:
+def _escalated(verdict: Any, absent: bool) -> bool:
     v2 = getattr(verdict, "v2", None)
     if v2 is not None and v2.critical and int(v2.objections) >= 1:
         return True
@@ -90,7 +106,9 @@ def _escalated(verdict: Any) -> bool:
     if getattr(intent, "escalation", None) == "X2" or "v1_8_misconception" in intent.reasons:
         return True
     if "v1_3_flag" in intent.reasons:
-        return any(result.check_id == "V1.3" and result.outcome == "flag" and result.reason_code != "no_checker" for result in verdict.v1)
+        # Not an escalation only when the claim's V1.3 flags are all the checker's absence (and there is at least one).
+        flags = [result for result in verdict.v1 if result.check_id == "V1.3" and result.outcome == "flag"]
+        return not flags or not all(_is_absence(result, absent) for result in flags)
     return False
 
 
@@ -100,11 +118,12 @@ def clean(verification: Any) -> bool:
         return False
     if block.alignment is not None and block.alignment.outcome != "pass":
         return False
+    absent = checker_absent(verification)
     for verdict in _verdicts(verification):
         v2 = getattr(verdict, "v2", None)
         if v2 is not None and (v2.outcome != "pass" or int(v2.cycle) != 0):
             return False
-        if _escalated(verdict):
+        if _escalated(verdict, absent):
             return False
     return True
 
@@ -134,8 +153,9 @@ def vote_agreement(verdicts: list[str]) -> Decimal:
 def signals_of(entry: Any) -> Signals:
     verification = entry.verification
     verdicts = _verdicts(verification)
+    absent = checker_absent(verification)
     with localcontext(CTX):
-        passing = sum(1 for verdict in verdicts if all(_passes(result) for result in verdict.v1) and getattr(verdict, "v2", None) is not None
+        passing = sum(1 for verdict in verdicts if all(_passes(result, absent) for result in verdict.v1) and getattr(verdict, "v2", None) is not None
                       and verdict.v2.outcome == "pass" and int(verdict.v2.cycle) == 0)
         v = q(Decimal(passing) / Decimal(len(verdicts))) if verdicts else ZERO
         judged = [verdict.v2 for verdict in verdicts if getattr(verdict, "v2", None) is not None and verdict.v2.outcome != "withheld"
@@ -187,8 +207,9 @@ def outcome_of(entry: Any, *, ledger_seq: int, created_at: str, candidates: dict
         return Skip(int(ledger_seq), "no_v2_verdict", model)
     if not block.panel_reached:
         return Skip(int(ledger_seq), "panel_not_reached", model)
+    absent = checker_absent(verification)
     for verdict in _verdicts(verification):
-        if all(_passes(result) for result in verdict.v1) and (getattr(verdict, "v2", None) is None or verdict.v2.outcome == "withheld"):
+        if all(_passes(result, absent) for result in verdict.v1) and (getattr(verdict, "v2", None) is None or verdict.v2.outcome == "withheld"):
             return Skip(int(ledger_seq), "v2_withheld", model)
     return outcome(1 if clean(verification) else 0)
 

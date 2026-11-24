@@ -57,6 +57,7 @@ from app.core.config import (
     Settings,
 )
 from app.core.structured_logging import FIELDS
+from app.services.ranking.vocabulary import RANKING_FIRST_MAJOR
 
 LOGGER = logging.getLogger("qcai.config_package")
 PACKAGE_DIRECTORY = Path(__file__).resolve().parents[1] / "config_package"
@@ -66,11 +67,12 @@ DEFAULT_PACKAGE_PATH = PACKAGE_DIRECTORY / "v7.json"
 # scripts/config_package.py reads this constant, so renumbering the Phase 7 package (E16) edits these two constants, the
 # file names and the Alembic parent (docs/architecture/ehmf-change-control.md "Renumbering the Phase 7 package").
 EHMF_SCHEMA_VERSION = 6
-# The first package schema with a ranking block (Phase 9), equal to ranking.vocabulary.RANKING_FIRST_MAJOR. Every rule a
-# schema introduces applies to every later schema; LATEST_SCHEMA_VERSION is the loader's upper bound. Renumbering the
-# Phase 9 package (E16) edits RANKING_SCHEMA_VERSION, RANKING_FIRST_MAJOR, the file names and the Alembic parent
+# The first package schema with a ranking block (Phase 9) is one constant, ranking.vocabulary.RANKING_FIRST_MAJOR (a
+# standard-library module); RANKING_SCHEMA_VERSION is that constant under the loader's name. Every rule a schema
+# introduces applies to every later schema; LATEST_SCHEMA_VERSION, the loader's upper bound, is the latest of these.
+# Renumbering the Phase 9 package (E16) edits RANKING_FIRST_MAJOR, the file names and the Alembic parent
 # (docs/architecture/ehmf-change-control.md "Renumbering the Phase 9 package").
-RANKING_SCHEMA_VERSION = 7
+RANKING_SCHEMA_VERSION = RANKING_FIRST_MAJOR
 LATEST_SCHEMA_VERSION = RANKING_SCHEMA_VERSION
 # Package v6 stays readable for one release after the Phase 9 merge (DI-126; its own CI step).
 V6_PACKAGE_PATH = PACKAGE_DIRECTORY / "v6.json"
@@ -1841,7 +1843,6 @@ class RankingParams:
     clusters: tuple[str, ...]
     active_task_types: tuple[str, ...]
     cluster_rule: str
-    min_generated: int
     golden_set_path: str
     golden_set_sha256: str
     golden_set_items: int
@@ -1949,7 +1950,8 @@ def _parse_ranking(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], v2: 
     recommission = _mapping(block, "recommission")
     _decimal_text(recommission, "deflation", "ranking.recommission", low="0", high="1", high_open=False)
     _require(recommission.get("cap") == "C", "ranking.recommission.cap must be 'C' (task 4)")
-    min_generated = _integer(recommission, "min_generated", minimum=1)
+    _require("min_generated" not in recommission,
+             "ranking.recommission.min_generated is refused: the regression passes only when every golden-set query gives a completed verdict")
     _require(recommission.get("gateway_mode") == "shadow", "ranking.recommission.gateway_mode must be 'shadow' (task 4: shadow golden regression)")
     _require(recommission.get("uncommissioned_prior") == {"alpha": "1", "beta": "1"}, "ranking.recommission.uncommissioned_prior must be Beta(1, 1)")
     golden = _mapping(recommission, "golden_set")
@@ -1981,7 +1983,7 @@ def _parse_ranking(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], v2: 
     return RankingParams(
         version=RANKING_VERSION, parameters_version=PARAMETERS_VERSION, block=block, parameters_sha256=canonical_sha256(block),
         static_models=static, clusters=CLUSTERS, active_task_types=ACTIVE_TASK_TYPES, cluster_rule=contexts["cluster_rule"],
-        min_generated=min_generated, golden_set_path=golden["path"], golden_set_sha256=golden["sha256"], golden_set_items=int(golden["items"]),
+        golden_set_path=golden["path"], golden_set_sha256=golden["sha256"], golden_set_items=int(golden["items"]),
         report_path=report, stop_refresh_s=refresh, live_routing=live["state"], provisional=True,
     )
 

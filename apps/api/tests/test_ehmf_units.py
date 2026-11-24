@@ -209,7 +209,10 @@ def test_the_golden_runner_exits_on_drift_dirty_and_unmet(tmp_path, monkeypatch)
     path.write_text(json.dumps(drifted), encoding="utf-8")
     assert golden.main(["--check", str(path)]) == 1
     monkeypatch.setattr(golden, "_commit", lambda: "abc-dirty")
-    assert golden.main(["--write", str(tmp_path / "out.json")]) == 4
+    history = tmp_path / "history.json"
+    history.write_bytes(golden.DEFAULT_HISTORY.read_bytes())
+    assert golden.main(["--write", str(tmp_path / "out.json"), "--history", str(history)]) == 4
+    assert history.read_bytes() == golden.DEFAULT_HISTORY.read_bytes()
     assert golden.main(["--check", str(REPO_ROOT / "lqs" / "x.json")]) == 2
     unmet = json.loads(json.dumps(record))
     path.write_text(json.dumps(unmet), encoding="utf-8")
