@@ -294,8 +294,55 @@ def test_phase8_a_stale_public_projection_cannot_recreate_an_erased_rows_handle(
         assert public_handle(db, owner).startswith("learner-")
 
 
+def test_phase8_an_in_flight_core_writer_cannot_write_after_erasure(privacy_engine):
+    from sqlalchemy import insert
+
+    from app.db_models import Note, UserAccount
+    from app.services.learner_record_lock import guard_request_writes, learner_writer
+
+    owner = f"acct-{uuid4().hex}"
+    with Session(privacy_engine) as db:
+        db.add(UserAccount(user_id=owner, email=f"{uuid4().hex}@example.invalid", password_hash="synthetic"))
+        db.commit()
+    with Session(privacy_engine) as writer:
+        guard_request_writes(writer, learner_writer(writer, "local", owner))
+        with Session(privacy_engine) as eraser:
+            erase_subject(eraser, "local", owner, Settings(_env_file=None))
+            eraser.commit()
+        with pytest.raises(HTTPException, match="unavailable"):
+            writer.execute(insert(Note.__table__).values(user_id=owner, lesson_slug="fixture", body="Synthetic late note."))
+        writer.rollback()
+        assert not independently_remaining(writer, (owner,))
+
+
+def test_phase8_arena_result_cannot_restore_an_erased_players_rows(privacy_engine, monkeypatch):
+    from app.db_models import ArenaProfile, UserAccount
+    from app.services import arena_engine
+    from app.services.learner_record_lock import learner_writer
+
+    active, erased = (f"acct-{uuid4().hex}" for _ in range(2))
+    monkeypatch.setattr(arena_engine, "SessionLocal", lambda: Session(privacy_engine))
+    with Session(privacy_engine) as db:
+        players = {}
+        for identifier in (active, erased):
+            db.add(UserAccount(user_id=identifier, email=f"{uuid4().hex}@example.invalid", password_hash="synthetic"))
+            db.add(ArenaProfile(player_id=identifier, display_name="Synthetic Arena player"))
+            players[identifier] = arena_engine.MatchPlayer(
+                identifier, "learner-fixture", "Synthetic Arena player", 2, writer=learner_writer(db, "local", identifier)
+            )
+        db.commit()
+        erase_subject(db, "local", erased, Settings(_env_file=None))
+        db.commit()
+    match = arena_engine.ArenaMatch("fixture-match", "ranked", players)
+    assert arena_engine.ArenaService()._persist_results(match, {active}) == []
+    with Session(privacy_engine) as db:
+        assert not independently_remaining(db, (erased,))
+        profile = db.scalar(select(ArenaProfile).where(ArenaProfile.player_id == active))
+        assert profile.matches_played == 0
+
+
 @pytest.mark.parametrize("legacy_delete", [False, True], ids=["self-service", "account-delete"])
-@pytest.mark.parametrize("writer_kind", ["note", "tutor-turn"])
+@pytest.mark.parametrize("writer_kind", ["note", "tutor-turn", "existing-tutor-thread"])
 def test_phase8_erasure_serializes_with_unguarded_and_first_writers_http(
     privacy_engine, monkeypatch, legacy_delete, writer_kind,
 ):
@@ -304,7 +351,7 @@ def test_phase8_erasure_serializes_with_unguarded_and_first_writers_http(
 
     from app.core.config import get_settings
     from app.core.db import get_db
-    from app.db_models import Note, TutorTurn
+    from app.db_models import Note, TutorThread, TutorTurn
     from app.services import learner_record_privacy
     from app.services.learner_record_lock import guard_key
     from test_phase8_routes import LESSON, PASSWORD, account, app
@@ -321,6 +368,7 @@ def test_phase8_erasure_serializes_with_unguarded_and_first_writers_http(
     flushed, release_write, write_returned = Event(), Event(), Event()
     erasure_attempted, erasure_locked = Event(), Event()
     held_guards = []
+    thread_lock_order = []
 
     def test_db():
         with Session(privacy_engine, autoflush=False) as db:
@@ -332,12 +380,27 @@ def test_phase8_erasure_serializes_with_unguarded_and_first_writers_http(
                     flushed.set()
                     assert release_write.wait(10)
 
+            @event.listens_for(db, "do_orm_execute")
+            def check_thread_lock_order(state):
+                statement = state.statement
+                if state.is_select and getattr(statement, "_for_update_arg", None) is not None and (
+                    any(table.name == TutorThread.__tablename__ for table in statement.get_final_froms())
+                ):
+                    result = state.invoke_statement()
+                    _, held = db.info.get("learner_write_locks", (None, set()))
+                    thread_lock_order.append(guard_key(owner) in held)
+                    return result
+
             yield db
 
     monkeypatch.setitem(app.dependency_overrides, get_db, test_db)
     browser, headers, owner, _ = account()
     with Session(privacy_engine) as db:
         subject = bind_subject(db, "local", owner)
+        if writer_kind == "existing-tutor-thread":
+            thread_id = f"thread-{uuid4().hex}"
+            db.add(TutorThread(id=thread_id, user_id=owner, title="Synthetic prior thread"))
+            body["thread_id"] = thread_id
         db.commit()
     eraser = TestClient(app, cookies=browser.cookies)
     original_mark = learner_record_privacy.mark_erased_subjects
@@ -367,6 +430,8 @@ def test_phase8_erasure_serializes_with_unguarded_and_first_writers_http(
             assert erasure_attempted.wait(10)
             assert not erasure_locked.wait(0.25), "Erasure acquired its guard while the authenticated writer held rows."
             assert held_guards == [True]
+            if writer_kind != "note":
+                assert thread_lock_order == [True], "Acquire the principal guard before locking the tutor thread."
         finally:
             release_write.set()
         assert writing.result(timeout=15).status_code == 200

@@ -82,14 +82,17 @@ def guard_request_writes(db: Session, writer: LearnerWriter) -> None:
         if any(obj.__table__.name != "public_handles" for obj in (*session.new, *session.dirty, *session.deleted)):
             writer.lock(session)
 
-    def before_dml(state):
-        if state.is_insert or state.is_update or state.is_delete:
+    def before_statement(state):
+        if state.is_select and getattr(state.statement, "_for_update_arg", None) is not None:
+            # The tutor locks an existing thread before appending turns. Erasure takes the principal lock first.
+            writer.lock(state.session)
+        elif state.is_insert or state.is_update or state.is_delete:
             table = getattr(state.statement, "table", None)
             if getattr(table, "name", None) not in {"learner_write_guards", "public_handles"}:
                 writer.lock(state.session)
 
     event.listen(db, "before_flush", before_flush)
-    event.listen(db, "do_orm_execute", before_dml)
+    event.listen(db, "do_orm_execute", before_statement)
 
 
 def lock_learner_write(

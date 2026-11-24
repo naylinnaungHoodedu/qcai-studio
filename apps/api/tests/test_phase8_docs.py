@@ -435,7 +435,7 @@ def test_phase8_docs_section_17_states_only_the_current_verification():
     proof = (ROOT / ERASURE_PROOF).read_bytes()
     assert "inputs" not in json.loads(proof)
     assert f"`{ERASURE_PROOF}` has record file SHA-256 `{hashlib.sha256(proof).hexdigest()}`" in section
-    assert "the proof has no inputs block" in section
+    assert "the proof has no inputs block" in section.lower()
 
 
 def _require_review_response_fields(response):
@@ -505,13 +505,14 @@ def test_phase8_docs_describe_the_shipped_package_and_inherited_version_guards()
     assert f"accepts schemas 1-{LATEST_SCHEMA_VERSION} up to `LATEST_SCHEMA_VERSION`" in loader
     assert all(value in loader for value in ("`EHMF_SCHEMA_VERSION` (6)", "`V6_PACKAGE_PATH`", "`V7_PACKAGE_PATH`", "DI-317"))
     assert f"The default path is v{LATEST_SCHEMA_VERSION} with Phase 8" in cli
-    acceptance = phase7.split("\n### 13.2 ", 1)[1].split("\n### 13.3 ", 1)[0]
+    acceptance = phase7.split("\n### 13.1 ", 1)[1].split("\n### 13.3 ", 1)[0]
     inherited_tests = phase7.split("\n### 13.3 ", 1)[1].split("\n## ", 1)[0]
     strategy = (ROOT / "docs/testing/test-strategy.md").read_text(encoding="utf-8")
     phase7_strategy = strategy.split("\n## Phase 7 ", 1)[1].split("\n## ", 1)[0]
     for text in (acceptance, inherited_tests, phase7_strategy):
         assert not re.search(r"shipped (?:package (?:is )?)?v[67]\b|v[67] is the default", text, re.I)
     assert "reads v6 explicitly" in acceptance and f"carried into v{LATEST_SCHEMA_VERSION}" in acceptance
+    assert "first EHMF package" in acceptance and "independent loader ceiling" in acceptance
     for text in (inherited_tests, phase7_strategy):
         for version in (4, 5):
             assert f"v{version} through v{LATEST_SCHEMA_VERSION}" in text
