@@ -23,7 +23,7 @@ import json
 import os
 from pathlib import Path
 import re
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from . import ablation, analysis_plans, governance, planes, statistics, ulqs
 from .abstention import abstention_by_turn_depth, correct_abstention
@@ -268,6 +268,16 @@ def _type_problems(spec: Mapping[str, Any]) -> list[str]:
     for key in ("responder", "governance"):
         if key in spec and not isinstance(spec[key], Mapping):
             reasons.append(key)
+    responder = spec.get("responder")
+    if isinstance(responder, Mapping):
+        recorded, live = responder.get("recorded"), responder.get("live")
+        if recorded is not None and not (isinstance(recorded, Mapping) and isinstance(recorded.get("path"), str) and recorded["path"]
+                                         and isinstance(recorded.get("sha256"), str)):
+            reasons.append("responder.recorded")
+        if live is not None and not (isinstance(live, Mapping) and isinstance(live.get("adapter"), (str, type(None)))):
+            reasons.append("responder.live")
+        if not isinstance(responder.get("rule", ""), str):
+            reasons.append("responder.rule")
     bootstrap = spec.get("bootstrap")
     if bootstrap is not None:
         ok = isinstance(bootstrap, Mapping) and _integer(bootstrap.get("resamples", 1000), 1)
@@ -316,9 +326,28 @@ def _check_shape(spec: Mapping[str, Any], parameters: Mapping[str, Any]) -> None
             raise RunRefused(2, ["replicate_subsample_required"])
 
 
+def _file_sha256(path: Path) -> str | None:
+    try:
+        return lf_sha256(path)
+    except OSError:
+        return None
+
+
 def plan_run(spec: Mapping[str, Any], *, repo_root: Path = REPO_ROOT, environ: Mapping[str, str] = os.environ,
-             out_dir: Path | None = None, access_log: Path | None = None) -> Plan:
-    repo_root = Path(repo_root)
+             out_dir: Path | None = None, access_log: Path | None = None, on_read: Callable[[str, str], None] | None = None) -> Plan:
+    """The run's plan, or RunRefused. `on_read(kind, sha256)` is told of each research-plane input as soon as it is read
+    (the items, the catalog, the recording and every governance record), before any later check can refuse the run, so
+    that the access log holds every read of a refused run too."""
+    def note(kind: str, sha256: str | None) -> None:
+        if on_read is not None and sha256 is not None:
+            on_read(kind, sha256)
+
+    with governance.observe_reads(note if on_read is not None else None):
+        return _plan_run(spec, repo_root=Path(repo_root), environ=environ, out_dir=out_dir, access_log=access_log, note=note)
+
+
+def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str, str], out_dir: Path | None,
+              access_log: Path | None, note: Callable[[str, str | None], None]) -> Plan:
     try:
         parameters_raw = load_harness_parameters()
     except (OSError, ValueError):
@@ -336,11 +365,14 @@ def plan_run(spec: Mapping[str, Any], *, repo_root: Path = REPO_ROOT, environ: M
     if package_sha != spec["package"].get("sha256") or _sidecar(package_path) != package_sha:
         raise RunRefused(6, ["package_sha256"])
     # 3. The items.
+    items_path = _path(spec["items"]["path"], repo_root)
     try:
-        items = tuple(read_jsonl(_path(spec["items"]["path"], repo_root)))
+        items = tuple(read_jsonl(items_path))
     except (OSError, ValueError):
+        note("ulqs_items", _file_sha256(items_path))
         raise RunRefused(3, ["items_unreadable"]) from None
     problems = ulqs.validate_dataset(items)
+    note("ulqs_items", _file_sha256(items_path) if problems else ulqs.dataset_sha256(items))
     if problems:
         raise RunRefused(3, ["items_invalid"] + [str(problem) for problem in problems[:20]])
     items_sha = ulqs.dataset_sha256(items)
@@ -355,11 +387,14 @@ def plan_run(spec: Mapping[str, Any], *, repo_root: Path = REPO_ROOT, environ: M
     catalog = None
     catalog_sha = None
     if spec.get("evidence_catalog"):
+        catalog_path = _path(spec["evidence_catalog"]["path"], repo_root)
         try:
-            catalog = EvidenceCatalog.load(_path(spec["evidence_catalog"]["path"], repo_root))
+            catalog = EvidenceCatalog.load(catalog_path)
         except (OSError, ValueError):
+            note("evidence_catalog", _file_sha256(catalog_path))
             raise RunRefused(3, ["catalog_invalid"]) from None
         catalog_sha = catalog.sha256
+        note("evidence_catalog", catalog_sha)
         if catalog_sha != spec["evidence_catalog"].get("sha256"):
             raise RunRefused(6, ["catalog_sha256"])
     corpus_versions = {item["corpus_version"] for item in items}
@@ -423,12 +458,16 @@ def plan_run(spec: Mapping[str, Any], *, repo_root: Path = REPO_ROOT, environ: M
     recording_source = None
     if spec["mode"] == "recorded":
         recorded = (spec.get("responder") or {}).get("recorded") or {}
+        recording_path = _path(recorded["path"], repo_root) if "path" in recorded else None
+        recording_sha = None if recording_path is None else _file_sha256(recording_path)
+        note("recording", recording_sha)
         try:
-            recording_path = _path(recorded["path"], repo_root)
+            if recording_path is None:
+                raise KeyError("path")
             responder = RecordedResponder(recording_path)
         except (KeyError, OSError, ValueError):
             raise RunRefused(6, ["recording_unreadable"]) from None
-        if lf_sha256(recording_path) != recorded.get("sha256"):
+        if recording_sha != recorded.get("sha256"):
             raise RunRefused(6, ["recording_sha256"])
         if responder.header.get("run_pins_sha256") != recording_pins(package_sha, items_sha, catalog_sha, arms_sha, prompt_version):
             raise RunRefused(6, ["recording_pins_mismatch"])

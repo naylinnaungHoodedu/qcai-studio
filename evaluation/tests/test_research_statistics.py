@@ -59,3 +59,128 @@ def test_sample_variance_and_slope():
     assert statistics.least_squares_slope([(1, 1.0), (2, 3.0), (3, 5.0)]) == pytest.approx(2.0)
     assert statistics.least_squares_slope([(1, 1.0)]) is None
     assert statistics.least_squares_slope([(1, 1.0), (1, 2.0)]) is None
+
+
+# --- The analysis plans' registered tests: closed forms, table values and hand-computed answers. --------------------
+
+
+def test_chi_square_and_student_t_tails_match_closed_forms_and_table_values():
+    from math import atan, exp, pi
+
+    for x in (0.1, 1.0, 5.991464547107979, 13.8):
+        assert statistics.chi2_sf(x, 2) == pytest.approx(exp(-x / 2), rel=1e-12)  # df 2: exp(-x/2) exactly
+    assert statistics.chi2_sf(3.841458820694124, 1) == pytest.approx(0.05, abs=1e-12)  # 5% points of the chi-square table
+    assert statistics.chi2_sf(7.814727903251178, 3) == pytest.approx(0.05, abs=1e-12)
+    assert statistics.chi2_sf(0.0, 4) == 1.0
+    for t in (-3.0, -1.0, 0.0, 0.5, 1.0, 3.0, 40.0):
+        assert statistics.student_t_cdf(t, 1) == pytest.approx(0.5 + atan(t) / pi, abs=1e-13)  # df 1 is the Cauchy law
+    assert statistics.student_t_cdf(2.2281388519649385, 10) == pytest.approx(0.975, abs=1e-11)  # t table, 10 df
+    assert statistics.student_t_cdf(-1.8124611228107335, 10) == pytest.approx(0.05, abs=1e-11)
+    assert statistics.normal_quantile(0.975) == pytest.approx(1.959963984540054, abs=1e-12)
+    assert statistics.normal_cdf(statistics.normal_quantile(0.05)) == pytest.approx(0.05, abs=1e-13)
+    for call in (lambda: statistics.chi2_sf(1.0, 0), lambda: statistics.student_t_cdf(1.0, 0), lambda: statistics.normal_quantile(1.0)):
+        with pytest.raises(ValueError):
+            call()
+
+
+def test_friedman_known_answers_with_and_without_ties():
+    from math import exp
+
+    # Four blocks ranking three treatments alike: rank sums 4, 8, 12, so Q = 12 / (4 * 3 * 4) * 224 - 48 = 8, p = exp(-4).
+    result = statistics.friedman([[1, 2, 3]] * 4)
+    assert result["statistic"] == pytest.approx(8.0, abs=1e-12) and result["df"] == 2
+    assert result["p_value"] == pytest.approx(exp(-4), rel=1e-12) and result["rank_sums"] == [4.0, 8.0, 12.0]
+    # With ties: average ranks give rank sums 12, 13.5, 11.5, 13 (sum of squares 627.5), so the uncorrected Q is
+    # 0.12 * 627.5 - 75 = 0.3; a pair ties in three blocks and a triple in one, so the correction is
+    # 1 - (6 + 6 + 6 + 24) / (5 * 4 * 15) = 0.86 and Q = 0.3 / 0.86 (scipy.stats.friedmanchisquare agrees).
+    tied = statistics.friedman([[3, 3, 1, 2], [2, 4, 4, 1], [1, 1, 2, 3], [5, 2, 2, 2], [1, 3, 2, 4]])
+    assert tied["rank_sums"] == [12.0, 13.5, 11.5, 13.0] and tied["df"] == 3
+    assert tied["statistic"] == pytest.approx(0.3 / 0.86, abs=1e-12)
+    for bad in ([[1, 2]] * 3, [[1, 2, 3]], [[1, 2, 3], [1, 2]], [[1, 1, 1], [2, 2, 2]]):
+        with pytest.raises(ValueError):
+            statistics.friedman(bad)
+
+
+def test_paired_tost_known_answers():
+    from math import atan, pi
+
+    # Two pairs give one degree of freedom (the Cauchy law): d = (1, 0), mean 0.5, se 0.5, margin 1, so
+    # p_lower = 1 - T(3) = 0.5 - atan(3) / pi and p_upper = T(-1) = 0.25.
+    result = statistics.paired_tost([1, 0], [0, 0], margin="1")
+    assert result["p_lower"] == pytest.approx(0.5 - atan(3) / pi, abs=1e-13) and result["p_upper"] == pytest.approx(0.25, abs=1e-13)
+    assert result["p_value"] == result["p_upper"] and result["equivalent"] is False and result["df"] == 1
+    close = statistics.paired_tost([1.0, 2.1, 3.0, 2.5, 1.9, 2.2], [1.1, 2.0, 2.8, 2.6, 2.0, 2.0], margin="0.5")
+    assert close["equivalent"] is True and close["p_value"] == pytest.approx(0.0003146448802213064, rel=1e-9)  # scipy agrees
+    assert statistics.paired_tost([1, 1], [1, 1], margin="0.5")["p_value"] == 0.0  # no spread, inside the margin
+    assert statistics.paired_tost([2, 2], [1, 1], margin="0.5")["p_value"] == 1.0  # no spread, outside it
+    for call in (lambda: statistics.paired_tost([1], [1], margin="1"), lambda: statistics.paired_tost([1, 2], [1, 2], margin="0"),
+                 lambda: statistics.paired_tost([1, 2], [1], margin="1")):
+        with pytest.raises(ValueError):
+            call()
+
+
+def _mean(values):
+    return sum(values) / len(values)
+
+
+def test_the_one_sided_paired_and_cluster_bootstraps_use_the_lower_percentile_index():
+    data = [0.2, 1.5, 0.3, 2.8, 0.9, 0.1, 4.0, 0.6, 1.1, 0.4]
+    result = statistics.bootstrap_one_sided(data, _mean, resamples=2000, seed="bca", margin="0.5")
+    replicates = sorted(_mean([data[i] for i in statistics.hash_resample_indices(10, "bca", b)]) for b in range(2000))
+    assert result["lower_bound"] == replicates[100] and result["reject"] is (replicates[100] > 0.5)
+    assert result["share_at_or_below_margin"] == sum(1 for value in replicates if value <= 0.5) / 2000
+    assert result == statistics.bootstrap_one_sided(data, _mean, resamples=2000, seed="bca", margin="0.5")
+    few = sorted(_mean([data[i] for i in statistics.hash_resample_indices(10, "f", b)]) for b in range(30))
+    assert statistics.bootstrap_one_sided(data, _mean, resamples=30, seed="f")["lower_bound"] == few[1]  # floor(0.05 * 30) = 1
+    left, right = [1, 1, 0, 1, 1, 0, 1, 1], [1, 0, 0, 1, 0, 0, 1, 1]
+    paired = statistics.paired_bootstrap_one_sided(left, right, resamples=500, seed="p", margin="-0.05")
+    pairs = list(zip(map(float, left), map(float, right)))
+    differences = sorted(sum(a - b for a, b in (pairs[i] for i in statistics.hash_resample_indices(8, "p", r))) / 8 for r in range(500))
+    assert paired["estimate"] == 0.25 and paired["lower_bound"] == differences[25] and paired["method"] == "paired-percentile-one-sided"
+    assert paired["reject"] is (differences[25] > -0.05)
+    clusters = [[1, 0], [1], [0, 0, 1], [1, 1]]
+
+    def pooled(chosen):
+        return _mean([value for cluster in chosen for value in cluster])
+
+    cluster = statistics.cluster_bootstrap_lower_bound(clusters, pooled, resamples=400, seed="c")
+    expected = sorted(pooled([clusters[i] for i in statistics.hash_resample_indices(4, "c", b)]) for b in range(400))[20]
+    assert cluster["lower_bound"] == expected and cluster["method"] == "cluster-percentile-one-sided"
+    with pytest.raises(ValueError):
+        statistics.paired_bootstrap_one_sided([1], [1, 0], resamples=10, seed="x")
+
+
+def test_the_bca_lower_bound_known_answer_and_its_undefined_case():
+    data = [0.2, 1.5, 0.3, 2.8, 0.9, 0.1, 4.0, 0.6, 1.1, 0.4]
+    result = statistics.cluster_bootstrap_bca_one_sided(data, _mean, resamples=2000, seed="bca")
+    # Recomputed independently (numpy and scipy.stats.norm) from the same 2000 hash-resample-v1 replicates.
+    assert result["z0"] == pytest.approx(0.02256156839022472, abs=1e-9)
+    assert result["acceleration"] == pytest.approx(0.06774727499994508, abs=1e-12)
+    assert result["adjusted_alpha"] == pytest.approx(0.07506297081900551, abs=1e-9)
+    assert result["lower_bound"] == pytest.approx(0.68, abs=1e-12) and result["method"] == "cluster-bca-one-sided"
+    # The right skew moves the BCa bound above the plain percentile bound (0.63).
+    assert statistics.bootstrap_one_sided(data, _mean, resamples=2000, seed="bca")["lower_bound"] == pytest.approx(0.63, abs=1e-12)
+    symmetric = statistics.cluster_bootstrap_bca_one_sided([-2.0, -1.0, 0.0, 1.0, 2.0], _mean, resamples=500, seed="s")
+    assert symmetric["acceleration"] == pytest.approx(0.0, abs=1e-15)
+    with pytest.raises(ValueError):
+        statistics.cluster_bootstrap_bca_one_sided([1.0, 1.0, 1.0], _mean, resamples=50, seed="s")  # no replicate below it
+
+
+def test_the_two_level_bootstrap_follows_its_published_rule():
+    groups = [[0.5, -0.2], [0.1], [-0.4, 0.3, 0.2], [0.6, 0.0]]
+
+    def pooled(chosen):
+        return _mean([value for group in chosen for value in group])
+
+    result = statistics.two_level_bootstrap_share_le_zero(groups, pooled, resamples=300, seed="t")
+    replicates = []
+    for b in range(300):
+        chosen = [[groups[g][i] for i in statistics.hash_resample_indices(len(groups[g]), f"t\x1f{b}\x1f{k}", 0)]
+                  for k, g in enumerate(statistics.hash_resample_indices(4, "t", b))]
+        replicates.append(pooled(chosen))
+    assert result["share_le_zero"] == sum(1 for value in replicates if value <= 0) / 300
+    assert result["estimate"] == pytest.approx(pooled(groups)) and result["rule"] == "hash-resample-two-level-v1"
+    assert statistics.two_level_bootstrap_share_le_zero([[1.0], [2.0, 3.0]], pooled, resamples=50, seed="t")["share_le_zero"] == 0.0
+    assert statistics.two_level_bootstrap_share_le_zero([[-1.0], [0.0]], pooled, resamples=50, seed="t")["share_le_zero"] == 1.0
+    with pytest.raises(ValueError):
+        statistics.two_level_bootstrap_share_le_zero([[1.0], []], pooled, resamples=5, seed="t")

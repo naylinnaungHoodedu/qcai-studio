@@ -9,8 +9,8 @@ A run pins the configuration package by path and sha256, the items, the evidence
 its seeds are hashed. Stub and recorded runs repeat byte for byte. Hold H12 refuses every run over non-synthetic data while
 D-14 is open, live runs are refused in this repository, and a confirmatory run needs a valid IRB record and OSF record.
 --write and --check run in a temporary directory outside the checkout; nothing else is written there. With --access-log
-(required for non-synthetic inputs, with --actor-role) the run logs the spec read, every input the plan read, its start
-and its outcome (completed, interrupted or refused). --resume continues only this run's own checkpoint.
+(required for non-synthetic inputs, with --actor-role) the run logs the spec read, every input as the planner reads it
+(also when it then refuses the run), its start and its outcome (completed, interrupted or refused). --resume continues only this run's own checkpoint.
 
 Exit codes: 0 ok; 1 drift; 2 usage, a malformed spec, a path, an experiment or a foreign checkpoint refused; 3 invalid items, unresolved pointers, a freeze record or a
 payload-log violation; 5 interrupted (provider outage; --resume continues); 6 a pin mismatch; 7 arm parity; 8 confirmatory
@@ -76,27 +76,10 @@ def _run_id(spec: dict) -> str | None:
     return value if isinstance(value, str) and runner.RUN_ID.match(value) else None
 
 
-def _input_reads(plan: runner.Plan) -> list[tuple[str, str]]:
-    """(artifact kind, sha256) for every research-plane input the plan read: the items, the catalog, the governance
-    records and the recording."""
-    spec = plan.spec
-    reads = [("ulqs_items", plan.pins["items"]["sha256"])]
-    if plan.pins["evidence_catalog"]:
-        reads.append(("evidence_catalog", plan.pins["evidence_catalog"]["sha256"]))
-    governance = spec.get("governance") or {}
-    for kind, reference in (("irb_record", governance.get("irb_record")), ("osf_record", governance.get("osf_record")),
-                            ("freeze_record", spec.get("freeze_record")), ("scan_report", spec.get("pre_run_scan")),
-                            ("governance_record", spec.get("provider_terms")), ("governance_record", spec.get("licence_ruling")),
-                            ("governance_record", spec.get("research_use_confirmation")),
-                            ("recording", (spec.get("responder") or {}).get("recorded"))):
-        if isinstance(reference, dict) and isinstance(reference.get("sha256"), str):
-            reads.append((kind, reference["sha256"]))
-    return reads
-
-
 def run(spec_path: Path, out_dir: Path, *, resume: bool = False, access: Path | None = None, actor_role: str | None = None) -> int:
-    """A run. With --access-log every access is logged before the outcome is known: the spec read, each input the plan
-    read, the run start, and its outcome (completed, interrupted or refused)."""
+    """A run. With --access-log every access is logged before the outcome is known: the spec read, each input as soon as
+    the planner reads it (so a run the planner refuses after reading its items still logs them), the run start, and its
+    outcome (completed, interrupted or refused)."""
     if access is not None:
         if actor_role is None:
             print("usage (exit 2): --access-log needs --actor-role", file=sys.stderr)
@@ -119,12 +102,10 @@ def run(spec_path: Path, out_dir: Path, *, resume: bool = False, access: Path | 
     spec_sha = lf_sha256(spec_path)
     log("read", "run_spec", spec_sha, spec)
     try:
-        plan = runner.plan_run(spec, out_dir=out_dir, access_log=access)
+        plan = runner.plan_run(spec, out_dir=out_dir, access_log=access, on_read=lambda kind, sha256: log("read", kind, sha256, spec))
     except runner.RunRefused as error:
         log("run", "run_spec", spec_sha, spec, "refused")
         return _refused(error)
-    for kind, sha256 in _input_reads(plan):
-        log("read", kind, sha256, spec)
     log("run", "run_spec", spec_sha, spec, "started")
     try:
         record = runner.execute_run(plan, _responder(plan), out_dir, resume=resume, commit=_commit())

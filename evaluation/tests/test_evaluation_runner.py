@@ -259,7 +259,41 @@ MALFORMED = [
     (lambda s: s.update(bootstrap={"resamples": 0, "level": "0.95"}), "bootstrap"),
     (lambda s: s.update(bootstrap={"resamples": 10, "level": 0.95}), "bootstrap"),
     (lambda s: s.update(pre_run_scan="scan.json"), "pre_run_scan"),
+    (lambda s: s.update(mode="recorded", responder={"recorded": "x"}), "responder.recorded"),
+    (lambda s: s.update(mode="recorded", responder={"recorded": [1]}), "responder.recorded"),
+    (lambda s: s.update(mode="recorded", responder={"recorded": {"path": 1, "sha256": "0" * 64}}), "responder.recorded"),
+    (lambda s: s.update(mode="recorded", responder={"recorded": {"path": "r.jsonl", "sha256": None}}), "responder.recorded"),
+    (lambda s: s.update(mode="live", responder={"live": "x"}), "responder.live"),
+    (lambda s: s.update(mode="live", responder={"live": [1]}), "responder.live"),
+    (lambda s: s.update(mode="live", responder={"live": {"adapter": [1]}}), "responder.live"),
+    (lambda s: s.update(responder={"rule": 5}), "responder.rule"),
 ]
+
+
+def _nodes(value, path=()):
+    yield path
+    children = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
+    for key, child in children:
+        yield from _nodes(child, path + (key,))
+
+
+@pytest.mark.parametrize("mode", ["stub", "recorded", "live"])
+def test_no_malformed_value_anywhere_in_a_spec_ends_in_a_traceback(tmp_path, mode):
+    # Every node of a stub, recorded and live spec replaced in turn by a value of the wrong type: the planner refuses
+    # (RunRefused) or plans; any other exception would reach the CLI as a traceback with exit 1, the drift code.
+    responder = {"stub": None, "recorded": {"recorded": {"path": "r.jsonl", "sha256": "0" * 64}}, "live": {"live": {"adapter": "none"}}}[mode]
+    base, _ = small_spec(tmp_path, mode=mode, responder=responder)
+    for path in list(_nodes(base))[1:]:
+        for bad in ("x", [1], {"path": 1}, None):
+            spec = json.loads(json.dumps(base))
+            target = spec
+            for key in path[:-1]:
+                target = target[key]
+            target[path[-1]] = bad
+            try:
+                runner.plan_run(spec)
+            except runner.RunRefused:
+                pass
 
 
 @pytest.mark.parametrize(("edit", "reason"), MALFORMED)
@@ -312,3 +346,16 @@ def test_live_and_confirmatory_specs_must_keep_a_replicate_subsample(tmp_path, r
             runner.plan_run({**spec, **changes})
         assert refused.value.code == 2 and refused.value.reasons == ["replicate_subsample_required"]
     runner.plan_run(spec)  # an exploratory stub run may drop the subsample
+
+
+def test_the_record_s_code_pins_cover_only_the_harness_and_ignore_crlf_checkouts(tmp_path):
+    # The stub record pins the LF sha256 of each harness module and of scripts/run_evaluation.py, nothing else, so an
+    # unrelated change elsewhere never drifts the record, and a CRLF (core.autocrlf) checkout pins what an LF one does.
+    pins = runner.code_pins()
+    assert set(pins) == {path.relative_to(REPO_ROOT).as_posix() for path in Path(runner.__file__).resolve().parent.glob("*.py")} | {
+        "scripts/run_evaluation.py"}
+    for name in pins:
+        target = tmp_path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((REPO_ROOT / name).read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+    assert runner.code_pins(tmp_path) == pins

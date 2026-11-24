@@ -91,7 +91,7 @@ def test_the_stratum_rules():
     f_short = item("F")
     f_short["conversation"] = f_short["conversation"][:1]
     assert ("conversation", "required_for_stratum") in codes(f_short)
-    ev_syn_on_licensed = item("A", item_id="ULQS-A-001", license_class="private_eval_full_span")
+    ev_syn_on_licensed = item("A", item_id="ULQS-A-901", license_class="private_eval_full_span")
     assert ("evidence_ids[0]", "synthetic_mismatch") in codes(ev_syn_on_licensed)
 
 
@@ -189,20 +189,134 @@ def test_the_schema_file_agrees_with_the_validator():
     conditions = json.dumps(schema["allOf"])
     for rule in ('"const": "1.1"', '"minItems": 2', '"const": "abstain"', '"const": "G"', '"const": "F"'):
         assert rule in conditions, rule
-    # Where jsonschema happens to be installed (it is not an API requirement, so CI checks the structure above only), the
-    # schema accepts every synthetic stratum item and rejects what the validator rejects.
+
+
+# A dependency-free evaluator for the JSON Schema 2020-12 keywords the ULQS schema uses, so that CI (where jsonschema is
+# not installed: it is not an API requirement) proves the schema and the validator agree on real instances. Where
+# jsonschema is installed, the test also checks that this evaluator and jsonschema give the same verdict on every case.
+ANNOTATIONS = frozenset({"$schema", "$id", "title", "description", "default", "provisional", "x-rules-not-expressible"})
+ASSERTIONS = frozenset({"$ref", "$defs", "type", "enum", "const", "pattern", "required", "properties", "additionalProperties",
+                        "items", "minItems", "maxItems", "minLength", "minimum", "maximum", "exclusiveMinimum", "uniqueItems",
+                        "allOf", "anyOf", "oneOf", "not", "if", "then", "else"})
+TYPES = {"object": dict, "array": list, "string": str, "boolean": bool, "null": type(None)}
+
+
+def _schema_keywords(node, found=None):
+    """Every keyword of every subschema (property names under `properties` and `$defs` are names, not keywords)."""
+    found = set() if found is None else found
+    if isinstance(node, dict):
+        for key, value in node.items():
+            found.add(key)
+            if key in ("properties", "$defs"):
+                for child in value.values():
+                    _schema_keywords(child, found)
+            elif key in ("items", "additionalProperties", "not", "if", "then", "else") and isinstance(value, dict):
+                _schema_keywords(value, found)
+            elif key in ("allOf", "anyOf", "oneOf"):
+                for child in value:
+                    _schema_keywords(child, found)
+    return found
+
+
+def _is_type(value, name):
+    if name == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if name == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    return isinstance(value, TYPES[name])
+
+
+def schema_valid(node, value, root):
+    import re as _re
+
+    if node is True or node == {}:
+        return True
+    if node is False:
+        return False
+    if "$ref" in node:
+        target = root
+        for part in node["$ref"].removeprefix("#/").split("/"):
+            target = target[part]
+        if not schema_valid(target, value, root):
+            return False
+    if "type" in node and not any(_is_type(value, name) for name in ([node["type"]] if isinstance(node["type"], str) else node["type"])):
+        return False
+    if "enum" in node and not any(value == option and type(value) is type(option) for option in node["enum"]):
+        return False
+    if "const" in node and not (value == node["const"] and type(value) is type(node["const"])):
+        return False
+    if isinstance(value, str):
+        if "minLength" in node and len(value) < node["minLength"]:
+            return False
+        if "pattern" in node and not _re.search(node["pattern"], value):
+            return False
+    if _is_type(value, "number"):
+        if "minimum" in node and value < node["minimum"] or "maximum" in node and value > node["maximum"]:
+            return False
+        if "exclusiveMinimum" in node and value <= node["exclusiveMinimum"]:
+            return False
+    if isinstance(value, list):
+        if "minItems" in node and len(value) < node["minItems"] or "maxItems" in node and len(value) > node["maxItems"]:
+            return False
+        if node.get("uniqueItems") and len({json.dumps(entry, sort_keys=True) for entry in value}) != len(value):
+            return False
+        if "items" in node and not all(schema_valid(node["items"], entry, root) for entry in value):
+            return False
+    if isinstance(value, dict):
+        if any(key not in value for key in node.get("required", ())):
+            return False
+        properties = node.get("properties", {})
+        for key, entry in value.items():
+            if key in properties:
+                if not schema_valid(properties[key], entry, root):
+                    return False
+            elif "additionalProperties" in node and not schema_valid(node["additionalProperties"], entry, root):
+                return False
+    if not all(schema_valid(child, value, root) for child in node.get("allOf", ())):
+        return False
+    if "anyOf" in node and not any(schema_valid(child, value, root) for child in node["anyOf"]):
+        return False
+    if "oneOf" in node and sum(schema_valid(child, value, root) for child in node["oneOf"]) != 1:
+        return False
+    if "not" in node and schema_valid(node["not"], value, root):
+        return False
+    if "if" in node:
+        branch = node.get("then") if schema_valid(node["if"], value, root) else node.get("else")
+        if branch is not None and not schema_valid(branch, value, root):
+            return False
+    return True
+
+
+SCHEMA_MUTATIONS = (lambda i: i.pop("question"), lambda i: i.update(bloom="memorise"), lambda i: i.pop("gold_answer"),
+                    lambda i: i.update(conversation=[]), lambda i: i.update(extra_field=1), lambda i: i.update(weight=0),
+                    lambda i: i.update(item_id="SYN-H-001"), lambda i: i.update(concepts=[]), lambda i: i.update(topic=" "),
+                    lambda i: i["quality_scores"].update(educational_value=4), lambda i: i.update(corpus_scope=["synthetic", "synthetic"]),
+                    lambda i: i.update(schema_version="1.2"), lambda i: i.update(evidence_ids=["EV-1999-p001-01"]))
+
+
+def test_the_schema_file_accepts_and_rejects_what_the_validator_does_in_ci():
+    schema = json.loads(ulqs.SCHEMA_PATH.read_text(encoding="utf-8"))
+    used = _schema_keywords(schema)
+    assert used - ANNOTATIONS <= ASSERTIONS, used - ANNOTATIONS - ASSERTIONS  # nothing the evaluator would ignore
+    assert {"$ref", "allOf", "if", "oneOf", "not", "additionalProperties", "pattern"} <= used  # the evaluator is exercised
+    accepted = synthetic.synthetic_dataset(synthetic.SMALL)
+    assert {entry["stratum"] for entry in accepted} == set(ulqs.STRATA)
+    rejected = []
+    for mutate in SCHEMA_MUTATIONS:
+        entry = item()
+        mutate(entry)
+        rejected.append(entry)
+    for entry in accepted:
+        assert ulqs.validate_item(entry) == [] and schema_valid(schema, entry, schema), entry["item_id"]
+    for index, entry in enumerate(rejected):
+        assert ulqs.validate_item(entry) and not schema_valid(schema, entry, schema), index
     try:
         import jsonschema
     except ImportError:
-        return
+        return  # the agreement above already ran; this extra check needs the optional library
     validator = jsonschema.Draft202012Validator(schema)
-    for entry in synthetic.synthetic_dataset(synthetic.SMALL):
-        assert not list(validator.iter_errors(entry)), entry["item_id"]
-    for mutate in (lambda i: i.pop("question"), lambda i: i.update(bloom="memorise"), lambda i: i.pop("gold_answer"),
-                   lambda i: i.update(conversation=[]), lambda i: i.update(extra_field=1)):
-        entry = item()
-        mutate(entry)
-        assert ulqs.validate_item(entry) and list(validator.iter_errors(entry))
+    for entry in accepted + rejected:
+        assert validator.is_valid(entry) == schema_valid(schema, entry, schema), entry.get("item_id")
 
 
 def test_the_legacy_loader_still_reads_and_validates_its_own_schema():

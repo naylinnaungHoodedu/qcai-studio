@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
+import re
 import sys
 
 import pytest
@@ -165,16 +167,53 @@ def test_the_report_names_each_set_s_kind_and_the_ulqs_set_s_dataset():
                                           {"id": "u", "kind": "ulqs", "dataset_content_sha256": ulqs.dataset_content_sha256(items)}]
 
 
-def test_the_whole_tracked_tree_holds_zero_synthetic_fingerprint_matches(tmp_path):
-    # AC-10-4 over the tracked tree, every text file whatever its suffix. It runs once, in api-and-evaluation (the
-    # api-postgres legs run apps/api/tests only), beside CI's own --repo step, which also reads the .env.example templates.
-    report = tmp_path / "scan.json"
-    assert scanner().main(["--synthetic-fixture", str(synthetic.CONTAMINATION_FIXTURE), "--repo", "--require-zero", "--report", str(report)]) == 0
-    result = json.loads(report.read_text(encoding="utf-8"))
-    (repository,) = result["targets"]
-    assert result["result"] == "pass" and repository["target"] == "repository" and repository["scanned"] > 700
-    assert {"path": "evaluation/fixtures/contamination_synthetic_v1.json", "reason": "synthetic contamination fixture"} in repository["excluded"]
-    assert {entry["reason"] for entry in repository["excluded"]} <= {"synthetic contamination fixture", contamination.ENV_EXCLUSION}
+def test_ci_scans_the_whole_tracked_tree_once_with_the_env_templates_and_require_zero():
+    # AC-10-4 over the whole tracked tree is CI's own step (api-and-evaluation): every text file whatever its suffix, the
+    # tracked .env.example templates included, under --require-zero. No test repeats that scan (it took about 37 s); the
+    # tests scan the Phase 10 records and synthetic directories through the same script.
+    ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    steps = [line.strip() for line in ci.splitlines() if "scan_research_logs.py" in line and "--repo" in line]
+    assert steps == ["- run: python scripts/scan_research_logs.py --synthetic-fixture evaluation/fixtures/contamination_synthetic_v1.json "
+                     "--repo --include-env-files --require-zero --report \"$RUNNER_TEMP/research-log-scan.json\""]
+    job = ci.split("\n  api-and-evaluation:\n", 1)[1].split("\n  api-image-boundary-scan:\n", 1)[0]
+    assert steps[0] in job
+    sources = [*(REPO_ROOT / "evaluation" / "tests").glob("test_*.py"), *(REPO_ROOT / "apps" / "api" / "tests").glob("test_*.py")]
+    for path in sources:
+        text = path.read_text(encoding="utf-8")
+        for node in ast.walk(ast.parse(text)):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            body = ast.get_source_segment(text, node)
+            calls = [call for call in re.findall(r"main\(\[[^\]]*\"--repo\"[^\]]*\]", body) if "--synthetic-fixture" in call]
+            # A test may use the repository target only over a list it supplies (git_files replaced), never the whole tree.
+            assert not calls or 'setattr(contamination, "git_files"' in body, (path.name, node.name)
+
+
+def test_an_env_template_s_content_never_reaches_the_output_the_report_or_an_error(tmp_path, capsys, monkeypatch):
+    # CI's --repo step reads the tracked .env.example templates. The scanner reports paths, counts and set ids only: a
+    # sentinel planted in a temporary env template (never a workstation file) appears in no output, report or error.
+    sentinel = "SENTINEL-" + "7f3a9c" * 6
+    passage = fixture()["licensed_passages"][0]
+    root = tmp_path / "tree"
+    (root / "apps" / "api").mkdir(parents=True)
+    (root / ".env.example").write_text(f"SECRET_VALUE={sentinel}\n", encoding="utf-8")
+    (root / "apps" / "api" / ".env.example").write_text(f"NOTE={sentinel} {passage}\n", encoding="utf-8")
+    (root / ".env.local.example.yaml").write_text(f"key: {sentinel}\n", encoding="utf-8")
+    module = scanner()
+    report = tmp_path / "report.json"
+    argv = ["--synthetic-fixture", str(synthetic.CONTAMINATION_FIXTURE), "--path", str(root), "--include-env-files", "--require-zero",
+            "--report", str(report)]
+    assert module.main(argv) == 1  # the planted passage is a match, named by path
+    out = capsys.readouterr()
+    result = report.read_text(encoding="utf-8")
+    assert "apps/api/.env.example" in result and json.loads(result)["matches_total"] >= 1
+    monkeypatch.setattr(contamination, "MAX_SCAN_BYTES", 8)  # every template now too large: excluded by path and reason
+    assert module.main(argv) == 1
+    later = capsys.readouterr()
+    too_large = report.read_text(encoding="utf-8")
+    assert {entry["reason"] for entry in json.loads(too_large)["targets"][0]["excluded"]} == {"too_large"}
+    for text in (out.out, out.err, result, later.out, later.err, too_large):
+        assert sentinel not in text and passage not in text and "SECRET_VALUE" not in text
 
 
 def test_the_repository_target_reads_git_ls_files_only(tmp_path, monkeypatch):

@@ -4,8 +4,8 @@
 `evaluation/config/analysis_plans_v1.json`; `--check` in CI proves this file is current. Nothing here is executed:
 no hypothesis has been tested and no HR-1 to MR-3 outcome is asserted (plan Phase 10 P; invariant 9).
 
-- Analysis plans: `analysis-plans-v1`, canonical sha256 `065177a6d750641e0ac561dd6df0451836a97f7b28def5357a06addd77ce2891`.
-- Status: registered-draft (not filed; DI-131).
+- Analysis plans: `analysis-plans-v1`, canonical sha256 `73d92c5e3c78b874b8788fe2b38bf8c75b0d1e0efbd7de99c758a70cea69fd7f`.
+- Status: draft, not filed with OSF (DI-131).
 - Significance: alpha = 0.05, Holm correction within each family (plan 12.7: "E1-E4 are pre-registered
   hypothesis tests (alpha = 0.05, Holm per family), not software gates").
 - Source: VBT RevB p. 18, Sec. X-A; Table XVII; Table XVIII; plan 12.7.
@@ -56,13 +56,13 @@ Criteria reported without a family test: MR-2; MR-3; LQ-2.
 | `mcnemar_exact` | implemented |
 | `wilson_upper_bound` | implemented |
 | `holm` | implemented |
-| `paired_bootstrap_one_sided` | not implemented (DI-138) |
-| `cluster_bootstrap_bca_one_sided` | not implemented (DI-138) |
-| `cluster_bootstrap_lower_bound` | not implemented (DI-138) |
-| `bootstrap_one_sided` | not implemented (DI-138) |
-| `two_level_bootstrap_share_le_zero` | not implemented (DI-138) |
-| `friedman` | not implemented (DI-138) |
-| `paired_tost` | not implemented (DI-138) |
+| `paired_bootstrap_one_sided` | implemented |
+| `cluster_bootstrap_bca_one_sided` | implemented |
+| `cluster_bootstrap_lower_bound` | implemented |
+| `bootstrap_one_sided` | implemented |
+| `two_level_bootstrap_share_le_zero` | implemented |
+| `friedman` | implemented |
+| `paired_tost` | implemented |
 
 Not executed: every hypothesis above awaits the frozen ULQS, the IRB letter, the OSF DOI and the research data
 plane (DI-129..DI-141).

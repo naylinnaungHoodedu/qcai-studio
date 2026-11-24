@@ -10,12 +10,14 @@ self-declared. A run that is not confirmatory skips the confirmatory gate and is
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+import contextvars
 import datetime as _dt
 import json
 import os
 from pathlib import Path
 import re
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterator, Mapping
 
 from .canonical import canonical_sha256, lf_sha256
 
@@ -29,6 +31,18 @@ SCAN_REPORT = "qcai-research-log-scan"
 # Fingerprint sets whose ids carry these prefixes are the public synthetic fixture's or the scanner's self-test's: they
 # prove nothing about the research data, so a pre-run scan made only of them does not pass the gate.
 NON_RESEARCH_SET_PREFIXES = ("synthetic-", "self-test-")
+# The access log's observer: while a run is planned (`observe_reads`), every record `resolve_record` reads is reported as
+# (access-log artifact kind, sha256 of the bytes read), so a refused run still logs the governance records it read.
+_READ_OBSERVER: contextvars.ContextVar[Callable[[str, str], None] | None] = contextvars.ContextVar("governance_reads", default=None)
+
+
+@contextmanager
+def observe_reads(callback: Callable[[str, str], None] | None) -> Iterator[None]:
+    token = _READ_OBSERVER.set(callback)
+    try:
+        yield
+    finally:
+        _READ_OBSERVER.reset(token)
 
 
 class GovernanceError(ValueError):
@@ -134,8 +148,9 @@ def load_research_use(path: Path) -> dict[str, Any]:
     return raw
 
 
-def resolve_record(reference: Any, repo_root: Path) -> Path:
-    """A spec's record reference ({"path", "sha256"}) as a path, after its sha256 (LF-normalised bytes) is checked."""
+def resolve_record(reference: Any, repo_root: Path, *, kind: str = "governance_record") -> Path:
+    """A spec's record reference ({"path", "sha256"}) as a path, after its sha256 (LF-normalised bytes) is checked. A
+    file that was read is reported to the read observer under `kind` (an access-log artifact kind), matching or not."""
     if not isinstance(reference, Mapping) or not isinstance(reference.get("path"), str):
         raise GovernanceError("reference")
     path = Path(reference["path"])
@@ -144,6 +159,9 @@ def resolve_record(reference: Any, repo_root: Path) -> Path:
         digest = lf_sha256(path)
     except OSError:
         raise GovernanceError("file") from None
+    observer = _READ_OBSERVER.get()
+    if observer is not None:
+        observer(kind, digest)
     if digest != reference.get("sha256"):
         raise GovernanceError("sha256")
     return path
@@ -177,7 +195,7 @@ def irb_refusals(reference: Any, on: _dt.date, repo_root: Path, *, missing: str)
     if not reference:
         return [missing]
     try:
-        irb = load_irb(resolve_record(reference, repo_root))
+        irb = load_irb(resolve_record(reference, repo_root, kind="irb_record"))
     except GovernanceError as error:
         return [f"irb_invalid:{error.field}"]
     reasons = []
@@ -209,7 +227,7 @@ def scan_refusals(reference: Any, repo_root: Path, *, dataset_content_sha256: st
     if not reference:
         return [missing]
     try:
-        scan = json.loads(resolve_record(reference, repo_root).read_text(encoding="utf-8"))
+        scan = json.loads(resolve_record(reference, repo_root, kind="scan_report").read_text(encoding="utf-8"))
     except GovernanceError as error:
         return [f"pre_run_scan_invalid:{error.field}"]
     except (OSError, ValueError):
@@ -244,7 +262,7 @@ def confirmatory_refusals(spec: Mapping[str, Any], *, analysis_plan_sha256: str,
         reasons.append("osf_missing")
     else:
         try:
-            osf = load_osf(resolve_record(osf_ref, repo_root))
+            osf = load_osf(resolve_record(osf_ref, repo_root, kind="osf_record"))
             if _dt.date.fromisoformat(osf["registered_date"]) > on:
                 reasons.append("osf_registered_after_run")
             if osf["analysis_plan_sha256"] != analysis_plan_sha256:
@@ -262,7 +280,7 @@ def confirmatory_refusals(spec: Mapping[str, Any], *, analysis_plan_sha256: str,
         reasons.append("freeze_record_missing")
     else:
         try:
-            freeze = load_freeze_record(resolve_record(freeze_ref, repo_root))
+            freeze = load_freeze_record(resolve_record(freeze_ref, repo_root, kind="freeze_record"))
             if freeze["passed"] is not True or freeze["dataset_sha256"] != dataset_sha256:
                 reasons.append("freeze_record_failed")
         except GovernanceError:

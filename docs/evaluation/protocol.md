@@ -13,8 +13,9 @@ DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-141). Not execu
    (`evaluation/config/arms_v1.json`) and the analysis plan (`evaluation/config/analysis_plans_v1.json`). Seeds are
    sha256(run_id, arm, item_id, replicate).
 3. **Arms (Table XV).** Every arm is GATE's configuration plus a declared ablation, checked by the parity check (AC-10-2):
-   `NR` (no retrieval, no gate), `LEX` (lexical retrieval with the gate's floor), `SEM` (semantic, no gate), `GATE` (the
-   deployed configuration), `GATE+SV` (one verifier in a refine-or-refuse loop), `GATE+V1` (baseline validation only) and
+   `NR` (no retrieval, no gate), `LEX` (lexical retrieval with the gate's floor), `SEM` (semantic, no gate), `GATE` (Table XV
+   calls it "the deployed configuration" of the paper's design; it is not the current production configuration, where
+   semantic retrieval is off and learners receive only contained answers), `GATE+SV` (one verifier in a refine-or-refuse loop), `GATE+V1` (baseline validation only) and
    `VLOOP` (V1, the V2 panel under 2oo3, and correction). The former four-arm letters correspond as A to `NR`, B to `LEX`,
    C to `SEM` and D to `GATE`.
 4. **Execute.** Three replicates on a 40-item S1 subsample; failed provider calls are retried three times, then logged and
@@ -22,8 +23,10 @@ DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-141). Not execu
    spec must keep the subsample, so its record reports replicate variance); abstentions are outcomes, not missing data. Payload logs hold pointers, hashes and sizes only.
 5. **Label.** Atomic claims are labelled supported, attribution error, unsupported but true, or fabricated, with the EHMF
    type; abstaining units are labelled supported or unsupported abstention (`lqs/rubric.md`).
-6. **Analyse.** Exact McNemar, the one-sided bootstraps and the Friedman test of the pre-registration, with Holm within each
-   family at alpha 0.05. Only McNemar, Wilson and Holm are implemented; the rest are not implemented (DI-138).
+6. **Analyse.** Exact McNemar, the one-sided, paired, cluster, BCa and two-level bootstraps, the Friedman test and the
+   paired TOST of the pre-registration, with Holm within each family at alpha 0.05. Every test the analysis plans register
+   is implemented in `evaluation/qcai_eval/statistics.py` with known-answer tests and has run on no research data; the
+   cumulative-link models, ICC and prediction-powered inference are not implemented (DI-138).
 7. **Scan.** Before and after a run, `scripts/scan_research_logs.py` scans every research-plane log with the salted
    fingerprints and must report zero matches. The pre-run scan the run spec pins must use the research fingerprint sets,
    the ULQS set built from the run's items, and cover the repository and the prompts or logs.

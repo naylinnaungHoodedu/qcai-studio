@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fractions import Fraction
 import hashlib
-from math import ceil, comb, floor, sqrt
+from math import ceil, comb, erf, exp, floor, lgamma, log, sqrt
 from typing import Any, Callable, Mapping, Sequence
 
 PROVISIONAL_DEFAULTS = ("PD-70",)  # Phase 10 spec 12.1; ratified under DI-140
@@ -93,8 +93,9 @@ def hash_resample_indices(n: int, seed: str, resample: int) -> list[int]:
 
 
 def bootstrap(clusters: Sequence[Any], statistic: Callable[[list], float], *, resamples: int, seed: str, level: str = "0.95") -> dict:
-    """A seeded percentile bootstrap over clusters. Bounds: the sorted replicates at floor((1 - level) / 2 * B) and
-    ceil((1 + level) / 2 * B) - 1. BCa and the hypothesis-specific bootstraps are not implemented (DI-138)."""
+    """A seeded two-sided percentile bootstrap over clusters. Bounds: the sorted replicates at floor((1 - level) / 2 * B)
+    and ceil((1 + level) / 2 * B) - 1. The one-sided, paired, cluster, BCa and two-level forms the analysis plans name
+    follow below."""
     if resamples < 1 or not clusters:
         raise ValueError("bootstrap needs clusters and at least one resample")
     confidence = Fraction(level)
@@ -104,3 +105,258 @@ def bootstrap(clusters: Sequence[Any], statistic: Callable[[list], float], *, re
     upper_index = ceil((1 + confidence) / 2 * resamples) - 1
     return {"estimate": statistic(values), "lower": replicates[lower_index], "upper": replicates[upper_index], "resamples": resamples,
             "seed": seed, "method": "percentile", "rule": "hash-resample-v1", "level": level}
+
+
+# --- The analysis plans' remaining registered tests (spec 4.7; analysis_plans_v1.json "tests"). Each is the textbook
+# procedure with the harness's hash-resample-v1 resampling; none is run on research data here (DI-138). --------------
+
+
+def normal_cdf(z: float) -> float:
+    return 0.5 * (1.0 + erf(z / sqrt(2.0)))
+
+
+def normal_quantile(p: float) -> float:
+    """The standard normal quantile by bisection on `normal_cdf` (absolute error below 1e-12)."""
+    if not 0.0 < p < 1.0:
+        raise ValueError("the normal quantile needs 0 < p < 1")
+    low, high = -40.0, 40.0
+    for _ in range(200):
+        middle = (low + high) / 2.0
+        if normal_cdf(middle) < p:
+            low = middle
+        else:
+            high = middle
+    return (low + high) / 2.0
+
+
+def _gamma_q(a: float, x: float) -> float:
+    """The regularized upper incomplete gamma function Q(a, x): series below a + 1, continued fraction above."""
+    if x <= 0.0:
+        return 1.0
+    if x < a + 1.0:
+        term = total = 1.0 / a
+        n = a
+        for _ in range(10000):
+            n += 1.0
+            term *= x / n
+            total += term
+            if abs(term) < abs(total) * 1e-16:
+                break
+        return max(0.0, 1.0 - total * exp(-x + a * log(x) - lgamma(a)))
+    tiny = 1e-300
+    b = x + 1.0 - a
+    c, d = 1.0 / tiny, 1.0 / b
+    h = d
+    for i in range(1, 10000):
+        an = -i * (i - a)
+        b += 2.0
+        d = an * d + b
+        d = tiny if abs(d) < tiny else d
+        c = b + an / c
+        c = tiny if abs(c) < tiny else c
+        d = 1.0 / d
+        delta = d * c
+        h *= delta
+        if abs(delta - 1.0) < 1e-16:
+            break
+    return exp(-x + a * log(x) - lgamma(a)) * h
+
+
+def chi2_sf(x: float, df: int) -> float:
+    """P(X >= x) for a chi-square variable with `df` degrees of freedom."""
+    if df < 1:
+        raise ValueError("chi-square needs at least one degree of freedom")
+    return _gamma_q(df / 2.0, x / 2.0)
+
+
+def _beta_continued_fraction(a: float, b: float, x: float) -> float:
+    tiny = 1e-300
+    c, d = 1.0, 1.0 - (a + b) * x / (a + 1.0)
+    d = 1.0 / (tiny if abs(d) < tiny else d)
+    h = d
+    for m in range(1, 10000):
+        delta = 1.0
+        for numerator in (m * (b - m) * x / ((a + 2 * m - 1) * (a + 2 * m)),
+                          -(a + m) * (a + b + m) * x / ((a + 2 * m) * (a + 2 * m + 1))):
+            d = 1.0 + numerator * d
+            d = 1.0 / (tiny if abs(d) < tiny else d)
+            c = 1.0 + numerator / c
+            c = tiny if abs(c) < tiny else c
+            delta = d * c
+            h *= delta
+        if abs(delta - 1.0) < 1e-16:
+            break
+    return h
+
+
+def _beta_regularized(a: float, b: float, x: float) -> float:
+    """The regularized incomplete beta function I_x(a, b)."""
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    front = exp(lgamma(a + b) - lgamma(a) - lgamma(b) + a * log(x) + b * log(1.0 - x))
+    if x < (a + 1.0) / (a + b + 2.0):
+        return front * _beta_continued_fraction(a, b, x) / a
+    return 1.0 - front * _beta_continued_fraction(b, a, 1.0 - x) / b
+
+
+def student_t_cdf(t: float, df: int) -> float:
+    if df < 1:
+        raise ValueError("Student's t needs at least one degree of freedom")
+    tail = 0.5 * _beta_regularized(df / 2.0, 0.5, df / (df + t * t))
+    return 1.0 - tail if t > 0 else tail
+
+
+def _replicates(values: list, statistic: Callable[[list], float], resamples: int, seed: str) -> list[float]:
+    if resamples < 1 or not values:
+        raise ValueError("bootstrap needs clusters and at least one resample")
+    return sorted(statistic([values[i] for i in hash_resample_indices(len(values), seed, b)]) for b in range(resamples))
+
+
+def _one_sided(replicates: list[float], estimate: float, index: int, *, margin: str, alpha: str, method: str, seed: str) -> dict:
+    resamples = len(replicates)
+    bound = float(Fraction(margin))
+    lower = replicates[min(max(index, 0), resamples - 1)]
+    return {"estimate": estimate, "lower_bound": lower, "margin": margin, "alpha": alpha, "reject": lower > bound,
+            "share_at_or_below_margin": sum(1 for value in replicates if value <= bound) / resamples, "resamples": resamples,
+            "seed": seed, "method": method, "rule": "hash-resample-v1"}
+
+
+def bootstrap_one_sided(clusters: Sequence[Any], statistic: Callable[[list], float], *, resamples: int, seed: str,
+                        margin: str = "0", alpha: str = "0.05") -> dict:
+    """A one-sided percentile bootstrap: the lower bound is the sorted replicate at floor(alpha * B), and the null
+    (statistic <= margin) is rejected when that bound exceeds the margin."""
+    values = list(clusters)
+    replicates = _replicates(values, statistic, resamples, seed)
+    return _one_sided(replicates, statistic(values), floor(Fraction(alpha) * resamples), margin=margin, alpha=alpha,
+                      method="percentile-one-sided", seed=seed)
+
+
+def cluster_bootstrap_lower_bound(clusters: Sequence[Any], statistic: Callable[[list], float], *, resamples: int, seed: str,
+                                  margin: str = "0", alpha: str = "0.05") -> dict:
+    """The one-sided percentile lower bound with whole clusters (for example every claim of one item) as the resampling
+    unit; `statistic` receives the resampled list of clusters."""
+    result = bootstrap_one_sided(clusters, statistic, resamples=resamples, seed=seed, margin=margin, alpha=alpha)
+    return {**result, "method": "cluster-percentile-one-sided"}
+
+
+def paired_bootstrap_one_sided(left: Sequence[float], right: Sequence[float], *, resamples: int, seed: str, margin: str = "0",
+                               alpha: str = "0.05") -> dict:
+    """mean(left) - mean(right) over paired items, each pair resampled whole, one-sided against `margin` (H1c's
+    non-inferiority margin is -0.05)."""
+    if len(left) != len(right):
+        raise ValueError("a paired bootstrap needs paired inputs")
+    pairs = [(float(a), float(b)) for a, b in zip(left, right)]
+    result = bootstrap_one_sided(pairs, _mean_difference, resamples=resamples, seed=seed, margin=margin, alpha=alpha)
+    return {**result, "method": "paired-percentile-one-sided"}
+
+
+def _mean_difference(pairs: list) -> float:
+    return sum(a - b for a, b in pairs) / len(pairs)
+
+
+def cluster_bootstrap_bca_one_sided(clusters: Sequence[Any], statistic: Callable[[list], float], *, resamples: int, seed: str,
+                                    margin: str = "0", alpha: str = "0.05") -> dict:
+    """The one-sided BCa lower bound (Efron 1987) over clusters: z0 = Phi^-1(share of replicates below the estimate), the
+    acceleration from the leave-one-cluster-out jackknife, a = sum(d^3) / (6 sum(d^2)^1.5) with d = mean - theta_(i), and
+    the bound at the sorted replicate floor(Phi(z0 + (z0 + z_alpha) / (1 - a (z0 + z_alpha))) * B)."""
+    values = list(clusters)
+    if len(values) < 2:
+        raise ValueError("BCa needs at least two clusters for the jackknife")
+    replicates = _replicates(values, statistic, resamples, seed)
+    estimate = statistic(values)
+    below = sum(1 for value in replicates if value < estimate) / resamples
+    if not 0.0 < below < 1.0:
+        raise ValueError("BCa is undefined when no replicate, or every replicate, lies below the estimate")
+    z0 = normal_quantile(below)
+    jackknife = [statistic(values[:i] + values[i + 1:]) for i in range(len(values))]
+    centre = sum(jackknife) / len(jackknife)
+    squares = sum((centre - value) ** 2 for value in jackknife)
+    acceleration = 0.0 if squares == 0 else sum((centre - value) ** 3 for value in jackknife) / (6.0 * squares ** 1.5)
+    z_alpha = normal_quantile(float(Fraction(alpha)))
+    adjusted = normal_cdf(z0 + (z0 + z_alpha) / (1.0 - acceleration * (z0 + z_alpha)))
+    result = _one_sided(replicates, estimate, floor(adjusted * resamples), margin=margin, alpha=alpha,
+                        method="cluster-bca-one-sided", seed=seed)
+    return {**result, "z0": z0, "acceleration": acceleration, "adjusted_alpha": adjusted}
+
+
+def two_level_bootstrap_share_le_zero(groups: Sequence[Sequence[Any]], statistic: Callable[[list], float], *, resamples: int,
+                                      seed: str) -> dict:
+    """A two-level bootstrap (`hash-resample-two-level-v1`): resample the groups (hash-resample-v1 with `seed` and
+    resample b), then the members of the group at each position k (hash-resample-v1 with seed f"{seed}\\x1f{b}\\x1f{k}"
+    and resample 0). Reports the share of replicates at or below zero (H4a)."""
+    outer = [list(group) for group in groups]
+    if resamples < 1 or not outer or any(not group for group in outer):
+        raise ValueError("a two-level bootstrap needs non-empty groups and at least one resample")
+    replicates = []
+    for b in range(resamples):
+        chosen = []
+        for k, index in enumerate(hash_resample_indices(len(outer), seed, b)):
+            group = outer[index]
+            chosen.append([group[i] for i in hash_resample_indices(len(group), f"{seed}\x1f{b}\x1f{k}", 0)])
+        replicates.append(statistic(chosen))
+    return {"estimate": statistic(outer), "share_le_zero": sum(1 for value in replicates if value <= 0) / resamples,
+            "resamples": resamples, "seed": seed, "method": "two-level", "rule": "hash-resample-two-level-v1"}
+
+
+def _ranks(values: Sequence[float]) -> list[float]:
+    """Ranks from 1, ties sharing their average rank."""
+    ordered = sorted(range(len(values)), key=lambda i: values[i])
+    ranks = [0.0] * len(values)
+    start = 0
+    while start < len(ordered):
+        end = start
+        while end + 1 < len(ordered) and values[ordered[end + 1]] == values[ordered[start]]:
+            end += 1
+        for position in range(start, end + 1):
+            ranks[ordered[position]] = (start + end) / 2.0 + 1.0
+        start = end + 1
+    return ranks
+
+
+def friedman(blocks: Sequence[Sequence[float]]) -> dict:
+    """Friedman's test over n >= 2 blocks (rows) of the same k >= 3 treatments (columns): average ranks for ties, the
+    tie correction 1 - sum(t^3 - t) / (n k (k^2 - 1)), and p from chi-square with k - 1 degrees of freedom."""
+    rows = [list(row) for row in blocks]
+    k = len(rows[0]) if rows else 0
+    if k < 3 or len(rows) < 2 or any(len(row) != k for row in rows):
+        raise ValueError("Friedman's test needs at least two blocks of the same k >= 3 treatments")
+    n = len(rows)
+    sums = [0.0] * k
+    ties = 0.0
+    for row in rows:
+        ranks = _ranks(row)
+        for j, rank in enumerate(ranks):
+            sums[j] += rank
+        for rank in set(ranks):
+            t = ranks.count(rank)
+            ties += t ** 3 - t
+    correction = 1.0 - ties / (n * k * (k * k - 1))
+    if correction == 0:
+        raise ValueError("Friedman's test is undefined when every block is fully tied")
+    statistic = (12.0 / (n * k * (k + 1)) * sum(total * total for total in sums) - 3.0 * n * (k + 1)) / correction
+    return {"statistic": statistic, "df": k - 1, "p_value": chi2_sf(statistic, k - 1), "rank_sums": sums, "blocks": n}
+
+
+def paired_tost(left: Sequence[float], right: Sequence[float], *, margin: str, alpha: str = "0.05") -> dict:
+    """Two one-sided paired t-tests of equivalence within (-margin, margin) on d = left - right: p = max(p_lower,
+    p_upper) with p_lower = 1 - T((mean + margin) / se) and p_upper = T((mean - margin) / se), T Student's t with n - 1
+    degrees of freedom; equivalence is supported when p <= alpha."""
+    if len(left) != len(right) or len(left) < 2:
+        raise ValueError("a paired TOST needs at least two paired values")
+    bound = float(Fraction(margin))
+    if bound <= 0:
+        raise ValueError("the equivalence margin must be positive")
+    differences = [float(a) - float(b) for a, b in zip(left, right)]
+    n = len(differences)
+    mean = sum(differences) / n
+    se = sqrt((sample_variance(differences) or 0.0) / n)
+    if se == 0:
+        p_lower = p_upper = 0.0 if -bound < mean < bound else 1.0
+    else:
+        p_lower = 1.0 - student_t_cdf((mean + bound) / se, n - 1)
+        p_upper = student_t_cdf((mean - bound) / se, n - 1)
+    p_value = max(p_lower, p_upper)
+    return {"mean_difference": mean, "se": se, "df": n - 1, "margin": margin, "p_lower": p_lower, "p_upper": p_upper,
+            "p_value": p_value, "equivalent": p_value <= float(Fraction(alpha)), "alpha": alpha}

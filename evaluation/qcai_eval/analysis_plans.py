@@ -3,6 +3,8 @@
 Plan 12.7: "E1-E4 are pre-registered hypothesis tests (alpha = 0.05, Holm per family), not software gates". The plans hold
 no outcome: the loader refuses any key that would carry one (`result`, `p_value`, `met`, ...), at any depth. The test
 registry is honest: an `implemented` entry names a callable of `statistics.py`; every other test is `not implemented`.
+Nothing is filed with OSF while D-08 is open (DI-131), so the plans' status must start with `draft` and may not use the
+word `registered`.
 """
 
 from __future__ import annotations
@@ -46,6 +48,9 @@ def validate_plans(raw: Mapping[str, Any]) -> None:
         raise PlanError(f"outcome keys are refused in an analysis plan: {', '.join(forbidden)}")
     if raw.get("plans") != "analysis-plans-v1" or raw.get("alpha") != "0.05" or raw.get("correction") != "holm-per-family":
         raise PlanError("plans: must be analysis-plans-v1 at alpha 0.05 with Holm per family")
+    status = raw.get("status")
+    if not isinstance(status, str) or not status.startswith("draft") or "registered" in status.lower():
+        raise PlanError("status: an unfiled plan is a draft and never claims to be registered (DI-131)")
     families = raw.get("families") or {}
     if tuple(families) != FAMILIES:
         raise PlanError("families: must be exactly E1, E2, E3 and E4")

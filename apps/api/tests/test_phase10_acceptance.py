@@ -212,7 +212,7 @@ FREEZE_CASES = {
     "Bloom 79%": (dict(mutate=_bloom), {"bloom_below_share"}),
     "bibliographic 11%": (dict(mutate=_bibliographic), {"bibliographic_above_share"}),
     "item_kind null": (dict(mutate=_set_one(("item_kind",), None)), {"item_kind_unmarked"}),
-    "two corpus versions": (dict(mutate=_set_one(("corpus_version",), "QCAI-CORPUS-2026-08-27")), {"corpus_versions_differ"}),
+    "two corpus versions": (dict(mutate=_set_one(("corpus_version",), "QCAI-CORPUS-2030-01-01")), {"corpus_versions_differ"}),
     "synthetic items when licensed are required": (dict(require_licensed=True), {"synthetic_items"}),
     "no corpus-text check": (dict(corpus_check=False), {"pointers_not_text_verified"}),
     "no previous set": (dict(previous_edit=lambda previous: None), {"no_previous_set"}),
@@ -269,9 +269,9 @@ def _rc1(items):
         for key in ("dataset_version", "item_kind", "split"):
             rc1.pop(key, None)
         rc1["validation"].pop("human_reviewed")
-        rc1.update(schema_version="1.0", license_class="private_eval_full_span", corpus_version="QCAI-CORPUS-2026-08-27",
+        rc1.update(schema_version="1.0", license_class="private_eval_full_span", corpus_version="QCAI-CORPUS-2030-01-01",
                    corpus_scope=[volume], status="candidate")
-        rc1["provenance"] = {"created_utc": "2026-08-27T00:00:00Z", "author": synthetic.SENTINEL,
+        rc1["provenance"] = {"created_utc": "2030-01-01T00:00:00Z", "author": synthetic.SENTINEL,
                              "migrated_from": "invented-v0", "migration_disposition": "convert" if index % 2 else "revise",
                              "note": "invented note"}
         rc1["question"] = f"{rc1['question']} {synthetic.SENTINEL}"
@@ -280,7 +280,7 @@ def _rc1(items):
             rc1["notes"] = "invented notes"
         for block in [rc1] + rc1.get("conversation", []):
             if "negative_evidence" in block:
-                block["negative_evidence"]["corpus_version"] = "QCAI-CORPUS-2026-08-27"
+                block["negative_evidence"]["corpus_version"] = "QCAI-CORPUS-2030-01-01"
         reshaped.append(rc1)
     return reshaped
 
@@ -575,9 +575,9 @@ def test_ac_10_3_level_units_carry_identical_evidence_and_nr_sends_none(tmp_path
 
 
 def test_ac_10_4_the_repository_and_the_evaluation_outputs_hold_zero_synthetic_fingerprint_matches(tmp_path, monkeypatch):
-    # The whole tracked tree is scanned once, in evaluation/tests
-    # (test_contamination_scan.py::test_the_whole_tracked_tree_holds_zero_synthetic_fingerprint_matches) and in CI's --repo
-    # step; here the repository target runs over the Phase 10 records and the fixture through the same script.
+    # The whole tracked tree is scanned once, by CI's --repo step (guarded by
+    # test_contamination_scan.py::test_ci_scans_the_whole_tracked_tree_once_with_the_env_templates_and_require_zero); here
+    # the repository target runs over the Phase 10 records and the fixture through the same script.
     scan = script("scan_research_logs")
     records = sorted(name for name in contamination.git_files(REPO_ROOT)
                      if name.startswith(("docs/evaluation/phase10/", "evaluation/", "lqs/")))
@@ -661,6 +661,11 @@ def test_ac_10_4_a_checkout_path_in_another_spelling_is_still_refused(tmp_path):
             assert planes.checkout_relative(extended) == "docs/x.json"
             with pytest.raises(planes.PathRefused):
                 planes.require_private_output(extended)
+        # A spelling every platform has (CI runs on Linux): a dotted detour back into the checkout.
+        dotted = REPO_ROOT / "evaluation" / ".." / "docs" / "x.json"
+        assert planes.checkout_relative(dotted) == "docs/x.json"
+        with pytest.raises(planes.PathRefused):
+            planes.require_private_output(dotted)
         assert planes.require_private_output(tmp_path / "private" / "x.json") == tmp_path / "private" / "x.json"
         assert planes.checkout_relative(tmp_path / "private") is None and planes.checkout_relative(REPO_ROOT) == "."
     finally:
@@ -977,6 +982,26 @@ def test_plan_f_the_access_log_records_every_read_and_each_run_s_outcome(tmp_pat
     lines = read_jsonl(access)
     assert {line["actor_role"] for line in lines} == {"PI"} and all(set(line) <= {
         "log", "at", "actor_role", "action", "artifact_kind", "artifact_sha256", "purpose", "run_id", "outcome"} for line in lines)
+    # A run the planner refuses after reading its private items (hold H12, today every non-synthetic run) still logs the
+    # items read, with the dataset sha256, before the refusal.
+    access.unlink()
+    items, items_path = _non_synthetic_set(tmp_path / "h12")
+    h12 = write_spec(tmp_path, synthetic.spec_dict(items_path=items_path, catalog_path=None), "h12.json")
+    assert run_main(["--spec", h12, "--output-dir", tmp_path / "h12-out", "--access-log", access, "--actor-role", "MLE"]) == 9
+    assert _access(access) == [("read", "run_spec", None), ("read", "ulqs_items", None), ("run", "run_spec", "refused")]
+    assert read_jsonl(access)[1]["artifact_sha256"] == ulqs.dataset_sha256(items)
+    # A confirmatory run refused at its gate logs each governance record the gate read (the sha256 of the bytes read,
+    # here a record whose pinned sha256 does not match), after the items and the catalog.
+    access.unlink()
+    irb, scan = tmp_path / "irb.json", tmp_path / "scan.json"
+    irb.write_text("{}", encoding="utf-8")
+    scan.write_text("{}", encoding="utf-8")
+    confirmatory = write_spec(tmp_path, stub_spec(tmp_path / "conf", purpose="confirmatory", experiment="E1",
+                                                  governance={"irb_record": {"path": str(irb), "sha256": "0" * 64}, "osf_record": None},
+                                                  pre_run_scan={"path": str(scan), "sha256": lf_sha256(scan)}), "conf.json")
+    assert run_main(["--spec", confirmatory, "--output-dir", tmp_path / "conf-out", "--access-log", access, "--actor-role", "PI"]) == 8
+    assert _access(access) == reads + [("read", "irb_record", None), ("read", "scan_report", None), ("run", "run_spec", "refused")]
+    assert [line["artifact_sha256"] for line in read_jsonl(access)[3:5]] == [lf_sha256(irb), lf_sha256(scan)]
 
 
 def test_plan_f_the_validator_logs_each_input_it_reads_and_each_record_it_writes(tmp_path):
@@ -1226,6 +1251,10 @@ def test_phase10_docs_quote_the_plan_and_state_the_current_rules():
     protocol = (REPO_ROOT / "docs" / "evaluation" / "protocol.md").read_text(encoding="utf-8")
     for arm in ablation.ARM_IDS:
         assert f"`{arm}`" in protocol, arm
+    # GATE is Table XV's "deployed configuration" of the paper's design, never a claim about current production.
+    flat = " ".join(protocol.split())
+    assert "calls it \"the deployed configuration\" of the paper's design; it is not the current production configuration" in flat
+    assert "`GATE` (the deployed configuration)" not in flat
     head = spec_text().split("\n## 14. Review history\n", 1)[0]
     for number in range(60, 75):
         assert f"| PD-{number} |" in head

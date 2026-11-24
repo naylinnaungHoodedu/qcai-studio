@@ -1,6 +1,6 @@
 {
  "plans": "analysis-plans-v1",
- "status": "registered-draft (not filed; DI-131)",
+ "status": "draft, not filed with OSF (DI-131)",
  "provisional": true,
  "authority": "P1-D-18 (plan 12.7); ratified under DI-140 (PD-70)",
  "alpha": "0.05",
@@ -135,12 +135,12 @@
   "mcnemar_exact": "implemented",
   "wilson_upper_bound": "implemented",
   "holm": "implemented",
-  "paired_bootstrap_one_sided": "not implemented (DI-138)",
-  "cluster_bootstrap_bca_one_sided": "not implemented (DI-138)",
-  "cluster_bootstrap_lower_bound": "not implemented (DI-138)",
-  "bootstrap_one_sided": "not implemented (DI-138)",
-  "two_level_bootstrap_share_le_zero": "not implemented (DI-138)",
-  "friedman": "not implemented (DI-138)",
-  "paired_tost": "not implemented (DI-138)"
+  "paired_bootstrap_one_sided": "implemented",
+  "cluster_bootstrap_bca_one_sided": "implemented",
+  "cluster_bootstrap_lower_bound": "implemented",
+  "bootstrap_one_sided": "implemented",
+  "two_level_bootstrap_share_le_zero": "implemented",
+  "friedman": "implemented",
+  "paired_tost": "implemented"
  }
 }

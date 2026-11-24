@@ -50,18 +50,30 @@ def test_ids_are_unique_tests_registered_and_criteria_from_table_xvii():
 def test_every_implemented_test_names_a_callable_and_the_rest_say_not_implemented():
     raw = plans()
     implemented = [name for name, status in raw["tests"].items() if status == "implemented"]
-    assert implemented == ["mcnemar_exact", "wilson_upper_bound", "holm"]
+    assert implemented == ["mcnemar_exact", "wilson_upper_bound", "holm", "paired_bootstrap_one_sided", "cluster_bootstrap_bca_one_sided",
+                           "cluster_bootstrap_lower_bound", "bootstrap_one_sided", "two_level_bootstrap_share_le_zero", "friedman",
+                           "paired_tost"]
     assert all(callable(getattr(statistics, name)) for name in implemented)
     assert all(status.startswith("not implemented (DI-138)") for status in raw["tests"].values() if status != "implemented")
+    honest = copy.deepcopy(raw)
+    honest["tests"]["ordinal_cumulative_link"] = "not implemented (DI-138)"
+    analysis_plans.validate_plans(honest)
+    honest["tests"]["ordinal_cumulative_link"] = "pending"
+    with pytest.raises(analysis_plans.PlanError, match="ordinal_cumulative_link"):
+        analysis_plans.validate_plans(honest)
     broken = copy.deepcopy(raw)
-    broken["tests"]["friedman"] = "implemented"
-    with pytest.raises(analysis_plans.PlanError, match="friedman"):
+    broken["tests"]["wilcoxon_signed_rank"] = "implemented"  # no such callable in statistics.py
+    with pytest.raises(analysis_plans.PlanError, match="wilcoxon_signed_rank"):
         analysis_plans.validate_plans(broken)
 
 
 def test_the_preregistration_is_generated_as_a_draft_with_every_test_status():
     text = analysis_plans.preregistration_markdown(plans())
-    assert "**DRAFT - not filed with OSF (DI-131).**" in text
+    assert "**DRAFT - not filed with OSF (DI-131).**" in text and "- Status: draft, not filed with OSF (DI-131)." in text
+    assert "registered" not in plans()["status"].lower()
+    for status in ("registered-draft (not filed; DI-131)", "registered", "filed", None):
+        with pytest.raises(analysis_plans.PlanError, match="status"):
+            analysis_plans.validate_plans({**plans(), "status": status})
     assert "alpha = 0.05, Holm correction within each family" in text
     for name, status in plans()["tests"].items():
         assert f"| `{name}` | {status} |" in text

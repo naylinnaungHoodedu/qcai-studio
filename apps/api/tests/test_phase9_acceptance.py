@@ -2292,7 +2292,7 @@ def test_phase9_docs_the_records_name_the_merge_and_the_cited_main_run():
     # Phase 10's first commit (E15): PR #40 merged as main d366e20 (tree identical to 83e7078); main run 45438485114 is cited.
     texts = _phase9_merge_texts()
     for name, text in texts.items():
-        for needed in ("`d366e20`", "`83e7078`", "45438485114"):
+        for needed in ("PR #40", "`d366e20`", "`83e7078`", "45438485114", "45435838850", "45433086376", "45360174794"):
             assert needed in text, (name, needed)
         for stale in ("no AC is CI-green", "the cited run must be on `main`", "each later commit needs its own run"):
             assert stale.lower() not in text.lower(), (name, stale)

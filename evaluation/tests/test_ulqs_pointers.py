@@ -63,7 +63,7 @@ def test_every_resolution_status_is_reached_and_no_locator_holds_text():
     assert resolver.resolve("not-a-pointer").status == "malformed"
     assert PointerResolver().resolve(ev).status == "no_catalog"
     assert PointerResolver().resolve(span).status == "no_span_lookup"
-    assert PointerResolver(catalog=catalog, corpus_version="QCAI-CORPUS-2026-08-27").resolve(ev).status == "corpus_version_mismatch"
+    assert PointerResolver(catalog=catalog, corpus_version="QCAI-CORPUS-2030-01-01").resolve(ev).status == "corpus_version_mismatch"
     changed = dict(corpus)
     document = f"syn-doc-{ev.lower()}"
     changed[document] = changed[document].replace("Synthetic", "Synthetik")
