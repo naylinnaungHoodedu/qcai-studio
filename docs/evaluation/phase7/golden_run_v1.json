@@ -1,8 +1,8 @@
 {
  "report": "qcai-ehmf-golden-run",
  "format_version": 1,
- "created_at": "2026-11-24T20:32:11+00:00",
- "commit": "e61a766690e32e21a51f49be381d86625c207b5c",
+ "created_at": "2026-11-24T20:40:57+00:00",
+ "commit": "53abc42d8500263ff0d22ee6a1b0b5df360788ce",
  "evidence_class": "change-control gate, not research results (plan Phase 7 H; 12.5)",
  "pins": {
   "config_package": {
@@ -565,7 +565,7 @@
    "apps/api/app/services/learner_progress.py": "5c38c893b42c36b48d42ea9aedd6986f3a66403879d5b2764cdd85dd1f7829a5",
    "apps/api/app/services/learner_record.py": "f16961484a3762eac0b791e61d34e15a7cfb2a66145c6521abb7b369a38cbeda",
    "apps/api/app/services/learner_record_identity.py": "bf90f43588ec0c76ec0239f4d1e8657010012c87314742d8cc5be6c2e1696eae",
-   "apps/api/app/services/learner_record_lock.py": "6a89895d84ed1e287418a136d1ea2952c6a99ddec35a74d89564ec87069f6ffe",
+   "apps/api/app/services/learner_record_lock.py": "3efb2debc77967cf89251e49e865bd9b8757beb0ef3bcfde298f1b493e585b62",
    "apps/api/app/services/learner_record_metrics.py": "3849c0133a8c4026c773db5f7d272216b3d21a94d8e71170eb7b6c429887f9d7",
    "apps/api/app/services/learner_record_planner.py": "2c81189a04c0d806bd73e9bf2968de77a3aaf90086b62035f9ce514ea619a213",
    "apps/api/app/services/learner_record_privacy.py": "5918a80b1a65b6e170f7f5bda08703989d108427d5c78c7906f33e660022f517",
@@ -696,6 +696,6 @@
    "scripts/run_golden_set.py": "931d70dcfdc66f32a91ad9145eb85894c86c8ccd00ded6edc6ae533b4e506b08",
    "scripts/run_v1_fixtures.py": "eef14c4c906aa9abb209c97b83bf78c077ca7a6642febbc0d09b0665b86405bd"
   },
-  "sha256": "5f222f7f94e8caee5efcfac11b3462945b5e6b96a96c6ababc34816d330ace19"
+  "sha256": "c167dd8f33913ae7a43c133dd3992421a6543e7ed53adc3813ae5863e2c3c15d"
  }
 }

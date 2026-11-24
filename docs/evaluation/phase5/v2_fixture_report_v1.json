@@ -1,8 +1,8 @@
 {
  "report": "qcai-v2-fixture-report",
  "format_version": 1,
- "created_at": "2026-11-24T20:31:47+00:00",
- "commit": "e61a766690e32e21a51f49be381d86625c207b5c",
+ "created_at": "2026-11-24T20:40:19+00:00",
+ "commit": "53abc42d8500263ff0d22ee6a1b0b5df360788ce",
  "evidence_class": "fixture measurements, not research results (plan Phase 5 H: V-2, V-4 are E2 results, never claimed from fixtures)",
  "public_corpus_only": true,
  "config_package": {
@@ -226,8 +226,8 @@
  },
  "latency": {
   "p95_ms": {
-   "gateway_call": 0.038,
-   "panel": 7.657
+   "gateway_call": 0.034,
+   "panel": 6.396
   }
  },
  "result": "pass",
@@ -277,7 +277,7 @@
    "apps/api/app/services/ehmf/vocabulary.py": "66325cd0a261e5ad7163cc96b33068d38b1ab86def36c70758ec5959c265b89e",
    "apps/api/app/services/erasure.py": "386e3d5ef2abdeae21e863e54d6d0fa797952bcd70610406a95c68b98ee1fda0",
    "apps/api/app/services/guest_sessions.py": "41fcc5145ab7b0153267c4dc86d2e37bed3b659951a0a0509e983be07f7ea9bc",
-   "apps/api/app/services/learner_record_lock.py": "6a89895d84ed1e287418a136d1ea2952c6a99ddec35a74d89564ec87069f6ffe",
+   "apps/api/app/services/learner_record_lock.py": "3efb2debc77967cf89251e49e865bd9b8757beb0ef3bcfde298f1b493e585b62",
    "apps/api/app/services/ledger.py": "6fdc40a062b70537c240a8287a19fbd361b031d1655954a27a4664c1f4a00558",
    "apps/api/app/services/lexical_index.py": "fe90eefb9f5d58f7201ca9ee6e641eac6ce78160604191481468b643882dba52",
    "apps/api/app/services/provenance.py": "cbea0a9970dac7fe17b653e1308d26b99846e92d0c9e04b5b15be4c3a96e5857",
@@ -335,6 +335,6 @@
    "apps/api/app/services/v3/stop.py": "a846ccc64ff5122a5327374b6220976cd0bef9e8aacf7ae8d81ec6131535ca6c",
    "scripts/run_v2_fixtures.py": "73d36d76bebc93a4e09227fcd2978e4dce518580af900eecb233cc4887c0590b"
   },
-  "sha256": "a84fd90c8ea72d460ce74264d20d92a5e9b3c1a2622e19365d2ad8d2c792d905"
+  "sha256": "0d4a93dfb96f802a2f9533ef5de327d68ca5c71e3e28af7e6fbcd135a2388acd"
  }
 }

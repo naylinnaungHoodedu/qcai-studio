@@ -47,7 +47,7 @@
       "apps/api/app/services/ehmf/vocabulary.py": "66325cd0a261e5ad7163cc96b33068d38b1ab86def36c70758ec5959c265b89e",
       "apps/api/app/services/erasure.py": "386e3d5ef2abdeae21e863e54d6d0fa797952bcd70610406a95c68b98ee1fda0",
       "apps/api/app/services/guest_sessions.py": "41fcc5145ab7b0153267c4dc86d2e37bed3b659951a0a0509e983be07f7ea9bc",
-      "apps/api/app/services/learner_record_lock.py": "6a89895d84ed1e287418a136d1ea2952c6a99ddec35a74d89564ec87069f6ffe",
+      "apps/api/app/services/learner_record_lock.py": "3efb2debc77967cf89251e49e865bd9b8757beb0ef3bcfde298f1b493e585b62",
       "apps/api/app/services/learner_record_metrics.py": "3849c0133a8c4026c773db5f7d272216b3d21a94d8e71170eb7b6c429887f9d7",
       "apps/api/app/services/learner_record_planner.py": "2c81189a04c0d806bd73e9bf2968de77a3aaf90086b62035f9ce514ea619a213",
       "apps/api/app/services/ledger.py": "6fdc40a062b70537c240a8287a19fbd361b031d1655954a27a4664c1f4a00558",
@@ -110,7 +110,7 @@
       "scripts/run_v2_fixtures.py": "73d36d76bebc93a4e09227fcd2978e4dce518580af900eecb233cc4887c0590b"
     },
     "rule": "imported-repository-modules-sha256-lf-v1",
-    "sha256": "710e784beff9547ea429ccbc3dba4f182fb6a22d8f07f29236c3a2ab8d892fb4"
+    "sha256": "32c649edd7de52e954f67eb8699dcae287a8ce2d5de172e03ea23ecceda73a72"
   },
   "item_set": "public-fixtures",
   "item_set_sha256": "069e9385a571dfd8810eef92d4dc906778fcdcbcbc8d2bafccd9f4cb73e3e405",
