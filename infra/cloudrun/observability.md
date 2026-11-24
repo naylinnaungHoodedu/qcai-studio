@@ -262,7 +262,7 @@ The two override keys: `config.override` logs `ehmf_shadow` and `ehmf_on` when e
 
 ## Phase 8 SLIs: learner record and privacy
 
-`/ready` reports the four configured learner switches and `phase8_exit_passed`. In development `learner_slis.planner_stop_observed` shows the last local observation of the shared stop, along with process counters. The planner checks the authoritative stop during its own work. Readiness issues no Phase 8 database query.
+`/ready` reports the four configured learner switches and `phase8_exit_passed`. In development `learner_slis.planner_stop_observed` shows the last local observation of the shared stop, along with process counters. The planner checks the authoritative stop during its own work. The Phase 7 EHMF fields retain their own stop read.
 
 - F-3 uses `learner.record.updated` with interaction start and commit time. Keep the production measure on the DI-305 evidence path until authorized.
 - `learner.sync.conflict` records the reason from version, counter, ownership, replay, and untrusted-write checks. `learner.harness.violation` records failed engineering invariants and the CLI exits with the stop status.

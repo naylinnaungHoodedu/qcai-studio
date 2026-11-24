@@ -17,11 +17,13 @@ from app.core.config import Settings
 from app.core.config_package import (
     DEFAULT_PACKAGE_PATH,
     EHMF_SCHEMA_VERSION,
+    LATEST_SCHEMA_VERSION,
     V1_PACKAGE_PATH,
     V2_PACKAGE_PATH,
     V3_PACKAGE_PATH,
     V4_PACKAGE_PATH,
     V5_PACKAGE_PATH,
+    V6_PACKAGE_PATH,
     WIRED_GENERATORS,
     ConfigPackageError,
     canonical_sha256,
@@ -40,6 +42,7 @@ V3_RAW = json.loads(V3_PACKAGE_PATH.read_text(encoding="utf-8"))
 V4_RAW = json.loads(V4_PACKAGE_PATH.read_text(encoding="utf-8"))
 # Package v5 (Phase 6), readable for one release after Phase 7 (DI-112): the v5 tests below read it explicitly.
 V5_RAW = json.loads(V5_PACKAGE_PATH.read_text(encoding="utf-8"))
+V6_RAW = json.loads(V6_PACKAGE_PATH.read_text(encoding="utf-8"))
 
 
 def _write(tmp_path: Path, payload: dict, *, sidecar: str | None = None) -> Path:
@@ -50,16 +53,12 @@ def _write(tmp_path: Path, payload: dict, *, sidecar: str | None = None) -> Path
 
 
 def test_the_shipped_package_validates_and_matches_its_hash():
-    # Phase 7: the shipped package is the first with an ehmf block (v6, 6.0.0: schema and major EHMF_SCHEMA_VERSION, read
-    # from the loader so a renumbering edits one constant, E16); the 5.0.0 assertions are
-    # test_v5_keeps_every_v4_value_but_the_listed_changes's (v5 read explicitly); the 4.0.0, 3.0.0, 2.0.0 and 1.0.0 assertions are
-    # test_v4_stays_readable_for_one_release's, test_v3_stays_readable_for_one_release's,
-    # test_v2_stays_readable_for_one_release's and test_v1_stays_readable_for_one_release's.
+    # Phase 8 ships the latest schema, including the Phase 7 EHMF block and its v6 predecessor.
     package = load_config_package(DEFAULT_PACKAGE_PATH, governed=True)
-    assert package.hash_verified and package.is_default_path and package.package_version == f"{EHMF_SCHEMA_VERSION}.0.0"
-    assert package.schema_version == EHMF_SCHEMA_VERSION and package.tutor_pipeline is not None and package.v1 is not None
+    assert package.hash_verified and package.is_default_path and package.package_version == f"{LATEST_SCHEMA_VERSION}.0.0"
+    assert package.schema_version == LATEST_SCHEMA_VERSION and package.tutor_pipeline is not None and package.v1 is not None
     assert package.gateway is not None and package.v2 is not None and package.tools is not None and package.v3 is not None
-    assert package.ehmf is not None and RAW["supersedes"]["sha256"] == canonical_sha256(V5_RAW)
+    assert package.ehmf is not None and RAW["supersedes"]["sha256"] == canonical_sha256(V6_RAW)
     assert package.sha256 == recorded_sha256(DEFAULT_PACKAGE_PATH) == canonical_sha256(RAW)
     assert package.span_scheme == "span-v2" and package.abstention.provisional is True
     # The image copies apps/api/app, so the package ships inside it (the Dockerfile has no other path for it).
@@ -597,15 +596,13 @@ def test_v4_keeps_every_v3_value_but_the_listed_changes():
     ],
 )
 def test_v4_structural_errors_always_stop_the_load(tmp_path, edit):
-    # Each refusal holds for v4.json, still readable (DI-100), for v5, which keeps every v4 block (Phase 6 spec 13.3;
-    # read explicitly since Phase 7 ships v6), and for the shipped v6, which keeps them too (Phase 7 spec 5.2). On v5 the
-    # schema_version=5 edit is no edit, so schema_version=6 stands for it there (a v6 package needs an ehmf block).
+    # Preserve every v4 rejection on later packages. Replace the v5 no-op with an unsupported schema.
     _the_unedited_copies_load(tmp_path)
-    for base in (V4_RAW, V5_RAW, RAW):
+    for base in (V4_RAW, V5_RAW, V6_RAW, RAW):
         payload = json.loads(json.dumps(base))
         edit(payload)
-        if base is V5_RAW and payload.get("schema_version") == 5:
-            payload["schema_version"] = EHMF_SCHEMA_VERSION
+        if base is V5_RAW and payload == base:
+            payload["schema_version"] = LATEST_SCHEMA_VERSION + 1
         path = _write(tmp_path, payload)
         for governed in (True, False):
             with pytest.raises(ConfigPackageError):
@@ -614,7 +611,7 @@ def test_v4_structural_errors_always_stop_the_load(tmp_path, edit):
 
 def test_v4_names_the_entry_schema_whose_provenance_fields_it_fills(tmp_path):
     # unused_provenance_fields describes the package's entry schema (ledger-entry-v3 in v4 and v5, ledger-entry-v4 in the
-    # shipped v6), as in v1 to v3; a v2 record written under v4 with MODEL_GATEWAY off keeps the three Phase 5 fields null
+    # shipped v7), as in v1 to v3; a v2 record written under v4 with MODEL_GATEWAY off keeps the three Phase 5 fields null
     # (v5 read explicitly since Phase 7).
     payload = json.loads(json.dumps(RAW))
     payload["tutor_pipeline"]["unused_provenance_fields"] = ["tool_contract_version"]
@@ -816,13 +813,12 @@ def _duplicate_development_entry(payload: dict) -> None:
     ],
 )
 def test_v5_structural_errors_always_stop_the_load(tmp_path, edit):
-    # v5 read explicitly since Phase 7 ships v6 (DI-112); a schema_version=6 v5 has no ehmf block, so it is refused. Each
-    # refusal holds for the shipped v6 too (it keeps every v5 block), but for the edits v6 itself changes: the trigger
+    # v5 is read explicitly (DI-112). A v5 body at schema 6 lacks EHMF. Keep the refusals on v6 and v7 except for the edits made by v6: the trigger
     # registry x-triggers-v2 and schema_version 6 are v6's own values (no edit there), and v6 takes V3 severity from
     # ehmf.weights, so it has no severity.E to remove (test_the_v5_edits_v6_changes_are_exactly_the_three_it_makes).
     _the_unedited_copies_load(tmp_path)
-    for base in (V5_RAW, RAW):
-        if base is RAW and not _v5_edit_applies_to_v6(edit):
+    for base in (V5_RAW, V6_RAW, RAW):
+        if base is not V5_RAW and not _v5_edit_applies_to_v6(edit):
             continue
         payload = json.loads(json.dumps(base))
         edit(payload)
@@ -833,25 +829,25 @@ def test_v5_structural_errors_always_stop_the_load(tmp_path, edit):
 
 
 def _v5_edit_applies_to_v6(edit) -> bool:
-    payload = json.loads(json.dumps(RAW))
+    payload = json.loads(json.dumps(V6_RAW))
     try:
         edit(payload)
     except KeyError:
         return False
-    return payload != RAW
+    return payload != V6_RAW
 
 
 def _the_unedited_copies_load(tmp_path: Path) -> None:
     """The control: each base, written as the edited copies are, loads, so a refusal is the edit's."""
-    for base in (V4_RAW, V5_RAW, RAW):
+    for base in (V4_RAW, V5_RAW, V6_RAW, RAW):
         load_config_package(_write(tmp_path, json.loads(json.dumps(base))), governed=False)
 
 
 def test_the_v5_edits_v6_changes_are_exactly_the_three_it_makes():
     edits = next(mark.args[1] for mark in test_v5_structural_errors_always_stop_the_load.pytestmark if mark.name == "parametrize")
     assert len([edit for edit in edits if not _v5_edit_applies_to_v6(edit)]) == 3
-    assert RAW["v3"]["triggers"]["version"] == "x-triggers-v2" and RAW["schema_version"] == EHMF_SCHEMA_VERSION
-    assert "E" not in RAW["v3"]["priority"]["severity"] and RAW["v3"]["priority"]["severity"]["source"] == "ehmf.weights"
+    assert V6_RAW["v3"]["triggers"]["version"] == "x-triggers-v2" and V6_RAW["schema_version"] == EHMF_SCHEMA_VERSION
+    assert "E" not in V6_RAW["v3"]["priority"]["severity"] and V6_RAW["v3"]["priority"]["severity"]["source"] == "ehmf.weights"
 
 
 def test_v3_package_check_problems():

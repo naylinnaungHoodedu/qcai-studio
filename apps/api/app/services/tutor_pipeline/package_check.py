@@ -1,4 +1,5 @@
-"""Consistency of a configuration package of schema 2 or later (v2; v3; v4 since Phase 5; v5 since Phase 6; v6 since Phase 7, the shipped package) with the
+"""Consistency of a configuration package of schema 2 or later (v2; v3; v4 since Phase 5; v5 since Phase 6;
+v6 since Phase 7; v7 since Phase 8, the shipped package) with the
 tutor pipeline code (Phase 3 spec 5.4, conflict 30; Phase 4 spec 5.3 for schema 3's ledger rules; Phase 5 spec 5.3 for
 schema 4's).
 

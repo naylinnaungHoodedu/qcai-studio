@@ -1,12 +1,12 @@
 # QC+AI Studio: Phase 8 implementation spec
 
-Learner adaptation and privacy-preserving record, upgrade plan lines 1557-1614. The branch was cut at `98f7cc4` and its current integration base is `31343c8`.
+Learner adaptation and privacy-preserving record, upgrade plan lines 1557-1614. The branch was cut at `98f7cc4` and its current integration base is `512b8a6`.
 
 Sections 0-17 describe the behaviour the code has and identify deferred integration work. Section 18 holds one history-table row per review round. This file is LF in every checkout (`.gitattributes`).
 
 ## 0. Ground rules, measured facts, readings
 
-Smoke and acceptance checks use synthetic fixtures and run offline under the branch rules and shared-file limits in §0.1. The verified Phase 6 integration base is `31343c86c23007cec227b38413e0e53140f714a5` (PR #38, main CI run 45180967316, reported green by the owner). The branch ships package v6 and Alembic head `20261123_phase8_learner`. Phase 6 added package v5, migration `20261122_phase6_v3_audit`, and the user-keyed `v3_claims` and `v3_flags` tables. Their erasure and retention scope is explicit.
+Smoke and acceptance checks use synthetic fixtures and run offline under the branch rules and shared-file limits in §0.1. Phase 7 reached main as `512b8a668f6bc95358183c4f173efb0daa44868c` (PR #39) and entered this branch in merge `bf4fe3a`. It contributes package v6, the EHMF stop table and revision, and the golden-set history. Phase 8 ships package v7 and Alembic head `20261123_phase8_learner`. The preceding Phase 6 merge contributes the two user-keyed V3 tables covered by erasure and retention.
 
 Phase 5 added `gateway_budget_days`, `gateway_stops`, and `evidential_cache_entries` to the shared ORM and updated the migration chain. The retrieval engine delegates embedding egress to `app/gateway/embeddings.py`. Its import guard allows only the Pinecone index SDK exception in the retrieval engine. The handoff's Phase 5 snapshot of untouched database files and its earlier embedding exception no longer describe the integrated code. Phase 8 uses the existing shared-file ownership limits and treats the added gateway tables and embedding implementation as Phase 5-owned.
 
@@ -19,7 +19,7 @@ The §8.1 boundaries apply to the following files and entry points.
 | Shared area | Permitted edits |
 |---|---|
 | `core/config.py`, `core/auth.py`, `core/authorization.py` | One learner settings block and validator. Preserve the `AuthUser` fields and the `get_current_user` signature. Place all Phase 8 policies together after the existing learner-record entries. |
-| `app/main.py` | Keep existing routers and add readiness fields and configuration-override keys after the main integration. Phase 8 readiness uses in-process state and issues no database query. |
+| `app/main.py` | Keep existing routers and append Phase 8 readiness fields and configuration-override keys. Phase 8 uses its last in-process planner-stop observation. Phase 7 retains its own EHMF readiness fields and stop read. |
 | `services/erasure.py`, `services/retention.py`, `workers/retention.py` | Preserve `erase_user(db, user_id)`, `erase_stale_guest_rows(db, cutoff)` and `run_retention_cleanup(db, now=None)`. Every intentional exemption has a documented reason. |
 | `app/gateway/**`, `services/v2_panel/**`, `services/v1_checks/**`, `services/teaching_assistant.py` and the evidential pipeline | Keep the verifier and gateway code and contracts under main-track ownership. The bump-docstring exception covers shipped-version text in the designated modules only. The hashes and published schemas stay fixed. |
 | `services/ledger.py`, `core/schema_upgrades.py`, and Alembic | Change `SCHEMA_REVISION` and add Phase 8 schema reconciliation and one additive revision after the merge. Keep the earlier revisions and ledger behavior. |
@@ -28,6 +28,7 @@ The §8.1 boundaries apply to the following files and entry points.
 | `.github/workflows/ci.yml`, `test-strategy.md` and `.gitattributes` | Add the predecessor readability and invariance checks to CI. Test strategy and attributes take append-only Phase 8 sections, with the duplicate merged exit paragraph removed under R2-07. |
 | `test_phase3_acceptance.py`, `test_response_ledger_migrations.py` | Only §7.5 migration-head generalisation. The inherited readiness SQL assertion is protected. |
 | `test_phase4_acceptance.py`, `test_phase5_acceptance.py` | Only the specified shipped-version pins in the isolated bump. The Phase 5 gateway-stop assertion is protected. The Phase 8 guard pins the unchanged Phase 5 source. |
+| `test_phase7_acceptance.py` | The v6 checks read the explicit Phase 7 package. The migration checks follow the Phase 8 head while preserving the Phase 7 downgrade assertions. |
 | `test_configuration_overrides.py`, `test_api.py` | The former takes the package-copy docstring and one case per Phase 8 override. The latter permits only the consent fixture for progress aggregation. |
 | Templates, generated freeze baseline, shared test harness and dependencies | Keep protected templates out of ordinary suite output. Preserve the public-payload golden file, test setup and lockfiles. |
 
@@ -87,7 +88,9 @@ The consent service stores a current row and erasable change history. Analytics 
 
 ## 5. Configuration package
 
-Package v6 (6.0.0) supersedes v5 (5.0.0, SHA-256 `ed91a98f8f3cca200e2164381da966ce9ec8f8a2de2120d2c2fc6fd77e9b2e68`). It adds the provisional learner settings, `phase8_exit_passed: false`, and the D-26 and D-27 entries. V5's D-08 and all prior decision entries are preserved. The evidence, gateway, and V3 contract pins carry forward. DI-317 identifies the v5 readability step. Phase 7 must renumber if Phase 8 merges first, and Phase 8 must renumber if Phase 7 takes v6 on main first.
+Package v7 (7.0.0, SHA-256 `adf3aed271aaf2c84c852f2e0169825b9889577d4aa64573ea7066f12c97d1e5`) supersedes Phase 7's v6 (6.0.0, SHA-256 `cd16a12360b01b1250fdbb339da4c71701828197cd8dcd2629a6a9a34a3d5327`). It adds the provisional learner settings, `phase8_exit_passed: false`, and D-26 and D-27. All inherited decisions and contract pins carry forward. The EHMF block is identical in v6 and v7, including `config_version.first_package: "6.0.0"`.
+
+The loader accepts integer schemas 1 through 7. It uses a separate upper bound from `EHMF_SCHEMA_VERSION` so EHMF checks apply from schema 6 onward and learner checks begin at schema 7. `EHMF_SCHEMA_VERSION` and `EHMF_FIRST_MAJOR` both equal 6. DI-317 tracks v6 readability. The golden-set runner appends v7 after the committed v6 history entry, and CI enforces the base branch's unchanged prefix.
 
 The loader compares each engineering sub-block with the code policy. `sync` records the active replica cap, retirement order and retry limits. `assessment` has the attempt limit, window and completion threshold. `planner` has the bands, budget, renderer hand-back and harness levels. `privacy` records NDJSON export, canonical receipt hashing, audit retention and guard retention. The provisional marker, authority, consent version and consent-class policy are validated separately.
 
@@ -118,10 +121,11 @@ All default to off outside development. Settings reject every non-off value outs
 | `services/erasure.py`, `services/retention.py`, `services/guest_sessions.py`, `services/local_accounts.py` | Metadata coverage, class-based expiry, stable revocation, and compatibility with account deletion. |
 | `src/lib/api.ts`, `src/lib/learner-record-api.ts`, `src/lib/learner-record-sync.ts` | Existing versioned writer, replica transport, and offline-safe clock and retry behavior. |
 | `app/main.py` | §8.3(c) adds the Phase 8 settings, last observed stop and configuration override keys. |
-| `core/config_package.py`, `config_package/v6.json` and its sidecar, `scripts/config_package.py` | The §7.4 exception adds schema 6 validation and the predecessor hash. |
+| `core/config_package.py`, `config_package/v7.json` and its sidecar, `scripts/config_package.py` | The §7.4 exception adds schema 7 and the v6 predecessor hash while preserving the EHMF schema floor. |
 | `services/ledger.py`, `core/schema_upgrades.py`, `alembic/versions/20261123_phase8_learner.py` | §7.5 advances `SCHEMA_REVISION` and adds the additive migration and reconciliation for early guard tables. |
 | `services/tutor_followups.py`, `tutor_pipeline/__init__.py`, `tutor_pipeline/contracts.py`, `tutor_pipeline/package_check.py` | Shipped-version text under the §7.4 bump-docstring exception. |
-| `.github/workflows/ci.yml` | §7.4 keeps v5 readable and §8.3(g) checks the invariance report. |
+| `.github/workflows/ci.yml` | §7.4 checks v6 readability and §8.3(g) checks the invariance report. Phase 7's golden-set base-history check continues to run. |
+| `scripts/run_golden_set.py`, `docs/evaluation/phase7/package_versions.json` and the golden record | The runner's default follows the shipped package. It generates the v7 record and appends one history entry. |
 | `scripts/prove_erasure.py`, `scripts/run_invariance_harness.py` | Phase 8 owns the independent proof and the public fixture replay. The checks run offline. |
 | `docs/architecture/phase3-implementation-spec.md`, `docs/architecture/phase4-implementation-spec.md`, `docs/architecture/phase5-implementation-spec.md`, `docs/architecture/phase6-implementation-spec.md` | The §7.4 and §7.5 exceptions update shipped-version and migration references. R2-02 restores the Phase 3 readiness boundary. |
 | `docs/adr/ADR-001-grounding-separation.md`, `docs/adr/ADR-003-learner-record-synchronization.md` | Describe the implemented presentation boundary and add the dated synchronization record. |
@@ -131,7 +135,7 @@ All default to off outside development. Settings reject every non-off value outs
 
 ## 8. Database
 
-Revision `20261123_phase8_learner` follows `20261122_phase6_v3_audit` and adds the ten Phase 8 tables. The revision accepts ORM-created tables and adds missing epoch and activity columns to the early guard table. Startup initializes those columns for earlier rows without resetting an existing epoch. Downgrade verifies that all Phase 8 tables are empty before removing their schema. An image rollback leaves the schema and protection markers intact.
+Revision `20261123_phase8_learner` follows `20261123_phase7_ehmf` and adds the ten Phase 8 tables. The revision accepts ORM-created tables and adds missing epoch and activity columns to the early guard table. Startup initializes those columns for earlier rows without resetting an existing epoch. Downgrade verifies that all Phase 8 tables are empty before removing their schema. A further downgrade crosses the separate Phase 7 `allow_ehmf_drop` guard. An image rollback leaves the schema and protection markers intact.
 
 ## 9. Routes and request-path behaviour
 
@@ -204,11 +208,15 @@ The erasure proof seeds user-keyed and dependent rows for local, guest, federate
 | `test_authorization.py` | `test_a_refused_caller_is_refused` | §8.1 authorization coverage | Enables the development claim route for the denied-principal case. |
 | `test_authorization.py` | `_write_everything` | §8.1 authorization coverage | Obtains an issued replica and analytics consent so the fixture stores the owner marker. |
 | `test_authorization.py` | `test_no_caller_scoped_read_returns_another_learners_data` | §8.1 authorization coverage | Requires the marker in the owner's export and still excludes it from a different learner's responses. |
-| `test_config_package.py` | `test_the_shipped_package_validates_and_matches_its_hash` | §7.4 bump | Pins v6 and schema 6 as shipped while retaining the hash, gateway and audit checks. |
-| `test_config_package.py` | `test_v4_structural_errors_always_stop_the_load` | §7.4 bump | Checks v4, v5 and v6, choosing the unsupported schema 7 mutation where schema 5 is now supported. |
+| `test_config_package.py` | `test_the_shipped_package_validates_and_matches_its_hash` | §7.4 bump | Checks the shipped schema and v6 predecessor hash while retaining the gateway, audit, and EHMF checks. |
+| `test_config_package.py` | `test_v4_structural_errors_always_stop_the_load` | §7.4 bump | Checks v4 through v7 and uses schema 8 in place of the no-op schema assignment on v5. |
 | `test_config_package.py` | `test_v4_stays_readable_for_one_release` | §7.4 bump | Checks the v4 digest against v5's predecessor instead of v6's, preserving v4 readability. |
 | `test_config_package.py` | `test_v5_keeps_every_v4_value_but_the_listed_changes` | §7.4 bump | Reads the explicit v5 fixture to preserve the v4-to-v5 change assertions. |
-| `test_config_package.py` | `test_v5_structural_errors_always_stop_the_load` | §7.4 bump | Runs v5 refusals against both v5 and v6 and uses an actually unsupported schema number. |
+| `test_config_package.py` | `test_v5_structural_errors_always_stop_the_load` | §7.4 bump | Runs v5 refusals across v5, v6 and v7 while preserving the Phase 7 exceptions for changed values. |
+| `test_config_package.py` | `test_v4_names_the_entry_schema_whose_provenance_fields_it_fills` | §7.4 bump docstring and comments | Describes the inherited ledger-entry-v4 checks under shipped v7. |
+| `test_config_package.py` | `_v5_edit_applies_to_v6` | §7.4 bump | Reads the explicit v6 payload to keep the exceptions tied to the Phase 7 changes. |
+| `test_config_package.py` | `_the_unedited_copies_load` | §7.4 bump | Adds the v6 control and keeps the pre-mutation load checks for later schemas. |
+| `test_config_package.py` | `test_the_v5_edits_v6_changes_are_exactly_the_three_it_makes` | §7.4 bump | Reads the explicit v6 package to retain the original Phase 7 comparison. |
 | `test_configuration_overrides.py` | `write_package` | §7.4 bump docstring | Names the actual shipped package while the helper still copies the package and its schemas. |
 | `test_configuration_overrides.py` | `test_c2_each_refused_relaxation_is_refused_and_still_recorded_under_its_own_key` | §8.3(c) override cases | Adds inherited parametrizations for the five Phase 8 keys. Each case still tests refusal and the corresponding audit key. |
 | `test_cs595_increment.py` | `test_learner_record_api_requires_a_durable_session_and_accepts_idempotent_operations` | §8.1 sync contract | Obtains the issued replica and sends the expected version. The durable-session and completion assertions remain. |
@@ -218,15 +226,20 @@ The erasure proof seeds user-keyed and dependent rows for local, guest, federate
 | `test_malformed_input.py` | `test_a_learner_record_value_that_cannot_be_stored_is_refused_and_the_record_still_reads` | §8.1 sync contract | Exercises both modes while preserving rejection and the subsequent read. |
 | `test_malformed_input.py` | `test_non_finite_preference_follows_the_flagged_backend_contract` | §8.1 sync contract | Separately pins the legacy backend-specific result and uniform guarded validation. |
 | `test_phase3_acceptance.py` | `test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_empty_ledger` | §7.5 migration | Steps through the Phase 8 head before testing the older downgrade and data-loss refusal. |
-| `test_phase3_acceptance.py` | `test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode` | R2-02 restored protected text | Round 1 widened the allowed queries. Round 2 restores the Phase 6 source and uses in-process observation for Phase 8 readiness. |
-| `test_phase4_acceptance.py` | `test_phase4_docs_the_phase3_spec_states_what_phase4_changed` | §7.4 bump | Repoints the shipped name, schema tuple and fixture-version pins to v6 while preserving the text and fixture checks. |
-| `test_phase4_acceptance.py` | `test_phase4_docs_the_code_texts_name_the_shipped_package` | §7.4 bump | Repoints the module text and inherited schema sets to v6 while retaining the Phase 4 and Phase 5 constraints. |
+| `test_phase3_acceptance.py` | `test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode` | R2-02 restored protected text | The protected readiness assertion matches the current main baseline. In-process observation supplies the Phase 8 field. |
+| `test_phase4_acceptance.py` | `test_phase4_docs_the_phase3_spec_states_what_phase4_changed` | §7.4 bump | Repoints the package, independent loader ceiling and fixture-version pins to v7 while preserving their checks. |
+| `test_phase4_acceptance.py` | `test_phase4_docs_the_code_texts_name_the_shipped_package` | §7.4 bump | Repoints the module text to v7 and checks that v7 retains v6's schema set and earlier pins. |
 | `test_phase5_acceptance.py` | `test_phase5_docs_the_runbooks_and_registers_state_the_gateway_s_operations_exactly` | R2-02 restored protected text | Round 1 widened the pinned readiness phrase. Round 2 restores the inherited test and its gateway-only query scope. |
-| `test_phase6_acceptance.py` | `test_plan_g_the_phase_6_revision_is_additive_reversible_and_keeps_its_rows` | §7.5 migration | Checks the v6-era descendant and unwinds the empty Phase 8 schema before exercising the V3 retention guards. |
-| `test_phase6_acceptance.py` | `test_plan_i_ready_reports_package_v5_and_the_v3_fields_and_no_count` | §7.4 version pin and R2-02 restoration | The historical name says v5. The test checks the shipped package dynamically (v6 here) and retains the V3 assertions and gateway-only SQL allow-list. |
-| `test_phase6_acceptance.py` | `test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_head` | §7.5 migration | Checks the Phase 8 head and absolute Phase 6 rollback step while retaining the earlier rollback and data-protection checks. |
+| `test_phase6_acceptance.py` | `test_plan_g_the_phase_6_revision_is_additive_reversible_and_keeps_its_rows` | §7.5 migration | Checks the Phase 8 head and the Phase 7 and 6 parents, then unwinds the empty Phase 8 schema before the V3 retention guards. |
+| `test_phase6_acceptance.py` | `test_plan_i_ready_reports_package_v5_and_the_v3_fields_and_no_count` | §7.4 version pin and R2-02 restoration | The historical name says v5. The assertion reads the shipped package dynamically (v7 here) and retains the V3 assertions and the inherited SQL allow-list. |
+| `test_phase6_acceptance.py` | `test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_head` | §7.5 migration | Checks the Phase 8 stamp and the absolute rollback to Phase 7 while retaining the EHMF, V3 and ledger safeguards. |
+| `test_phase7_acceptance.py` | `test_plan_g_v5_stays_readable_and_v6_parses_v1_to_v4_records` | §7.4 bump | Exercises the first EHMF package at explicit v6 and checks the shipped v7 carries the same EHMF contract. |
+| `test_phase7_acceptance.py` | `test_plan_e_the_phase_7_revision_is_additive_reversible_and_keeps_its_rows` | §7.5 migration | Verifies the Phase 7 revision's existing parent and guard under the Phase 8 head. |
+| `test_phase7_acceptance.py` | `test_plan_e_the_phase_7_downgrade_refuses_while_ehmf_stops_holds_rows_and_the_table_refuses_truncate` | §7.5 migration | Downgrades the empty Phase 8 schema first, then exercises the same EHMF table, truncate and downgrade guards. |
 | `test_response_ledger_migrations.py` | `test_e10_the_absolute_downgrade_target_is_safe_in_every_stamp_state_the_runbook_allows` | §7.5 migration | Stamps the Phase 8 head, steps through the empty successor, and retains the absolute-target and ledger refusal checks. |
-| `test_response_ledger_migrations.py` | `test_f14_the_forward_alembic_step_runs_only_on_a_phase2_stamp` | §7.5 migration | Checks the ordered Phase 3, 5, 6 and 8 upgrades without changing the Phase 2 stamp and invalid-replay assertions. |
+| `test_response_ledger_migrations.py` | `test_f14_the_forward_alembic_step_runs_only_on_a_phase2_stamp` | §7.5 migration | Checks the ordered Phase 3, 5, 6, 7 and 8 upgrades while retaining the Phase 2 stamp and invalid-replay assertions. |
+| `test_phase8_settings.py` | `test_phase8_package_v7_preserves_v6_contracts_and_hash_chain` | §7.4 bump | Checks the v7 overlay, v6's complete EHMF policy, its first-version constants and the predecessor hash. |
+| `test_phase8_evidence.py` | `test_phase8_migration_retains_existing_tables_and_refuses_data_loss` | §7.5 migration | Upgrades a real Phase 7 schema and proves that a nonempty Phase 8 schema refuses downgrade. |
 | `apps/frontend/tests/privacy-inventory.integration.test.ts` | `AC-8-7: the privacy page lists exactly the cookies the code sets or reads` | §8.1 inventory coverage | Names AC-8-7 explicitly and preserves the exact cookie comparison. |
 | `apps/frontend/tests/privacy-inventory.integration.test.ts` | `AC-8-7: the privacy page lists exactly the browser-storage keys the code uses` | §8.1 inventory coverage | Names AC-8-7 explicitly and preserves the exact storage-key comparison. |
 | `test_phase8_sync.py` | `test_phase8_assessment_quota_and_server_clock_when_principal_equals_subject` | R2-09 | Renamed the helper-level case to state when principal and subject match. The bound-account HTTP test guards the distinction. |
@@ -235,7 +248,7 @@ The erasure proof seeds user-keyed and dependent rows for local, guest, federate
 
 ## 14. CI changes
 
-The API and evaluation job checks v5 readability and the committed invariance report. Its existing pytest step verifies the erasure proof. PostgreSQL jobs verify the API suite with both drivers. The existing public-payload golden record remains the freeze boundary.
+The API and evaluation job checks v6 readability, the v7 golden-set record against the base branch, and the committed invariance report. Its existing pytest step verifies the erasure proof. PostgreSQL jobs verify the API suite with both drivers. The existing public-payload golden record remains the freeze boundary.
 
 ## 15. Docs and evidence
 
@@ -277,7 +290,7 @@ The defaults are provisional. Each row names the code or artifact that enforces 
 | DI-314 | Publish approved consent-class disclosure. AC-8-7 covers the cookie and storage inventory. Blocked by: open D-27 and D-05. | Product Owner, Principal Investigator | Deferred |
 | DI-315 | Re-review R-51 at the Phase 8 exit. Production carries the existing client mastery path until `LEARNER_SYNC` is enabled. Blocked by: open D-24, D-05, and DI-300. | Product Owner | Open |
 | DI-316 | Closed 2026-11-22 by owner decision P2-12-D-05 following the rule-12 question. Account erasure keeps independently submitted support requests on the 540-day rule. `services/learner_record_privacy.py` and `services/erasure.py` record and enforce that scope. | Product Owner | Closed |
-| DI-317 | Remove v5 and its readability check after one release. Blocked by: a production release after the Phase 8 merge, under D-05. | Engineering | Deferred |
+| DI-317 | Remove v6 and its readability check after one release. Blocked by: a production release after the Phase 8 merge, under D-05. The append-only golden-set history retains the v6 entry. | Engineering | Deferred |
 | DI-318 | Dedicated counters at runtime evidential contract refusals and `ToolNotVisible` in `tutor_pipeline/contracts.py` and `gateway/tools.py`. Round 1 stopped these changes under rule 12 and §8.1. The owner answered the round-2 question by assigning both reserved changes to the main track. The Phase 8 harness and sync signals operate independently. | Engineering (main track) | Handed over |
 
 Plan M: "[Risk R-01][Risk R-08][Risk R-41][Risk R-42][Risk R-51]; residual: backups keep erased rows for a window."
@@ -371,4 +384,4 @@ The rows record the build and each review round in order. Sections 0–17 descri
 | Spec (pre-code) | - | Initial design and verification map. |
 | Build | `cb142b1` | Settings, synchronization, identity, privacy lifecycle, shadow planner, and engineering evidence. Regression guards include `test_settings_phase8_defaults_and_refusals`, `test_ac_8_1_concurrent_trusted_updates_preserve_each_mastery_value`, `test_phase8_claim_requires_guest_csrf_and_is_one_shot`, `test_plan_f_the_committed_erasure_proof_matches_a_fresh_run`, and `test_plan_p_the_committed_invariance_report_matches_a_fresh_run`. |
 | Review 1 | `8c7b7d4` | Route ownership and PD register guards, serialized cutover and erasure, claim and privacy HTTP coverage, active replica lifecycle, measurable invariance, retention, and spec controls. See `test_phase8_route_policies_form_one_block_after_the_learner_record_rows`, `test_phase8_docs_pd_204_states_the_engineering_constants_in_code`, `test_phase8_erasure_refuses_an_in_flight_subject_rebind`, `test_phase8_privacy_http_consent_export_erasure_and_assessment`, and `test_ac_8_4_a_learner_value_in_an_evidential_payload_is_detected`. |
-| Review 2 | `cb2a33e` | Restored the §8.1 retention and readiness contracts. Verified erasure serialization, retained-principal recovery, guard expiry, F-3, trusted mastery, package-code equality, and documentation traceability. The owner assigned DI-318 to the main track. See `test_phase8_erase_stale_guest_rows_keeps_its_two_argument_signature`, `test_phase8_keeps_protected_acceptance_tests_at_the_phase6_baseline`, `test_phase8_erasure_serializes_with_unguarded_and_first_writers`, and `test_phase8_a_principal_erased_and_signing_in_again_gets_a_fresh_empty_record`. |
+| Review 2 | `cb2a33e`, merge `bf4fe3a` | Restored the retention and readiness contracts and verified erasure serialization, retained-principal recovery, expiry, F-3 and trusted mastery. The owner assigned DI-318 to the main track. Phase 7 main `512b8a6` entered through `bf4fe3a`. Package v7 SHA-256 is `adf3aed271aaf2c84c852f2e0169825b9889577d4aa64573ea7066f12c97d1e5`. Alembic `down_revision` is `20261123_phase7_ehmf`. See `test_phase8_erase_stale_guest_rows_keeps_its_two_argument_signature`, `test_phase8_keeps_protected_acceptance_tests_at_the_phase7_baseline`, `test_phase8_erasure_serializes_with_unguarded_and_first_writers`, `test_phase8_a_principal_erased_and_signing_in_again_gets_a_fresh_empty_record`, `test_phase8_loader_refuses_schema_versions_outside_the_latest_bound`, and `test_phase8_migration_retains_existing_tables_and_refuses_data_loss`. |

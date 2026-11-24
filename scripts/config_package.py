@@ -1,5 +1,5 @@
 """Check or re-hash the configuration package (Phase 2 spec 2.5; Phase 3 spec 5.5; Phase 4 spec 5.4; Phase 5 spec 5.4;
-Phase 6 spec 5.3; Phase 7 spec 5.3).
+Phase 6 spec 5.3; Phase 7 spec 5.3; Phase 8 spec section 5).
 
 Run: python scripts/config_package.py --check [--path P]   (validates the package and its sidecar hash; for packages
                                                              v2 to v5 also the tutor-pipeline schema pins, prompt hashes
@@ -24,7 +24,8 @@ set's sha256 and item count, the library with the development store) and prints 
 library pin and sidecar, the routing table and sha256, the template sha256 and the golden set's sha256 and items. What a
 schema adds applies to every later schema, except the inline misconception library hash (schemas 3 to 5; from v6 the
 library is a pinned file).
-The default path is the shipped package v6; v5, v4, v3, v2 and v1 stay readable for one release (--path .../v5.json, DI-112;
+The default path is the shipped package v7. From schema 7 the loader also checks the learner policy. Package v6
+stays readable (DI-317) with its EHMF checks. Packages v5 through v1 remain readable (--path .../v5.json, DI-112;
 --path .../v4.json, DI-100;
 --path .../v3.json, DI-84; --path .../v2.json, DI-63; --path .../v1.json, DI-42).
 """

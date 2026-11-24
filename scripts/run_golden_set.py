@@ -404,7 +404,7 @@ def _main(argv: list[str] | None = None) -> int:
     mode.add_argument("--write", type=Path)
     mode.add_argument("--check", type=Path)
     parser.add_argument("--allow-dirty", action="store_true", help="--write from a working tree that differs from HEAD")
-    parser.add_argument("--package", type=Path, default=DEFAULT_PACKAGE_PATH, help="the configuration package (default: the shipped v6)")
+    parser.add_argument("--package", type=Path, default=DEFAULT_PACKAGE_PATH, help="the configuration package (default: the shipped package)")
     parser.add_argument("--history", type=Path, default=DEFAULT_HISTORY, help="the append-only package version history")
     base_source = parser.add_mutually_exclusive_group()
     base_source.add_argument("--base-ref", help="a git ref whose committed history must be an unchanged prefix (CI: the base branch)")

@@ -214,21 +214,26 @@ def test_phase8_readiness_reports_the_last_stop_observation_without_querying(mon
 
 def test_phase8_migration_retains_existing_tables_and_refuses_data_loss(fresh_database_url):
     from app.db_models import LearnerWriteGuard
-    from test_response_ledger_migrations import PHASE6_REVISION, PHASE8_REVISION, PHASE8_TABLES, _alembic, _tables
+    from test_response_ledger_migrations import PHASE7_REVISION, PHASE8_REVISION, PHASE8_TABLES, _alembic, _stamp, _tables
 
     engine = create_engine(fresh_database_url)
     try:
         Base.metadata.create_all(engine)
+        Base.metadata.drop_all(engine, tables=[Base.metadata.tables[name] for name in PHASE8_TABLES])
+        phase7_tables = _tables(engine)
+        assert "ehmf_stops" in phase7_tables
+        engine.dispose()
+        assert _alembic(fresh_database_url, "stamp", PHASE7_REVISION).returncode == 0
+        upgraded = _alembic(fresh_database_url, "upgrade", PHASE8_REVISION)
+        assert upgraded.returncode == 0, upgraded.stderr[-1800:]
+        assert _tables(engine) == phase7_tables | PHASE8_TABLES
         with Session(engine) as db:
             db.add(LearnerWriteGuard(key_digest=uuid4().hex, erased=True))
             db.commit()
         engine.dispose()
-        assert _alembic(fresh_database_url, "stamp", PHASE6_REVISION).returncode == 0
-        upgraded = _alembic(fresh_database_url, "upgrade", PHASE8_REVISION)
-        assert upgraded.returncode == 0, upgraded.stderr[-1800:]
-        assert PHASE8_TABLES <= _tables(engine)
-        refused = _alembic(fresh_database_url, "downgrade", PHASE6_REVISION)
+        refused = _alembic(fresh_database_url, "downgrade", PHASE7_REVISION)
         assert refused.returncode != 0 and "contain records" in refused.stderr
         assert PHASE8_TABLES <= _tables(engine)
+        assert _stamp(engine) == [PHASE8_REVISION]
     finally:
         engine.dispose()

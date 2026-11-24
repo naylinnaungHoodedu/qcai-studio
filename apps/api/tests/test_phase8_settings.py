@@ -64,16 +64,21 @@ def test_freeze_phase8_requires_d27_even_after_exit(monkeypatch):
         Settings(_env_file=None, environment="production", learner_planner="shadow")
 
 
-def test_phase8_package_v6_preserves_v5_contracts_and_hash_chain():
+def test_phase8_package_v7_preserves_v6_contracts_and_hash_chain():
+    from app.services.ehmf.vocabulary import EHMF_FIRST_MAJOR
     from app.services.learner_record_sync import ASSESSMENT_LIMIT, ASSESSMENT_WINDOW, MAX_ISSUED_REPLICAS
     from app.services.learner_record_shadow import COMPLETION_THRESHOLD, PLANNER_BUDGET_MS
 
-    previous_path = config_package.DEFAULT_PACKAGE_PATH.with_name("v5.json")
-    previous = config_package.load_config_package(previous_path, governed=True)
-    assert previous.package_version == "5.0.0" and previous.hash_verified and not previous.is_default_path
+    previous = config_package.load_config_package(config_package.V6_PACKAGE_PATH, governed=True)
+    assert previous.package_version == "6.0.0" and previous.hash_verified and not previous.is_default_path
+    assert previous.schema_version == config_package.EHMF_SCHEMA_VERSION == EHMF_FIRST_MAJOR == 6
     latest = config_package.load_config_package(config_package.DEFAULT_PACKAGE_PATH, governed=True)
     after = latest.raw
-    assert latest.schema_version == 6 and after["supersedes"]["sha256"] == previous.sha256
+    assert (latest.package_version, latest.schema_version) == ("7.0.0", 7)
+    assert after["supersedes"]["package_version"] == previous.package_version
+    assert after["supersedes"]["sha256"] == previous.sha256
+    assert latest.ehmf == previous.ehmf and latest.ehmf is not None
+    assert after["ehmf"]["config_version"]["first_package"] == "6.0.0"
     assert set(after) == set(previous.raw) | {"learner"}
     for key, value in previous.raw.items():
         if key not in {"package_version", "schema_version", "phase", "created", "supersedes", "flag_policy", "owner_decisions"}:
@@ -100,6 +105,24 @@ def test_phase8_package_v6_preserves_v5_contracts_and_hash_chain():
     source = Path(__file__).resolve().parents[3] / "apps/frontend/src/lib/learner-record-sync.ts"
     match = re.search(r"^const CLIENT_CAS_RETRIES = (\d+);", source.read_text(encoding="utf-8"), re.M)
     assert match and int(match[1]) == CLIENT_CAS_RETRIES
+
+
+@pytest.mark.parametrize("version", [0, 8, True])
+def test_phase8_loader_refuses_schema_versions_outside_the_latest_bound(version):
+    path = config_package.DEFAULT_PACKAGE_PATH
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    assert config_package.parse_config_package(raw, path=path, sha256="", hash_verified=False).schema_version == 7
+    raw["schema_version"] = version
+    with pytest.raises(config_package.ConfigPackageError, match="schema_version.*integer from 1 to 7"):
+        config_package.parse_config_package(raw, path=path, sha256="", hash_verified=False)
+
+
+def test_phase8_schema_seven_still_enforces_ehmf_checks():
+    path = config_package.DEFAULT_PACKAGE_PATH
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["ehmf"]["config_version"]["first_package"] = "7.0.0"
+    with pytest.raises(config_package.ConfigPackageError, match="ehmf.config_version.*first_package '6.0.0'"):
+        config_package.parse_config_package(raw, path=path, sha256="", hash_verified=False)
 
 
 @pytest.mark.parametrize(("section", "field", "value"), [

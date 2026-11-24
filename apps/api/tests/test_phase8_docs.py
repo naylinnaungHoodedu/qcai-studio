@@ -8,6 +8,7 @@ import re
 from app import db_models
 from app.core.authorization import ROUTE_POLICIES
 from app.core.config import Settings
+from app.core.config_package import LATEST_SCHEMA_VERSION
 from app.core.phase8_settings import PHASE8_FLAGS
 from app.services.erasure import RETENTION_EXEMPT_TABLES, guest_retention_age_columns, user_keyed_tables
 from app.services.learner_record_planner import ADVANCED_THRESHOLD, FOUNDATION_THRESHOLD
@@ -32,7 +33,7 @@ PHASE8_EXTENDED_MODULES = {
     "test_api.py", "test_authorization.py", "test_cs595_increment.py", "test_erasure_retention.py",
     "test_malformed_input.py", "apps/frontend/tests/privacy-inventory.integration.test.ts",
     "test_config_package.py", "test_configuration_overrides.py", "test_phase3_acceptance.py",
-    "test_phase4_acceptance.py", "test_phase5_acceptance.py", "test_phase6_acceptance.py",
+    "test_phase4_acceptance.py", "test_phase5_acceptance.py", "test_phase6_acceptance.py", "test_phase7_acceptance.py",
     "test_response_ledger_migrations.py",
 }
 PHASE8_CHANGED_TESTS = {
@@ -50,6 +51,10 @@ PHASE8_CHANGED_TESTS = {
         "test_v4_stays_readable_for_one_release",
         "test_v5_keeps_every_v4_value_but_the_listed_changes",
         "test_v5_structural_errors_always_stop_the_load",
+        "test_v4_names_the_entry_schema_whose_provenance_fields_it_fills",
+        "_v5_edit_applies_to_v6",
+        "_the_unedited_copies_load",
+        "test_the_v5_edits_v6_changes_are_exactly_the_three_it_makes",
     ),
     "test_configuration_overrides.py": (
         "write_package",
@@ -82,6 +87,11 @@ PHASE8_CHANGED_TESTS = {
         "test_plan_g_the_phase_6_revision_is_additive_reversible_and_keeps_its_rows",
         "test_plan_i_ready_reports_package_v5_and_the_v3_fields_and_no_count",
         "test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_head",
+    ),
+    "test_phase7_acceptance.py": (
+        "test_plan_g_v5_stays_readable_and_v6_parses_v1_to_v4_records",
+        "test_plan_e_the_phase_7_revision_is_additive_reversible_and_keeps_its_rows",
+        "test_plan_e_the_phase_7_downgrade_refuses_while_ehmf_stops_holds_rows_and_the_table_refuses_truncate",
     ),
     "test_response_ledger_migrations.py": (
         "test_e10_the_absolute_downgrade_target_is_safe_in_every_stamp_state_the_runbook_allows",
@@ -150,13 +160,13 @@ def test_phase8_route_policies_form_one_block_after_the_learner_record_rows():
     assert "export async function issueLearnerRecordReplica" in (lib / "learner-record-api.ts").read_text(encoding="utf-8")
 
 
-def test_phase8_keeps_protected_acceptance_tests_at_the_phase6_baseline():
-    # LF-normalized source from 31343c8, excluding only the permitted Phase 3 migration function.
+def test_phase8_keeps_protected_acceptance_tests_at_the_phase7_baseline():
+    # LF-normalized source from 512b8a6, excluding only the permitted Phase 3 migration function.
     phase3 = (TESTS / "test_phase3_acceptance.py").read_text(encoding="utf-8")
     phase3 = re.sub(r"(?ms)^def test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_empty_ledger\(.*?(?=^def )", "", phase3)
     phase5 = (TESTS / "test_phase5_acceptance.py").read_text(encoding="utf-8")
     assert hashlib.sha256(phase3.encode()).hexdigest() == "e6f34990290d48b604b18314bcbcbd5f258a1b447870760229aaff98a22b162f"
-    assert hashlib.sha256(phase5.encode()).hexdigest() == "d640e9e5abbf5ef2ef8dfda0cd1efc3d08b565cb93373ccfb0ae78939351c984"
+    assert hashlib.sha256(phase5.encode()).hexdigest() == "6f14c88031b46453deada05ee69bd08fcbe9c7412f7d59d058c29b43b03aa3eb"
 
 
 def test_phase8_docs_pd_204_states_the_engineering_constants_in_code():
@@ -357,7 +367,7 @@ def test_phase8_docs_names_the_shared_files_and_changes_to_existing_tests():
         "core/phase8_settings.py", "core/config.py", "core/auth.py", "core/authorization.py", "db_models.py",
         "schemas.py", "api/routes/learner_record.py", "api/routes/auth.py", "api/routes/content.py",
         "api/routes/analytics.py", "services/tutor_orchestrator.py", "src/lib/api.ts", "src/lib/learner-record-api.ts",
-        "app/main.py", "core/config_package.py", "config_package/v6.json", "scripts/config_package.py",
+        "app/main.py", "core/config_package.py", "config_package/v7.json", "scripts/config_package.py",
         "services/ledger.py", "services/tutor_followups.py", "tutor_pipeline/__init__.py",
         "tutor_pipeline/contracts.py", "tutor_pipeline/package_check.py", "alembic/versions/20261123_phase8_learner.py",
         ".github/workflows/ci.yml", "scripts/prove_erasure.py", "scripts/run_invariance_harness.py",
@@ -391,9 +401,9 @@ def test_phase8_docs_describe_the_shipped_package_and_inherited_version_guards()
     paths = [APP / "core/config_package.py", ROOT / "scripts/config_package.py"]
     for path in paths:
         doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8")))
-        assert "shipped package v6" in doc and "shipped package v5" not in doc and "DI-317" in doc
+        assert "shipped package v7" in doc and "shipped package v6" not in doc and "DI-317" in doc
     phase4 = (ROOT / "docs/architecture/phase4-implementation-spec.md").read_text(encoding="utf-8")
-    assert "`v6.json` with Phase 8" in phase4.split("### 5.2 Loader", 1)[1].split("\n### ", 1)[0]
+    assert "`v7.json` with Phase 8" in phase4.split("### 5.2 Loader", 1)[1].split("\n### ", 1)[0]
     phase6 = (ROOT / "docs/architecture/phase6-implementation-spec.md").read_text(encoding="utf-8")
     inherited = (TESTS / "test_phase6_acceptance.py").read_text(encoding="utf-8")
     assert "test_plan_i_ready_reports_package_v5_and_the_v3_fields_and_no_count" in phase6
@@ -401,6 +411,6 @@ def test_phase8_docs_describe_the_shipped_package_and_inherited_version_guards()
     assert "statement.startswith(\"SELECT gateway_stops.reason FROM gateway_stops\")" in inherited
     assert "SELECT learner_adaptation_stops.reason" not in inherited
     structural = (TESTS / "test_config_package.py").read_text(encoding="utf-8").split("def test_v4_structural_errors", 1)[1].split("\ndef ", 1)[0]
-    unsupported = re.search(r'payload\["schema_version"\] = (\d+)', structural)
-    assert unsupported and f"`schema_version={unsupported[1]}`" in phase6
-    assert "V5_RAW" in structural and "`v4.json`, `v5.json` and the shipped v6" in phase6
+    assert 'payload["schema_version"] = LATEST_SCHEMA_VERSION + 1' in structural
+    assert f"`schema_version={LATEST_SCHEMA_VERSION + 1}`" in phase6
+    assert "V5_RAW, V6_RAW, RAW" in structural and "`v5.json`, `v6.json`, and the shipped v7" in phase6

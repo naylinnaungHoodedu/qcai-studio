@@ -723,6 +723,7 @@ def test_plan_g_earlier_ledger_rows_read_as_config_version_pre_phase_7(tmp_path)
 
 
 def test_plan_g_v5_stays_readable_and_v6_parses_v1_to_v4_records():
+    from app.core.config_package import V6_PACKAGE_PATH
     from app.services.tutor_pipeline.package_check import check_tutor_pipeline_package
 
     v5 = load_config_package(V5_PACKAGE_PATH, governed=True)
@@ -730,7 +731,11 @@ def test_plan_g_v5_stays_readable_and_v6_parses_v1_to_v4_records():
     assert check_tutor_pipeline_package(v5, structural=True) == []
     v4 = load_config_package(V5_PACKAGE_PATH.with_name("v4.json"), governed=True)
     assert check_tutor_pipeline_package(v4, structural=True) == []
-    assert DEFAULT_PACKAGE_PATH.name == f"v{EHMF_SCHEMA_VERSION}.json" and PACKAGE.schema_version == EHMF_SCHEMA_VERSION == vocabulary.EHMF_FIRST_MAJOR and PACKAGE.v3.trigger_registry_version == "x-triggers-v2"
+    v6 = load_config_package(V6_PACKAGE_PATH, governed=True)
+    assert v6.schema_version == EHMF_SCHEMA_VERSION == vocabulary.EHMF_FIRST_MAJOR == 6
+    assert v6.ehmf is not None and v6.v3.trigger_registry_version == "x-triggers-v2"
+    assert check_tutor_pipeline_package(v6, structural=True) == []
+    assert PACKAGE.ehmf == v6.ehmf and PACKAGE.v3.trigger_registry_version == "x-triggers-v2"
     assert check_tutor_pipeline_package(PACKAGE, structural=True) == []
 
 
@@ -1260,12 +1265,15 @@ def test_the_ehmf_vocabulary_lives_in_one_module():
 def test_plan_e_the_phase_7_revision_is_additive_reversible_and_keeps_its_rows():
     from alembic.script import ScriptDirectory
     from alembic.config import Config
+    from app.services.ledger import SCHEMA_REVISION
+    from test_response_ledger_migrations import PHASE7_REVISION, PHASE8_REVISION
 
     config = Config(str(API_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(API_ROOT / "alembic"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["20261123_phase7_ehmf"]
-    revision = script.get_revision("20261123_phase7_ehmf")
+    assert script.get_heads() == [SCHEMA_REVISION] == [PHASE8_REVISION]
+    assert script.get_revision(PHASE8_REVISION).down_revision == PHASE7_REVISION
+    revision = script.get_revision(PHASE7_REVISION)
     assert revision.down_revision == "20261122_phase6_v3_audit"
     source = Path(revision.path).read_text(encoding="utf-8")
     assert "allow_ehmf_drop" in source and "v3_append_only" in source and "DROP FUNCTION" not in source
@@ -1306,14 +1314,15 @@ def test_plan_e_the_phase_7_downgrade_refuses_while_ehmf_stops_holds_rows_and_th
     from app.core.db import Base
     from app.core.schema_upgrades import run_schema_upgrades
     from app.services.ledger import SCHEMA_REVISION
+    from test_response_ledger_migrations import PHASE7_REVISION, PHASE8_REVISION, PHASE8_TABLES, _stamp
 
-    assert SCHEMA_REVISION == "20261123_phase7_ehmf"
+    assert SCHEMA_REVISION == PHASE8_REVISION
     connect_args = {"check_same_thread": False} if fresh_database_url.startswith("sqlite") else {}
     engine = create_engine(fresh_database_url, connect_args=connect_args)
     try:
         Base.metadata.create_all(engine)
         run_schema_upgrades(engine)
-        others = set(sa_inspect(engine).get_table_names()) - {"ehmf_stops"}
+        others = set(sa_inspect(engine).get_table_names()) - {"ehmf_stops"} - PHASE8_TABLES
         with engine.begin() as connection:
             connection.execute(text("INSERT INTO ehmf_stops (from_config_version, to_config_version, change_seq, detected_seq, before_claims, "
                                     "before_ab, after_claims, after_ab, window_deliveries, package_sha256, created_at) VALUES "
@@ -1327,6 +1336,11 @@ def test_plan_e_the_phase_7_downgrade_refuses_while_ehmf_stops_holds_rows_and_th
                     connection.execute(text(statement))
         engine.dispose()
         assert _alembic(fresh_database_url, "stamp", SCHEMA_REVISION).returncode == 0
+        emptied = _alembic(fresh_database_url, "downgrade", PHASE7_REVISION)
+        assert emptied.returncode == 0, emptied.stderr[-2000:]
+        assert not PHASE8_TABLES & set(sa_inspect(engine).get_table_names())
+        assert "ehmf_stops" in sa_inspect(engine).get_table_names() and _stamp(engine) == [PHASE7_REVISION]
+        engine.dispose()
         refused = _alembic(fresh_database_url, "downgrade", "20261122_phase6_v3_audit")
         assert refused.returncode != 0 and "ehmf_stops holds 1 rows" in refused.stderr, refused.stderr[-2000:]
         assert "allow_ehmf_drop=true" in refused.stderr and "python -m app.workers.ehmf status" in refused.stderr
