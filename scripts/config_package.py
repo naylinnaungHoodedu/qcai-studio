@@ -1,26 +1,31 @@
 """Check or re-hash the configuration package (Phase 2 spec 2.5; Phase 3 spec 5.5; Phase 4 spec 5.4; Phase 5 spec 5.4;
-Phase 6 spec 5.3; Phase 8 spec section 5).
+Phase 6 spec 5.3; Phase 7 spec 5.3).
 
 Run: python scripts/config_package.py --check [--path P]   (validates the package and its sidecar hash; for packages
-                                                             v2 to v6 also the tutor-pipeline schema pins, prompt hashes
-                                                             and schema structure, for v3 to v6 the V1 block: rule ids
+                                                             v2 to v5 also the tutor-pipeline schema pins, prompt hashes
+                                                             and schema structure, for v3 to v5 the V1 block: rule ids
                                                              and their hash, and the adversarial fixture set's pin, for
-                                                             v4 to v6 the gateway, v2 and tools blocks, the committed
-                                                             tool contract document included, and for v5 and v6 the v3 block:
+                                                             v4 and v5 the gateway, v2 and tools blocks, the committed
+                                                             tool contract document included, and for v5 the v3 block:
                                                              its two schema pins and structure, its rule ids and the
                                                              development registry's fixture; exit 1 on a problem)
-     python scripts/config_package.py --rehash [--path P]  (recomputes the stopword hash and, for v2 to v6, the schema
+     python scripts/config_package.py --rehash [--path P]  (recomputes the stopword hash and, for v2 to v5, the schema
                                                              pins, the three prompt hashes and the legacy containment
-                                                             rule hash from the code; for v3 to v6 also v1.rules_hash,
+                                                             rule hash from the code; for v3 to v5 also v1.rules_hash,
                                                              the misconception library sha256 and the fixture set's
-                                                             sha256 and case count; for v4 to v6 the tool contract
-                                                             file's sha256 and the two V2 prompt hashes; for v5 and v6 the two
+                                                             sha256 and case count; for v4 and v5 the tool contract
+                                                             file's sha256 and the two V2 prompt hashes; for v5 the two
                                                              V3 schema pins; rewrites the sidecar)
      python scripts/config_package.py --write-schemas      (writes the pinned contract schemas from the pydantic models,
-                                                             fourteen and the tool contract document for v4 to v6, the
-                                                             two V3 schemas for v5 and v6, then --rehash)
-The default path is the shipped package v6. The v6 loader checks the learner policy against the Phase 8 code.
-Package v5 remains readable under DI-317. Earlier packages remain readable (--path .../v4.json, DI-100;
+                                                             fourteen and the tool contract document for v4 and v5, the
+                                                             two V3 schemas for v5, then --rehash)
+From schema EHMF_SCHEMA_VERSION (package v6, Phase 7) --check also runs the EHMF check (the routing document, the golden
+set's sha256 and item count, the library with the development store) and prints its summary, and --rehash recomputes the
+library pin and sidecar, the routing table and sha256, the template sha256 and the golden set's sha256 and items. What a
+schema adds applies to every later schema, except the inline misconception library hash (schemas 3 to 5; from v6 the
+library is a pinned file).
+The default path is the shipped package v6; v5, v4, v3, v2 and v1 stay readable for one release (--path .../v5.json, DI-112;
+--path .../v4.json, DI-100;
 --path .../v3.json, DI-84; --path .../v2.json, DI-63; --path .../v1.json, DI-42).
 """
 
@@ -39,6 +44,7 @@ for path in (REPO_ROOT, API_ROOT):
 
 from app.core.config_package import (  # noqa: E402
     DEFAULT_PACKAGE_PATH,
+    EHMF_SCHEMA_VERSION,
     ConfigPackageError,
     canonical_sha256,
     load_config_package,
@@ -82,33 +88,61 @@ def write_schemas(path: Path) -> list[Path]:
     return written
 
 
+def _rehash_ehmf(path: Path, payload: dict) -> None:
+    """Package v6 (Phase 7 spec 5.3): the library pin and its sidecar, the routing sha256, the disclosure template's
+    sha256 and the golden set's sha256 and item count."""
+    from app.core.config_package import disclosure_template_sha256
+    from app.services.ehmf.routing import routing_sha256, routing_table
+
+    library = payload["v1"]["v1_8"]["library"]
+    library_path = path.parent / library["path"]
+    digest = canonical_sha256(json.loads(library_path.read_text(encoding="utf-8")))
+    library["sha256"] = digest
+    library_path.with_name(library_path.name + ".sha256").write_text(digest + "\n", encoding="utf-8", newline="\n")
+    ehmf = payload["ehmf"]
+    ehmf["routing"]["table"] = routing_table()
+    ehmf["routing"]["sha256"] = routing_sha256()
+    template = ehmf["conflicts"]["disclosure_template"]
+    template["sha256"] = disclosure_template_sha256(template["id"], template["text"])
+    golden_path = REPO_ROOT / ehmf["golden_set"]["path"]
+    if golden_path.exists():
+        golden = json.loads(golden_path.read_text(encoding="utf-8"))
+        ehmf["golden_set"]["sha256"] = canonical_sha256(golden)
+        ehmf["golden_set"]["items"] = len(golden["items"])
+
+
 def rehash(path: Path) -> str:
     payload = json.loads(path.read_text(encoding="utf-8"))
     words = sorted(set(payload["retrieval"]["stopwords"]["words"]))
     payload["retrieval"]["stopwords"]["words"] = words
     payload["retrieval"]["stopwords"]["sha256"] = stopwords_sha256(words)
-    if payload.get("schema_version") in (3, 4, 5, 6):
+    version = int(payload.get("schema_version") or 1)
+    if version >= EHMF_SCHEMA_VERSION:
+        _rehash_ehmf(path, payload)
+    if 3 <= version < EHMF_SCHEMA_VERSION:
         from app.core.config_package import misconception_library_sha256
+
+        library = payload["v1"]["v1_8"]["library"]
+        library["sha256"] = misconception_library_sha256(library)
+    if version >= 3:
         from app.services.v1_checks.package_check import fixture_set_sha256, repository_root
 
         v1 = payload["v1"]
-        library = v1["v1_8"]["library"]
-        library["sha256"] = misconception_library_sha256(library)
         fixtures_path = repository_root() / v1["fixtures"]["path"]
         if fixtures_path.exists():
             cases = json.loads(fixtures_path.read_text(encoding="utf-8"))["cases"]
             v1["fixtures"]["set_sha256"] = fixture_set_sha256(cases)
             v1["fixtures"]["cases"] = len(cases)
-    if payload.get("schema_version") in (4, 5, 6):
+    if version >= 4:
         from app.services.v2_panel.rules import alignment_prompt_hash, verifier_prompt_hash
 
         payload["tools"]["sha256"] = canonical_sha256(json.loads((path.parent / payload["tools"]["path"]).read_text(encoding="utf-8")))
         payload["v2"]["prompt"]["verifier_prompt_hash"] = verifier_prompt_hash()
         payload["v2"]["prompt"]["alignment_prompt_hash"] = alignment_prompt_hash()
-    if payload.get("schema_version") in (5, 6):
+    if version >= 5:
         for pin in payload["v3"]["schemas"].values():
             pin["sha256"] = canonical_sha256(json.loads((path.parent / pin["path"]).read_text(encoding="utf-8")))
-    if payload.get("schema_version") in (2, 3, 4, 5, 6):
+    if version >= 2:
         from app.services.tutor_pipeline.evidential import evidential_prompt_hash
         from app.services.tutor_pipeline.render import pedagogical_prompt_hash
         from app.services.tutor_pipeline.resolve import resolver_prompt_hash
@@ -124,7 +158,7 @@ def rehash(path: Path) -> str:
         from app.services.ledger import LEGACY_CONTAINMENT_RULE_HASH
 
         tutor["legacy"]["containment_rule_hash"] = LEGACY_CONTAINMENT_RULE_HASH
-    if payload.get("schema_version") in (3, 4, 5, 6):
+    if version >= 3:
         from app.services.v1_checks.rules import v1_rules_hash
 
         payload["v1"]["rules_hash"] = v1_rules_hash(parse_config_package(payload, path=path, sha256="", hash_verified=False))
@@ -153,6 +187,10 @@ def check(path: Path) -> int:
             from app.services.v3.package_check import check_v3_package
 
             problems.extend(check_v3_package(package, structural=True))
+        if package.ehmf is not None:
+            from app.services.ehmf.package_check import check_ehmf_package
+
+            problems.extend(check_ehmf_package(package, structural=True))
         if problems:
             for problem in problems:
                 print(f"configuration package check failed: {problem}", file=sys.stderr)
@@ -190,6 +228,15 @@ def check(path: Path) -> int:
             f"v3 {v3.version} (provisional): triggers {v3.trigger_registry_version}; draw {v3.draw_rule} at {v3.draw_rate} "
             f"({v3.x5_rate} under X5); double review {v3.double_review_rate}; critical registries {registries}; "
             f"phase6_exit_passed {package.flag_policy.phase6_exit_passed}"
+        )
+    if package.ehmf is not None:
+        ehmf = package.ehmf
+        factors = ", ".join(f"{name} {factor}" for name, (factor, _spans) in sorted(ehmf.penalty_registries.items()))
+        weights = ", ".join(f"{key} {value}" for key, value in ehmf.weight_strings().items())
+        print(
+            f"ehmf {ehmf.version} (provisional): routing {ehmf.routing_version} ({ehmf.routing_sha256[:16]}); weights {weights} (provisional); "
+            f"library {package.v1.library_version} ({len(package.v1.library_entries)} entries); golden set {ehmf.golden_set_items} items; "
+            f"penalty factors {factors}; phase7_exit_passed {package.flag_policy.phase7_exit_passed}"
         )
     return 0
 

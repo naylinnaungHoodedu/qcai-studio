@@ -258,7 +258,7 @@ The Python blocks of this section are valid Python (methods have `...` bodies), 
 ```python
 V2_VERDICTS = ("SUPPORTED", "CONTRADICTED", "NOT_ENOUGH_INFO")
 V2Verdict = Literal["SUPPORTED", "CONTRADICTED", "NOT_ENOUGH_INFO"]
-EHMF_TYPES = ("A", "B", "C", "D", "E")
+EHMF_TYPES = ("A", "B", "C", "D", "E")   # imported from ehmf.vocabulary since Phase 7
 
 
 class VerdictSpan(Contract):

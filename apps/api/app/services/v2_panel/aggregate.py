@@ -87,13 +87,29 @@ def _labels(base: tuple[str, ...], judged: dict, degraded_mode: str) -> tuple[tu
     return (tuple(base) + (("degraded",) if degraded else ())), (BANNER_FOR_MODE[degraded_mode] if degraded else None)
 
 
-def build_record_v2(decision: Any, *, mode: str, policy: Any, locked: Any, disclosure: Any, phase3_decision: str | None,
-                    legacy_decision: str | None, track: Any, outcome: Any, cycles: int = 0, corrections: tuple = (),
-                    exhausted: frozenset[str] = frozenset(), alignment: Any = None, alignment_failed: bool = False,
-                    alignment_missing: bool = False) -> VerificationRecordV2:
+def build_record_v2(decision: Any, **kwargs: Any) -> VerificationRecordV2:
+    return VerificationRecordV2(**_record_fields_v2(decision, **kwargs))
+
+
+def _record_fields_v2(decision: Any, *, mode: str, policy: Any, locked: Any, disclosure: Any, phase3_decision: str | None,
+                      legacy_decision: str | None, track: Any, outcome: Any, cycles: int = 0, corrections: tuple = (),
+                      exhausted: frozenset[str] = frozenset(), alignment: Any = None, alignment_failed: bool = False,
+                      alignment_missing: bool = False) -> dict[str, Any]:
+    """The fields of the V2 record build_record_v2 validates; ehmf.record builds a VerificationRecordV4 from the same
+    fields (Phase 7 spec 3.3). An EHMF abstention (ehmf_detector_down, ehmf_set_changed; valid in a v4 record only) is
+    built as a V1 abstention whose final reason is the EHMF reason."""
+    from dataclasses import replace
+
+    from app.services.tutor_pipeline.contracts import EHMF_FINAL_REASONS
+
+    ehmf_reason = getattr(decision, "abstention_reason", None) if getattr(decision, "abstention_reason", None) in EHMF_FINAL_REASONS else None
+    if ehmf_reason is not None:
+        decision = replace(decision, abstention_reason="no_claims")
     base = build_record(decision, mode=mode, policy=policy, locked=locked, disclosure=disclosure, phase3_decision=phase3_decision,
                         legacy_decision=legacy_decision)
     fields = {name: getattr(base, name) for name in type(base).model_fields if name not in ("verification_schema", "verdicts", "labels")}
+    if ehmf_reason is not None:
+        fields["final_reason"] = ehmf_reason
     passed = isinstance(decision, V1Passed)
     judged = dict(outcome.claims) if (passed and outcome is not None) else {}
     degraded_mode = worst_mode(verdict.mode for verdict in judged.values())
@@ -102,7 +118,7 @@ def build_record_v2(decision: Any, *, mode: str, policy: Any, locked: Any, discl
                                         cycle_count=verdict.cycle_count) for verdict in base.verdicts)
         shadow = V2ShadowSummary(would_deliver=0, would_fail=0, would_withhold=0) if track.mode == "shadow" else None
         block = _block(track, degraded_mode="FULL", alignment=None, cycles=cycles, corrections=corrections, shadow=shadow, banner=None)
-        return VerificationRecordV2(**fields, verdicts=verdicts, labels=base.labels, v2=block)
+        return dict(**fields, verdicts=verdicts, labels=base.labels, v2=block)
     if track.mode == "shadow":
         verdicts = tuple(ClaimVerdictV2(claim_id=verdict.claim_id, v1=verdict.v1, v2=judged.get(verdict.claim_id), v3=_intent(verdict.v3),
                                         final=verdict.final, cycle_count=verdict.cycle_count) for verdict in base.verdicts)
@@ -113,7 +129,7 @@ def build_record_v2(decision: Any, *, mode: str, policy: Any, locked: Any, discl
         labels, banner = _labels(base.labels, judged, degraded_mode)
         block = _block(track, degraded_mode=degraded_mode, alignment=alignment if alignment is not None else outcome.alignment,
                        cycles=0, corrections=(), shadow=shadow, banner=banner)
-        return VerificationRecordV2(**fields, verdicts=verdicts, labels=labels, v2=block)
+        return dict(**fields, verdicts=verdicts, labels=labels, v2=block)
     # on
     shown = {segment.claim_id for segment in decision.rendered.segments if segment.kind == "claim" and segment.claim_id}
     if alignment_failed:
@@ -157,7 +173,7 @@ def build_record_v2(decision: Any, *, mode: str, policy: Any, locked: Any, discl
     fields.update(final=final, final_reason=final_reason, replacement=replacement_for(legacy_decision) if final == "withhold" else "none",
                   comparison=comparison_for(final, phase3_decision=phase3_decision, legacy_decision=legacy_decision))
     block = _block(track, degraded_mode=degraded_mode, alignment=alignment, cycles=cycles, corrections=corrections, shadow=None, banner=banner)
-    return VerificationRecordV2(**fields, verdicts=tuple(verdicts), labels=labels, v2=block)
+    return dict(**fields, verdicts=tuple(verdicts), labels=labels, v2=block)
 
 
 __all__ = ["build_record_v2", "v1_excluded", "PANEL_WEIGHTS_VERSION"]

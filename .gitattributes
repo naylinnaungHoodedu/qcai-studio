@@ -6,4 +6,7 @@ docs/architecture/phase3-implementation-spec.md text eol=lf
 docs/architecture/phase4-implementation-spec.md text eol=lf
 docs/architecture/phase5-implementation-spec.md text eol=lf
 docs/architecture/phase6-implementation-spec.md text eol=lf
+docs/architecture/phase7-implementation-spec.md text eol=lf
+apps/api/app/config_package/misconceptions/*.json text eol=lf
+docs/evaluation/phase7/*.json text eol=lf
 docs/architecture/phase8-implementation-spec.md text eol=lf

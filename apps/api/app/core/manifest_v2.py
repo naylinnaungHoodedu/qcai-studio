@@ -46,6 +46,41 @@ AUTHORED_LICENCE = {
     "public_service": False,
 }
 LICENCE_FIELDS = ("source", "license", "permitted_use", "public_service")
+# Phase 7 (plan Phase 7 D task 3; spec 5.4): optional source metadata the Content Owner supplies per item for conflict
+# precedence (precedence-v1). Carried over from the existing manifest like the licence fields, never created or inferred;
+# all three present or none; never hashed into corpus_version.
+SOURCE_METADATA_FIELDS = ("source_year", "peer_reviewed", "source_role")
+
+
+def source_metadata_problems(manifest: dict[str, Any]) -> list[str]:
+    """What in the manifest's source metadata breaks spec 5.4: a year outside 1900..2100, a non-boolean peer_reviewed, a
+    role other than primary or secondary, or a partial set."""
+    problems = []
+    for item in manifest.get("items", []) or []:
+        if not isinstance(item, dict):
+            continue
+        present = [field for field in SOURCE_METADATA_FIELDS if field in item]
+        name = item.get("id", "?")
+        if present and len(present) != len(SOURCE_METADATA_FIELDS):
+            problems.append(f"{name}: source metadata is all of source_year, peer_reviewed and source_role, or none")
+            continue
+        if not present:
+            continue
+        year = item["source_year"]
+        if not isinstance(year, int) or isinstance(year, bool) or not 1900 <= year <= 2100:
+            problems.append(f"{name}: source_year must be an integer in 1900..2100")
+        if not isinstance(item["peer_reviewed"], bool):
+            problems.append(f"{name}: peer_reviewed must be a boolean")
+        if item["source_role"] not in ("primary", "secondary"):
+            problems.append(f"{name}: source_role must be primary or secondary")
+    return problems
+
+
+def _existing_source_metadata(existing: dict[str, Any] | None, item_id: str) -> dict[str, Any]:
+    raw = _existing_item(existing, item_id)
+    if raw is None:
+        return {}
+    return {field: raw[field] for field in SOURCE_METADATA_FIELDS if field in raw}
 
 
 class ManifestError(RuntimeError):
@@ -286,6 +321,7 @@ def build_manifest(root: Path, existing: dict[str, Any] | None, package: ConfigP
                 "media": media,
             }
             item.update(_existing_licence(existing, item_id, [name], DEFAULT_LICENCE))
+            item.update(_existing_source_metadata(existing, item_id))
             items.append(item)
     authored_hash = authored_sha256(MODULE_BLUEPRINTS)
     authored_version = "sha256:" + authored_hash[:16]
@@ -308,6 +344,7 @@ def build_manifest(root: Path, existing: dict[str, Any] | None, package: ConfigP
         "media": None,
     }
     authored.update(_existing_licence(existing, AUTHORED_ITEM_ID, [], AUTHORED_LICENCE))
+    authored.update(_existing_source_metadata(existing, AUTHORED_ITEM_ID))
     items.append(authored)
     items.sort(key=lambda item: item["id"])
     return {

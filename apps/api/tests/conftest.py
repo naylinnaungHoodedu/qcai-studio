@@ -84,14 +84,21 @@ def _backdated_items() -> int:
 
 @pytest.fixture(autouse=True)
 def _fresh_v3_stop_and_no_backdated_shared_items():
-    """Each test reads the V3 stop afresh (v3.stop.reset_stop_cache), and fails when it leaves a shared-database queue
-    item enqueued before the session started (Phase 6 spec 0.1)."""
+    """Each test reads the V3 stop and the EHMF stop afresh (v3.stop.reset_stop_cache, ehmf.stop.reset_stop_cache) with
+    EHMF available (Phase 7 spec 7.3), and fails when it leaves a shared-database queue item enqueued before the session
+    started (Phase 6 spec 0.1)."""
+    from app.services import ehmf
+    from app.services.ehmf.stop import reset_stop_cache as reset_ehmf_stop_cache
     from app.services.v3.stop import reset_stop_cache
 
     reset_stop_cache()
+    reset_ehmf_stop_cache()
+    ehmf.EHMF_UNAVAILABLE_REASON = None
     before = _backdated_items()
     yield
     reset_stop_cache()
+    reset_ehmf_stop_cache()
+    ehmf.EHMF_UNAVAILABLE_REASON = None
     after = _backdated_items()
     if after > before:
         pytest.fail(f"a test left {after - before} backdated V3 queue item(s) in the shared database; use v3_fakes.fresh_v3_sessions()")

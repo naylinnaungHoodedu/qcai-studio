@@ -1,0 +1,11 @@
+{
+ "history": "qcai-config-package-versions",
+ "format_version": 1,
+ "rule": "append-only: one entry per package_version of a package with an ehmf block, oldest first; a recorded sha256 never changes, so a package edit needs a new package_version; CI checks that this history starts with the base branch's unchanged (run_golden_set.py --base-ref; docs/architecture/ehmf-change-control.md)",
+ "entries": [
+  {
+   "version": "6.0.0",
+   "sha256": "cd16a12360b01b1250fdbb339da4c71701828197cd8dcd2629a6a9a34a3d5327"
+  }
+ ]
+}

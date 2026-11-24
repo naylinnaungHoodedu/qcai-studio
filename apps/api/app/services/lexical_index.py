@@ -13,8 +13,9 @@ Video chapter summaries are never entries (task 2.7). Nothing here takes a learn
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from fractions import Fraction
 import math
 import re
 import unicodedata
@@ -93,9 +94,16 @@ class RetrievalDecision:
 
 
 class LexicalIndex:
-    def __init__(self, entries: Sequence[IndexEntry], params: RetrievalParams, abstention: AbstentionParams, *, gate: Gate) -> None:
+    def __init__(self, entries: Sequence[IndexEntry], params: RetrievalParams, abstention: AbstentionParams, *, gate: Gate,
+                 penalties: Mapping[str, Fraction] | None = None) -> None:
         if gate not in ("p1-floor", "bm25f-v1"):
             raise ValueError(f"Unknown retrieval gate {gate!r}")
+        # Phase 7 (plan Phase 7 D task 5 "B2/D spans lose retrieval priority"; spec 4.7; PD-45): span id -> factor in
+        # (0, 1], applied to the ranking only (which spans fall inside top_k), never to a score, the floor or abstention.
+        # Empty (every shipped registry, and whenever EHMF is not on) leaves both sort lines exactly Phase 6's.
+        self.penalties: dict[str, Fraction] = dict(penalties or {})
+        if any(not (0 < factor <= 1) for factor in self.penalties.values()):
+            raise ValueError("a span penalty is a factor in (0, 1]")
         self.entries = tuple(entries)
         self.params = params
         self.abstention = abstention
@@ -267,7 +275,11 @@ class LexicalIndex:
             if rounded < self.abstention.floor:
                 continue
             results.append(ScoredEntry(entry, rounded, matched, rounded < self.abstention.floor + self.abstention.margin, gate_score=rounded))
-        results.sort(key=lambda item: (-item.score, item.entry.span_id))
+        if self.penalties:
+            penalties = self.penalties
+            results.sort(key=lambda item: (-(Fraction(item.score) * penalties.get(item.entry.span_id, 1)), item.entry.span_id))
+        else:
+            results.sort(key=lambda item: (-item.score, item.entry.span_id))
         reason: Reason = "evidence" if results else "below_floor" if any_eligible else "insufficient_coverage" if any_match else "no_match"
         return self._decision(reason, results[:top_k], terms)
 
@@ -284,6 +296,10 @@ class LexicalIndex:
             any_match = any_match or matched
             if passes:
                 results.append(ScoredEntry(entry, score, 0, False, boost_lesson, gate_score=float(floor_score)))
-        results.sort(key=lambda item: item.score, reverse=True)  # stable on index order, as Phase 1 sorted
+        if self.penalties:
+            penalties = self.penalties
+            results.sort(key=lambda item: item.score * float(penalties.get(item.entry.span_id, 1)), reverse=True)
+        else:
+            results.sort(key=lambda item: item.score, reverse=True)  # stable on index order, as Phase 1 sorted
         reason: Reason = "evidence" if results else "below_floor" if any_match else "no_match"
         return self._decision(reason, results[:top_k], terms)

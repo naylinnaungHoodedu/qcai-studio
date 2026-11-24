@@ -23,7 +23,8 @@ from typing import Any, Literal
 from pydantic import Field, model_validator
 
 from app.services.tutor_pipeline.contracts import HEX64, SCHEMA_MODELS, SPAN_ID, Contract, EhmfType
-from app.services.v2_panel.rules import EHMF_TYPES, V2_VERDICTS
+from app.services.ehmf.vocabulary import EHMF_TYPES
+from app.services.v2_panel.rules import V2_VERDICTS
 
 V2Verdict = Literal["SUPPORTED", "CONTRADICTED", "NOT_ENOUGH_INFO"]
 _UUID = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"

@@ -2,13 +2,13 @@
   "package": "qcai-configuration-package",
   "package_version": "6.0.0",
   "schema_version": 6,
-  "phase": "8",
+  "phase": "7",
   "status": "provisional",
   "created": "2026-11-23",
   "supersedes": {
     "package_version": "5.0.0",
     "sha256": "ed91a98f8f3cca200e2164381da966ce9ec8f8a2de2120d2c2fc6fd77e9b2e68",
-    "readable_until": "the release after the Phase 8 merge"
+    "readable_until": "the release after the Phase 7 merge"
   },
   "span_identity": {
     "scheme": "span-v2",
@@ -411,6 +411,11 @@
         "version": "v2-alignment-verdict-v1",
         "path": "schemas/v2-alignment-verdict.v1.schema.json",
         "sha256": "704dec8edf26832b2e1bd390ec8cd0b931d29a72418c1eea5063f39dd6447d3f"
+      },
+      "LedgerEntryV4": {
+        "version": "ledger-entry-v4",
+        "path": "schemas/ledger-entry.v4.schema.json",
+        "sha256": "f2698067c3e82e3d47e57d740e6d3050b5c7fcd33c300124ff4a709aa02a8564"
       }
     },
     "resolver": {
@@ -468,7 +473,7 @@
     },
     "ledger": {
       "chain": "tutor-responses",
-      "entry_schema": "ledger-entry-v3",
+      "entry_schema": "ledger-entry-v4",
       "record_hash_rule": "sha256(canonical{chain,seq,created_at,prev_hash,entry_sha256})-v1",
       "genesis": "0000000000000000000000000000000000000000000000000000000000000000",
       "deliveries": [
@@ -481,7 +486,8 @@
       "entry_schemas": [
         "ledger-entry-v1",
         "ledger-entry-v2",
-        "ledger-entry-v3"
+        "ledger-entry-v3",
+        "ledger-entry-v4"
       ]
     },
     "legacy": {
@@ -691,14 +697,13 @@
     },
     "v1_8": {
       "library": {
-        "library": "qcai-misconception-library",
-        "version": "v0",
-        "status": "empty: Q-14 seed list unavailable (A-18)",
-        "entries": [],
-        "sha256": "f053d035f99e20f6d2fdbb307ce0619f8d30d62bccc52a192389429083a5af7b"
+        "path": "misconceptions/v1.json",
+        "schema": "misconception-library-v1",
+        "version": "v1",
+        "sha256": "7a8c85bf14d87e8c24b95dce3654097765803eb8ddecd6395bc490508689b730"
       },
       "on_match": "flag_withhold_queue_v3",
-      "authority": "Q-14 unavailable (A-18); DI-53"
+      "authority": "Q-14 unavailable (A-18); DI-53, DI-106"
     },
     "v1_9": {
       "provisional": true,
@@ -1044,12 +1049,12 @@
     "status": "provisional",
     "authority": "PD-32, PD-33, PD-34, PD-35, PD-36, PD-37, PD-38, PD-39 (ratified under DI-98); plan Phase 6 (L1439-1498)",
     "triggers": {
-      "version": "x-triggers-v1",
+      "version": "x-triggers-v2",
       "provisional": true,
-      "record": "PD-32",
+      "record": "PD-32, PD-44",
       "rules": {
         "X1": "critical-claim-objection-v1",
-        "X2": "v2-exhausted-type-a-b-v1",
+        "X2": "v2-exhausted-any-type-v2",
         "X3": "learner-flag-f0-v1",
         "X4": "v1-5-margin-mark-v1",
         "X5": "model-version-change-or-cusum-alarm-v1",
@@ -1068,10 +1073,8 @@
         "hold": "sticky_for_the_response"
       },
       "x2": {
-        "ehmf_types": [
-          "A",
-          "B"
-        ]
+        "fires_on": "every_x2_escalation",
+        "emitted_by": "ehmf.correction"
       },
       "x4": {
         "margin_source": "v1.v1_5.x4_margin"
@@ -1106,13 +1109,8 @@
       "provisional_until": "expert elicitation (plan 6.3; D-06, DI-98)",
       "rule": "severity-exposure-one-minus-k-v1",
       "severity": {
-        "A": 1.0,
-        "B": 1.0,
-        "C": 0.6,
-        "D": 0.6,
-        "E": 0.4,
-        "unknown": 1.0,
-        "disclosed_conflict": 0.0
+        "source": "ehmf.weights",
+        "unknown": 1.0
       },
       "exposure_rule": "learner-deliveries-of-claim-set-v1",
       "claim_set_key_rule": "sorted-claim-ids-sha256-v1",
@@ -1265,9 +1263,268 @@
       }
     }
   },
+  "ehmf": {
+    "version": "ehmf-v1",
+    "provisional": true,
+    "status": "provisional",
+    "authority": "PD-40..PD-49 (ratified under DI-109); plan Phase 7 (L1500-1555)",
+    "types": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E"
+    ],
+    "subtypes": {
+      "B": [
+        "B1",
+        "B2"
+      ]
+    },
+    "routing": {
+      "version": "ehmf-routing-v1",
+      "provisional": true,
+      "record": "PD-40",
+      "doc": "docs/architecture/ehmf-routing.md",
+      "table": {
+        "A": {
+          "detectors": [
+            "V1.2:negation_mismatch",
+            "V1.2:no_bound_claims",
+            "V1.2:not_quotable",
+            "V1.2:not_verbatim",
+            "V1.2:outside_bundle",
+            "V1.2:partial_sentence",
+            "V1.2:quantity_mismatch",
+            "V1.2:unbound",
+            "V1.3:contradicted",
+            "V1.5:below_floor",
+            "V1.5:corpus_version_mismatch",
+            "V1.5:insufficient_coverage",
+            "V1.5:no_match",
+            "V1.5:no_query_terms",
+            "V1.5:no_quotable_evidence",
+            "V2:CONTRADICTED"
+          ],
+          "mitigation": "revise_or_abstain",
+          "owner": "ml_engineer",
+          "telemetry": "ehmf.type.A",
+          "final": false
+        },
+        "B1": {
+          "detectors": [
+            "V1.1:content_hash_mismatch",
+            "V1.1:malformed_span_id",
+            "V1.1:unresolvable",
+            "V1.2:unresolvable"
+          ],
+          "mitigation": "final",
+          "owner": "ml_engineer",
+          "telemetry": "ehmf.type.B1",
+          "final": true
+        },
+        "B2": {
+          "detectors": [
+            "V1.3:below_support_threshold",
+            "V1.3:not_enough_info",
+            "V2:NOT_ENOUGH_INFO"
+          ],
+          "mitigation": "recite_or_abstain",
+          "owner": "ml_engineer",
+          "telemetry": "ehmf.type.B2",
+          "final": false
+        },
+        "C": {
+          "detectors": [
+            "V1.8:misconception_match"
+          ],
+          "mitigation": "bind_step_or_label_analogy",
+          "owner": "content_owner",
+          "telemetry": "ehmf.type.C",
+          "final": false
+        },
+        "D": {
+          "detectors": [
+            "V1.4:unmapped_factual_sentence",
+            "V1.7:conflict_disclosed",
+            "V1.7:conflict_withheld"
+          ],
+          "mitigation": "precedence_plus_disclosure",
+          "owner": "content_owner",
+          "telemetry": "ehmf.type.D",
+          "final": false
+        },
+        "E": {
+          "detectors": [
+            "V1.4:citation_list_mismatch",
+            "V1.4:citation_marker_mismatch",
+            "V1.4:citation_not_on_claim",
+            "V1.4:citation_outside_locked_set",
+            "V1.4:claim_uncited",
+            "V1.4:duplicate_claim",
+            "V1.4:empty",
+            "V1.4:no_claim_rendered",
+            "V1.4:render_failed",
+            "V1.4:text_not_segments",
+            "V1.6:keyed_answer_present",
+            "V1.9:above_band",
+            "V1.9:below_band",
+            "V1.9:claim_plan_invalid",
+            "V1.9:generator_mismatch",
+            "V1.9:response_envelope_invalid",
+            "alignment:leakage"
+          ],
+          "mitigation": "regenerate_pedagogical_pass",
+          "owner": "ml_engineer",
+          "telemetry": "ehmf.type.E",
+          "final": false
+        }
+      },
+      "sha256": "76c2b0e53504e0a0d970df34ef67a8e30fac4c560a9c783a8dd4de77bccb87d7"
+    },
+    "weights": {
+      "provisional": true,
+      "record": "PD-41",
+      "owner_decision": "EHMF-WEIGHTS",
+      "provisional_until": "expert elicitation by the PI (plan Phase 7 O; E-88; DI-108)",
+      "A": 1.0,
+      "B": 1.0,
+      "C": 0.6,
+      "D": 0.6,
+      "D_disclosed": 0.0,
+      "E": 0.4,
+      "unknown": 1.0
+    },
+    "conflicts": {
+      "provisional": true,
+      "record": "PD-42",
+      "precedence": "precedence-v1",
+      "applies": "recorded_only",
+      "rules": [
+        "newer_peer_reviewed_over_older",
+        "primary_over_secondary"
+      ],
+      "incomplete_metadata": "no_winner_disclose_both",
+      "rules_disagree": "no_winner_disclose_both",
+      "metadata_fields": [
+        "source_year",
+        "peer_reviewed",
+        "source_role"
+      ],
+      "metadata_source": "corpus manifest items (Content Owner; absent = unresolved; never inferred)",
+      "disclosure_template": {
+        "id": "conflict-disclosure-v2",
+        "text": "These course sources disagree ({kinds}) between {items}. Both passages are shown; neither is preferred unless a precedence basis is named: {basis}.",
+        "sha256": "41694c69c482204b2fb58ed585a9ae72be1adf4492121d8b13933ec9d96a1bec"
+      },
+      "undisclosed": "v1_7_fail",
+      "outside_corpus": "not_detected"
+    },
+    "library": {
+      "record": "PD-43",
+      "pin": "v1.v1_8.library",
+      "editors": [
+        "content_owner",
+        "v3"
+      ],
+      "paraphrase_max_chars": 280,
+      "paraphrase_max_shared_words": 8,
+      "production_entries": 0,
+      "v3_proposals": "exported_never_applied"
+    },
+    "correction": {
+      "provisional": true,
+      "record": "PD-44",
+      "max_cycles_source": "v2.correction.max_cycles",
+      "third_cycle": "refused",
+      "exhausted": "abstain_emit_x2_every_claim",
+      "type_e": "re_render_keep_claim_and_span_sets",
+      "set_changed": "refuse_abstain_response",
+      "mitigations": {
+        "A": "revise_or_abstain",
+        "B1": "final",
+        "B2": "recite_or_abstain",
+        "C": "bind_step_or_label_analogy",
+        "D": "precedence_plus_disclosure",
+        "E": "regenerate_pedagogical_pass"
+      }
+    },
+    "retrieval_penalty": {
+      "provisional": true,
+      "record": "PD-45",
+      "operator_policy": "D-06",
+      "rule": "span-penalty-rank-v1",
+      "applies_to": "ranking_only",
+      "applies_when": "ehmf_on",
+      "source": "applied_v3_gold_labels_via_change_control",
+      "registries": {
+        "development": {
+          "factor": {
+            "numerator": 1,
+            "denominator": 2
+          },
+          "spans": []
+        },
+        "staging": {
+          "factor": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "spans": []
+        },
+        "production": {
+          "factor": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "spans": []
+        },
+        "default": {
+          "factor": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "spans": []
+        }
+      }
+    },
+    "stop": {
+      "provisional": true,
+      "record": "PD-46",
+      "operator_policy": "D-06",
+      "rule": "rising-ab-after-config-change-v1",
+      "window_claims": 200,
+      "min_claims": 100,
+      "min_ab_findings": 2,
+      "rise": {
+        "numerator": 3,
+        "denominator": 2
+      },
+      "scan_records": 5000,
+      "audit_rate_source": "v3.triggers.x5.audit_rate",
+      "window_deliveries_source": "v3.triggers.x5.window_deliveries",
+      "revert": "operator_reloads_prior_package",
+      "refresh_s": 60
+    },
+    "golden_set": {
+      "record": "PD-47",
+      "version": "golden-set-v1",
+      "path": "docs/evaluation/phase7/golden_set_v1.json",
+      "sha256": "26d6a8dd1d5cdb40504695407223bc5061d2197d82bfc1a87dc8dbc585c3fbd1",
+      "items": 40,
+      "run_record": "docs/evaluation/phase7/golden_run_v1.json",
+      "citation_resolution": "1/1",
+      "drift": "blocks_promotion"
+    },
+    "config_version": {
+      "rule": "package-version-v1",
+      "earlier": "pre-phase-7",
+      "first_package": "6.0.0"
+    }
+  },
   "flag_policy": {
     "provisional": true,
-    "authority": "PD-10 for two_pass_tutor and phase4_exit_passed: the Phase 3 switch outside development (plan Phase 3 G; AC-3-6; 13.6), whose values are plan MUST text or a fact, recorded provisional with PD-10 and ratified with it (DI-37); PD-19 for v1_pipeline: the Phase 4 switch (plan Phase 4 G; 13.6), an engineering default recorded provisional with PD-19 and ratified with it (DI-55); PD-28 for model_gateway and phase5_exit_passed: the Phase 5 switch (plan Phase 5 G, L; 13.6), an engineering default recorded provisional with PD-28 and ratified with it (DI-76); PD-38 for v3_queue and phase6_exit_passed: the Phase 6 switch (plan Phase 6 L; 13.6), an engineering default recorded provisional with PD-38 and ratified with it (DI-98); PD-203 for the Phase 8 switches and Phase 8 exit (plan Phase 8 L and P, DI-300)",
+    "authority": "PD-10 for two_pass_tutor and phase4_exit_passed: the Phase 3 switch outside development (plan Phase 3 G; AC-3-6; 13.6), whose values are plan MUST text or a fact, recorded provisional with PD-10 and ratified with it (DI-37); PD-19 for v1_pipeline: the Phase 4 switch (plan Phase 4 G; 13.6), an engineering default recorded provisional with PD-19 and ratified with it (DI-55); PD-28 for model_gateway and phase5_exit_passed: the Phase 5 switch (plan Phase 5 G, L; 13.6), an engineering default recorded provisional with PD-28 and ratified with it (DI-76); PD-38 for v3_queue and phase6_exit_passed: the Phase 6 switch (plan Phase 6 L; 13.6), an engineering default recorded provisional with PD-38 and ratified with it (DI-98); PD-48 for ehmf and phase7_exit_passed: the Phase 7 switch (plan Phase 7 L; 13.6), an engineering default recorded provisional with PD-48 and ratified with it (DI-109)",
     "two_pass_tutor": {
       "values": [
         "off",
@@ -1324,16 +1581,7 @@
     },
     "phase6_exit_passed": false,
     "phase6_exit_evidence": null,
-    "learner_sync": {
-      "values": [
-        "off",
-        "on"
-      ],
-      "default_development": "on",
-      "default_elsewhere": "off",
-      "on_requires": "phase8_exit_passed"
-    },
-    "learner_planner": {
+    "ehmf": {
       "values": [
         "off",
         "shadow",
@@ -1341,28 +1589,13 @@
       ],
       "default_development": "shadow",
       "default_elsewhere": "off",
-      "on_requires": "phase8_exit_passed"
+      "on_requires": "phase7_exit_passed",
+      "on_outside_development": "refused_before_exit",
+      "requires": "model_gateway_not_off",
+      "authority": "plan Phase 7 L; 13.6; PD-48"
     },
-    "learner_identity": {
-      "values": [
-        "off",
-        "on"
-      ],
-      "default_development": "off",
-      "default_elsewhere": "off",
-      "on_requires": "phase8_exit_passed"
-    },
-    "learner_privacy": {
-      "values": [
-        "off",
-        "on"
-      ],
-      "default_development": "on",
-      "default_elsewhere": "off",
-      "on_requires": "phase8_exit_passed"
-    },
-    "phase8_exit_passed": false,
-    "phase8_exit_evidence": null
+    "phase7_exit_passed": false,
+    "phase7_exit_evidence": null
   },
   "owner_decisions": {
     "D-17": {
@@ -1474,16 +1707,18 @@
     },
     "Q-14": {
       "state": "unavailable",
-      "path": "misconception library v0 empty (A-18)",
-      "record": "DI-53"
+      "path": "misconception library v1 holds no entries (A-18)",
+      "record": "DI-53, DI-106"
     },
     "D-06": {
       "state": "open",
       "path": "[PROV] values frozen in versioned configuration before use, never reported as results (plan L795-800)",
-      "record": "DI-52; PD-36, PD-37; DI-98",
+      "record": "DI-52; PD-36, PD-37; DI-98; PD-45, PD-46; DI-109",
       "operator_values": [
         "v3.slo",
-        "v3.workflow.double_review"
+        "v3.workflow.double_review",
+        "ehmf.retrieval_penalty",
+        "ehmf.stop"
       ]
     },
     "D-07": {
@@ -1550,22 +1785,30 @@
       "applied": "no research data plane: production-plane gold labels about public-corpus spans only; research labelling is a Phase 6 non-goal",
       "record": "DI-94"
     },
-    "D-26": {
-      "state": "recommended",
-      "text": "D-26 RECOMMENDATION: compare-and-set learner-record merge [Evidence E-110]; integrity [Risk R-51]. SL.",
-      "path": "PD-201",
-      "applied": "compare-and-set",
-      "ratified": false,
-      "record": "PD-201"
-    },
-    "D-27": {
+    "EHMF-WEIGHTS": {
       "state": "open",
-      "text": "D-27 OPEN DECISION: consent classes before Phase 8 [Risk R-09]. PO, PI.",
-      "path": "most protective provisional path",
-      "applied": "consent-classes-provisional-v1",
-      "hold": "H13",
-      "ratified": false,
-      "record": "PD-200; DI-301"
+      "owner": "PI",
+      "text": "EHMF weight values (expert elicitation) owned by the Principal Investigator [Evidence E-88].",
+      "applied": "plan 6.3 values A 1.0, B 1.0, C 0.6, D 0.6 (0 when disclosed), E 0.4, provisional",
+      "record": "PD-41; DI-108"
+    },
+    "D-16": {
+      "state": "recommended_not_applied",
+      "owner": "CO",
+      "text": "Correct content at source (CO) | (a) correct; (b) withdraw",
+      "applied": "no DOCX is edited by engineering; scripts/check_source_fidelity.py reports the mismatches",
+      "record": "PD-49; DI-105"
+    },
+    "Q-11": {
+      "state": "unresolved",
+      "text": "Other DOCX-source discrepancies?",
+      "record": "DI-105"
+    },
+    "EHMF-SOURCE-METADATA": {
+      "state": "unsupplied",
+      "owner": "CO",
+      "applied": "every conflict discloses both spans; precedence-v1 is recorded only and needs complete metadata",
+      "record": "PD-42; DI-107"
     }
   },
   "boundary": {
@@ -1596,54 +1839,5 @@
     ],
     "passage_shingle_words": 12,
     "passage_min_hits_per_file": 1
-  },
-  "learner": {
-    "provisional": true,
-    "authority": "PD-200 through PD-205",
-    "consent_version": "d27-unresolved-v1",
-    "consent_classes": {
-      "adaptation": {
-        "development": "synthetic-grant",
-        "elsewhere": "refused"
-      },
-      "analytics": {
-        "development": "synthetic-grant",
-        "elsewhere": "refused"
-      },
-      "research": {
-        "development": "refused",
-        "elsewhere": "refused"
-      }
-    },
-    "sync": {
-      "active_replicas": 16,
-      "retirement": "least-recently-used",
-      "server_retries": 0,
-      "client_retries": 1
-    },
-    "assessment": {
-      "attempt_limit": 12,
-      "window_minutes": 15,
-      "completion_threshold": 0.7
-    },
-    "planner": {
-      "bands": [
-        0.4,
-        0.75
-      ],
-      "shadow_budget_ms": 150,
-      "renderer_wiring": "DI-312",
-      "harness_levels": [
-        0.1,
-        0.5,
-        0.9
-      ]
-    },
-    "privacy": {
-      "export": "ndjson",
-      "receipt_digest": "canonical-json-sha256",
-      "audit_retention_days": 365,
-      "guard_retention_days": 365
-    }
   }
 }

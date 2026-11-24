@@ -2,12 +2,12 @@
 
 The escalation triggers, the queue and the audit draw of configuration package v5 (`v3` block; plan Phase 6 F "trigger registry v1"; `docs/architecture/phase6-implementation-spec.md` 3.3, 4.1-4.5, 5.1; PD-32 to PD-37). Every value is provisional and ratified under DI-98. `apps/api/tests/test_phase6_acceptance.py::test_plan_f_the_trigger_registry_document_matches_the_package` compares this page with the package.
 
-Registry `x-triggers-v1`. V-3 counts X1-X4 only; X5 and X6 audits are proof tests (plan 15.3 "V-3 numerator counts X1-X4 only; audits are proof tests [Evidence E-85]."; PD-37).
+Registry `x-triggers-v2` (package v6; `x-triggers-v1` in package v5). V-3 counts X1-X4 only; X5 and X6 audits are proof tests (plan 15.3 "V-3 numerator counts X1-X4 only; audits are proof tests [Evidence E-85]."; PD-37).
 
 | Trigger | Rule id | Source in the ledger record | Subject | Holds | V-3 |
 |---|---|---|---|---|---|
 | X1 | `critical-claim-objection-v1` | a claim whose V2 verdict marks it `critical` (the environment's registry, D-25), at tiers 1, 2 and 3 (plan AC-5-4 "critical claims follow X1 from Phase 6"), that drew a family objection: on its final verdict, or a claim-loop correction cycle that listed it | claim | at tier 1 only (plan task 1 "withheld at tier 1"): never delivered (the runner's sticky hold), withheld until Phase 7 change control; at tier 2 or 3 queued, not held | counted |
-| X2 | `v2-exhausted-type-a-b-v1` | a claim escalated `X2` (V2 correction exhausted) whose final verdict has an objecting family verdict of EHMF type A or B | claim | no (the record already abstains it) | counted |
+| X2 | `v2-exhausted-any-type-v2` | a claim escalated `X2` (V2 correction exhausted), whatever its EHMF type (registry `x-triggers-v2`, package v6, Phase 7 spec conflict 3; under `x-triggers-v1`, package v5, rule `v2-exhausted-type-a-b-v1`, only one whose final verdict has an objecting family verdict of EHMF type A or B) | claim | no (the record already abstains it) | counted |
 | X3 | `learner-flag-f0-v1` | a learner flag on their own tutor turn (`POST /v3/flags`, development only); F_i = 0, never a verdict | response | no | counted |
 | X4 | `v1-5-margin-mark-v1` | the record's V1.5 `near_miss` mark, or V1.5's rule over a legacy record's sufficiency with the package's `v1.v1_5.x4_margin` for its gate | response | no | counted |
 | X5 | `model-version-change-or-cusum-alarm-v1` | a model-version change of a known model key (the registry's verifiers, a record's verifier, generator or V1.3 checker) or a CUSUM alarm (`cusum-alarm-v1`, Phase 9's statistic): the next 1500 learner deliveries are drawn at 1/5 | response (the drawn delivery) | no | proof test |
@@ -19,7 +19,7 @@ Registry `x-triggers-v1`. V-3 counts X1-X4 only; X5 and X6 audits are proof test
 
 ## Priority
 
-Rule `severity-exposure-one-minus-k-v1`: priority = severity x exposure x (1 - K), in exact rationals; ties by enqueue time, then item id. The EHMF weights are plan 6.3's, which "await expert elicitation" (bound while D-06 is open; PD-34).
+Rule `severity-exposure-one-minus-k-v1`: priority = severity x exposure x (1 - K), in exact rationals; ties by enqueue time, then item id. The EHMF weights are plan 6.3's, which "await expert elicitation" (bound while D-06 is open; PD-34); from package v6 they are `ehmf.weights` (PD-41), the same values.
 
 | Weight | Value |
 |---|---|

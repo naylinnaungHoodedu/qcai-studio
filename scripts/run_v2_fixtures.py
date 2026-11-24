@@ -151,7 +151,7 @@ class Environment:
     def settings(self, down) -> Settings:
         return Settings(environment="development", enforce_corpus_governance=True, corpus_manifest_path=str(self.manifest),
                         retrieval_gate="bm25f-v1", two_pass_tutor="shadow", v1_pipeline="enforce", model_gateway="on",
-                        model_gateway_disabled_adapters=list(down))
+                        model_gateway_disabled_adapters=list(down), ehmf="off")
 
     def close(self) -> None:
         self.database.dispose()

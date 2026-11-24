@@ -152,11 +152,15 @@ def temp_package(tmp_path: Path, edit=None, **v1_overrides) -> Path:
     if edit is not None:
         edit(raw)
     library = raw["v1"]["v1_8"]["library"]
-    library["sha256"] = misconception_library_sha256(library)
+    if "path" not in library:
+        # An inline library (packages v3 to v5); package v6 pins the library v1 file, which the copy carries (Phase 7).
+        library["sha256"] = misconception_library_sha256(library)
     path = tmp_path / "package" / DEFAULT_PACKAGE_PATH.name
     path.parent.mkdir(parents=True, exist_ok=True)
     if not (path.parent / "schemas").exists():
         shutil.copytree(DEFAULT_PACKAGE_PATH.parent / "schemas", path.parent / "schemas")
+    if (DEFAULT_PACKAGE_PATH.parent / "misconceptions").exists() and not (path.parent / "misconceptions").exists():
+        shutil.copytree(DEFAULT_PACKAGE_PATH.parent / "misconceptions", path.parent / "misconceptions")
     raw["v1"]["rules_hash"] = v1_rules_hash(parse_config_package(raw, path=path, sha256="", hash_verified=False))
     path.write_text(json.dumps(raw), encoding="utf-8")
     path.with_name(DEFAULT_PACKAGE_PATH.name + ".sha256").write_text(canonical_sha256(raw) + "\n", encoding="utf-8")

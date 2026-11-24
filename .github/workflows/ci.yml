@@ -32,8 +32,22 @@ jobs:
       - run: python scripts/config_package.py --check --path apps/api/app/config_package/v3.json
       # Phase 6: configuration package v4 stays readable for one release (DI-100).
       - run: python scripts/config_package.py --check --path apps/api/app/config_package/v4.json
-      # Phase 8: configuration package v5 stays readable for one release (DI-317).
+      # Phase 7: configuration package v5 stays readable for one release (DI-112).
       - run: python scripts/config_package.py --check --path apps/api/app/config_package/v5.json
+      # Plan Phase 7 D task 6, K AC-7-6 and 12.5: the golden-set gate. Exit 6 when the package, the misconception library,
+      # the routing table or the golden set differs from the committed golden run (a change without a run), or when the
+      # package's version is missing from docs/evaluation/phase7/package_versions.json or recorded there with another
+      # sha256 (a package edit that keeps its package_version), or when that history does not start with the base
+      # branch's committed history unchanged (append-only: a rewritten or removed entry); exit 1 on drift. The base
+      # branch is fetched by name (the pull request's base, else main) and read with git show, not by ancestry.
+      - env:
+          BASE_REF: ${{ github.base_ref || 'main' }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          python scripts/run_golden_set.py --check docs/evaluation/phase7/golden_run_v1.json --base-ref FETCH_HEAD
+      # Plan Phase 7 P (R-18) and Phase 11 task 3: the source-fidelity check over the 12 DOCX. --check proves the committed report
+      # (3 mismatches) is current; --require-zero (AC-11-3) joins CI once the Content Owner corrects the DOCX at source (DI-105).
+      - run: python scripts/check_source_fidelity.py --check docs/evaluation/phase7/source_fidelity_report_v1.json
       # Plan Phase 6 F/K: the residual report (synthetic telemetry, not research results): the seeded draw over 6070 synthetic
       # deliveries, the Wilson bound of 0 errors in 300 audited items below 1.3% (AC-6-5), the gold chain and an unchanged ledger.
       - run: python scripts/run_v3_residual_report.py --check docs/evaluation/phase6/v3_residual_report_v1.json

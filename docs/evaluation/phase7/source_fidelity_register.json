@@ -1,0 +1,48 @@
+{
+ "register": "qcai-source-fidelity-register",
+ "format_version": 1,
+ "scope": "the 12 tracked DOCX (git ls-files '*.docx')",
+ "q11": "unresolved: other DOCX-source discrepancies are not known (Q-11)",
+ "entries": [
+  {
+   "id": "quen-external-sensitivity",
+   "docx": "Quantum Computing AI Research Synthesis 2026.docx",
+   "kind": "number",
+   "location": {
+    "table": 4,
+    "row": 2,
+    "column": 4
+   },
+   "row_label": "QUEN (Proposed)",
+   "column_label": "External Sens.",
+   "source_value": "0.828",
+   "authority": "plan F-7 (E-30): \"DOCX transposes Sens 1.143 / FP 0.828 (source: FP 1.143 / Sens 0.828)\""
+  },
+  {
+   "id": "quen-external-fp-rate",
+   "docx": "Quantum Computing AI Research Synthesis 2026.docx",
+   "kind": "number",
+   "location": {
+    "table": 4,
+    "row": 2,
+    "column": 5
+   },
+   "row_label": "QUEN (Proposed)",
+   "column_label": "External FP Rate",
+   "source_value": "1.143",
+   "authority": "plan F-7 (E-30)"
+  },
+  {
+   "id": "gea-alignment-wording",
+   "docx": "Quantum Computing AI Research Synthesis 2026.docx",
+   "kind": "absent_phrase",
+   "location": {
+    "paragraph": 68,
+    "anchor": "GEA"
+   },
+   "phrase": "perfectly aligned",
+   "source_value": "GEA = 0.40",
+   "authority": "plan F-7 (E-30): \"\\\"perfectly aligned\\\" where GEA = 0.40\""
+  }
+ ]
+}

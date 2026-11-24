@@ -1,0 +1,792 @@
+{
+ "golden_set": "golden-set-v1",
+ "format_version": 1,
+ "public_corpus_only": true,
+ "ulqs": "disjoint (R-25)",
+ "evidence_class": "change-control gate over public-corpus and synthetic fixtures, not research results (plan Phase 7 H; 12.5)",
+ "phase4_fixtures": "docs/evaluation/phase4/v1_adversarial_fixtures_v1.json",
+ "about": "Plan Phase 7 D task 6 golden-set gate (PD-47): public-corpus or synthetic queries only (synthetic items use in-domain queries of apps/api/tests/data/score_floor_queries.json with scripted development fake adapters); each item names the finding types it must carry (expect.types, a subset of the record's), the types it must not carry (absent_types), whether an attacked claim is delivered (a Phase 4 item's own delivered rule: for a conflict, delivered undisclosed), whether X2 is emitted and whether a conflict is disclosed. Phase 4 items take their attack from the Phase 4 fixture file by id.",
+ "items": [
+  {
+   "id": "gs-001",
+   "class": "negation",
+   "source": "phase4:neg-strip-01",
+   "query": "Why do the sources repeatedly emphasize hybrid loops instead of end-to-end quantum models?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "strip_negation"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "A"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-002",
+   "class": "negation",
+   "source": "phase4:neg-strip-02",
+   "query": "What makes healthcare QC+AI architectures operationally demanding?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "strip_negation"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "A"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-003",
+   "class": "negation",
+   "source": "phase4:neg-strip-03",
+   "query": "Why is the quantum explainability section taught cautiously?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "strip_negation"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "A"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-004",
+   "class": "negation",
+   "source": "phase4:neg-strip-04",
+   "query": "Why does cybersecurity have a more urgent migration profile than consumer recommendation or gaming use cases?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "strip_negation"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "A"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-005",
+   "class": "negation",
+   "source": "phase4:neg-strip-05",
+   "query": "Which industry group in the document is most tightly tied to native molecular simulation?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "strip_negation"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "A"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-006",
+   "class": "negation",
+   "source": "phase4:neg-insert-01",
+   "query": "What is the difference between QAI and AI4QC?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "insert_negation"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "A"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-007",
+   "class": "negation",
+   "source": "phase4:neg-insert-02",
+   "query": "What makes a QC+AI claim plausible in the NISQ era?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "insert_negation"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "A"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-008",
+   "class": "negation",
+   "source": "phase4:neg-insert-03",
+   "query": "What problem does SAC solve inside the augmented Lagrangian workflow?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "insert_negation"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "A"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-009",
+   "class": "negation",
+   "source": "phase4:neg-insert-04",
+   "query": "Why can nested qubit routing still dominate runtime after the optimization model is compressed?",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "insert_negation"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "A"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-010",
+   "class": "negation",
+   "source": "phase4:neg-insert-05",
+   "query": "Explain why quantum logistics needs both problem reduction before execution and routing control during compilation.",
+   "attack": {
+    "kind": "claim_transform",
+    "transform": "insert_negation"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "A"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-011",
+   "class": "invented_citation",
+   "source": "phase4:unresolvable-01",
+   "query": "Why should QC-DQN be taught carefully in a clinical context?",
+   "attack": {
+    "kind": "span_id",
+    "form": "nonexistent",
+    "seed": "unresolvable-01"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "B1"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-012",
+   "class": "invented_citation",
+   "source": "phase4:unresolvable-02",
+   "query": "What makes these healthcare-flavored examples more operationally constrained than the perception examples?",
+   "attack": {
+    "kind": "span_id",
+    "form": "malformed",
+    "seed": "unresolvable-02"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "B1"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-013",
+   "class": "invented_citation",
+   "source": "phase4:unresolvable-03",
+   "query": "Explain why QC-DQN and biomedical quantum-kernel methods should be evaluated as narrow hybrid architectures rather than end-to-end quantum replacements.",
+   "attack": {
+    "kind": "span_id",
+    "form": "uppercase",
+    "seed": "unresolvable-03"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "B1"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-014",
+   "class": "invented_citation",
+   "source": "phase4:unresolvable-04",
+   "query": "Why should QC-DQN be taught carefully?",
+   "attack": {
+    "kind": "span_id",
+    "form": "nonexistent",
+    "seed": "unresolvable-04"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "B1"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-015",
+   "class": "invented_citation",
+   "source": "phase4:unresolvable-05",
+   "query": "What makes healthcare QC+AI architectures operationally demanding?",
+   "attack": {
+    "kind": "span_id",
+    "form": "malformed",
+    "seed": "unresolvable-05"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "B1"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-016",
+   "class": "non_supporting_citation",
+   "source": "synthetic",
+   "query": "What is the difference between QAI and AI4QC?",
+   "attack": {
+    "kind": "v2_script",
+    "verify": [
+     "NOT_ENOUGH_INFO",
+     "B"
+    ]
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "B2"
+    ],
+    "x2": true,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-017",
+   "class": "non_supporting_citation",
+   "source": "synthetic",
+   "query": "Explain why quantum logistics needs both problem reduction before execution and routing control during compilation.",
+   "attack": {
+    "kind": "v2_script",
+    "verify": [
+     "NOT_ENOUGH_INFO",
+     "B"
+    ]
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "B2"
+    ],
+    "x2": true,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-018",
+   "class": "non_supporting_citation",
+   "source": "synthetic",
+   "query": "Which architectural pattern best matches the authored Module 3 vision, graph, and few-shot cases?",
+   "attack": {
+    "kind": "v2_script",
+    "verify": [
+     "NOT_ENOUGH_INFO",
+     "B"
+    ]
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "B2"
+    ],
+    "x2": true,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-019",
+   "class": "misconception",
+   "source": "phase4:misconception-01",
+   "query": "Why can nested qubit routing still dominate runtime after the optimization model is compressed?",
+   "attack": {
+    "kind": "misconception",
+    "entry": "MC-FIXTURE-1"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "C"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-020",
+   "class": "misconception",
+   "source": "phase4:misconception-02",
+   "query": "Explain why quantum logistics needs both problem reduction before execution and routing control during compilation.",
+   "attack": {
+    "kind": "misconception",
+    "entry": "MC-FIXTURE-2"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "C"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-021",
+   "class": "misconception",
+   "source": "phase4:misconception-03",
+   "query": "Why does the authored Module 3 document keep returning to the quantum bottleneck instead of claiming end-to-end quantum perception?",
+   "attack": {
+    "kind": "misconception",
+    "entry": "MC-FIXTURE-3"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "C"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-022",
+   "class": "conflict",
+   "source": "phase4:conflict-version-01",
+   "query": "artificial intelligence quantum computing research paper synthesis",
+   "attack": {
+    "kind": "compose_from_items",
+    "items": [
+     "analyzing-quantum-computing-and-ai-paper-2025",
+     "quantum-computing-ai-research-synthesis-2026"
+    ]
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "D"
+    ],
+    "x2": false,
+    "disclosed": true
+   }
+  },
+  {
+   "id": "gs-023",
+   "class": "conflict",
+   "source": "phase4:conflict-version-02",
+   "query": "quantum computing artificial intelligence synthesis analysis",
+   "attack": {
+    "kind": "compose_from_items",
+    "items": [
+     "analyzing-quantum-computing-and-ai-paper-2025",
+     "quantum-computing-ai-research-synthesis-2026"
+    ]
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "D"
+    ],
+    "x2": false,
+    "disclosed": true
+   }
+  },
+  {
+   "id": "gs-024",
+   "class": "conflict",
+   "source": "phase4:conflict-version-03",
+   "query": "synthesis of quantum computing and artificial intelligence research",
+   "attack": {
+    "kind": "compose_from_items",
+    "items": [
+     "analyzing-quantum-computing-and-ai-paper-2025",
+     "quantum-computing-ai-research-synthesis-2026"
+    ]
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "D"
+    ],
+    "x2": false,
+    "disclosed": true
+   }
+  },
+  {
+   "id": "gs-025",
+   "class": "leakage",
+   "source": "phase4:keyed-01",
+   "query": "Why do the sources repeatedly emphasize hybrid loops instead of end-to-end quantum models?",
+   "attack": {
+    "kind": "keyed",
+    "key": "fixture-key-1"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "E"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-026",
+   "class": "leakage",
+   "source": "phase4:keyed-02",
+   "query": "What makes a QC+AI claim plausible in the NISQ era?",
+   "attack": {
+    "kind": "keyed",
+    "key": "fixture-key-2"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "E"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-027",
+   "class": "leakage",
+   "source": "phase4:keyed-03",
+   "query": "What problem does SAC solve inside the augmented Lagrangian workflow?",
+   "attack": {
+    "kind": "keyed",
+    "key": "fixture-key-3"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "E"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-028",
+   "class": "alignment_leakage",
+   "source": "synthetic",
+   "query": "Explain why QC-DQN and biomedical quantum-kernel methods should be evaluated as narrow hybrid architectures rather than end-to-end quantum replacements.",
+   "attack": {
+    "kind": "v2_script",
+    "alignment_leakage": true
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "E"
+    ],
+    "x2": true,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-029",
+   "class": "invalid_schema",
+   "source": "phase4:invalid-schema-01",
+   "query": "What is the difference between QAI and AI4QC?",
+   "attack": {
+    "kind": "schema",
+    "form": "extra_field"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "E"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-030",
+   "class": "invalid_schema",
+   "source": "phase4:invalid-schema-02",
+   "query": "What makes a QC+AI claim plausible in the NISQ era?",
+   "attack": {
+    "kind": "schema",
+    "form": "other_generator"
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "E"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-031",
+   "class": "exhausted",
+   "source": "synthetic",
+   "query": "Explain how the authored Module 6 document turns QC+AI into a sustainable hybrid-systems roadmap.",
+   "attack": {
+    "kind": "v2_script",
+    "verify": [
+     "CONTRADICTED",
+     "A"
+    ]
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "A"
+    ],
+    "x2": true,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-032",
+   "class": "exhausted",
+   "source": "synthetic",
+   "query": "Which pairing best reflects intermediate hardware-constrained programming practice?",
+   "attack": {
+    "kind": "v2_script",
+    "verify": [
+     "CONTRADICTED",
+     "A"
+    ]
+   },
+   "expect": {
+    "delivered": false,
+    "types": [
+     "A"
+    ],
+    "x2": true,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-033",
+   "class": "supported",
+   "source": "synthetic",
+   "query": "What is the difference between QAI and AI4QC?",
+   "attack": {
+    "kind": "v2_script"
+   },
+   "expect": {
+    "delivered": true,
+    "types": [],
+    "absent_types": [
+     "A",
+     "B1",
+     "B2",
+     "C",
+     "D"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-034",
+   "class": "supported",
+   "source": "synthetic",
+   "query": "Explain why quantum logistics needs both problem reduction before execution and routing control during compilation.",
+   "attack": {
+    "kind": "v2_script"
+   },
+   "expect": {
+    "delivered": true,
+    "types": [],
+    "absent_types": [
+     "A",
+     "B1",
+     "B2",
+     "C",
+     "D"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-035",
+   "class": "supported",
+   "source": "synthetic",
+   "query": "Which architectural pattern best matches the authored Module 3 vision, graph, and few-shot cases?",
+   "attack": {
+    "kind": "v2_script"
+   },
+   "expect": {
+    "delivered": true,
+    "types": [],
+    "absent_types": [
+     "A",
+     "B1",
+     "B2",
+     "C",
+     "D"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-036",
+   "class": "supported",
+   "source": "synthetic",
+   "query": "Explain why QC-DQN and biomedical quantum-kernel methods should be evaluated as narrow hybrid architectures rather than end-to-end quantum replacements.",
+   "attack": {
+    "kind": "v2_script"
+   },
+   "expect": {
+    "delivered": true,
+    "types": [],
+    "absent_types": [
+     "A",
+     "B1",
+     "B2",
+     "C",
+     "D"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-037",
+   "class": "supported",
+   "source": "synthetic",
+   "query": "Explain how the authored Module 6 document turns QC+AI into a sustainable hybrid-systems roadmap.",
+   "attack": {
+    "kind": "v2_script"
+   },
+   "expect": {
+    "delivered": true,
+    "types": [],
+    "absent_types": [
+     "A",
+     "B1",
+     "B2",
+     "C",
+     "D"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-038",
+   "class": "supported",
+   "source": "synthetic",
+   "query": "Which pairing best reflects intermediate hardware-constrained programming practice?",
+   "attack": {
+    "kind": "v2_script"
+   },
+   "expect": {
+    "delivered": true,
+    "types": [],
+    "absent_types": [
+     "A",
+     "B1",
+     "B2",
+     "C",
+     "D"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-039",
+   "class": "supported",
+   "source": "synthetic",
+   "query": "Describe why advanced QC+AI software engineering must treat compilation, caching, and pulse-level execution as first-class design concerns.",
+   "attack": {
+    "kind": "v2_script"
+   },
+   "expect": {
+    "delivered": true,
+    "types": [],
+    "absent_types": [
+     "A",
+     "B1",
+     "B2",
+     "C",
+     "D"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  },
+  {
+   "id": "gs-040",
+   "class": "supported",
+   "source": "synthetic",
+   "query": "How do banks check that a quantum model is trustworthy before using it?",
+   "attack": {
+    "kind": "v2_script"
+   },
+   "expect": {
+    "delivered": true,
+    "types": [],
+    "absent_types": [
+     "A",
+     "B1",
+     "B2",
+     "C",
+     "D"
+    ],
+    "x2": false,
+    "disclosed": false
+   }
+  }
+ ]
+}

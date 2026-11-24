@@ -3,8 +3,9 @@
 Every contract is frozen and refuses unknown fields (extra="forbid"), so a learner-state field can never ride along
 on a retrieval request or an evidential envelope (AC-3-1, R-41) and a generator cannot smuggle text past the claim
 plan (R-11). The committed JSON schemas (app/config_package/schemas/: the eight *.v1.schema.json,
-ledger-entry.v2.schema.json for LedgerEntryV2 and ledger-entry.v3.schema.json for LedgerEntryV3) are generated from
-these models and pinned by sha256 in the shipped configuration package (v6 since Phase 8, which pins the same fourteen
+ledger-entry.v2.schema.json for LedgerEntryV2, ledger-entry.v3.schema.json for LedgerEntryV3 and ledger-entry.v4.schema.json
+for LedgerEntryV4) are generated from these models and pinned by sha256 in the shipped configuration package (v6 since
+Phase 7, which also pins LedgerEntryV4 and the misconception library v1 file; v5 since Phase 6, which pins the same fourteen
 schemas as v4 and, in its v3 block, the two V3 contracts of app.services.v3.contracts; v4 since Phase 5, which also pins
 the four gateway request and verdict schemas; v3, still readable, pins nine, and v2 the eight v1 schemas).
 
@@ -551,9 +552,8 @@ CHECK_IDS = ("V1.1", "V1.2", "V1.3", "V1.4", "V1.5", "V1.6", "V1.7", "V1.8", "V1
 CheckId = Literal["V1.1", "V1.2", "V1.3", "V1.4", "V1.5", "V1.6", "V1.7", "V1.8", "V1.9"]
 Outcome = Literal["pass", "flag", "hard_fail", "abstain", "mark"]
 EhmfType = Literal["A", "B", "C", "D", "E"]
-# Plan Phase 4 D table, EHMF column (verbatim).
-EHMF_BY_CHECK = {"V1.1": ("B",), "V1.2": ("A", "B"), "V1.3": ("A", "B", "C"), "V1.4": ("D", "E"), "V1.5": ("A",),
-                 "V1.6": ("E",), "V1.7": ("D",), "V1.8": ("C",), "V1.9": ("E",)}
+# Plan Phase 4 D table, EHMF column (verbatim), re-exported from ehmf.vocabulary.PLAN_TYPES_BY_CHECK (Phase 7).
+from app.services.ehmf.vocabulary import PLAN_TYPES_BY_CHECK as EHMF_BY_CHECK  # noqa: E402 - standard library only
 STAGES_BY_CHECK = {"V1.1": ("pre_render",), "V1.2": ("pre_render",), "V1.3": ("pre_render",), "V1.4": ("post_render",),
                    "V1.5": ("pre_render",), "V1.6": ("post_render",), "V1.7": ("pre_render",), "V1.8": ("pre_render",),
                    "V1.9": ("pre_render", "post_render")}
@@ -1175,3 +1175,251 @@ class LedgerEntryV3(LedgerEntryV2):
 ACCEPTED_ABSTENTION_REASONS["ledger-entry-v3"] = (*ACCEPTED_ABSTENTION_REASONS["ledger-entry-v2"], *V2_ABSTENTION_REASONS)
 SCHEMA_MODELS["LedgerEntryV3"] = LedgerEntryV3
 ENTRY_SCHEMAS["ledger-entry-v3"] = LedgerEntryV3
+
+
+# ------------------------------------------------------------------------------------------------ EHMF (Phase 7)
+#
+# Plan Phase 7 D tasks 1-4 (Phase 7 spec 3.3): per-finding EHMF typing, the precedence record, the disclosure template
+# conflict-disclosure-v2, the correction record and the X2 list, additive in ledger-entry-v4. A v4 record is validated
+# against the routing version and the weights it carries, so a later package never invalidates a stored record.
+
+from fractions import Fraction  # noqa: E402
+
+from app.services.ehmf.routing import FINDING_RULES_BY_VERSION  # noqa: E402 - standard library only
+from app.services.ehmf.vocabulary import EHMF_DETECTOR_DOWN, EHMF_SET_CHANGED, PRIMARY_ORDER, TYPE_OF  # noqa: E402
+
+FindingType = Literal["A", "B1", "B2", "C", "D", "E"]
+FindingSource = Literal["V1.1", "V1.2", "V1.3", "V1.4", "V1.5", "V1.6", "V1.7", "V1.8", "V1.9", "V2", "alignment"]
+EHMF_FINAL_REASONS = (EHMF_DETECTOR_DOWN, EHMF_SET_CHANGED)
+EHMF_WEIGHT_KEYS = ("A", "B", "C", "D", "D_disclosed", "E")
+_NO_WINNER = ("metadata_incomplete", "no_rule_applies", "rules_disagree")
+
+
+class EhmfFinding(Contract):
+    source: FindingSource
+    reason_code: str                          # the V1 reason, the V2 verdict, or "leakage"
+    type: FindingType                         # FINDING_RULES_BY_VERSION[record.routing_version][(source, reason_code)] (record rule 2)
+    attempt: int = Field(ge=1, le=3)          # the generation attempt of a V1 result (1 for V2 and alignment)
+    claim_id: str | None = Field(default=None, pattern=CLAIM_ID)
+    reported_type: EhmfType | None = None     # V2 only: the verifier's type; never decides `type`
+    family: str | None = None                 # V2 only
+
+
+class EhmfClaim(Contract):
+    claim_id: str = Field(pattern=CLAIM_ID)
+    findings: tuple[EhmfFinding, ...] = Field(max_length=64)
+    primary: FindingType | None               # highest weight, ties by PRIMARY_ORDER; None without a finding
+    weight: str                               # str(Fraction) of the primary's weight ("0" without a finding or for a disclosed D)
+
+
+class EhmfConflict(Contract):
+    kind: Literal["version_of_same_asset", "number_disagreement", "negation_disagreement"]
+    span_ids: tuple[str, ...] = Field(min_length=2, max_length=12)
+    item_ids: tuple[str, str]
+    claim_ids: tuple[str, ...] = ()
+    rule: Literal["precedence-v1"] = "precedence-v1"
+    winner_item_id: str | None                # recorded only: never changes a final (conflict 24)
+    basis: Literal["metadata_incomplete", "no_rule_applies", "rules_disagree", "newer_peer_reviewed", "primary_over_secondary", "both_rules"]
+    disclosed: bool
+    d_weight: str                             # "0" when disclosed, else the record's D weight ("3/5")
+
+
+class EhmfDisclosure(Contract):
+    template: Literal["conflict-disclosure-v2"] = "conflict-disclosure-v2"
+    template_sha256: str = Field(pattern=HEX64)
+    text: str = Field(max_length=2000)        # the filled template: kinds and public item ids only, no span text
+
+
+class EhmfCorrection(Contract):
+    cycle: int = Field(ge=1, le=2)
+    kind: Literal["revise", "re_render"]
+    types: tuple[FindingType, ...]            # the failing claims' finding types this cycle, sorted and unique
+    claim_set_before: str = Field(pattern=HEX64)
+    claim_set_after: str | None = Field(default=None, pattern=HEX64)    # None when the cycle ended the run (V1 fail)
+    span_set_before: str = Field(pattern=HEX64)
+    span_set_after: str | None = Field(default=None, pattern=HEX64)
+    outcome: Literal["applied", "refused_set_changed", "ended"]
+
+
+class EhmfRecord(Contract):
+    block_schema: Literal["ehmf-v1"] = "ehmf-v1"
+    mode: Literal["shadow", "on"]
+    routing_version: Literal["ehmf-routing-v1"]
+    routing_sha256: str = Field(pattern=HEX64)
+    config_version: str                       # == versions.config_package_version (LedgerEntryV4 rule)
+    library_version: str
+    library_sha256: str = Field(pattern=HEX64)
+    weights: dict[str, str]                   # the weights this record used: A, B, C, D, D_disclosed, E as str(Fraction)
+    claims: tuple[EhmfClaim, ...] = Field(max_length=20)      # one per verdict, in verdict order
+    response_findings: tuple[EhmfFinding, ...] = Field(max_length=256)   # response-level results and dropped proposals, every attempt
+    conflicts: tuple[EhmfConflict, ...] = Field(max_length=20)
+    disclosure: EhmfDisclosure | None
+    corrections: tuple[EhmfCorrection, ...] = Field(max_length=2)
+    x2_emitted: tuple[str, ...]               # sorted claim ids escalated X2
+    max_cycles: Literal[2] = 2
+    detector_down: tuple[str, ...] = ()       # sorted detector names (R-c) that raised or were unavailable
+    detector_absent: tuple[str, ...] = ()     # "V1.3" under D-21
+
+
+def finding_weight(finding_type: str, weights: dict[str, str], *, disclosed: bool = False) -> Fraction:
+    """A finding type's weight from a record's own weights: B1 and B2 weigh B, a disclosed V1.7 D weighs D_disclosed."""
+    if finding_type == "D" and disclosed:
+        return Fraction(weights["D_disclosed"])
+    return Fraction(weights[TYPE_OF[finding_type]])
+
+
+def primary_of(findings, weights: dict[str, str]) -> tuple[str | None, str]:
+    """(primary type, str(weight)): the heaviest finding, ties by PRIMARY_ORDER; (None, "0") without a finding."""
+    best: tuple[Fraction, int, str] | None = None
+    for finding in findings:
+        disclosed = finding.source == "V1.7" and finding.reason_code == "conflict_disclosed"
+        weight = finding_weight(finding.type, weights, disclosed=disclosed)
+        key = (weight, -PRIMARY_ORDER.index(finding.type), finding.type)
+        if best is None or key[:2] > best[:2]:
+            best = key
+    if best is None:
+        return None, "0"
+    return best[2], str(best[0])
+
+
+def accepted_v1_1_is_b1(record: "VerificationRecordV2") -> bool:
+    """The accepted (final) generation attempt's V1.1 result is a hard fail: a B1 finding on the whole candidate."""
+    accepted = max(record.generation_attempts, 1)
+    return any(result.check_id == "V1.1" and result.attempt == accepted and result.outcome == "hard_fail" for result in record.checks)
+
+
+class VerificationRecordV4(VerificationRecordV2):
+    verification_schema: Literal["ehmf-verification-v1"] = "ehmf-verification-v1"
+    ehmf: EhmfRecord
+
+    @model_validator(mode="after")
+    def _rules(self) -> "VerificationRecordV4":
+        on = self.v2.mode == "on"
+        problems = verification_problems(
+            self,
+            v1_3_routed=lambda verdict: on and verdict.v2 is not None and verdict.v2.outcome == "pass",
+            claim_abstains_alone=lambda verdict: on and verdict.v3 is not None and verdict.v3.escalation == "X2",
+            final_reasons=(*V2_FINAL_REASONS, *EHMF_FINAL_REASONS),
+        )
+        problems.extend(self._v2_rules())
+        problems.extend(self._ehmf_rules())
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
+    def _ehmf_rules(self) -> list[str]:  # noqa: C901 - one block per numbered rule of spec 3.3
+        ehmf = self.ehmf
+        problems: list[str] = []
+        rules = FINDING_RULES_BY_VERSION.get(ehmf.routing_version, {})
+        verdict_ids = [verdict.claim_id for verdict in self.verdicts]
+        # 1. one claim entry per verdict, in order; a claim entry holds only its own findings (and its conflicts' V1.7 D)
+        if [claim.claim_id for claim in ehmf.claims] != verdict_ids:
+            problems.append("ehmf.claims are one per verdict, in verdict order")
+        for claim in ehmf.claims:
+            for finding in claim.findings:
+                if finding.source == "V1.7":
+                    if not any(claim.claim_id in conflict.claim_ids for conflict in ehmf.conflicts):
+                        problems.append(f"{claim.claim_id}: a V1.7 finding sits only on its conflict's claims")
+                elif finding.claim_id != claim.claim_id:
+                    problems.append(f"{claim.claim_id}: a claim entry holds only its own findings (response-level ones are response_findings)")
+        # 2. every finding is typed by the record's own routing table; the weights are complete and D_disclosed is 0
+        for finding in [finding for claim in ehmf.claims for finding in claim.findings] + list(ehmf.response_findings):
+            if rules.get((finding.source, finding.reason_code)) != finding.type:
+                problems.append(f"a {finding.source} {finding.reason_code} finding is typed by the record's routing table")
+            if (finding.source == "V2") != (finding.family is not None):
+                problems.append("a V2 finding, and only one, names its family")
+        if set(ehmf.weights) != set(EHMF_WEIGHT_KEYS) or ehmf.weights.get("D_disclosed") != "0":
+            problems.append("ehmf.weights name A, B, C, D, D_disclosed and E, and D_disclosed is 0 (plan \"0 when disclosed\")")
+            return problems
+        try:
+            for value in ehmf.weights.values():
+                Fraction(value)
+        except (ValueError, ZeroDivisionError):
+            problems.append("ehmf.weights are fractions")
+            return problems
+        # 3. AC-7-2: B1 is final
+        if accepted_v1_1_is_b1(self) and any(verdict.final == "deliver" or verdict.v2 is not None for verdict in self.verdicts):
+            problems.append("the accepted candidate's V1.1 result is B1: no claim is delivered or voted on (AC-7-2)")
+        by_claim = {claim.claim_id: claim for claim in ehmf.claims}
+        for verdict in self.verdicts:
+            entry = by_claim.get(verdict.claim_id)
+            if entry is not None and any(finding.type == "B1" for finding in entry.findings) and (verdict.final == "deliver" or verdict.v2 is not None):
+                problems.append(f"{verdict.claim_id} has a B1 finding: it is never delivered and never voted on (AC-7-2)")
+        # 4. AC-7-3: the conflicts follow the disclosure block; a disclosed conflict's D weighs D_disclosed (0)
+        pairs = self.disclosure.conflicts if self.disclosure is not None else ()
+        disclose = self.disclosure is not None and self.disclosure.policy == "disclose"
+        if [(c.kind, c.span_ids, c.item_ids, c.claim_ids) for c in ehmf.conflicts] != [(p.kind, p.span_ids, p.item_ids, p.claim_ids) for p in pairs]:
+            problems.append("ehmf.conflicts are the disclosure block's conflicts, in order")
+        for conflict in ehmf.conflicts:
+            if conflict.disclosed != disclose:
+                problems.append("a conflict is disclosed exactly when the disclosure policy is disclose")
+            expected = ehmf.weights["D_disclosed"] if conflict.disclosed else ehmf.weights["D"]
+            if conflict.d_weight != expected:
+                problems.append("a disclosed conflict's D weighs D_disclosed (0), an undisclosed one D (AC-7-3)")
+            # 5. precedence names a winner of the pair only on a rule that orders it (recorded only)
+            if (conflict.winner_item_id is None) != (conflict.basis in _NO_WINNER) or (
+                    conflict.winner_item_id is not None and conflict.winner_item_id not in conflict.item_ids):
+                problems.append("precedence names a winner of the pair exactly when a rule orders it")
+        if (ehmf.disclosure is not None) != any(conflict.disclosed for conflict in ehmf.conflicts):
+            problems.append("ehmf.disclosure is set exactly when a conflict is disclosed")
+        # 6. AC-7-4: a re-render keeps the claim and span sets, or the response abstains (ehmf_set_changed)
+        refused = False
+        for correction in ehmf.corrections:
+            same = correction.claim_set_after == correction.claim_set_before and correction.span_set_after == correction.span_set_before
+            if correction.kind == "re_render" and correction.outcome == "applied" and not same:
+                problems.append("an applied re-render keeps the claim set and the span set (AC-7-4)")
+            if correction.outcome == "refused_set_changed":
+                refused = True
+                if same or correction.claim_set_after is None:
+                    problems.append("a refused re-render changed the claim or span set")
+                if self.final != "abstain" or self.final_reason != EHMF_SET_CHANGED:
+                    problems.append("a refused re-render abstains the response (ehmf_set_changed)")
+        if self.final_reason == EHMF_SET_CHANGED and not refused:
+            problems.append("ehmf_set_changed follows a refused re-render")
+        # 7. AC-7-5: the corrections are V2's cycles; x2_emitted lists every X2 escalation
+        block = self.v2
+        if (len(ehmf.corrections) != block.cycles or [c.cycle for c in ehmf.corrections] != list(range(1, block.cycles + 1))
+                or [c.kind for c in ehmf.corrections] != [c.kind for c in block.corrections]):
+            problems.append("ehmf.corrections are the V2 correction cycles, numbered from 1, of the same kinds")
+        x2 = sorted(verdict.claim_id for verdict in self.verdicts if verdict.v3 is not None and verdict.v3.escalation == "X2")
+        if list(ehmf.x2_emitted) != x2:
+            problems.append("ehmf.x2_emitted lists every claim escalated X2, sorted (AC-7-5)")
+        # 8. detector state
+        down = tuple(ehmf.detector_down)
+        if down and self.final != "abstain":
+            problems.append("a detector that is down abstains the response")
+        if down == ("V1.3",):
+            if self.final_reason not in ("checker_unavailable", EHMF_DETECTOR_DOWN):
+                problems.append("V1.3 down abstains with checker_unavailable or ehmf_detector_down")
+        elif down and self.final_reason != EHMF_DETECTOR_DOWN:
+            problems.append("a detector that is down abstains with ehmf_detector_down")
+        if self.final_reason == EHMF_DETECTOR_DOWN and (not down or ehmf.mode != "on"):
+            problems.append("ehmf_detector_down names its detector and needs EHMF on")
+        if list(down) != sorted(set(down)) or list(ehmf.detector_absent) != sorted(set(ehmf.detector_absent)):
+            problems.append("detector_down and detector_absent are sorted and unique")
+        # 9. primary and weight from the record's own weights
+        for claim in ehmf.claims:
+            if (claim.primary, claim.weight) != primary_of(claim.findings, ehmf.weights):
+                problems.append(f"{claim.claim_id}: primary is the heaviest finding type (ties by PRIMARY_ORDER) and weight its weight")
+        return problems
+
+
+class LedgerEntryV4(LedgerEntryV3):
+    entry_schema: Literal["ledger-entry-v4"] = "ledger-entry-v4"
+    verification: VerificationRecordV4
+
+    @model_validator(mode="after")
+    def _v4_rules(self) -> "LedgerEntryV4":
+        problems = []
+        if self.verification.ehmf.config_version != self.versions.config_package_version:
+            problems.append("verification.ehmf.config_version is the record's config_package_version")
+        if self.delivery != "shadow":
+            problems.append("only shadow records carry an EHMF block before the Phase 7 exit (DI-111)")
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
+
+ACCEPTED_ABSTENTION_REASONS["ledger-entry-v4"] = (*ACCEPTED_ABSTENTION_REASONS["ledger-entry-v3"], *EHMF_FINAL_REASONS)
+SCHEMA_MODELS["LedgerEntryV4"] = LedgerEntryV4
+ENTRY_SCHEMAS["ledger-entry-v4"] = LedgerEntryV4

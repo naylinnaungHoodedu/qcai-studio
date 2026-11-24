@@ -1,0 +1,78 @@
+{
+ "report": "qcai-source-fidelity-report",
+ "format_version": 1,
+ "register_sha256": "44e1d43256217607b7620080c13ce7d7681a0b234d295888983c88ab99870fbb",
+ "docx": [
+  {
+   "path": "Advanced_Programming_and_Software_Development_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+   "sha256": "2785f7a73f514e9183fa005696397729f96dcc9b5d71046d50feaab391fad773"
+  },
+  {
+   "path": "Analyzing Quantum Computing and AI Paper 2025.docx",
+   "sha256": "151415a28a29659016c8dcf01d074d05f7af8be62c0d8f794aebc0305e1f2773"
+  },
+  {
+   "path": "Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence_Models.docx",
+   "sha256": "7da5b12eb2a93755eb9e8f7ddada0dc39153a962fab6a071d33006fbc1f55a39"
+  },
+  {
+   "path": "Intermediate_Quantum_Programming_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+   "sha256": "d64748204bf513399ec35978003cf7c1e0c9b3b91eef4d818abbe32afb23bf60"
+  },
+  {
+   "path": "Introduction_to_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+   "sha256": "e61289e7df6eb8cc74c4b08e92b385bda70ad326f7314e3a732e3d1fbf25f887"
+  },
+  {
+   "path": "Quantum Computing AI Research Synthesis 2026.docx",
+   "sha256": "44a33c955e6ab78b544e15c716a51deaf1f0d9695786dd7bbcfda28c73d35df9"
+  },
+  {
+   "path": "Quantum Computing and Artificial Intelligence Industry Use Cases.docx",
+   "sha256": "f4e4ad4a5b6add5caf4a086f2a8ce6300948db4c90ad9cad9c291d255d3674b2"
+  },
+  {
+   "path": "Quantum_Finance_Programming_and_Optimization_for_Hardware-Constrained_Learning_for_Quantum_Computing_and_Artificial_Intelligence.docx",
+   "sha256": "3994337939c9b0062b10a8357113fc9481cfb03b692bdb001348fce0e9e3d81b"
+  },
+  {
+   "path": "update_data/Module2_Routing, Graph Shrinking, and Logistics under Hardware Constraints.docx",
+   "sha256": "c8d635fdf542eee42ece4cd3df962cab31085fe5c4b4ee0f74f4ea72587caeba"
+  },
+  {
+   "path": "update_data/Module3_Quantum Vision, GNN, and Few-Shot Hybrid Architectures.docx",
+   "sha256": "d624fab042eaa6465f0f9f4ecb40f56e56f39937468e867307aa26c41f29554e"
+  },
+  {
+   "path": "update_data/Module4_Expressive Bottlenecks Compression, Language, and Explanation.docx",
+   "sha256": "0265f4ebd02b0585523439d44e321acb7b92108366e6cd8b18bb0ec0bc1534dc"
+  },
+  {
+   "path": "update_data/Module6_From Algorithmic Novelty to Sustainable Hybrid Systems.docx",
+   "sha256": "770b94c32a793f51bca68126aaf2117cc9473c49c1c543e90c0ea78ce08ebec7"
+  }
+ ],
+ "entries": [
+  {
+   "id": "quen-external-sensitivity",
+   "docx_value": "1.143",
+   "source_value": "0.828",
+   "match": false
+  },
+  {
+   "id": "quen-external-fp-rate",
+   "docx_value": "0.828",
+   "source_value": "1.143",
+   "match": false
+  },
+  {
+   "id": "gea-alignment-wording",
+   "docx_value": "present",
+   "source_value": "GEA = 0.40",
+   "match": false
+  }
+ ],
+ "mismatches": 3,
+ "result": "mismatches_present",
+ "ac_11_3": "not met: correction at source is the Content Owner's (D-16; DI-105)"
+}

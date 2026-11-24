@@ -176,6 +176,44 @@ def test_a_mixed_v1_v2_v3_chain_verifies_exports_restores_and_its_v3_intents_car
         restored.dispose()
 
 
+def test_a_mixed_v1_to_v4_chain_verifies_exports_restores_and_reads_its_config_versions(isolated, tmp_path):
+    # Phase 7 (spec 8, E2): ledger-entry-v4 is additive. A chain of v1, v2, v3 and v4 records verifies, passes the
+    # provenance audit, exports with each line's read-time config_version and restores into a fresh database, where it
+    # verifies again with the same records.
+    from ehmf_fakes import SHIPPED_VERSION, typed_record
+    from tutor_fakes import make_entry
+
+    engine, factory = isolated
+    ledger.append_ledger_entry(make_entry(), session_factory=factory, budget_ms=5000)
+    run(dev_pipeline(Settings(model_gateway="off"), session_factory=factory), MULTI_CLAIM, record=True, legacy_decision="answer")
+    ledger.append_ledger_entry(on_record().entry, session_factory=factory, budget_ms=5000)
+    typed = typed_record().entry
+    assert typed.entry_schema == "ledger-entry-v4"
+    ledger.append_ledger_entry(typed, session_factory=factory, budget_ms=5000)
+    with factory() as db:
+        rows = list(db.scalars(select(ResponseLedgerRecord).order_by(ResponseLedgerRecord.seq)))
+        assert [row.entry_schema for row in rows] == ["ledger-entry-v1", "ledger-entry-v2", "ledger-entry-v3", "ledger-entry-v4"]
+        assert ledger.verify_response_ledger(db).ok
+        provenance = ledger.ledger_provenance(db, PACKAGE)
+        exported = tmp_path / "ledger.jsonl"
+        assert ledger.export_ledger(db, exported) == 4
+        hashes = [row.record_hash for row in rows]
+    assert provenance["problem_count"] == 0, provenance["problems"]
+    lines = [json.loads(line) for line in exported.read_text(encoding="utf-8").splitlines()]
+    expected = [ledger.config_version_of(json.loads(line["entry"]).get("versions")) for line in lines]
+    assert [line["config_version"] for line in lines] == expected and expected[-1] == SHIPPED_VERSION
+    restored = create_engine(f"sqlite:///{(tmp_path / 'restored.db').as_posix()}")
+    try:
+        Base.metadata.create_all(restored)
+        run_schema_upgrades(restored)
+        with sessionmaker(bind=restored)() as db:
+            assert ledger.restore_ledger(db, exported)[0] == 4 and ledger.verify_response_ledger(db).ok
+            again = list(db.scalars(select(ResponseLedgerRecord).order_by(ResponseLedgerRecord.seq)))
+            assert [row.entry_schema for row in again][-1] == "ledger-entry-v4" and [row.record_hash for row in again] == hashes
+    finally:
+        restored.dispose()
+
+
 def test_the_provenance_audit_compares_a_v3_record_with_the_package_s_phase_5_pins():
     entry = on_record().entry.model_dump(mode="json")
     params = ledger.ledger_params(PACKAGE)

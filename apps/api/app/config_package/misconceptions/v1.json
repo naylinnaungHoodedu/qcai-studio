@@ -1,0 +1,12 @@
+{
+  "library": "qcai-misconception-library",
+  "schema": "misconception-library-v1",
+  "version": "v1",
+  "status": "no production entries: the Q-14 seed list is unavailable (A-18); entries are the Content Owner's",
+  "editors": [
+    "content_owner",
+    "v3"
+  ],
+  "synthetic": false,
+  "entries": []
+}

@@ -9,9 +9,10 @@ here reads a database, a learner record or a clock.
                     at most its verdict's cycle; an alignment item's re-render lists shown claims, not objections). It is
                     queued and counted; x1_held_claims, the X1 claims at tier 1 ("withheld at tier 1"), are withheld
                     (holds.withheld_claim_ids; the runner's sticky hold keeps them undelivered under MODEL_GATEWAY=on).
-  X2 x2_claims      a claim the record escalates X2 (V2 correction exhausted) whose final verdict has an objecting family
-                    verdict of EHMF type A or B ("Type A/B unresolved after two cycles"); every other exhausted claim is
-                    queued with reason v2_correction_exhausted and no trigger.
+  X2 x2_claims      under x-triggers-v1 (package v5), a claim the record escalates X2 (V2 correction exhausted) whose final
+                    verdict has an objecting family verdict of EHMF type A or B ("Type A/B unresolved after two cycles"),
+                    every other exhausted claim being queued with reason v2_correction_exhausted and no trigger; under
+                    x-triggers-v2 (package v6, Phase 7) every claim the record escalates X2, whatever its type.
   X3 x3_fires       the record's learner flags (feedback.record_flag asks it once a flag is stored; F_i = 0, never a verdict).
   X4 x4_fires       the record's V1.5 mark (a verified record), or V1.5's rule over a legacy or v1 record's sufficiency with
                     the package's X4 margin for its gate (v1.v1_5.x4_margin).
@@ -114,15 +115,18 @@ def x1_held_claims(entry: Any) -> frozenset[str]:
     return frozenset(claim_id for claim_id, tier in _x1_tiers(entry).items() if tier == X1_WITHHOLD_TIER)
 
 
-def x2_claims(entry: Any) -> frozenset[str]:
-    from app.services.v3.rules import X2_TYPES
+def x2_claims(entry: Any, *, registry_version: str = "x-triggers-v1") -> frozenset[str]:
+    """x-triggers-v1 (package v5): an X2-escalated claim with an objecting family verdict of type A or B. x-triggers-v2
+    (package v6; Phase 7 spec conflict 3, PD-44): every X2-escalated claim, whatever its type (AC-7-5: the engine
+    abstains and emits X2); severity still ranks A and B first."""
+    from app.services.v3.rules import TRIGGER_REGISTRY_VERSION_V2, X2_TYPES
 
     fired = set()
     for verdict in _verdicts(entry):
         intent = getattr(verdict, "v3", None)
         if intent is None or getattr(intent, "escalation", None) != "X2":
             continue
-        if set(family_objection_types(getattr(verdict, "v2", None))) & set(X2_TYPES):
+        if registry_version == TRIGGER_REGISTRY_VERSION_V2 or set(family_objection_types(getattr(verdict, "v2", None))) & set(X2_TYPES):
             fired.add(verdict.claim_id)
     return frozenset(fired)
 
@@ -220,9 +224,9 @@ def response_types(entry: Any) -> frozenset[str]:
     return frozenset(types)
 
 
-def evaluate(entry: Any, *, x4_margin: Mapping[str, float]) -> RecordTriggers:
+def evaluate(entry: Any, *, x4_margin: Mapping[str, float], registry_version: str = "x-triggers-v1") -> RecordTriggers:
     kind: Literal["delivery", "shadow"] = "shadow" if entry.delivery == "shadow" else "delivery"
-    x1, x2, held = x1_claims(entry), x2_claims(entry), x1_held_claims(entry)
+    x1, x2, held = x1_claims(entry), x2_claims(entry, registry_version=registry_version), x1_held_claims(entry)
     items = []
     for verdict in _verdicts(entry):
         triggers = frozenset(({"X1"} if verdict.claim_id in x1 else set()) | ({"X2"} if verdict.claim_id in x2 else set()))

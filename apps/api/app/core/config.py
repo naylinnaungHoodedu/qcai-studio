@@ -225,6 +225,15 @@ class Settings(BaseSettings):
     # The learner flag route's rate limit (POST /v3/flags, development only): an engineering parameter like PD-11's
     # limits, provisional with PD-38 (DI-98).
     v3_flag_rate_limit: str = "10/minute"
+    # Phase 7 (EHMF operationalization; docs/architecture/phase7-implementation-spec.md section 6). None = "shadow" in
+    # development and "off" elsewhere (EHMF_DEFAULT_DEVELOPMENT, EHMF_DEFAULT_ELSEWHERE, which package v6
+    # flag_policy.ehmf must name). Off is Phase 6 exactly: no ledger-entry-v4 record, no detector guard, no set check, no
+    # stop detection, no span penalty and no stop read on /ready. Shadow records the EHMF typing, precedence, disclosure
+    # and X2 list in development shadow records and changes no learner path. "on" adds the detector guard and the span
+    # penalty, and is refused outside development while the package says flag_policy.phase7_exit_passed is false (PD-48).
+    # EHMF is effectively off whenever the V2 mode is off. Shadow outside development is a recorded override that changes
+    # no learner path (the two-pass pipeline and V2 are off there).
+    ehmf: Literal["off", "shadow", "on"] | None = None
 
     @field_validator("model_egress_providers", "model_gateway_disabled_adapters", mode="before")
     @classmethod
@@ -313,6 +322,10 @@ class Settings(BaseSettings):
             self.v3_queue = V3_QUEUE_DEFAULT_DEVELOPMENT if development else V3_QUEUE_DEFAULT_ELSEWHERE
         if not development and self.v3_queue == "on":
             self._refuse_v3_queue_on_before_phase_6_exit()
+        if self.ehmf is None:
+            self.ehmf = EHMF_DEFAULT_DEVELOPMENT if development else EHMF_DEFAULT_ELSEWHERE
+        if not development and self.ehmf == "on":
+            self._refuse_ehmf_on_before_phase_7_exit()
         if self.arena_enabled and self.environment.lower() != "development":
             raise ValueError("ARENA_ENABLED is not permitted outside development (Decision D-03).")
         if self.guest_token_secret is None and self.environment.lower() == "development":
@@ -355,6 +368,22 @@ class Settings(BaseSettings):
             )
         if not (package.is_default_path and package.hash_verified):
             raise ValueError("V1_PIPELINE=enforce outside development needs the shipped, hash-verified configuration package.")
+
+    def _refuse_ehmf_on_before_phase_7_exit(self) -> None:
+        # Read lazily, as for TWO_PASS_TUTOR=on: no other construction of Settings depends on the package.
+        from app.core.config_package import ConfigPackageError, get_config_package  # lazy: avoids an import cycle
+
+        try:
+            package = get_config_package(self)
+        except ConfigPackageError as exc:
+            raise ValueError(f"EHMF=on needs a valid configuration package: {exc}") from exc
+        if not package.flag_policy.phase7_exit_passed:
+            raise ValueError(
+                "EHMF=on is refused outside development before the Phase 7 exit (configuration package "
+                "flag_policy.phase7_exit_passed is false; plan Phase 7 L, P). Use off or shadow."
+            )
+        if not (package.is_default_path and package.hash_verified):
+            raise ValueError("EHMF=on outside development needs the shipped, hash-verified configuration package.")
 
     def _refuse_model_gateway_on_before_phase_5_exit(self) -> None:
         # Read lazily, as for TWO_PASS_TUTOR=on: no other construction of Settings depends on the package.
@@ -472,6 +501,10 @@ MODEL_GATEWAY_DEFAULT_ELSEWHERE = "off"
 # default_elsewhere, and the loader refuses a package whose values differ.
 V3_QUEUE_DEFAULT_DEVELOPMENT = "shadow"
 V3_QUEUE_DEFAULT_ELSEWHERE = "off"
+# The ehmf defaults (PD-48). Configuration package v6 records them as flag_policy.ehmf.default_development and
+# default_elsewhere, and the loader refuses a package whose values differ.
+EHMF_DEFAULT_DEVELOPMENT = "shadow"
+EHMF_DEFAULT_ELSEWHERE = "off"
 
 
 @lru_cache

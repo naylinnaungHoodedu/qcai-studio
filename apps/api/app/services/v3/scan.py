@@ -29,7 +29,7 @@ import json
 import logging
 from typing import Any
 
-from sqlalchemy import func, insert, select, text
+from sqlalchemy import func, insert, inspect, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -70,14 +70,18 @@ def known_versions(db: Session) -> dict[str, str]:
 
 
 def open_windows(db: Session) -> list[list[int]]:
-    """Each X5 event as [from_ledger_seq, remaining deliveries], remaining = its window less the deliveries considered
-    after it."""
-    from app.db_models import V3Draw, V3Event
+    """Each X5 event, and each EHMF rising-A/B stop (ehmf_stops, Phase 7 spec 4.10: "sets audit to 20%"), as
+    [from_ledger_seq, remaining deliveries], remaining = its window less the deliveries considered after it."""
+    from app.db_models import EhmfStop, V3Draw, V3Event
 
     windows = []
-    for from_seq, size in db.execute(select(V3Event.from_ledger_seq, V3Event.window_deliveries).order_by(V3Event.seq)):
-        seen = db.scalar(select(func.count()).select_from(V3Draw).where(V3Draw.ledger_seq > int(from_seq))) or 0
-        windows.append([int(from_seq), max(0, int(size) - int(seen))])
+    sources = [select(V3Event.from_ledger_seq, V3Event.window_deliveries).order_by(V3Event.seq)]
+    if inspect(db.get_bind()).has_table(EhmfStop.__tablename__):
+        sources.append(select(EhmfStop.detected_seq, EhmfStop.window_deliveries).order_by(EhmfStop.seq))
+    for source in sources:
+        for from_seq, size in db.execute(source):
+            seen = db.scalar(select(func.count()).select_from(V3Draw).where(V3Draw.ledger_seq > int(from_seq))) or 0
+            windows.append([int(from_seq), max(0, int(size) - int(seen))])
     return windows
 
 
@@ -107,6 +111,19 @@ def _sightings(db: Session, known: dict[str, str], sightings, *, source: str, se
         db.execute(insert(V3ModelVersion).values(model_key=key, model_version=version, first_seen_seq=int(seq), source=source, seen_at=utc(now)))
         known[key] = version
     return changes
+
+
+def _ehmf_stop(db: Session, settings: Any, package: Any, *, now: datetime) -> None:
+    """The EHMF rising-A/B stop's detection (Phase 7 spec 4.10), once per scan inside its transaction and lock, only when
+    the package has an ehmf block and EHMF's effective mode is not off."""
+    if getattr(package, "ehmf", None) is None:
+        return
+    from app.services import ehmf
+    from app.services.ehmf.stop import detect
+
+    if ehmf.mode(settings, package) == "off":
+        return
+    detect(db, package, now=now)
 
 
 def run_scan(*, settings: Any, package: Any, session_factory: Callable[[], Session] = SessionLocal, now: datetime | None = None,
@@ -142,6 +159,7 @@ def _scan_once(*, settings: Any, package: Any, session_factory: Callable[[], Ses
         rows = db.execute(select(ResponseLedgerRecord.__table__).where(ResponseLedgerRecord.seq > cursor)
                           .order_by(ResponseLedgerRecord.seq).limit(int(limit))).all()
         known = known_versions(db)
+        _ehmf_stop(db, settings, package, now=now)
         windows = open_windows(db)
         window = int(params.x5_window_deliveries)
         changes = _sightings(db, known, trig.registry_sightings(registry_for(package, settings)), source="registry", seq=cursor, window=window,
@@ -155,7 +173,7 @@ def _scan_once(*, settings: Any, package: Any, session_factory: Callable[[], Ses
             else:
                 changes += _sightings(db, known, trig.record_sightings(entry), source="record", seq=int(row.seq), window=window,
                                       windows=windows, now=now)
-                specs.extend(trig.evaluate(entry, x4_margin=margins).items)
+                specs.extend(trig.evaluate(entry, x4_margin=margins, registry_version=params.trigger_registry_version).items)
             if row.delivery in DELIVERIES:
                 counts["deliveries"] += 1
                 active = trig.x5_active(windows, int(row.seq))
