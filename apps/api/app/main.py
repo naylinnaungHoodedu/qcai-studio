@@ -454,8 +454,10 @@ def _record_configuration_overrides() -> None:
             ("ehmf_shadow", settings.ehmf == "shadow"),
             ("ehmf_on", settings.ehmf == "on"),
             # Phase 9: the ranking outside development (on is refused everywhere while D-28 is open; shadow changes no learner
-            # path, and adds X5 audits and V3 items in that environment) and its development-only shadow generation.
+            # path, and adds X5 audits and V3 items in that environment), live routing (on: refused while D-28 is open or
+            # before the Phase 9 exit, recorded should a build ever run with it) and its development-only shadow generation.
             ("ranking_shadow", settings.ranking == "shadow"),
+            ("ranking_on", settings.ranking == "on"),
             ("ranking_shadow_generation", bool(settings.ranking_shadow_generation)),
         )
         if active

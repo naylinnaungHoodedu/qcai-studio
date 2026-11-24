@@ -43,6 +43,14 @@ class RankingUncommissioned(RuntimeError):
     """A static candidate has no commission event: the scan consumes nothing (spec conflict 26)."""
 
 
+class RankingInputRefused(RuntimeError):
+    """An operator input (commission, recommission_*) the controller would refuse: nothing is appended (append_inputs)."""
+
+    def __init__(self, kind: str, reason: str) -> None:
+        super().__init__(f"{kind} refused: {reason}")
+        self.kind, self.reason = kind, reason
+
+
 def mode(settings: "Settings", package: "ConfigPackage") -> Literal["off", "shadow"]:
     if getattr(package, "ranking", None) is None or RANKING_UNAVAILABLE_REASON is not None:
         return "off"

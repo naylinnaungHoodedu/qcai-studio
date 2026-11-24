@@ -1,8 +1,8 @@
 {
  "report": "qcai-ehmf-golden-run",
  "format_version": 1,
- "created_at": "2026-11-24T10:21:09+00:00",
- "commit": "79584e0776e97f060f87f66e9edf6447782c19e5-dirty",
+ "created_at": "2026-11-24T12:30:16+00:00",
+ "commit": "67e195ff5e527066ef9e72d35e19a5aba985e802-dirty",
  "evidence_class": "change-control gate, not research results (plan Phase 7 H; 12.5)",
  "pins": {
   "config_package": {
@@ -535,7 +535,7 @@
    "apps/api/app/gateway/retired.py": "e5744df75d606a0d80cbf2ad51f13cbe9c6fd4684532df8ea917d83dc968b015",
    "apps/api/app/gateway/secrets.py": "a173c7fd21226b1e4d28d5abc1349986502be8e873a32bae0ec14ca350161f5e",
    "apps/api/app/gateway/tools.py": "391ad72fcfe11684811684d7d0e19134bf6a9f8ffac41edfb0af164928a460a4",
-   "apps/api/app/main.py": "81beaeebe8a09d622b95206ac4faf6a4e0deb96b98a9b0b0a83aa4ba8e7bab58",
+   "apps/api/app/main.py": "fa5c58c95dd6a92290e910adfe51b3ea3655c0e603e6a963048568a8e047073c",
    "apps/api/app/schemas.py": "dd4318765e3928f76aa533a77cfcc91678e84c7531f07875e057594a1cc94f4e",
    "apps/api/app/services/answer_history.py": "10b8e776d6149f453dfbe7ec8fe4d4219b6a45e5afc636327d9de29875a4a49f",
    "apps/api/app/services/arena_engine.py": "8cc33ed89b83803a7171d156e9d367b18eb0bb3820c5e2678e8e6195be30bd18",
@@ -572,10 +572,10 @@
    "apps/api/app/services/public_handles.py": "4fb56351f9e1b1bf8050bf471ea976eb57d5eda5264ccc8d2df6198989e48d3c",
    "apps/api/app/services/qa_engine.py": "678ab941468f21da8376ec305a82cc904ee16bc0da2551165146eebd0d4a41ca",
    "apps/api/app/services/quiz_keys.py": "c839f3da7fce2abada021d5a454cada57ed209474db93abf479fc6a6ad538131",
-   "apps/api/app/services/ranking/__init__.py": "7b0a54d8c43d71af388c1de38eb0bc96b3160dbe480d22314ad3d63e99da59a9",
+   "apps/api/app/services/ranking/__init__.py": "d91c6a8760f99946722444c894077782a0f7eeba22052b0db347fa8cafa879c3",
    "apps/api/app/services/ranking/batch.py": "462137b94d17ec547c94f12921ba01e15ccbb84a6040519c2beec6a447602203",
    "apps/api/app/services/ranking/contexts.py": "48a3299bb86cb7e51898741342bb04ca4c200eb5670b6d264ebc003b414e1388",
-   "apps/api/app/services/ranking/controller.py": "e3278f90ae8a0e4ccfbafbc59156afc5d64c9736c6d5ad44fd5aa3b92fade2a3",
+   "apps/api/app/services/ranking/controller.py": "f86592b2c9510bbdcc755917b6782dc13898247ce31e08d6ae93deef2fe1b50d",
    "apps/api/app/services/ranking/cusum.py": "4c590d6b9279e649cd8df24f0e44a6ededeac2399501dab65a15effa0185930c",
    "apps/api/app/services/ranking/generators.py": "a3c3ad80806235142e702da7b1b7295326e41cf1b0838ba5c7ec42f2a8eca49d",
    "apps/api/app/services/ranking/hook.py": "1d07a4a7837da18af4d4724efd9ae3745ee7224f24c2b357b890daeebfb729cd",
@@ -584,9 +584,9 @@
    "apps/api/app/services/ranking/numeric.py": "65f53c620bcef68c6f202b2d1466137eedfbf4cf4f8db87bfed828529fa57076",
    "apps/api/app/services/ranking/package_check.py": "ba3677ce5aa21a3fdd32b9d15ca71dd959eee120e17b940387b518baee814f78",
    "apps/api/app/services/ranking/quality.py": "6ac10964a71d3044f01df35fee1aafe3095099c5b870c7decd28a99f767fa52e",
-   "apps/api/app/services/ranking/recommission.py": "0763fb40ed34c5fa344602a92fc7a6c695716514c830d1b106d61e4e8082a566",
+   "apps/api/app/services/ranking/recommission.py": "80dbea4db54956283cd365ee2e7d001a8f2c212f6f8d399a7055d67f5e15a8c4",
    "apps/api/app/services/ranking/replay.py": "747ad144c4cbc4e7fc339f7abd7a4e2c4eb7917b5121ebbff544d149ec18cc67",
-   "apps/api/app/services/ranking/scan.py": "b04730a2954a0169290548a83224c02e634fb68cf0ff84167d3775588e6e4a49",
+   "apps/api/app/services/ranking/scan.py": "cb4e9787f1a7f2cf0250a337f9696fb5b332d305eec9758ada9ec3a269fb50ab",
    "apps/api/app/services/ranking/score.py": "1d46c752f2a78b1f5689b59f32e81901113bf286aa5e4cf5d7f6ea66ef196970",
    "apps/api/app/services/ranking/selection.py": "3fe91a08fbd69ec69bb5b1ae45b2e31a23e43ec901e5777201987f0399d7ec88",
    "apps/api/app/services/ranking/signals.py": "12bf913428a926d951aecb501ee30e7d8d7bfecf10efe41aad8e7f551501bcd9",
@@ -677,7 +677,7 @@
    "apps/api/app/workers/ingestion.py": "7ff5fe0365bcdf47d8f0f68fed51ab1f225b07f25a7bab1659cd6a104f2ce91b",
    "apps/api/app/workers/migrate_citations.py": "185c0c430eb0cdb839577d7fe2c008d76ba506ed80923234ec3302bfe72690c4",
    "apps/api/app/workers/rag.py": "13d3fdcb8c57ec033a293f46555a576a25296cc047d30edcc2c1c012012e47b9",
-   "apps/api/app/workers/ranking.py": "fcb94514e829d9a3a62aa53301a4c324dc570cec088003d15ca1de950f842052",
+   "apps/api/app/workers/ranking.py": "219c3ad40924f9d24dcddbb7f93feffafa8d3bf8e5be324267226d65613dd28f",
    "apps/api/app/workers/register_spans.py": "47daf0503e4c08c3a1616f2f38dd15c9884b3b461d5b2a1f60e25340a8cc0592",
    "apps/api/app/workers/response_ledger.py": "bc19c239651438cb0544064a881c4509cc25d59fd4ef8d852b2fc8c2d644783c",
    "apps/api/app/workers/retention.py": "a7b0f30b392a57e81afcba287e91e336d520edc0265ff08e509113bb74ecf81f",
@@ -687,6 +687,6 @@
    "scripts/run_golden_set.py": "931d70dcfdc66f32a91ad9145eb85894c86c8ccd00ded6edc6ae533b4e506b08",
    "scripts/run_v1_fixtures.py": "eef14c4c906aa9abb209c97b83bf78c077ca7a6642febbc0d09b0665b86405bd"
   },
-  "sha256": "9785f7230c8afd7415f593faca318f16113531383989d54f564fcc4dd9b418ad"
+  "sha256": "d87919cdc229a3ccd83ab8081322a6b0772cea9d92d5183bb4f324fe4e9fa888"
  }
 }

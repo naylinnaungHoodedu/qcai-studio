@@ -1,8 +1,8 @@
 {
  "report": "qcai-ranking-replay",
  "format_version": 1,
- "created_at": "2026-11-24T10:21:02Z",
- "commit": "79584e0776e97f060f87f66e9edf6447782c19e5-dirty",
+ "created_at": "2026-11-24T12:24:11Z",
+ "commit": "67e195ff5e527066ef9e72d35e19a5aba985e802-dirty",
  "evidence_class": "engineering measurement on synthetic streams, not E4 results (invariant 9; Table XVII MR-1..MR-3 not asserted)",
  "pins": {
   "config_package": {
@@ -208,10 +208,10 @@
  ],
  "inputs": {
   "files": {
-   "apps/api/app/services/ranking/__init__.py": "7b0a54d8c43d71af388c1de38eb0bc96b3160dbe480d22314ad3d63e99da59a9",
+   "apps/api/app/services/ranking/__init__.py": "d91c6a8760f99946722444c894077782a0f7eeba22052b0db347fa8cafa879c3",
    "apps/api/app/services/ranking/batch.py": "462137b94d17ec547c94f12921ba01e15ccbb84a6040519c2beec6a447602203",
    "apps/api/app/services/ranking/contexts.py": "48a3299bb86cb7e51898741342bb04ca4c200eb5670b6d264ebc003b414e1388",
-   "apps/api/app/services/ranking/controller.py": "e3278f90ae8a0e4ccfbafbc59156afc5d64c9736c6d5ad44fd5aa3b92fade2a3",
+   "apps/api/app/services/ranking/controller.py": "f86592b2c9510bbdcc755917b6782dc13898247ce31e08d6ae93deef2fe1b50d",
    "apps/api/app/services/ranking/cusum.py": "4c590d6b9279e649cd8df24f0e44a6ededeac2399501dab65a15effa0185930c",
    "apps/api/app/services/ranking/generators.py": "a3c3ad80806235142e702da7b1b7295326e41cf1b0838ba5c7ec42f2a8eca49d",
    "apps/api/app/services/ranking/hook.py": "1d07a4a7837da18af4d4724efd9ae3745ee7224f24c2b357b890daeebfb729cd",
@@ -220,9 +220,9 @@
    "apps/api/app/services/ranking/numeric.py": "65f53c620bcef68c6f202b2d1466137eedfbf4cf4f8db87bfed828529fa57076",
    "apps/api/app/services/ranking/package_check.py": "ba3677ce5aa21a3fdd32b9d15ca71dd959eee120e17b940387b518baee814f78",
    "apps/api/app/services/ranking/quality.py": "6ac10964a71d3044f01df35fee1aafe3095099c5b870c7decd28a99f767fa52e",
-   "apps/api/app/services/ranking/recommission.py": "0763fb40ed34c5fa344602a92fc7a6c695716514c830d1b106d61e4e8082a566",
+   "apps/api/app/services/ranking/recommission.py": "80dbea4db54956283cd365ee2e7d001a8f2c212f6f8d399a7055d67f5e15a8c4",
    "apps/api/app/services/ranking/replay.py": "747ad144c4cbc4e7fc339f7abd7a4e2c4eb7917b5121ebbff544d149ec18cc67",
-   "apps/api/app/services/ranking/scan.py": "b04730a2954a0169290548a83224c02e634fb68cf0ff84167d3775588e6e4a49",
+   "apps/api/app/services/ranking/scan.py": "cb4e9787f1a7f2cf0250a337f9696fb5b332d305eec9758ada9ec3a269fb50ab",
    "apps/api/app/services/ranking/score.py": "1d46c752f2a78b1f5689b59f32e81901113bf286aa5e4cf5d7f6ea66ef196970",
    "apps/api/app/services/ranking/selection.py": "3fe91a08fbd69ec69bb5b1ae45b2e31a23e43ec901e5777201987f0399d7ec88",
    "apps/api/app/services/ranking/signals.py": "12bf913428a926d951aecb501ee30e7d8d7bfecf10efe41aad8e7f551501bcd9",
@@ -233,6 +233,6 @@
    "apps/api/app/services/ranking/vocabulary.py": "76f8127a69de1b5049dedcf0016fa95e6b3591b3adf66107af3449ca62f72a58",
    "scripts/run_ranking_replay.py": "6830e5d2bd68ee395c406fde7f9d02a9829b65b8893fdbe8c3ae167fb1e7ed94"
   },
-  "sha256": "f2411b02d36b9808e66dd3982f0728c492e0e3b70a603b7a0b3efa78329d873f"
+  "sha256": "acc8e7448e803cead4037c2c238c735d0ee2947af4993f3168818b75b8f8caa3"
  }
 }

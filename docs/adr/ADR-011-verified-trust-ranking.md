@@ -32,7 +32,12 @@ fallback for an empty eligible set (plan Phase 9 A, D). Live routing is an OPEN 
   mismatch only; a mismatch in the append-only log itself (the chain, a derived event, a checkpoint) needs a backup
   restore or a new log, and a release that changes the controller's output makes every existing log mismatch.
 - Every writer of the ranking log (the scan, the operator inputs, `replay --check`, `clear-stop`) takes the ranking lock
-  and then V3's, so no two writers chain from the same row.
+  and then V3's, so no two writers chain from the same row. An operator input the controller would refuse (a commission
+  for a model with outcomes, a recommission for another version) is refused before anything is appended (exit 2). The
+  recommission set (golden-set-v1, public-corpus and synthetic queries) ships in the API image, sha256-checked against the
+  package, so `commission` and `recommission` run in-image.
+- A CUSUM alarm is sustained only while the hold its stream's first alarm opened is open; a model change's hold on the
+  same stream leaves the next alarm a first alarm with its own hold.
 - Development shadow generation runs the extra record through a copy of the request path's pipeline, never by changing
   the shared pipeline's generator; the provenance audit accepts a clone record in development only.
 

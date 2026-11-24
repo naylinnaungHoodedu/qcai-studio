@@ -145,6 +145,75 @@ def test_cusum_constants_steps_reset_and_sustained():
     assert state["counts"]["sustained"] >= 1 and len([k for k, _p in derived if k == "hold"]) == 2  # one hold per stream
 
 
+def test_a_first_alarm_under_a_model_change_hold_is_not_sustained_and_opens_its_own_hold():
+    # Sustained is a second alarm while the stream's alarm hold is open (second-alarm-while-held-v1): a model change's hold
+    # on the same stream does not make the first alarm after the change sustained.
+    log = Log().models(model("m-a", "f-a"), model("m-b", "f-b"), clean=2000)
+    log.batch("m-a", 25).batch("m-b", 25)
+    log.add("model_change", {"adapter_id": "m-a", "from_version": "2026-11-21", "to_version": "2026-11-22", "source": "registry"})
+    for _ in range(40):
+        log.outcome("m-a", 0)
+    state, derived = apply_all(log.events)
+    holds = [payload for kind, payload in derived if kind == "hold"]
+    change_hold = next(item["hold_id"] for item in holds if item["cause"] == "model_change")
+    alarms = [payload for kind, payload in derived if kind == "alarm" and payload["stream"] == "model:m-a"]
+    assert len(alarms) >= 2 and alarms[0]["sustained"] is False and alarms[0]["hold_id"] != change_hold
+    alarm_hold = next(item for item in holds if item["cause"] == "alarm" and item["hold_id"] == alarms[0]["hold_id"])
+    assert alarm_hold["models"] == ["m-a"] and alarms[1]["sustained"] is True and alarms[1]["hold_id"] == alarm_hold["hold_id"]
+    assert state["counts"]["sustained"] == sum(1 for kind, item in derived if kind == "alarm" and item["sustained"])
+    assert {state["holds"][change_hold]["cause"], state["holds"][alarm_hold["hold_id"]]["cause"]} == {"model_change", "alarm"}
+
+
+def test_the_controller_counts_a_refused_operator_input_and_leaves_the_prior():
+    from app.services.ranking.recommission import refusal
+
+    a = model("m-a", "f-a")
+    log = Log().models(a, model("m-b", "f-b"), clean=40).batch("m-a", 3)
+    before, _ = apply_all(log.events)
+    assert refusal(before, "commission", {"adapter_id": "m-a", "version": a["model_version"]}) == "has_outcomes"
+    assert refusal(before, "commission", {"adapter_id": "m-b", "version": "other"}) == "version_mismatch"
+    assert refusal(before, "recommission_pass", {"adapter_id": "m-a", "version": "other"}) == "version_mismatch"
+    assert refusal(before, "recommission_pass", {"adapter_id": "m-a", "version": a["model_version"]}) is None
+    assert refusal(before, "commission", {"adapter_id": "m-z", "version": "x"}) == "unknown_model"
+    log.commission(a, clean=1, failed=30)
+    log.add("recommission_pass", {"adapter_id": "m-b", "version": "other", "clean": 40, "failed": 0, "generated": 40, "run_sha256": "0" * 64})
+    after, _ = apply_all(log.events)
+    assert after["counts"]["refused_inputs"] == 2 and after["models"]["m-a"]["prior"] == before["models"]["m-a"]["prior"]
+
+
+def test_the_recommission_set_resolves_in_a_checkout_and_in_an_image_layout(tmp_path):
+    from app.services.ranking.recommission import RecommissionSetError, recommission_queries, recommission_set_path
+
+    relative = PACKAGE.ranking.golden_set_path
+    assert recommission_set_path(relative) == REPO_ROOT / relative
+    # The API image (apps/api/Dockerfile: WORKDIR /app, apps/api/app at /app/app, the set at /app/<relative>).
+    module = tmp_path / "app" / "app" / "services" / "ranking" / "recommission.py"
+    module.parent.mkdir(parents=True)
+    module.write_text("", encoding="utf-8")
+    with pytest.raises(RecommissionSetError) as missing:
+        recommission_queries(PACKAGE, start=module)
+    assert missing.value.problem == "missing"
+    image_copy = tmp_path / "app" / relative
+    image_copy.parent.mkdir(parents=True)
+    image_copy.write_bytes((REPO_ROOT / relative).read_bytes())
+    assert recommission_set_path(relative, start=module) == image_copy
+    assert len(recommission_queries(PACKAGE, start=module)) == PACKAGE.ranking.golden_set_items
+    golden = json.loads(image_copy.read_text(encoding="utf-8"))
+    golden["items"] = golden["items"][:-1]
+    image_copy.write_text(json.dumps(golden), encoding="utf-8")
+    with pytest.raises(RecommissionSetError) as changed:
+        recommission_queries(PACKAGE, start=module)
+    assert changed.value.problem == "sha256_or_count_mismatch"
+    image_copy.write_text("{", encoding="utf-8")
+    with pytest.raises(RecommissionSetError) as unreadable:
+        recommission_queries(PACKAGE, start=module)
+    assert unreadable.value.problem == "unreadable"
+    # The image copies exactly that file to that place.
+    dockerfile = (API_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert f"COPY --chown=qcai:qcai {relative} ./{relative}" in dockerfile.splitlines()
+    assert "WORKDIR /app" in dockerfile.splitlines() and "COPY --chown=qcai:qcai apps/api/app ./app" in dockerfile.splitlines()
+
+
 def test_outcome_rule_order_cluster_and_tier():
     from app.services.ranking.contexts import tier_for
     from app.services.ranking.signals import NON_VERDICT_FINALS

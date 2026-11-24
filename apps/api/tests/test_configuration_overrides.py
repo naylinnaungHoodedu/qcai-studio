@@ -96,9 +96,11 @@ PACKAGE_RELAXATIONS = {"config_package_path_overridden": {"is_default_path": Fal
 # Phase 5: MODEL_GATEWAY=on, refused outside development before the Phase 5 exit (and without V1_PIPELINE=enforce).
 # Phase 6: V3_QUEUE=on, refused outside development before the Phase 6 exit.
 # Phase 7: EHMF=on, refused outside development before the Phase 7 exit.
-# Phase 9: RANKING_SHADOW_GENERATION, refused outside development (development-only shadow generation).
+# Phase 9: RANKING=on (live routing), refused while D-28 is open or before the Phase 9 exit, and RANKING_SHADOW_GENERATION,
+# refused outside development (development-only shadow generation).
 REFUSED_RELAXATIONS = {"v1_pipeline_enforce": {"v1_pipeline": "enforce"}, "model_gateway_on": {"model_gateway": "on"}, "v3_queue_on": {"v3_queue": "on"},
-                       "ehmf_on": {"ehmf": "on"}, "ranking_shadow_generation": {"ranking_shadow_generation": True}}
+                       "ehmf_on": {"ehmf": "on"}, "ranking_on": {"ranking": "on"},
+                       "ranking_shadow_generation": {"ranking_shadow_generation": True}}
 
 
 def _override_details(monkeypatch, settings: Settings, package=None) -> dict | None:

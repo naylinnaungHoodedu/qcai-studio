@@ -65,7 +65,7 @@ A, B = model("model-a", "family-a"), model("model-b", "family-b")
 PHASE9_TEST_MODULES = (
     "test_phase9_acceptance.py", "test_ranking_units.py", "ranking_fakes.py", "conftest.py", "test_phase7_acceptance.py",
     "test_phase6_acceptance.py", "test_phase4_acceptance.py", "test_phase3_acceptance.py", "test_config_package.py", "test_ehmf_units.py",
-    "test_response_ledger_migrations.py", "test_configuration_overrides.py",
+    "test_response_ledger_migrations.py", "test_configuration_overrides.py", "test_boundary_scan.py",
 )
 
 
@@ -566,6 +566,43 @@ def test_ac_9_5_the_ranking_reuses_v3_s_model_change_for_a_version_v3_already_sa
         assert len(change) == 1 and change[0]["v3_event_seq"] == before[0]
 
 
+def test_ac_9_5_a_version_v3_knows_only_from_a_first_sighting_gets_a_change_from_the_previous_version(tmp_path):
+    # The ranking saw the clone at 2026-11-21; V3's first sighting of the key is the bumped 2026-11-22 (no V3 event). The
+    # ranking's change writes its X5 event from the previous version and adds no second v3_model_versions row.
+    from sqlalchemy import func, select
+
+    from app.db_models import V3Event, V3ModelVersion
+    from app.gateway.registry import registry_for
+    from app.services.ranking.generators import CloneGenerator
+    from app.services.v3.scan import run_scan as v3_scan
+    from v3_fakes import fresh_v3_sessions
+
+    bumped = _clone_package(tmp_path, "2026-11-22")
+    key = f"generator:{CLONE}"
+
+    def changes(db) -> list[dict]:
+        return [json.loads(p) for (p,) in db.execute(select(V3Event.payload).where(V3Event.kind == "model_change"))]
+
+    with fresh_v3_sessions() as (factory, _engine):
+        commission_static(factory)
+        scan(factory)
+        assert stored_state(factory)["models"][CLONE]["version"] == "2026-11-21"
+        settings = Settings(environment="development", model_gateway="shadow", ehmf="shadow", ranking="off", config_package_path=str(bumped.path))
+        spec = next(item for item in registry_for(bumped, settings).members if item.adapter_id == CLONE)
+        shadow_record(factory, settings=settings, generator=CloneGenerator(spec, bumped, settings=settings))
+        v3_scan(settings=Settings(environment="development", v3_queue="shadow", config_package_path=str(bumped.path)), package=bumped,
+                session_factory=factory, now=FIXED_NOW)
+        with factory() as db:
+            assert [item["model_key"] for item in changes(db)].count(key) == 0
+            assert db.scalar(select(func.count()).select_from(V3ModelVersion).where(V3ModelVersion.model_key == key)) == 1
+        scan(factory, settings=ranking_settings(config_package_path=str(bumped.path)), package=bumped)
+        with factory() as db:
+            change = next(item for item in changes(db) if item["model_key"] == key)
+            assert (change["from_version"], change["to_version"]) == ("fake-delta-verifier@2026-11-21", "fake-delta-verifier@2026-11-22")
+            assert db.scalar(select(func.count()).select_from(V3ModelVersion).where(V3ModelVersion.model_key == key)) == 1
+        assert events_of(factory, "model_change")[0]["v3_event_seq"] is not None
+
+
 def test_ac_9_5_the_x5_window_raises_the_next_delivery_s_draw_to_one_in_five(tmp_path):
     from sqlalchemy import select
 
@@ -699,34 +736,66 @@ def test_ac_9_5_the_recommission_command_runs_the_golden_regression_and_only_its
 # ===================================================================================================== AC-9-6
 
 
-@pytest.mark.parametrize("cause", ["down", "stopped", "kill_switch", "disabled", "all_d"])
+# Each cause makes the candidates ineligible on its own: the clone is commissioned clean (rated A) unless the cause is all_d
+# (then with failures, rated D), and the static candidate clean when the cause also reaches it (the kill switch), else with
+# failures (rated D); (the clone's expected availability reason, the static candidate's, the static commissioning).
+AC_9_6_CAUSES = {"down": ("down", None, "d"), "stopped": ("stopped", None, "d"), "disabled": ("disabled", None, "d"),
+                 "kill_switch": ("kill_switch", "kill_switch", "clean"), "all_d": (None, None, "d")}
+
+
+def _ac_9_6_run(cause: str, *, active: bool):
+    """(setup, settings): setup(factory) appends one shadow record, commissions both candidates for `cause` and scans once,
+    with the cause applied when `active` (the gateway stopped, the kill switch, the clone disabled or down, or rated D)."""
+    from v2_fakes import ScriptedFakeAdapter, fresh_gateway
+    from app.gateway.registry import registry_for
+    from ranking_fakes import commission_candidate
+
+    gateway = fresh_gateway()
+    settings = ranking_settings()
+    if active and cause == "stopped":
+        gateway.stop("budget_breach")
+    elif active and cause == "kill_switch":
+        settings = ranking_settings(model_gateway_kill_switch="abstain_only")
+    elif active and cause == "disabled":
+        settings = ranking_settings(model_gateway_disabled_adapters=[CLONE])
+    elif active and cause == "down":
+        gateway = fresh_gateway(adapters={spec.adapter_id: ScriptedFakeAdapter(spec, down=spec.adapter_id == CLONE)
+                                          for spec in registry_for(PACKAGE, settings).members})
+    static_clean = AC_9_6_CAUSES[cause][2] == "clean"
+
+    def setup(factory):
+        shadow_record(factory)
+        commission_static(factory, settings=settings, clean=40 if static_clean else 5, failed=0 if static_clean else 20, gateway=gateway)
+        rated_d = active and cause == "all_d"
+        commission_candidate(factory, CLONE, settings=settings, clean=5 if rated_d else 200, failed=20 if rated_d else 0, gateway=gateway)
+        scan(factory, settings=settings, gateway=gateway)
+    return setup, settings
+
+
+@pytest.mark.parametrize("cause", sorted(AC_9_6_CAUSES))
 def test_ac_9_6_an_empty_eligible_set_delivers_no_unverified_text_and_enqueues_a_v3_item(cause):
     from sqlalchemy import func, select
 
     from app.db_models import ResponseLedgerRecord, V3QueueItem
     from app.services.ranking import hook
-    from v2_fakes import fresh_gateway
     from v3_fakes import fresh_v3_sessions
 
+    clone_reason, static_reason, _ = AC_9_6_CAUSES[cause]
+    # The control: the same commissioning without the cause gives an incumbent (the cause is the only reason for the fallback).
     with fresh_v3_sessions() as (factory, _engine):
-        shadow_record(factory)
-        gateway = fresh_gateway()
-        settings = ranking_settings()
-        if cause == "stopped":
-            gateway.stop("budget_breach")
-        elif cause == "kill_switch":
-            settings = ranking_settings(model_gateway_kill_switch="abstain_only")
-        elif cause == "disabled":
-            settings = ranking_settings(model_gateway_disabled_adapters=[CLONE])
-        elif cause == "down":
-            from v2_fakes import ScriptedFakeAdapter
-            from app.gateway.registry import registry_for
-
-            gateway = fresh_gateway(adapters={spec.adapter_id: ScriptedFakeAdapter(spec, down=spec.adapter_id == CLONE)
-                                              for spec in registry_for(PACKAGE, settings).members})
-        # The static candidate is ineligible too: commissioned with failures (rated D), or by the kill switch.
-        commission_static(factory, settings=settings, clean=5, failed=20, gateway=gateway)
-        scan(factory, settings=settings, gateway=gateway)
+        setup, _settings = _ac_9_6_run(cause, active=False)
+        setup(factory)
+        assert stored_state(factory)["availability"] == {CLONE: None, STATIC: None} and events_of(factory, "availability") == []
+        control = events_of(factory, "select")
+        assert control and all(item["payload"]["kind"] == "incumbent" and item["payload"]["eligible"] for item in control), cause
+    with fresh_v3_sessions() as (factory, _engine):
+        setup, settings = _ac_9_6_run(cause, active=True)
+        setup(factory)
+        # The scan's availability event names the gateway's reason for the registry member (Algorithm 1 line 1, available(m)).
+        expected = {CLONE: clone_reason, STATIC: static_reason}
+        assert stored_state(factory)["availability"] == expected
+        if cause != "all_d":
+            assert events_of(factory, "availability")[-1]["payload"]["models"] == expected
         selects = events_of(factory, "select")
         assert selects and all(item["payload"]["kind"] == "fallback" for item in selects)
         payload = selects[0]["payload"]
@@ -741,6 +810,14 @@ def test_ac_9_6_an_empty_eligible_set_delivers_no_unverified_text_and_enqueues_a
         assert [field.name for field in fields(Decision)] == ["kind", "model", "eligible", "explore", "action"]
         with factory() as db:
             assert db.scalar(select(func.count()).select_from(ResponseLedgerRecord)) == ledger_rows
+
+
+def test_ac_9_6_with_v3_off_the_fallback_row_notes_v3_off():
+    from sqlalchemy import func, select
+
+    from app.db_models import V3QueueItem
+    from v3_fakes import fresh_v3_sessions
+
     # With V3 off the fallback row notes v3_off and no item is created.
     with fresh_v3_sessions() as (factory, _engine):
         shadow_record(factory)
@@ -748,6 +825,8 @@ def test_ac_9_6_an_empty_eligible_set_delivers_no_unverified_text_and_enqueues_a
         commission_static(factory, settings=settings, clean=5, failed=20)
         scan(factory, settings=settings)
         assert {item["note"] for item in events_of(factory, "select")} == {"v3_off"}
+        with factory() as db:
+            assert db.scalar(select(func.count()).select_from(V3QueueItem)) == 0
 
 
 # ===================================================================================================== AC-9-7
@@ -1011,7 +1090,7 @@ def test_ac_9_8_one_event_log_replayed_twice_gives_byte_identical_final_states()
             assert check(db).reason == "chain"
 
 
-def test_ac_9_8_the_worker_replay_check_exits_1_on_a_mismatch_and_0_when_current():
+def test_ac_9_8_the_worker_replay_check_exits_1_on_a_mismatch_and_0_when_current(caplog):
     from sqlalchemy import insert
 
     from app.db_models import RankingEvent, RankingState
@@ -1032,7 +1111,15 @@ def test_ac_9_8_the_worker_replay_check_exits_1_on_a_mismatch_and_0_when_current
         scan(factory)
         assert main(["replay", "--check"], session_factory=factory, now=FIXED_NOW) == 0
         tamper_state(factory)
-        assert main(["replay", "--check"], session_factory=factory, now=FIXED_NOW) == 1
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger="qcai.worker"):
+            assert main(["replay", "--check"], session_factory=factory, now=FIXED_NOW) == 1
+        # The stop line and the stop row name what mismatched (the runbook's "The stop" reads it); no replay_checked line.
+        logged = [item for item in _worker_events(caplog) if item["event"] in ("ranking.stop", "ranking.replay_checked")]
+        assert len(logged) == 1 and logged[0]["event"] == "ranking.stop" and logged[0]["reason"] == "replay_mismatch"
+        assert logged[0]["mismatch"] == "state" and "first_mismatch_seq" in logged[0]
+        stop = events_of(factory)[-1]
+        assert stop["kind"] == "stop" and stop["payload"]["mismatch"] == "state" and "first_mismatch_seq" in stop["payload"]
         assert main(["scan"], session_factory=factory, now=FIXED_NOW) == 2
     # A scan that finds the state differing from its checkpoint stops the ranking and exits 1, --until-done included.
     for argv in (["scan"], ["scan", "--until-done"]):
@@ -1058,7 +1145,12 @@ def test_ac_9_8_the_worker_replay_check_exits_1_on_a_mismatch_and_0_when_current
         with factory() as db:
             EventLog(db, empty_state(), now=FIXED_NOW).control("checkpoint", {"state_sha256": "0" * 64, "last_input_seq": 0})
             db.commit()
-        assert main(["replay", "--check"], session_factory=factory, now=FIXED_NOW) == 1
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger="qcai.worker"):
+            assert main(["replay", "--check"], session_factory=factory, now=FIXED_NOW) == 1
+        stop_line = next(item for item in _worker_events(caplog) if item["event"] == "ranking.stop")
+        assert stop_line["mismatch"] == "checkpoint" and events_of(factory)[-1]["payload"]["mismatch"] == "checkpoint"
+        assert isinstance(stop_line["first_mismatch_seq"], int)
         assert main(["clear-stop", "--cause", "fixed_data"], session_factory=factory, now=FIXED_NOW) == 2
         refused = clear_stop("fixed_code", session_factory=factory, now=FIXED_NOW)
         assert not refused and refused.reason == "checkpoint" and events_of(factory)[-1]["kind"] == "stop"
@@ -1525,6 +1617,74 @@ def test_plan_l_the_scan_refuses_while_the_static_generator_is_uncommissioned():
         assert commissioned["payload"]["generated"] == 40 and commissioned["payload"]["failed"] == 0
         scan(factory)
         assert len(events_of(factory, "outcome")) == 1
+
+
+def _worker_events(caplog) -> list[dict]:
+    return [record.json_fields for record in caplog.records if record.name == "qcai.worker" and hasattr(record, "json_fields")]
+
+
+def test_plan_l_a_refused_commission_or_recommission_exits_2_logs_the_refusal_and_appends_nothing(caplog, monkeypatch):
+    from sqlalchemy import func, select
+
+    from app.db_models import RankingEvent
+    from app.services.ranking import recommission
+    from app.services.ranking.scan import append_inputs
+    from app.workers.ranking import main
+    from v2_fakes import fresh_gateway
+    from v3_fakes import fresh_v3_sessions
+
+    few = recommission.recommission_queries(PACKAGE)[:3]
+    monkeypatch.setattr(recommission, "recommission_queries", lambda _package: list(few))
+
+    def rows(factory) -> int:
+        with factory() as db:
+            return db.scalar(select(func.count()).select_from(RankingEvent))
+
+    with fresh_v3_sessions() as (factory, _engine):
+        commission_static(factory)
+        shadow_record(factory)
+        scan(factory)
+        assert len(events_of(factory, "outcome")) == 1
+        before, prior = rows(factory), stored_state(factory)["models"][STATIC]["prior"]
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger="qcai.worker"):
+            # A commission for a model with outcomes: refused, exit 2, nothing appended, no ranking.commissioned.
+            assert main(["commission", STATIC], session_factory=factory, now=FIXED_NOW) == 2
+        logged = _worker_events(caplog)
+        assert {"event": "ranking.scan_refused", "reason": "commission_refused", "refusal": "has_outcomes", "adapter_id": STATIC} in logged
+        assert not any(item["event"] == "ranking.commissioned" for item in logged)
+        assert rows(factory) == before and len(events_of(factory, "commission")) == 1
+        state = stored_state(factory)
+        assert state["models"][STATIC]["prior"] == prior and state["counts"]["refused_inputs"] == 0
+        # A recommission at another version than the model's: refused before anything of the call is appended.
+        with factory() as db:
+            with pytest.raises(ranking.RankingInputRefused) as refused:
+                append_inputs(db, [("recommission_pass", {"adapter_id": STATIC, "version": "stale", "clean": 3, "failed": 0, "generated": 3,
+                                                          "run_sha256": "0" * 64})], settings=ranking_settings(), package=PACKAGE, now=FIXED_NOW,
+                              gateway=fresh_gateway())
+            assert (refused.value.kind, refused.value.reason) == ("recommission_pass", "version_mismatch")
+            db.commit()
+        assert rows(factory) == before and stored_state(factory)["counts"]["refused_inputs"] == 0
+        # The worker's recommission refusal takes the same path (exit 2, recommission_refused, nothing appended).
+        monkeypatch.setattr(recommission, "refusal", lambda state, kind, payload: "version_mismatch")
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger="qcai.worker"):
+            assert main(["recommission", STATIC], session_factory=factory, now=FIXED_NOW) == 2
+        logged = _worker_events(caplog)
+        assert {"event": "ranking.scan_refused", "reason": "recommission_refused", "refusal": "version_mismatch", "adapter_id": STATIC} in logged
+        assert not any(item["event"] == "ranking.recommissioned" for item in logged) and rows(factory) == before
+
+    # An unreadable recommission set refuses the command (exit 2) before any regression or append.
+    def missing(_package):
+        raise recommission.RecommissionSetError("missing")
+
+    monkeypatch.setattr(recommission, "recommission_queries", missing)
+    with fresh_v3_sessions() as (factory, _engine):
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger="qcai.worker"):
+            assert main(["commission", STATIC], session_factory=factory, now=FIXED_NOW) == 2
+        assert {"event": "ranking.scan_refused", "reason": "recommission_set_unavailable", "problem": "missing"} in _worker_events(caplog)
+        assert rows(factory) == 0
 
 
 def test_plan_l_the_scan_takes_the_ranking_then_the_v3_lock():

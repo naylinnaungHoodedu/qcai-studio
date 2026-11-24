@@ -11,7 +11,8 @@ retried as the V3 scan does):
      availability changed (the gateway's ineligible_reason for a registry member; kill_switch for a static one under
      MODEL_GATEWAY_KILL_SWITCH), and `model_seen` or `model_change` per candidate; a model change records its X5 window
      under V3's lock with the key and version a record would carry (generator:<adapter_id>, <model_id>@<model_version>;
-     generator-prompt:<id> for a static generator), reusing V3's event when V3 already knows that version (conflict 14);
+     generator-prompt:<id> for a static generator), reusing V3's event when V3 already recorded a change to that version
+     (conflict 14), else from V3's known version or the candidate's previous one (record_x5_change);
   4. while a static candidate is uncommissioned, commit and refuse (RankingUncommissioned; conflict 26);
   5. append `hold_release` for each open hold once every X5 window raised under it closed (v3.scan.window_remaining == 0
      for the v3_event_seq of its `hold` row and of every `alarm` row naming it, a sustained alarm's included; a row
@@ -292,7 +293,10 @@ def x5_key(model: Any, *, static: bool) -> tuple[str, str]:
 
 
 def record_x5_change(db: Session, model: Any, *, static: bool, from_version: str, settings: Any, package: Any, now: datetime) -> tuple[int, bool]:
-    """The X5 model_change event for a candidate's version change: (v3 event seq, reused). V3's lock is held."""
+    """The X5 model_change event for a candidate's version change: (v3 event seq, reused). V3's lock is held. `from_version`
+    is the previous version in the form a record carries (x5_key's). When V3 already knows the new version from its own
+    model_change event, that event is reused; when V3 knows it only from a first sighting (no event), the event is written
+    from `from_version` and no second v3_model_versions row is added."""
     from app.db_models import V3Event, V3ModelVersion
     from app.services.v3 import triggers as trig
     from app.services.v3.queue import utc
@@ -300,15 +304,18 @@ def record_x5_change(db: Session, model: Any, *, static: bool, from_version: str
 
     key, version = x5_key(model, static=static)
     known = known_versions(db)
-    if known.get(key) == version:
+    sighted = known.get(key) == version
+    if sighted:
         for seq, payload in db.execute(select(V3Event.seq, V3Event.payload).where(V3Event.kind == "model_change").order_by(V3Event.seq.desc())):
             body = json.loads(payload)
             if body.get("model_key") == key and body.get("to_version") == version:
                 return int(seq), True
+    previous = from_version if sighted or key not in known else known[key]
     head = _ledger_head(db)
-    seq = record_model_change(db, trig.ModelChange(model_key=key, from_version=known.get(key, from_version), to_version=version),
+    seq = record_model_change(db, trig.ModelChange(model_key=key, from_version=previous, to_version=version),
                               source="ranking", from_ledger_seq=head, window=int(package.v3.x5_window_deliveries), now=now)
-    db.execute(insert(V3ModelVersion).values(model_key=key, model_version=version, first_seen_seq=head, source="ranking", seen_at=utc(now)))
+    if not sighted:
+        db.execute(insert(V3ModelVersion).values(model_key=key, model_version=version, first_seen_seq=head, source="ranking", seen_at=utc(now)))
     return seq, False
 
 
@@ -423,7 +430,8 @@ def _sync(db: Session, log: EventLog, state: dict, *, settings: Any, package: An
             log.append("model_seen", {"model": model.as_dict()}, model_key=model.adapter_id)
         elif entry["version"] != model.model_version:
             static = model.adapter_id in params.static_models
-            v3_seq, reused = record_x5_change(db, model, static=static, from_version=entry["version"], settings=settings, package=package, now=now)
+            previous = entry["version"] if static else f"{entry['model_id']}@{entry['version']}"   # x5_key's form, before the change
+            v3_seq, reused = record_x5_change(db, model, static=static, from_version=previous, settings=settings, package=package, now=now)
             payload = {"adapter_id": model.adapter_id, "from_version": entry["version"], "to_version": model.model_version,
                        "source": "package" if static else "registry"}
             log.append("model_change", payload, model_key=model.adapter_id, v3_event_seq=v3_seq)
@@ -471,7 +479,11 @@ def scan_until_done(*, settings: Any, package: Any, session_factory: Callable[[]
 
 def append_inputs(db: Session, inputs: list[tuple[str, dict]], *, settings: Any, package: Any, now: datetime, gateway: Any = None) -> list[int]:
     """Append operator inputs (commission, recommission_pass, recommission_fail) with their derived events and a checkpoint,
-    under the scan's locks, in the caller's transaction (the worker commits). The state must match its checkpoint."""
+    under the scan's locks, in the caller's transaction (the worker commits). The state must match its checkpoint. An input
+    the controller would refuse (recommission.refusal: an unknown model, a commission for a model with outcomes, another
+    version) raises RankingInputRefused before anything of the call is appended; the caller does not commit."""
+    from app.services.ranking.recommission import refusal
+
     take_locks(db)
     if stopped(db):
         raise ranking.RankingStopped("the ranking log is stopped")
@@ -483,6 +495,10 @@ def append_inputs(db: Session, inputs: list[tuple[str, dict]], *, settings: Any,
     _sync(db, log, state, settings=settings, package=package, gateway=gateway, now=now)
     seqs = []
     for kind, payload in inputs:
+        reason = refusal(log.state, kind, payload) if kind in ("commission", "recommission_pass", "recommission_fail") else None
+        if reason is not None:
+            db.rollback()
+            raise ranking.RankingInputRefused(kind, reason)
         seqs.append(log.append(kind, payload, model_key=payload.get("adapter_id")))
     _finish(db, log, state)
     return seqs

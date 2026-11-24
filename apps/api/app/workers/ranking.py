@@ -7,12 +7,15 @@ only; never a learner identifier, a response id or text). Every command but stat
                                          included)
   status                                 ranking.status with the mode and the SLIs (ranking.metrics.slis)
   replay --check                         under the ranking locks, replay the stored log twice; a mismatch appends
-                                         `stop {replay_mismatch}`, logs ranking.stop on qcai.worker and exits 1 (the
-                                         plan L stop)
-  commission ADAPTER                     the shadow golden regression over the recommission set; appends `commission`
-                                         (refused for a model with outcomes); exit 1 when it does not pass
+                                         `stop {replay_mismatch, mismatch, first_mismatch_seq}`, logs ranking.stop
+                                         (with mismatch and first_mismatch_seq) on qcai.worker and exits 1 (the plan L
+                                         stop)
+  commission ADAPTER                     the shadow golden regression over the recommission set; appends `commission`;
+                                         exit 1 when it does not pass; refused (exit 2, commission_refused, nothing
+                                         appended) for a model with outcomes
   recommission ADAPTER                   the same regression; appends recommission_pass (the cap lifts) or
-                                         recommission_fail (exit 1)
+                                         recommission_fail (exit 1); refused (exit 2, recommission_refused) for another
+                                         version than the model's
   clear-stop --cause {fixed_code,fixed_data,restored_backup}
                                          under the ranking locks; refused (exit 2) unless the hash chain, every stored
                                          derived event and every stored checkpoint match the replay and two replays
@@ -20,7 +23,7 @@ only; never a learner identifier, a response id or text). Every command but stat
                                          ranking_states and ranking_incumbents from the replay, appends a checkpoint
                                          and clear_stop (deployment.md, Phase 9, for the other mismatches)
 Exit codes: 0 ok; 1 a stop, a failed check or a failed regression; 2 usage or a refusal (ranking off, stopped,
-uncommissioned, an unknown adapter). Run as: python -m app.workers.ranking <command> ...
+uncommissioned, an unknown adapter, a refused commission or recommission, an unreadable recommission set). Run as: python -m app.workers.ranking <command> ...
 """
 
 from __future__ import annotations
@@ -60,10 +63,15 @@ def replay_check(*, session_factory=SessionLocal, now: datetime | None = None) -
         same = canonical(second.state) == canonical(again.state) and second.derived == again.derived
         ok = first.ok and same
         fields = {"ok": ok, "state_sha256": first.state_sha256, "stored_sha256": first.stored_sha256,
-                  "first_mismatch_seq": first.first_mismatch_seq, "reason": first.reason}
+                  "first_mismatch_seq": first.first_mismatch_seq, "reason": first.reason, "mismatch": None}
+        if not ok:
+            # What mismatched (deployment.md, Phase 9, "The stop"): state, chain, derived, checkpoint, input:<error>, or
+            # replays_differ when the log replays cleanly but two replays differ.
+            fields["mismatch"] = first.reason if not first.ok else "replays_differ"
         if not ok and not stopped(db):
             log = EventLog(db, empty_state(), now=now or datetime.now(UTC))
-            log.control("stop", {"reason": "replay_mismatch", "expected_sha256": first.stored_sha256, "actual_sha256": first.state_sha256})
+            log.control("stop", {"reason": "replay_mismatch", "mismatch": fields["mismatch"], "first_mismatch_seq": first.first_mismatch_seq,
+                                 "expected_sha256": first.stored_sha256, "actual_sha256": first.state_sha256})
             db.commit()
     return ok, fields
 
@@ -164,7 +172,8 @@ def main(argv: list[str] | None = None, *, session_factory=SessionLocal, now: da
         ok, fields = replay_check(session_factory=session_factory, now=now)
         if not ok:
             LOGGER.error("The ranking replay does not match the stored log: the ranking is stopped",
-                         extra={FIELDS: {"event": "ranking.stop", "reason": "replay_mismatch", "expected_sha256": fields["stored_sha256"],
+                         extra={FIELDS: {"event": "ranking.stop", "reason": "replay_mismatch", "mismatch": fields["mismatch"],
+                                         "first_mismatch_seq": fields["first_mismatch_seq"], "expected_sha256": fields["stored_sha256"],
                                          "actual_sha256": fields["state_sha256"]}})
             return EXIT_FAILED
         LOGGER.info("Ranking replay checked", extra={FIELDS: {"event": "ranking.replay_checked", **fields}})
@@ -175,7 +184,12 @@ def main(argv: list[str] | None = None, *, session_factory=SessionLocal, now: da
             return _refused("replays_differ" if cleared.reason == "replays_differ" else "log_mismatch", mismatch=cleared.reason)
         LOGGER.info("The ranking stop was cleared", extra={FIELDS: {"event": "ranking.stop_cleared", "cause": args.cause}})
         return EXIT_OK
-    run = regression(args.adapter, settings=settings, package=package)
+    from app.services.ranking.recommission import RecommissionSetError
+
+    try:
+        run = regression(args.adapter, settings=settings, package=package)
+    except RecommissionSetError as exc:
+        return _refused("recommission_set_unavailable", problem=exc.problem)
     if run is None:
         return _refused("unknown_adapter")
     from app.services.ranking.scan import append_inputs
@@ -194,6 +208,10 @@ def main(argv: list[str] | None = None, *, session_factory=SessionLocal, now: da
             db.commit()
     except ranking.RankingStopped:
         return _refused("stopped")
+    except ranking.RankingInputRefused as refused:
+        # Nothing was appended (append_inputs rolled back): an unknown model, a commission for a model with outcomes, or
+        # another version than the model's.
+        return _refused(f"{args.command}_refused", refusal=refused.reason, adapter_id=run.adapter_id)
     event = "ranking.commissioned" if args.command == "commission" else "ranking.recommissioned"
     LOGGER.info("Ranking regression recorded", extra={FIELDS: {"event": event, "adapter_id": run.adapter_id, "kind": kind, "clean": run.clean,
                                                                "failed": run.failed, "generated": run.generated, "passed": run.passed}})

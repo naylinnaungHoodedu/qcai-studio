@@ -149,14 +149,20 @@ def shadow_record(factory, query: str = TIER2, *, settings: Settings | None = No
 
 def commission_static(factory, *, settings: Settings | None = None, package=PACKAGE, clean: int = 40, failed: int = 0, gateway=None):
     """Append the static generator's commission input (as the worker's commission command records it)."""
+    commission_candidate(factory, STATIC, settings=settings, package=package, clean=clean, failed=failed, gateway=gateway)
+
+
+def commission_candidate(factory, adapter_id: str, *, settings: Settings | None = None, package=PACKAGE, clean: int = 40, failed: int = 0,
+                         gateway=None):
+    """Append a candidate's commission input at its current version (as the worker's commission command records it)."""
     from app.services.ranking.models import candidates
     from app.services.ranking.scan import append_inputs
     from v2_fakes import fresh_gateway
 
     settings = settings or ranking_settings()
-    ref = next(item for item in candidates(package, settings) if item.adapter_id == STATIC)
+    ref = next(item for item in candidates(package, settings) if item.adapter_id == adapter_id)
     with factory() as db:
-        append_inputs(db, [("commission", {"adapter_id": STATIC, "version": ref.model_version, "clean": clean, "failed": failed,
+        append_inputs(db, [("commission", {"adapter_id": adapter_id, "version": ref.model_version, "clean": clean, "failed": failed,
                                            "generated": clean + failed, "mean_q": "0.9", "run_sha256": "0" * 64})],
                       settings=settings, package=package, now=FIXED_NOW, gateway=gateway or fresh_gateway())
         db.commit()

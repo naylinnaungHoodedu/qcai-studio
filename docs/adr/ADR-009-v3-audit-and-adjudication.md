@@ -33,11 +33,14 @@ Nothing learner-facing changes outside development: V3 is off there, the flag in
 
 - **CUSUM alarms.** The Phase 9 ranking scan raises its alarms (source `phase9-cusum`) through `record_cusum_alarm`, now
   with `db=` so the alarm row commits with the ranking events that name it; each opens the X5 window as before. A hold on
-  promotions lasts until `v3.scan.window_remaining(db, v3_event_seq)` is 0 (open while V3 is off).
+  promotions lasts until every X5 window raised under it has closed: `v3.scan.window_remaining(db, v3_event_seq)` is 0
+  for its own window and for each sustained alarm's later window under the same hold (open while V3 is off).
 - **Model changes from the ranking.** `record_model_change` returns the inserted seq. The ranking scan records a candidate's
   version change under V3's lock with the key and version a record carries (`generator:<adapter_id>`,
-  `<model_id>@<model_version>`; `generator-prompt:<id>` for a static generator's prompt hash) and inserts the
-  `v3_model_versions` row, reusing V3's event when V3 already knows that version, so one change opens one window.
+  `<model_id>@<model_version>`; `generator-prompt:<id>` for a static generator's prompt hash), reusing V3's event when
+  V3 already recorded a change to that version, so one change opens one window. Otherwise the event runs from V3's known
+  version, or from the candidate's previous version in that form, and the `v3_model_versions` row is inserted unless V3
+  already holds the version from a first sighting.
 - **The queue reason.** Package v7's `v3.triggers.queue_reasons` adds `ranking_empty_eligible_set` (`QUEUE_REASONS_V7`), the
   ranking fallback's response item; it is not an X trigger, so `V3_COUNTED` is unchanged. Packages v5 and v6 keep the four
   Phase 6 reasons. `GoldLabel.reasons` takes the five; the schema packages v5 and v6 pin is reproduced by

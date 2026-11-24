@@ -162,7 +162,10 @@ def _cusum(state: dict, params, payload: dict, seq: int, derived: list, *, model
             fired = statistic > params.h
         if not fired:
             continue
-        open_hold = next((identifier for identifier, hold in sorted(state["holds"].items()) if hold["stream"] == stream), None)
+        # Sustained (second-alarm-while-held-v1): a second alarm on the stream while the hold its first alarm opened is open.
+        # Another cause's hold on the stream (a model change's) does not make an alarm sustained: the alarm opens its own.
+        open_hold = next((identifier for identifier, hold in sorted(state["holds"].items())
+                          if hold["stream"] == stream and hold["cause"] == "alarm"), None)
         sustained = open_hold is not None
         identifier = open_hold or rc.hold_id("alarm", stream, seq)
         derived.append(("alarm", {"stream": stream, "scope": "model" if contexts == ["*"] else "model_cluster", "statistic": to_str(statistic),

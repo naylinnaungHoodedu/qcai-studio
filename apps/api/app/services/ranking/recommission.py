@@ -7,7 +7,9 @@ pass: rule every-item-generated-no-failed-first-pass-v1) lifts the cap; a failin
 commissioning run (alpha0 = 1 + clean, beta0 = 1 + failed, Qbar0 = its mean Q) and is refused for a model with outcomes.
 
 regression_run is the worker's shadow regression (impure: it runs the two-pass pipeline over the recommission queries with
-the development fakes; record=False, so it writes nothing); every other function is a pure state transition.
+the development fakes; record=False, so it writes nothing) and recommission_queries reads the recommission set (golden-set-v1,
+found in the checkout or in the API image, which copies it; its sha256 and item count must be the package's); every
+other function is a pure state transition.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import localcontext
 import hashlib
+from pathlib import Path
 from typing import Any
 
 from app.services.ranking.cusum import cluster_stream, model_stream
@@ -56,10 +59,24 @@ def model_change(state: dict, params: Params, payload: dict, seq: int, derived: 
     derived.append(("hold", {"hold_id": identifier, "cause": "model_change", "contexts": ["*"], "models": [model]}))
 
 
+def refusal(state: dict, kind: str, payload: dict) -> str | None:
+    """Why an operator input would be refused (None when it applies): unknown_model, has_outcomes (a commission only) or
+    version_mismatch. The controller counts a refused input in `refused_inputs`; scan.append_inputs raises
+    RankingInputRefused before it appends one, so the worker exits 2 and writes nothing."""
+    entry = state["models"].get(payload["adapter_id"])
+    if entry is None:
+        return "unknown_model"
+    if kind == "commission" and has_outcomes(state, payload["adapter_id"]):
+        return "has_outcomes"
+    if payload["version"] != entry["version"]:
+        return "version_mismatch"
+    return None
+
+
 def commission(state: dict, params: Params, payload: dict) -> bool:
     model = payload["adapter_id"]
     entry = state["models"].get(model)
-    if entry is None or has_outcomes(state, model) or payload["version"] != entry["version"]:
+    if refusal(state, "commission", payload) is not None:
         state["counts"]["refused_inputs"] += 1
         return False
     entry["prior"] = {"alpha": to_str(1 + int(payload["clean"])), "beta": to_str(1 + int(payload["failed"])), "qbar": to_str(D(payload["mean_q"]))}
@@ -71,7 +88,7 @@ def commission(state: dict, params: Params, payload: dict) -> bool:
 
 def recommission(state: dict, payload: dict, *, passed: bool) -> None:
     entry = state["models"].get(payload["adapter_id"])
-    if entry is None or payload["version"] != entry["version"]:
+    if refusal(state, "recommission_pass" if passed else "recommission_fail", payload) is not None:
         state["counts"]["refused_inputs"] += 1
         return
     if passed:
@@ -158,14 +175,38 @@ def regression_run(model: Any, *, package: Any, queries: list[str] | None = None
     return RunResult(model.adapter_id, model.model_version, clean, failed, generated, skipped, mean_q, run_sha256, passed)
 
 
-def recommission_queries(package: Any) -> list[str]:
+class RecommissionSetError(RuntimeError):
+    """The recommission set cannot be read, or its sha256 or item count differs from the package's (fail closed)."""
+
+    def __init__(self, problem: str) -> None:
+        super().__init__(f"the recommission set is unavailable: {problem}")
+        self.problem = problem
+
+
+def recommission_set_path(relative: str, *, start: Path | None = None) -> Path:
+    """The first ancestor directory of this module holding `relative` (the package's golden_set path): the repository root
+    in a checkout, /app in the API image (apps/api/Dockerfile copies the file to /app/<relative>). Missing: RecommissionSetError."""
+    for directory in (start or Path(__file__)).resolve().parents:
+        candidate = directory / relative
+        if candidate.is_file():
+            return candidate
+    raise RecommissionSetError("missing")
+
+
+def recommission_queries(package: Any, *, start: Path | None = None) -> list[str]:
     import json
 
-    from app.services.ehmf.package_check import _repository_root  # the checkout or image root that holds docs/
+    from app.core.config_package import canonical_sha256
 
     params = package.ranking
-    path = _repository_root() / params.golden_set_path
-    return [item["query"] for item in json.loads(path.read_text(encoding="utf-8"))["items"]]
+    path = recommission_set_path(params.golden_set_path, start=start)
+    try:
+        golden = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RecommissionSetError("unreadable") from exc
+    if canonical_sha256(golden) != params.golden_set_sha256 or len(golden.get("items", ())) != params.golden_set_items:
+        raise RecommissionSetError("sha256_or_count_mismatch")
+    return [item["query"] for item in golden["items"]]
 
 
 def _run_query(pipeline: Any, query: str, index: int) -> Any:
@@ -181,4 +222,4 @@ def _run_query(pipeline: Any, query: str, index: int) -> Any:
                                       shadowed_response_id=f"turn-{UUID(int=index + 1)}", legacy_decision="answer"), record=False)
 
 
-__all__ = ["RunResult", "cluster_stream", "commission", "has_outcomes", "hold_id", "model_change", "recommission", "regression_run"]
+__all__ = ["RecommissionSetError", "RunResult", "cluster_stream", "commission", "has_outcomes", "hold_id", "model_change", "recommission", "recommission_queries", "recommission_set_path", "refusal", "regression_run"]
