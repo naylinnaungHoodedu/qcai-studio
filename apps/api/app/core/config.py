@@ -234,6 +234,19 @@ class Settings(BaseSettings):
     # EHMF is effectively off whenever the V2 mode is off. Shadow outside development is a recorded override that changes
     # no learner path (the two-pass pipeline and V2 are off there).
     ehmf: Literal["off", "shadow", "on"] | None = None
+    # Phase 9 (verified-trust ranking; docs/architecture/phase9-implementation-spec.md section 6). None = "shadow" in
+    # development and "off" elsewhere (RANKING_DEFAULT_DEVELOPMENT, RANKING_DEFAULT_ELSEWHERE, which package v7
+    # flag_policy.ranking must name). Off runs no ranking scan, no hook and no /ready stop read, and keeps every event,
+    # alarm and X5 window already written (plan L "Flag to static assignment, alarms retained"). Shadow runs the ranking
+    # scan (worker) over the ledger: it records the controller's events, raises X5 audits through Phase 6 and enqueues V3
+    # items, and changes no learner path (static assignment keeps generating every record). "on" (live routing) is
+    # refused in every environment while D-28 is open or the package says flag_policy.phase9_exit_passed is false (plan
+    # Phase 9 G, P; hold H11; PD-58). Shadow outside development is a recorded override that changes no learner path.
+    ranking: Literal["off", "shadow", "on"] | None = None
+    # Development only (refused elsewhere; PD-58): the shadow pipeline also generates, for the ranking hook's challenger
+    # or incumbent, one more undelivered shadow record with a development fake generate member (spec 4.12). Off by default,
+    # so the development request path is unchanged.
+    ranking_shadow_generation: bool = False
 
     @field_validator("model_egress_providers", "model_gateway_disabled_adapters", mode="before")
     @classmethod
@@ -326,6 +339,12 @@ class Settings(BaseSettings):
             self.ehmf = EHMF_DEFAULT_DEVELOPMENT if development else EHMF_DEFAULT_ELSEWHERE
         if not development and self.ehmf == "on":
             self._refuse_ehmf_on_before_phase_7_exit()
+        if self.ranking is None:
+            self.ranking = RANKING_DEFAULT_DEVELOPMENT if development else RANKING_DEFAULT_ELSEWHERE
+        if self.ranking == "on":
+            self._refuse_ranking_on()
+        if self.ranking_shadow_generation and not development:
+            raise ValueError("RANKING_SHADOW_GENERATION is development-only (Phase 9 spec 6; PD-58).")
         if self.arena_enabled and self.environment.lower() != "development":
             raise ValueError("ARENA_ENABLED is not permitted outside development (Decision D-03).")
         if self.guest_token_secret is None and self.environment.lower() == "development":
@@ -384,6 +403,25 @@ class Settings(BaseSettings):
             )
         if not (package.is_default_path and package.hash_verified):
             raise ValueError("EHMF=on outside development needs the shipped, hash-verified configuration package.")
+
+    def _refuse_ranking_on(self) -> None:
+        # Live routing (plan Phase 9 G "live routing only by flag after [Decision D-28]"; hold H11): refused in every
+        # environment, development included, while D-28 is open or the Phase 9 exit is not passed. Read lazily.
+        from app.core.config_package import ConfigPackageError, get_config_package  # lazy: avoids an import cycle
+
+        try:
+            package = get_config_package(self)
+        except ConfigPackageError as exc:
+            raise ValueError(f"RANKING=on needs a valid configuration package: {exc}") from exc
+        d28 = package.owner_decisions.get("D-28") if isinstance(package.owner_decisions, dict) else None
+        d28_open = not isinstance(d28, dict) or d28.get("state") != "decided"
+        if package.ranking is None or d28_open or not package.flag_policy.phase9_exit_passed:
+            raise ValueError(
+                "RANKING=on (live routing) is refused while D-28 is open, hold H11 holds and the Phase 9 exit is not passed "
+                "(configuration package flag_policy.phase9_exit_passed; plan Phase 9 G, P). Use off or shadow."
+            )
+        if not (package.is_default_path and package.hash_verified):
+            raise ValueError("RANKING=on needs the shipped, hash-verified configuration package.")
 
     def _refuse_model_gateway_on_before_phase_5_exit(self) -> None:
         # Read lazily, as for TWO_PASS_TUTOR=on: no other construction of Settings depends on the package.
@@ -505,6 +543,10 @@ V3_QUEUE_DEFAULT_ELSEWHERE = "off"
 # default_elsewhere, and the loader refuses a package whose values differ.
 EHMF_DEFAULT_DEVELOPMENT = "shadow"
 EHMF_DEFAULT_ELSEWHERE = "off"
+# The ranking defaults (PD-58). Configuration package v7 records them as flag_policy.ranking.default_development and
+# default_elsewhere, and the loader refuses a package whose values differ.
+RANKING_DEFAULT_DEVELOPMENT = "shadow"
+RANKING_DEFAULT_ELSEWHERE = "off"
 
 
 @lru_cache

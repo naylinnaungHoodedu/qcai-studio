@@ -865,3 +865,78 @@ class V3Scan(Base):
     package_version: Mapped[str] = mapped_column(String(32))
     package_sha256: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+# Phase 9 (verified-trust ranking; docs/architecture/phase9-implementation-spec.md 8). No table holds a learner identifier,
+# learner text or a foreign key to a user-keyed table, so erasure (plan 10.3) never reaches them.
+RANKING_EVENT_KINDS_SQL = ", ".join(
+    f"'{kind}'" for kind in ("config", "availability", "model_seen", "model_change", "commission", "recommission_pass", "recommission_fail",
+                             "outcome", "skipped", "feedback", "hold_release", "tick", "select", "batch", "promote", "demote", "alarm",
+                             "hold", "checkpoint", "stop", "clear_stop"))
+
+
+class RankingEvent(Base):
+    # The append-only, hash-chained ranking event log (app.services.ranking.scan): the controller's inputs, the events
+    # they derived, and the checkpoint, stop and clear_stop control rows. sha256 = sha256(prev_sha256|kind|payload)
+    # (ranking-chain-v1); observed_at is outside the hash. Triggers refuse UPDATE and DELETE (and TRUNCATE on PostgreSQL).
+    __tablename__ = "ranking_events"
+    __table_args__ = (
+        CheckConstraint(f"kind IN ({RANKING_EVENT_KINDS_SQL})", name="ck_ranking_events_kind"),
+        UniqueConstraint("input_key", name="uq_ranking_events_input"),
+        UniqueConstraint("context_key", "batch_seq", name="uq_ranking_events_batch"),
+        Index("ix_ranking_events_kind", "kind"),
+        Index("ix_ranking_events_ledger_seq", "ledger_seq"),
+    )
+
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(24))
+    context_key: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    model_key: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    ledger_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    batch_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    input_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payload: Mapped[str] = mapped_column(Text)
+    prev_sha256: Mapped[str] = mapped_column(String(64))
+    sha256: Mapped[str] = mapped_column(String(64))
+    v3_event_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    note: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RankingScan(Base):
+    # One row per ranking scan: the ledger range it read (the next scan starts after the largest to_seq) and its counts.
+    # Append-only.
+    __tablename__ = "ranking_scans"
+
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    from_seq: Mapped[int] = mapped_column(Integer)
+    to_seq: Mapped[int] = mapped_column(Integer)
+    records: Mapped[int] = mapped_column(Integer)
+    outcomes: Mapped[int] = mapped_column(Integer)
+    skipped: Mapped[int] = mapped_column(Integer)
+    batches: Mapped[int] = mapped_column(Integer)
+    alarms: Mapped[int] = mapped_column(Integer)
+    fallbacks: Mapped[int] = mapped_column(Integer)
+    package_version: Mapped[str] = mapped_column(String(32))
+    package_sha256: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RankingState(Base):
+    # The derived state cache: "_state" holds the canonical controller state (the replay must reproduce it byte for byte);
+    # "<model>|<context>" rows are a queryable copy of each model's state in each context. Rewritten by every scan.
+    __tablename__ = "ranking_states"
+
+    state_key: Mapped[str] = mapped_column(String(200), primary_key=True)
+    payload: Mapped[str] = mapped_column(Text)
+    sha256: Mapped[str] = mapped_column(String(64))
+    updated_event_seq: Mapped[int] = mapped_column(Integer)
+
+
+class RankingIncumbent(Base):
+    # The derived incumbent per context (a copy of the state's), rewritten by every scan.
+    __tablename__ = "ranking_incumbents"
+
+    context_key: Mapped[str] = mapped_column(String(160), primary_key=True)
+    model_key: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    since_event_seq: Mapped[int] = mapped_column(Integer)

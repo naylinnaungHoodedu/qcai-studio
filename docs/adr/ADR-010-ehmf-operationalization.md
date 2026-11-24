@@ -53,3 +53,11 @@ compared, so a conflict with a source outside the public corpus is not detected.
 - the misconception library is empty (Q-14, A-18; DI-106);
 - the stop is inert outside development, where no typed record is written (DI-111), and nothing reverts automatically (DI-114);
 - per-type rates are telemetry, not E2 results (plan H).
+
+## Revision 2026-11-23 (Phase 9: package v7)
+
+- **Package v7** (7.0.0, schema 7, `docs/architecture/phase9-implementation-spec.md` 5) keeps every v6 block and rule and
+  adds the `ranking` block (`ranking-params-v1`, provisional). Its schema bound is the loader's own
+  (`RANKING_SCHEMA_VERSION`, `LATEST_SCHEMA_VERSION`); `EHMF_SCHEMA_VERSION` stays 6 and every schema-6 rule applies to 7.
+  v6 stays readable for one release (DI-126). The package version history records 7.0.0 through
+  `run_golden_set.py --write` (the change-control gate of `docs/architecture/ehmf-change-control.md`).

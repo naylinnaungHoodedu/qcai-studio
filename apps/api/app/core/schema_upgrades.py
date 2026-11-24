@@ -79,6 +79,8 @@ def run_schema_upgrades(engine: Engine) -> None:
             _guard_v3_tables(connection)
             if "ehmf_stops" in tables:
                 _guard_ehmf_tables(connection)
+            if set(RANKING_APPEND_ONLY_TABLES) <= tables:
+                _guard_ranking_tables(connection)
         if "learner_write_guards" in tables:
             connection.exec_driver_sql(
                 "UPDATE learner_write_guards SET last_used_at = CURRENT_TIMESTAMP WHERE last_used_at IS NULL"
@@ -362,9 +364,10 @@ V3_QUEUE_STATE_MOVES = (("queued", "adjudicated"), ("adjudicated", "applied"))
 def _v3_queue_sets() -> dict[str, tuple[str, ...]]:
     # The comma-joined set columns and their vocabularies (queue.join writes sorted, comma-joined members).
     from app.services.ehmf.vocabulary import EHMF_TYPES
-    from app.services.v3.rules import QUEUE_REASONS, TRIGGERS
+    from app.services.v3.rules import QUEUE_REASONS_V7, TRIGGERS
 
-    return {"triggers": TRIGGERS, "reasons": QUEUE_REASONS, "ehmf_types": EHMF_TYPES}
+    # Every queue reason any package names (QUEUE_REASONS_V7 holds Phase 6's four and the ranking fallback's).
+    return {"triggers": TRIGGERS, "reasons": QUEUE_REASONS_V7, "ehmf_types": EHMF_TYPES}
 
 
 def _v3_queue_forward_only_postgres() -> str:
@@ -461,6 +464,32 @@ def _guard_ehmf_tables(connection: Connection) -> None:
                                    "BEGIN SELECT RAISE(ABORT, 'ehmf_stops is append-only: UPDATE refused'); END")
         connection.exec_driver_sql("CREATE TRIGGER ehmf_stops_no_delete BEFORE DELETE ON ehmf_stops "
                                    "BEGIN SELECT RAISE(ABORT, 'ehmf_stops is append-only: DELETE refused'); END")
+
+
+# The ranking event log and scan rows (Phase 9 spec 8.1): append-only, through Phase 6's v3_append_only() (created with
+# the V3 guards, which run first). ranking_states and ranking_incumbents are derived caches every scan rewrites.
+RANKING_APPEND_ONLY_TABLES = ("ranking_events", "ranking_scans")
+RANKING_TRIGGERS = (
+    *(Trigger(f"{table}_append_only", table, ("UPDATE", "DELETE"), "ROW", "v3_append_only") for table in RANKING_APPEND_ONLY_TABLES),
+    *(Trigger(f"{table}_no_truncate", table, ("TRUNCATE",), "STATEMENT", "v3_append_only") for table in RANKING_APPEND_ONLY_TABLES),
+)
+RANKING_SQLITE_TRIGGERS = (*(f"{table}_no_update" for table in RANKING_APPEND_ONLY_TABLES),
+                           *(f"{table}_no_delete" for table in RANKING_APPEND_ONLY_TABLES))
+
+
+def _guard_ranking_tables(connection: Connection) -> None:
+    if connection.dialect.name == "postgresql":
+        _postgres_guard(connection, functions={"v3_append_only": V3_FUNCTION_BODIES["v3_append_only"]}, triggers=RANKING_TRIGGERS,
+                        lock_order=RANKING_APPEND_ONLY_TABLES)
+        return
+    if connection.dialect.name == "sqlite":
+        for name in RANKING_SQLITE_TRIGGERS:
+            connection.exec_driver_sql(f"DROP TRIGGER IF EXISTS {name}")
+        for table in RANKING_APPEND_ONLY_TABLES:
+            connection.exec_driver_sql(f"CREATE TRIGGER {table}_no_update BEFORE UPDATE ON {table} "
+                                       f"BEGIN SELECT RAISE(ABORT, '{table} is append-only: UPDATE refused'); END")
+            connection.exec_driver_sql(f"CREATE TRIGGER {table}_no_delete BEFORE DELETE ON {table} "
+                                       f"BEGIN SELECT RAISE(ABORT, '{table} is append-only: DELETE refused'); END")
 
 
 def _guard_v3_tables(connection: Connection) -> None:

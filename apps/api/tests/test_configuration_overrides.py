@@ -42,7 +42,7 @@ client = TestClient(app)
 
 
 def write_package(tmp_path: Path, edit) -> Path:
-    """A copy of the shipped package (DEFAULT_PACKAGE_PATH, package v7 since Phase 8) under its own name, with `edit`
+    """A copy of the shipped package (DEFAULT_PACKAGE_PATH, package v5 since Phase 6) under its own name, with `edit`
     applied, its sidecar rewritten and its schema files alongside."""
     payload = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
     edit(payload)
@@ -87,6 +87,8 @@ SETTING_RELAXATIONS = {
     "v3_queue_shadow": {"v3_queue": "shadow"},
     # Phase 7: EHMF in shadow outside development (it changes no learner path; EHMF needs the V2 mode, off there).
     "ehmf_shadow": {"ehmf": "shadow"},
+    # Phase 9: the ranking in shadow outside development (it changes no learner path; it adds X5 audits and V3 items).
+    "ranking_shadow": {"ranking": "shadow"},
 }
 PACKAGE_RELAXATIONS = {"config_package_path_overridden": {"is_default_path": False}, "config_package_hash_unverified": {"hash_verified": False}}
 # Phase 4: a relaxation Settings refuse outside development before the Phase 4 exit (V1_PIPELINE=enforce). The alert
@@ -94,14 +96,11 @@ PACKAGE_RELAXATIONS = {"config_package_path_overridden": {"is_default_path": Fal
 # Phase 5: MODEL_GATEWAY=on, refused outside development before the Phase 5 exit (and without V1_PIPELINE=enforce).
 # Phase 6: V3_QUEUE=on, refused outside development before the Phase 6 exit.
 # Phase 7: EHMF=on, refused outside development before the Phase 7 exit.
-# Phase 8: learner flag activations, refused outside development before the Phase 8 exit.
-REFUSED_RELAXATIONS = {
-    "v1_pipeline_enforce": {"v1_pipeline": "enforce"}, "model_gateway_on": {"model_gateway": "on"},
-    "v3_queue_on": {"v3_queue": "on"}, "ehmf_on": {"ehmf": "on"},
-    "learner_sync_on": {"learner_sync": "on"}, "learner_identity_on": {"learner_identity": "on"},
-    "learner_privacy_on": {"learner_privacy": "on"}, "learner_planner_shadow": {"learner_planner": "shadow"},
-    "learner_planner_on": {"learner_planner": "on"},
-}
+# Phase 9: RANKING=on (live routing), refused while D-28 is open or before the Phase 9 exit, and RANKING_SHADOW_GENERATION,
+# refused outside development (development-only shadow generation).
+REFUSED_RELAXATIONS = {"v1_pipeline_enforce": {"v1_pipeline": "enforce"}, "model_gateway_on": {"model_gateway": "on"}, "v3_queue_on": {"v3_queue": "on"},
+                       "ehmf_on": {"ehmf": "on"}, "ranking_on": {"ranking": "on"},
+                       "ranking_shadow_generation": {"ranking_shadow_generation": True}}
 
 
 def _override_details(monkeypatch, settings: Settings, package=None) -> dict | None:

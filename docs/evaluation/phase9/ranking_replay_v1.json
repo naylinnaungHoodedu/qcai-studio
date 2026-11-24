@@ -1,0 +1,238 @@
+{
+ "report": "qcai-ranking-replay",
+ "format_version": 1,
+ "created_at": "2026-11-24T14:20:08Z",
+ "commit": "1c057dc753a796f0811973ad3524aa89f829fd79-dirty",
+ "evidence_class": "engineering measurement on synthetic streams, not E4 results (invariant 9; Table XVII MR-1..MR-3 not asserted)",
+ "pins": {
+  "config_package": {
+   "version": "7.0.0",
+   "sha256": "30c65633a31a5f06d6f985f0bdc62af761171415fd43800ae4c43b4e8c0fd5e6"
+  },
+  "ranking_parameters": {
+   "version": "ranking-params-v1",
+   "sha256": "4b93e983a326a778784b2786a400e707a7ac6402a59a2478a930b833384e4045"
+  }
+ },
+ "scenarios": [
+  {
+   "id": "flapping",
+   "seed": "synthetic-flapping-v1",
+   "events": 2026,
+   "log_rows": 4107,
+   "events_sha256": "e6abde226e07078b1ab8cbf1143d0e999c6e94860481829af183689304aca12f",
+   "final_state_sha256": "f8b212df7d303be41c2a2feff5dca6f91bc642291877e837b9a50e7c9cf6edfc",
+   "derived_sha256": "8a5907b89616be8e39445586b1692b299df16e5c5cb3b3f39f809ea639c5afd7",
+   "replays_equal": true,
+   "requests": 2000,
+   "drift_free_requests": 2000,
+   "switches_drift_free": 0,
+   "switches_per_context_per_1000_drift_free": {
+    "unscoped|explanation|2": "0"
+   },
+   "switch_causes_drift_free": {
+    "promote": 0,
+    "demote": 0
+   },
+   "false_alarms": 0,
+   "false_alarms_per_1000": "0",
+   "alarms": 0,
+   "detection_delay": null,
+   "fallbacks": 0,
+   "promotions": 0,
+   "demotions": 0
+  },
+  {
+   "id": "promotion",
+   "seed": "synthetic-promotion-v1",
+   "events": 1218,
+   "log_rows": 2468,
+   "events_sha256": "e9704fd59c3905e0bf5d2faca7599d35f4674bda5c17204f6a46068447a8d068",
+   "final_state_sha256": "ee7cf0f9fc3fc0778174a06d95b6fb2bb40f9faef97d1c96a652a0c9a25fce3f",
+   "derived_sha256": "0249dd0d341ef30d375ee1c74b4f65a48cdc024d3b0dcbaf832427c7f34315fa",
+   "replays_equal": true,
+   "requests": 1200,
+   "drift_free_requests": 1200,
+   "switches_drift_free": 1,
+   "switches_per_context_per_1000_drift_free": {
+    "unscoped|explanation|2": "0.833333333333333333"
+   },
+   "switch_causes_drift_free": {
+    "promote": 1,
+    "demote": 0
+   },
+   "false_alarms": 0,
+   "false_alarms_per_1000": "0",
+   "alarms": 0,
+   "detection_delay": null,
+   "fallbacks": 0,
+   "promotions": 1,
+   "demotions": 0
+  },
+  {
+   "id": "outage",
+   "seed": "synthetic-outage-v1",
+   "events": 917,
+   "log_rows": 1856,
+   "events_sha256": "4ec2660a181b3c3cb3ce70079d9f2fb6a437ffaaa1a083cd6651b6caa8747a64",
+   "final_state_sha256": "1eaafea4bde57bb7411b6d0625624a280eb000ee71d2647bdc2769a987269f66",
+   "derived_sha256": "344d03ec5edc63fb2844abec605d6b204129b9a94da8e029d7969b1636f2b202",
+   "replays_equal": true,
+   "requests": 900,
+   "drift_free_requests": 300,
+   "switches_drift_free": 0,
+   "switches_per_context_per_1000_drift_free": {
+    "unscoped|explanation|2": "0"
+   },
+   "switch_causes_drift_free": {
+    "promote": 0,
+    "demote": 0
+   },
+   "false_alarms": 0,
+   "false_alarms_per_1000": "0",
+   "alarms": 0,
+   "detection_delay": null,
+   "fallbacks": 0,
+   "promotions": 1,
+   "demotions": 1
+  },
+  {
+   "id": "drift",
+   "seed": "synthetic-drift-v1",
+   "events": 1521,
+   "log_rows": 3150,
+   "events_sha256": "a8d6c53e30c8df1e08b8b78416804b36aed3bd4605d4984b591b7e876af935f5",
+   "final_state_sha256": "5586d016064b4153307f3f3b1f3afba9fe2bb4d1b16dbfba8e75926f5c3c3817",
+   "derived_sha256": "023f4635b74b7fe67faa4b195bee3b6cc3b451f439ec3ba2fe6adb9620b42faa",
+   "replays_equal": true,
+   "requests": 1500,
+   "drift_free_requests": 750,
+   "switches_drift_free": 2,
+   "switches_per_context_per_1000_drift_free": {
+    "industry-use-cases|explanation|2": "6.666666666666666667",
+    "nisq-hybrid-workflows|explanation|2": "1.666666666666666667"
+   },
+   "switch_causes_drift_free": {
+    "promote": 1,
+    "demote": 1
+   },
+   "false_alarms": 2,
+   "false_alarms_per_1000": "2.666666666666666667",
+   "alarms": 26,
+   "detection_delay": 61,
+   "fallbacks": 0,
+   "promotions": 1,
+   "demotions": 1
+  },
+  {
+   "id": "model_change",
+   "seed": "synthetic-model_change-v1",
+   "events": 514,
+   "log_rows": 1036,
+   "events_sha256": "b2de919ed20803f3c236760dbe93c255832cb3641ff0701a13b55b962d1d6181",
+   "final_state_sha256": "d2e60011e2e6fa4599c9deb6a3a14797320810ca8e2d8f891c408435597f7ce5",
+   "derived_sha256": "549dbe1c73d344cd4d43ce1760d10739afe240a2ddc335405eb96546b33ed72a",
+   "replays_equal": true,
+   "requests": 500,
+   "drift_free_requests": 200,
+   "switches_drift_free": 0,
+   "switches_per_context_per_1000_drift_free": {
+    "unscoped|explanation|2": "0"
+   },
+   "switch_causes_drift_free": {
+    "promote": 0,
+    "demote": 0
+   },
+   "false_alarms": 0,
+   "false_alarms_per_1000": "0",
+   "alarms": 0,
+   "detection_delay": null,
+   "fallbacks": 0,
+   "promotions": 0,
+   "demotions": 0
+  },
+  {
+   "id": "empty_eligible",
+   "seed": "synthetic-empty_eligible-v1",
+   "events": 209,
+   "log_rows": 419,
+   "events_sha256": "3a4cbb1dca5ca27d7051e9b3e23ba5c9e0b77ad681e05df8a99e15daed33bfc4",
+   "final_state_sha256": "ece2602131a885bcd87c57ea5bf02142244f96e5264bca58bfc722a63b3f4995",
+   "derived_sha256": "f4ff5671f5da76661c37b9e6d72a97664ead6c273527054e27e6f64716a74f0b",
+   "replays_equal": true,
+   "requests": 200,
+   "drift_free_requests": 100,
+   "switches_drift_free": 0,
+   "switches_per_context_per_1000_drift_free": {
+    "unscoped|explanation|2": "0"
+   },
+   "switch_causes_drift_free": {
+    "promote": 0,
+    "demote": 0
+   },
+   "false_alarms": 0,
+   "false_alarms_per_1000": "0",
+   "alarms": 0,
+   "detection_delay": null,
+   "fallbacks": 100,
+   "promotions": 0,
+   "demotions": 1
+  },
+  {
+   "id": "rating_only",
+   "seed": "synthetic-rating_only-v1",
+   "events": 67,
+   "log_rows": 130,
+   "events_sha256": "894aa81ef11edaefb41d969b489b553b443073fc9141a92794de12543613d220",
+   "final_state_sha256": "01cfe3835f385c9badb5e1d1962a9174f6203021632a565d33c6d6d773fd6d85",
+   "derived_sha256": "bca29869b71af32f25ca821c662823e1859289ae860b913cef8213809003903f",
+   "replays_equal": true,
+   "requests": 60,
+   "drift_free_requests": 60,
+   "switches_drift_free": 0,
+   "switches_per_context_per_1000_drift_free": {
+    "unscoped|explanation|2": "0"
+   },
+   "switch_causes_drift_free": {
+    "promote": 0,
+    "demote": 0
+   },
+   "false_alarms": 0,
+   "false_alarms_per_1000": "0",
+   "alarms": 0,
+   "detection_delay": null,
+   "fallbacks": 0,
+   "promotions": 0,
+   "demotions": 0
+  }
+ ],
+ "inputs": {
+  "files": {
+   "apps/api/app/services/ranking/__init__.py": "d91c6a8760f99946722444c894077782a0f7eeba22052b0db347fa8cafa879c3",
+   "apps/api/app/services/ranking/batch.py": "462137b94d17ec547c94f12921ba01e15ccbb84a6040519c2beec6a447602203",
+   "apps/api/app/services/ranking/contexts.py": "48a3299bb86cb7e51898741342bb04ca4c200eb5670b6d264ebc003b414e1388",
+   "apps/api/app/services/ranking/controller.py": "f86592b2c9510bbdcc755917b6782dc13898247ce31e08d6ae93deef2fe1b50d",
+   "apps/api/app/services/ranking/cusum.py": "4c590d6b9279e649cd8df24f0e44a6ededeac2399501dab65a15effa0185930c",
+   "apps/api/app/services/ranking/generators.py": "a3c3ad80806235142e702da7b1b7295326e41cf1b0838ba5c7ec42f2a8eca49d",
+   "apps/api/app/services/ranking/hook.py": "1d07a4a7837da18af4d4724efd9ae3745ee7224f24c2b357b890daeebfb729cd",
+   "apps/api/app/services/ranking/metrics.py": "1a4e8f5fb578b21bafa69d9bec95b6efccb108ea3a847e548cec11f3ec2ce373",
+   "apps/api/app/services/ranking/models.py": "c8d98ce6a3776798e57b4fac02cf5f38668b2e60e39a41280676b41b10fa897d",
+   "apps/api/app/services/ranking/numeric.py": "65f53c620bcef68c6f202b2d1466137eedfbf4cf4f8db87bfed828529fa57076",
+   "apps/api/app/services/ranking/package_check.py": "ba3677ce5aa21a3fdd32b9d15ca71dd959eee120e17b940387b518baee814f78",
+   "apps/api/app/services/ranking/quality.py": "6ac10964a71d3044f01df35fee1aafe3095099c5b870c7decd28a99f767fa52e",
+   "apps/api/app/services/ranking/recommission.py": "80dbea4db54956283cd365ee2e7d001a8f2c212f6f8d399a7055d67f5e15a8c4",
+   "apps/api/app/services/ranking/replay.py": "747ad144c4cbc4e7fc339f7abd7a4e2c4eb7917b5121ebbff544d149ec18cc67",
+   "apps/api/app/services/ranking/scan.py": "5a81ac14d307c8deb8da28f9694e62dac0d4348b67d4aa44a71cf683da02241b",
+   "apps/api/app/services/ranking/score.py": "1d46c752f2a78b1f5689b59f32e81901113bf286aa5e4cf5d7f6ea66ef196970",
+   "apps/api/app/services/ranking/selection.py": "3fe91a08fbd69ec69bb5b1ae45b2e31a23e43ec901e5777201987f0399d7ec88",
+   "apps/api/app/services/ranking/signals.py": "12bf913428a926d951aecb501ee30e7d8d7bfecf10efe41aad8e7f551501bcd9",
+   "apps/api/app/services/ranking/state.py": "2252bc516d72506fcdb8931a71ba0bad35e7ae3f09f94d5c33cd4fe549732561",
+   "apps/api/app/services/ranking/synthetic.py": "29736e7b34ba0d5f2d0eef84dc50a2509f36a7cf5effc411d1e5e39714170177",
+   "apps/api/app/services/ranking/trust.py": "400c9c4d1b59c5771e760b5154ce597f5fcca4773a0ea4e399c146e9f22389d6",
+   "apps/api/app/services/ranking/types.py": "c6b5924d928108b6754e60389df31d39e527b9eb3447f4aac23ad2e737dcbd21",
+   "apps/api/app/services/ranking/vocabulary.py": "76f8127a69de1b5049dedcf0016fa95e6b3591b3adf66107af3449ca62f72a58",
+   "scripts/run_ranking_replay.py": "6830e5d2bd68ee395c406fde7f9d02a9829b65b8893fdbe8c3ae167fb1e7ed94"
+  },
+  "sha256": "f73f7e836c278d5a3d717186cab6b922d0b95cc55ee0fb14f9cd69a58621bc5a"
+ }
+}

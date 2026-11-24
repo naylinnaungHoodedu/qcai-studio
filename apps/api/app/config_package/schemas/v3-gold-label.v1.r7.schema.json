@@ -1,0 +1,238 @@
+{
+  "$defs": {
+    "ClaimLabel": {
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {
+          "pattern": "^claim-[0-9a-f]{32}$",
+          "title": "Claim Id",
+          "type": "string"
+        },
+        "ehmf_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "E"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ehmf Type"
+        },
+        "verdict": {
+          "enum": [
+            "SUPPORTED",
+            "CONTRADICTED",
+            "NOT_ENOUGH_INFO"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claim_id",
+        "verdict"
+      ],
+      "title": "ClaimLabel",
+      "type": "object"
+    },
+    "GoldClaim": {
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {
+          "pattern": "^claim-[0-9a-f]{32}$",
+          "title": "Claim Id",
+          "type": "string"
+        },
+        "span_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "title": "Span Ids",
+          "type": "array"
+        },
+        "text_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Text Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claim_id",
+        "span_ids",
+        "text_sha256"
+      ],
+      "title": "GoldClaim",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "abstention_label": {
+      "anyOf": [
+        {
+          "enum": [
+            "correct",
+            "missed_answer"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Abstention Label"
+    },
+    "adjudicated_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$",
+      "title": "Adjudicated At",
+      "type": "string"
+    },
+    "claim_labels": {
+      "items": {
+        "$ref": "#/$defs/ClaimLabel"
+      },
+      "maxItems": 20,
+      "title": "Claim Labels",
+      "type": "array"
+    },
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/GoldClaim"
+      },
+      "maxItems": 20,
+      "title": "Claims",
+      "type": "array"
+    },
+    "client_key": {
+      "pattern": "^[A-Za-z0-9_-]{8,64}$",
+      "title": "Client Key",
+      "type": "string"
+    },
+    "delivered_answer": {
+      "title": "Delivered Answer",
+      "type": "boolean"
+    },
+    "delivery_digest": {
+      "pattern": "^[0-9a-f]{32}$",
+      "title": "Delivery Digest",
+      "type": "string"
+    },
+    "gold_schema": {
+      "const": "v3-gold-label-v1",
+      "default": "v3-gold-label-v1",
+      "title": "Gold Schema",
+      "type": "string"
+    },
+    "item_id": {
+      "pattern": "^v3i-[0-9a-f]{24}$",
+      "title": "Item Id",
+      "type": "string"
+    },
+    "ledger_seq": {
+      "minimum": 1,
+      "title": "Ledger Seq",
+      "type": "integer"
+    },
+    "package_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Package Sha256",
+      "type": "string"
+    },
+    "package_version": {
+      "title": "Package Version",
+      "type": "string"
+    },
+    "reasons": {
+      "items": {
+        "enum": [
+          "v1_3_flag",
+          "v1_8_misconception",
+          "v2_correction_exhausted",
+          "v2_degraded_withheld",
+          "ranking_empty_eligible_set"
+        ],
+        "type": "string"
+      },
+      "maxItems": 5,
+      "title": "Reasons",
+      "type": "array"
+    },
+    "residual_error": {
+      "title": "Residual Error",
+      "type": "boolean"
+    },
+    "response_digest": {
+      "pattern": "^[0-9a-f]{32}$",
+      "title": "Response Digest",
+      "type": "string"
+    },
+    "review_round": {
+      "maximum": 3,
+      "minimum": 1,
+      "title": "Review Round",
+      "type": "integer"
+    },
+    "reviewer_digest": {
+      "pattern": "^[0-9a-f]{32}$",
+      "title": "Reviewer Digest",
+      "type": "string"
+    },
+    "subject": {
+      "enum": [
+        "claim",
+        "response"
+      ],
+      "title": "Subject",
+      "type": "string"
+    },
+    "triggers": {
+      "items": {
+        "enum": [
+          "X1",
+          "X2",
+          "X3",
+          "X4",
+          "X5",
+          "X6"
+        ],
+        "type": "string"
+      },
+      "maxItems": 6,
+      "title": "Triggers",
+      "type": "array"
+    }
+  },
+  "required": [
+    "item_id",
+    "review_round",
+    "subject",
+    "triggers",
+    "reasons",
+    "ledger_seq",
+    "response_digest",
+    "delivery_digest",
+    "delivered_answer",
+    "claims",
+    "claim_labels",
+    "abstention_label",
+    "residual_error",
+    "reviewer_digest",
+    "client_key",
+    "package_version",
+    "package_sha256",
+    "adjudicated_at"
+  ],
+  "title": "GoldLabel",
+  "type": "object"
+}

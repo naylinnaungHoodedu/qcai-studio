@@ -5,8 +5,8 @@ on a retrieval request or an evidential envelope (AC-3-1, R-41) and a generator 
 plan (R-11). The committed JSON schemas (app/config_package/schemas/: the eight *.v1.schema.json,
 ledger-entry.v2.schema.json for LedgerEntryV2, ledger-entry.v3.schema.json for LedgerEntryV3 and ledger-entry.v4.schema.json
 for LedgerEntryV4) are generated from these models and pinned by sha256 in the shipped configuration package (v7 since
-Phase 8, with the same pins as v6 since Phase 7, which also pins LedgerEntryV4 and the misconception library v1 file;
-v5 since Phase 6, which pins the same fourteen
+Phase 9, which pins the same tutor schemas as v6 and, in its v3 block, the gold-label schema with the ranking queue reason;
+v6 since Phase 7, which also pins LedgerEntryV4 and the misconception library v1 file; v5 since Phase 6, which pins the same fourteen
 schemas as v4 and, in its v3 block, the two V3 contracts of app.services.v3.contracts; v4 since Phase 5, which also pins
 the four gateway request and verdict schemas; v3, still readable, pins nine, and v2 the eight v1 schemas).
 

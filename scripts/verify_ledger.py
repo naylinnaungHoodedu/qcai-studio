@@ -118,7 +118,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.export is not None:
                 report["exported"] = {"rows": export_ledger(db, args.export)}
             if args.check_provenance:
-                report["provenance"] = ledger_provenance(db, get_config_package(get_settings()))
+                settings = get_settings()   # a development clone record is accepted in development only (Phase 9 spec 4.12)
+                report["provenance"] = ledger_provenance(db, get_config_package(settings), environment=settings.environment)
                 if check.ok and report["provenance"]["problem_count"]:
                     report["status"] = "provenance_mismatch"
     except SQLAlchemyError as exc:

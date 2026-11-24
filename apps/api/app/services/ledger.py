@@ -114,7 +114,7 @@ RECORD_HASH_RULE = "sha256(canonical{chain,seq,created_at,prev_hash,entry_sha256
 # retried within the remaining budget like an IntegrityError (spec 18.8 F8).
 RETRYABLE_SQLSTATES = frozenset({"40P01", "40001"})
 # The Alembic revision this code expects (tested against the single head); stamped on every record (plan 13.5).
-SCHEMA_REVISION = "20261123_phase8_learner"
+SCHEMA_REVISION = "20261123_phase9_ranking"
 # The legacy contained path's ids and rule hash, stamped on every legacy record (the only records production writes).
 # Configuration package v2 pins all four (tutor_pipeline.legacy) and package_check requires them to agree, so the
 # provenance audit (ledger_provenance) has a pinned reference value (DI-49).
@@ -623,12 +623,31 @@ def ledger_coverage(db: Session, since: datetime, *, now: datetime | None = None
     }
 
 
-def _provenance_problems(seq: int, entry: dict[str, Any], params: TutorPipelineParams, v1: Any, phase5: Any) -> list[str]:
+def clone_prompt_hashes(package: ConfigPackage, *, environment: str | None) -> dict[str, str]:
+    """Package v7 (Phase 9 spec 4.12): each development-registry fake generate member with the extractive-clone-v1 rule,
+    with the evidential prompt hash its shadow records carry; empty for a package without a ranking block, and empty
+    outside development (a clone generator is refused there, so no clone record can be legitimate: the strictest check)."""
+    if (environment or "").lower() != "development":
+        return {}
+    if getattr(package, "ranking", None) is None or package.gateway is None or package.tutor_pipeline is None:
+        return {}
+    from app.services.ranking.generators import clone_prompt_hash
+    from app.services.ranking.vocabulary import CLONE_RULE
+
+    return {spec.adapter_id: clone_prompt_hash(spec.adapter_id, package) for spec in package.gateway.registries.get("development", ())
+            if spec.provider == "fake" and "generate" in spec.capabilities and getattr(spec, "fake_generate_rule", None) == CLONE_RULE}
+
+
+def _provenance_problems(seq: int, entry: dict[str, Any], params: TutorPipelineParams, v1: Any, phase5: Any,
+                         clones: dict[str, str] | None = None) -> list[str]:
     """What in one record's provenance differs from the package's pins (ledger_provenance). A two-pass ledger-entry-v2
     or ledger-entry-v3 record must also name the package's V1.3 checker and V1 rules hash (Phase 4 spec 7.9); a v3
     record also its tool contract, panel weights and routing table versions and its V2 verifier prompt hash (Phase 5
     spec 7.3). v1 is the package's v1 block (None for a package without one) and phase5 its (v2, tools) blocks (None for
-    a package without them), each passed by every caller so that no call skips a check."""
+    a package without them), each passed by every caller so that no call skips a check. clones (clone_prompt_hashes):
+    a shadow record of a development clone generator (Phase 9 shadow generation) is checked against its clone prompt
+    hash instead of the package's evidential hash and allowed generators; every other generator id is checked as before.
+    Without clones (None) no generator is a clone, the strictest check."""
     provenance = entry.get("provenance") if isinstance(entry.get("provenance"), dict) else {}
     versions = entry.get("versions") if isinstance(entry.get("versions"), dict) else {}
     pipeline = entry.get("pipeline")
@@ -650,7 +669,10 @@ def _provenance_problems(seq: int, entry: dict[str, Any], params: TutorPipelineP
             "versions.pipeline_version": (versions.get("pipeline_version"), params.version),
             "resolved_question.resolver.prompt_hash": (resolver.get("prompt_hash"), params.resolver_prompt_hash),
         }
-        if versions.get("generator_id") not in params.generators_allowed:
+        clone_hash = (clones or {}).get(versions.get("generator_id")) if entry.get("delivery") == "shadow" else None
+        if clone_hash is not None:
+            expected["provenance.evidential_prompt_hash"] = (provenance.get("evidential_prompt_hash"), clone_hash)
+        elif versions.get("generator_id") not in params.generators_allowed:
             problems.append(f"seq {seq} versions.generator_id is not a generator the package allows")
         if entry.get("entry_schema") in ("ledger-entry-v2", "ledger-entry-v3", "ledger-entry-v4"):
             verification = entry.get("verification") if isinstance(entry.get("verification"), dict) else {}
@@ -682,7 +704,7 @@ def _provenance_problems(seq: int, entry: dict[str, Any], params: TutorPipelineP
     return problems
 
 
-def ledger_provenance(db: Session, package: ConfigPackage) -> dict[str, Any]:
+def ledger_provenance(db: Session, package: ConfigPackage, *, environment: str | None = None) -> dict[str, Any]:
     """F-2's audit until a provider prompt exists (plan 15.1 "Zero learner-state fields in evidential-pass prompts";
     DI-49): no evidential prompt is logged or ledgered, so instead every record must name the pinned, learner-free
     evidential input of its pipeline. A record stamped with the package in force (versions.config_package_sha256) is
@@ -692,10 +714,13 @@ def ledger_provenance(db: Session, package: ConfigPackage) -> dict[str, Any]:
                                       pedagogical prompt);
       two-pass (tutor_pipeline)       the evidential, pedagogical and resolver prompt hashes are the package's, the
                                       pipeline version is its version, and the generator is one it allows;
-    and every claim carries its record's provenance. A record stamped with another package is counted
+    and every claim carries its record's provenance. Only with environment "development" is a shadow record of a
+    development clone generator checked against its clone prompt hash (clone_prompt_hashes); otherwise, the default,
+    no generator is a clone. A record stamped with another package is counted
     (other_package) and not compared: its pins are that package's. Counts and seq numbers only, never record text.
     Read-only; run by the worker's and the script's --check-provenance."""
     params = ledger_params(package)
+    clones = clone_prompt_hashes(package, environment=environment)
     problems: list[str] = []
     records = checked = other_package = 0
     config_versions: dict[str, int] = {}
@@ -716,7 +741,7 @@ def ledger_provenance(db: Session, package: ConfigPackage) -> dict[str, Any]:
             other_package += 1
             continue
         checked += 1
-        problems.extend(_provenance_problems(seq, entry, params, package.v1, phase5_blocks(package)))
+        problems.extend(_provenance_problems(seq, entry, params, package.v1, phase5_blocks(package), clones))
     return {
         "package_version": package.package_version,
         "package_sha256": package.sha256,

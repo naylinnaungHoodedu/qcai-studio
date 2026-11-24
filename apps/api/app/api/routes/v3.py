@@ -234,6 +234,16 @@ def metrics(request: Request, db: Session = Depends(get_db), user: AuthUser = De
         return _not_found()
     from app.services.v3.metrics import slis
 
-    body = slis(db, get_config_package(settings), now=_now(), settings=settings)
+    package = get_config_package(settings)
+    body = slis(db, package, now=_now(), settings=settings)
+    # Phase 9 spec 4.13: the ranking SLIs, null when the ranking mode is off.
+    from app.services import ranking
+
+    if ranking.mode(settings, package) == "off":
+        body["ranking"] = None
+    else:
+        from app.services.ranking.metrics import slis as ranking_slis
+
+        body["ranking"] = ranking_slis(db, package)
     _event("v3.metrics_read", request, user)
     return _ok(body)

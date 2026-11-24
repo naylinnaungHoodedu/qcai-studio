@@ -374,9 +374,9 @@ def _approved_manifest() -> Path:
 def gate_environment(gate: str) -> Gate:
     manifest = _approved_manifest()
     settings = Settings(environment="development", enforce_corpus_governance=True, corpus_manifest_path=str(manifest), retrieval_gate=gate,
-                        two_pass_tutor="shadow", v1_pipeline="enforce", model_gateway="off", ehmf="off")
+                        two_pass_tutor="shadow", v1_pipeline="enforce", model_gateway="off", ehmf="off", ranking="off")
     off = Settings(environment="development", enforce_corpus_governance=True, corpus_manifest_path=str(manifest), retrieval_gate=gate,
-                   two_pass_tutor="shadow", v1_pipeline="off", model_gateway="off", ehmf="off")
+                   two_pass_tutor="shadow", v1_pipeline="off", model_gateway="off", ehmf="off", ranking="off")
     if gate not in _STORES:
         _STORES[gate] = CourseStore(settings)
     return Gate(gate=gate, settings=settings, off_settings=off, store=_STORES[gate])

@@ -15,8 +15,6 @@ from app.core.config import Settings
 from app.core.config_package import (
     DEFAULT_PACKAGE_PATH,
     EHMF_SCHEMA_VERSION,
-    LATEST_SCHEMA_VERSION,
-    V6_PACKAGE_PATH,
     ConfigPackageError,
     canonical_sha256,
     get_config_package,
@@ -144,12 +142,15 @@ def test_a_package_file_copied_without_its_library_folder_loads_only_the_library
 
 
 def test_the_phase_7_package_number_is_read_from_one_constant_per_side():
-    # The v6 predecessor defines the first EHMF schema and major. The shipped package has a separate schema ceiling.
-    first = load_config_package(V6_PACKAGE_PATH, governed=True)
-    assert first.schema_version == EHMF_SCHEMA_VERSION == vocabulary.EHMF_FIRST_MAJOR == 6
-    assert first.package_version == f"{EHMF_SCHEMA_VERSION}.0.0"
-    assert PACKAGE.schema_version == LATEST_SCHEMA_VERSION == int(SHIPPED_VERSION.split(".")[0])
-    assert PACKAGE.raw["ehmf"]["config_version"] == first.raw["ehmf"]["config_version"]
+    # E16: the Phase 7 package may be renumbered (Phase 8 takes v6 if it reaches main first). The loader's schema rules
+    # read EHMF_SCHEMA_VERSION and the ledger's config_version reads EHMF_FIRST_MAJOR; the two are equal, and v6 (the first
+    # package with an ehmf block, read explicitly since Phase 9 ships v7) is that schema and that major. The shipped
+    # package's own number is test_ranking_units' (RANKING_SCHEMA_VERSION, Phase 9).
+    from app.core.config_package import V6_PACKAGE_PATH
+
+    v6 = json.loads(V6_PACKAGE_PATH.read_text(encoding="utf-8"))
+    assert EHMF_SCHEMA_VERSION == vocabulary.EHMF_FIRST_MAJOR == v6["schema_version"] == int(v6["package_version"].split(".")[0])
+    assert PACKAGE.schema_version >= EHMF_SCHEMA_VERSION and int(SHIPPED_VERSION.split(".")[0]) == PACKAGE.schema_version
     assert PACKAGE.raw["ehmf"]["config_version"]["first_package"] == f"{vocabulary.EHMF_FIRST_MAJOR}.0.0"
     loader = (REPO_ROOT / "apps" / "api" / "app" / "core" / "config_package.py").read_text(encoding="utf-8")
     script = (REPO_ROOT / "scripts" / "config_package.py").read_text(encoding="utf-8")
@@ -208,7 +209,10 @@ def test_the_golden_runner_exits_on_drift_dirty_and_unmet(tmp_path, monkeypatch)
     path.write_text(json.dumps(drifted), encoding="utf-8")
     assert golden.main(["--check", str(path)]) == 1
     monkeypatch.setattr(golden, "_commit", lambda: "abc-dirty")
-    assert golden.main(["--write", str(tmp_path / "out.json")]) == 4
+    history = tmp_path / "history.json"
+    history.write_bytes(golden.DEFAULT_HISTORY.read_bytes())
+    assert golden.main(["--write", str(tmp_path / "out.json"), "--history", str(history)]) == 4
+    assert history.read_bytes() == golden.DEFAULT_HISTORY.read_bytes()
     assert golden.main(["--check", str(REPO_ROOT / "lqs" / "x.json")]) == 2
     unmet = json.loads(json.dumps(record))
     path.write_text(json.dumps(unmet), encoding="utf-8")

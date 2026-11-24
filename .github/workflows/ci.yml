@@ -34,8 +34,12 @@ jobs:
       - run: python scripts/config_package.py --check --path apps/api/app/config_package/v4.json
       # Phase 7: configuration package v5 stays readable for one release (DI-112).
       - run: python scripts/config_package.py --check --path apps/api/app/config_package/v5.json
-      # Phase 8: configuration package v6 stays readable for one release (DI-317).
+      # Phase 9: configuration package v6 stays readable for one release (DI-126).
       - run: python scripts/config_package.py --check --path apps/api/app/config_package/v6.json
+      # Plan Phase 9 F, J, L and AC-9-8: the ranking replay report over seven synthetic streams (an engineering measurement,
+      # not E4 results). Exit 7 is the plan L stop (a replay that differs from its event log), 6 a pin mismatch (the package
+      # or its ranking block changed without a replay run), 3 a scenario assertion, 1 drift.
+      - run: python scripts/run_ranking_replay.py --check docs/evaluation/phase9/ranking_replay_v1.json
       # Plan Phase 7 D task 6, K AC-7-6 and 12.5: the golden-set gate. Exit 6 when the package, the misconception library,
       # the routing table or the golden set differs from the committed golden run (a change without a run), or when the
       # package's version is missing from docs/evaluation/phase7/package_versions.json or recorded there with another
@@ -59,7 +63,7 @@ jobs:
       - run: python scripts/run_v2_fixtures.py --check docs/evaluation/phase5/v2_fixture_report_v1.json
       # E12: the shipped non-development learner answer bodies equal Phase 4's (sha256 only; no corpus text committed).
       - run: python scripts/capture_public_payloads.py --check apps/api/tests/data/phase4_public_payloads_v1.json
-      # Plan Phase 8 P: engineering invariance over public fixtures. Erasure proof runs in the API suite.
+      # Phase 8 plan P: engineering invariance over public fixtures. The API suite verifies erasure evidence.
       - run: python scripts/run_invariance_harness.py --check docs/evaluation/phase8/invariance_harness_report_v1.json
       # Plan Phase 4 F/H/K: the hashed adversarial fixture set and its report (fixture measurements, not research
       # results). Exit 3 is a plan L stop (answer-rate floor, V1 composition, or V1 p95 budget); exit 5 an adversarial

@@ -7,7 +7,8 @@ sufficiency reasons; the checker registry equals WIRED_CHECKERS; v1.quiz_feedbac
 (quiz_keys.FEEDBACK_RULE, PD-21).
 
 structural=True (tests, CI and scripts/config_package.py --check only): the adversarial fixture file exists and its
-set_sha256 and case count equal the package's pin. The image holds no docs/, so start-up never compares them, and the
+set_sha256 and case count equal the package's pin. Start-up never compares them (the image holds no fixture file;
+under docs/ it holds only the Phase 9 recommission set, docs/evaluation/phase7/golden_set_v1.json), and the
 repository root is found only when a structural check asks for it (repository_root): in the API image this module is
 /app/app/services/v1_checks/package_check.py, which has fewer parents than a checkout, so nothing here may compute the
 root at import (start-up imports this module).
@@ -28,7 +29,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 def repository_root() -> Path:
     """The checkout this module runs from (tests, CI, scripts). FileNotFoundError where there is none: the API image
-    has fewer parents than REPOSITORY_DEPTH and no docs/."""
+    has fewer parents than REPOSITORY_DEPTH (and under docs/ only the Phase 9 recommission set)."""
     parents = Path(__file__).resolve().parents
     if len(parents) <= REPOSITORY_DEPTH:
         raise FileNotFoundError("no repository checkout holds this module (the API image has none)")

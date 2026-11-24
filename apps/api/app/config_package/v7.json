@@ -2,13 +2,13 @@
   "package": "qcai-configuration-package",
   "package_version": "7.0.0",
   "schema_version": 7,
-  "phase": "8",
+  "phase": "9",
   "status": "provisional",
   "created": "2026-11-23",
   "supersedes": {
     "package_version": "6.0.0",
     "sha256": "cd16a12360b01b1250fdbb339da4c71701828197cd8dcd2629a6a9a34a3d5327",
-    "readable_until": "the release after the Phase 8 merge"
+    "readable_until": "the release after the Phase 9 merge"
   },
   "span_identity": {
     "scheme": "span-v2",
@@ -854,7 +854,8 @@
           },
           "cost_units_per_call": 1,
           "fake": {
-            "rule": "verbatim-support-v1"
+            "rule": "verbatim-support-v1",
+            "generate_rule": "extractive-clone-v1"
           }
         }
       ],
@@ -1100,7 +1101,8 @@
         "v1_3_flag",
         "v1_8_misconception",
         "v2_correction_exhausted",
-        "v2_degraded_withheld"
+        "v2_degraded_withheld",
+        "ranking_empty_eligible_set"
       ]
     },
     "priority": {
@@ -1253,8 +1255,8 @@
     "schemas": {
       "V3GoldLabel": {
         "version": "v3-gold-label-v1",
-        "path": "schemas/v3-gold-label.v1.schema.json",
-        "sha256": "880a55b8e72e1d357629219b2166550dfa954ce21a343768ad79138f68e9fc57"
+        "path": "schemas/v3-gold-label.v1.r7.schema.json",
+        "sha256": "ae2b37f81e1a0292d4529343b79ef4a57ca684628a4f868a5342f20a6d369ab6"
       },
       "V3CusumAlarm": {
         "version": "cusum-alarm-v1",
@@ -1522,9 +1524,203 @@
       "first_package": "6.0.0"
     }
   },
+  "ranking": {
+    "version": "ranking-v1",
+    "parameters_version": "ranking-params-v1",
+    "provisional": true,
+    "authority": "plan Phase 9 A: \"PAPER-SPECIFIED REQUIREMENT (defaults are provisional; Table XI; re-estimated on E4 data)\"; PD-50..PD-59; DI-117",
+    "decision_owners": {
+      "parameters": "PI",
+      "routing": "PO"
+    },
+    "contexts": {
+      "cluster_rule": "cluster-module-v1",
+      "unscoped": "unscoped",
+      "clusters": [
+        "nisq-hybrid-workflows",
+        "ai-for-quantum-hardware",
+        "quantum-enhanced-applications",
+        "representation-explainability",
+        "industry-use-cases",
+        "thermodynamics-roadmap",
+        "hardware-constrained-introduction",
+        "hardware-constrained-models",
+        "intermediate-quantum-programming",
+        "advanced-quantum-software",
+        "quantum-finance-programming"
+      ],
+      "task_types": [
+        "explanation",
+        "worked_example",
+        "hint",
+        "quiz_item",
+        "summary",
+        "video_script"
+      ],
+      "active_task_types": [
+        "explanation",
+        "quiz_item"
+      ],
+      "task_type_rule": "tier-1-quiz-item-v1",
+      "tier_source_rule": "tier-source-v1",
+      "provisional": true,
+      "owner_decision": "RANKING-TOPIC-CLUSTERS",
+      "record": "PD-50"
+    },
+    "models": {
+      "static": [
+        "extractive-d19-v1"
+      ],
+      "static_version_rule": "evidential-prompt-hash-16-v1",
+      "registry_capability": "generate",
+      "clone_rule": "extractive-clone-v1",
+      "static_requires_commission": true,
+      "record": "PD-54"
+    },
+    "trust": {
+      "gamma": "0.995",
+      "quantile": "0.05",
+      "quantile_rule": "decimal-regularized-incomplete-beta-bisection-v1",
+      "bisection_steps": 60,
+      "record": "PD-51"
+    },
+    "quality": {
+      "weights": {
+        "V": "0.35",
+        "S": "0.30",
+        "K": "0.15",
+        "F": "0.20"
+      },
+      "eta": "0.05",
+      "missing": "drop-and-renormalise-v1",
+      "h_rule": "ehmf-claim-weight-density-v1",
+      "v_rule": "first-pass-v1-v2-pass-share-v1",
+      "k_rule": "one-minus-normalised-vote-entropy-v1",
+      "s_rule": "missing-until-d21",
+      "f_rule": "shown-records-only-rating-minus-one-over-four-flag-zero-v1",
+      "initial_qbar": "0.5",
+      "record": "PD-51"
+    },
+    "ratings": {
+      "A": "0.95",
+      "B": "0.90",
+      "C": "0.80"
+    },
+    "tier_permissions": {
+      "A": [
+        1,
+        2,
+        3
+      ],
+      "B": [
+        2,
+        3
+      ],
+      "B_tier_1_when_no_A": true,
+      "C": [],
+      "D": []
+    },
+    "clean_rule": "first-pass-no-correction-no-generator-escalation-v1",
+    "selection": {
+      "eps_s": "0.05",
+      "thompson": "seeded-inverse-cdf-v1",
+      "tie_break": "adapter_id",
+      "first_incumbent_is_switch": false,
+      "record": "PD-52"
+    },
+    "promotion": {
+      "delta": "0.05",
+      "n_d": 3,
+      "comparison": "strictly-greater",
+      "streak": "eligible-batches-only-v1",
+      "rating_condition": "rating(h) >= rating(g)",
+      "demotion": "immediate",
+      "record": "PD-52"
+    },
+    "micro_batch": {
+      "responses": 25,
+      "seconds": 900,
+      "time_trigger": "record-time-and-scan-tick-v1",
+      "record": "PD-52"
+    },
+    "cusum": {
+      "p0": "0.05",
+      "p1": "0.15",
+      "h": "4.0",
+      "streams": [
+        "model",
+        "model_cluster"
+      ],
+      "reset_on_alarm": true,
+      "hold": "until-x5-window-closes-v1",
+      "sustained": "second-alarm-while-held-v1",
+      "demotes": false,
+      "record": "PD-53"
+    },
+    "recommission": {
+      "deflation": "0.3",
+      "cap": "C",
+      "pass_rule": "every-item-generated-no-failed-first-pass-v1",
+      "gateway_mode": "shadow",
+      "commissioning_prior": "one-plus-clean-one-plus-failed-v1",
+      "uncommissioned_prior": {
+        "alpha": "1",
+        "beta": "1"
+      },
+      "golden_set": {
+        "version": "golden-set-v1",
+        "path": "docs/evaluation/phase7/golden_set_v1.json",
+        "sha256": "26d6a8dd1d5cdb40504695407223bc5061d2197d82bfc1a87dc8dbc585c3fbd1",
+        "items": 40,
+        "target_items": 50
+      },
+      "record": "PD-54"
+    },
+    "penalties": {
+      "lambda_u": "0",
+      "lambda_l": "0",
+      "cost_rule": "cost-units-over-max-v1",
+      "latency_target_ms": null,
+      "operator_policy": "D-06",
+      "record": "PD-56"
+    },
+    "fallback": {
+      "empty_eligible_set": "abstain_and_enqueue_v3",
+      "pre_verified_source": null,
+      "queue_reason": "ranking_empty_eligible_set",
+      "record": "PD-57"
+    },
+    "replay": {
+      "event_schema": "ranking-event-v1",
+      "state_schema": "ranking-state-v1",
+      "arithmetic": "decimal-prec-34-half-even-quantize-1e-18-v1",
+      "report": "docs/evaluation/phase9/ranking_replay_v1.json",
+      "stop": "replay_mismatch",
+      "stop_refresh_s": 60,
+      "record": "PD-59"
+    },
+    "seed": "ranking-seed-v1",
+    "live_routing": {
+      "state": "refused",
+      "decision": "D-28",
+      "hold": "H11"
+    },
+    "hand_fixtures": [
+      {
+        "alpha": 95,
+        "beta": 5,
+        "lower_bound": "0.910"
+      },
+      {
+        "alpha": 190,
+        "beta": 10,
+        "lower_bound": "0.922"
+      }
+    ]
+  },
   "flag_policy": {
     "provisional": true,
-    "authority": "PD-10 for two_pass_tutor and phase4_exit_passed: the Phase 3 switch outside development (plan Phase 3 G; AC-3-6; 13.6), whose values are plan MUST text or a fact, recorded provisional with PD-10 and ratified with it (DI-37); PD-19 for v1_pipeline: the Phase 4 switch (plan Phase 4 G; 13.6), an engineering default recorded provisional with PD-19 and ratified with it (DI-55); PD-28 for model_gateway and phase5_exit_passed: the Phase 5 switch (plan Phase 5 G, L; 13.6), an engineering default recorded provisional with PD-28 and ratified with it (DI-76); PD-38 for v3_queue and phase6_exit_passed: the Phase 6 switch (plan Phase 6 L; 13.6), an engineering default recorded provisional with PD-38 and ratified with it (DI-98); PD-48 for ehmf and phase7_exit_passed: the Phase 7 switch (plan Phase 7 L; 13.6), an engineering default recorded provisional with PD-48 and ratified with it (DI-109); PD-203 for the Phase 8 switches and Phase 8 exit (plan Phase 8 L and P, DI-300)",
+    "authority": "PD-10 for two_pass_tutor and phase4_exit_passed: the Phase 3 switch outside development (plan Phase 3 G; AC-3-6; 13.6), whose values are plan MUST text or a fact, recorded provisional with PD-10 and ratified with it (DI-37); PD-19 for v1_pipeline: the Phase 4 switch (plan Phase 4 G; 13.6), an engineering default recorded provisional with PD-19 and ratified with it (DI-55); PD-28 for model_gateway and phase5_exit_passed: the Phase 5 switch (plan Phase 5 G, L; 13.6), an engineering default recorded provisional with PD-28 and ratified with it (DI-76); PD-38 for v3_queue and phase6_exit_passed: the Phase 6 switch (plan Phase 6 L; 13.6), an engineering default recorded provisional with PD-38 and ratified with it (DI-98); PD-48 for ehmf and phase7_exit_passed: the Phase 7 switch (plan Phase 7 L; 13.6), an engineering default recorded provisional with PD-48 and ratified with it (DI-109); PD-58 for ranking and phase9_exit_passed: the Phase 9 switch (plan Phase 9 G, L; D-28; H11), an engineering default recorded provisional with PD-58 and ratified with it (DI-117)",
     "two_pass_tutor": {
       "values": [
         "off",
@@ -1596,36 +1792,7 @@
     },
     "phase7_exit_passed": false,
     "phase7_exit_evidence": null,
-    "learner_identity": {
-      "values": [
-        "off",
-        "on"
-      ],
-      "default_development": "off",
-      "default_elsewhere": "off",
-      "on_requires": "phase8_exit_passed"
-    },
-    "phase8_exit_passed": false,
-    "phase8_exit_evidence": null,
-    "learner_sync": {
-      "values": [
-        "off",
-        "on"
-      ],
-      "default_development": "on",
-      "default_elsewhere": "off",
-      "on_requires": "phase8_exit_passed"
-    },
-    "learner_privacy": {
-      "values": [
-        "off",
-        "on"
-      ],
-      "default_development": "on",
-      "default_elsewhere": "off",
-      "on_requires": "phase8_exit_passed"
-    },
-    "learner_planner": {
+    "ranking": {
       "values": [
         "off",
         "shadow",
@@ -1633,8 +1800,19 @@
       ],
       "default_development": "shadow",
       "default_elsewhere": "off",
-      "on_requires": "phase8_exit_passed"
-    }
+      "on_requires": [
+        "phase9_exit_passed",
+        "D-28"
+      ],
+      "on_everywhere": "refused_while_d28_open",
+      "shadow_generation": {
+        "default": false,
+        "development_only": true
+      },
+      "authority": "plan Phase 9 G, L; D-28; H11; PD-58"
+    },
+    "phase9_exit_passed": false,
+    "phase9_exit_evidence": null
   },
   "owner_decisions": {
     "D-17": {
@@ -1752,12 +1930,13 @@
     "D-06": {
       "state": "open",
       "path": "[PROV] values frozen in versioned configuration before use, never reported as results (plan L795-800)",
-      "record": "DI-52; PD-36, PD-37; DI-98; PD-45, PD-46; DI-109",
+      "record": "DI-52; PD-36, PD-37; DI-98; PD-45, PD-46; DI-109; PD-56; DI-117",
       "operator_values": [
         "v3.slo",
         "v3.workflow.double_review",
         "ehmf.retrieval_penalty",
-        "ehmf.stop"
+        "ehmf.stop",
+        "ranking.penalties"
       ]
     },
     "D-07": {
@@ -1849,22 +2028,36 @@
       "applied": "every conflict discloses both spans; precedence-v1 is recorded only and needs complete metadata",
       "record": "PD-42; DI-107"
     },
-    "D-26": {
-      "state": "recommended",
-      "text": "D-26 RECOMMENDATION: compare-and-set learner-record merge [Evidence E-110]; integrity [Risk R-51]. SL.",
-      "path": "PD-201",
-      "applied": "compare-and-set",
-      "ratified": false,
-      "record": "PD-201"
-    },
-    "D-27": {
+    "D-28": {
       "state": "open",
-      "text": "D-27 OPEN DECISION: consent classes before Phase 8 [Risk R-09]. PO, PI.",
-      "path": "most protective provisional path",
-      "applied": "consent-classes-provisional-v1",
-      "hold": "H13",
-      "ratified": false,
-      "record": "PD-200; DI-301"
+      "owner": "PO",
+      "text": "D-28 OPEN DECISION: Phase 9 live-routing go-ahead (shadow is the default) after the E4 report [VBT RevB: p. 19, Sec. IX-B, Table XVII, MR-3]. PO.",
+      "hold": "H11",
+      "behaviour": "RANKING=on refused everywhere",
+      "record": "PD-58; DI-118"
+    },
+    "D-15": {
+      "state": "recommended",
+      "owner": "PfO",
+      "behaviour": "research replay only in the research environment",
+      "record": "DI-124"
+    },
+    "RANKING-TOPIC-CLUSTERS": {
+      "state": "open",
+      "owners": [
+        "PI",
+        "PO"
+      ],
+      "text": "topic clusters [Evidence E-89], whose definition is an OPEN DECISION.",
+      "applied": "cluster-module-v1 (PD-50)",
+      "record": "PD-50; DI-116"
+    },
+    "RANKING-PARAMETERS": {
+      "state": "open",
+      "owner": "PI",
+      "text": "Decision owners: Principal Investigator (parameters), Product Owner (routing).",
+      "applied": "ranking-params-v1 (PD-51..PD-59)",
+      "record": "DI-117"
     }
   },
   "boundary": {
@@ -1895,54 +2088,5 @@
     ],
     "passage_shingle_words": 12,
     "passage_min_hits_per_file": 1
-  },
-  "learner": {
-    "provisional": true,
-    "authority": "PD-200 through PD-205",
-    "consent_version": "d27-unresolved-v1",
-    "consent_classes": {
-      "adaptation": {
-        "development": "synthetic-grant",
-        "elsewhere": "refused"
-      },
-      "analytics": {
-        "development": "synthetic-grant",
-        "elsewhere": "refused"
-      },
-      "research": {
-        "development": "refused",
-        "elsewhere": "refused"
-      }
-    },
-    "sync": {
-      "active_replicas": 16,
-      "retirement": "least-recently-used",
-      "server_retries": 0,
-      "client_retries": 1
-    },
-    "assessment": {
-      "attempt_limit": 12,
-      "window_minutes": 15,
-      "completion_threshold": 0.7
-    },
-    "planner": {
-      "bands": [
-        0.4,
-        0.75
-      ],
-      "shadow_budget_ms": 150,
-      "renderer_wiring": "DI-312",
-      "harness_levels": [
-        0.1,
-        0.5,
-        0.9
-      ]
-    },
-    "privacy": {
-      "export": "ndjson",
-      "receipt_digest": "canonical-json-sha256",
-      "audit_retention_days": 365,
-      "guard_retention_days": 365
-    }
   }
 }

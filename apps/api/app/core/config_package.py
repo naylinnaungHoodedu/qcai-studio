@@ -2,7 +2,7 @@
 configuration package v2"; Phase 4 P: "fixture hashes in configuration package v3"; Phase 2 spec 2.5 and 4.2;
 Phase 3 spec section 5; Phase 4 spec section 5).
 
-A versioned JSON file in the API image freezes every Phase 2
+A versioned JSON file shipped in the API image (apps/api/app/config_package/v3.json) that freezes every Phase 2
 value: the span-identity scheme, the BM25 parameters and stopword list, the provisional abstention floor and
 margin, the near-duplicate thresholds, the D-30 legacy-citation rule, the provisional owner decisions (D-17, D-30,
 Q-10) and the boundary policy. Version 2 (Phase 3) copies every v1 block and adds the two-channel tutor: the
@@ -18,14 +18,12 @@ schemas (LedgerEntryV3 and the four gateway request and verdict contracts) and a
 adapter registry per environment, the pinning rule, the D-23 egress opt-in, budgets, the evidential cache, the payload
 policy, the stop guards and the retired settings), the V2 panel (`v2`: families, tiers, the voting matrix, correction,
 degraded modes, the alignment item), the tool contracts (`tools`) and the model_gateway flag policy. Version 5 (Phase 6,
-apps/api/app/config_package/v5.json) copies every v4 block and adds the V3 audit (`v3`: the trigger
+apps/api/app/config_package/v5.json, the shipped package) copies every v4 block and adds the V3 audit (`v3`: the trigger
 registry x-triggers-v1, the queue priority and its EHMF weights, the seeded audit draw, the adjudication workflow, the
 gold store, the critical-claim registry per environment, the queue-age SLO and the stop, the residual statistic, the
 reviewer gate and the two pinned V3 schemas), the v3_queue flag policy and the D-08, D-14 and D-18 owner decisions.
-Version 6 (Phase 7) adds the EHMF policy and pins the ledger-entry-v4 schema. The shipped package v7 (Phase 8)
-retains these contracts and adds the learner policy, engineering defaults, and pre-exit flags.
 Next to each file, <name>.json.sha256 holds the sha256 of its canonical JSON, so a CRLF checkout hashes the same.
-v6.json remains readable under DI-317. v5.json through v1.json also remain readable (DI-112, DI-100, DI-84, DI-63, DI-42).
+v4.json, v3.json, v2.json and v1.json stay readable for one release (DI-100, DI-84, DI-63, DI-42).
 
 Start-up loads and validates it before any database work. A structural error always stops start-up; a hash
 mismatch stops a governed build and is a logged warning in development. The loader never opens the calibration
@@ -59,6 +57,7 @@ from app.core.config import (
     Settings,
 )
 from app.core.structured_logging import FIELDS
+from app.services.ranking.vocabulary import RANKING_FIRST_MAJOR
 
 LOGGER = logging.getLogger("qcai.config_package")
 PACKAGE_DIRECTORY = Path(__file__).resolve().parents[1] / "config_package"
@@ -68,9 +67,15 @@ DEFAULT_PACKAGE_PATH = PACKAGE_DIRECTORY / "v7.json"
 # scripts/config_package.py reads this constant, so renumbering the Phase 7 package (E16) edits these two constants, the
 # file names and the Alembic parent (docs/architecture/ehmf-change-control.md "Renumbering the Phase 7 package").
 EHMF_SCHEMA_VERSION = 6
-LEARNER_SCHEMA_VERSION = 7
-LATEST_SCHEMA_VERSION = LEARNER_SCHEMA_VERSION
-V6_PACKAGE_PATH = PACKAGE_DIRECTORY / "v6.json"  # Phase 7 predecessor, retained under DI-317.
+# The first package schema with a ranking block (Phase 9) is one constant, ranking.vocabulary.RANKING_FIRST_MAJOR (a
+# standard-library module); RANKING_SCHEMA_VERSION is that constant under the loader's name. Every rule a schema
+# introduces applies to every later schema; LATEST_SCHEMA_VERSION, the loader's upper bound, is the latest of these.
+# Renumbering the Phase 9 package (E16) edits RANKING_FIRST_MAJOR, the file names and the Alembic parent
+# (docs/architecture/ehmf-change-control.md "Renumbering the Phase 9 package").
+RANKING_SCHEMA_VERSION = RANKING_FIRST_MAJOR
+LATEST_SCHEMA_VERSION = RANKING_SCHEMA_VERSION
+# Package v6 stays readable for one release after the Phase 9 merge (DI-126; its own CI step).
+V6_PACKAGE_PATH = PACKAGE_DIRECTORY / "v6.json"
 # Package v5 stays readable for one release after the Phase 7 merge (DI-112; its own CI step).
 V5_PACKAGE_PATH = PACKAGE_DIRECTORY / "v5.json"
 # Readable for one release after the Phase 6 merge (DI-100), the Phase 5 merge (DI-84), the Phase 4 merge (DI-63) and
@@ -269,6 +274,9 @@ class FlagPolicy:
     # Package v6: EHMF=on is refused outside development while this is false (plan Phase 7 L, P).
     phase7_exit_passed: bool = False
     phase7_exit_evidence: str | None = None
+    # Package v7: RANKING=on is refused everywhere while this is false or D-28 is open (plan Phase 9 G, P; H11).
+    phase9_exit_passed: bool = False
+    phase9_exit_evidence: str | None = None
 
 
 @dataclass(frozen=True)
@@ -392,6 +400,8 @@ class ConfigPackage:
     v3: "V3Params | None" = None
     # Package v6 (Phase 7): the EHMF block (ehmf.*), None before v6.
     ehmf: "EhmfParams | None" = None
+    # Package v7 (Phase 9): the ranking block (ranking.*), None before v7.
+    ranking: "RankingParams | None" = None
 
 
 def _require(condition: bool, message: str) -> None:
@@ -949,8 +959,33 @@ def _parse_flag_policy(raw: Mapping[str, Any], *, schema_version: int = 2) -> Fl
         _require(isinstance(evidence7, str) and bool(evidence7.strip()), "flag_policy.phase7_exit_passed true needs a phase7_exit_evidence string")
     else:
         _require(evidence7 is None or isinstance(evidence7, str), "flag_policy.phase7_exit_evidence must be null or a string")
+    if schema_version < RANKING_SCHEMA_VERSION:
+        return FlagPolicy(phase4_exit_passed=passed, phase4_exit_evidence=evidence, phase5_exit_passed=passed5, phase5_exit_evidence=evidence5,
+                          phase6_exit_passed=passed6, phase6_exit_evidence=evidence6, phase7_exit_passed=passed7, phase7_exit_evidence=evidence7)
+    from app.core.config import RANKING_DEFAULT_DEVELOPMENT, RANKING_DEFAULT_ELSEWHERE
+
+    _require(all(name in str(policy.get("authority")) for name in ("PD-58", "DI-117")),
+             "flag_policy.authority must name PD-58 (DI-117): it holds the ranking defaults")
+    ranking = _mapping(policy, "ranking")
+    _require(ranking.get("values") == ["off", "shadow", "on"], "flag_policy.ranking.values must be [off, shadow, on]")
+    _require(ranking.get("default_development") == RANKING_DEFAULT_DEVELOPMENT,
+             f"flag_policy.ranking.default_development must be the code's default ({RANKING_DEFAULT_DEVELOPMENT!r})")
+    _require(ranking.get("default_elsewhere") == RANKING_DEFAULT_ELSEWHERE,
+             f"flag_policy.ranking.default_elsewhere must be the code's default ({RANKING_DEFAULT_ELSEWHERE!r})")
+    _require(ranking.get("on_requires") == ["phase9_exit_passed", "D-28"] and ranking.get("on_everywhere") == "refused_while_d28_open",
+             "flag_policy.ranking.on_requires must be [phase9_exit_passed, D-28] and on_everywhere 'refused_while_d28_open' (plan Phase 9 G)")
+    _require(ranking.get("shadow_generation") == {"default": False, "development_only": True},
+             "flag_policy.ranking.shadow_generation must be {default: false, development_only: true} (the code's default)")
+    passed9 = policy.get("phase9_exit_passed")
+    _require(isinstance(passed9, bool), "flag_policy.phase9_exit_passed must be a boolean")
+    evidence9 = policy.get("phase9_exit_evidence")
+    if passed9:
+        _require(isinstance(evidence9, str) and bool(evidence9.strip()), "flag_policy.phase9_exit_passed true needs a phase9_exit_evidence string")
+    else:
+        _require(evidence9 is None or isinstance(evidence9, str), "flag_policy.phase9_exit_evidence must be null or a string")
     return FlagPolicy(phase4_exit_passed=passed, phase4_exit_evidence=evidence, phase5_exit_passed=passed5, phase5_exit_evidence=evidence5,
-                      phase6_exit_passed=passed6, phase6_exit_evidence=evidence6, phase7_exit_passed=passed7, phase7_exit_evidence=evidence7)
+                      phase6_exit_passed=passed6, phase6_exit_evidence=evidence6, phase7_exit_passed=passed7, phase7_exit_evidence=evidence7,
+                      phase9_exit_passed=passed9, phase9_exit_evidence=evidence9)
 
 
 # ------------------------------------------------------------------------------------------------ package v4 (Phase 5)
@@ -1025,8 +1060,8 @@ def _bool_state(decisions: Mapping[str, Any], name: str, open_states: tuple[str,
     return isinstance(entry, dict) and entry.get("state") in open_states
 
 
-def _parse_adapter(raw: Any, registry: str, *, providers_open: bool) -> Any:
-    from app.gateway.adapters import WIRED_FAKE_RULES
+def _parse_adapter(raw: Any, registry: str, *, providers_open: bool, schema_version: int = 4) -> Any:
+    from app.gateway.adapters import WIRED_FAKE_GENERATE_RULES, WIRED_FAKE_RULES
     from app.gateway.pinning import pin_problem
     from app.gateway.registry import AUTH_HEADERS, CAPABILITIES, IDENTIFIER, MAX_RETRIES, MAX_TOKENS, TIMEOUT_MS, AdapterSpec, Caps
 
@@ -1053,6 +1088,19 @@ def _parse_adapter(raw: Any, registry: str, *, providers_open: bool) -> Any:
     cost = _integer(raw, "cost_units_per_call", minimum=0)
     fake = raw.get("fake")
     fake_rule = fake.get("rule") if isinstance(fake, dict) else None
+    generate_rule = fake.get("generate_rule") if isinstance(fake, dict) else None
+    if isinstance(fake, dict):
+        _require(set(fake) <= {"rule", "generate_rule"}, f"gateway adapter {adapter_id}: fake names only rule and generate_rule")
+    if schema_version < RANKING_SCHEMA_VERSION:
+        _require(generate_rule is None, f"gateway adapter {adapter_id}: fake.generate_rule needs package v{RANKING_SCHEMA_VERSION} or later")
+    elif provider == "fake":
+        # Package v7 (Phase 9 spec 5.2): a fake member that can generate names its wired generate rule (the extractive
+        # clone, development shadow generation only), and a member that cannot generate names none.
+        if "generate" in (capabilities or []):
+            _require(generate_rule in WIRED_FAKE_GENERATE_RULES,
+                     f"gateway adapter {adapter_id}: a fake member with generate names a wired fake.generate_rule {sorted(WIRED_FAKE_GENERATE_RULES)}")
+        else:
+            _require(generate_rule is None, f"gateway adapter {adapter_id}: only a fake member with generate names fake.generate_rule")
     if provider == "fake":
         _require(fake_rule in WIRED_FAKE_RULES, f"gateway adapter {adapter_id}: a fake member names a wired fake rule")
         _require(registry == "development", f"gateway adapter {adapter_id}: fake members are registered in development only")
@@ -1077,7 +1125,7 @@ def _parse_adapter(raw: Any, registry: str, *, providers_open: bool) -> Any:
              f"gateway adapter {adapter_id}: secret_ref must be an upper-case environment variable name")
     return AdapterSpec(adapter_id=adapter_id, family=family, provider=provider, model_id=model_id, model_version=str(version),
                        capabilities=tuple(capabilities), caps=caps, cost_units_per_call=cost, fake_rule=fake_rule,
-                       endpoint=endpoint, auth_header=auth_header, secret_ref=secret_ref)
+                       endpoint=endpoint, auth_header=auth_header, secret_ref=secret_ref, fake_generate_rule=generate_rule)
 
 
 def _parse_embeddings(gateway: Mapping[str, Any], *, providers_open: bool) -> Any:
@@ -1109,7 +1157,7 @@ def _parse_embeddings(gateway: Mapping[str, Any], *, providers_open: bool) -> An
     )
 
 
-def _parse_gateway(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], tutor: TutorPipelineParams) -> GatewayParams:
+def _parse_gateway(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], tutor: TutorPipelineParams, schema_version: int = 4) -> GatewayParams:
     """Package v4 gateway (Phase 5 spec 5.2). Every refusal is structural: an unpinned identifier always stops the load,
     and with it start-up (AC-5-10)."""
     from app.gateway.pinning import PIN_RULE, PINNED_VERSION_TEXT, REFUSED_TOKENS_TEXT, REFUSED_WITHIN_TOKEN_TEXT
@@ -1143,7 +1191,7 @@ def _parse_gateway(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], tuto
                      f"gateway.registries.{name} must be empty while D-12, D-07 or Q-09 is open or the Q-15 payload review is pending")
         specs = []
         for entry in members:
-            spec = _parse_adapter(entry, name, providers_open=providers_open)
+            spec = _parse_adapter(entry, name, providers_open=providers_open, schema_version=schema_version)
             _require(spec.adapter_id not in seen, f"gateway adapter {spec.adapter_id} is listed twice")
             seen.add(spec.adapter_id)
             if "verify" in spec.capabilities:
@@ -1359,6 +1407,7 @@ def _parse_v3(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], v2: "V2Pa
         MAX_ROUNDS,
         PRIORITY_RULE,
         QUEUE_REASONS,
+        QUEUE_REASONS_V7,
         REVIEWER_ROLE,
         TIE_BREAK,
         TRIGGER_REGISTRY_VERSION,
@@ -1414,7 +1463,9 @@ def _parse_v3(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], v2: "V2Pa
     if d06_open:
         _require(counted == V3_COUNTED, "v3.triggers.counted must be X1-X4 while D-06 is open (plan 15.3; PD-37)")
     _require(set(counted) <= set(TRIGGER_RULES), "v3.triggers.counted names a trigger the registry does not hold")
-    _require(tuple(triggers.get("queue_reasons") or ()) == QUEUE_REASONS, "v3.triggers.queue_reasons must be the code's queue reasons")
+    # Package v7 (Phase 9 spec conflict 24) adds the ranking fallback's reason; v5 and v6 keep Phase 6's four.
+    queue_reasons = QUEUE_REASONS_V7 if schema_version >= RANKING_SCHEMA_VERSION else QUEUE_REASONS
+    _require(tuple(triggers.get("queue_reasons") or ()) == queue_reasons, "v3.triggers.queue_reasons must be the code's queue reasons")
 
     priority = _mapping(v3, "priority")
     for key, code in (("rule", PRIORITY_RULE), ("exposure_rule", EXPOSURE_RULE), ("claim_set_key_rule", CLAIM_SET_KEY_RULE), ("k_rule", K_RULE)):
@@ -1531,7 +1582,7 @@ def _parse_v3(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], v2: "V2Pa
         schemas[name] = SchemaPin(version=_text(pin, "version"), path=_schema_path(pin.get("path"), name), sha256=_hex64(pin, "sha256"))
     return V3Params(
         version=V3_VERSION, trigger_registry_version=registry_version, trigger_rules=dict(registry_rules), counted=counted,
-        queue_reasons=QUEUE_REASONS, x1_tiers=X1_TIERS, x1_withhold_tier=X1_WITHHOLD_TIER, x2_types=x2_types, x5_rate=x5_rate, x5_window_deliveries=window, severity=severity,
+        queue_reasons=queue_reasons, x1_tiers=X1_TIERS, x1_withhold_tier=X1_WITHHOLD_TIER, x2_types=x2_types, x5_rate=x5_rate, x5_window_deliveries=window, severity=severity,
         priority_rule=PRIORITY_RULE, exposure_rule=EXPOSURE_RULE, claim_set_key_rule=CLAIM_SET_KEY_RULE, k_rule=K_RULE, tie_break=TIE_BREAK,
         draw_rule=DRAW_RULE, draw_seed=seed, draw_rate=draw_rate, population=("delivered", "legacy"), lease_s=lease_s,
         double_review_rate=double_rate, max_rounds=MAX_ROUNDS, gold_chain=GOLD_CHAIN, gold_schema=GOLD_SCHEMA,
@@ -1770,6 +1821,173 @@ def _parse_ehmf(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], v2: "V2
     )
 
 
+# ------------------------------------------------------------------------------------------------ package v7 (Phase 9)
+#
+# The ranking block (docs/architecture/phase9-implementation-spec.md 5.1, 5.2): ranking-params-v1, every value
+# provisional (PD-50..PD-59, DI-117). Decimal values are JSON strings (a JSON number is refused), so the controller's
+# arithmetic (app.services.ranking.numeric) reads exactly what the package says. The controller does not read this
+# dataclass: the scan writes the canonical block into the ranking event log (a `config` event), and the controller and
+# the replay read it from there.
+
+RANKING_OWNER_DECISIONS = ("D-28", "D-15", "RANKING-TOPIC-CLUSTERS", "RANKING-PARAMETERS", "D-06")
+RANKING_PROVISIONAL_BLOCKS = ("contexts",)
+
+
+@dataclass(frozen=True)
+class RankingParams:
+    version: str
+    parameters_version: str
+    block: Mapping[str, Any]          # the canonical ranking block, as the package states it (the `config` event carries it)
+    parameters_sha256: str
+    static_models: tuple[str, ...]
+    clusters: tuple[str, ...]
+    active_task_types: tuple[str, ...]
+    cluster_rule: str
+    golden_set_path: str
+    golden_set_sha256: str
+    golden_set_items: int
+    report_path: str
+    stop_refresh_s: int
+    live_routing: str
+    provisional: bool = True
+
+
+def _decimal_text(raw: Mapping[str, Any], key: str, where: str, *, low: str, high: str, low_open: bool = True, high_open: bool = True) -> Any:
+    from decimal import Decimal, InvalidOperation
+
+    value = raw.get(key)
+    _require(isinstance(value, str), f"{where}.{key} must be a decimal string (a JSON number is refused)")
+    try:
+        number = Decimal(value)
+    except InvalidOperation:
+        number = None
+    _require(number is not None and number.is_finite(), f"{where}.{key} must be a decimal string")
+    lower, upper = Decimal(low), Decimal(high)
+    _require((number > lower if low_open else number >= lower) and (number < upper if high_open else number <= upper),
+             f"{where}.{key} must be in {'(' if low_open else '['}{low}, {high}{')' if high_open else ']'}")
+    return number
+
+
+def _parse_ranking(raw: Mapping[str, Any], *, decisions: Mapping[str, Any], v2: "V2Params | None", ehmf: "EhmfParams | None",
+                   tutor: TutorPipelineParams) -> RankingParams:
+    """Package v7 ranking (Phase 9 spec 5.2). Every refusal is structural."""
+    from decimal import Decimal
+
+    from app.services.ranking.vocabulary import (
+        ACTIVE_TASK_TYPES,
+        CLUSTERS,
+        PARAMETERS_VERSION,
+        QUEUE_REASON,
+        RANKING_VERSION,
+        RULES,
+        TASK_TYPES,
+    )
+
+    for name in RANKING_OWNER_DECISIONS:
+        _require(isinstance(decisions.get(name), dict), f"owner_decisions.{name} must be an object in package v{RANKING_SCHEMA_VERSION}")
+    d06_open = _bool_state(decisions, "D-06", ("open",))
+    d28_open = _bool_state(decisions, "D-28", ("open",))
+    _require("ranking.penalties" in (decisions["D-06"].get("operator_values") or []),
+             "owner_decisions.D-06.operator_values must name ranking.penalties (task 6: penalties are operator policy)")
+    block = _mapping(raw, "ranking")
+    _require(block.get("provisional") is True, "ranking must be marked provisional: true (plan Phase 9 A; PD-50..PD-59, DI-117)")
+    _require(block.get("version") == RANKING_VERSION and block.get("parameters_version") == PARAMETERS_VERSION,
+             f"ranking.version must be '{RANKING_VERSION}' and parameters_version '{PARAMETERS_VERSION}'")
+    _require(block.get("decision_owners") == {"parameters": "PI", "routing": "PO"},
+             "ranking.decision_owners must be {parameters: PI, routing: PO} (plan Phase 9 O)")
+    for name in RANKING_PROVISIONAL_BLOCKS:
+        _require(_mapping(block, name).get("provisional") is True, f"ranking.{name} must be marked provisional: true")
+    for dotted, code in RULES.items():
+        section, _, key = dotted.partition(".")
+        value = block.get(section) if not key else _mapping(block, section).get(key)
+        _require(value == code, f"ranking.{dotted} must be '{code}'")
+    contexts = _mapping(block, "contexts")
+    _require(tuple(contexts.get("clusters") or ()) == CLUSTERS, "ranking.contexts.clusters must be the MODULE_BLUEPRINTS slugs, in order")
+    _require(tuple(contexts.get("task_types") or ()) == TASK_TYPES and tuple(contexts.get("active_task_types") or ()) == ACTIVE_TASK_TYPES,
+             "ranking.contexts.task_types and active_task_types must be the code's")
+    _require(contexts.get("owner_decision") == "RANKING-TOPIC-CLUSTERS", "ranking.contexts.owner_decision must be RANKING-TOPIC-CLUSTERS")
+    models = _mapping(block, "models")
+    static = tuple(models.get("static") or ())
+    # A subset here: the D-12 rule below (after every block) names an allowed list the open decision refuses.
+    _require(bool(static) and len(set(static)) == len(static) and set(static) <= set(tutor.generators_allowed) and set(static) <= WIRED_GENERATORS,
+             "ranking.models.static must be the package's allowed, wired generators")
+    _require(v2 is not None and all(name in v2.generator_families for name in static), "ranking.models.static names a generator family each")
+    _require(models.get("static_requires_commission") is True, "ranking.models.static_requires_commission must be true (spec conflict 26)")
+    trust = _mapping(block, "trust")
+    _decimal_text(trust, "gamma", "ranking.trust", low="0.9", high="1")
+    _decimal_text(trust, "quantile", "ranking.trust", low="0", high="0.5")
+    _require(trust.get("bisection_steps") == 60, "ranking.trust.bisection_steps must be 60")
+    quality = _mapping(block, "quality")
+    weights = _mapping(quality, "weights")
+    _require(sorted(weights) == ["F", "K", "S", "V"], "ranking.quality.weights must name V, S, K and F")
+    values = [_decimal_text(weights, name, "ranking.quality.weights", low="0", high="1", low_open=False, high_open=False) for name in "VSKF"]
+    _require(sum(values, Decimal(0)) == 1, "ranking.quality.weights must sum to 1")
+    _decimal_text(quality, "eta", "ranking.quality", low="0", high="1", high_open=False)
+    _decimal_text(quality, "initial_qbar", "ranking.quality", low="0", high="1", low_open=False, high_open=False)
+    ratings = _mapping(block, "ratings")
+    _require(sorted(ratings) == ["A", "B", "C"], "ranking.ratings must name A, B and C")
+    a, b, c = (_decimal_text(ratings, name, "ranking.ratings", low="0", high="1") for name in "ABC")
+    _require(a > b > c, "ranking.ratings must be strictly descending (A > B > C)")
+    _require(block.get("tier_permissions") == {"A": [1, 2, 3], "B": [2, 3], "B_tier_1_when_no_A": True, "C": [], "D": []},
+             "ranking.tier_permissions must be paper Sec. VII-B's (A all tiers; B tiers 2-3, tier 1 only without an A; C and D none)")
+    selection = _mapping(block, "selection")
+    _decimal_text(selection, "eps_s", "ranking.selection", low="0", high="0.5", low_open=False, high_open=False)
+    _require(selection.get("first_incumbent_is_switch") is False, "ranking.selection.first_incumbent_is_switch must be false")
+    promotion = _mapping(block, "promotion")
+    _decimal_text(promotion, "delta", "ranking.promotion", low="0", high="1", low_open=False)
+    _require(isinstance(promotion.get("n_d"), int) and not isinstance(promotion.get("n_d"), bool) and promotion["n_d"] >= 1,
+             "ranking.promotion.n_d must be an integer of at least 1")
+    batch = _mapping(block, "micro_batch")
+    _integer(batch, "responses", minimum=1)
+    _integer_in(batch, "seconds", 60, 86400)
+    cusum = _mapping(block, "cusum")
+    p0 = _decimal_text(cusum, "p0", "ranking.cusum", low="0", high="1")
+    p1 = _decimal_text(cusum, "p1", "ranking.cusum", low="0", high="1")
+    _require(p0 < p1, "ranking.cusum needs 0 < p0 < p1 < 1")
+    _decimal_text(cusum, "h", "ranking.cusum", low="0", high="1000000")
+    _require(cusum.get("streams") == ["model", "model_cluster"] and cusum.get("reset_on_alarm") is True and cusum.get("demotes") is False,
+             "ranking.cusum must chart model and model_cluster streams, reset on an alarm and never demote (task 2)")
+    recommission = _mapping(block, "recommission")
+    _decimal_text(recommission, "deflation", "ranking.recommission", low="0", high="1", high_open=False)
+    _require(recommission.get("cap") == "C", "ranking.recommission.cap must be 'C' (task 4)")
+    _require("min_generated" not in recommission,
+             "ranking.recommission.min_generated is refused: the regression passes only when every golden-set query gives a completed verdict")
+    _require(recommission.get("gateway_mode") == "shadow", "ranking.recommission.gateway_mode must be 'shadow' (task 4: shadow golden regression)")
+    _require(recommission.get("uncommissioned_prior") == {"alpha": "1", "beta": "1"}, "ranking.recommission.uncommissioned_prior must be Beta(1, 1)")
+    golden = _mapping(recommission, "golden_set")
+    _require(ehmf is not None and golden.get("version") == ehmf.golden_set_version and golden.get("path") == ehmf.golden_set_path
+             and golden.get("sha256") == ehmf.golden_set_sha256 and golden.get("items") == ehmf.golden_set_items,
+             "ranking.recommission.golden_set must be ehmf.golden_set's (spec conflict 4)")
+    _require(golden.get("target_items") == 50, "ranking.recommission.golden_set.target_items must be 50 (plan Phase 9 A; DI-119)")
+    penalties = _mapping(block, "penalties")
+    for name in ("lambda_u", "lambda_l"):
+        _decimal_text(penalties, name, "ranking.penalties", low="0", high="1000", low_open=False)
+    if d06_open:
+        _require(penalties.get("lambda_u") == "0" and penalties.get("lambda_l") == "0" and penalties.get("latency_target_ms") is None,
+                 "ranking.penalties must be lambda_u = lambda_l = 0 with no latency target while D-06 is open (task 6)")
+    _require(penalties.get("operator_policy") == "D-06", "ranking.penalties.operator_policy must be D-06")
+    fallback = _mapping(block, "fallback")
+    _require(fallback.get("pre_verified_source") is None, "ranking.fallback.pre_verified_source must be null: no pre-verified store exists (DI-83)")
+    _require(fallback.get("queue_reason") == QUEUE_REASON, f"ranking.fallback.queue_reason must be '{QUEUE_REASON}'")
+    replay = _mapping(block, "replay")
+    report = _relative_path(replay.get("report"), "ranking.replay.report")
+    refresh = _integer_in(replay, "stop_refresh_s", 1, 3600)
+    _require(isinstance(block.get("seed"), str) and bool(block["seed"].strip()), "ranking.seed must be a non-empty string")
+    live = _mapping(block, "live_routing")
+    _require(live.get("decision") == "D-28" and live.get("hold") == "H11", "ranking.live_routing names D-28 and hold H11")
+    if d28_open:
+        _require(live.get("state") == "refused", "ranking.live_routing.state must be 'refused' while D-28 is open (hold H11)")
+    fixtures = block.get("hand_fixtures")
+    _require(fixtures == [{"alpha": 95, "beta": 5, "lower_bound": "0.910"}, {"alpha": 190, "beta": 10, "lower_bound": "0.922"}],
+             "ranking.hand_fixtures must be plan J's Beta(95,5) -> 0.910 and Beta(190,10) -> 0.922")
+    return RankingParams(
+        version=RANKING_VERSION, parameters_version=PARAMETERS_VERSION, block=block, parameters_sha256=canonical_sha256(block),
+        static_models=static, clusters=CLUSTERS, active_task_types=ACTIVE_TASK_TYPES, cluster_rule=contexts["cluster_rule"],
+        golden_set_path=golden["path"], golden_set_sha256=golden["sha256"], golden_set_items=int(golden["items"]),
+        report_path=report, stop_refresh_s=refresh, live_routing=live["state"], provisional=True,
+    )
+
+
 def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bool) -> ConfigPackage:
     _require(isinstance(raw, dict), "the file must hold a JSON object")
     _require(raw.get("package") == PACKAGE_NAME, f"'package' must be '{PACKAGE_NAME}'")
@@ -1894,6 +2112,7 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
     tool_params: ToolParams | None = None
     v3_params: V3Params | None = None
     ehmf_params: "EhmfParams | None" = None
+    ranking_params: "RankingParams | None" = None
     if schema_version >= 2:
         supersedes = _mapping(raw, "supersedes")
         _text(supersedes, "package_version")
@@ -1905,7 +2124,7 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
             _v1_owner_decisions(decisions, v1_params)
             _q22_provisional_values(raw, decisions)
         if schema_version >= 4:
-            gateway_params = _parse_gateway(raw, decisions=decisions, tutor=tutor_pipeline)
+            gateway_params = _parse_gateway(raw, decisions=decisions, tutor=tutor_pipeline, schema_version=int(schema_version))
             v2_params = _parse_v2(raw, decisions=decisions, gateway=gateway_params)
             tool_params = _parse_tools(raw)
         if schema_version >= EHMF_SCHEMA_VERSION:
@@ -1913,10 +2132,8 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
         if schema_version >= 5:
             v3_params = _parse_v3(raw, decisions=decisions, v2=v2_params, schema_version=int(schema_version),
                                   ehmf_weights=ehmf_params.weights if ehmf_params is not None else None)
-        if schema_version >= LEARNER_SCHEMA_VERSION:
-            from app.core.phase8_settings import check_phase8_package
-
-            check_phase8_package(raw)
+        if schema_version >= RANKING_SCHEMA_VERSION:
+            ranking_params = _parse_ranking(raw, decisions=decisions, v2=v2_params, ehmf=ehmf_params, tutor=tutor_pipeline)
         d12 = decisions.get("D-12")
         _require(isinstance(d12, dict), "owner_decisions.D-12 must be an object in package v2")
         if d12.get("state") == "open":
@@ -1965,6 +2182,7 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
         tools=tool_params,
         v3=v3_params,
         ehmf=ehmf_params,
+        ranking=ranking_params,
     )
 
 
