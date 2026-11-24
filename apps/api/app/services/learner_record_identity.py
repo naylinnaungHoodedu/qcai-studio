@@ -13,12 +13,14 @@ from app.core.config import Settings, get_settings
 from app.core.guest_tokens import verify_guest_token
 from app.db_models import (
     GuestLegacyUpgrade, LearnerClaimAudit, LearnerGuestRevocation, LearnerRecord, LearnerRecordOperation,
-    LearnerReplica, LearnerSubject, TutorTurnIdempotency, UserAccount,
+    LearnerReplica, LearnerSubject, TutorTurnIdempotency,
 )
 from app.services.erasure import USER_KEY_COLUMNS, user_keyed_tables
 from app.services.guest_sessions import _was_ever_public, guest_credential_digest, is_guest_revoked
 from app.services.learner_record import _wins
-from app.services.learner_record_lock import WriteObservation, has_write_guard, insert_for, lock_learner_write, phase8_writes_enabled
+from app.services.learner_record_lock import (
+    WriteObservation, has_write_guard, insert_for, lock_learner_write, phase8_writes_enabled, recheck_learner_principal,
+)
 from app.services.learner_record_sync import lock_learner_record
 
 
@@ -114,20 +116,13 @@ def _transfer(db: Session, former: str, target: str, *, learner_only: bool) -> d
     return moved
 
 
-def _recheck_principal(db: Session, provider: str, identifier: str) -> None:
-    if provider == "local" and db.get(UserAccount, identifier, populate_existing=True) is None:
-        raise HTTPException(401, "Authentication required.")
-    if provider == "guest" and is_guest_revoked(db, identifier):
-        raise HTTPException(401, "Guest session revoked.")
-
-
 def bind_subject(
     db: Session, provider: str, identifier: str, *, verify_account: bool = False,
     observation: WriteObservation | None = None,
 ) -> str:
     lock_learner_write(db, identifier, observation=observation if provider in {"auth0", "demo"} else None)
     if verify_account:
-        _recheck_principal(db, provider, identifier)
+        recheck_learner_principal(db, provider, identifier)
     digest = principal_digest(provider, identifier)
     candidate = f"subj-{uuid4().hex}"
     db.execute(
@@ -153,7 +148,7 @@ def write_subject(
     subject = find_subject(db, provider, identifier)
     if guarded or phase8_writes_enabled(get_settings()) or subject or has_write_guard(db, identifier):
         lock_learner_write(db, identifier, observation=observation if provider in {"auth0", "demo"} else None)
-        _recheck_principal(db, provider, identifier)
+        recheck_learner_principal(db, provider, identifier)
         # Binding and erasure both use the principal lock.
         subject = find_subject(db, provider, identifier)
         if subject:

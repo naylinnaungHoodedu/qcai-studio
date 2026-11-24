@@ -64,6 +64,21 @@ def test_freeze_phase8_requires_d27_even_after_exit(monkeypatch):
         Settings(_env_file=None, environment="production", learner_planner="shadow")
 
 
+def test_phase8_planner_shadow_needs_the_verified_exit_and_a_ratified_d27(monkeypatch):
+    raw = {
+        "flag_policy": {"phase8_exit_passed": True},
+        "owner_decisions": {"D-27": {"state": "decided", "ratified": False}},
+    }
+    package = SimpleNamespace(raw=raw, is_default_path=True, hash_verified=True)
+    monkeypatch.setattr(config_package, "get_config_package", lambda settings: package)
+    with pytest.raises(ValidationError, match="LEARNER_PLANNER.*D-27"):
+        Settings(_env_file=None, environment="production", learner_planner="shadow")
+    raw["owner_decisions"]["D-27"]["ratified"] = True
+    assert Settings(_env_file=None, environment="production", learner_planner="shadow").learner_planner == "shadow"
+    with pytest.raises(ValidationError, match="DI-312"):
+        Settings(_env_file=None, environment="production", learner_planner="on")
+
+
 def test_freeze_phase8_privacy_requires_d27_even_after_exit(monkeypatch):
     fake = SimpleNamespace(raw={
         "flag_policy": {"phase8_exit_passed": True},
@@ -75,20 +90,25 @@ def test_freeze_phase8_privacy_requires_d27_even_after_exit(monkeypatch):
         Settings(_env_file=None, environment="production", learner_privacy="on")
 
 
-def test_phase8_package_v7_preserves_v6_contracts_and_hash_chain():
+def test_phase8_package_v8_preserves_v7_contracts_and_hash_chain():
     from app.services.ehmf.vocabulary import EHMF_FIRST_MAJOR
+    from app.services.ranking.vocabulary import RANKING_FIRST_MAJOR
     from app.services.learner_record_sync import ASSESSMENT_LIMIT, ASSESSMENT_WINDOW, MAX_ISSUED_REPLICAS
     from app.services.learner_record_shadow import COMPLETION_THRESHOLD, PLANNER_BUDGET_MS
 
-    previous = config_package.load_config_package(config_package.V6_PACKAGE_PATH, governed=True)
-    assert previous.package_version == "6.0.0" and previous.hash_verified and not previous.is_default_path
-    assert previous.schema_version == config_package.EHMF_SCHEMA_VERSION == EHMF_FIRST_MAJOR == 6
+    previous = config_package.load_config_package(config_package.V7_PACKAGE_PATH, governed=True)
+    assert previous.package_version == "7.0.0" and previous.hash_verified and not previous.is_default_path
+    assert config_package.EHMF_SCHEMA_VERSION == EHMF_FIRST_MAJOR == 6
+    assert previous.schema_version == config_package.RANKING_SCHEMA_VERSION == RANKING_FIRST_MAJOR == 7
     latest = config_package.load_config_package(config_package.DEFAULT_PACKAGE_PATH, governed=True)
     after = latest.raw
-    assert (latest.package_version, latest.schema_version) == ("7.0.0", 7)
+    assert latest.schema_version == config_package.LATEST_SCHEMA_VERSION == config_package.LEARNER_SCHEMA_VERSION == 8
+    assert latest.package_version == "8.0.0" and latest.is_default_path and latest.hash_verified
     assert after["supersedes"]["package_version"] == previous.package_version
     assert after["supersedes"]["sha256"] == previous.sha256
     assert latest.ehmf == previous.ehmf and latest.ehmf is not None
+    assert latest.ranking == previous.ranking and latest.ranking is not None
+    assert after["v3"]["schemas"]["V3GoldLabel"] == previous.raw["v3"]["schemas"]["V3GoldLabel"]
     assert after["ehmf"]["config_version"]["first_package"] == "6.0.0"
     assert set(after) == set(previous.raw) | {"learner"}
     for key, value in previous.raw.items():
@@ -115,22 +135,26 @@ def test_phase8_package_v7_preserves_v6_contracts_and_hash_chain():
     assert match and int(match[1]) == CLIENT_CAS_RETRIES
 
 
-@pytest.mark.parametrize("version", [0, 8, True])
+@pytest.mark.parametrize("version", [0, 9, True])
 def test_phase8_loader_refuses_schema_versions_outside_the_latest_bound(version):
     path = config_package.DEFAULT_PACKAGE_PATH
     raw = json.loads(path.read_text(encoding="utf-8"))
-    assert config_package.parse_config_package(raw, path=path, sha256="", hash_verified=False).schema_version == 7
+    assert config_package.parse_config_package(raw, path=path, sha256="", hash_verified=False).schema_version == 8
     raw["schema_version"] = version
-    with pytest.raises(config_package.ConfigPackageError, match="schema_version.*integer from 1 to 7"):
+    with pytest.raises(config_package.ConfigPackageError, match="schema_version.*integer from 1 to 8"):
         config_package.parse_config_package(raw, path=path, sha256="", hash_verified=False)
 
 
-def test_phase8_schema_seven_still_enforces_ehmf_checks():
+def test_phase8_schema_eight_still_enforces_ehmf_and_ranking_checks():
     path = config_package.DEFAULT_PACKAGE_PATH
     raw = json.loads(path.read_text(encoding="utf-8"))
     raw["ehmf"]["config_version"]["first_package"] = "7.0.0"
     with pytest.raises(config_package.ConfigPackageError, match="ehmf.config_version.*first_package '6.0.0'"):
         config_package.parse_config_package(raw, path=path, sha256="", hash_verified=False)
+    original = json.loads(path.read_text(encoding="utf-8"))
+    original["ranking"]["version"] = "unknown-ranking-policy"
+    with pytest.raises(config_package.ConfigPackageError, match="ranking.version"):
+        config_package.parse_config_package(original, path=path, sha256="", hash_verified=False)
 
 
 @pytest.mark.parametrize(("section", "field", "value"), [

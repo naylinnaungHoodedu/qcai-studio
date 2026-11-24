@@ -45,6 +45,12 @@ PHASE7_REVISION = "20261123_phase7_ehmf"
 PHASE7_TABLES = {"ehmf_stops"}
 PHASE9_REVISION = "20261123_phase9_ranking"
 PHASE9_TABLES = {"ranking_events", "ranking_scans", "ranking_states", "ranking_incumbents"}
+PHASE8_REVISION = "20261123_phase8_learner"
+PHASE8_TABLES = {
+    "learner_issued_replicas", "learner_write_guards", "learner_subjects", "learner_guest_revocations",
+    "learner_claim_audits", "learner_consents", "learner_erasure_audits", "learner_consent_changes",
+    "learner_adaptation_stops", "learner_assessment_facts",
+}
 
 
 def fresh_sessions(database_url: str):
@@ -127,9 +133,13 @@ def test_e10_the_absolute_downgrade_target_is_safe_in_every_stamp_state_the_runb
         with engine.connect() as connection:
             assert compare_metadata(MigrationContext.configure(connection, opts={"compare_type": True}), Base.metadata) == []
         engine.dispose()
-        assert _alembic(fresh_database_url, "stamp", PHASE9_REVISION).returncode == 0
+        assert _alembic(fresh_database_url, "stamp", PHASE8_REVISION).returncode == 0
         checked = _alembic(fresh_database_url, "check")  # the runbook's comparison once stamped: nothing pending
         assert checked.returncode == 0 and "No new upgrade operations detected" in (checked.stdout + checked.stderr), checked.stderr[-2000:]
+        down = _alembic(fresh_database_url, "downgrade", PHASE9_REVISION)
+        assert down.returncode == 0, down.stderr[-2000:]
+        assert _tables(engine) == everything - PHASE8_TABLES and _stamp(engine) == [PHASE9_REVISION]
+        everything -= PHASE8_TABLES
         down = _alembic(fresh_database_url, "downgrade", PHASE7_REVISION)
         assert down.returncode == 0, down.stderr[-2000:]
         assert _tables(engine) == everything - PHASE9_TABLES and _stamp(engine) == [PHASE7_REVISION]
@@ -202,7 +212,7 @@ def test_f14_the_forward_alembic_step_runs_only_on_a_phase2_stamp(fresh_database
     try:
         # A Phase 2 database: no Phase 3, 5, 6, 7 or 9 tables and no ledger_record_expected, stamped at the Phase 2 revision.
         Base.metadata.drop_all(engine, tables=[Base.metadata.tables[name]
-                                               for name in PHASE3_TABLES | PHASE5_TABLES | PHASE6_TABLES | PHASE7_TABLES | PHASE9_TABLES])
+                                               for name in PHASE3_TABLES | PHASE5_TABLES | PHASE6_TABLES | PHASE7_TABLES | PHASE9_TABLES | PHASE8_TABLES])
         with engine.begin() as connection:
             connection.exec_driver_sql("ALTER TABLE tutor_turns DROP COLUMN ledger_record_expected")
         engine.dispose()
@@ -225,9 +235,13 @@ def test_f14_the_forward_alembic_step_runs_only_on_a_phase2_stamp(fresh_database
         engine.dispose()
         upgraded = _alembic(fresh_database_url, "upgrade", PHASE9_REVISION)  # the Phase 9 runbook's gated step
         assert upgraded.returncode == 0, upgraded.stderr[-2000:]
+        assert not PHASE8_TABLES & _tables(engine)
+        engine.dispose()
+        upgraded = _alembic(fresh_database_url, "upgrade", PHASE8_REVISION)
+        assert upgraded.returncode == 0, upgraded.stderr[-2000:]
         checked = _alembic(fresh_database_url, "check")
         assert checked.returncode == 0 and "No new upgrade operations detected" in (checked.stdout + checked.stderr), checked.stderr[-2000:]
-        assert PHASE3_TABLES | PHASE5_TABLES | PHASE6_TABLES | PHASE7_TABLES | PHASE9_TABLES <= set(sa_inspect(engine).get_table_names())
+        assert PHASE3_TABLES | PHASE5_TABLES | PHASE6_TABLES | PHASE7_TABLES | PHASE9_TABLES | PHASE8_TABLES <= _tables(engine)
         engine.dispose()
         # The same database without a stamp, as create_all leaves one: "upgrade head" replays every revision against
         # tables that exist and fails, which is why the runbook skips the job then.

@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import re
 
+import pytest
+
 from app import db_models
 from app.core.authorization import ROUTE_POLICIES
 from app.core.config import Settings
@@ -31,6 +33,19 @@ PHASE8_MODELS = (
     "LearnerConsent", "LearnerConsentChange", "LearnerErasureAudit", "LearnerAdaptationStop", "LearnerAssessmentFact",
 )
 BASELINE = TESTS / "data" / "phase8_shared_baseline_v1.json"
+INPUT_RECORDS = (
+    "docs/evaluation/phase3/three_plan_replay_v1.json",
+    "docs/evaluation/phase4/v1_fixture_report_v1.json",
+    "docs/evaluation/phase5/v2_fixture_report_v1.json",
+    "docs/evaluation/phase6/v3_residual_report_v1.json",
+    "docs/evaluation/phase7/golden_run_v1.json",
+    "docs/evaluation/phase8/invariance_harness_report_v1.json",
+    "docs/evaluation/phase9/ranking_replay_v1.json",
+)
+ERASURE_PROOF = "docs/evaluation/phase8/erasure_proof_v1.json"
+HAND_BACK_FIELDS = (
+    "Rules that no longer fit", "Dated revision sections appended", "Proposed package pins", "Stopped items",
+)
 PLAN_QUOTE_LINES = {
     "L1573": "2) Server-issued replica clocks, monotonic counters, compare-and-set on record_version [Decision D-26].",
     "L1574": "3) Mastery from server-scored assessments [Risk R-42]; planner (Loop 2) [Evidence E-74].",
@@ -79,12 +94,19 @@ def _names():
 
 
 def _test_source_symbols(path, source):
-    """Fingerprint declarations so traceability ignores formatting and comments."""
+    """Fingerprint Python declarations and TypeScript integration check bodies."""
     if path.endswith(".ts"):
-        return {name: name for name in re.findall(r'^test\("([^"]+)",', source, re.M)}
+        # The integration files use node:test with one call per check. Pin its body as well as its name.
+        tests = list(re.finditer(r"^[ \t]*(?:it|test)(?:\.(?:skip|only|todo))?\(\s*(['\"])(.*?)\1\s*,", source, re.M))
+        declarations = {"module setup": source[:tests[0].start()] if tests else source}
+        boundaries = [test.start() for test in tests] + [len(source)]
+        for match, end in zip(tests, boundaries[1:]):
+            assert match[2] not in declarations, (path, match[2])
+            declarations[match[2]] = source[match.start():end]
+        return {name: hashlib.sha256(body.rstrip().encode()).hexdigest() for name, body in declarations.items()}
     declarations = {}
     for node in ast.parse(source).body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             names = (node.name,)
         elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else (node.target,)
@@ -95,6 +117,24 @@ def _test_source_symbols(path, source):
         for name in names:
             declarations.setdefault(name, []).append(ast.dump(node))
     return {name: hashlib.sha256("\n".join(nodes).encode()).hexdigest() for name, nodes in declarations.items()}
+
+
+def _main_test_symbols(baseline):
+    pinned = {**baseline["test_symbols"], **baseline["main_test_symbols"]}
+    return {module: symbols for module, symbols in pinned.items() if module not in baseline["removed_on_main"]}
+
+
+def _current_test_modules():
+    paths = [*TESTS.rglob("*.py"), *(ROOT / "evaluation/tests").rglob("*.py"),
+             *(ROOT / "apps/frontend/tests").rglob("*.test.ts")]
+    return {path.name if path.parent == TESTS else path.relative_to(ROOT).as_posix() for path in paths}
+
+
+def _phase8_test_module(module):
+    name = Path(module).name
+    return (name.startswith("test_phase8_") and name.endswith(".py")) or (
+        name.startswith("phase8-") and name.endswith(".test.ts")
+    )
 
 
 def _test_changes(baseline):
@@ -127,7 +167,7 @@ def test_phase8_route_policies_form_one_block_after_the_learner_record_rows():
 
 
 def test_phase8_keeps_protected_acceptance_tests_at_the_phase7_baseline():
-    # LF-normalized source from 512b8a6, excluding only the permitted Phase 3 migration function.
+    # The Phase 9 merge updates the main baseline. Exclude only the permitted Phase 3 migration function.
     phase3 = (TESTS / "test_phase3_acceptance.py").read_text(encoding="utf-8")
     phase3 = re.sub(r"(?ms)^def test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_empty_ledger\(.*?(?=^def )", "", phase3)
     phase5 = (TESTS / "test_phase5_acceptance.py").read_text(encoding="utf-8")
@@ -191,6 +231,7 @@ def test_phase8_docs_spec_headings_shapes_and_plan_quotes():
     assert _section(18).count("| Review 1 |") == 1
     assert _section(18).count("| Review 2 |") == 1
     assert _section(18).count("| Review 3 |") == 1
+    assert _section(18).count("| Review 4 |") == 1
     for model in PHASE8_MODELS:
         line = next(line for line in _section(3).splitlines() if line.startswith(f"| `{model}` |"))
         listed = set(re.findall(r"`([a-z][a-z_]+)`", line.split("|")[2]))
@@ -204,9 +245,23 @@ def test_phase8_docs_spec_headings_shapes_and_plan_quotes():
     assert all(name in retention for name in (
         "learner_claim_audits", "learner_erasure_audits", "learner_write_guards", "last_used_at", "updated_at", "tombstone",
     ))
+    rollout = (ROOT / "infra/cloudrun/deployment.md").read_text(encoding="utf-8").split("\n## Phase 8: ", 1)[1]
+    assert "**Before the release.**" in rollout and "**After the deploy.**" in rollout
+    assert "Settings refuse non-off values before the verified Phase 8 exit" in rollout
+    assert "`phase8_exit_passed: false`" in rollout and "`learner_slis: {}`" in rollout
+    for command in (
+        "python scripts/config_package.py --check --path apps/api/app/config_package/v8.json",
+        "python scripts/run_invariance_harness.py --check docs/evaluation/phase8/invariance_harness_report_v1.json",
+        "python scripts/prove_erasure.py --check docs/evaluation/phase8/erasure_proof_v1.json",
+    ):
+        assert command in rollout and command in _section(17)
+    proof_readme = (ROOT / "docs/evaluation/phase8/README.md").read_text(encoding="utf-8").split("`prove_erasure.py`", 1)[1]
+    for document in (proof_readme, _section(12)):
+        for code, reason in ((1, "drift"), (3, "failed proof"), (4, "dirty-tree write")):
+            assert re.search(rf"\b{code}\b[^,.]*\b{reason}\b", document)
     for flag in PHASE8_FLAGS:
         assert flag.upper() in retention and flag.upper() in _section(6)
-        assert flag.upper() in (ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8").split("\n## Phase 8: ", 1)[1]
+        assert flag.upper() in rollout
 
 
 def test_phase8_docs_the_test_strategy_maps_every_test_module_the_phase_added():
@@ -220,7 +275,7 @@ def test_phase8_docs_the_test_strategy_maps_every_test_module_the_phase_added():
     }
     assert all(len(description) > 100 for description in declared.values())
     baseline = json.loads(BASELINE.read_text(encoding="utf-8"))
-    changed_symbols, _ = _test_changes(baseline["test_symbols"])
+    changed_symbols, _ = _test_changes(_main_test_symbols(baseline))
     assert set(rows(changed)) == {module for module, _ in changed_symbols}
     assert "**Exit gate.**" in changed and "phase8_exit_passed" in changed
     names = _names()
@@ -333,7 +388,10 @@ def test_phase8_docs_adr_003_has_a_phase8_revision():
 def test_phase8_docs_names_the_shared_files_and_changes_to_existing_tests():
     baseline = json.loads(BASELINE.read_text(encoding="utf-8"))
     assert baseline["commit"] == "512b8a668f6bc95358183c4f173efb0daa44868c"
-    assert baseline["commit"] in _section(0)
+    assert baseline["main_commit"] == "d366e20980f1e26111ba9f45e95503715ec8564c"
+    assert all(baseline[name] in _section(0) for name in ("commit", "main_commit"))
+    main_symbols = _main_test_symbols(baseline)
+    assert set(main_symbols) == {module for module in _current_test_modules() if not _phase8_test_module(module)}
     listed = set(re.findall(r"`([^ `]+)`", _section(7)))
     missing = set(baseline["shared_paths"]) - listed
     assert not missing, sorted(missing)
@@ -342,7 +400,7 @@ def test_phase8_docs_names_the_shared_files_and_changes_to_existing_tests():
     rows = re.findall(r"^\| `([^`]+)` \| `([^`]+)` \| ([^|]+) \| ([^|]+) \|$", table, re.M)
     trace = {(module, name): (exception.strip(), reason.strip()) for module, name, exception, reason in rows}
     assert len(trace) == len(rows)
-    changed, removed = _test_changes(baseline["test_symbols"])
+    changed, removed = _test_changes(main_symbols)
     assert set(trace) == changed, (sorted(changed - set(trace)), sorted(set(trace) - changed))
     assert all(exception and reason for exception, reason in trace.values())
     replaced = {
@@ -355,6 +413,45 @@ def test_phase8_docs_names_the_shared_files_and_changes_to_existing_tests():
         if module.endswith(".py"):
             assert name in RETIRED_PHASE8_TEST_NAMES
     assert "test_a_non_finite_preference_is_refused_on_postgres_and_never_a_500" in STRATEGY.read_text(encoding="utf-8")
+
+
+def test_phase8_docs_section_17_states_only_the_current_verification():
+    section = _section(17)
+    assert not re.search(r"^#+ .*Round \d", section, re.M)
+    assert not re.search(r"\bv5\b[^\n.]*\bas predecessors\b", section)
+    digests = dict(re.findall(r"^\| `([^`]+\.json)` \| `([0-9a-f]{64})` \|$", section, re.M))
+    assert set(digests) == set(INPUT_RECORDS)
+    assert "| Record | Inputs SHA-256 (record `inputs.sha256`) |" in section
+    source_commits = set()
+    for path, digest in digests.items():
+        record = json.loads((ROOT / path).read_text(encoding="utf-8"))
+        assert digest == record["inputs"]["sha256"], path
+        if "commit" in record:
+            source_commits.add(record["commit"])
+    assert len(source_commits) == 1
+    evidence_commit = source_commits.pop()
+    assert re.fullmatch(r"[0-9a-f]{40}", evidence_commit)
+    assert set(re.findall(r"\b[0-9a-f]{7,40}\b", section)) == {evidence_commit}
+    proof = (ROOT / ERASURE_PROOF).read_bytes()
+    assert "inputs" not in json.loads(proof)
+    assert f"`{ERASURE_PROOF}` has record file SHA-256 `{hashlib.sha256(proof).hexdigest()}`" in section
+    assert "the proof has no inputs block" in section
+
+
+def _require_review_response_fields(response):
+    for field in HAND_BACK_FIELDS:
+        assert len(re.findall(rf"^- \*\*{re.escape(field)}\.\*\* \S.+$", response, re.M)) == 1, field
+
+
+def test_phase8_docs_the_handback_check_requires_all_reconciliation_fields():
+    section = _section(17).split("\n### 17.2 ", 1)[1]
+    fields = tuple(re.findall(r"^- ([^\n]+)$", section, re.M))
+    assert fields == HAND_BACK_FIELDS
+    response = [f"- **{field}.** Evidence for this field." for field in fields]
+    _require_review_response_fields("\n".join(response))
+    for index, field in enumerate(fields):
+        with pytest.raises(AssertionError, match=field):
+            _require_review_response_fields("\n".join(response[:index] + response[index + 1:]))
 
 
 def test_phase8_docs_shared_file_rules_resolve_inside_the_spec():
@@ -376,9 +473,9 @@ def test_phase8_docs_describe_the_shipped_package_and_inherited_version_guards()
     paths = [APP / "core/config_package.py", ROOT / "scripts/config_package.py"]
     for path in paths:
         doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8")))
-        assert "shipped package v7" in doc and "shipped package v6" not in doc and "DI-317" in doc
+        assert f"shipped package v{LATEST_SCHEMA_VERSION}" in doc and "DI-317" in doc
     phase4 = (ROOT / "docs/architecture/phase4-implementation-spec.md").read_text(encoding="utf-8")
-    assert "`v7.json` with Phase 8" in phase4.split("### 5.2 Loader", 1)[1].split("\n### ", 1)[0]
+    assert f"`v{LATEST_SCHEMA_VERSION}.json` with Phase 8" in phase4.split("### 5.2 Loader", 1)[1].split("\n### ", 1)[0]
     phase6 = (ROOT / "docs/architecture/phase6-implementation-spec.md").read_text(encoding="utf-8")
     inherited = (TESTS / "test_phase6_acceptance.py").read_text(encoding="utf-8")
     assert "test_plan_i_ready_reports_package_v5_and_the_v3_fields_and_no_count" in phase6
@@ -388,7 +485,8 @@ def test_phase8_docs_describe_the_shipped_package_and_inherited_version_guards()
     structural = (TESTS / "test_config_package.py").read_text(encoding="utf-8").split("def test_v4_structural_errors", 1)[1].split("\ndef ", 1)[0]
     assert 'payload["schema_version"] = LATEST_SCHEMA_VERSION + 1' in structural
     assert f"`schema_version={LATEST_SCHEMA_VERSION + 1}`" in phase6
-    assert "V5_RAW, V6_RAW, RAW" in structural and "`v5.json`, `v6.json`, and the shipped v7" in phase6
+    assert "V5_RAW, V6_RAW, V7_RAW, RAW" in structural
+    assert f"`v5.json`, `v6.json`, `v7.json`, and the shipped v{LATEST_SCHEMA_VERSION}" in phase6
     phase7 = (ROOT / "docs/architecture/phase7-implementation-spec.md").read_text(encoding="utf-8")
     provenance, loader, cli = (
         phase7.split(f"\n### {section} ", 1)[1].split("\n### ", 1)[0]
@@ -405,8 +503,19 @@ def test_phase8_docs_describe_the_shipped_package_and_inherited_version_guards()
         ))
     assert f"`DEFAULT_PACKAGE_PATH` is v{LATEST_SCHEMA_VERSION} with Phase 8" in loader
     assert f"accepts schemas 1-{LATEST_SCHEMA_VERSION} up to `LATEST_SCHEMA_VERSION`" in loader
-    assert all(value in loader for value in ("`EHMF_SCHEMA_VERSION` (6)", "`V6_PACKAGE_PATH`", "DI-317"))
+    assert all(value in loader for value in ("`EHMF_SCHEMA_VERSION` (6)", "`V6_PACKAGE_PATH`", "`V7_PACKAGE_PATH`", "DI-317"))
     assert f"The default path is v{LATEST_SCHEMA_VERSION} with Phase 8" in cli
+    acceptance = phase7.split("\n### 13.2 ", 1)[1].split("\n### 13.3 ", 1)[0]
+    inherited_tests = phase7.split("\n### 13.3 ", 1)[1].split("\n## ", 1)[0]
+    strategy = (ROOT / "docs/testing/test-strategy.md").read_text(encoding="utf-8")
+    phase7_strategy = strategy.split("\n## Phase 7 ", 1)[1].split("\n## ", 1)[0]
+    for text in (acceptance, inherited_tests, phase7_strategy):
+        assert not re.search(r"shipped (?:package (?:is )?)?v[67]\b|v[67] is the default", text, re.I)
+    assert "reads v6 explicitly" in acceptance and f"carried into v{LATEST_SCHEMA_VERSION}" in acceptance
+    for text in (inherited_tests, phase7_strategy):
+        for version in (4, 5):
+            assert f"v{version} through v{LATEST_SCHEMA_VERSION}" in text
+        assert "`V6_PACKAGE_PATH`" in text and "DI-317" in text
     for text in (provenance, readme):
         assert "clean Phase 8 integration source commit without a `-dirty` suffix" in text
 

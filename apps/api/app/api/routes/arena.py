@@ -10,7 +10,7 @@ from app.core.arena_tickets import (
     issue_arena_ticket,
     redeem_arena_ticket,
 )
-from app.core.auth import AuthUser, get_current_user
+from app.core.auth import AuthUser, demo_principal_allowed, get_current_user
 from app.core.config import Settings, get_settings
 from app.core.db import SessionLocal
 from app.core.rate_limit import SlidingWindowLimiter, limiter
@@ -18,6 +18,7 @@ from app.core.request_protection import websocket_origin_is_trusted
 from app.schemas import ArenaProfileRead, ArenaStatusRead, ArenaTicketRead
 from app.services.arena_engine import DEFAULT_DISPLAY_NAME, get_arena_service
 from app.services.guest_sessions import is_guest_revoked
+from app.services.learner_record_lock import learner_writer, phase8_writes_enabled
 from app.services.security_log import record_security_event_async
 from app.services.text_utils import sanitize_user_text
 
@@ -72,6 +73,10 @@ def _socket_principal(offered_protocols: list[str], settings: Settings) -> Arena
         with SessionLocal() as db:
             if is_guest_revoked(db, ticket.user_id):
                 return None
+    if ticket.provider == "demo" and phase8_writes_enabled(settings):
+        with SessionLocal() as db:
+            if not demo_principal_allowed(db, ticket.user_id, settings):
+                return None
     return ticket
 
 
@@ -119,6 +124,9 @@ async def arena_socket(websocket: WebSocket):
 
     service = get_arena_service()
     try:
+        if principal.provider != "demo" and phase8_writes_enabled(settings):
+            with SessionLocal() as db:
+                websocket.state.learner_writer = learner_writer(db, principal.provider, principal.user_id)
         await service.connect(websocket, principal.user_id, _display_name(websocket.query_params.get("display_name")), mode)
         while True:
             message = await websocket.receive()
@@ -142,5 +150,7 @@ async def arena_socket(websocket: WebSocket):
                 await websocket.close(code=1003, reason="Arena messages must be JSON objects.")
                 break
             await service.handle_message(principal.user_id, payload)
+    except HTTPException:
+        await _reject(websocket, 4403, "Arena principal is unavailable.", subject=principal.user_id)
     finally:
         await service.disconnect(principal.user_id, websocket)

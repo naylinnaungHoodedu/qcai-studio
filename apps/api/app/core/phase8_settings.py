@@ -110,8 +110,6 @@ def resolve_phase8_settings(settings: "Settings") -> None:
         _require_shipped_phase8_exit(settings, active)
     if settings.learner_planner == "on":
         raise ValueError("LEARNER_PLANNER=on requires the versioned renderer wiring (DI-312). Use off or shadow.")
-    if not development and settings.learner_planner != "off":
-        raise ValueError("LEARNER_PLANNER requires approved adaptation consent outside development (D-27). Use off.")
 
 
 def _require_shipped_phase8_exit(settings: "Settings", active: Mapping[str, str]) -> None:
@@ -130,7 +128,10 @@ def _require_shipped_phase8_exit(settings: "Settings", active: Mapping[str, str]
         )
     if not (package.is_default_path and package.hash_verified):
         raise ValueError(f"{names} outside development needs the shipped, hash-verified configuration package. Use off.")
-    if active.get("learner_privacy") == "on":
-        decision = package.raw.get("owner_decisions", {}).get("D-27", {})
-        if not isinstance(decision, Mapping) or decision.get("state") in (None, "open"):
-            raise ValueError("LEARNER_PRIVACY requires approved consent policy outside development (D-27). Use off.")
+    decision = package.raw.get("owner_decisions", {}).get("D-27", {})
+    consent_approved = (isinstance(decision, Mapping) and decision.get("state") not in (None, "open")
+                        and decision.get("ratified") is True)
+    if not consent_approved:
+        for flag in ("learner_privacy", "learner_planner"):
+            if flag in active:
+                raise ValueError(f"{flag.upper()} requires approved consent policy outside development (D-27). Use off.")

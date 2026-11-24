@@ -7,6 +7,7 @@ from string import Formatter
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -39,8 +40,28 @@ def test_ac_8_4_evidential_prompts_and_the_abstention_configuration_hold_zero_le
     assert not run_harness(subset=3)["f2_fields"]
 
 
-def test_ac_8_4_a_learner_value_in_an_evidential_payload_is_detected(monkeypatch):
+def test_ac_8_4_the_scan_covers_every_phase8_learner_state_field():
+    from dataclasses import fields
+    from app.schemas import LearnerRecordOperationInput, LearnerRecordRead, LearnerReplicaIssued
+    from app.services.learner_record_planner import LearnerPresentation
+    from app.services.tutor_pipeline.contracts import LEARNER_STATE_FIELDS
+    from scripts.run_invariance_harness import learner_fields
+
+    required = set(LEARNER_STATE_FIELDS) | {field.name for field in fields(LearnerPresentation)}
+    for model in (LearnerRecordRead, LearnerRecordOperationInput, LearnerConsentRecord, LearnerReplicaIssued):
+        required.update(model.model_fields)
+    assert required | {"subject_id", "receipt_id"} <= LEARNER_FIELDS
+    for name in ("lesson_order", "planner_version", "record_version", "completed_item_ids"):
+        assert learner_fields({name: ["fixture"]}) == {name}
+
+
+@pytest.mark.parametrize("leak", ["learner-value", "lesson_order"])
+def test_ac_8_4_a_learner_value_in_an_evidential_payload_is_detected(monkeypatch, leak):
     from app.services.tutor_pipeline import pipeline
+    from app.services.tutor_pipeline.contracts import EvidentialEnvelope
+
+    class EnvelopeWithOrder(EvidentialEnvelope):
+        lesson_order: tuple[str, ...]
 
     original = pipeline.build_envelope
 
@@ -48,11 +69,13 @@ def test_ac_8_4_a_learner_value_in_an_evidential_payload_is_detected(monkeypatch
         result = original(*args, **kwargs)
         if result is None:
             return None
+        if leak == "lesson_order":
+            return EnvelopeWithOrder(**result.model_dump(), lesson_order=("fixture",))
         instructions = result.instructions.model_copy(update={"rule_id": "fixture stepwise"})
         return result.model_copy(update={"instructions": instructions})
 
     monkeypatch.setattr(pipeline, "build_envelope", builder)
-    assert "learner-value" in run_harness(subset=3)["f2_fields"]
+    assert leak in run_harness(subset=3)["f2_fields"]
 
 
 def test_plan_p_the_harness_takes_the_item_set_and_the_generation_design_as_inputs(tmp_path):
@@ -214,26 +237,72 @@ def test_phase8_readiness_reports_the_last_stop_observation_without_querying(mon
 
 def test_phase8_migration_retains_existing_tables_and_refuses_data_loss(fresh_database_url):
     from app.db_models import LearnerWriteGuard
-    from test_response_ledger_migrations import PHASE7_REVISION, PHASE8_REVISION, PHASE8_TABLES, _alembic, _stamp, _tables
+    from test_response_ledger_migrations import PHASE8_REVISION, PHASE8_TABLES, PHASE9_REVISION, _alembic, _stamp, _tables
 
     engine = create_engine(fresh_database_url)
     try:
         Base.metadata.create_all(engine)
         Base.metadata.drop_all(engine, tables=[Base.metadata.tables[name] for name in PHASE8_TABLES])
-        phase7_tables = _tables(engine)
-        assert "ehmf_stops" in phase7_tables
+        phase9_tables = _tables(engine)
+        assert {"ehmf_stops", "ranking_events"} <= phase9_tables
         engine.dispose()
-        assert _alembic(fresh_database_url, "stamp", PHASE7_REVISION).returncode == 0
+        assert _alembic(fresh_database_url, "stamp", PHASE9_REVISION).returncode == 0
         upgraded = _alembic(fresh_database_url, "upgrade", PHASE8_REVISION)
         assert upgraded.returncode == 0, upgraded.stderr[-1800:]
-        assert _tables(engine) == phase7_tables | PHASE8_TABLES
+        assert _tables(engine) == phase9_tables | PHASE8_TABLES
         with Session(engine) as db:
             db.add(LearnerWriteGuard(key_digest=uuid4().hex, erased=True))
             db.commit()
         engine.dispose()
-        refused = _alembic(fresh_database_url, "downgrade", PHASE7_REVISION)
+        refused = _alembic(fresh_database_url, "downgrade", PHASE9_REVISION)
         assert refused.returncode != 0 and "contain records" in refused.stderr
         assert PHASE8_TABLES <= _tables(engine)
         assert _stamp(engine) == [PHASE8_REVISION]
+    finally:
+        engine.dispose()
+def test_plan_g_the_phase8_revision_accepts_create_all_tables_an_early_guard_table_and_existing_learner_rows(
+    fresh_database_url,
+):
+    from sqlalchemy import create_engine, inspect, select
+    from sqlalchemy.orm import Session
+
+    from app.db_models import Base, LearnerRecord, LearnerRecordOperation, LearnerReplica
+    from test_response_ledger_migrations import PHASE8_REVISION, PHASE9_REVISION, _alembic, _stamp
+
+    models = (LearnerRecord, LearnerReplica, LearnerRecordOperation)
+
+    def rows(engine):
+        with engine.connect() as connection:
+            return [connection.execute(select(model.__table__)).mappings().one() for model in models]
+
+    engine = create_engine(fresh_database_url)
+    try:
+        Base.metadata.create_all(engine)
+        with engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE learner_write_guards DROP COLUMN erasure_epoch")
+            connection.exec_driver_sql("ALTER TABLE learner_write_guards DROP COLUMN last_used_at")
+        with Session(engine) as db:
+            db.add_all([
+                LearnerRecord(user_id="fixture-owner", record_version=1, completed_items=["fixture-item"]),
+                LearnerReplica(user_id="fixture-owner", replica_id="fixture-replica", last_logical_counter=1),
+                LearnerRecordOperation(user_id="fixture-owner", operation_id="fixture-operation",
+                                       replica_id="fixture-replica", logical_counter=1, operation_type="complete_item",
+                                       payload={"item_id": "fixture-item"}, payload_hash="0" * 64),
+            ])
+            db.commit()
+        original_rows = rows(engine)
+        assert {col["name"] for col in inspect(engine).get_columns("learner_write_guards")} == {"key_digest", "erased"}
+        stamp = _alembic(fresh_database_url, "stamp", PHASE9_REVISION)
+        assert stamp.returncode == 0, stamp.stderr
+        upgrade = _alembic(fresh_database_url, "upgrade", PHASE8_REVISION)
+        assert upgrade.returncode == 0, upgrade.stderr
+        assert _stamp(engine) == [PHASE8_REVISION]
+        assert {col["name"] for col in inspect(engine).get_columns("learner_write_guards")} == {
+            "key_digest", "erased", "erasure_epoch", "last_used_at",
+        }
+        assert rows(engine) == original_rows
+        check = _alembic(fresh_database_url, "check")
+        assert check.returncode == 0, check.stderr
+        assert "No new upgrade operations detected" in check.stdout
     finally:
         engine.dispose()

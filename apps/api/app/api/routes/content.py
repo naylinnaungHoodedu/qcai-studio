@@ -168,15 +168,15 @@ def record_quiz_attempt(
     score, responses, feedback = score_attempt(keys, payload.responses)
     durable = user.provider not in {"guest", "demo"}
     sync_enabled = get_settings().learner_sync == "on"
-    subject = write_subject(
-        db, user.provider, user.user_id,
-        bind=durable and get_settings().learner_identity == "on", guarded=sync_enabled,
-        observation=learner_write_observation(request),
-    )
-    server_clock = (
-        begin_server_assessment(db, subject, payload.lesson_slug, attempt_owner=user.user_id)
-        if sync_enabled else None
-    )
+    subject, server_clock = user.user_id, None
+    if durable:
+        subject = write_subject(
+            db, user.provider, user.user_id,
+            bind=get_settings().learner_identity == "on", guarded=sync_enabled,
+            observation=learner_write_observation(request),
+        )
+        if sync_enabled:
+            server_clock = begin_server_assessment(db, subject, payload.lesson_slug, attempt_owner=user.user_id)
     record = QuizAttempt(
         user_id=user.user_id,
         lesson_slug=payload.lesson_slug,

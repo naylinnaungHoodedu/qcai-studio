@@ -51,13 +51,14 @@ def require_privacy_enabled() -> None:
 
 
 @router.get("/learner-consent", dependencies=[Depends(require_privacy_enabled)])
-def get_learner_consent(user: AuthUser = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_learner_consent(user: AuthUser = Depends(require_verified_principal), db: Session = Depends(get_db)):
     return {"consent_version": CONSENT_VERSION, "consent": read_consent(db, user.provider, user.user_id)}
 
 
 @router.put("/learner-consent", dependencies=[Depends(require_privacy_enabled)])
 def put_learner_consent(
-    request: Request, payload: LearnerConsentUpdate, user: AuthUser = Depends(get_current_user), db: Session = Depends(get_db),
+    request: Request, payload: LearnerConsentUpdate,
+    user: AuthUser = Depends(require_verified_principal), db: Session = Depends(get_db),
 ):
     states = set_consent(
         db, user.provider, user.user_id, payload.consent_class, payload.granted, get_settings(),

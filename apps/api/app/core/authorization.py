@@ -181,8 +181,8 @@ ROUTE_POLICIES: dict[tuple[str, str], RoutePolicy] = {
     ("POST", "/learner-record/operations"): _p(DURABLE_LEARNER, CALLER),
     ("POST", "/learner-record/replicas"): _p(DURABLE_LEARNER, CALLER, "Phase 8 replica issuance."),
     ("POST", "/auth/guest-claim"): _p(DURABLE_LEARNER, CALLER, "Phase 8. Also requires a verified guest session."),
-    ("GET", "/auth/learner-consent"): _p(PRINCIPAL, CALLER, "Phase 8 provisional consent."),
-    ("PUT", "/auth/learner-consent"): _p(PRINCIPAL, CALLER, "Phase 8 provisional consent."),
+    ("GET", "/auth/learner-consent"): _p(VERIFIED_PRINCIPAL, CALLER, "Phase 8 provisional consent."),
+    ("PUT", "/auth/learner-consent"): _p(VERIFIED_PRINCIPAL, CALLER, "Phase 8 provisional consent."),
     ("GET", "/auth/learner-export"): _p(VERIFIED_PRINCIPAL, CALLER, "Phase 8 local learner data."),
     ("POST", "/auth/learner-erasure"): _p(VERIFIED_PRINCIPAL, CALLER, "Phase 8 local erasure and receipt."),
     # Projects

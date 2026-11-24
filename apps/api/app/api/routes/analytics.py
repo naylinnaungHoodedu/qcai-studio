@@ -39,11 +39,12 @@ def record_event(
     user: AuthUser = Depends(get_current_user),
 ):
     privacy_on = get_settings().learner_privacy == "on"
-    write_subject(
-        db, user.provider, user.user_id, bind=False, guarded=privacy_on, observation=learner_write_observation(request),
-    )
+    if user.provider != "demo":
+        write_subject(
+            db, user.provider, user.user_id, bind=False, guarded=privacy_on, observation=learner_write_observation(request),
+        )
     if privacy_on:
-        if not read_consent(db, user.provider, user.user_id)["analytics"]:
+        if user.provider == "demo" or not read_consent(db, user.provider, user.user_id)["analytics"]:
             record_signal("analytics.consent_withheld")
             return {"status": "ok"}
     event = AnalyticsEvent(

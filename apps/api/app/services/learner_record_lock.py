@@ -6,19 +6,30 @@ from hashlib import sha256
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import event, select, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.core.phase8_settings import GUARD_RETENTION_DAYS
-from app.db_models import LearnerWriteGuard
+from app.db_models import LearnerWriteGuard, UserAccount
 
 
 @dataclass(frozen=True)
 class WriteObservation:
     erasure_epoch: str | None
     observed_at: datetime
+
+
+@dataclass(frozen=True)
+class LearnerWriter:
+    provider: str
+    identifier: str
+    observation: WriteObservation | None = None
+
+    def lock(self, db: Session) -> None:
+        lock_learner_write(db, self.identifier, observation=self.observation)
+        recheck_learner_principal(db, self.provider, self.identifier)
 
 
 def phase8_writes_enabled(settings) -> bool:
@@ -43,6 +54,42 @@ def observe_learner_write(db: Session, identifier: str) -> WriteObservation:
     observed_at = datetime.now(UTC)
     epoch = db.scalar(select(LearnerWriteGuard.erasure_epoch).where(LearnerWriteGuard.key_digest == guard_key(identifier)))
     return WriteObservation(epoch, observed_at)
+
+
+def learner_writer(db: Session, provider: str, identifier: str) -> LearnerWriter:
+    observation = observe_learner_write(db, identifier) if provider == "auth0" else None
+    return LearnerWriter(provider, identifier, observation)
+
+
+def recheck_learner_principal(db: Session, provider: str, identifier: str) -> None:
+    if provider == "local" and db.get(UserAccount, identifier, populate_existing=True) is None:
+        raise HTTPException(401, "Authentication required.")
+    if provider == "guest":
+        from app.services.guest_sessions import is_guest_revoked
+
+        if is_guest_revoked(db, identifier):
+            raise HTTPException(401, "Guest session revoked.")
+
+
+def guard_request_writes(db: Session, writer: LearnerWriter) -> None:
+    """Guard the existing request session immediately before its transactional writes."""
+    if "learner_writer" in db.info:
+        return
+    db.info["learner_writer"] = writer
+
+    def before_flush(session, context, instances):
+        # Public projections take their own locks, including locks for authors besides the caller.
+        if any(obj.__table__.name != "public_handles" for obj in (*session.new, *session.dirty, *session.deleted)):
+            writer.lock(session)
+
+    def before_dml(state):
+        if state.is_insert or state.is_update or state.is_delete:
+            table = getattr(state.statement, "table", None)
+            if getattr(table, "name", None) not in {"learner_write_guards", "public_handles"}:
+                writer.lock(state.session)
+
+    event.listen(db, "before_flush", before_flush)
+    event.listen(db, "do_orm_execute", before_dml)
 
 
 def lock_learner_write(
@@ -76,8 +123,9 @@ def lock_learner_write(
     if erase:
         held.discard(key)
         return
-    if erased and not (
-        observation is not None and current_epoch is not None and observation.erasure_epoch == current_epoch
-    ):
+    if (observation is None and erased) or (observation is not None and observation.erasure_epoch != current_epoch):
         raise HTTPException(409, "Learner record is unavailable.")
+    if erased:
+        # A fresh retained principal can start new activity. Keep the epoch to reject stale observations.
+        db.execute(update(LearnerWriteGuard).where(LearnerWriteGuard.key_digest == key).values(erased=False))
     held.add(key)

@@ -5,7 +5,7 @@ from alembic import op
 
 
 revision: str = "20261123_phase8_learner"
-down_revision: str = "20261123_phase7_ehmf"
+down_revision: str = "20261123_phase9_ranking"
 branch_labels = None
 depends_on = None
 

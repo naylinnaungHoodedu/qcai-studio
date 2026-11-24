@@ -241,8 +241,9 @@ def test_phase8_erasure_serializes_with_unguarded_and_first_writers(privacy_engi
 
 
 def test_phase8_erasure_rejects_a_stale_observation_and_accepts_a_fresh_one(privacy_engine):
+    from app.db_models import Note
     from app.services.learner_record_identity import write_subject
-    from app.services.learner_record_lock import observe_learner_write
+    from app.services.learner_record_lock import LearnerWriter, guard_request_writes, observe_learner_write
 
     owner = f"fixture-{uuid4().hex}"
     settings = Settings(_env_file=None)
@@ -261,6 +262,120 @@ def test_phase8_erasure_rejects_a_stale_observation_and_accepts_a_fresh_one(priv
         assert same == owner
         returning.commit()
         assert not independently_remaining(returning, (owner,))
+    with Session(privacy_engine) as stale:
+        guard_request_writes(stale, LearnerWriter("auth0", owner, observation))
+        stale.add(Note(user_id=owner, lesson_slug="fixture", body="stale note"))
+        with pytest.raises(HTTPException, match="unavailable"):
+            stale.commit()
+        stale.rollback()
+        assert not independently_remaining(stale, (owner,))
+
+
+def test_phase8_a_stale_public_projection_cannot_recreate_an_erased_rows_handle(privacy_engine):
+    from app.db_models import ArenaProfile, PublicHandle
+    from app.services.learner_record_lock import learner_writer
+    from app.services.public_handles import public_handle
+
+    owner = f"fixture-{uuid4().hex}"
+    with Session(privacy_engine) as db:
+        db.add(ArenaProfile(player_id=owner, display_name="Synthetic player"))
+        db.commit()
+        assert db.scalar(select(ArenaProfile.player_id)) == owner
+        erase_subject(db, "auth0", owner, Settings(_env_file=None))
+        db.commit()
+        learner_writer(db, "auth0", owner).lock(db)
+        db.commit()
+        with pytest.raises(HTTPException, match="no longer available"):
+            public_handle(db, owner)
+        db.rollback()
+        assert db.get(PublicHandle, owner) is None
+        db.add(ArenaProfile(player_id=owner, display_name="Synthetic returning player"))
+        db.commit()
+        assert public_handle(db, owner).startswith("learner-")
+
+
+@pytest.mark.parametrize("legacy_delete", [False, True], ids=["self-service", "account-delete"])
+@pytest.mark.parametrize("writer_kind", ["note", "tutor-turn"])
+def test_phase8_erasure_serializes_with_unguarded_and_first_writers_http(
+    privacy_engine, monkeypatch, legacy_delete, writer_kind,
+):
+    from fastapi.testclient import TestClient
+    from sqlalchemy import event
+
+    from app.core.config import get_settings
+    from app.core.db import get_db
+    from app.db_models import Note, TutorTurn
+    from app.services import learner_record_privacy
+    from app.services.learner_record_lock import guard_key
+    from test_phase8_routes import LESSON, PASSWORD, account, app
+
+    model = Note if writer_kind == "note" else TutorTurn
+    if writer_kind == "note":
+        write_path, body = f"/content/lessons/{LESSON}/notes", {"body": "Synthetic in-flight note."}
+    else:
+        write_path, body = "/tutor/turns", {"message": "Why does routing depth matter?", "lesson_slug": LESSON}
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "learner_privacy", "on")
+    monkeypatch.setattr(settings, "two_pass_tutor", "shadow")
+    flushed, release_write, write_returned = Event(), Event(), Event()
+    erasure_attempted, erasure_locked = Event(), Event()
+    held_guards = []
+
+    def test_db():
+        with Session(privacy_engine, autoflush=False) as db:
+            @event.listens_for(db, "after_flush")
+            def hold_write(session, context):
+                if any(isinstance(obj, model) for obj in session.new) and not flushed.is_set():
+                    _, held = session.info.get("learner_write_locks", (None, set()))
+                    held_guards.append(guard_key(owner) in held)
+                    flushed.set()
+                    assert release_write.wait(10)
+
+            yield db
+
+    monkeypatch.setitem(app.dependency_overrides, get_db, test_db)
+    browser, headers, owner, _ = account()
+    with Session(privacy_engine) as db:
+        subject = bind_subject(db, "local", owner)
+        db.commit()
+    eraser = TestClient(app, cookies=browser.cookies)
+    original_mark = learner_record_privacy.mark_erased_subjects
+
+    def mark(*args):
+        erasure_attempted.set()
+        identifiers = original_mark(*args)
+        erasure_locked.set()
+        # Let the already-committed writer finish reading its own response fields before deletion.
+        assert write_returned.wait(10)
+        return identifiers
+
+    monkeypatch.setattr(learner_record_privacy, "mark_erased_subjects", mark)
+
+    def write():
+        try:
+            return browser.post(write_path, headers=headers, json=body)
+        finally:
+            write_returned.set()
+
+    method, erase_path = ("DELETE", "/auth/account") if legacy_delete else ("POST", "/auth/learner-erasure")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        writing = pool.submit(write)
+        try:
+            assert flushed.wait(10), f"The {writer_kind} request never flushed."
+            erasing = pool.submit(eraser.request, method, erase_path, headers=headers, json={"password": PASSWORD})
+            assert erasure_attempted.wait(10)
+            assert not erasure_locked.wait(0.25), "Erasure acquired its guard while the authenticated writer held rows."
+            assert held_guards == [True]
+        finally:
+            release_write.set()
+        assert writing.result(timeout=15).status_code == 200
+        erased = erasing.result(timeout=15)
+    assert erased.status_code == 200
+    receipt = erased.json()["receipt"] if legacy_delete else erased.json()
+    assert receipt["zero_counts"][model.__tablename__] == 0
+    with Session(privacy_engine) as db:
+        assert not independently_remaining(db, (owner, subject))
 
 
 @pytest.mark.parametrize("provider", ["local", "guest", "auth0", "demo"])

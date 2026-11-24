@@ -6,11 +6,12 @@ import logging
 import re
 import time
 
+from fastapi import HTTPException
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
 from app.core.guest_tokens import guest_csrf_for, issue_guest_token
 from app.db_models import (
     ArenaMatchRecord,
@@ -43,6 +44,14 @@ def is_guest_revoked(db: Session, guest_id: str, *, include_phase8: bool = True)
 
 
 def revoke_guest(db: Session, guest_id: str, reason: str) -> GuestRevocation:
+    from app.services.learner_record_lock import lock_learner_write, phase8_writes_enabled
+
+    if phase8_writes_enabled(get_settings()):
+        tombstone_key = guest_credential_digest(guest_id)
+        tombstone = db.get(LearnerGuestRevocation, tombstone_key)
+        if tombstone is not None:
+            return GuestRevocation(guest_id=guest_id, reason=reason, revoked_at=tombstone.revoked_at)
+        lock_learner_write(db, guest_id)
     revocation = db.get(GuestRevocation, guest_id)
     if revocation is None:
         revocation = GuestRevocation(guest_id=guest_id, reason=reason)
@@ -82,6 +91,16 @@ def upgrade_legacy_guest(
         return None
     if not _LEGACY_GUEST_CSRF_PATTERN.fullmatch(legacy_csrf.strip().lower()):
         return None
+    from app.services.learner_record_lock import lock_learner_write, phase8_writes_enabled
+
+    if phase8_writes_enabled(settings):
+        try:
+            lock_learner_write(db, guest_id)
+        except HTTPException as exc:
+            if exc.status_code != 409:
+                raise
+            db.rollback()
+            return None
     if is_guest_revoked(db, guest_id) or db.get(GuestLegacyUpgrade, guest_id) is not None:
         return None
     if _was_ever_public(db, guest_id):

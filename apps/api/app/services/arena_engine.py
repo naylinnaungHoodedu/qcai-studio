@@ -7,12 +7,14 @@ from functools import lru_cache
 from typing import Any
 from uuid import uuid4
 
-from fastapi import WebSocket
+from fastapi import HTTPException, WebSocket
 from sqlalchemy import select
 
+from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.db_models import ArenaMatchRecord, ArenaProfile
 from app.schemas import ArenaLeaderboardEntry, ArenaProfileRead
+from app.services.learner_record_lock import LearnerWriter, phase8_writes_enabled
 from app.services.public_handles import public_handles
 from app.services.text_utils import sanitize_user_text
 
@@ -249,6 +251,7 @@ class MatchPlayer:
     score: int = 0
     correct_answers: int = 0
     submitted_answers: int = 0
+    writer: LearnerWriter | None = None
 
 
 @dataclass
@@ -280,6 +283,10 @@ def _public_display_name(profile: ArenaProfile) -> str:
 def _public_handles(player_ids: list[str]) -> dict[str, str]:
     with SessionLocal() as session:
         return public_handles(session, player_ids)
+
+
+def _socket_writer(websocket: WebSocket) -> LearnerWriter | None:
+    return getattr(getattr(websocket, "state", None), "learner_writer", None)
 
 
 def _rank_label_from_xp(xp: int) -> str:
@@ -378,7 +385,7 @@ class ArenaService:
     async def connect(self, websocket: WebSocket, player_id: str, display_name: str, mode: str) -> None:
         # The route has accepted the socket and validated the principal; player_id is that principal's id.
         display_name = sanitize_user_text(display_name, preserve_newlines=False) or DEFAULT_DISPLAY_NAME
-        await self._ensure_profile(player_id, display_name)
+        await self._ensure_profile(player_id, display_name, _socket_writer(websocket))
         handle = _public_handles([player_id])[player_id]
         match_start_id: str | None = None
         payload: dict[str, Any] | None = None
@@ -479,8 +486,11 @@ class ArenaService:
             await self._finalize_round(match_id, round_number)
 
     def _build_ranked_match(self, opponent_id: str, player_id: str) -> ArenaMatch:
-        opponent_profile = self.profile(opponent_id)
-        current_profile = self.profile(player_id)
+        legacy = not phase8_writes_enabled(get_settings())
+        opponent_profile = self.profile(opponent_id, create_missing=legacy)
+        current_profile = self.profile(player_id, create_missing=legacy)
+        if opponent_profile is None or current_profile is None:
+            raise HTTPException(409, "Arena principal is unavailable.")
         handles = _public_handles([opponent_id, player_id])
         return ArenaMatch(
             match_id=f"match-{uuid4().hex[:10]}",
@@ -492,6 +502,7 @@ class ArenaService:
                     display_name=opponent_profile.display_name,
                     adaptive_level=opponent_profile.adaptive_level,
                     websocket=self._connections[opponent_id],
+                    writer=_socket_writer(self._connections[opponent_id]),
                 ),
                 player_id: MatchPlayer(
                     player_id=player_id,
@@ -499,13 +510,16 @@ class ArenaService:
                     display_name=current_profile.display_name,
                     adaptive_level=current_profile.adaptive_level,
                     websocket=self._connections[player_id],
+                    writer=_socket_writer(self._connections[player_id]),
                 ),
             },
             difficulty_band=max(1, min(5, round((opponent_profile.adaptive_level + current_profile.adaptive_level) / 2))),
         )
 
     def _build_bot_match(self, player_id: str, handle: str, display_name: str, websocket: WebSocket) -> ArenaMatch:
-        profile = self.profile(player_id)
+        profile = self.profile(player_id, create_missing=not phase8_writes_enabled(get_settings()))
+        if profile is None:
+            raise HTTPException(409, "Arena principal is unavailable.")
         bot_level = max(1, min(5, profile.adaptive_level + random.choice([-1, 0, 1])))
         bot_player = MatchPlayer(
             player_id=f"bot-{uuid4().hex[:6]}",
@@ -521,6 +535,7 @@ class ArenaService:
             display_name=display_name or profile.display_name,
             adaptive_level=profile.adaptive_level,
             websocket=websocket,
+            writer=_socket_writer(websocket),
         )
         return ArenaMatch(
             match_id=f"match-{uuid4().hex[:10]}",
@@ -769,6 +784,13 @@ class ArenaService:
         xp_updates: list[dict[str, Any]] = []
         human_players = [player for player in match.players.values() if not player.is_bot]
         with SessionLocal() as session:
+            try:
+                for player in sorted(human_players, key=lambda item: item.player_id):
+                    if player.writer is not None:
+                        player.writer.lock(session)
+            except HTTPException:
+                # A result also names its opponent. Discard the whole result if either credential was erased.
+                return []
             for player in human_players:
                 profile = session.scalars(select(ArenaProfile).where(ArenaProfile.player_id == player.player_id)).first()
                 if not profile:
@@ -833,8 +855,10 @@ class ArenaService:
             session.commit()
         return xp_updates
 
-    async def _ensure_profile(self, player_id: str, display_name: str) -> None:
+    async def _ensure_profile(self, player_id: str, display_name: str, writer: LearnerWriter | None = None) -> None:
         with SessionLocal() as session:
+            if writer is not None:
+                writer.lock(session)
             profile = session.scalars(select(ArenaProfile).where(ArenaProfile.player_id == player_id)).first()
             if profile:
                 if display_name and profile.display_name != display_name:

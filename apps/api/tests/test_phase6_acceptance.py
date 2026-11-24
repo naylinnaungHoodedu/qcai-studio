@@ -746,14 +746,18 @@ def test_plan_g_the_phase_6_revision_is_additive_reversible_and_keeps_its_rows(f
     from app.core.db import Base
     from app.services.ledger import SCHEMA_REVISION
 
-    assert ScriptDirectory.from_config(Config(str(API_ROOT / "alembic.ini"))).get_heads() == [SCHEMA_REVISION] == ["20261123_phase9_ranking"]  # Phase 7, then Phase 9, follow the Phase 6 revision
+    from test_response_ledger_migrations import PHASE8_TABLES, PHASE9_REVISION, PHASE9_TABLES
+
+    script = ScriptDirectory.from_config(Config(str(API_ROOT / "alembic.ini")))
+    assert script.get_heads() == [SCHEMA_REVISION]
+    assert script.get_revision(SCHEMA_REVISION).down_revision == PHASE9_REVISION
     connect_args = {"check_same_thread": False} if fresh_database_url.startswith("sqlite") else {}
     engine = create_engine(fresh_database_url, connect_args=connect_args)
     try:
         Base.metadata.create_all(engine)
         # The Phase 7 and Phase 9 tables follow the Phase 6 revision, so "upgrade head" from the Phase 5 stamp creates them too.
-        Base.metadata.drop_all(engine, tables=[Base.metadata.tables[name] for name in (*V3_TABLES, "ehmf_stops", "ranking_events", "ranking_scans",
-                                                                                       "ranking_states", "ranking_incumbents")])
+        newer = V3_TABLES | {"ehmf_stops"} | PHASE9_TABLES | PHASE8_TABLES
+        Base.metadata.drop_all(engine, tables=[Base.metadata.tables[name] for name in newer])
         others = set(sa_inspect(engine).get_table_names())
         engine.dispose()
         assert _alembic(fresh_database_url, "stamp", PHASE5_REVISION).returncode == 0
@@ -762,6 +766,10 @@ def test_plan_g_the_phase_6_revision_is_additive_reversible_and_keeps_its_rows(f
         checked = _alembic(fresh_database_url, "check")
         assert checked.returncode == 0 and "No new upgrade operations detected" in (checked.stdout + checked.stderr), checked.stderr[-2000:]
         assert V3_TABLES <= set(sa_inspect(engine).get_table_names())
+        engine.dispose()
+        trimmed = _alembic(fresh_database_url, "downgrade", PHASE9_REVISION)
+        assert trimmed.returncode == 0, trimmed.stderr[-2000:]
+        assert not PHASE8_TABLES & set(sa_inspect(engine).get_table_names())
         engine.dispose()
         # A CUSUM alarm (from outside the ledger) keeps the tables too; a model_change event (derived from the records and
         # the registry) is not counted: one of each gives "1 cusum_alarm rows".
@@ -1331,8 +1339,9 @@ def test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_h
     step = runbook.split("3. **Check the stamp:** `alembic current`.", 1)[1].split("\n4. ", 1)[0]
     # Since Phase 9 the head is 20261123_phase9_ranking: its bullet takes the Phase 9 step, then the Phase 7, Phase 6 and
     # Phase 5 steps.
-    assert re.findall(r"`([0-9a-z_]+) \(head\)`", step) == [SCHEMA_REVISION] == ["20261123_phase9_ranking"]
+    assert re.findall(r"`([0-9a-z_]+) \(head\)`", step) == [SCHEMA_REVISION] == ["20261123_phase8_learner"]
     head_bullet = next(line for line in step.splitlines() if f"`{SCHEMA_REVISION} (head)`" in line)
+    assert "alembic downgrade 20261123_phase9_ranking" in head_bullet
     assert "allow_ranking_drop=true downgrade 20261123_phase7_ehmf" in head_bullet
     assert "allow_ehmf_drop=true downgrade 20261122_phase6_v3_audit" in head_bullet
     assert "allow_v3_drop=true downgrade 20261122_phase5_gateway_controls" in head_bullet and "export-gold --all" in head_bullet

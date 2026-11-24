@@ -53,9 +53,21 @@ def quiz(browser, headers):
 
 
 def test_freeze_phase8_flags_off_learner_record_and_quiz_routes_are_unchanged(monkeypatch):
+    from app.core.phase8_settings import PHASE8_FLAGS
+    from app.db_models import Base
+    from test_response_ledger_migrations import PHASE8_TABLES
+
+    def encode(value):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
+
+    def phase8_counts():
+        with SessionLocal() as db:
+            return {name: db.scalar(select(func.count()).select_from(Base.metadata.tables[name])) for name in PHASE8_TABLES}
+
     settings = get_settings()
-    for field in ("learner_identity", "learner_privacy", "learner_sync"):
+    for field in PHASE8_FLAGS:
         monkeypatch.setattr(settings, field, "off")
+    before = phase8_counts()
     browser, headers, principal, _ = account()
     assert browser.post("/learner-record/replicas", headers=headers).status_code == 404
     assert browser.post("/auth/guest-claim", headers=headers).status_code == 404
@@ -69,21 +81,46 @@ def test_freeze_phase8_flags_off_learner_record_and_quiz_routes_are_unchanged(mo
     engine = SessionLocal.kw["bind"]
     event.listen(engine, "before_cursor_execute", capture)
     try:
-        assert browser.get("/learner-record").json()["record_version"] == 0
+        blank = {"user_id": principal, "record_version": 0, "mastery": {}, "completed_item_ids": [],
+                 "attempt_counts": {}, "cursor": None, "preferences": {}, "version_vector": {}}
+        assert browser.get("/learner-record").content == encode(blank)
     finally:
         event.remove(engine, "before_cursor_execute", capture)
     assert any("insert into learner_records" in statement for statement in statements)
-    assert browser.post("/learner-record/operations", headers=headers,
-                        json=batch(f"browser-{uuid4().hex}", 1, "fixture")).status_code == 200
+    replica = f"browser-{uuid4().hex}"
+    write = batch(replica, 1, "fixture")
+    operation_id = write["operations"][0]["operation_id"]
+    applied = browser.post("/learner-record/operations", headers=headers, json=write)
+    expected = {**blank, "record_version": 1, "completed_item_ids": ["fixture"], "version_vector": {replica: 1}}
+    assert applied.status_code == 200
+    assert applied.content == encode({"receipts": [{"operation_id": operation_id, "status": "applied"}], "record": expected})
+    questions = get_course_store().quiz_keys.for_lesson(LESSON)
+    from app.services.quiz_keys import score_attempt
+
+    score, _, feedback = score_attempt(questions, {item.id: item.answer for item in questions})
+    expected_feedback = [item.model_dump(mode="json") for item in feedback]
+    observed_ids = []
     for _ in range(13):
         result = quiz(browser, headers)
         assert result.status_code == 200
-    attempt_id = result.json()["attempt_id"]
+        attempt_id = result.json()["attempt_id"]
+        observed_ids.append(attempt_id)
+        assert result.content == encode({"status": "saved", "attempt_id": attempt_id, "score": score, "feedback": expected_feedback})
+    assert browser.post("/analytics/events", headers=headers, json={"event_type": "fixture"}).content == b'{"status":"ok"}'
     with SessionLocal() as db:
-        assert db.scalar(select(LearnerRecordOperation.operation_id).where(
-            LearnerRecordOperation.user_id == principal, LearnerRecordOperation.operation_id == f"quiz-{attempt_id}-mastery",
-        ))
+        clocks = dict(db.execute(select(LearnerRecordOperation.operation_id, LearnerRecordOperation.logical_counter).where(
+            LearnerRecordOperation.user_id == principal, LearnerRecordOperation.operation_id.like("quiz-%"),
+        )).all())
+        assert clocks == {
+            f"quiz-{attempt}-{suffix}": attempt * 2 + offset
+            for attempt in observed_ids for suffix, offset in (("mastery", 1), ("attempt", 2), ("complete", 3))
+        }
         assert db.get(LearnerAssessmentFact, attempt_id) is None
+        assert db.scalar(select(func.count()).select_from(AnalyticsEvent).where(AnalyticsEvent.user_id == principal)) == 1
+    assert phase8_counts() == before
+    deletion = browser.request("DELETE", "/auth/account", headers=headers, json={"password": PASSWORD})
+    assert deletion.status_code == 200 and deletion.content == b'{"status":"deleted"}'
+    assert phase8_counts() == before
 
 
 def test_phase8_first_binding_preserves_the_read_version_and_existing_replica(monkeypatch):
@@ -364,6 +401,93 @@ def test_phase8_a_demo_header_cannot_export_or_erase_another_principal():
         assert {identifier: independently_remaining(db, (identifier,)) for identifier in targets} == before
     assert signed_in.get("/auth/learner-export").status_code == 200
     assert signed_guest.get("/auth/learner-export").status_code == 200
+
+
+def test_phase8_a_demo_header_cannot_read_or_change_another_principals_consent(monkeypatch):
+    from app.db_models import LearnerConsent, LearnerConsentChange
+    from app.services.learner_record_privacy import read_consent
+
+    monkeypatch.setattr(get_settings(), "learner_privacy", "on")
+    local, headers, owner, _ = account()
+    guest = f"guest-{uuid4()}"
+    guest_client = TestClient(app)
+    issued = int(time.time())
+    secret = get_settings().guest_token_secret
+    guest_client.cookies.set(GUEST_TOKEN_COOKIE, issue_guest_token(secret, guest, issued))
+    consent_path = "/auth/learner-consent"
+    grant = {"consent_class": "analytics", "granted": True}
+    with SessionLocal() as db:
+        subject = bind_subject(db, "local", owner)
+        db.commit()
+    assert local.put(consent_path, headers=headers, json=grant).json()["consent"]["analytics"] is True
+    guest_headers = {"origin": ORIGIN, "x-qcai-csrf": guest_csrf_for(secret, guest, issued)}
+    assert guest_client.put(consent_path, headers=guest_headers, json=grant).json()["consent"]["analytics"] is True
+
+    keys = (owner, guest, subject)
+
+    def consent_snapshot():
+        with SessionLocal() as db:
+            return (
+                read_consent(db, "local", owner), read_consent(db, "guest", guest),
+                *(db.execute(select(table).where(table.c.user_id.in_(keys)).order_by(*table.primary_key)).mappings().all()
+                  for table in (LearnerConsent.__table__, LearnerConsentChange.__table__)),
+            )
+
+    before = consent_snapshot()
+    assert {row["user_id"] for row in before[2]} == {guest, subject}
+    visitor = TestClient(app)
+    for identifier in (*keys, "demo-consent-fixture"):
+        unverified = {"x-demo-user": identifier, "origin": ORIGIN}
+        assert visitor.get(consent_path, headers=unverified).status_code == 403
+        assert visitor.put(consent_path, headers=unverified, json={**grant, "granted": False}).status_code == 403
+    assert consent_snapshot() == before
+
+
+def test_phase8_a_demo_header_cannot_consume_another_learners_assessment_quota(monkeypatch):
+    from app.core.phase8_settings import ASSESSMENT_LIMIT
+    from app.services.learner_record_identity import find_subject
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "learner_sync", "on")
+    monkeypatch.setattr(settings, "learner_identity", "on")
+    browser, headers, owner, _ = account()
+    with SessionLocal() as db:
+        subject = bind_subject(db, "local", owner)
+        db.commit()
+    visitor = TestClient(app)
+    for _ in range(ASSESSMENT_LIMIT):
+        assert quiz(visitor, {"origin": ORIGIN, "x-demo-user": owner}).status_code == 403
+    assert quiz(browser, headers).status_code == 200
+    with SessionLocal() as db:
+        assert find_subject(db, "local", owner) == subject
+        assert db.get(LearnerRecord, owner) is None
+        assert db.scalar(select(func.count()).select_from(QuizAttempt).where(QuizAttempt.user_id == owner)) == 1
+
+
+@pytest.mark.parametrize("provider", ["demo", "guest"])
+def test_phase8_quiz_previews_do_not_acquire_an_assessment_quota_or_record_lock(monkeypatch, provider):
+    from app.api.routes import content
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "learner_sync", "on")
+    owner = f"{provider}-{uuid4()}"
+    browser = TestClient(app)
+    headers = {"origin": ORIGIN}
+    if provider == "demo":
+        headers["x-demo-user"] = owner
+    else:
+        issued = int(time.time())
+        browser.cookies.set(GUEST_TOKEN_COOKIE, issue_guest_token(settings.guest_token_secret, owner, issued))
+        headers["x-qcai-csrf"] = guest_csrf_for(settings.guest_token_secret, owner, issued)
+
+    def unexpected_quota(*args, **kwargs):
+        pytest.fail("A preview entered the durable assessment quota and record lock.")
+
+    monkeypatch.setattr(content, "begin_server_assessment", unexpected_quota)
+    assert quiz(browser, headers).status_code == 200
+    with SessionLocal() as db:
+        assert db.get(LearnerRecord, owner) is None
+        assert db.scalar(select(func.count()).select_from(QuizAttempt).where(QuizAttempt.user_id == owner)) == 1
 
 
 def test_phase8_erasure_confirmation_is_limited_and_audits_duration(monkeypatch):

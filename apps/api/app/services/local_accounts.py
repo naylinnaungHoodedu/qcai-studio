@@ -103,6 +103,11 @@ def authenticate_local_account(db: Session, email: str, password: str) -> UserAc
 
 
 def create_local_session(db: Session, user_id: str) -> tuple[str, str, datetime]:
+    from app.core.config import get_settings
+    from app.services.learner_record_lock import LearnerWriter, phase8_writes_enabled
+
+    if phase8_writes_enabled(get_settings()):
+        LearnerWriter("local", user_id).lock(db)
     session_token = secrets.token_urlsafe(48)
     csrf_token = secrets.token_urlsafe(24)
     expires_at = utc_now() + timedelta(seconds=AUTH_SESSION_MAX_AGE_SECONDS)

@@ -2,6 +2,7 @@
 
 import argparse
 from collections.abc import Mapping
+from dataclasses import fields
 import json
 import os
 from pathlib import Path
@@ -21,15 +22,24 @@ from scripts.replay_tutor_plans import FIXTURE, REGRESSIONS, _commit, fixture_it
 from app.core.config_package import canonical_sha256, get_config_package
 from app.core.phase8_settings import LEVELS
 from app.gateway.contracts import AlignmentRequest
+from app.schemas import (
+    LearnerConsentRecord, LearnerRecordOperationInput, LearnerRecordOperationsRequest, LearnerRecordRead,
+    LearnerReplicaIssued, LearnerReplicaRequest,
+)
 from app.services.learner_record_metrics import record_signal
-from app.services.learner_record_planner import plan_presentation
+from app.services.learner_record_planner import LearnerPresentation, plan_presentation
 from app.services.tutor_pipeline.contracts import LEARNER_STATE_FIELDS, PresentationPlan
 from app.services.tutor_pipeline.pipeline import PipelineInput
 from app.services.tutor_pipeline.resolve import LearnerTurn, resolve_turns
 from app.services.v2_panel.cache import ProcessEvidentialCache
 
 
-LEARNER_FIELDS = frozenset(LEARNER_STATE_FIELDS) | {"expected_record_version", "consent_class", "replica_id"}
+LEARNER_FIELDS = frozenset(LEARNER_STATE_FIELDS).union(
+    (field.name for field in fields(LearnerPresentation)),
+    LearnerRecordRead.model_fields, LearnerRecordOperationInput.model_fields, LearnerRecordOperationsRequest.model_fields,
+    LearnerConsentRecord.model_fields, LearnerReplicaIssued.model_fields, LearnerReplicaRequest.model_fields,
+    {"subject_id", "receipt_id", "principal_digest", "erasure_epoch", "id"},
+)
 PLANNER_VALUE = re.compile(r"(?<![\w.])(?:concise|stepwise|socratic|0\.[159])(?![\w.])", re.IGNORECASE)
 
 
