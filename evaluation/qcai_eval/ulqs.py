@@ -2,7 +2,8 @@
 
 The validator accepts the rc1 record shape (`schema_version` "1.0") and the v1.0 records the migrator writes
 (`schema_version` "1.1", `dataset_version` "ULQS-v1.0"). It is hand-written (no jsonschema in the API requirements);
-`lqs/ulqs-v1.0.schema.json` states the same rules for interoperability and a unit test keeps the two in agreement.
+`lqs/ulqs-v1.0.schema.json` states the same rules for interoperability; unit tests that run in CI keep the two in
+agreement (structurally, and on valid and invalid items through a dependency-free evaluator of the schema's keywords).
 
 Every problem names an item id, a field path and a code, never a value: an item's text is research data (R-25).
 Standard library only.

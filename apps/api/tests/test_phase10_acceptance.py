@@ -1263,9 +1263,10 @@ def test_phase10_docs_quote_the_plan_and_state_the_current_rules():
     assert "The exit is not passed (DI-129)." in head
 
 
-PHASE10_MODULES = ("test_phase10_acceptance.py", "test_ulqs_schema.py", "test_ulqs_pointers.py", "test_rater_agreement.py",
+PHASE10_MODULES = ("test_phase10_acceptance.py", "conftest.py", "test_ulqs_schema.py", "test_ulqs_pointers.py", "test_rater_agreement.py",
                    "test_ablation_arms.py", "test_evaluation_runner.py", "test_research_statistics.py", "test_analysis_plans.py",
-                   "test_seeded_fault_fixtures.py", "test_contamination_scan.py", "test_payload_log.py", "test_governance_records.py")
+                   "test_seeded_fault_fixtures.py", "test_contamination_scan.py", "test_payload_log.py", "test_governance_records.py",
+                   "test_evaluators.py", "test_phase9_acceptance.py", "test_python_sources.py")
 
 
 def test_phase10_docs_the_test_strategy_maps_every_test_module_the_phase_added():
@@ -1273,8 +1274,9 @@ def test_phase10_docs_the_test_strategy_maps_every_test_module_the_phase_added()
     section = strategy.split("## Phase 10 acceptance map (plan Phase 10 K)", 1)[1]
     exit_gate = next(line for line in section.splitlines() if line.startswith("**Exit gate.** The Phase 10 exit"))
     assert exit_gate.endswith("The exit is not passed.")
-    for name in PHASE10_MODULES:
-        assert f"`{name}`" in section, name
+    # Every module this phase added or changed, and every module of evaluation/tests (a new one must join the map).
+    for name in (*PHASE10_MODULES, *(path.name for path in (REPO_ROOT / "evaluation" / "tests").glob("*.py"))):
+        assert f"`{name}`" in section or f"`evaluation/tests/{name}`" in section or f"`apps/api/tests/{name}`" in section, name
     for ac in range(1, 7):
         assert f"| AC-10-{ac} |" in section, ac
     names = set()

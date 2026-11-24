@@ -20,9 +20,11 @@ artifact's sha256; it holds no names, no identifiers of people and no text. `eva
 path must itself be a research-plane path. Each script logs every research-plane input it reads and every record it
 writes:
 
-- `run_evaluation.py`: the spec read (`run_spec`), each input the plan read (the items, the catalog, the governance
-  records, the pre-run scan, the recording), the run's start, and its outcome: `completed` (with the payload log's
-  sha256), `interrupted` (with the checkpoint's sha256) or `refused`. A run that stops early still leaves its reads.
+- `run_evaluation.py`: the spec read (`run_spec`), then each input as soon as the planner reads it (the items, the
+  catalog, the recording, and each governance record and the pre-run scan with the sha256 of the bytes read, whether or
+  not it matches its pin), the run's start, and its outcome: `completed` (with the payload log's sha256), `interrupted`
+  (with the checkpoint's sha256) or `refused`. A run that stops early, including one the planner refuses after reading
+  its items (hold H12, the confirmatory gate, a live or pin refusal), still leaves its reads.
 - `validate_ulqs.py`: the items and the previous set, the catalog, the corpus text it read, the ratings, and the agreement
   and freeze records it writes.
 - `build_licensed_fingerprints.py`: each licensed text and the ULQS items it reads, and each fingerprint file it writes.

@@ -32,14 +32,18 @@ ratified under DI-140). The Phase 10 exit is not passed (DI-129).
    are confirmatory only.
 7. Payload logs hold pointers, hashes and sizes only (AC-10-6). Contamination is scanned with salted fingerprints of the
    licensed corpus and of the ULQS; public CI uses synthetic fingerprints with a published salt (AC-10-4).
-8. The E1-E4 analysis plans are data with no outcome fields; the pre-registration draft is generated from them.
+8. The E1-E4 analysis plans are data with no outcome fields and a draft status (nothing is filed with OSF, DI-131); the
+   pre-registration draft is generated from them. Every test they register is implemented in `statistics.py` with
+   known-answer tests and has run on no research data (DI-138).
 
 ## Consequences
 
 - Every AC is provable in code on synthetic data, and no ULQS item, gold label or licensed text enters the repository or CI.
 - The real-data halves wait on the owner decisions and PI items (DI-129..DI-141); nothing here decides them.
-- A code change to the evaluation package changes the committed synthetic run record's code pins, so CI's
-  `run_evaluation.py --check` fails until the record is rewritten with `--write`: the record always names the code it ran.
+- A code change to `evaluation/qcai_eval/*.py` or `scripts/run_evaluation.py` changes the committed synthetic run
+  record's code pins, so CI's `run_evaluation.py --check` fails until the record is rewritten with `--write`: the record
+  always names the code it ran. The pins read CRLF as LF and cover no other file, so a CRLF checkout or a change
+  elsewhere leaves the record current.
 
 ## Residuals
 
