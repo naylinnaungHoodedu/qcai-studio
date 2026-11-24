@@ -23,8 +23,11 @@ From schema EHMF_SCHEMA_VERSION (package v6, Phase 7) --check also runs the EHMF
 set's sha256 and item count, the library with the development store) and prints its summary, and --rehash recomputes the
 library pin and sidecar, the routing table and sha256, the template sha256 and the golden set's sha256 and items. What a
 schema adds applies to every later schema, except the inline misconception library hash (schemas 3 to 5; from v6 the
-library is a pinned file).
-The default path is the shipped package v6; v5, v4, v3, v2 and v1 stay readable for one release (--path .../v5.json, DI-112;
+library is a pinned file). From schema RANKING_SCHEMA_VERSION (package v7, Phase 9) --check also runs the ranking check (the
+hand fixtures, the clusters, the recommission golden set's sha256 and item count, the replay report) and prints its summary,
+and --rehash copies ehmf.golden_set's pin into ranking.recommission.golden_set.
+The default path is the shipped package v7; v6, v5, v4, v3, v2 and v1 stay readable for one release (--path .../v6.json,
+DI-126; --path .../v5.json, DI-112;
 --path .../v4.json, DI-100;
 --path .../v3.json, DI-84; --path .../v2.json, DI-63; --path .../v1.json, DI-42).
 """
@@ -45,6 +48,7 @@ for path in (REPO_ROOT, API_ROOT):
 from app.core.config_package import (  # noqa: E402
     DEFAULT_PACKAGE_PATH,
     EHMF_SCHEMA_VERSION,
+    RANKING_SCHEMA_VERSION,
     ConfigPackageError,
     canonical_sha256,
     load_config_package,
@@ -78,11 +82,12 @@ def write_schemas(path: Path) -> list[Path]:
         target.write_text(json.dumps(tool_contract_document(), indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
         written.append(target)
     if payload.get("schema_version", 0) >= 5:
-        from app.services.v3.contracts import V3_SCHEMA_MODELS
+        from app.services.v3.contracts import v3_schema_models
 
+        models = v3_schema_models(payload["schema_version"])
         for name, pin in payload["v3"]["schemas"].items():
             target = path.parent / pin["path"]
-            schema = V3_SCHEMA_MODELS[name].model_json_schema(mode="validation")
+            schema = models[name].model_json_schema(mode="validation")
             target.write_text(json.dumps(schema, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
             written.append(target)
     return written
@@ -119,6 +124,10 @@ def rehash(path: Path) -> str:
     version = int(payload.get("schema_version") or 1)
     if version >= EHMF_SCHEMA_VERSION:
         _rehash_ehmf(path, payload)
+    if version >= RANKING_SCHEMA_VERSION:
+        # Phase 9 spec conflict 4: the recommission set is the golden set's queries, pinned with it.
+        golden = payload["ehmf"]["golden_set"]
+        payload["ranking"]["recommission"]["golden_set"].update({key: golden[key] for key in ("version", "path", "sha256", "items")})
     if 3 <= version < EHMF_SCHEMA_VERSION:
         from app.core.config_package import misconception_library_sha256
 
@@ -191,6 +200,10 @@ def check(path: Path) -> int:
             from app.services.ehmf.package_check import check_ehmf_package
 
             problems.extend(check_ehmf_package(package, structural=True))
+        if package.ranking is not None:
+            from app.services.ranking.package_check import check_ranking_package
+
+            problems.extend(check_ranking_package(package, structural=True))
         if problems:
             for problem in problems:
                 print(f"configuration package check failed: {problem}", file=sys.stderr)
@@ -238,6 +251,10 @@ def check(path: Path) -> int:
             f"library {package.v1.library_version} ({len(package.v1.library_entries)} entries); golden set {ehmf.golden_set_items} items; "
             f"penalty factors {factors}; phase7_exit_passed {package.flag_policy.phase7_exit_passed}"
         )
+    if package.ranking is not None:
+        from app.services.ranking.package_check import summary
+
+        print(summary(package))
     return 0
 
 

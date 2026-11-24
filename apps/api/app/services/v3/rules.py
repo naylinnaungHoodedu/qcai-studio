@@ -21,6 +21,10 @@ X1_TIERS = (1, 2, 3)
 X1_WITHHOLD_TIER = 1
 V3_COUNTED = ("X1", "X2", "X3", "X4")            # plan 15.3 "V-3 numerator counts X1-X4 only; audits are proof tests" (PD-37)
 QUEUE_REASONS = ("v1_3_flag", "v1_8_misconception", "v2_correction_exhausted", "v2_degraded_withheld")
+# Package schema 7 (Phase 9 spec conflict 24): the ranking controller's empty-eligible-set fallback enqueues a response item with
+# this reason (AC-9-6). It is not an X trigger, so V3_COUNTED is unchanged; schemas 5 and 6 keep QUEUE_REASONS.
+RANKING_QUEUE_REASON = "ranking_empty_eligible_set"
+QUEUE_REASONS_V7 = (*QUEUE_REASONS, RANKING_QUEUE_REASON)
 X2_TYPES = ("A", "B")                            # x-triggers-v1 (package v5) only
 TRIGGER_REGISTRY_VERSION_V2 = "x-triggers-v2"
 TRIGGER_RULES_V2 = {**TRIGGER_RULES, "X2": "v2-exhausted-any-type-v2"}   # package v6 (Phase 7 spec conflict 3; PD-44)

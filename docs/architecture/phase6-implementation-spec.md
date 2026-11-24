@@ -351,7 +351,9 @@ DIGEST = r"^[0-9a-f]{32}$"
 CLIENT_KEY = r"^[A-Za-z0-9_-]{8,64}$"
 UTC_TIME = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$"
 Trigger = Literal["X1", "X2", "X3", "X4", "X5", "X6"]
-QueueReason = Literal["v1_3_flag", "v1_8_misconception", "v2_correction_exhausted", "v2_degraded_withheld"]
+QueueReason = Literal["v1_3_flag", "v1_8_misconception", "v2_correction_exhausted", "v2_degraded_withheld", "ranking_empty_eligible_set"]
+# QueueReasonV6 holds the first four: GoldLabelV6Schema (reasons max_length 4) reproduces the schema packages v5 and v6 pin
+# (Phase 9 spec conflict 28); the fifth is the Phase 9 ranking fallback's, in package v7's queue reasons.
 
 
 class ClaimLabel(Contract):
@@ -386,7 +388,7 @@ class GoldLabel(Contract):
     review_round: int = Field(ge=1, le=3)
     subject: Literal["claim", "response"]
     triggers: tuple[Trigger, ...] = Field(max_length=6)
-    reasons: tuple[QueueReason, ...] = Field(max_length=4)
+    reasons: tuple[QueueReason, ...] = Field(max_length=5)
     ledger_seq: int = Field(ge=1)
     response_digest: str = Field(pattern=DIGEST)
     delivery_digest: str = Field(pattern=DIGEST)
@@ -779,10 +781,10 @@ def record_cusum_alarm(alarm: CusumAlarm, *, settings: Settings, package: Config
 ```
 
 - It refuses `source == "synthetic-test"` outside development (`ValueError`).
-- It inserts `v3_events(kind "cusum_alarm", payload = canonical JSON of the alarm, from_ledger_seq = the ledger head seq or 0, window_deliveries = package v3 window)` and logs `v3.x5_event` (`kind`, `stream`) at WARNING. It returns the event seq.
+- It inserts `v3_events(kind "cusum_alarm", payload = canonical JSON of the alarm, from_ledger_seq = the ledger head seq or 0, window_deliveries = package v3 window)` and logs `v3.x5_event` (`kind`, `stream`) at WARNING. It returns the event seq. With `db=` (the Phase 9 scan) it inserts in the caller's session without committing and the line is logged when that transaction commits (`app/core/after_commit.py`), never for a rolled-back attempt.
 - It records the alarm whatever the V3 mode: the next scan applies the window.
 - Phase 9 calls it, and Phase 6 tests call it with synthetic alarms.
-- `scan.record_model_change` (used by 4.4) inserts a `model_change` event with payload `{model_key, from_version, to_version, source}` and logs `v3.x5_event`.
+- `scan.record_model_change` (used by 4.4) inserts a `model_change` event with payload `{model_key, from_version, to_version, source}` in the caller's transaction and logs `v3.x5_event` when that transaction commits (`app/core/after_commit.py`), never for a rolled-back attempt.
 
 ### 4.9 Holds (`v3/holds.py`; R-b, plan J, plan L)
 

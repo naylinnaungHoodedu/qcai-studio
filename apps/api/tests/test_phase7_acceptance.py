@@ -350,9 +350,13 @@ def test_ac_7_6_a_package_edit_that_keeps_its_version_is_refused_at_write(tmp_pa
     record = tmp_path / "golden_run.json"
     record.write_text(RECORD.read_text(encoding="utf-8"), encoding="utf-8")
     edited = package_copy(tmp_path / "a", lambda raw: raw["ehmf"]["stop"].update(window_claims=201))
-    assert golden.main(["--write", str(record), "--package", str(edited), "--allow-dirty"]) == golden.EXIT_PIN
+    # A copy of the history: a --write that got past its refusals would append to it, never to the committed one.
+    history = tmp_path / "history.json"
+    history.write_bytes(golden.DEFAULT_HISTORY.read_bytes())
+    assert golden.main(["--write", str(record), "--package", str(edited), "--history", str(history), "--allow-dirty"]) == golden.EXIT_PIN
     assert "bump package_version" in capsys.readouterr().err
     assert record.read_text(encoding="utf-8") == RECORD.read_text(encoding="utf-8")
+    assert history.read_bytes() == golden.DEFAULT_HISTORY.read_bytes()
     committed = json.loads(RECORD.read_text(encoding="utf-8"))
     assert golden.same_version_edit(committed, PACKAGE) is None
     bumped = load_config_package(package_copy(tmp_path / "b", lambda raw: (raw["ehmf"]["stop"].update(window_claims=201),
@@ -384,7 +388,11 @@ def test_ac_7_6_a_same_version_edit_fails_the_ci_check_whatever_record_is_checke
     # The CI step reads the committed history, which records the shipped package.
     assert golden.DEFAULT_HISTORY == REPO_ROOT / "docs" / "evaluation" / "phase7" / "package_versions.json"
     entries = golden.load_history(golden.DEFAULT_HISTORY)["entries"]
-    assert {"version": PACKAGE.package_version, "sha256": PACKAGE.sha256} in entries
+    # It ends with exactly one entry for the shipped package, whose sha256 is the committed package's (and its sidecar's).
+    sidecar = DEFAULT_PACKAGE_PATH.with_name(DEFAULT_PACKAGE_PATH.name + ".sha256").read_text(encoding="utf-8").strip()
+    assert PACKAGE.hash_verified and PACKAGE.sha256 == sidecar
+    assert entries[-1] == {"version": PACKAGE.package_version, "sha256": sidecar}
+    assert [entry["version"] for entry in entries].count(PACKAGE.package_version) == 1
     # A version the history lacks, a new version not newer than the newest entry, and a missing or malformed history.
     bumped = load_config_package(package_copy(tmp_path / "b", lambda raw: (raw["ehmf"]["stop"].update(window_claims=201),
                                                                            raw.update(package_version=NEXT_PATCH))), governed=False)
@@ -413,6 +421,27 @@ def test_ac_7_6_write_appends_a_new_package_version_to_the_history(tmp_path):
     assert json.loads(target.read_text(encoding="utf-8"))["pins"]["config_package"] == {"version": NEXT_PATCH, "sha256": bumped.sha256}
 
 
+def test_ac_7_6_no_test_runs_a_golden_set_write_against_the_committed_history():
+    # Test hygiene (Phase 9 D4): a --write that gets past its refusals appends to its --history, so every test call of the
+    # golden runner with --write names a temporary history (a literal "--history" or a starred list of arguments that holds
+    # one); otherwise a package mid-edit makes the test append a stray entry to the committed package_versions.json.
+    import ast
+
+    offenders = []
+    for path in sorted((API_ROOT / "tests").glob("test_*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "main"
+                    and isinstance(node.func.value, ast.Name) and node.func.value.id == "golden" and node.args
+                    and isinstance(node.args[0], ast.List)):
+                continue
+            items = node.args[0].elts
+            constants = [item.value for item in items if isinstance(item, ast.Constant)]
+            if "--write" in constants and "--history" not in constants and not any(isinstance(item, ast.Starred) for item in items):
+                offenders.append(f"{path.name}:{node.lineno}")
+    assert offenders == []
+
+
 def test_ac_7_6_a_same_version_edit_hidden_by_editing_the_history_fails_the_ci_check_against_the_base(tmp_path, capsys):
     # A same-version package edit whose history entry is rewritten to the edited sha256 (or removed, so --write
     # appends it again) passes without a base. With the base branch's committed history (CI: --base-ref) the history
@@ -425,7 +454,8 @@ def test_ac_7_6_a_same_version_edit_hidden_by_editing_the_history_fails_the_ci_c
     base.write_bytes(golden.DEFAULT_HISTORY.read_bytes())
     shipped = golden.load_history(base)
     history = tmp_path / "history.json"
-    history.write_text(json.dumps({**shipped, "entries": [{"version": PACKAGE.package_version, "sha256": edited.sha256}]}), encoding="utf-8")
+    rewritten = [entry for entry in shipped["entries"] if entry["version"] != PACKAGE.package_version]
+    history.write_text(json.dumps({**shipped, "entries": [*rewritten, {"version": PACKAGE.package_version, "sha256": edited.sha256}]}), encoding="utf-8")
     record = tmp_path / "run.json"
     common = ["--package", str(edited_path), "--history", str(history)]
     assert golden.main(["--write", str(record), *common, "--allow-dirty"]) == golden.EXIT_OK
@@ -730,8 +760,13 @@ def test_plan_g_v5_stays_readable_and_v6_parses_v1_to_v4_records():
     assert check_tutor_pipeline_package(v5, structural=True) == []
     v4 = load_config_package(V5_PACKAGE_PATH.with_name("v4.json"), governed=True)
     assert check_tutor_pipeline_package(v4, structural=True) == []
-    assert DEFAULT_PACKAGE_PATH.name == f"v{EHMF_SCHEMA_VERSION}.json" and PACKAGE.schema_version == EHMF_SCHEMA_VERSION == vocabulary.EHMF_FIRST_MAJOR and PACKAGE.v3.trigger_registry_version == "x-triggers-v2"
-    assert check_tutor_pipeline_package(PACKAGE, structural=True) == []
+    # v6 (the first package with an ehmf block) is read explicitly since Phase 9 ships v7, which keeps every v6 rule.
+    from app.core.config_package import V6_PACKAGE_PATH
+
+    v6 = load_config_package(V6_PACKAGE_PATH, governed=True)
+    assert V6_PACKAGE_PATH.name == f"v{EHMF_SCHEMA_VERSION}.json" and v6.schema_version == EHMF_SCHEMA_VERSION == vocabulary.EHMF_FIRST_MAJOR
+    assert v6.v3.trigger_registry_version == "x-triggers-v2" and PACKAGE.v3.trigger_registry_version == "x-triggers-v2"
+    assert check_tutor_pipeline_package(v6, structural=True) == [] and check_tutor_pipeline_package(PACKAGE, structural=True) == []
 
 
 # ===================================================================================================== plan I
@@ -1264,7 +1299,8 @@ def test_plan_e_the_phase_7_revision_is_additive_reversible_and_keeps_its_rows()
     config = Config(str(API_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(API_ROOT / "alembic"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["20261123_phase7_ehmf"]
+    # The Phase 9 revision follows this one (the head since Phase 9).
+    assert script.get_revision(script.get_heads()[0]).down_revision == "20261123_phase7_ehmf"
     revision = script.get_revision("20261123_phase7_ehmf")
     assert revision.down_revision == "20261122_phase6_v3_audit"
     source = Path(revision.path).read_text(encoding="utf-8")
@@ -1307,7 +1343,8 @@ def test_plan_e_the_phase_7_downgrade_refuses_while_ehmf_stops_holds_rows_and_th
     from app.core.schema_upgrades import run_schema_upgrades
     from app.services.ledger import SCHEMA_REVISION
 
-    assert SCHEMA_REVISION == "20261123_phase7_ehmf"
+    assert SCHEMA_REVISION == "20261123_phase9_ranking"  # the head since Phase 9, which follows the Phase 7 revision
+    phase9 = {"ranking_events", "ranking_scans", "ranking_states", "ranking_incumbents"}
     connect_args = {"check_same_thread": False} if fresh_database_url.startswith("sqlite") else {}
     engine = create_engine(fresh_database_url, connect_args=connect_args)
     try:
@@ -1335,7 +1372,7 @@ def test_plan_e_the_phase_7_downgrade_refuses_while_ehmf_stops_holds_rows_and_th
         dropped = _alembic(fresh_database_url, "-x", "allow_ehmf_drop=true", "downgrade", "20261122_phase6_v3_audit")
         assert dropped.returncode == 0, dropped.stderr[-2000:]
         remaining = set(sa_inspect(engine).get_table_names())
-        assert "ehmf_stops" not in remaining and remaining - {"alembic_version"} == others - {"alembic_version"}
+        assert "ehmf_stops" not in remaining and remaining - {"alembic_version"} == others - {"alembic_version"} - phase9
     finally:
         engine.dispose()
 
@@ -1519,3 +1556,30 @@ def test_phase7_docs_the_spec_ends_in_one_review_history_table():
         names |= set(re.findall(r"^def (test_\w+)\(", path.read_text(encoding="utf-8"), flags=re.MULTILINE))
     for name in re.findall(r"`(test_[a-z0-9_]+)`", history):
         assert name in names, name
+
+
+def test_phase7_docs_the_records_name_the_merge_and_the_cited_main_run():
+    # PR #39 was squash-merged as 512b8a6 (tree identical to 4e682db); main run 45308186298 passed every job and is the
+    # cited run (Phase 9 design E15). The spec's DI-104 row, its section 17 exit bullet and the test strategy's Phase 7 exit
+    # paragraph name the merge, the merged tree and that run, none keeps a pre-merge phrase, and the exit stays not passed.
+    spec = spec_text()
+    head, history = spec.split("\n## 18. Review history\n", 1)
+    exit_block = head.split("**Exit (plan P).**", 1)[1]
+    strategy = (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
+    texts = {
+        "DI-104": next(line for line in head.splitlines() if line.startswith("| DI-104 |")),
+        "spec 17": next(line for line in exit_block.splitlines() if line.startswith("- The AC tests are done in code.")),
+        "test strategy": next(line for line in strategy.split("## Phase 7 acceptance map", 1)[1].splitlines() if line.startswith("**Exit gate.**")),
+    }
+    for name, text in texts.items():
+        for fact in ("`512b8a6`", "`4e682db`", "45308186298"):
+            assert fact in text, (name, fact)
+        for stale in ("each later commit needs its own run", "the cited run must be on `main`", "the cited CI run must be on `main`",
+                      "45234227899"):
+            assert stale.lower() not in text.lower(), (name, stale)
+    assert "The exit is not passed." in texts["DI-104"] and texts["DI-104"].endswith("| Eng / PI / CO | Open |")
+    for blocker in ("DI-105", "DI-108", "DI-109", "DI-89"):
+        assert blocker in texts["DI-104"], blocker
+    assert "The exit is not passed." in texts["test strategy"]
+    assert "- `phase7_exit_passed` stays `false`. The exit is not passed." in exit_block
+    assert "| Merge | `512b8a6` |" in history

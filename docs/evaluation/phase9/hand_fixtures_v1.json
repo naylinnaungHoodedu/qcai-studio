@@ -1,0 +1,93 @@
+{
+ "fixtures": "qcai-ranking-hand-fixtures",
+ "format_version": 1,
+ "about": "Plan Phase 9 J hand fixtures (Evidence E-90) and eqs. (5)-(11) worked by hand: numbers only. The Beta lower bounds are F^-1_Beta(0.05; alpha, beta) to the paper's three decimals; the worked example applies eqs. (5)-(6) with gamma 0.995, eq. (8) with weights 0.35/0.30/0.15/0.20 renormalised over the present signals (S and F missing), eq. (9) with eta 0.05, and the CUSUM of eq. (11) with p0 0.05, p1 0.15 (A = ln 3, B = ln(17/19)). Every value is the to_str() text the code writes.",
+ "beta_lower_bounds": [
+  {
+   "alpha": 95,
+   "beta": 5,
+   "quantile": "0.05",
+   "lower_bound": "0.910",
+   "value_1e12": "0.909926441808"
+  },
+  {
+   "alpha": 190,
+   "beta": 10,
+   "quantile": "0.05",
+   "lower_bound": "0.922",
+   "value_1e12": "0.922407666443"
+  }
+ ],
+ "worked_example": {
+  "alpha0": "41",
+  "beta0": "1",
+  "qbar0": "0.9",
+  "steps": [
+   {
+    "y": 1,
+    "signals": {
+     "V": "1",
+     "S": null,
+     "K": "1",
+     "H": "0",
+     "F": null
+    },
+    "Q": "1",
+    "alpha": "41.795",
+    "beta": "0.995",
+    "qbar": "0.905",
+    "T": "0.931043605582"
+   },
+   {
+    "y": 0,
+    "signals": {
+     "V": "0.5",
+     "S": null,
+     "K": "0.5",
+     "H": "0.2",
+     "F": null
+    },
+    "Q": "0.4",
+    "alpha": "41.586025",
+    "beta": "1.990025",
+    "qbar": "0.87975",
+    "T": "0.893715965944"
+   },
+   {
+    "y": 1,
+    "signals": {
+     "V": "1",
+     "S": null,
+     "K": null,
+     "H": null,
+     "F": null
+    },
+    "Q": "1",
+    "alpha": "42.378094875",
+    "beta": "1.980074875",
+    "qbar": "0.8857625",
+    "T": "0.895900358146"
+   }
+  ]
+ },
+ "cusum": {
+  "p0": "0.05",
+  "p1": "0.15",
+  "A": "1.098612288668109691",
+  "B": "-0.11122563511022438",
+  "steps": [
+   {
+    "e": 1,
+    "S": "1.098612288668109691"
+   },
+   {
+    "e": 1,
+    "S": "2.197224577336219382"
+   },
+   {
+    "e": 0,
+    "S": "2.085998942225995002"
+   }
+  ]
+ }
+}

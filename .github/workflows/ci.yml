@@ -34,6 +34,12 @@ jobs:
       - run: python scripts/config_package.py --check --path apps/api/app/config_package/v4.json
       # Phase 7: configuration package v5 stays readable for one release (DI-112).
       - run: python scripts/config_package.py --check --path apps/api/app/config_package/v5.json
+      # Phase 9: configuration package v6 stays readable for one release (DI-126).
+      - run: python scripts/config_package.py --check --path apps/api/app/config_package/v6.json
+      # Plan Phase 9 F, J, L and AC-9-8: the ranking replay report over seven synthetic streams (an engineering measurement,
+      # not E4 results). Exit 7 is the plan L stop (a replay that differs from its event log), 6 a pin mismatch (the package
+      # or its ranking block changed without a replay run), 3 a scenario assertion, 1 drift.
+      - run: python scripts/run_ranking_replay.py --check docs/evaluation/phase9/ranking_replay_v1.json
       # Plan Phase 7 D task 6, K AC-7-6 and 12.5: the golden-set gate. Exit 6 when the package, the misconception library,
       # the routing table or the golden set differs from the committed golden run (a change without a run), or when the
       # package's version is missing from docs/evaluation/phase7/package_versions.json or recorded there with another

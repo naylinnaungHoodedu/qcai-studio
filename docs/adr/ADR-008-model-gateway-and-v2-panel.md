@@ -44,3 +44,18 @@ Nothing learner-facing changes outside development: the legacy contained answers
 - **The sticky hold.** Under `MODEL_GATEWAY=on` the V1 track's correction loop holds a critical tier-1 claim that fails in any cycle for the rest of the response: it is never given to the generator's `revise`, it stays pending in every later cycle even when a later tally passes (a member that failed a call left the panel, so the claim's next tally runs under REDUCED-2's 1oo2), and after the last cycle it abstains with X2, or is withheld when its last outcome is V2-withheld. Its objection stays in the record (`corrections[i].failed_claim_ids`). Phase 5's record rules are unchanged.
 - **The V3 stop on tier 1** (plan Phase 6 L). At a tier-1 response's first consult the V2 track reads the stop (`v3.stop.tier1_withheld`, over the pipeline's own database, `TwoPassPipeline(..., v3_stop=)`); while it holds, the response runs the `pre_verified_only` kill-switch path: no call, every claim withheld in ZERO, the record naming `kill_switch: "pre_verified_only"`, and `tutor.v2.v3_stop` logged. Tier 2 and 3 are unaffected.
 - **The queue's consumption of the V3 intents.** The Phase 6 scan reads every ledger record itself (`app.services.v3.scan`): the V3 intents of Phase 4 and Phase 5 records become queue items with their reasons, X2 escalations with an A or B objection become X2 items, and the rest of the exhausted claims stay queued with reason `v2_correction_exhausted` (DI-56's consumer). `ledger.pending_v3_intents` stays a read-only helper.
+
+## Revision 2026-11-23 (Phase 9: the fake clone rule)
+
+- **The fake generate rule.** From package v7 a fake member with capability `generate` names `fake.generate_rule`, and the
+  only wired rule is `extractive-clone-v1` (`gateway.adapters.WIRED_FAKE_GENERATE_RULES`); a member without `generate`
+  names none, and packages before v7 refuse the key. v7's development `fake-delta-v1` names it. `AdapterSpec.fake_generate_rule`
+  is not in `public()`.
+- **The clone generator** (`app.services.ranking.generators.CloneGenerator`) is the D-19 extractive generator under such a
+  member's identity, for development shadow generation only (`RANKING_SHADOW_GENERATION`): `model_id` is
+  `<model_id>@<model_version>` and its prompt hash covers the clone rule and the package's evidential prompt hash. It makes
+  no gateway or network call, and its V2 panel excludes its family as for every generator.
+- **The clone provenance rule.** In development only (`ledger_provenance(..., environment="development")`),
+  `ledger._provenance_problems` checks a shadow record of a development clone member against the clone prompt hash
+  (`ledger.clone_prompt_hashes`) instead of the package's evidential hash and allowed generators; elsewhere, and by
+  default, such a record is reported, since a clone is refused there. Every other generator id is checked as before.

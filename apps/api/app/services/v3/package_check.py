@@ -28,9 +28,11 @@ def _repository_root() -> Path:
 def check_v3_package(package: Any, *, structural: bool) -> list[str]:
     if package.v3 is None:
         return ["the configuration package has no v3 block (package v5 is required)"]
-    from app.core.config_package import EHMF_SCHEMA_VERSION, canonical_sha256
+    from app.core.config_package import EHMF_SCHEMA_VERSION, RANKING_SCHEMA_VERSION, canonical_sha256
     from app.services.v3 import rules
-    from app.services.v3.contracts import V3_SCHEMA_MODELS
+    from app.services.v3.contracts import v3_schema_models
+
+    V3_SCHEMA_MODELS = v3_schema_models(package.schema_version)
 
     v3 = package.v3
     problems: list[str] = []
@@ -50,7 +52,7 @@ def check_v3_package(package: Any, *, structural: bool) -> list[str]:
         # Package v6 (Phase 7 spec conflict 3) names x-triggers-v2; v5 keeps x-triggers-v1.
         "version": (v3.version, rules.V3_VERSION),
         "trigger_registry_version": (v3.trigger_registry_version, rules.TRIGGER_REGISTRY_VERSION_V2 if package.schema_version >= EHMF_SCHEMA_VERSION else rules.TRIGGER_REGISTRY_VERSION),
-        "trigger_rules": (dict(v3.trigger_rules), rules.TRIGGER_RULES_V2 if package.schema_version >= EHMF_SCHEMA_VERSION else rules.TRIGGER_RULES), "queue_reasons": (tuple(v3.queue_reasons), rules.QUEUE_REASONS),
+        "trigger_rules": (dict(v3.trigger_rules), rules.TRIGGER_RULES_V2 if package.schema_version >= EHMF_SCHEMA_VERSION else rules.TRIGGER_RULES), "queue_reasons": (tuple(v3.queue_reasons), rules.QUEUE_REASONS_V7 if package.schema_version >= RANKING_SCHEMA_VERSION else rules.QUEUE_REASONS),
         "counted": (tuple(v3.counted), rules.V3_COUNTED), "priority_rule": (v3.priority_rule, rules.PRIORITY_RULE),
         "exposure_rule": (v3.exposure_rule, rules.EXPOSURE_RULE), "claim_set_key_rule": (v3.claim_set_key_rule, rules.CLAIM_SET_KEY_RULE),
         "k_rule": (v3.k_rule, rules.K_RULE), "tie_break": (tuple(v3.tie_break), rules.TIE_BREAK), "draw_rule": (v3.draw_rule, rules.DRAW_RULE),

@@ -180,11 +180,13 @@ def _check_tutor_pipeline_package(package) -> None:
     (MODEL_GATEWAY not off), else the V2 mode stays off. Then the tutor pipeline (Phase 3 spec 5.4, conflict 30): one
     of its problems stops a governed build only when the pipeline is requested (TWO_PASS_TUTOR not off); otherwise the
     pipeline is reported unavailable (/ready tutor_pipeline.available false) and its effective mode stays off. Between
-    the gateway and the pipeline, _check_v3_package (Phase 6 spec 4.15, 10.1)."""
+    the gateway and the pipeline, _check_v3_package (Phase 6 spec 4.15, 10.1), _check_ehmf_package (Phase 7) and
+    _check_ranking_package (Phase 9 spec 4.14, 10.1)."""
     _check_v1_package(package)
     _check_gateway_package(package)
     _check_v3_package(package)
     _check_ehmf_package(package)
+    _check_ranking_package(package)
     if package.tutor_pipeline is None:
         tutor_shadow.PIPELINE_UNAVAILABLE_REASON = None
         return
@@ -260,7 +262,8 @@ def _check_ehmf_package(package) -> None:
     unavailable (/ready ehmf.available false), its mode stays off and ehmf.unavailable is logged. Outside development the
     default (EHMF off) never stops a start-up; a recorded EHMF=shadow override (config.override ehmf_shadow) does stop a
     governed start-up when the package has a problem. Reads only the package and the committed files beside it (never docs/
-    or apps/api/tests/, which the image does not hold); writes nothing."""
+    or apps/api/tests/; the image holds no apps/api/tests/ and under docs/ only the Phase 9 recommission set); writes
+    nothing."""
     from app.services import ehmf as ehmf_service
 
     if package.ehmf is None:
@@ -277,6 +280,30 @@ def _check_ehmf_package(package) -> None:
         raise ConfigPackageError(f"ehmf: {reason}")
     ehmf_service.EHMF_UNAVAILABLE_REASON = reason
     logging.getLogger("qcai.ehmf").warning("EHMF is unavailable; its mode stays off", extra={FIELDS: {"event": "ehmf.unavailable", "reason": reason}})
+
+
+def _check_ranking_package(package) -> None:
+    """Package v7's ranking block against the ranking code (Phase 9 spec 4.14, 10.1): the vocabulary, the clusters and the
+    two hand fixtures. Without a ranking block (a v1 to v6 package) the ranking mode is off. A problem stops a governed
+    start-up only when the ranking is requested (RANKING not off: outside development a recorded RANKING=shadow override);
+    otherwise the ranking is reported unavailable (/ready ranking.available false), its mode stays off and
+    ranking.unavailable is logged. Reads no database and no docs/; writes nothing."""
+    from app.services import ranking as ranking_service
+
+    if package.ranking is None:
+        ranking_service.RANKING_UNAVAILABLE_REASON = None
+        return
+    from app.services.ranking.package_check import check_ranking_package
+
+    problems = check_ranking_package(package, structural=False)
+    if not problems:
+        ranking_service.RANKING_UNAVAILABLE_REASON = None
+        return
+    reason = "; ".join(problems)[:500]
+    if settings.enforce_corpus_governance and settings.ranking != "off":
+        raise ConfigPackageError(f"ranking: {reason}")
+    ranking_service.RANKING_UNAVAILABLE_REASON = reason
+    logging.getLogger("qcai.ranking").warning("The ranking is unavailable; its mode stays off", extra={FIELDS: {"event": "ranking.unavailable", "reason": reason}})
 
 
 def _warn_retired_provider_settings() -> None:
@@ -427,6 +454,12 @@ def _record_configuration_overrides() -> None:
             # since the two-pass pipeline and V2 are off there).
             ("ehmf_shadow", settings.ehmf == "shadow"),
             ("ehmf_on", settings.ehmf == "on"),
+            # Phase 9: the ranking outside development (on is refused everywhere while D-28 is open; shadow changes no learner
+            # path, and adds X5 audits and V3 items in that environment), live routing (on: refused while D-28 is open or
+            # before the Phase 9 exit, recorded should a build ever run with it) and its development-only shadow generation.
+            ("ranking_shadow", settings.ranking == "shadow"),
+            ("ranking_on", settings.ranking == "on"),
+            ("ranking_shadow_generation", bool(settings.ranking_shadow_generation)),
         )
         if active
     }
@@ -663,6 +696,34 @@ def _build_fields() -> dict:
         "ehmf_setting": settings.ehmf,
         "phase7_exit_passed": bool(package.flag_policy.phase7_exit_passed),
         "ehmf": _ehmf_fields(package, store),
+        # Phase 9 (plan Phase 9 I; spec 10.2): the ranking mode in force, the setting and the package's static ranking values.
+        # The one read beside them is the cached ranking stop, only when the mode is not off: no count, rate, rating,
+        # incumbent, seq or model state.
+        "ranking_mode": _ranking_mode(package),
+        "ranking_setting": settings.ranking,
+        "phase9_exit_passed": bool(package.flag_policy.phase9_exit_passed),
+        "ranking": _ranking_fields(package),
+    }
+
+
+def _ranking_mode(package) -> str:
+    from app.services import ranking as ranking_service
+
+    return ranking_service.mode(settings, package)
+
+
+def _ranking_fields(package) -> dict | None:
+    from app.services import ranking as ranking_service
+    from app.services.ranking.replay import process_stop_state
+
+    params = package.ranking
+    if params is None:
+        return None
+    return {
+        "version": params.version, "parameters_version": params.parameters_version, "parameters_sha256": params.parameters_sha256,
+        "provisional": params.provisional, "cluster_rule": params.cluster_rule, "active_task_types": list(params.active_task_types),
+        "live_routing": params.live_routing, "decision": "D-28", "hold": "H11", "shadow_generation": bool(settings.ranking_shadow_generation),
+        "stop": {"stopped": process_stop_state(settings, package)}, "available": ranking_service.RANKING_UNAVAILABLE_REASON is None,
     }
 
 

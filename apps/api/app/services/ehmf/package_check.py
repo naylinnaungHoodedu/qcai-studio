@@ -2,7 +2,8 @@
 
 check_ehmf_package(structural=False) runs at start-up (main._check_ehmf_package): the routing table and its sha256
 against the code, the weights against the plan, the correction bound, the stop and penalty structure and the library
-file's hash. It never reads docs/ or apps/api/tests/ (the image holds neither). structural=True (tests and
+file's hash. It never reads docs/ or apps/api/tests/ (the image holds no apps/api/tests/, and under docs/ only the
+recommission set docs/evaluation/phase7/golden_set_v1.json that the Phase 9 ranking worker reads). structural=True (tests and
 scripts/config_package.py --check) also checks the golden-set file's sha256 and item count, that the routing document
 exists, and the library rules with the development store.
 """

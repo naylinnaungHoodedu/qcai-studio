@@ -343,6 +343,7 @@ class AdapterSpec:         # E1 ModelAdapter {adapter_id, family, provider, mode
     endpoint: str | None = None       # HttpJsonAdapter only: https, no query, no userinfo, no fragment
     auth_header: str | None = None    # "authorization-bearer" | "x-api-key"
     secret_ref: str | None = None     # an environment variable name (Secret Manager mounts); never a value
+    fake_generate_rule: str | None = None   # package v7 (Phase 9 spec 5.2): a fake generate member's rule; never in public()
 
     def public(self) -> dict: ...                         # what /ready reports: identifiers only
 

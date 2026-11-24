@@ -746,13 +746,14 @@ def test_plan_g_the_phase_6_revision_is_additive_reversible_and_keeps_its_rows(f
     from app.core.db import Base
     from app.services.ledger import SCHEMA_REVISION
 
-    assert ScriptDirectory.from_config(Config(str(API_ROOT / "alembic.ini"))).get_heads() == [SCHEMA_REVISION] == ["20261123_phase7_ehmf"]  # Phase 7 follows the Phase 6 revision
+    assert ScriptDirectory.from_config(Config(str(API_ROOT / "alembic.ini"))).get_heads() == [SCHEMA_REVISION] == ["20261123_phase9_ranking"]  # Phase 7, then Phase 9, follow the Phase 6 revision
     connect_args = {"check_same_thread": False} if fresh_database_url.startswith("sqlite") else {}
     engine = create_engine(fresh_database_url, connect_args=connect_args)
     try:
         Base.metadata.create_all(engine)
-        # The Phase 7 table follows the Phase 6 revision, so "upgrade head" from the Phase 5 stamp creates it too.
-        Base.metadata.drop_all(engine, tables=[Base.metadata.tables[name] for name in (*V3_TABLES, "ehmf_stops")])
+        # The Phase 7 and Phase 9 tables follow the Phase 6 revision, so "upgrade head" from the Phase 5 stamp creates them too.
+        Base.metadata.drop_all(engine, tables=[Base.metadata.tables[name] for name in (*V3_TABLES, "ehmf_stops", "ranking_events", "ranking_scans",
+                                                                                       "ranking_states", "ranking_incumbents")])
         others = set(sa_inspect(engine).get_table_names())
         engine.dispose()
         assert _alembic(fresh_database_url, "stamp", PHASE5_REVISION).returncode == 0
@@ -1010,14 +1011,16 @@ def test_plan_e_only_two_v3_tables_hold_a_person_s_id_and_erasure_reaches_them()
 def test_invariant_5_a_flag_feeds_quality_only_and_never_a_verdict():
     properties = _entry_schema_properties()
     assert not properties & {"f_i", "feedback", "flag", "flags", "learner_flag", "learner_rating"}
-    # The flag table is read by the feedback service only; no verdict, ledger or pipeline module reads it or F_i.
+    # The flag table is read by the feedback service only; no verdict, ledger or pipeline module reads it or F_i. Since
+    # Phase 9 the ranking scan reads F_i for the quality term Q (Table X, "F_i feeds quality only"), and no ranking
+    # trust, CUSUM or selection module reads it (AC-9-2, test_ac_9_2_a_learner_rating_changes_only_f_i).
     for path in sorted((API_ROOT / "app").rglob("*.py")):
         source = path.read_text(encoding="utf-8")
         relative = path.relative_to(API_ROOT / "app").as_posix()
         if "V3Flag" in source:
             assert relative in ("db_models.py", "services/v3/feedback.py"), relative
         if re.search(r"\bf_i\(", source):
-            assert relative == "services/v3/feedback.py", relative
+            assert relative in ("services/v3/feedback.py", "services/ranking/scan.py"), relative
         if relative.startswith(("services/v1_checks/", "services/v2_panel/", "services/tutor_pipeline/", "services/ledger.py")):
             assert "v3.feedback" not in source and "v3_flags" not in source, relative
 
@@ -1326,9 +1329,11 @@ def test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_h
 
     runbook = (REPO_ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8")
     step = runbook.split("3. **Check the stamp:** `alembic current`.", 1)[1].split("\n4. ", 1)[0]
-    # Since Phase 7 the head is 20261123_phase7_ehmf: its bullet takes the Phase 7 step, then the Phase 6 and Phase 5 steps.
-    assert re.findall(r"`([0-9a-z_]+) \(head\)`", step) == [SCHEMA_REVISION] == ["20261123_phase7_ehmf"]
+    # Since Phase 9 the head is 20261123_phase9_ranking: its bullet takes the Phase 9 step, then the Phase 7, Phase 6 and
+    # Phase 5 steps.
+    assert re.findall(r"`([0-9a-z_]+) \(head\)`", step) == [SCHEMA_REVISION] == ["20261123_phase9_ranking"]
     head_bullet = next(line for line in step.splitlines() if f"`{SCHEMA_REVISION} (head)`" in line)
+    assert "allow_ranking_drop=true downgrade 20261123_phase7_ehmf" in head_bullet
     assert "allow_ehmf_drop=true downgrade 20261122_phase6_v3_audit" in head_bullet
     assert "allow_v3_drop=true downgrade 20261122_phase5_gateway_controls" in head_bullet and "export-gold --all" in head_bullet
     assert any(line.strip().startswith("- `20261122_phase6_v3_audit`:") for line in step.splitlines())

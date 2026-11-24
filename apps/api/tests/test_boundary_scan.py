@@ -63,7 +63,8 @@ def test_copy_sources_skip_other_stages_and_expand_globs(tmp_path):
     assert sources == ["package*.json", "src", "app"]
     files = ["package.json", "package-lock.json", "src/a.ts", "app/b.py", "README.md"]
     assert scanner.image_source_files(files, sources) == ["package.json", "package-lock.json", "src/a.ts", "app/b.py"]
-    assert scanner.dockerfile_sources(REPO_ROOT / "apps" / "api" / "Dockerfile") == ["apps/api/requirements.txt", "apps/api/app", "corpus/public", "transcripts"]
+    assert scanner.dockerfile_sources(REPO_ROOT / "apps" / "api" / "Dockerfile") == [
+        "apps/api/requirements.txt", "apps/api/app", "corpus/public", "transcripts", "docs/evaluation/phase7/golden_set_v1.json"]
 
 
 def test_secret_like_names_are_matched_by_name_and_never_opened(tmp_path):

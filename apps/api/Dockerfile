@@ -15,6 +15,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY --chown=qcai:qcai apps/api/app ./app
 COPY --chown=qcai:qcai corpus/public ./corpus/public
 COPY --chown=qcai:qcai transcripts ./source-assets/transcripts
+# The ranking's recommission set (golden-set-v1: public-corpus and synthetic queries only), read by the in-image
+# `python -m app.workers.ranking commission|recommission` (Phase 9 spec 4.8); its sha256 is the package's.
+COPY --chown=qcai:qcai docs/evaluation/phase7/golden_set_v1.json ./docs/evaluation/phase7/golden_set_v1.json
 # No source asset goes in the image: a governed build serves only what the manifest approves, and none is
 # approved (Decision P1-D-07, D-31; AC-1-5: "neither served nor packaged"). An approved asset gets a delivery
 # path when D-02 approves it (D-10).
