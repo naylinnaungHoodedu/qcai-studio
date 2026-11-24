@@ -98,16 +98,18 @@ def window_remaining(db: Session, v3_event_seq: int) -> int:
 
 
 def record_model_change(db: Session, change: trig.ModelChange, *, source: str, from_ledger_seq: int, window: int, now: datetime) -> int:
-    """Insert the X5 model_change event inside the caller's transaction; returns its seq."""
+    """Insert the X5 model_change event inside the caller's transaction; returns its seq. Its v3.x5_event line is logged
+    when that transaction commits (after_commit.log_after_commit), never for a rolled-back attempt."""
+    from app.core.after_commit import log_after_commit
     from app.db_models import V3Event
 
     payload = json.dumps({"model_key": change.model_key, "from_version": change.from_version, "to_version": change.to_version,
                           "source": source}, sort_keys=True, separators=(",", ":"))
     result = db.execute(insert(V3Event).values(kind="model_change", payload=payload, from_ledger_seq=int(from_ledger_seq),
                                                window_deliveries=int(window), created_at=utc(now)))
-    LOGGER.warning("A model version changed: the audit rate is raised (X5)", extra={FIELDS: {
+    log_after_commit(db, LOGGER, logging.WARNING, "A model version changed: the audit rate is raised (X5)", {
         "event": "v3.x5_event", "kind": "model_change", "model_key": change.model_key, "from_version": change.from_version,
-        "to_version": change.to_version}})
+        "to_version": change.to_version})
     return int(result.inserted_primary_key[0])
 
 

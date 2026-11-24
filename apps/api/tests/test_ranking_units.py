@@ -357,6 +357,46 @@ def test_record_model_change_returns_its_seq_and_window_remaining_counts_the_dra
             assert isinstance(seq, int) and window_remaining(db, seq) == 3 and window_remaining(db, seq + 99) == 0
 
 
+def test_lines_describing_a_transaction_s_writes_are_logged_only_when_it_commits(caplog):
+    # record_cusum_alarm(db=...) and the derived events' lines (log_derived) wait for the caller's commit: a rolled-back or
+    # closed transaction logs none of them, a committed one logs each once.
+    import logging
+    from datetime import UTC, datetime
+
+    from app.core.config import Settings
+    from app.services.ranking.scan import log_derived
+    from app.services.v3.contracts import CusumAlarm
+    from app.services.v3.events import record_cusum_alarm
+    from v3_fakes import fresh_v3_sessions
+
+    alarm = CusumAlarm(stream="model:x", p0=0.05, p1=0.15, h=4.0, statistic=4.2, observations=120, raised_at="2026-11-20T12:00:00Z",
+                       source="phase9-cusum")
+    payload = {"stream": "model:x", "statistic": "4.2", "observations": 120, "sustained": False}
+    settings = Settings(environment="development")
+
+    def lines() -> list[str]:
+        return [record.json_fields["event"] for record in caplog.records if hasattr(record, "json_fields")
+                and record.json_fields.get("event") in ("v3.x5_event", "ranking.alarm")]
+
+    with fresh_v3_sessions() as (factory, _engine), caplog.at_level(logging.INFO):
+        with factory() as db:
+            record_cusum_alarm(alarm, settings=settings, package=PACKAGE, db=db, now=datetime.now(UTC))
+            log_derived(db, "alarm", payload)
+            db.rollback()
+        with factory() as db:
+            record_cusum_alarm(alarm, settings=settings, package=PACKAGE, db=db, now=datetime.now(UTC))
+            log_derived(db, "alarm", payload)
+        assert lines() == []
+        with factory() as db:
+            record_cusum_alarm(alarm, settings=settings, package=PACKAGE, db=db, now=datetime.now(UTC))
+            log_derived(db, "alarm", payload)
+            assert lines() == []
+            db.commit()
+            assert lines() == ["v3.x5_event", "ranking.alarm"]
+            db.commit()
+        assert lines() == ["v3.x5_event", "ranking.alarm"]
+
+
 def test_the_clone_generator_is_refused_outside_its_rule_and_development():
     from dataclasses import replace
 

@@ -25,6 +25,9 @@ retried as the V3 scan does):
   8. `tick {at: now}`, then the ranking_scans row, the checkpoint, ranking_states and ranking_incumbents; commit.
 The ledger is only read. Every event is hash-chained (ranking-chain-v1) and its derived events follow it. take_locks is
 the one lock order every ranking writer uses (the scan, append_inputs, and the worker's replay --check and clear-stop).
+The lines that describe the transaction's writes (ranking.model_change, the derived events' ranking.batch, promote,
+demote, alarm, sustained_alarm and fallback, and V3's v3.x5_event) are logged only when it commits
+(after_commit.log_after_commit): a refused operator input or a retried SQLite-busy attempt logs none of them.
 """
 
 from __future__ import annotations
@@ -40,6 +43,7 @@ from sqlalchemy import func, insert, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from app.core.after_commit import log_after_commit
 from app.core.db import SessionLocal
 from app.core.structured_logging import FIELDS
 from app.services import ranking
@@ -141,7 +145,7 @@ class EventLog:
         self._insert(kind, payload, v3_event_seq=v3_seq, note=note, **columns)
         if kind == "alarm":
             self.last_alarm_v3 = v3_seq
-        log_derived(kind, payload)
+        log_derived(self.db, kind, payload)
 
     # side effects ----------------------------------------------------------------------------------------------------
 
@@ -180,22 +184,23 @@ class EventLog:
         return None
 
 
-def log_derived(kind: str, payload: dict) -> None:
+def log_derived(db: Session, kind: str, payload: dict) -> None:
+    """The line a derived event logs, emitted when the transaction that appends it commits (never for a rolled-back attempt)."""
     if kind == "batch":
-        LOGGER.info("A ranking micro-batch closed", extra={FIELDS: {"event": "ranking.batch", "context": payload["context"],
-                                                                    "batch_seq": payload["batch_seq"], "trigger": payload["trigger"],
-                                                                    "models": sorted(payload["states"])}})
+        log_after_commit(db, LOGGER, logging.INFO, "A ranking micro-batch closed", {
+            "event": "ranking.batch", "context": payload["context"], "batch_seq": payload["batch_seq"], "trigger": payload["trigger"],
+            "models": sorted(payload["states"])})
     elif kind in ("promote", "demote"):
-        LOGGER.warning("The ranking incumbent changed", extra={FIELDS: {"event": f"ranking.{kind}", "context": payload["context"],
-                                                                        "from": payload["from"], "to": payload["to"]}})
+        log_after_commit(db, LOGGER, logging.WARNING, "The ranking incumbent changed", {
+            "event": f"ranking.{kind}", "context": payload["context"], "from": payload["from"], "to": payload["to"]})
     elif kind == "alarm":
         event = "ranking.sustained_alarm" if payload["sustained"] else "ranking.alarm"
-        LOGGER.warning("A ranking CUSUM alarm raised the X5 audit", extra={FIELDS: {"event": event, "stream": payload["stream"],
-                                                                                    "statistic": payload["statistic"],
-                                                                                    "observations": payload["observations"],
-                                                                                    "sustained": payload["sustained"]}})
+        log_after_commit(db, LOGGER, logging.WARNING, "A ranking CUSUM alarm raised the X5 audit", {
+            "event": event, "stream": payload["stream"], "statistic": payload["statistic"], "observations": payload["observations"],
+            "sustained": payload["sustained"]})
     elif kind == "select" and payload["kind"] == "fallback":
-        LOGGER.warning("The eligible set was empty: the decision abstains", extra={FIELDS: {"event": "ranking.fallback", "context": payload["context"]}})
+        log_after_commit(db, LOGGER, logging.WARNING, "The eligible set was empty: the decision abstains",
+                         {"event": "ranking.fallback", "context": payload["context"]})
 
 
 def _dialect_name(db: Session) -> str:
@@ -435,9 +440,9 @@ def _sync(db: Session, log: EventLog, state: dict, *, settings: Any, package: An
             payload = {"adapter_id": model.adapter_id, "from_version": entry["version"], "to_version": model.model_version,
                        "source": "package" if static else "registry"}
             log.append("model_change", payload, model_key=model.adapter_id, v3_event_seq=v3_seq)
-            LOGGER.warning("A ranking candidate's version changed: deflated, capped at C, X5 raised", extra={FIELDS: {
+            log_after_commit(db, LOGGER, logging.WARNING, "A ranking candidate's version changed: deflated, capped at C, X5 raised", {
                 "event": "ranking.model_change", "adapter_id": model.adapter_id, "from_version": payload["from_version"],
-                "to_version": payload["to_version"], "reused_v3_event": reused}})
+                "to_version": payload["to_version"], "reused_v3_event": reused})
     availability = availability_of(known, settings=settings, package=package, gateway=gateway)
     if any(state["availability"].get(name, "unseen") != reason for name, reason in availability.items()):
         log.append("availability", {"models": availability})
@@ -481,7 +486,9 @@ def append_inputs(db: Session, inputs: list[tuple[str, dict]], *, settings: Any,
     """Append operator inputs (commission, recommission_pass, recommission_fail) with their derived events and a checkpoint,
     under the scan's locks, in the caller's transaction (the worker commits). The state must match its checkpoint. An input
     the controller would refuse (recommission.refusal: an unknown model, a commission for a model with outcomes, another
-    version) raises RankingInputRefused before anything of the call is appended; the caller does not commit."""
+    version) raises RankingInputRefused before anything of the call is appended; the caller does not commit. The lines
+    describing the call's writes (ranking.model_change, v3.x5_event, ...) are logged when the caller commits, so a refused
+    call logs none of them."""
     from app.services.ranking.recommission import refusal
 
     take_locks(db)

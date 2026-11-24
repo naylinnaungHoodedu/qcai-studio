@@ -1,8 +1,8 @@
 {
  "report": "qcai-ehmf-golden-run",
  "format_version": 1,
- "created_at": "2026-11-24T12:30:16+00:00",
- "commit": "67e195ff5e527066ef9e72d35e19a5aba985e802-dirty",
+ "created_at": "2026-11-24T14:26:18+00:00",
+ "commit": "1c057dc753a796f0811973ad3524aa89f829fd79-dirty",
  "evidence_class": "change-control gate, not research results (plan Phase 7 H; 12.5)",
  "pins": {
   "config_package": {
@@ -497,6 +497,7 @@
    "apps/api/app/api/routes/support.py": "0a016bbb83650ae671be62ab1fa2df676ae02235fbf1657161857cda82a6b794",
    "apps/api/app/api/routes/tutor.py": "0d00c3b500b96d2dae79baedf855ff84b002170ef95e76b1bf98bd05790fbb2e",
    "apps/api/app/api/routes/v3.py": "f6d554abb6b135933ee043347ddd5e4a93f335870577696d8b8578b6ca4071b6",
+   "apps/api/app/core/after_commit.py": "e7039c1e793f2c72db1afd9277fec5bf81ac3af8faf317b0d9eab0ec892a4f9e",
    "apps/api/app/core/arena_tickets.py": "1bd8efdb738ff4e77570c7525d2271bffc2a14b23672cfeda708e87a89a53584",
    "apps/api/app/core/auth.py": "83f8216ef7929fa81e45a124eacc55357160a37e016be5db66efbf5d8aa6ed77",
    "apps/api/app/core/authorization.py": "1a767523e01902c0ec870388d8f8fcbf426a4605a4d1be4f99f7a48ef9a49407",
@@ -535,7 +536,7 @@
    "apps/api/app/gateway/retired.py": "e5744df75d606a0d80cbf2ad51f13cbe9c6fd4684532df8ea917d83dc968b015",
    "apps/api/app/gateway/secrets.py": "a173c7fd21226b1e4d28d5abc1349986502be8e873a32bae0ec14ca350161f5e",
    "apps/api/app/gateway/tools.py": "391ad72fcfe11684811684d7d0e19134bf6a9f8ffac41edfb0af164928a460a4",
-   "apps/api/app/main.py": "fa5c58c95dd6a92290e910adfe51b3ea3655c0e603e6a963048568a8e047073c",
+   "apps/api/app/main.py": "b5bf34ebd8f637f89411cf582fa34bc1b5a2913e14fd2a1d2308e6dacb697608",
    "apps/api/app/schemas.py": "dd4318765e3928f76aa533a77cfcc91678e84c7531f07875e057594a1cc94f4e",
    "apps/api/app/services/answer_history.py": "10b8e776d6149f453dfbe7ec8fe4d4219b6a45e5afc636327d9de29875a4a49f",
    "apps/api/app/services/arena_engine.py": "8cc33ed89b83803a7171d156e9d367b18eb0bb3820c5e2678e8e6195be30bd18",
@@ -552,7 +553,7 @@
    "apps/api/app/services/ehmf/detectors.py": "ac3a4137b9e7b2190a61f6876a1eca791cf0d2788e446a0e1529b1d88b658a8e",
    "apps/api/app/services/ehmf/library.py": "aac4cabddd18c10899a907e57937b8e59179f6ddfcf68a7fca01e0fc775971ea",
    "apps/api/app/services/ehmf/metrics.py": "37d9cb82895c25cd5ca4f5130c01ac9bbe153fdf07ca976be038970870e31d89",
-   "apps/api/app/services/ehmf/package_check.py": "2b40c64a3e5c1c287a7821f351adeac5f7ce5e9ccfa084f7a347e4cfea9a3add",
+   "apps/api/app/services/ehmf/package_check.py": "ddc8c3ac157f727fffe635dd3f1db9b9a8fca7ffd0fc5bb14cf725455a25b1e6",
    "apps/api/app/services/ehmf/record.py": "fe848ac6ad533f7a262489e05f527aa2bd35a7e0fb1c892f4da37e94912773e2",
    "apps/api/app/services/ehmf/routing.py": "9ef0d00d92ed6295255f7ef6384d424fa2acf7554ca49afd4a1f5e8fd92bb4bd",
    "apps/api/app/services/ehmf/stop.py": "5af4b09f5c4b7a92e76d48238b756047aed678e38070ea4cdcd841316c704cab",
@@ -586,7 +587,7 @@
    "apps/api/app/services/ranking/quality.py": "6ac10964a71d3044f01df35fee1aafe3095099c5b870c7decd28a99f767fa52e",
    "apps/api/app/services/ranking/recommission.py": "80dbea4db54956283cd365ee2e7d001a8f2c212f6f8d399a7055d67f5e15a8c4",
    "apps/api/app/services/ranking/replay.py": "747ad144c4cbc4e7fc339f7abd7a4e2c4eb7917b5121ebbff544d149ec18cc67",
-   "apps/api/app/services/ranking/scan.py": "cb4e9787f1a7f2cf0250a337f9696fb5b332d305eec9758ada9ec3a269fb50ab",
+   "apps/api/app/services/ranking/scan.py": "5a81ac14d307c8deb8da28f9694e62dac0d4348b67d4aa44a71cf683da02241b",
    "apps/api/app/services/ranking/score.py": "1d46c752f2a78b1f5689b59f32e81901113bf286aa5e4cf5d7f6ea66ef196970",
    "apps/api/app/services/ranking/selection.py": "3fe91a08fbd69ec69bb5b1ae45b2e31a23e43ec901e5777201987f0399d7ec88",
    "apps/api/app/services/ranking/signals.py": "12bf913428a926d951aecb501ee30e7d8d7bfecf10efe41aad8e7f551501bcd9",
@@ -630,7 +631,7 @@
    "apps/api/app/services/v1_checks/legacy_guard.py": "a92e676a6141ec89368587067731080c235c58b8a5b01a4b9d88eaabe56cd29a",
    "apps/api/app/services/v1_checks/lexicon.py": "65a5e1d63a11262eb9264240c1dc230cce457083b49dfb334a593498804b90a8",
    "apps/api/app/services/v1_checks/metrics.py": "23b69babb82d883e58b93cbf2cb046b2343ed5f3ad1d7229692f8c714eb71083",
-   "apps/api/app/services/v1_checks/package_check.py": "90fc427c8007a092a558b41a23d30412452587c99d27eacf40730667fac4ae63",
+   "apps/api/app/services/v1_checks/package_check.py": "cb0d2874ceeb0cb32f7456bdc26ba3ca4ca044d5c7f3d4163fd1e005689f2e14",
    "apps/api/app/services/v1_checks/results.py": "e8ee833e645c37bdae2cb573945fb660a22640db4ec2a37562cde3fd8483c5b2",
    "apps/api/app/services/v1_checks/rules.py": "cde0927e58dfb3ff624d305f9da45796cfd447bbc97eb1e77db50c3c363a66da",
    "apps/api/app/services/v1_checks/runner.py": "e48ada7180aa9f956bb2db69ad13385409a1c9fd358c0ba303f0f5fafe44f62c",
@@ -655,7 +656,7 @@
    "apps/api/app/services/v3/__init__.py": "3204eb7822e72a4aad9bc5c06f99346d874f96b29c879e496fc141c57a336c2c",
    "apps/api/app/services/v3/contracts.py": "96079a35edc346ff13792407eaa4a623427a1b827e8b6a52419bc6a5b49069f0",
    "apps/api/app/services/v3/draw.py": "dd3993817be1689f921bc608977079c29ab4b02181c240fe1c9d5aac8ee0522e",
-   "apps/api/app/services/v3/events.py": "8c0cc5aefe008f5903942b277ca1ea7a951664b072d50660032758841cce4c95",
+   "apps/api/app/services/v3/events.py": "e78c2b87d7305cdd2fa94af14cb9e1cc4e8be459a505470d118694d016cfcea6",
    "apps/api/app/services/v3/feedback.py": "c1edf38c434edd073b3753b9c33a110058708620d00c7b1d7e0fdbc7a5cd0bb6",
    "apps/api/app/services/v3/gold.py": "62fb1feb4b0ca737f2b493aa421355e1830c98de8d1fe9aa86a0d2a3d6fd4553",
    "apps/api/app/services/v3/holds.py": "23eed4681fb4e7680dbbf960879ffa19a93a6b22a57082db1e3cf9236825c527",
@@ -665,7 +666,7 @@
    "apps/api/app/services/v3/queue.py": "a052d0f6dc2fa7510f4e2f8c1cb7d19ba9c028ca2685a267fd1c4552e0c82e4a",
    "apps/api/app/services/v3/residual.py": "0910041ed6682f7c1005c8be9ced6d2526b535224cae5c814395377d84a259d8",
    "apps/api/app/services/v3/rules.py": "0ae84335d5f83a8f76cd17b4f50357146b6a3ed06795acf0de0f9b87456a521a",
-   "apps/api/app/services/v3/scan.py": "8d7c928b5232152c9e0d3bae54145d18767f877d01125974f8722478ae0ccd68",
+   "apps/api/app/services/v3/scan.py": "b3c48ba473781ad9e015c4ea478e0951f5362ca81d3c732c192f5a7abaca6017",
    "apps/api/app/services/v3/stop.py": "a846ccc64ff5122a5327374b6220976cd0bef9e8aacf7ae8d81ec6131535ca6c",
    "apps/api/app/services/v3/triggers.py": "7634c7eb14f7c98aab3516648e2c7a597b51e8a8fa1232cdf430e43ea32b89e0",
    "apps/api/app/services/v3/views.py": "da360bac41fce93cfd280777a23278e8fd2c938b47b65186be6b525a44a7bef3",
@@ -687,6 +688,6 @@
    "scripts/run_golden_set.py": "931d70dcfdc66f32a91ad9145eb85894c86c8ccd00ded6edc6ae533b4e506b08",
    "scripts/run_v1_fixtures.py": "eef14c4c906aa9abb209c97b83bf78c077ca7a6642febbc0d09b0665b86405bd"
   },
-  "sha256": "d87919cdc229a3ccd83ab8081322a6b0772cea9d92d5183bb4f324fe4e9fa888"
+  "sha256": "31225ad564c321d0b679e9decfda59d70bd814eec11e00ae5eb345858765930c"
  }
 }

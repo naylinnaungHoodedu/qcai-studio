@@ -533,6 +533,58 @@ def test_ac_9_5_a_model_version_change_deflates_caps_at_c_and_raises_x5_until_th
             assert stored_state(factory)["models"][clone_id]["capped"] is expected, kind
 
 
+def test_ac_9_5_a_rolled_back_model_change_logs_no_x5_event_and_the_committed_one_logs_it_once(tmp_path, caplog, monkeypatch):
+    # A refused operator input and a retried SQLite-busy scan attempt both roll back the X5 window and the model_change
+    # row their _sync wrote: neither logs v3.x5_event or ranking.model_change. The scan that commits logs each once.
+    import sqlite3
+
+    from sqlalchemy import select
+    from sqlalchemy.exc import OperationalError
+
+    from app.db_models import V3Event
+    from app.services.ranking import scan as scan_module
+    from app.services.ranking.scan import append_inputs
+    from v2_fakes import fresh_gateway
+    from v3_fakes import fresh_v3_sessions
+
+    bumped = _clone_package(tmp_path, "2026-11-22")
+    settings = ranking_settings(config_package_path=str(bumped.path))
+
+    def lines() -> list[str]:
+        return [record.json_fields["event"] for record in caplog.records
+                if hasattr(record, "json_fields") and record.json_fields.get("event") in ("v3.x5_event", "ranking.model_change")]
+
+    def x5_rows(factory) -> int:
+        with factory() as db:
+            return sum(1 for (payload,) in db.execute(select(V3Event.payload).where(V3Event.kind == "model_change"))
+                       if json.loads(payload)["model_key"] == f"generator:{CLONE}")
+
+    with fresh_v3_sessions() as (factory, _engine):
+        commission_static(factory)
+        scan(factory)
+        caplog.clear()
+        with caplog.at_level(logging.INFO):
+            with factory() as db:
+                with pytest.raises(ranking.RankingInputRefused):
+                    append_inputs(db, [("recommission_pass", {"adapter_id": CLONE, "version": "stale", "clean": 3, "failed": 0, "generated": 3,
+                                                              "run_sha256": "0" * 64})], settings=settings, package=bumped, now=FIXED_NOW,
+                                  gateway=fresh_gateway())
+            assert lines() == [] and x5_rows(factory) == 0 and events_of(factory, "model_change") == []
+            real_feedback, failures = scan_module._feedback, []
+
+            def busy_once(db, log):
+                if not failures:
+                    failures.append(1)
+                    raise OperationalError("UPDATE", {}, sqlite3.OperationalError("database is locked"))
+                real_feedback(db, log)
+
+            monkeypatch.setattr(scan_module, "_feedback", busy_once)
+            scan(factory, settings=settings, package=bumped)
+        assert failures == [1]
+        assert sorted(lines()) == ["ranking.model_change", "v3.x5_event"]
+        assert x5_rows(factory) == 1 and len(events_of(factory, "model_change")) == 1
+
+
 def test_ac_9_5_the_ranking_reuses_v3_s_model_change_for_a_version_v3_already_saw(tmp_path):
     # V3 sees the clone's records first (a baseline at 2026-11-21, then a change to 2026-11-22): the ranking scan's change to
     # that version reuses V3's event, so one change opens one X5 window (spec conflict 14).

@@ -781,10 +781,10 @@ def record_cusum_alarm(alarm: CusumAlarm, *, settings: Settings, package: Config
 ```
 
 - It refuses `source == "synthetic-test"` outside development (`ValueError`).
-- It inserts `v3_events(kind "cusum_alarm", payload = canonical JSON of the alarm, from_ledger_seq = the ledger head seq or 0, window_deliveries = package v3 window)` and logs `v3.x5_event` (`kind`, `stream`) at WARNING. It returns the event seq.
+- It inserts `v3_events(kind "cusum_alarm", payload = canonical JSON of the alarm, from_ledger_seq = the ledger head seq or 0, window_deliveries = package v3 window)` and logs `v3.x5_event` (`kind`, `stream`) at WARNING. It returns the event seq. With `db=` (the Phase 9 scan) it inserts in the caller's session without committing and the line is logged when that transaction commits (`app/core/after_commit.py`), never for a rolled-back attempt.
 - It records the alarm whatever the V3 mode: the next scan applies the window.
 - Phase 9 calls it, and Phase 6 tests call it with synthetic alarms.
-- `scan.record_model_change` (used by 4.4) inserts a `model_change` event with payload `{model_key, from_version, to_version, source}` and logs `v3.x5_event`.
+- `scan.record_model_change` (used by 4.4) inserts a `model_change` event with payload `{model_key, from_version, to_version, source}` in the caller's transaction and logs `v3.x5_event` when that transaction commits (`app/core/after_commit.py`), never for a rolled-back attempt.
 
 ### 4.9 Holds (`v3/holds.py`; R-b, plan J, plan L)
 

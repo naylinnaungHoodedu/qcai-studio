@@ -7,7 +7,8 @@ v3_events row whose window raises the audit rate to 1/5 over the next window_del
 ledger head, whatever the V3 mode (the next scan applies it), and logs v3.x5_event at WARNING. A synthetic-test alarm
 is refused outside development. Model-version changes are recorded by the scan (scan.record_model_change). The Phase 9
 ranking scan raises its alarms here (source phase9-cusum) inside its own transaction: with db the row is inserted in the
-caller's session and not committed, so the alarm, the ranking event that names it and the scan commit together.
+caller's session and not committed, so the alarm, the ranking event that names it and the scan commit together, and its
+v3.x5_event line is logged only when that transaction commits (after_commit.log_after_commit).
 """
 
 from __future__ import annotations
@@ -46,11 +47,15 @@ def record_cusum_alarm(alarm: CusumAlarm, *, settings: Any, package: Any, sessio
                                                         created_at=now))
         return int(result.inserted_primary_key[0])
 
+    fields = {"event": "v3.x5_event", "kind": "cusum_alarm", "stream": alarm.stream}
     if db is not None:
+        from app.core.after_commit import log_after_commit
+
         seq = insert_alarm(db)
-    else:
-        with session_factory() as session:
-            seq = insert_alarm(session)
-            session.commit()
-    LOGGER.warning("A CUSUM alarm raised the audit rate (X5)", extra={FIELDS: {"event": "v3.x5_event", "kind": "cusum_alarm", "stream": alarm.stream}})
+        log_after_commit(db, LOGGER, logging.WARNING, "A CUSUM alarm raised the audit rate (X5)", fields)
+        return seq
+    with session_factory() as session:
+        seq = insert_alarm(session)
+        session.commit()
+    LOGGER.warning("A CUSUM alarm raised the audit rate (X5)", extra={FIELDS: fields})
     return seq

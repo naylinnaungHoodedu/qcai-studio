@@ -1,8 +1,8 @@
 {
  "report": "qcai-v1-fixture-report",
  "format_version": 1,
- "created_at": "2026-11-24T12:30:34+00:00",
- "commit": "67e195ff5e527066ef9e72d35e19a5aba985e802-dirty",
+ "created_at": "2026-11-24T14:26:08+00:00",
+ "commit": "1c057dc753a796f0811973ad3524aa89f829fd79-dirty",
  "evidence_class": "fixture measurements, not research results (plan Phase 4 H)",
  "public_corpus_only": true,
  "fixtures": {
@@ -1258,7 +1258,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 3.802,
+    "p95_ms": 6.688,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2485,7 +2485,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 3.666,
+    "p95_ms": 7.429,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2539,7 +2539,7 @@
   "contained": true
  },
  "latency": {
-  "p95_ms": 3.1,
+  "p95_ms": 4.73,
   "budget_ms": 250,
   "within_budget": true
  },
@@ -2606,7 +2606,7 @@
    "apps/api/app/services/v1_checks/aggregate.py": "97ebd8370571353018059f5b53433b18c11ced4cffff9cff20804c7a982809eb",
    "apps/api/app/services/v1_checks/lexicon.py": "65a5e1d63a11262eb9264240c1dc230cce457083b49dfb334a593498804b90a8",
    "apps/api/app/services/v1_checks/metrics.py": "23b69babb82d883e58b93cbf2cb046b2343ed5f3ad1d7229692f8c714eb71083",
-   "apps/api/app/services/v1_checks/package_check.py": "90fc427c8007a092a558b41a23d30412452587c99d27eacf40730667fac4ae63",
+   "apps/api/app/services/v1_checks/package_check.py": "cb0d2874ceeb0cb32f7456bdc26ba3ca4ca044d5c7f3d4163fd1e005689f2e14",
    "apps/api/app/services/v1_checks/results.py": "e8ee833e645c37bdae2cb573945fb660a22640db4ec2a37562cde3fd8483c5b2",
    "apps/api/app/services/v1_checks/rules.py": "cde0927e58dfb3ff624d305f9da45796cfd447bbc97eb1e77db50c3c363a66da",
    "apps/api/app/services/v1_checks/runner.py": "e48ada7180aa9f956bb2db69ad13385409a1c9fd358c0ba303f0f5fafe44f62c",
@@ -2628,6 +2628,6 @@
    "apps/api/app/services/v3/rules.py": "0ae84335d5f83a8f76cd17b4f50357146b6a3ed06795acf0de0f9b87456a521a",
    "scripts/run_v1_fixtures.py": "eef14c4c906aa9abb209c97b83bf78c077ca7a6642febbc0d09b0665b86405bd"
   },
-  "sha256": "6714310eec2c36edc121709d2ae17316c17a0cd3b70f191299942ed4ae3bc2bd"
+  "sha256": "6be97435dfb6791d1686f7a2596be3409aebf30ce7215cde7a96f4d876414dd8"
  }
 }

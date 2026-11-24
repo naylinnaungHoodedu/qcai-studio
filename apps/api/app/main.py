@@ -262,7 +262,8 @@ def _check_ehmf_package(package) -> None:
     unavailable (/ready ehmf.available false), its mode stays off and ehmf.unavailable is logged. Outside development the
     default (EHMF off) never stops a start-up; a recorded EHMF=shadow override (config.override ehmf_shadow) does stop a
     governed start-up when the package has a problem. Reads only the package and the committed files beside it (never docs/
-    or apps/api/tests/, which the image does not hold); writes nothing."""
+    or apps/api/tests/; the image holds no apps/api/tests/ and under docs/ only the Phase 9 recommission set); writes
+    nothing."""
     from app.services import ehmf as ehmf_service
 
     if package.ehmf is None:
