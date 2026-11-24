@@ -362,7 +362,7 @@ def test_ac_5_6_a_mid_response_loss_and_each_kill_switch():
     outcomes = {}
     for switch in ("abstain_only", "pre_verified_only"):
         adapters = adapters_of(THREE)
-        settings = Settings(model_gateway="on", model_gateway_kill_switch=switch)
+        settings = Settings(model_gateway="on", model_gateway_kill_switch=switch, ehmf="off")  # the v3 record this test judges (Phase 7)
         entry = run(v2_pipeline(settings, gateway=fresh_gateway(adapters=adapters), registry=THREE), TIER2, legacy_decision="answer").entry
         verification = entry.verification
         assert verification.final_reason == "v2_kill_switch" and all(adapter.calls == 0 for adapter in adapters.values())
@@ -541,7 +541,9 @@ def test_ac_5_8_a_repeated_claim_span_pair_hits_the_cache_and_a_configuration_bu
     assert all(not vote.cached for verdict in judged(first).values() for vote in verdict.votes)
     assert all(vote.cached for verdict in judged(second).values() for vote in verdict.votes)
     assert {name: adapter.calls - calls[name] for name, adapter in adapters.items()} == {name: 1 for name in adapters}  # alignment only
-    bumped = temp_package(tmp_path, edit=lambda raw: raw.update(package_version="4.0.1"))
+    from ehmf_fakes import NEXT_PATCH
+
+    bumped = temp_package(tmp_path, edit=lambda raw: raw.update(package_version=NEXT_PATCH))  # a bump within the shipped major
     settings = Settings(model_gateway="on", config_package_path=str(bumped))
     other = v2_pipeline(settings, gateway=fresh_gateway(adapters=adapters), registry=THREE, cache=cache)
     assert other.package.sha256 != pipeline.package.sha256
@@ -848,7 +850,8 @@ def test_plan_g_shadow_dual_run_records_v2_beside_the_unchanged_v1_decision(capl
     off = run(dev_pipeline(Settings(model_gateway="off")), TIER2, legacy_decision="answer").entry
     shadow = run(v2_pipeline(Settings(model_gateway="shadow"), gateway=fresh_gateway(adapters=adapters_of(THREE)), registry=THREE), TIER2,
                  legacy_decision="answer").entry
-    assert type(shadow) is LedgerEntryV3 and shadow.verification.v2.mode == "shadow"
+    # Since Phase 7 the development default (EHMF=shadow) types the shadow: a ledger-entry-v4, which extends v3.
+    assert isinstance(shadow, LedgerEntryV3) and shadow.entry_schema == "ledger-entry-v4" and shadow.verification.v2.mode == "shadow"
     for name in ("final", "final_reason", "replacement", "labels"):
         assert getattr(shadow.verification, name) == getattr(off.verification, name), name
     assert [verdict.final for verdict in shadow.verification.verdicts] == [verdict.final for verdict in off.verification.verdicts]

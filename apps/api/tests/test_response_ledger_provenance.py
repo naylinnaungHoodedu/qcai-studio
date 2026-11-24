@@ -149,8 +149,9 @@ def test_l7_the_provenance_audit_passes_on_the_records_the_code_writes_and_names
     assert answered.decision == "answer" and answered.entry.claims and abstained.decision == "abstain" and not abstained.entry.claims
     with factory() as db:
         audit = ledger_provenance(db, PACKAGE)
+    # Phase 7 adds the read-time config_version counts (plan Phase 7 G; R-e): every record here stamps the shipped package.
     assert audit == {"package_version": PACKAGE.package_version, "package_sha256": PACKAGE.sha256, "records": 4, "checked": 4, "other_package": 0,
-                     "problem_count": 0, "problems": []}
+                     "config_versions": {PACKAGE.package_version: 4}, "problem_count": 0, "problems": []}
     legacy_entry = build_legacy_entry(_legacy(claims=CLAIM), settings=settings, package=PACKAGE, manifest_sha256=None)
     budget = 5000
     append_ledger_entry(_changed(legacy_entry, entry_provenance={"evidential_prompt_hash": "d" * 64}), session_factory=factory, budget_ms=budget)

@@ -69,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
         if package.v3 is None:
             return EXIT_USAGE
         with SessionLocal() as db:
-            body = slis(db, package, now=datetime.now(UTC))
+            body = slis(db, package, now=datetime.now(UTC), settings=settings)
         LOGGER.info("V3 status", extra={FIELDS: {"event": "v3.status", "mode": v3.mode(settings, package), **body}})
         return EXIT_OK
     if args.command == "verify-gold":

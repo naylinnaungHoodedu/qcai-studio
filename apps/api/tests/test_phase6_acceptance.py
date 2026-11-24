@@ -178,7 +178,9 @@ def test_ac_6_1_a_critical_tier_1_claim_with_one_objection_fires_x1_and_is_withh
         run_scan(settings=SETTINGS, package=PACKAGE, session_factory=factory, now=NOW)
         with factory() as db:
             item = db.execute(select(V3QueueItem.__table__).where(V3QueueItem.claim_key == target.claim_id)).first()
-    assert tuple(sorted(queue.split(item.triggers))) == ("X1",) and item.held is True
+    # Under package v6 (x-triggers-v2, Phase 7 spec conflict 3) the exhausted claim also fires X2; v5 fired X1 alone.
+    expected = ("X1", "X2") if PACKAGE.v3.trigger_registry_version == "x-triggers-v2" else ("X1",)
+    assert tuple(sorted(queue.split(item.triggers))) == expected and item.held is True
     # Under shadow X1 fires on the same objection; the finals are Phase 4's and no correction runs.
     shadow = Settings(model_gateway="shadow")
     _, entry = v3_fakes.shadow_v3_record(settings=shadow, adapters=v3_fakes.objecting_adapters(registry, "fake-beta-v1", objection))
@@ -408,7 +410,7 @@ def test_ac_6_6_a_learner_flag_sets_f_i_to_zero_and_changes_no_verdict_or_ledger
         legacy = db.execute(select(ResponseLedgerRecord.__table__).where(ResponseLedgerRecord.response_id == turn_id)).first()
         shadow = db.execute(select(ResponseLedgerRecord.__table__).where(ResponseLedgerRecord.shadowed_response_id == turn_id)).first()
         count = db.scalar(select(func.count()).select_from(ResponseLedgerRecord))
-    assert legacy is not None and shadow is not None and shadow.entry_schema == "ledger-entry-v3"
+    assert legacy is not None and shadow is not None and shadow.entry_schema == "ledger-entry-v4"  # typed since Phase 7 (a v3 subclass)
     response = client.post("/v3/flags", json={"response_id": turn_id}, headers=learner)
     assert response.status_code == 200 and response.json() == {"status": "recorded", "f_i": 0.0, "duplicate": False}
     with SessionLocal() as db:
@@ -744,12 +746,13 @@ def test_plan_g_the_phase_6_revision_is_additive_reversible_and_keeps_its_rows(f
     from app.core.db import Base
     from app.services.ledger import SCHEMA_REVISION
 
-    assert ScriptDirectory.from_config(Config(str(API_ROOT / "alembic.ini"))).get_heads() == [SCHEMA_REVISION] == [PHASE6_REVISION]
+    assert ScriptDirectory.from_config(Config(str(API_ROOT / "alembic.ini"))).get_heads() == [SCHEMA_REVISION] == ["20261123_phase7_ehmf"]  # Phase 7 follows the Phase 6 revision
     connect_args = {"check_same_thread": False} if fresh_database_url.startswith("sqlite") else {}
     engine = create_engine(fresh_database_url, connect_args=connect_args)
     try:
         Base.metadata.create_all(engine)
-        Base.metadata.drop_all(engine, tables=[Base.metadata.tables[name] for name in V3_TABLES])
+        # The Phase 7 table follows the Phase 6 revision, so "upgrade head" from the Phase 5 stamp creates it too.
+        Base.metadata.drop_all(engine, tables=[Base.metadata.tables[name] for name in (*V3_TABLES, "ehmf_stops")])
         others = set(sa_inspect(engine).get_table_names())
         engine.dispose()
         assert _alembic(fresh_database_url, "stamp", PHASE5_REVISION).returncode == 0
@@ -822,11 +825,11 @@ def test_plan_i_ready_reports_package_v5_and_the_v3_fields_and_no_count():
     from app.core.db import engine
 
     body = client.get("/ready").json()
-    assert body["config_package_version"] == "5.0.0" and body["v3_queue"] == "shadow" and body["v3_queue_setting"] == "shadow"
+    assert body["config_package_version"] == PACKAGE.package_version and body["v3_queue"] == "shadow" and body["v3_queue_setting"] == "shadow"
     assert body["phase6_exit_passed"] is False
     fields = body["v3"]
     assert fields == {
-        "version": "v3-audit-v1", "trigger_registry": "x-triggers-v1", "triggers": ["X1", "X2", "X3", "X4", "X5", "X6"],
+        "version": "v3-audit-v1", "trigger_registry": PACKAGE.v3.trigger_registry_version, "triggers": ["X1", "X2", "X3", "X4", "X5", "X6"],
         "draw": {"rule": "seeded-sha256-bernoulli-v1", "rate": "1/20", "x5_rate": "1/5", "x5_window_deliveries": 1500}, "double_review": "1/10",
         "queue_age_slo_s": 259200, "stop_window_s": 172800, "stop_measure": "oldest_open_item_age",
         "critical_registry": {"environment": "development", "entries": 3}, "reviewer_pool": "unstaffed", "gold_schema": "v3-gold-label-v1",
@@ -943,7 +946,11 @@ def test_plan_f_the_trigger_registry_document_matches_the_package():
     assert f"at tiers {', '.join(tiers[:-1])} and {tiers[-1]}" in x1_row and f"at tier {x1['withhold_tier']} only" in x1_row
     for reason in v3_raw["triggers"]["queue_reasons"]:
         assert f"`{reason}`" in document
-    for name, weight in v3_raw["priority"]["severity"].items():
+    severity = v3_raw["priority"]["severity"]
+    if severity.get("source") == "ehmf.weights":  # package v6 (Phase 7): V3 severity is the ehmf weights
+        weights = PACKAGE.raw["ehmf"]["weights"]
+        severity = {**{key: weights[key] for key in ("A", "B", "C", "D", "E")}, "unknown": severity["unknown"], "disclosed_conflict": weights["D_disclosed"]}
+    for name, weight in severity.items():
         assert f"| {name} | {weight} |" in document, name
     for key in ("rule", "exposure_rule", "claim_set_key_rule", "k_rule"):
         assert f"`{v3_raw['priority'][key]}`" in document
@@ -1304,11 +1311,11 @@ def test_phase6_docs_the_texts_phase6_made_false_state_the_current_code():
     phase5 = (REPO_ROOT / "docs" / "architecture" / "phase5-implementation-spec.md").read_text(encoding="utf-8")
     assert "development holds Phase 6's synthetic registry" in phase5 and "The X1 trigger and the sticky hold" in phase5
     phase3 = (REPO_ROOT / "docs" / "architecture" / "phase3-implementation-spec.md").read_text(encoding="utf-8")
-    assert "`.../v5.json` with Phase 6" in phase3 and "and 5 since Phase 6" in phase3
+    assert "`.../v5.json` with Phase 6" in phase3 and "5 since Phase 6, and 6 since Phase 7" in phase3 and "`.../v6.json` with Phase 7" in phase3
     ledger_paragraph = next(line for line in phase3.splitlines() if "LEDGER_READER_ROLES" in line and "D-18" in line)
     assert "reviewer_admitted" in ledger_paragraph
     phase4 = (REPO_ROOT / "docs" / "architecture" / "phase4-implementation-spec.md").read_text(encoding="utf-8")
-    assert "`v5.json` with Phase 6" in phase4 and "5 since Phase 6" in phase4
+    assert "`v5.json` with Phase 6" in phase4 and "5 since Phase 6" in phase4 and "`v6.json` with Phase 7" in phase4
 
 
 def test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_head():
@@ -1319,9 +1326,12 @@ def test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_h
 
     runbook = (REPO_ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8")
     step = runbook.split("3. **Check the stamp:** `alembic current`.", 1)[1].split("\n4. ", 1)[0]
-    assert re.findall(r"`([0-9a-z_]+) \(head\)`", step) == [SCHEMA_REVISION] == ["20261122_phase6_v3_audit"]
+    # Since Phase 7 the head is 20261123_phase7_ehmf: its bullet takes the Phase 7 step, then the Phase 6 and Phase 5 steps.
+    assert re.findall(r"`([0-9a-z_]+) \(head\)`", step) == [SCHEMA_REVISION] == ["20261123_phase7_ehmf"]
     head_bullet = next(line for line in step.splitlines() if f"`{SCHEMA_REVISION} (head)`" in line)
+    assert "allow_ehmf_drop=true downgrade 20261122_phase6_v3_audit" in head_bullet
     assert "allow_v3_drop=true downgrade 20261122_phase5_gateway_controls" in head_bullet and "export-gold --all" in head_bullet
+    assert any(line.strip().startswith("- `20261122_phase6_v3_audit`:") for line in step.splitlines())
     assert "alembic downgrade 20261119_phase3_response_ledger" in head_bullet
     assert any(line.strip().startswith("- `20261122_phase5_gateway_controls`:") for line in step.splitlines())
     assert step.rstrip().splitlines()[-1].strip() == "- Anything else: stop."
@@ -1344,3 +1354,28 @@ def test_phase6_docs_the_spec_ends_in_one_review_history_table():
         assert all(name in names for name in re.findall(r"`(test_[a-z0-9_]+)`", findings)), round_name
     # A review round is named only in section 18 (a gold label's "round 2" is a domain term here, so it is allowed).
     assert re.findall(r"\b[Rr]eview \d+\b(?![/.\d])", head) == []
+
+
+def test_phase6_docs_the_records_name_the_merge_and_the_cited_main_run():
+    # PR #38 was squash-merged as 31343c8 (tree identical to 1c49b74); main run 45180967316 passed every job and is the
+    # cited run (Phase 7 design E15). The spec's DI-89 row, its section 17 exit bullet and the test strategy's Phase 6 exit
+    # paragraph name the merge, the merged tree and that run, none keeps a pre-merge phrase, and the exit stays not passed.
+    spec = spec_text()
+    head, history = spec.split("\n## 18. Review history\n", 1)
+    exit_block = head.split("**Exit (plan P).**", 1)[1]
+    strategy = (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
+    texts = {
+        "DI-89": next(line for line in head.splitlines() if line.startswith("| DI-89 |")),
+        "spec 17": next(line for line in exit_block.splitlines() if line.startswith("- The AC tests are done in code.")),
+        "test strategy": next(line for line in strategy.split("## Phase 6 acceptance map", 1)[1].splitlines() if line.startswith("**Exit gate.**")),
+    }
+    for name, text in texts.items():
+        for fact in ("`31343c8`", "`1c49b74`", "45180967316"):
+            assert fact in text, (name, fact)
+        for stale in ("no run on `main` exists before the merge", "each later commit needs its own run", "the cited run must be on `main`",
+                      "the cited CI run must be on `main`"):
+            assert stale.lower() not in text.lower(), (name, stale)
+    assert "The exit is not passed." in texts["DI-89"] and texts["DI-89"].endswith("| Eng / PI | Open |")
+    assert "The exit is not passed." in texts["test strategy"]
+    assert "- `phase6_exit_passed` stays `false`. The exit is not passed." in exit_block
+    assert "| Converge 2 | `1c49b74` |" in history and "| Merge | `31343c8` |" in history

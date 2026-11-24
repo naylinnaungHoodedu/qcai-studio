@@ -234,6 +234,6 @@ def metrics(request: Request, db: Session = Depends(get_db), user: AuthUser = De
         return _not_found()
     from app.services.v3.metrics import slis
 
-    body = slis(db, get_config_package(settings), now=_now())
+    body = slis(db, get_config_package(settings), now=_now(), settings=settings)
     _event("v3.metrics_read", request, user)
     return _ok(body)

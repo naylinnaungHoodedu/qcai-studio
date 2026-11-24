@@ -374,9 +374,9 @@ def _approved_manifest() -> Path:
 def gate_environment(gate: str) -> Gate:
     manifest = _approved_manifest()
     settings = Settings(environment="development", enforce_corpus_governance=True, corpus_manifest_path=str(manifest), retrieval_gate=gate,
-                        two_pass_tutor="shadow", v1_pipeline="enforce", model_gateway="off")
+                        two_pass_tutor="shadow", v1_pipeline="enforce", model_gateway="off", ehmf="off")
     off = Settings(environment="development", enforce_corpus_governance=True, corpus_manifest_path=str(manifest), retrieval_gate=gate,
-                   two_pass_tutor="shadow", v1_pipeline="off", model_gateway="off")
+                   two_pass_tutor="shadow", v1_pipeline="off", model_gateway="off", ehmf="off")
     if gate not in _STORES:
         _STORES[gate] = CourseStore(settings)
     return Gate(gate=gate, settings=settings, off_settings=off, store=_STORES[gate])
@@ -398,10 +398,12 @@ def _input(pipeline: TwoPassPipeline, query: str) -> PipelineInput:
 
 
 def _pipeline(env: Gate, v1, *, off: bool = False, generator=None, renderer=None, checker=None, keyed=None, library=None,
-              clock=None) -> TwoPassPipeline:
-    settings = env.off_settings if off else env.settings
+              clock=None, settings: Settings | None = None, pipeline_options: dict | None = None) -> TwoPassPipeline:
+    """settings and pipeline_options (a gateway, an adapter registry, a cache, a session factory) let the Phase 7
+    golden-set runner realise a case with MODEL_GATEWAY and EHMF on; the defaults are this report's own run."""
+    settings = settings if settings is not None else (env.off_settings if off else env.settings)
     pipeline = TwoPassPipeline(RetrievalEngine(env.store, settings), settings, generator=generator, renderer=renderer, checker=checker,
-                               keyed_items=keyed, misconceptions=library)
+                               keyed_items=keyed, misconceptions=library, **(pipeline_options or {}))
     pipeline.v1_params = v1
     if clock is not None:
         pipeline.v1_clock = clock
@@ -447,7 +449,8 @@ def _base_locked(env: Gate, v1, query: str):
     return _pipeline(env, v1, off=True).run(_input(_pipeline(env, v1, off=True), query), record=False)
 
 
-def run_pipeline_case(case: dict, env: Gate, v1, configuration: str, fixtures: dict) -> tuple[dict, object]:
+def run_pipeline_case(case: dict, env: Gate, v1, configuration: str, fixtures: dict, *, settings: Settings | None = None,
+                      pipeline_options: dict | None = None) -> tuple[dict, object]:
     attack = case["attack"]
     kind = attack["kind"]
     package = get_config_package(env.settings)
@@ -480,7 +483,8 @@ def run_pipeline_case(case: dict, env: Gate, v1, configuration: str, fixtures: d
         keyed = FixtureKeys((KeyedItem(item_id=spec["item_id"], lesson_slug="fixture-lesson", prompt=spec["prompt"], choices=(), answer=key_text),))
     if kind == "misconception":
         library = _library([entry for entry in fixtures["fixture_library"] if entry["id"] == attack["entry"]])
-    pipeline = _pipeline(env, v1, generator=generator, renderer=renderer, checker=checker, keyed=keyed, library=library, clock=clock)
+    pipeline = _pipeline(env, v1, generator=generator, renderer=renderer, checker=checker, keyed=keyed, library=library, clock=clock,
+                         settings=settings, pipeline_options=pipeline_options)
     item = _input(pipeline, case["query"])
     if kind == "compose_from_items":
         # The generator needs the bundle's item ids; the pipeline retrieves exactly this bundle.

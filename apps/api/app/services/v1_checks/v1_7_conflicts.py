@@ -11,7 +11,7 @@ Over the cited spans of one response (the locked set's spans; the bundle names e
 No pair: pass / no_conflict. Otherwise a DisclosureBlock with policy v1.on_conflict: disclose (labels which spans
 disagree; no new claim) gives flag / conflict_disclosed and the label conflict_disclosed; withhold gives
 flag / conflict_withheld and every claim in a pair is withheld. Precedence between the sources ("newer peer-reviewed
-over older") is Phase 7's.
+over older") is ehmf.conflicts (precedence-v1, Phase 7): recorded only in the typed record, never changing a final.
 
 The shipped family is the 2025/2026 lecture video (Q-10, E-21): video spans are never cited and the 2026 item is
 unbound, so in production disclosure can come only from a number or negation disagreement. legacy_conflicts applies

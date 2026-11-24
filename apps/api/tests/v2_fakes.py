@@ -119,14 +119,15 @@ def fresh_gateway(units: int = 100000, *, adapters: dict | None = None, clock=No
 
 def v2_pipeline(settings=None, *, gateway=None, registry=None, cache=None, **kwargs):
     """A two-pass pipeline over the development store with MODEL_GATEWAY=on (unless settings say otherwise), its own
-    gateway (a fresh one by default) and its own cold evidential cache."""
+    gateway (a fresh one by default) and its own cold evidential cache. The default settings set EHMF=off, so the Phase 5
+    and 6 tests keep judging the ledger-entry-v3 record they test (Phase 7 spec 13.3); the EHMF tests pass their own."""
     from app.core.config import Settings
     from app.services.retrieval_engine import RetrievalEngine
     from app.services.store import get_course_store
     from app.services.tutor_pipeline.pipeline import TwoPassPipeline
     from app.services.v2_panel.cache import ProcessEvidentialCache
 
-    settings = settings or Settings(model_gateway="on")
+    settings = settings or Settings(model_gateway="on", ehmf="off")
     return TwoPassPipeline(RetrievalEngine(get_course_store(), settings), settings, gateway=gateway or fresh_gateway(),
                            adapter_registry=registry, cache=cache if cache is not None else ProcessEvidentialCache(), **kwargs)
 

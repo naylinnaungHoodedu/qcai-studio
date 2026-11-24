@@ -73,6 +73,8 @@ def run_schema_upgrades(engine: Engine) -> None:
             _guard_response_ledger(connection)
         if set(V3_GUARDED_TABLES) <= tables:
             _guard_v3_tables(connection)
+            if "ehmf_stops" in tables:
+                _guard_ehmf_tables(connection)
 
 
 def _guard_security_events(connection: Connection) -> None:
@@ -348,7 +350,8 @@ V3_QUEUE_STATE_MOVES = (("queued", "adjudicated"), ("adjudicated", "applied"))
 
 def _v3_queue_sets() -> dict[str, tuple[str, ...]]:
     # The comma-joined set columns and their vocabularies (queue.join writes sorted, comma-joined members).
-    from app.services.v3.rules import EHMF_TYPES, QUEUE_REASONS, TRIGGERS
+    from app.services.ehmf.vocabulary import EHMF_TYPES
+    from app.services.v3.rules import QUEUE_REASONS, TRIGGERS
 
     return {"triggers": TRIGGERS, "reasons": QUEUE_REASONS, "ehmf_types": EHMF_TYPES}
 
@@ -424,6 +427,29 @@ V3_SQLITE_TRIGGERS = (
     "v3_queue_items_no_delete",
     "v3_queue_items_forward_only",
 )
+
+
+# The EHMF stops (Phase 7 spec 8): append-only, through Phase 6's v3_append_only() (created with the V3 guards, which
+# run first). Checked on every start and re-created only when not current; no '%' in these statements.
+EHMF_TRIGGERS = (
+    Trigger("ehmf_stops_append_only", "ehmf_stops", ("UPDATE", "DELETE"), "ROW", "v3_append_only"),
+    Trigger("ehmf_stops_no_truncate", "ehmf_stops", ("TRUNCATE",), "STATEMENT", "v3_append_only"),
+)
+EHMF_SQLITE_TRIGGERS = ("ehmf_stops_no_update", "ehmf_stops_no_delete")
+
+
+def _guard_ehmf_tables(connection: Connection) -> None:
+    if connection.dialect.name == "postgresql":
+        _postgres_guard(connection, functions={"v3_append_only": V3_FUNCTION_BODIES["v3_append_only"]}, triggers=EHMF_TRIGGERS,
+                        lock_order=("ehmf_stops",))
+        return
+    if connection.dialect.name == "sqlite":
+        for name in EHMF_SQLITE_TRIGGERS:
+            connection.exec_driver_sql(f"DROP TRIGGER IF EXISTS {name}")
+        connection.exec_driver_sql("CREATE TRIGGER ehmf_stops_no_update BEFORE UPDATE ON ehmf_stops "
+                                   "BEGIN SELECT RAISE(ABORT, 'ehmf_stops is append-only: UPDATE refused'); END")
+        connection.exec_driver_sql("CREATE TRIGGER ehmf_stops_no_delete BEFORE DELETE ON ehmf_stops "
+                                   "BEGIN SELECT RAISE(ABORT, 'ehmf_stops is append-only: DELETE refused'); END")
 
 
 def _guard_v3_tables(connection: Connection) -> None:

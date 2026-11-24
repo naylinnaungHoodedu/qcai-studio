@@ -232,3 +232,30 @@ The service events log on `qcai.v3`, the V2 track's on `qcai.tutor`, the worker'
 | Reviewer actions | security events `v3.queue_read`, `v3.scan_run`, `v3.item_read`, `v3.item_claimed`, `v3.item_adjudicated`, `v3.item_applied` and `v3.metrics_read` (on `qcai.security`; outcome success; `route` and the call's counts or item id, the actor role and the subject digest): counters |
 | Reviewer refusals | security event `authz.denied` (on `qcai.security`; outcome denied; `route`, `required` `role:reviewer`, or `reviewer_pool:D-18` outside development while D-18 is open, `provider`): a counter |
 | Security event `config.override` | the details name `v3_queue_shadow` (the V3 queue in shadow outside development) or `v3_queue_on` (refused outside development before the Phase 6 exit; a line means a package claiming the exit): an alert on any line |
+
+## Phase 7 SLIs: EHMF (plan Phase 7 I)
+
+Not set up yet: no log-based metric, alert policy, dashboard or scheduled job exists (each is a cloud write under D-05; DI-110). The SLIs are computed by `app.services.ehmf.metrics.slis` over the typed (`ledger-entry-v4`) records, grouped by `config_version`, served on the reviewer-only `GET /v3/metrics` (`ehmf`) and logged by `python -m app.workers.ehmf status`; `/ready` carries `config_version`, the static EHMF values and the cached stop state (`ehmf.stop.revert_required`: one `ehmf_stops` read per process every 60 s (`ehmf.stop.refresh_s`), only when EHMF is not off; null with no read when it is off), and no count or rate. Outside development no typed record is written, so the SLIs are empty there until EHMF runs (DI-111). Telemetry, not E2 results (plan Phase 7 H).
+
+| SLI | Definition |
+|---|---|
+| Per-type rate per 100 claims (`per_100_claims`) | for A, B1, B2, C, D, E: 100 times the typed claims with a finding of that type over the typed claims, as an exact reduced fraction string (`50`, `100/3`; null with no typed claim); `claims` is the denominator and `claim_type_counts` holds each count. A typed claim is a claim entry or a dropped proposal (a V1.2 response finding with a claim id, such as the AC-7-1 negated claim), as the stop counts it |
+| Per-type rate per 100 responses (`per_100_responses`) | for each type: 100 times the typed records with a response-level finding of that type (dropped proposals included) over the typed records, as an exact reduced fraction string (`responses` is the denominator and `response_type_counts` holds each count; V1.1 B1 makes "zero delivered Type B1" visible) |
+| Type D disclosure share | disclosed conflicts over detected conflicts |
+| Correction-cycle distribution | typed records by V2 cycles: 0, 1, 2, and exhausted (an X2 emitted) |
+| X2 emissions, set-changed refusals, detector-down records | counts |
+| The stop | `reason`: `clear` (no row, or the latest row names neither version in force; `revert_required` false), `rising_ab` (the latest row's `to_config_version` is the package in force; `revert_required` true), `reverted` (its `from_config_version` is the package in force; `revert_required` false), `unreadable` (the read failed; `revert_required` null: never read as clear) and `not_evaluated` (EHMF off or no ehmf block: nothing read; `revert_required` null) |
+
+| Event, logger and severity | Fields |
+|---|---|
+| `tutor.ehmf.record` on `qcai.tutor`, INFO | `mode`, `per_type`, `conflicts`, `disclosed`, `x2`, `cycles`, `detector_down`, `config_version` |
+| `tutor.ehmf.detector_down` on `qcai.tutor`, WARNING | `detector` |
+| `tutor.ehmf.correction_refused` on `qcai.tutor`, WARNING | `cycle`, `reason` (`cycle_limit`, `set_changed`) |
+| `ehmf.stop` on `qcai.ehmf`, WARNING | `from_config_version`, `to_config_version`, `before_claims`, `before_ab`, `after_claims`, `after_ab` |
+| `ehmf.stop_unread` on `qcai.ehmf`, WARNING | none |
+| `ehmf.unavailable` on `qcai.ehmf`, WARNING | `reason` (start-up) |
+| `ehmf.status` and `ehmf.proposals_exported` on `qcai.worker`, INFO | the mode and SLIs; `count` |
+| `ehmf.proposals_export_refused` on `qcai.worker`, WARNING | `reason` |
+| `ehmf.status_refused` on `qcai.worker`, WARNING | `reason` (`no_ehmf_block`: the package in force has no ehmf block, such as v5; the command exits 2, and `status` still logs every `ehmf_stops` row as `stops` when the table is readable) |
+
+The two override keys: `config.override` logs `ehmf_shadow` and `ehmf_on` when either is set outside development.

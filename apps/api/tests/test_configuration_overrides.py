@@ -85,13 +85,17 @@ SETTING_RELAXATIONS = {
     "model_egress_opt_in": {"model_egress_providers": ["openai-embeddings"]},
     # Phase 6: the V3 queue in shadow outside development (it changes no learner path; no reviewer is admitted there).
     "v3_queue_shadow": {"v3_queue": "shadow"},
+    # Phase 7: EHMF in shadow outside development (it changes no learner path; EHMF needs the V2 mode, off there).
+    "ehmf_shadow": {"ehmf": "shadow"},
 }
 PACKAGE_RELAXATIONS = {"config_package_path_overridden": {"is_default_path": False}, "config_package_hash_unverified": {"hash_verified": False}}
 # Phase 4: a relaxation Settings refuse outside development before the Phase 4 exit (V1_PIPELINE=enforce). The alert
 # still names it, should a build ever run with it, so it has its own case (built without validation).
 # Phase 5: MODEL_GATEWAY=on, refused outside development before the Phase 5 exit (and without V1_PIPELINE=enforce).
 # Phase 6: V3_QUEUE=on, refused outside development before the Phase 6 exit.
-REFUSED_RELAXATIONS = {"v1_pipeline_enforce": {"v1_pipeline": "enforce"}, "model_gateway_on": {"model_gateway": "on"}, "v3_queue_on": {"v3_queue": "on"}}
+# Phase 7: EHMF=on, refused outside development before the Phase 7 exit.
+REFUSED_RELAXATIONS = {"v1_pipeline_enforce": {"v1_pipeline": "enforce"}, "model_gateway_on": {"model_gateway": "on"}, "v3_queue_on": {"v3_queue": "on"},
+                       "ehmf_on": {"ehmf": "on"}}
 
 
 def _override_details(monkeypatch, settings: Settings, package=None) -> dict | None:

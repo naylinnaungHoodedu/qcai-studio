@@ -61,6 +61,8 @@ from app.services.tutor_pipeline.contracts import (
     LedgerEntry,
     LedgerEntryV2,
     LedgerEntryV3,
+    LedgerEntryV4,
+    VerificationRecordV4,
     LockedClaimSet,
     PipelineCounts,
     PipelineCountsV2,
@@ -183,6 +185,7 @@ def render_checked(
     over: Callable[[], bool] | None = None,
     post_render: Callable[[RenderAttempt], HookVerdict] | None = None,
     omit: frozenset[str] = frozenset(),
+    subset_check: Callable[[RenderedResponse, LockedClaimSet], Any] | None = None,
 ) -> tuple[RenderedResponse | None, int, str | None]:
     """Plan 3.7: render, subset-check; on an unmapped factual sentence re-render, at most max_regenerations times,
     then abstain. Returns (the passing rendering or None, attempts made, abstention reason or None).
@@ -198,10 +201,14 @@ def render_checked(
     through this module's check_subset, and the hook decides: accept, or reject with a reason, a next presentation
     plan and next omitted claims, or stop. The reason returned is the hook's for the last rejected attempt that was not
     a fault (render_failed when every attempt raised). omit is passed to the renderer only when it is not empty. With
-    neither post_render nor omit the behaviour is Phase 3's exactly."""
+    neither post_render nor omit the behaviour is Phase 3's exactly.
+
+    subset_check (the V1 track under EHMF=on, Phase 7 spec 4.3) replaces the direct check_subset call with a guarded
+    one: a raising subset checker is then DetectorDown("V1.4"), which propagates (the response abstains with
+    ehmf_detector_down) instead of becoming a render fault (Type E render_failed)."""
     if post_render is not None or omit:
         return _render_with_hook(renderer, locked, presentation, max_regenerations=max_regenerations, over=over,
-                                 post_render=post_render, omit=omit)
+                                 post_render=post_render, omit=omit, subset_check=subset_check)
     attempts = 1 + max_regenerations
     faults = 0
     for attempt in range(1, attempts + 1):
@@ -226,7 +233,8 @@ def render_checked(
     return None, attempts, contracts.RENDER_FAILED if faults == attempts else "subset_check_failed"
 
 
-def _render_with_hook(renderer, locked, presentation, *, max_regenerations, over, post_render, omit):
+def _render_with_hook(renderer, locked, presentation, *, max_regenerations, over, post_render, omit, subset_check=None):
+    from app.services.ehmf.detectors import DetectorDown
     from app.services.v1_checks.v1_9_schema_readability import check_v1_9_envelope
 
     attempts = 1 + max_regenerations
@@ -243,8 +251,8 @@ def _render_with_hook(renderer, locked, presentation, *, max_regenerations, over
                 envelope_error = envelope.reason_code
             else:
                 step = "subset_check"
-                subset = check_subset(rendered, locked)
-        except contracts.LockedClaimSetTampered:
+                subset = subset_check(rendered, locked) if subset_check is not None else check_subset(rendered, locked)
+        except (contracts.LockedClaimSetTampered, DetectorDown):
             raise
         except Exception as exc:  # noqa: BLE001 - a fault is a failed attempt, logged and counted apart (spec 18.12 J3)
             fault, rendered, subset = step, None, None
@@ -514,8 +522,13 @@ class TwoPassPipeline:
                            settings=self.settings, clock=self.v2_clock,
                            budget_over=lambda step: self._over(started, budget_ms, step, event="tutor.v2.budget_exceeded"),
                            v3_stop=self._v3_stop)
+        ehmf_mode = "off"
+        if v2_mode != "off":
+            from app.services import ehmf
+
+            ehmf_mode = ehmf.mode(self.settings, self.package, v2_mode=v2_mode)
         track = V1Track(self, checker=self.checker, keyed_items=self.keyed_items, library=self.misconceptions, v2_hook=hook,
-                        clock=self.v1_clock, cache=cache if mode == "enforce" else None)
+                        clock=self.v1_clock, cache=cache if mode == "enforce" else None, ehmf_mode=ehmf_mode)
         # In enforce the V1 track is the record's composition; in shadow it runs after the record's decision.
         event = "tutor.two_pass.budget_exceeded" if mode == "enforce" else "tutor.v1.budget_exceeded"
         return track.run(
@@ -644,7 +657,8 @@ class TwoPassPipeline:
                   presentation: PresentationPlan) -> LedgerEntryV2:
         """A ledger-entry-v2 record (Phase 4 spec 4.13): the v1 fields, ProvenanceV2 naming the V1.3 checker, claims with
         their entailment score (enforce only, from a real checker), the V1 VerificationRecord and PipelineCountsV2. With
-        a V2 verification record (Phase 5) it is a ledger-entry-v3 (_entry_v3)."""
+        a V2 verification record (Phase 5) it is a ledger-entry-v3 (_entry_v3), and with an EHMF record (Phase 7) a
+        ledger-entry-v4 (_entry_v3 with the v4 model)."""
         if isinstance(v1.record, VerificationRecordV2):
             return self._entry_v3(item, decision, reason, bundle, locked, rendered, attempts, proposed, dropped, budget_ms, v1=v1,
                                   presentation=presentation)
@@ -672,7 +686,8 @@ class TwoPassPipeline:
     def _entry_v3(self, item, decision, reason, bundle, locked, rendered, attempts, proposed, dropped, budget_ms, *, v1,
                   presentation: PresentationPlan) -> LedgerEntryV3:
         """A ledger-entry-v3 record (Phase 5 spec 4.16): the v2 fields, ProvenanceV3 filling every plan 7.4 provenance
-        field from the package, and the VerificationRecordV2."""
+        field from the package, and the VerificationRecordV2. With a VerificationRecordV4 (EHMF shadow or on; Phase 7
+        spec 4.6) it is a ledger-entry-v4 with the same provenance and claims, and tutor.ehmf.record is logged."""
         block = v1.record.v2
         base = self._provenance(bundle)
         provenance = ProvenanceV3(**base.model_dump(exclude={"v1_3_checker_model_id", "panel_weights_version", "routing_table_version",
@@ -685,7 +700,11 @@ class TwoPassPipeline:
                                entailment_score=scores.get(claim.claim_id), provenance=provenance)
             for claim in locked.claims
         )
-        return LedgerEntryV3(
+        model = LedgerEntryV3
+        if isinstance(v1.record, VerificationRecordV4):
+            model = LedgerEntryV4
+            _log_ehmf_record(v1.record)
+        return model(
             **self._entry_fields(item, decision, reason, bundle, locked, rendered, attempts, budget_ms, presentation),
             claims=claims,
             provenance=provenance,
@@ -697,3 +716,19 @@ class TwoPassPipeline:
                 render_attempts=attempts,
             ),
         )
+
+
+def _log_ehmf_record(record: VerificationRecordV4) -> None:
+    """tutor.ehmf.record (Phase 7 spec 10.3): counts, rule ids and versions only, never text."""
+    import logging
+    from collections import Counter
+
+    from app.core.structured_logging import FIELDS
+
+    ehmf = record.ehmf
+    per_type = Counter(finding.type for claim in ehmf.claims for finding in claim.findings)
+    per_type.update(finding.type for finding in ehmf.response_findings)
+    logging.getLogger("qcai.tutor").info("EHMF record", extra={FIELDS: {
+        "event": "tutor.ehmf.record", "mode": ehmf.mode, "per_type": dict(sorted(per_type.items())), "conflicts": len(ehmf.conflicts),
+        "disclosed": sum(1 for conflict in ehmf.conflicts if conflict.disclosed), "x2": len(ehmf.x2_emitted), "cycles": len(ehmf.corrections),
+        "detector_down": list(ehmf.detector_down), "config_version": ehmf.config_version}})

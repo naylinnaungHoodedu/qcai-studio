@@ -130,6 +130,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Corpus manifest is invalid: {exc}", file=sys.stderr)
         return 1
     failed = False
+    # Phase 7 (spec 5.4): the Content Owner's optional source metadata is complete per item and well-formed.
+    from app.core.manifest_v2 import source_metadata_problems
+
+    metadata = source_metadata_problems(json.loads(registry.manifest_path.read_text(encoding="utf-8"))) if registry.manifest_path else []
+    if metadata:
+        failed = True
+        print("Source metadata is malformed (Phase 7 spec 5.4):\n" + "\n".join(f"- {problem}" for problem in metadata), file=sys.stderr)
     if args.check_public_assets:
         # The served catalogue is the manifest (Decision P1-D-07, D-31): an empty one is valid and serves nothing.
         problems = review_problems(registry, load_license_register(args.register), [*SOURCE_DOCUMENT_NAMES, *SOURCE_VIDEO_NAMES])

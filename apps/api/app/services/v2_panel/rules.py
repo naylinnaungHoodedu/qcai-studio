@@ -43,7 +43,7 @@ FAMILY_FOLD_RULE = "worst-pair-v1"
 VERIFIER_PROMPT_ID, ALIGNMENT_PROMPT_ID = "blind-claim-span-v1", "alignment-item-v1"
 V2_VERDICTS = ("SUPPORTED", "CONTRADICTED", "NOT_ENOUGH_INFO")
 OBJECTIONS = ("CONTRADICTED", "NOT_ENOUGH_INFO")  # arbitration rule 3: NOT_ENOUGH_INFO counts against a claim
-EHMF_TYPES = ("A", "B", "C", "D", "E")
+from app.services.ehmf.vocabulary import EHMF_TYPES  # noqa: E402 - the one definition (Phase 7 spec 3.1)
 VERIFIER_REQUEST_SCHEMA, ALIGNMENT_REQUEST_SCHEMA = "v2-verdict-request-v1", "v2-alignment-request-v1"
 # Fixed text: it names no model, family, generator, learner or vote (Phase 5 spec 4.7).
 VERIFIER_INSTRUCTIONS = (

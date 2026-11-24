@@ -28,6 +28,12 @@ With the Phase 5 V2 track as its hook (v2_panel.track.V2Track; Phase 5 spec 4.13
             claims (fresh post-render hook), and the alignment item, whose failure is type E and re-renders only (sharing
             the two cycles)
     -> build_record_v2 -> VerificationRecordV2
+The correction loop's only bound is the EHMF correction guard (ehmf.correction.CorrectionGuard, max_cycles from the
+package; Phase 7 spec 4.4): before each cycle the runner asks begin_cycle(cycles + 1), and a third cycle is refused, so
+the claims it would have corrected abstain with X2. With EHMF shadow or on (Phase 7; development only by default) the
+runner also records each cycle's claim and span sets, refuses a re-render that changes either (the response abstains,
+ehmf_set_changed; AC-7-4) and builds a VerificationRecordV4 with the ehmf block (ehmf.record). Under EHMF on each
+detector call is guarded (ehmf.detectors): a detector that raises abstains the response with ehmf_detector_down.
 The generation-1 claim plan is read from and written to the evidential cache (v2_panel.cache) when a V2 track runs in
 enforce; a regeneration and a correction candidate bypass it, and a cached plan whose candidate hard-fails V1.9 or
 V1.1 is evicted. V1 latency is measured without the V2 time.
@@ -158,11 +164,12 @@ class _RenderHook:
             self.last_hard, self.last_failing = True, (invalid,)
             return HookVerdict(accept=False, reason="response_envelope_invalid")
         rendered = attempt.rendered
+        guard = self.track._guard
         checks = (
             make_result("V1.9", "post_render", number, "schema_valid"),
-            v1_4_result(attempt.subset, fault=None, attempt=number),
-            check_v1_6(rendered, self.items, v1=v1, attempt=number),
-            check_v1_9_readability(rendered, v1=v1, attempt=number),
+            guard("V1.4", v1_4_result, attempt.subset, fault=None, attempt=number),
+            guard("V1.6", check_v1_6, rendered, self.items, v1=v1, attempt=number),
+            guard("V1.9", check_v1_9_readability, rendered, v1=v1, attempt=number),
         )
         self.results.extend(checks)
         if all(result.outcome == "pass" for result in checks):
@@ -190,8 +197,11 @@ class _RenderHook:
 
 class V1Track:
     def __init__(self, pipeline: "TwoPassPipeline", *, checker=None, keyed_items=None, library=None, v2_hook=None,
-                 v1: "V1Params | None" = None, clock: Callable[[], float] = time.monotonic, cache: Any = None) -> None:
+                 v1: "V1Params | None" = None, clock: Callable[[], float] = time.monotonic, cache: Any = None,
+                 ehmf_mode: str = "off") -> None:
         self.pipeline = pipeline
+        # Phase 7: "off" (Phase 6 exactly), "shadow" (typed v4 record and the set check) or "on" (also the detector guard).
+        self.ehmf_mode = ehmf_mode if getattr(getattr(pipeline, "package", None), "ehmf", None) is not None else "off"
         self.v1 = v1 if v1 is not None else pipeline.v1_params
         if self.v1 is None:
             raise ValueError("the configuration package has no v1 block (package v3 is required)")
@@ -248,6 +258,27 @@ class V1Track:
         registry = self.pipeline.store.span_registry
         return {span_id: record.text for span_id in locked.span_ids if (record := registry.get(span_id)) is not None}
 
+    def _guard(self, detector: str, fn, *args, **kwargs):
+        """Under EHMF=on, a detector call that raises becomes DetectorDown(detector) (Phase 7 spec 4.3); else the call."""
+        if self.ehmf_mode != "on":
+            return fn(*args, **kwargs)
+        from app.services.ehmf.detectors import guarded
+
+        return guarded(detector, fn, *args, **kwargs)
+
+    def _subset_check(self, rendered, locked):
+        """The post-render subset check (V1.4's detector), guarded under EHMF=on (Phase 7 spec 4.3): a raise is then
+        DetectorDown("V1.4"), never a render fault. Read from the pipeline module at call time."""
+        from app.services.tutor_pipeline import pipeline as pipeline_module
+
+        return self._guard("V1.4", pipeline_module.check_subset, rendered, locked)
+
+    def _check_library(self) -> None:
+        if self.ehmf_mode == "on" and (self.library is None or getattr(self.library, "available", True) is False):
+            from app.services.ehmf.detectors import DetectorDown
+
+            raise DetectorDown("V1.8")
+
     # ---------------------------------------------------------------------------------------------------- run
 
     def run(
@@ -293,7 +324,7 @@ class V1Track:
         v1 = self.v1
         pipeline = self.pipeline
         results = state.results
-        sufficiency = check_v1_5(bundle.sufficiency, x4_margin=v1.x4_margin[bundle.sufficiency.gate])
+        sufficiency = self._guard("V1.5", check_v1_5, bundle.sufficiency, x4_margin=v1.x4_margin[bundle.sufficiency.gate])
         results.append(sufficiency)
         if sufficiency.outcome == "abstain":
             return V1Abstained(results=tuple(results), generation_attempts=0, render_attempts=0, abstention_reason=bundle.sufficiency.reason)
@@ -307,6 +338,7 @@ class V1Track:
             if generation > 1 and budget_over("generate"):
                 return V1Abstained(results=tuple(results), generation_attempts=generation - 1, render_attempts=0, abstention_reason="budget_exceeded")
             state.reset_candidate()
+            state.attempt = generation
             cache_key, cached = self._cached_plan(envelope) if generation == 1 and first_raw is _UNSET and regenerate else (None, None)
             raw = first_raw if generation == 1 and first_raw is not _UNSET else (cached if cached is not None else self._propose(envelope))
             schema, plan = check_v1_9_plan(raw, generator_ref=pipeline.generator.ref, attempt=generation)
@@ -330,7 +362,7 @@ class V1Track:
                 # As in Phase 3: bind never runs, so the claims are counted as skipped, never as binding failures.
                 state.proposed, state.unbound = len(plan.claims), Counter({BUDGET_SKIPPED: len(plan.claims)})
                 return V1Abstained(results=tuple(results), generation_attempts=generation, render_attempts=0, abstention_reason="budget_exceeded")
-            resolution = check_v1_1(plan, bundle, resolver=pipeline.resolver, attempt=generation)
+            resolution = self._guard("V1.1", check_v1_1, plan, bundle, resolver=pipeline.resolver, attempt=generation)
             results.append(resolution)
             if resolution.outcome == "hard_fail":
                 if cache_key is not None:
@@ -342,8 +374,8 @@ class V1Track:
                 state.proposed, state.unbound = len(plan.claims), Counter({UNRESOLVABLE_CANDIDATE: len(plan.claims)})
                 return V1HardFail(results=tuple(results), failing=(resolution,), generation_attempts=generation, render_attempts=0,
                                   abstention_reason="unresolvable_citation")
-            binding = check_v1_2(plan, bundle, resolver=pipeline.resolver, store=pipeline.store, registry=pipeline.registry,
-                                 params=pipeline.params, v1=v1, stopwords=stopwords, attempt=generation)
+            binding = self._guard("V1.2", check_v1_2, plan, bundle, resolver=pipeline.resolver, store=pipeline.store, registry=pipeline.registry,
+                                  params=pipeline.params, v1=v1, stopwords=stopwords, attempt=generation)
             results.extend(binding.results)
             state.binding, state.proposed = binding, len(plan.claims)
             if not binding.drafts:
@@ -351,16 +383,17 @@ class V1Track:
             state.locked = self._lock(binding.drafts, bundle, ctx, has_plan=True)
             if budget_over("bind"):
                 return V1Abstained(results=tuple(results), generation_attempts=generation, render_attempts=0, abstention_reason="budget_exceeded")
-            entailment = check_v1_3(state.locked, self._span_texts(state.locked), checker=self.checker, v1=v1, attempt=generation,
-                                    clock=self.clock, scores=state.scores)
+            entailment = self._guard("V1.3", check_v1_3, state.locked, self._span_texts(state.locked), checker=self.checker, v1=v1,
+                                     attempt=generation, clock=self.clock, scores=state.scores)
             results.extend(entailment)
             if any(result.outcome == "abstain" for result in entailment):
                 return V1Abstained(results=tuple(results), generation_attempts=generation, render_attempts=0,
                                    abstention_reason="checker_unavailable")
-            conflict, state.disclosure = check_v1_7(state.locked, bundle, sentences_of=self._sentences_of, v1=v1, stopwords=stopwords,
-                                                    attempt=generation)
+            conflict, state.disclosure = self._guard("V1.7", check_v1_7, state.locked, bundle, sentences_of=self._sentences_of, v1=v1,
+                                                     stopwords=stopwords, attempt=generation)
             results.append(conflict)
-            results.extend(check_v1_8(state.locked, self.library, attempt=generation))
+            self._check_library()
+            results.extend(self._guard("V1.8", check_v1_8, state.locked, self.library, attempt=generation))
             break
         state.pre_render, state.generation = tuple(results), generation
         return self._render(ctx, state, generation, budget_over, stopwords)
@@ -393,7 +426,7 @@ class V1Track:
         start_presentation = presentation or ctx.presentation
         rendered, attempts, reason = render_checked(
             self.pipeline.renderer, locked, start_presentation, max_regenerations=v1.max_render_regenerations,
-            over=lambda: budget_over("render"), post_render=hook, omit=omit,
+            over=lambda: budget_over("render"), post_render=hook, omit=omit, subset_check=self._subset_check,
         )
         results.extend(hook.results)
         if rendered is not None:
@@ -415,63 +448,43 @@ class V1Track:
 
     def _run_v2(self, ctx, bundle, envelope, *, envelope_reason, first_raw, budget_over, mode, phase3_decision) -> V1Run:
         """The run with the Phase 5 V2 track as its hook (Phase 5 spec 4.13, 4.14)."""
+        from app.services.ehmf.correction import CorrectionGuard, CorrectionLimit
+        from app.services.ehmf.detectors import DetectorDown
         from app.services.tutor_pipeline.contracts import V2Correction
-        from app.services.v2_panel.aggregate import build_record_v2
+        from app.services.v2_panel.aggregate import _record_fields_v2
         from app.services.v2_panel.metrics import V2_METRICS
-        from app.services.v2_panel.rules import MAX_CORRECTION_CYCLES
         from app.services.v2_panel.voting import presentation_only
 
         track = self.v2_hook
         started = time.perf_counter()
         state = _RunState(empty=self._lock((), bundle, ctx, has_plan=False))
-        decision = self._decide(ctx, bundle, envelope, envelope_reason, first_raw, budget_over, state)
         outcome, cycles, corrections, exhausted = None, 0, [], frozenset()
+        ehmf = _EhmfRun(self, guard=CorrectionGuard(max_cycles=self._max_cycles()))
+        ehmf.state = state
         held: set[str] = set()
-        while True:
-            track.cycle = cycles
-            outcome = v2_outcome(track, decision)
-            if outcome is None or outcome.mode == "shadow":
-                break
-            failing = outcome.failing()
-            # The X1 sticky hold (Phase 6 spec 4.13): a critical tier-1 claim that failed in any cycle stays pending
-            # while its outcome is a pass, so a later tally that passes (its objector left the panel) never delivers it.
-            held |= {claim_id for claim_id in failing if outcome.claims[claim_id].critical and outcome.claims[claim_id].tier == 1}
-            pending = frozenset(failing) | frozenset(claim_id for claim_id in held
-                                                    if claim_id in outcome.claims and outcome.claims[claim_id].outcome == "pass")
-            if not pending:
-                break
-            if cycles == MAX_CORRECTION_CYCLES:
-                exhausted = pending
-                break
-            cycles += 1
-            correction_started = time.perf_counter()
-            # Plan 5.8 "Type E re-renders only": a claim whose objections are all type E (presentation) is never revised;
-            # a held claim is never revised either (it is re-verified unchanged).
-            presentation = frozenset(claim_id for claim_id in failing if claim_id not in held and presentation_only(outcome.objection_types(claim_id)))
-            content = tuple(claim_id for claim_id in failing if claim_id not in presentation and claim_id not in held)
-            plan, revised = self._correction_plan(decision, content, outcome) if content else (None, [])
-            corrections.append(V2Correction(cycle=cycles, kind="revise" if content or pending & held else "re_render",
-                                            failed_claim_ids=tuple(sorted(pending)), revised_claim_ids=tuple(sorted(revised))))
-            if revised:
-                # A new candidate, judged by every V1 check from the start with fresh state (Phase 4 R-d); a hard fail
-                # or an abstention ends the loop with no further V2 call. Its rendering re-renders the type E claims too.
-                state = _RunState(empty=self._lock((), bundle, ctx, has_plan=False))
-                decision = self._decide(ctx, bundle, envelope, None, plan, budget_over, state, regenerate=False)
-            elif presentation:
-                # The same candidate rendered again (Socratic, a fresh post-render hook); a V1 failure of the rendering
-                # ends the loop with no further V2 call.
-                socratic = PresentationPlan(plan_id=self.v1.socratic_plan, source=ctx.presentation.source)
-                decision = self._render(ctx, state, state.generation, budget_over, self.pipeline.package.retrieval.stopwords, presentation=socratic)
-            V2_METRICS.correction((time.perf_counter() - correction_started) * MS_PER_S)
         alignment, alignment_failed, alignment_missing = None, False, False
-        if isinstance(decision, V1Passed) and outcome is not None and outcome.mode == "on":
-            decision, alignment, cycles, alignment_failed, alignment_missing = self._final_rendering(
-                ctx, state, decision, outcome, exhausted, cycles, corrections, budget_over)
+        try:
+            decision = self._decide(ctx, bundle, envelope, envelope_reason, first_raw, budget_over, state)
+            decision, outcome, cycles, exhausted, alignment, alignment_failed, alignment_missing = self._v2_loop(
+                ctx, bundle, envelope, budget_over, state, decision, corrections, held, ehmf, V2Correction, V2_METRICS, presentation_only,
+                CorrectionLimit)
+        except DetectorDown as down:
+            state = ehmf.state
+            ehmf.detector_down = (down.detector,)
+            outcome = None
+            decision = V1Abstained(results=tuple(state.results), generation_attempts=state.attempt, render_attempts=0,
+                                   abstention_reason="ehmf_detector_down")
+            LOGGER.warning("An EHMF detector is down: the response abstains", extra={FIELDS: {
+                "event": "tutor.ehmf.detector_down", "detector": down.detector}})
+            cycles = len(corrections)
+            ehmf.pad(corrections, state.locked)
+        state = ehmf.state
         passed = isinstance(decision, V1Passed)
-        record = build_record_v2(decision, mode=mode, policy=self.policy(), locked=state.locked, disclosure=state.disclosure,
-                                 phase3_decision=phase3_decision, legacy_decision=ctx.legacy_decision, track=track,
-                                 outcome=outcome if passed else None, cycles=cycles, corrections=tuple(corrections), exhausted=exhausted,
-                                 alignment=alignment, alignment_failed=alignment_failed, alignment_missing=alignment_missing)
+        fields = _record_fields_v2(decision, mode=mode, policy=self.policy(), locked=state.locked, disclosure=state.disclosure,
+                                   phase3_decision=phase3_decision, legacy_decision=ctx.legacy_decision, track=track,
+                                   outcome=outcome if passed else None, cycles=cycles, corrections=tuple(corrections), exhausted=exhausted,
+                                   alignment=alignment, alignment_failed=alignment_failed, alignment_missing=alignment_missing)
+        record = ehmf.build(fields)
         latency_ms = max((time.perf_counter() - started) * MS_PER_S - track.latency_ms, 0.0)
         self._observe(record, latency_ms, bundle, state.locked)
         track.finish(record, passed=passed)
@@ -489,6 +502,69 @@ class V1Track:
             scores=dict(state.scores),
             v2=outcome if passed else None,
         )
+
+    def _max_cycles(self) -> int:
+        """The correction bound: the package's ehmf.max_cycles (v2.correction.max_cycles) from v6, else Phase 5's."""
+        from app.services.v2_panel.rules import MAX_CORRECTION_CYCLES
+
+        params = getattr(self.pipeline.package, "ehmf", None)
+        return params.max_cycles if params is not None else MAX_CORRECTION_CYCLES
+
+    def _v2_loop(self, ctx, bundle, envelope, budget_over, state, decision, corrections, held, ehmf, V2Correction, V2_METRICS,
+                 presentation_only, CorrectionLimit):
+        track = self.v2_hook
+        outcome, cycles, exhausted = None, 0, frozenset()
+        while True:
+            track.cycle = cycles
+            outcome = self._guard("V2", v2_outcome, track, decision)
+            if outcome is None or outcome.mode == "shadow":
+                break
+            failing = outcome.failing()
+            # The X1 sticky hold (Phase 6 spec 4.13): a critical tier-1 claim that failed in any cycle stays pending
+            # while its outcome is a pass, so a later tally that passes (its objector left the panel) never delivers it.
+            held |= {claim_id for claim_id in failing if outcome.claims[claim_id].critical and outcome.claims[claim_id].tier == 1}
+            pending = frozenset(failing) | frozenset(claim_id for claim_id in held
+                                                    if claim_id in outcome.claims and outcome.claims[claim_id].outcome == "pass")
+            if not pending:
+                break
+            try:
+                ehmf.guard.begin_cycle(cycles + 1)
+            except CorrectionLimit:
+                ehmf.refused_cycle(cycles + 1)
+                exhausted = pending
+                break
+            cycles += 1
+            correction_started = time.perf_counter()
+            # Plan 5.8 "Type E re-renders only": a claim whose objections are all type E (presentation) is never revised;
+            # a held claim is never revised either (it is re-verified unchanged).
+            presentation = frozenset(claim_id for claim_id in failing if claim_id not in held and presentation_only(outcome.objection_types(claim_id)))
+            content = tuple(claim_id for claim_id in failing if claim_id not in presentation and claim_id not in held)
+            plan, revised = self._correction_plan(decision, content, outcome) if content else (None, [])
+            corrections.append(V2Correction(cycle=cycles, kind="revise" if content or pending & held else "re_render",
+                                            failed_claim_ids=tuple(sorted(pending)), revised_claim_ids=tuple(sorted(revised))))
+            before = decision
+            if revised:
+                # A new candidate, judged by every V1 check from the start with fresh state (Phase 4 R-d); a hard fail
+                # or an abstention ends the loop with no further V2 call. Its rendering re-renders the type E claims too.
+                state = _RunState(empty=self._lock((), bundle, ctx, has_plan=False))
+                ehmf.state = state
+                decision = self._decide(ctx, bundle, envelope, None, plan, budget_over, state, regenerate=False)
+            elif presentation:
+                # The same candidate rendered again (Socratic, a fresh post-render hook); a V1 failure of the rendering
+                # ends the loop with no further V2 call.
+                socratic = PresentationPlan(plan_id=self.v1.socratic_plan, source=ctx.presentation.source)
+                decision = self._render(ctx, state, state.generation, budget_over, self.pipeline.package.retrieval.stopwords, presentation=socratic)
+            decision = ehmf.cycle(cycles, corrections[-1].kind, before, decision, outcome, pending)
+            V2_METRICS.correction((time.perf_counter() - correction_started) * MS_PER_S)
+            if ehmf.set_changed:
+                return decision, None, cycles, exhausted, None, False, False
+        alignment, alignment_failed, alignment_missing = None, False, False
+        if isinstance(decision, V1Passed) and outcome is not None and outcome.mode == "on":
+            decision, alignment, cycles, alignment_failed, alignment_missing = self._final_rendering(
+                ctx, state, decision, outcome, exhausted, cycles, corrections, budget_over, ehmf=ehmf)
+            if ehmf.set_changed:
+                alignment = None
+        return decision, outcome, cycles, exhausted, alignment, alignment_failed, alignment_missing
 
     def _correction_plan(self, decision: V1Passed, failing, outcome) -> tuple[ClaimPlan, list[str]]:
         """The next candidate's claim plan: each failing claim given here (those with an objection of a type other than
@@ -512,14 +588,18 @@ class V1Track:
             claims.append(ProposedClaim(text=text, span_ids=claim.span_ids))
         return ClaimPlan(generator=generator.ref, claims=tuple(claims)), revised
 
-    def _final_rendering(self, ctx, state, decision: V1Passed, outcome, exhausted, cycles: int, corrections: list, budget_over):
+    def _final_rendering(self, ctx, state, decision: V1Passed, outcome, exhausted, cycles: int, corrections: list, budget_over, *,
+                         ehmf: "_EhmfRun | None" = None):
         """Mode on: render the deliverable claims once more when they differ from what V1's accepted rendering shows
         (not a correction cycle), then the alignment item on it; a Type E failure re-renders only (Socratic, the same
         omissions), sharing the cycles. Returns (decision, alignment, cycles, alignment_failed, alignment_missing)."""
+        from app.services.ehmf.correction import CorrectionGuard, CorrectionLimit
         from app.services.tutor_pipeline.contracts import V2Correction
         from app.services.v1_checks.v1_6_keyed_answers import assessment_items as items_for
         from app.services.v2_panel.aggregate import v1_excluded
-        from app.services.v2_panel.rules import MAX_CORRECTION_CYCLES
+
+        if ehmf is None:
+            ehmf = _EhmfRun(self, guard=CorrectionGuard(max_cycles=self._max_cycles()))
 
         track = self.v2_hook
         stopwords = self.pipeline.package.retrieval.stopwords
@@ -539,18 +619,23 @@ class V1Track:
                 return rendered, None, cycles, False, False
             decision = rendered
         while True:
-            alignment = track.align(decision.rendered, decision.locked)
+            alignment = self._guard("alignment", track.align, decision.rendered, decision.locked)
             if alignment is None:
                 return decision, None, cycles, False, True
             if alignment.outcome == "pass":
                 return decision, alignment, cycles, False, False
-            if cycles == MAX_CORRECTION_CYCLES:
+            try:
+                ehmf.guard.begin_cycle(cycles + 1)
+            except CorrectionLimit:
+                ehmf.refused_cycle(cycles + 1)
                 return decision, alignment, cycles, True, False
             cycles += 1
             corrections.append(V2Correction(cycle=cycles, kind="re_render", failed_claim_ids=tuple(sorted(shown(decision.rendered)))))
             socratic = PresentationPlan(plan_id=self.v1.socratic_plan, source=ctx.presentation.source)
+            before = decision
             rendered = self._render(ctx, state, state.generation, budget_over, stopwords, presentation=socratic, omit_extra=omit_extra)
-            if not isinstance(rendered, V1Passed):
+            rendered = ehmf.cycle(cycles, "re_render", before, rendered, None, (), types=("E",))
+            if ehmf.set_changed or not isinstance(rendered, V1Passed):
                 return rendered, None, cycles, False, False
             decision = rendered
 
@@ -612,6 +697,8 @@ class _RunState:
     # The accepted candidate's pre-render results and generation attempt, which every rendering of it starts from.
     pre_render: tuple | None = None
     generation: int = 0
+    # The generation attempt in progress (an EHMF detector-down abstention names it).
+    attempt: int = 0
 
     def __post_init__(self) -> None:
         self.locked = self.empty
@@ -620,3 +707,114 @@ class _RunState:
         """A regeneration is a new candidate: nothing of the previous one is carried over."""
         self.plan, self.binding, self.proposed, self.unbound, self.locked, self.disclosure = None, None, 0, Counter(), self.empty, None
         self.scores.clear()
+
+
+class _EhmfRun:
+    """The EHMF state of one V2 run (Phase 7 spec 4.4, 4.6): the correction guard, each cycle's record (its claim and
+    span sets before and after, its finding types), the set check and the detector state. With EHMF off it only holds
+    the guard (the loop's bound) and the record is the Phase 5/6 VerificationRecordV2."""
+
+    def __init__(self, track: "V1Track", *, guard: Any) -> None:
+        self.track = track
+        self.guard = guard
+        self.mode = track.ehmf_mode
+        self.corrections: list = []
+        self.detector_down: tuple[str, ...] = ()
+        self.set_changed = False
+        self.state: Any = None
+
+    def refused_cycle(self, cycle: int) -> None:
+        if self.mode != "off":
+            LOGGER.warning("A correction cycle beyond the bound was refused", extra={FIELDS: {
+                "event": "tutor.ehmf.correction_refused", "cycle": cycle, "reason": "cycle_limit"}})
+
+    def pad(self, corrections: list, locked: Any) -> None:
+        """A detector that went down inside a cycle ended it: that cycle is recorded as ended (no set after)."""
+        if self.mode == "off":
+            return
+        from app.services.ehmf.correction import claim_set_sha256, span_set_sha256
+        from app.services.tutor_pipeline.contracts import EhmfCorrection
+
+        while len(self.corrections) < len(corrections):
+            cycle = corrections[len(self.corrections)]
+            self.corrections.append(EhmfCorrection(cycle=cycle.cycle, kind=cycle.kind, types=(), claim_set_before=claim_set_sha256(locked),
+                                                   span_set_before=span_set_sha256(locked), outcome="ended"))
+
+    def cycle(self, number: int, kind: str, before: Any, after: Any, outcome: Any, pending, *, types: tuple[str, ...] | None = None) -> Any:
+        """Record one cycle; under EHMF shadow or on refuse a re-render that changed the claim or span set (AC-7-4): the
+        decision becomes the response abstention ehmf_set_changed. Returns the decision to continue with."""
+        if self.mode == "off":
+            return after
+        from app.services.ehmf.correction import claim_set_sha256, span_set_sha256
+        from app.services.tutor_pipeline.contracts import EhmfCorrection
+
+        if types is None:
+            types = _objection_finding_types(outcome, pending)
+        locked_before = before.locked
+        passed = isinstance(after, V1Passed)
+        after_claims = claim_set_sha256(after.locked) if passed else None
+        after_spans = span_set_sha256(after.locked) if passed else None
+        outcome_name = "applied" if passed else "ended"
+        if passed and kind == "re_render" and not self.guard.check_re_render(locked_before, after.locked):
+            outcome_name = "refused_set_changed"
+        self.corrections.append(EhmfCorrection(cycle=number, kind=kind, types=tuple(sorted(set(types))),
+                                               claim_set_before=claim_set_sha256(locked_before), claim_set_after=after_claims,
+                                               span_set_before=span_set_sha256(locked_before), span_set_after=after_spans,
+                                               outcome=outcome_name))
+        if outcome_name != "refused_set_changed":
+            return after
+        self.set_changed = True
+        LOGGER.warning("A re-render changed the claim or span set: the response abstains", extra={FIELDS: {
+            "event": "tutor.ehmf.correction_refused", "cycle": number, "reason": "set_changed"}})
+        return V1Abstained(results=tuple(before.results), generation_attempts=before.generation_attempts,
+                           render_attempts=before.render_attempts, abstention_reason="ehmf_set_changed")
+
+    def build(self, fields: dict) -> Any:
+        from app.services.tutor_pipeline.contracts import VerificationRecordV2
+
+        if self.mode == "off":
+            return VerificationRecordV2(**fields)
+        from app.services.ehmf.record import build_record_v4
+
+        track = self.track
+        pipeline = track.pipeline
+        absent = ("V1.3",) if getattr(track.checker, "checker_model_id", None) == "none" else ()
+        down = self.detector_down
+        if not down and any(result.check_id == "V1.3" and result.reason_code == "checker_unavailable" for result in fields["checks"]):
+            down = ("V1.3",)
+        library = track.library
+        record = build_record_v4(fields, mode=self.mode, package=pipeline.package, manifest=_manifest_of(pipeline),
+                                 corrections=tuple(self.corrections), detector_down=down, detector_absent=absent,
+                                 library=library)
+        return record
+
+
+def _objection_finding_types(outcome: Any, pending) -> tuple[str, ...]:
+    """The finding types of the pending claims' objecting family verdicts in a V2 outcome (CONTRADICTED A, else B2)."""
+    from app.services.v2_panel.voting import family_verdict
+
+    types = set()
+    claims = getattr(outcome, "claims", {}) or {}
+    for claim_id in pending:
+        verdict = claims.get(claim_id)
+        if verdict is None:
+            continue
+        by_family: dict[str, list] = {}
+        for vote in sorted(verdict.votes, key=lambda item: (item.family, item.span_id)):
+            by_family.setdefault(vote.family, []).append((vote.verdict, vote.ehmf_type))
+        for family in by_family:
+            folded, _reported = family_verdict(by_family[family])
+            if folded == "CONTRADICTED":
+                types.add("A")
+            elif folded == "NOT_ENOUGH_INFO":
+                types.add("B2")
+    return tuple(sorted(types))
+
+
+def _manifest_of(pipeline: Any) -> Any:
+    from app.services.ehmf.conflicts import manifest_items
+
+    override = getattr(pipeline, "ehmf_manifest", None)
+    if override is not None:
+        return override
+    return manifest_items(getattr(getattr(pipeline, "registry", None), "manifest_path", None))
