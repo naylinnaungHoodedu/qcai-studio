@@ -190,3 +190,10 @@ def require_durable_learner(request: Request, user: AuthUser = Depends(get_curre
         _record_denial(request, user, "role:admin|learner")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Learner role is required.")
     return user
+
+
+def require_verified_principal(user: AuthUser = Depends(get_current_user)) -> AuthUser:
+    """Require an authenticated account or signed guest credential for privacy operations."""
+    if user.provider not in {"local", "auth0", "guest"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="A verified session is required.")
+    return user

@@ -64,6 +64,17 @@ def test_freeze_phase8_requires_d27_even_after_exit(monkeypatch):
         Settings(_env_file=None, environment="production", learner_planner="shadow")
 
 
+def test_freeze_phase8_privacy_requires_d27_even_after_exit(monkeypatch):
+    fake = SimpleNamespace(raw={
+        "flag_policy": {"phase8_exit_passed": True},
+        "owner_decisions": {"D-27": {"state": "open", "ratified": False}},
+    }, is_default_path=True, hash_verified=True)
+    monkeypatch.setattr(config_package, "get_config_package", lambda settings: fake)
+    assert Settings(_env_file=None, environment="production").learner_privacy == "off"
+    with pytest.raises(ValidationError, match="LEARNER_PRIVACY.*D-27"):
+        Settings(_env_file=None, environment="production", learner_privacy="on")
+
+
 def test_phase8_package_v7_preserves_v6_contracts_and_hash_chain():
     from app.services.ehmf.vocabulary import EHMF_FIRST_MAJOR
     from app.services.learner_record_sync import ASSESSMENT_LIMIT, ASSESSMENT_WINDOW, MAX_ISSUED_REPLICAS
@@ -97,11 +108,8 @@ def test_phase8_package_v7_preserves_v6_contracts_and_hash_chain():
         "completion_threshold": COMPLETION_THRESHOLD,
     }
     assert after["learner"]["planner"]["shadow_budget_ms"] == PLANNER_BUDGET_MS
-    from app.services.retention import SECURITY_EVENT_RETENTION_DAYS
-
     for name, block in learner_engineering_policy().items():
         assert after["learner"][name] == block
-    assert after["learner"]["privacy"]["audit_retention_days"] == SECURITY_EVENT_RETENTION_DAYS
     source = Path(__file__).resolve().parents[3] / "apps/frontend/src/lib/learner-record-sync.ts"
     match = re.search(r"^const CLIENT_CAS_RETRIES = (\d+);", source.read_text(encoding="utf-8"), re.M)
     assert match and int(match[1]) == CLIENT_CAS_RETRIES
@@ -127,7 +135,7 @@ def test_phase8_schema_seven_still_enforces_ehmf_checks():
 
 @pytest.mark.parametrize(("section", "field", "value"), [
     ("assessment", "attempt_limit", 15), ("planner", "bands", [0.2, 0.8]),
-    ("sync", "client_retries", 3), ("privacy", "guard_retention_days", 100),
+    ("sync", "client_retries", 3), ("privacy", "guard_retention_days", 100), ("privacy", "audit_retention_days", 30),
 ])
 def test_phase8_package_refuses_rehashed_engineering_drift(tmp_path, section, field, value):
     source = config_package.DEFAULT_PACKAGE_PATH
@@ -141,7 +149,7 @@ def test_phase8_package_refuses_rehashed_engineering_drift(tmp_path, section, fi
         config_package.load_config_package(target, governed=True)
 
 
-@pytest.mark.parametrize("case", ["invalid-exit", "missing-evidence", "default-drift", "open-consent-grant"])
+@pytest.mark.parametrize("case", ["invalid-exit", "missing-evidence", "default-drift", "open-consent-grant", "exit-with-open-d27"])
 def test_phase8_package_refuses_inconsistent_release_policy(case):
     from app.core.phase8_settings import check_phase8_package
 
@@ -152,7 +160,11 @@ def test_phase8_package_refuses_inconsistent_release_policy(case):
         raw["flag_policy"]["phase8_exit_passed"] = True
     elif case == "default-drift":
         raw["flag_policy"]["learner_privacy"]["default_elsewhere"] = "on"
+    elif case == "exit-with-open-d27":
+        assert raw["owner_decisions"]["D-27"]["state"] == "open"
+        raw["flag_policy"].update(phase8_exit_passed=True, phase8_exit_evidence="synthetic exit evidence")
     else:
         raw["learner"]["consent_classes"]["adaptation"]["elsewhere"] = "granted"
-    with pytest.raises(config_package.ConfigPackageError, match="Phase 8"):
+    reason = "Phase 8 exit with D-27 open" if case == "exit-with-open-d27" else "Phase 8"
+    with pytest.raises(config_package.ConfigPackageError, match=reason):
         check_phase8_package(raw)

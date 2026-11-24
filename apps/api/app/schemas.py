@@ -704,6 +704,10 @@ class AuthActionRead(BaseModel):
     status: str
 
 
+class LocalAccountDeleteRead(AuthActionRead):
+    receipt: dict | None = None
+
+
 class GuestUpgradeRequest(BaseModel):
     legacy_guest_id: str = Field(max_length=80)
     legacy_csrf: str = Field(max_length=160)

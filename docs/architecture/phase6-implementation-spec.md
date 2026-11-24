@@ -113,7 +113,7 @@ Sections 0-17 describe the behaviour the code has. They are authoritative and ar
 - `erasure.user_keyed_tables()` finds tables with a `USER_KEY_COLUMNS` column (`user_id`, `reviewer_user_id`, `player_id`, `opponent_id`, `guest_id`).
 - `test_every_identity_like_column_is_a_registered_user_key` refuses any column matching `(user|player|guest|author|opponent|reviewer|learner|account)[a-z_]*_id$` that is not registered. A `reviewer_digest` column passes it.
 - `_seed_everything` seeds one row per covered table, skipping integer primary keys. It needs every foreign key to point at another covered table, so `v3_claims` has no foreign key and a single integer primary key.
-- `erase_stale_guest_rows` applies only to tables with `created_at`.
+- With `LEARNER_PRIVACY=off`, `erase_stale_guest_rows` applies the Phase 6 guest-prefix rule to tables with `created_at`. With `LEARNER_PRIVACY=on`, Phase 8 recognizes bound guests and uses the class age column under PD-205. `learner_consents` ages guest rows by `updated_at`.
 
 **M8. Wilson.**
 - `evaluation/qcai_eval/statistics.wilson_interval` (z = 1.959963984540054) is not in the API image, which copies `apps/api/app` only.

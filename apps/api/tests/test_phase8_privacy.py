@@ -174,20 +174,21 @@ def test_phase8_erasure_refuses_an_in_flight_subject_rebind(privacy_engine):
         assert "learner_records" in receipt["zero_counts"]
 
 
-@pytest.mark.parametrize("legacy_delete", [False, True], ids=["sync-off-self-service", "first-write-legacy-delete"])
-def test_phase8_erasure_serializes_with_unguarded_and_first_writers(privacy_engine, monkeypatch, legacy_delete):
+@pytest.mark.parametrize(("legacy_delete", "privacy"), [(False, "on"), (True, "on"), (True, "off")],
+                         ids=["sync-off-self-service", "first-write-legacy-delete", "first-write-privacy-off"])
+def test_phase8_erasure_serializes_with_unguarded_and_first_writers(privacy_engine, monkeypatch, legacy_delete, privacy):
     from app.core.config import get_settings
     from app.db_models import QuizAttempt, UserAccount
     from app.schemas import LearnerRecordOperationInput
     from app.services.learner_record import apply_learner_record_operations
-    from app.services import learner_record_identity
+    from app.services import learner_record_identity, learner_record_privacy
     from app.services.learner_record_lock import has_write_guard
     from app.services.learner_record_sync import begin_server_assessment
     from app.services.local_accounts import delete_local_account, hash_password
 
     settings = get_settings()
     monkeypatch.setattr(settings, "learner_identity", "off")
-    monkeypatch.setattr(settings, "learner_privacy", "on")
+    monkeypatch.setattr(settings, "learner_privacy", privacy)
     monkeypatch.setattr(settings, "learner_sync", "on" if legacy_delete else "off")
     owner, password = f"acct-{uuid4().hex}", uuid4().hex
     attempted, finished = Event(), Event()
@@ -199,6 +200,7 @@ def test_phase8_erasure_serializes_with_unguarded_and_first_writers(privacy_engi
 
     if legacy_delete:
         monkeypatch.setattr(learner_record_identity, "mark_erased_subjects", mark)
+        monkeypatch.setattr(learner_record_privacy, "mark_erased_subjects", mark)
 
     def erase():
         with Session(privacy_engine) as db:
@@ -279,7 +281,9 @@ def test_phase8_erasure_receipt_scope_matches_the_principal_type(privacy_engine,
         assert owner not in json.dumps(receipt) and subject not in json.dumps(receipt)
         expected = "account retained at issuer (DI-306)" if provider == "auth0" else "no external identity provider"
         assert receipt["scope"]["identity_provider"] == expected
-        assert "365 days" in receipt["scope"]["audit_retention"]
+        for name in ("audit_retention", "credential_protection"):
+            assert "365 days" in receipt["scope"][name]
+            assert "every privacy mode" in receipt["scope"][name]
         assert "unverified" in receipt["scope"]["external_processing"]
         gateways = [adapter.adapter_id for adapter in package.gateway.registries["development"]] if package.gateway else []
         assert receipt["gateway_registry"] == gateways
@@ -326,9 +330,25 @@ def test_plan_j_retention_deletes_by_retention_class_after_the_configured_period
         assert upgrade_legacy_guest(db, settings, stale_guest, uuid4().hex) is None
 
 
-def test_plan_f_linking_and_erasure_audits_expire_after_the_security_retention_period(privacy_engine):
+@pytest.mark.parametrize(("privacy", "sync", "policy_days"), [
+    ("on", "on", 365), ("off", "on", 365), ("off", "off", 365), ("off", "on", 30),
+], ids=["privacy-on", "sync-only", "rolled-back", "package-horizon"])
+def test_plan_f_linking_and_erasure_audits_expire_after_the_security_retention_period(
+    privacy_engine, monkeypatch, privacy, sync, policy_days,
+):
+    from app.core import phase8_settings
+    from app.core.config import get_settings
     from app.db_models import LearnerClaimAudit
-    from app.services.retention import SECURITY_EVENT_RETENTION_DAYS, run_retention_cleanup
+    from app.services.retention import run_retention_cleanup
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "learner_privacy", privacy)
+    monkeypatch.setattr(settings, "learner_sync", sync)
+    monkeypatch.setattr(settings, "learner_identity", "off")
+    monkeypatch.setattr(settings, "learner_planner", "off")
+    monkeypatch.setattr(phase8_settings, "AUDIT_RETENTION_DAYS", policy_days)
+    days = phase8_settings.learner_engineering_policy()["privacy"]["audit_retention_days"]
+    assert days == policy_days
 
     now = datetime.now(UTC)
     for model, fields in [
@@ -338,21 +358,27 @@ def test_plan_f_linking_and_erasure_audits_expire_after_the_security_retention_p
         with Session(privacy_engine, autoflush=False) as db:
             stale, fresh = uuid4().hex, uuid4().hex
             db.add_all([
-                model(id=stale, created_at=now - timedelta(days=SECURITY_EVENT_RETENTION_DAYS + 1), **fields),
-                model(id=fresh, created_at=now - timedelta(days=SECURITY_EVENT_RETENTION_DAYS - 1), **fields),
+                model(id=stale, created_at=now - timedelta(days=days + 1), **fields),
+                model(id=fresh, created_at=now - timedelta(days=days - 1), **fields),
             ])
             db.commit()
             run_retention_cleanup(db, now=now)
             assert db.get(model, stale) is None and db.get(model, fresh) is not None
 
 
-def test_plan_f_write_guards_expire_by_their_retention_rule(privacy_engine, monkeypatch):
+@pytest.mark.parametrize(("privacy", "sync"), [("on", "on"), ("off", "on"), ("off", "off")],
+                         ids=["privacy-on", "sync-only", "rolled-back"])
+def test_plan_f_write_guards_expire_by_their_retention_rule(privacy_engine, monkeypatch, privacy, sync):
     from app.core.config import get_settings
     from app.db_models import LearnerWriteGuard
     from app.services.learner_record_lock import GUARD_RETENTION_DAYS
     from app.services.retention import run_retention_cleanup
 
-    monkeypatch.setattr(get_settings(), "learner_privacy", "on")
+    settings = get_settings()
+    monkeypatch.setattr(settings, "learner_privacy", privacy)
+    monkeypatch.setattr(settings, "learner_sync", sync)
+    monkeypatch.setattr(settings, "learner_identity", "off")
+    monkeypatch.setattr(settings, "learner_planner", "off")
     now = datetime.now(UTC)
     with Session(privacy_engine) as db:
         for erased in (False, True):

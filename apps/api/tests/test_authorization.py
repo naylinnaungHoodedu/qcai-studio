@@ -30,6 +30,7 @@ ALLOWED_KINDS = {
     authz.PUBLIC: set(KINDS),
     authz.SERVICE: set(KINDS),
     authz.PRINCIPAL: set(KINDS) - {"anonymous"},
+    authz.VERIFIED_PRINCIPAL: {"guest", "local_learner"},
     authz.ASSET_READER: {"guest", "local_learner", "demo_learner", "demo_admin"},
     authz.DURABLE_LEARNER: {"local_learner"},
     authz.STAFF: {"demo_instructor", "demo_admin"},
@@ -77,6 +78,8 @@ def _actual_access(route) -> str:
     assert not role_sets, f"{route.path}: unrecognised role set {role_sets}"
     if "require_durable_learner" in names:
         return authz.DURABLE_LEARNER
+    if "require_verified_principal" in names:
+        return authz.VERIFIED_PRINCIPAL
     if "_require_asset_access" in names:
         return authz.ASSET_READER
     if "get_current_user" in names:
@@ -204,7 +207,10 @@ def test_a_refused_caller_is_refused(method, path, kind, local_learner, monkeypa
 
 def test_there_are_negatives_for_every_restricted_access_level():
     levels = {authz.ROUTE_POLICIES[(method, path)].access for method, path, _ in DENIED}
-    assert levels == {authz.PRINCIPAL, authz.ASSET_READER, authz.DURABLE_LEARNER, authz.STAFF, authz.ADMIN, authz.REVIEWER}
+    assert levels == {
+        authz.PRINCIPAL, authz.VERIFIED_PRINCIPAL, authz.ASSET_READER, authz.DURABLE_LEARNER,
+        authz.STAFF, authz.ADMIN, authz.REVIEWER,
+    }
 
 
 def test_a_role_denial_is_a_security_event(monkeypatch):
@@ -380,7 +386,8 @@ def test_peer_review_refuses_the_owner_and_answers_missing_and_retracted_alike()
 CALLER_READS = [
     path
     for (method, path), policy in POLICED
-    if method == "GET" and policy.ownership == authz.CALLER and policy.access in {authz.PRINCIPAL, authz.DURABLE_LEARNER}
+    if method == "GET" and policy.ownership == authz.CALLER
+    and policy.access in {authz.PRINCIPAL, authz.DURABLE_LEARNER, authz.VERIFIED_PRINCIPAL}
 ]
 # Reads where the owner's own response must show the marker, so the check above is not vacuous.
 MARKER_EXPECTED = {

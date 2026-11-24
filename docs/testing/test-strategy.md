@@ -287,7 +287,7 @@ Phase 8 uses synthetic principals, local databases, and public engineering fixtu
 | AC-8-2 | `test_phase8_sync_duplicate_receipts_and_monotonic_clock`, `test_phase8_sync_rejects_other_subjects_and_server_operations` |
 | AC-8-3 | `test_ac_8_3_three_mastery_levels_yield_identical_claim_set_cited_spans_and_decision` |
 | AC-8-4 | `test_ac_8_4_no_evidential_or_verifier_module_imports_a_phase8_module`, `test_ac_8_4_evidential_prompts_and_the_abstention_configuration_hold_zero_learner_state_fields`, `test_ac_8_4_a_learner_value_in_an_evidential_payload_is_detected` |
-| AC-8-5 | `test_plan_f_the_committed_erasure_proof_matches_a_fresh_run`, `test_phase8_export_and_erasure_cover_bound_subject_and_legacy_rows`, `test_phase8_claimed_guest_and_account_erasure_leave_no_keyed_rows`, `test_phase8_erasure_refuses_an_in_flight_subject_rebind`, `test_phase8_erasure_serializes_with_unguarded_and_first_writers`, `test_phase8_a_principal_erased_and_signing_in_again_gets_a_fresh_empty_record` |
+| AC-8-5 | `test_ac_8_5_every_erasure_route_writes_a_verified_receipt`, `test_ac_8_5_erasure_rolls_back_when_a_surviving_row_fails_verification`, `test_plan_f_the_committed_erasure_proof_matches_a_fresh_run`, `test_phase8_export_and_erasure_cover_bound_subject_and_legacy_rows`, `test_phase8_claimed_guest_and_account_erasure_leave_no_keyed_rows`, `test_phase8_erasure_refuses_an_in_flight_subject_rebind`, `test_phase8_erasure_serializes_with_unguarded_and_first_writers`, `test_phase8_a_principal_erased_and_signing_in_again_gets_a_fresh_empty_record` |
 | AC-8-6 | `test_a_client_sent_score_is_ignored`, `test_durable_mastery_follows_the_server_score`, `test_phase8_sync_rejects_other_subjects_and_server_operations`, `test_phase8_privacy_http_consent_export_erasure_and_assessment` |
 | AC-8-7 | `test_ac_8_7_the_privacy_inventory_equals_the_cookies_and_storage_keys_in_code` |
 
@@ -302,7 +302,7 @@ Phase 8 uses synthetic principals, local databases, and public engineering fixtu
 | `test_phase8_privacy.py` | Scoped export and verified erasure cover both the authenticated principal and learner subject while preserving the control subject. |
 | `test_phase8_evidence.py` | The public-fixture replay checks invariance and import isolation, and the synthetic erasure proof verifies record coverage. |
 | `test_phase8_docs.py` | The implementation spec, decision register, shared-file rules, and acceptance strategy stay synchronized with the code. |
-| `test_phase8_routes.py` | The HTTP contract covers flag rollback and first bind, claim origin and proof, isolated export, password refusal, erasure with receipts, and the gated analytics and assessment writes. |
+| `test_phase8_routes.py` | Both erasure routes return verified receipts and roll back on verification failures. The privacy-off response is byte-identical, and the boundary refuses unverified demo identities. |
 | `apps/frontend/tests/phase8-learner-sync.integration.test.ts` | The browser confirms the stored unused replica, advances against the server clock, and retries the same operations once if the version advanced. |
 
 ### Phase 8 changes to existing test modules
@@ -310,19 +310,21 @@ Phase 8 uses synthetic principals, local databases, and public engineering fixtu
 | File | Reason and preserved intent |
 |---|---|
 | `test_api.py` | The progress-aggregation test temporarily switches off the synthetic consent gate to preserve its existing analytics aggregation assertion. |
-| `test_authorization.py` | The fixture obtains an issued replica and records analytics consent, preserving refusal and cross-caller coverage for the active routes. |
+| `test_authorization.py` | The matrix recognizes verified privacy principals. Denied demo roles and the existing owner-marker assertions exercise the export scope. |
 | `test_cs595_increment.py` | The durable-session regression uses the issued-replica and expected-version contract while keeping the existing completion and access assertions. |
-| `test_erasure_retention.py` | Metadata fixtures seed assessment references and distinguish stable bindings and credential retention from the guest study age rule. |
-| `test_malformed_input.py` | Both flag modes exercise invalid values, including the historical backend-specific nonfinite behavior and the guarded uniform rejection. |
+| `test_erasure_retention.py` | Metadata fixtures seed assessment references and distinguish stable bindings and credential retention from guest study age. The inherited local deletion fixture exercises the same legacy exemptions with privacy off. |
+| `test_malformed_input.py` | Both flag modes exercise invalid values. `test_non_finite_preference_follows_the_flagged_backend_contract` renamed and replaced `test_a_non_finite_preference_is_refused_on_postgres_and_never_a_500`, retaining PostgreSQL refusal and a non-500 result. |
 | `apps/frontend/tests/privacy-inventory.integration.test.ts` | The two inventory assertions explicitly identify AC-8-7 and continue to compare exactly the discovered keys and cookie names. |
 | `test_config_package.py` | Exercises v6 and v7 under the new loader ceiling while preserving the v4 and v5 structural checks and Phase 7's schema comparisons. |
 | `test_ehmf_units.py` | Verifies the original Phase 7 EHMF constants against explicit v6 and checks the newer schema ceiling independently. |
 | `test_configuration_overrides.py` | Adds one case for each Phase 8 override key and preserves the production-default check. |
 | `test_phase3_acceptance.py` | Traverses the Phase 8 migration before earlier downgrades. Readiness retains the original Phase 3 SQL assertion. |
 | `test_phase4_acceptance.py` | Repoints the shipped-version and loader-tuple pins while preserving the fixture, schema, and code-text checks. |
-| `test_phase5_acceptance.py` | The protected file matches the Phase 7 baseline, including the original gateway-stop documentation assertion. |
 | `test_phase6_acceptance.py` | Preserves the V3 read and downgrade behavior while testing the shipped package and the successor revision. |
 | `test_phase7_acceptance.py` | Reads the original v6 package explicitly, checks the Phase 7 migration guard beneath the Phase 8 head, and exercises a same-version rewrite with the predecessor history preserved. |
 | `test_response_ledger_migrations.py` | Verifies absolute upgrade and downgrade targets across the Phase 8 head while retaining the existing ledger refusal checks. |
+| `test_structured_logging.py` | Pins the legacy privacy-off branch for the existing fake-clock case, which measures erasure and commit outside password confirmation. |
+
+The protected Phase 5 suite still matches the Phase 7 baseline.
 
 **Exit gate.** `phase8_exit_passed` stays false. See DI-300 for the main CI, owner decisions, and production evidence.

@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app.core import phase8_settings
 from app.core.config import get_settings
 from app.db_models import (
     GuestLegacyUpgrade, LearnerClaimAudit, LearnerErasureAudit, LearnerGuestRevocation, LearnerWriteGuard,
@@ -10,7 +11,7 @@ from app.db_models import (
 )
 from app.services.erasure import erase_stale_guest_rows
 from app.services.guest_sessions import guest_credential_digest
-from app.services.learner_record_lock import GUARD_RETENTION_DAYS, insert_for
+from app.services.learner_record_lock import insert_for
 
 
 PUBLIC_WEB_VITAL_RETENTION_DAYS = 30
@@ -76,14 +77,14 @@ def run_retention_cleanup(db: Session, now: datetime | None = None) -> dict[str,
             record("guest_legacy_upgrades", db.execute(delete(GuestLegacyUpgrade).where(
                 GuestLegacyUpgrade.upgraded_at < cutoff,
             )).rowcount)
-    if privacy_on:
-        audit_cutoff = now - timedelta(days=SECURITY_EVENT_RETENTION_DAYS)
-        for model in (LearnerClaimAudit, LearnerErasureAudit):
-            record(model.__tablename__, db.execute(delete(model).where(model.created_at < audit_cutoff)).rowcount)
-        guard_cutoff = now - timedelta(days=GUARD_RETENTION_DAYS)
-        record("learner_write_guards", db.execute(delete(LearnerWriteGuard).where(
-            LearnerWriteGuard.last_used_at < guard_cutoff,
-        )).rowcount)
+    # Earlier audits and guards remain subject to retention after a feature rollback.
+    audit_cutoff = now - timedelta(days=phase8_settings.AUDIT_RETENTION_DAYS)
+    for model in (LearnerClaimAudit, LearnerErasureAudit):
+        record(model.__tablename__, db.execute(delete(model).where(model.created_at < audit_cutoff)).rowcount)
+    guard_cutoff = now - timedelta(days=phase8_settings.GUARD_RETENTION_DAYS)
+    record("learner_write_guards", db.execute(delete(LearnerWriteGuard).where(
+        LearnerWriteGuard.last_used_at < guard_cutoff,
+    )).rowcount)
     record(
         "public_web_vitals",
         db.execute(

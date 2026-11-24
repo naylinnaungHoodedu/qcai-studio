@@ -84,6 +84,7 @@ def check_phase8_package(raw: Mapping) -> None:
     decision = raw["owner_decisions"].get("D-27")
     require(isinstance(decision, Mapping), "D-27 owner decision")
     if decision.get("state") == "open":
+        require(not exit_passed, "exit with D-27 open (DI-300)")
         require(
             decision.get("ratified") is False and learner.get("consent_version") == "d27-unresolved-v1"
             and classes == {
@@ -129,3 +130,7 @@ def _require_shipped_phase8_exit(settings: "Settings", active: Mapping[str, str]
         )
     if not (package.is_default_path and package.hash_verified):
         raise ValueError(f"{names} outside development needs the shipped, hash-verified configuration package. Use off.")
+    if active.get("learner_privacy") == "on":
+        decision = package.raw.get("owner_decisions", {}).get("D-27", {})
+        if not isinstance(decision, Mapping) or decision.get("state") in (None, "open"):
+            raise ValueError("LEARNER_PRIVACY requires approved consent policy outside development (D-27). Use off.")

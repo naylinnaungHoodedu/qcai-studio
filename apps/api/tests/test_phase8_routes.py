@@ -16,9 +16,10 @@ from app.core.db import SessionLocal
 from app.core.guest_tokens import GUEST_TOKEN_COOKIE, guest_csrf_for, issue_guest_token
 from app.db_models import (
     AnalyticsEvent, GuestLegacyUpgrade, GuestRevocation, LearnerAssessmentFact, LearnerErasureAudit, LearnerRecord,
-    LearnerRecordOperation, QuizAttempt, SecurityEvent, SupportRequest,
+    LearnerRecordOperation, Note, QuizAttempt, SecurityEvent, SupportRequest,
 )
 from app.main import app
+from app.services.erasure import user_keyed_tables
 from app.services.guest_sessions import upgrade_legacy_guest
 from app.services.learner_record_identity import bind_subject
 from app.services.store import get_course_store
@@ -228,15 +229,73 @@ def test_phase8_privacy_http_consent_export_erasure_and_assessment(monkeypatch):
         assert not independently_remaining(db, (principal, subject))
 
 
-def test_phase8_legacy_delete_account_erases_the_bound_subject():
+@pytest.mark.parametrize(("method", "path"), [("POST", "/auth/learner-erasure"), ("DELETE", "/auth/account")])
+def test_ac_8_5_every_erasure_route_writes_a_verified_receipt(monkeypatch, method, path):
+    monkeypatch.setattr(get_settings(), "learner_privacy", "on")
+    browser, headers, principal, _ = account()
+    with SessionLocal() as db:
+        subject = bind_subject(db, "local", principal)
+        db.add(Note(user_id=subject, lesson_slug=LESSON, body="Synthetic bound note"))
+        db.commit()
+        before = db.scalar(select(func.count()).select_from(LearnerErasureAudit))
+        assert "user_accounts" in independently_remaining(db, (principal,))
+        assert "notes" in independently_remaining(db, (subject,))
+    response = browser.request(method, path, headers=headers, json={"password": PASSWORD})
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "no-store"
+    assert "qcai_session_token" not in browser.cookies
+    body = response.json()
+    if method == "DELETE":
+        assert body["status"] == "deleted"
+        receipt = body["receipt"]
+    else:
+        receipt = body
+    zero_counts = receipt["zero_counts"]
+    assert {table.name for table in user_keyed_tables()} <= set(zero_counts)
+    assert all(count == 0 for count in zero_counts.values())
+    with SessionLocal() as db:
+        assert not independently_remaining(db, (principal, subject))
+        assert db.scalar(select(func.count()).select_from(LearnerErasureAudit)) == before + 1
+        audit = db.get(LearnerErasureAudit, receipt["id"])
+        assert audit.receipt_digest == canonical_sha256(receipt)
+        assert audit.table_set_digest == canonical_sha256(sorted(zero_counts)) and audit.deleted_total > 0
+
+
+@pytest.mark.parametrize(("method", "path"), [("POST", "/auth/learner-erasure"), ("DELETE", "/auth/account")])
+def test_ac_8_5_erasure_rolls_back_when_a_surviving_row_fails_verification(monkeypatch, method, path):
+    from app.services import learner_record_privacy
+
+    monkeypatch.setattr(get_settings(), "learner_privacy", "on")
     browser, headers, principal, _ = account()
     with SessionLocal() as db:
         subject = bind_subject(db, "local", principal)
         db.commit()
+        before = db.scalar(select(func.count()).select_from(LearnerErasureAudit))
+    erase = learner_record_privacy.erase_user
+
+    def leave_bound_rows(db, identifier):
+        return {} if identifier == subject else erase(db, identifier)
+
+    monkeypatch.setattr(learner_record_privacy, "erase_user", leave_bound_rows)
+    with pytest.raises(RuntimeError, match="Erasure verification failed"):
+        browser.request(method, path, headers=headers, json={"password": PASSWORD})
+    with SessionLocal() as db:
+        assert "user_accounts" in independently_remaining(db, (principal,))
+        assert "learner_records" in independently_remaining(db, (subject,))
+        assert db.scalar(select(func.count()).select_from(LearnerErasureAudit)) == before
+
+
+def test_freeze_phase8_privacy_off_account_deletion_keeps_the_original_response(monkeypatch):
+    monkeypatch.setattr(get_settings(), "learner_privacy", "off")
+    browser, headers, principal, _ = account()
+    with SessionLocal() as db:
+        before = db.scalar(select(func.count()).select_from(LearnerErasureAudit))
     response = browser.request("DELETE", "/auth/account", headers=headers, json={"password": PASSWORD})
     assert response.status_code == 200, response.text
+    assert response.content == b'{"status":"deleted"}'
     with SessionLocal() as db:
-        assert not independently_remaining(db, (principal, subject))
+        assert not independently_remaining(db, (principal,))
+        assert db.scalar(select(func.count()).select_from(LearnerErasureAudit)) == before
 
 
 @pytest.mark.parametrize("identity", ["on", "off"])
@@ -277,28 +336,34 @@ def test_phase8_a_principal_erased_and_signing_in_again_gets_a_fresh_empty_recor
             assert not independently_remaining(db, (previous,))
 
 
-def test_phase8_shared_demo_fallback_cannot_erase():
+@pytest.mark.parametrize("headers", [{}, {"x-demo-user": "demo-learner"}], ids=["fallback", "explicit"])
+def test_phase8_shared_demo_cannot_export_or_erase(headers):
     browser = TestClient(app)
-    assert browser.post("/auth/learner-erasure", headers={"origin": ORIGIN}, json={}).status_code == 403
-    assert browser.post("/auth/learner-erasure", headers={
-        "origin": ORIGIN, "x-demo-user": "demo-learner",
-    }, json={}).status_code == 403
+    assert browser.get("/auth/learner-export", headers=headers).status_code == 403
+    assert browser.post("/auth/learner-erasure", headers={**headers, "origin": ORIGIN}, json={}).status_code == 403
 
 
-def test_phase8_an_explicit_demo_principal_can_resume_after_erasure():
-    principal = f"fixture-{uuid4().hex}"
-    headers = {"x-demo-user": principal, "origin": ORIGIN}
-    first = TestClient(app)
-    assert quiz(first, headers).status_code == 200
-    assert first.post("/auth/learner-erasure", headers=headers, json={}).status_code == 200
+def test_phase8_a_demo_header_cannot_export_or_erase_another_principal():
+    signed_in, _, principal, _ = account()
+    guest = f"guest-{uuid4()}"
+    signed_guest = TestClient(app)
+    signed_guest.cookies.set(GUEST_TOKEN_COOKIE, issue_guest_token(get_settings().guest_token_secret, guest, int(time.time())))
     with SessionLocal() as db:
-        assert not independently_remaining(db, (principal,))
-
-    returning = TestClient(app)
-    assert quiz(returning, headers).status_code == 200
-    consent = returning.put("/auth/learner-consent", headers=headers, json={"consent_class": "analytics", "granted": True})
-    assert consent.status_code == 200 and consent.json()["consent"]["analytics"]
-    assert returning.post("/analytics/events", headers=headers, json={"event_type": "fixture"}).status_code == 200
+        subject = bind_subject(db, "local", principal)
+        db.add(Note(user_id=guest, lesson_slug=LESSON, body="Synthetic guest notes"))
+        db.commit()
+        targets = (principal, guest, subject)
+        before = {identifier: independently_remaining(db, (identifier,)) for identifier in targets}
+        assert all(before.values())
+    visitor = TestClient(app)
+    for identifier in (*targets, f"demo-{uuid4().hex}"):
+        headers = {"x-demo-user": identifier, "origin": ORIGIN}
+        assert visitor.get("/auth/learner-export", headers=headers).status_code == 403
+        assert visitor.post("/auth/learner-erasure", headers=headers, json={}).status_code == 403
+    with SessionLocal() as db:
+        assert {identifier: independently_remaining(db, (identifier,)) for identifier in targets} == before
+    assert signed_in.get("/auth/learner-export").status_code == 200
+    assert signed_guest.get("/auth/learner-export").status_code == 200
 
 
 def test_phase8_erasure_confirmation_is_limited_and_audits_duration(monkeypatch):

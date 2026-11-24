@@ -274,6 +274,8 @@ The settings of this runbook: `EHMF`, `CONFIG_PACKAGE_PATH`.
 
 The shipped package is v7. Package v6 stays readable for one release (DI-317). Package v7 preserves the Phase 7 EHMF block, and the golden-set gate records v7 after the v6 history entry. `LEARNER_SYNC`, `LEARNER_IDENTITY`, `LEARNER_PRIVACY`, and `LEARNER_PLANNER` default to off outside development. `phase8_exit_passed` is false, and the package rejects pre-exit activation. Plan L: "Flags for planner and sync. Stop: any harness violation blocks adaptation (never evidence)."
 
+A failing CI harness exits with status 3. An explicit operator harness run with `--stop-sqlite` records the shared planner stop. The runtime stop trigger for learner state in an evidential prompt is assigned to the main track under DI-319.
+
 The Alembic head is `20261123_phase8_learner` on `20261123_phase7_ehmf`. The optional migration job proceeds from the verified Phase 7 stamp with `alembic upgrade 20261123_phase8_learner`. Start-up can create the same additive tables. Validate the schema and use the versioned package and evidence checks in the Phase 8 spec before any owner-approved release.
 
 Roll back the image by digest and keep the Phase 8 tables intact. The unused-schema downgrade to `20261123_phase7_ehmf` refuses when Phase 8 data or protection markers exist. A subsequent Phase 7 downgrade retains its separate `allow_ehmf_drop` guard. Clear the shared planner stop only as an explicit operator action after investigation. Keep D-27, DI-300 and the production freeze in force until their release evidence is filed.

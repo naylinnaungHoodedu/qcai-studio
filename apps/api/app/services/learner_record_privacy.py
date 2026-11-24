@@ -10,6 +10,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app.core import phase8_settings
 from app.core.config import Settings
 from app.core.config_package import canonical_sha256, get_config_package
 from app.db_models import Base, GuestRevocation, LearnerConsent, LearnerConsentChange, LearnerErasureAudit, LearnerGuestRevocation
@@ -96,6 +97,14 @@ def _finite_json(value):
 
 
 def erase_subject(db: Session, provider: str, identifier: str, settings: Settings) -> dict:
+    receipt, _ = erase_subject_with_counts(db, provider, identifier, settings)
+    return receipt
+
+
+def erase_subject_with_counts(
+    db: Session, provider: str, identifier: str, settings: Settings,
+) -> tuple[dict, dict[str, int]]:
+    """Verify the deletion and flush its audit alongside the deleted rows. The caller commits."""
     identifiers = mark_erased_subjects(db, provider, identifier)
     verification = erasure_verification_conditions(db, identifiers)
     if provider == "guest":
@@ -103,7 +112,10 @@ def erase_subject(db: Session, provider: str, identifier: str, settings: Setting
                    .on_conflict_do_nothing(index_elements=["credential_digest"]))
         db.execute(delete(GuestRevocation).where(GuestRevocation.guest_id == identifier))
 
-    deleted_total = sum(sum(erase_user(db, subject).values()) for subject in identifiers)
+    deleted = {}
+    for subject in identifiers:
+        for table, count in erase_user(db, subject).items():
+            deleted[table] = deleted.get(table, 0) + count
     zero_counts = {}
     for name, condition in verification.items():
         count = db.scalar(select(func.count()).select_from(Base.metadata.tables[name]).where(condition))
@@ -129,15 +141,20 @@ def erase_subject(db: Session, provider: str, identifier: str, settings: Setting
             "evidential_cache": "holds no learner data",
             "external_processing": "historical egress unverified; external processors are outside this erasure",
             "identity_provider": "account retained at issuer (DI-306)" if provider == "auth0" else "no external identity provider",
-            "audit_retention": "linking and erasure digests and counts are retained for 365 days",
-            "credential_protection": "guest revocation is retained. Write guards prevent stale writes and expire after inactivity",
+            "audit_retention": (
+                f"linking and erasure digests and counts expire after {phase8_settings.AUDIT_RETENTION_DAYS} days in every privacy mode"
+            ),
+            "credential_protection": (
+                f"guest revocation is retained. Write guards expire after {phase8_settings.GUARD_RETENTION_DAYS} days of inactivity "
+                "in every privacy mode"
+            ),
             "backups": "deleted rows may remain through the backup window",
             "support_requests": "independently submitted records follow their 540-day support retention rule (P2-12-D-05)",
         },
     }
     db.add(LearnerErasureAudit(
         id=receipt["id"], receipt_digest=canonical_sha256(receipt), table_set_digest=table_digest,
-        deleted_total=deleted_total,
+        deleted_total=sum(deleted.values()),
     ))
     db.flush()
-    return receipt
+    return receipt, deleted

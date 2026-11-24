@@ -4,9 +4,9 @@ PD-200 uses consent version `d27-unresolved-v1` while D-27 remains open. The thr
 
 The consent row uses `user_id` and `consent_class` as its key and records `consent_version`, `granted`, `updated_at`, and `source`. Consent changes append an erasable history row. Guest consent does not become account consent when a record is claimed.
 
-The retention register covers every user-keyed table. Durable records stay until erasure unless a specific expiry applies. With `LEARNER_PRIVACY=on`, the job recognizes bound guests by provider. Guest consent ages from its update time, and guest legacy-upgrade records expire after 365 days while a digest protects the one-shot rule. Sessions use explicit expiry. Bindings remain until erasure. Identifier-free linking and erasure audit rows expire after 365 days with privacy enabled. Support contacts retain their separate 540-day rule under P2-12-D-05.
+The retention register covers every user-keyed table. Durable records stay until erasure unless a specific expiry applies. With `LEARNER_PRIVACY=on`, the job recognizes bound guests by provider. Guest consent ages from its update time, and guest legacy-upgrade records expire after 365 days while a digest protects the one-shot rule. Sessions use explicit expiry. Bindings remain until erasure. Identifier-free linking and erasure audit rows expire after 365 days in every privacy mode. Support contacts retain their separate 540-day rule under P2-12-D-05.
 
-The digest-keyed `learner_write_guards` table holds active guards and erasure epochs. With privacy cleanup enabled, rows in either state expire after 365 days without a guarded write or erasure, measured by `last_used_at`. Earlier request observations also expire after 365 days. The guest credential tombstone remains a separate control.
+The digest-keyed `learner_write_guards` table holds active guards and erasure epochs. In every privacy mode, rows in either state expire after 365 days without a guarded write or erasure, measured by `last_used_at`. Earlier request observations also expire after 365 days. The guest credential tombstone remains a separate control.
 
 | Table | Retention class |
 |---|---|

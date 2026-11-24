@@ -144,6 +144,7 @@ class AccountErasure:
     rows: dict[str, int]
     # The erasure-time SLI (plan Phase 1, item I): the erase and its commit, not the password check.
     duration_ms: int
+    receipt: dict | None = None
 
 
 def delete_local_account(db: Session, user_id: str, password: str) -> AccountErasure:
@@ -158,15 +159,22 @@ def delete_local_account(db: Session, user_id: str, password: str) -> AccountEra
     from app.core.config import get_settings
     from app.services.learner_record_lock import has_write_guard, phase8_writes_enabled
 
-    subject = find_subject(db, "local", user_id)
-    identifiers = (
-        mark_erased_subjects(db, "local", user_id)
-        if phase8_writes_enabled(get_settings()) or subject or has_write_guard(db, user_id)
-        else (user_id,)
-    )
-    counts = {}
-    for identifier in identifiers:
-        for table, count in erase_user(db, identifier).items():
-            counts[table] = counts.get(table, 0) + count
+    settings = get_settings()
+    receipt = None
+    if settings.learner_privacy == "on":
+        from app.services.learner_record_privacy import erase_subject_with_counts
+
+        receipt, counts = erase_subject_with_counts(db, "local", user_id, settings)
+    else:
+        subject = find_subject(db, "local", user_id)
+        identifiers = (
+            mark_erased_subjects(db, "local", user_id)
+            if phase8_writes_enabled(settings) or subject or has_write_guard(db, user_id)
+            else (user_id,)
+        )
+        counts = {}
+        for identifier in identifiers:
+            for table, count in erase_user(db, identifier).items():
+                counts[table] = counts.get(table, 0) + count
     db.commit()
-    return AccountErasure(rows=counts, duration_ms=round((time.monotonic() - started) * 1000))
+    return AccountErasure(rows=counts, duration_ms=round((time.monotonic() - started) * 1000), receipt=receipt)

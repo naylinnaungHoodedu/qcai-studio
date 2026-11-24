@@ -4,7 +4,7 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.core.auth import AuthUser, get_current_user, learner_write_observation, require_durable_learner
+from app.core.auth import AuthUser, get_current_user, learner_write_observation, require_durable_learner, require_verified_principal
 from app.core.config import Settings, get_settings
 from app.core.db import get_db
 from app.core.rate_limit import limiter
@@ -15,6 +15,7 @@ from app.schemas import (
     AuthSessionRead,
     GuestUpgradeRead,
     GuestUpgradeRequest,
+    LocalAccountDeleteRead,
     LocalAccountDeleteRequest,
     LocalAccountLoginRequest,
     LocalAccountRegisterRequest,
@@ -37,8 +38,8 @@ from app.services.local_accounts import (
 )
 from app.services.guest_sessions import upgrade_legacy_guest
 from app.services.learner_record_identity import claim_guest
-from app.services.learner_record_privacy import CONSENT_VERSION, erase_subject, iter_export, read_consent, set_consent
-from app.db_models import LearnerErasureAudit, UserAccount
+from app.services.learner_record_privacy import CONSENT_VERSION, erase_subject_with_counts, iter_export, read_consent, set_consent
+from app.db_models import UserAccount
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -68,7 +69,7 @@ def put_learner_consent(
 
 @router.get("/learner-export", dependencies=[Depends(require_privacy_enabled)])
 def get_learner_export(
-    request: Request, user: AuthUser = Depends(get_current_user), db: Session = Depends(get_db),
+    request: Request, user: AuthUser = Depends(require_verified_principal), db: Session = Depends(get_db),
 ):
     record_security_event(
         "learner.export", "success", connection=request, actor_role=user.role, subject=user.user_id,
@@ -83,12 +84,10 @@ def get_learner_export(
 @limiter.limit(lambda: get_settings().auth_login_rate_limit)
 def post_learner_erasure(
     request: Request, payload: LearnerPrivacyErasureRequest, response: Response,
-    user: AuthUser = Depends(get_current_user), db: Session = Depends(get_db),
+    user: AuthUser = Depends(require_verified_principal), db: Session = Depends(get_db),
 ):
     settings = get_settings()
     validate_request_origin(request, settings)
-    if user.provider == "demo" and (user.user_id == "demo-learner" or not request.headers.get("x-demo-user", "").strip()):
-        raise HTTPException(403, "The shared demo record cannot be erased.")
     if user.provider == "local":
         account = db.get(UserAccount, user.user_id)
         if account is None or not payload.password or not verify_password(payload.password, account.password_hash):
@@ -97,11 +96,10 @@ def post_learner_erasure(
                                   subject=user.user_id, details={"status": 401})
             raise HTTPException(401, "Password confirmation failed.")
     started = monotonic()
-    receipt = erase_subject(db, user.provider, user.user_id, settings)
-    deleted_total = db.get(LearnerErasureAudit, receipt["id"]).deleted_total
+    receipt, counts = erase_subject_with_counts(db, user.provider, user.user_id, settings)
     db.commit()
     record_security_event("learner.erasure", "success", connection=request, actor_role=user.role,
-                          subject=user.user_id, details={"rows": deleted_total, "duration_ms": round((monotonic() - started) * 1000)})
+                          subject=user.user_id, details={"rows": sum(counts.values()), "duration_ms": round((monotonic() - started) * 1000)})
     _clear_auth_cookies(response)
     response.delete_cookie(GUEST_TOKEN_COOKIE, path="/")
     response.headers["Cache-Control"] = "no-store"
@@ -281,7 +279,7 @@ def logout_account(
     return AuthActionRead(status="signed_out")
 
 
-@router.delete("/account", response_model=AuthActionRead)
+@router.delete("/account", response_model=LocalAccountDeleteRead, response_model_exclude_none=True)
 def delete_account(
     request: Request,
     payload: LocalAccountDeleteRequest,
@@ -318,7 +316,9 @@ def delete_account(
         subject=user.user_id,
         details={"duration_ms": erasure.duration_ms, "rows": sum(erasure.rows.values())},
     )
-    return AuthActionRead(status="deleted")
+    if erasure.receipt is not None:
+        response.headers["Cache-Control"] = "no-store"
+    return LocalAccountDeleteRead(status="deleted", receipt=erasure.receipt)
 
 
 @router.post("/guest-upgrade", response_model=GuestUpgradeRead)
