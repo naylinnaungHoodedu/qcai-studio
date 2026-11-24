@@ -21,6 +21,16 @@ jobs:
       # --check-recall-stop: plan Phase 2 L, spec conflict 29 (no approved document under the p1-floor gate).
       - run: python scripts/validate_corpus.py --check-public-assets --check-recall-stop
       - run: python scripts/validate_lqs.py --allow-draft
+      # Phase 10 (evaluation and research harness): synthetic inputs only; no ULQS item, gold label or licensed text
+      # enters CI (plan 12.7, R-25, R-26). Exit 3 invalid items or a known answer missed; 6 a pin; 7 arm parity.
+      - run: python scripts/validate_ulqs.py --items evaluation/fixtures/synthetic_ulqs_v1.jsonl --catalog evaluation/fixtures/synthetic_evidence_catalog_v1.jsonl
+      - run: python scripts/check_research_harness.py --check
+      # AC-10-3: the stub run reproduces the committed synthetic run record byte for byte (exit 1 drift, 6 a pin, 7 parity).
+      - run: python scripts/run_evaluation.py --check docs/evaluation/phase10/synthetic_run_record_v1.json --spec docs/evaluation/phase10/synthetic_run_spec_v1.json
+      # AC-10-4 (synthetic half): zero synthetic-fingerprint matches in the tracked tree; the self-test proves a planted
+      # sentinel is found. Real fingerprints run only in the research plane (DI-141).
+      - run: python scripts/scan_research_logs.py --synthetic-fixture evaluation/fixtures/contamination_synthetic_v1.json --repo --require-zero --report "$RUNNER_TEMP/research-log-scan.json"
+      - run: python scripts/scan_research_logs.py --synthetic-fixture evaluation/fixtures/contamination_synthetic_v1.json --self-test
       # Phase 2 (corpus, span identity, retrieval integrity). The checkout has no LFS content, so video hashes are
       # checked through their LFS pointer oids, which are the content sha256 (AC-2-6).
       - run: python scripts/config_package.py --check

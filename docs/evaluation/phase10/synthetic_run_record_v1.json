@@ -1,0 +1,964 @@
+{
+ "bootstrap": {
+  "clusters": "items",
+  "estimate": -0.21428571428571427,
+  "level": "0.95",
+  "lower": -0.42857142857142855,
+  "method": "percentile",
+  "quantity": "VLOOP - GATE item-level error difference",
+  "resamples": 1000,
+  "rule": "hash-resample-v1",
+  "seed": "5af9d4ac735babcf5dcedd7ca0eabc3c7149431e9455f8abfb61e145b043d55e",
+  "upper": 0.0
+ },
+ "comparisons": {
+  "correction": "holm",
+  "holm": {
+   "GATE-vs-GATE+SV": {
+    "adjusted": 1.0,
+    "p_value": 1.0,
+    "rank": 5,
+    "reject": false
+   },
+   "GATE-vs-GATE+V1": {
+    "adjusted": 1.0,
+    "p_value": 0.25,
+    "rank": 1,
+    "reject": false
+   },
+   "GATE-vs-LEX": {
+    "adjusted": 1.0,
+    "p_value": 0.453125,
+    "rank": 3,
+    "reject": false
+   },
+   "GATE-vs-NR": {
+    "adjusted": 1.0,
+    "p_value": 1.0,
+    "rank": 6,
+    "reject": false
+   },
+   "GATE-vs-SEM": {
+    "adjusted": 1.0,
+    "p_value": 0.625,
+    "rank": 4,
+    "reject": false
+   },
+   "GATE-vs-VLOOP": {
+    "adjusted": 1.0,
+    "p_value": 0.25,
+    "rank": 2,
+    "reject": false
+   }
+  },
+  "note": "synthetic: no arm effect by construction (R-f)",
+  "pairs": {
+   "GATE-vs-GATE+SV": {
+    "discordant": 5,
+    "left_only": 3,
+    "p_value": 1.0,
+    "paired_effect": -0.05,
+    "right_only": 2
+   },
+   "GATE-vs-GATE+V1": {
+    "discordant": 3,
+    "left_only": 3,
+    "p_value": 0.25,
+    "paired_effect": -0.15,
+    "right_only": 0
+   },
+   "GATE-vs-LEX": {
+    "discordant": 7,
+    "left_only": 2,
+    "p_value": 0.453125,
+    "paired_effect": 0.15,
+    "right_only": 5
+   },
+   "GATE-vs-NR": {
+    "discordant": 6,
+    "left_only": 3,
+    "p_value": 1.0,
+    "paired_effect": 0.0,
+    "right_only": 3
+   },
+   "GATE-vs-SEM": {
+    "discordant": 4,
+    "left_only": 3,
+    "p_value": 0.625,
+    "paired_effect": -0.1,
+    "right_only": 1
+   },
+   "GATE-vs-VLOOP": {
+    "discordant": 3,
+    "left_only": 3,
+    "p_value": 0.25,
+    "paired_effect": -0.15,
+    "right_only": 0
+   }
+  },
+  "test": "mcnemar_exact"
+ },
+ "created_at": "2026-11-24T00:00:00Z",
+ "evidence_class": "exploratory run; not a confirmatory test; no Table XVII row or HR-1..MR-3 outcome is asserted (invariant 9)",
+ "experiment": "harness-check",
+ "format_version": 1,
+ "governance": {
+  "confirmatory": false,
+  "irb": "not supplied",
+  "osf": "not supplied"
+ },
+ "metrics": {
+  "GATE": {
+   "AR": {
+    "lower": 0.6668604907890041,
+    "rate": 0.9230769230769231,
+    "successes": 12,
+    "total": 13,
+    "upper": 0.9862895787574435
+   },
+   "CA": {
+    "lower": 0.4868721707256811,
+    "rate": 0.8571428571428571,
+    "successes": 6,
+    "total": 7,
+    "upper": 0.9743203756552565
+   },
+   "CF": {
+    "lower": 0.5481455128483065,
+    "rate": 0.8,
+    "successes": 12,
+    "total": 15,
+    "upper": 0.9295245065301844
+   },
+   "CP": {
+    "lower": 0.672002348698212,
+    "proxy": "claim-level: resolving citations of supported claims",
+    "rate": 0.8888888888888888,
+    "successes": 16,
+    "total": 18,
+    "upper": 0.9689804773543876
+   },
+   "CR": {
+    "lower": 0.5481455128483065,
+    "proxy": "claim-level: supported claims with a resolving citation",
+    "rate": 0.8,
+    "successes": 12,
+    "total": 15,
+    "upper": 0.9295245065301844
+   },
+   "ER": {
+    "lower": 0.052368745896216595,
+    "rate": 0.15,
+    "successes": 3,
+    "total": 20,
+    "upper": 0.36041886474075696
+   },
+   "IV": {
+    "excluded_items": 0,
+    "items": 2,
+    "rate": {
+     "lower": 0.0,
+     "rate": 0.0,
+     "successes": 0,
+     "total": 2,
+     "upper": 0.6576197724933469
+    },
+    "violating_item_ids": []
+   },
+   "abstention_decay": {
+    "by_turn_depth": {
+     "1": {
+      "lower": 0.09453120573423074,
+      "rate": 0.5,
+      "successes": 1,
+      "total": 2,
+      "upper": 0.9054687942657693
+     },
+     "2": {
+      "lower": 0.34238022750665303,
+      "rate": 1.0,
+      "successes": 2,
+      "total": 2,
+      "upper": 1.0
+     }
+    },
+    "slope": 0.5
+   },
+   "citation_existence": {
+    "lower": 0.672002348698212,
+    "rate": 0.8888888888888888,
+    "successes": 16,
+    "total": 18,
+    "upper": 0.9689804773543876
+   },
+   "fabrication": {
+    "lower": 0.03736125910306537,
+    "rate": 0.13333333333333333,
+    "successes": 2,
+    "total": 15,
+    "upper": 0.37881982832322364
+   },
+   "provider_failures_excluded": 0,
+   "units": 20
+  },
+  "GATE+SV": {
+   "AR": {
+    "lower": 0.7719046276458016,
+    "rate": 1.0,
+    "successes": 13,
+    "total": 13,
+    "upper": 0.9999999999999999
+   },
+   "CA": {
+    "lower": 0.6456695649333126,
+    "rate": 1.0,
+    "successes": 7,
+    "total": 7,
+    "upper": 1.0
+   },
+   "CF": {
+    "lower": 0.5481455128483065,
+    "rate": 0.8,
+    "successes": 12,
+    "total": 15,
+    "upper": 0.9295245065301844
+   },
+   "CP": {
+    "lower": 0.672002348698212,
+    "proxy": "claim-level: resolving citations of supported claims",
+    "rate": 0.8888888888888888,
+    "successes": 16,
+    "total": 18,
+    "upper": 0.9689804773543876
+   },
+   "CR": {
+    "lower": 0.5481455128483065,
+    "proxy": "claim-level: supported claims with a resolving citation",
+    "rate": 0.8,
+    "successes": 12,
+    "total": 15,
+    "upper": 0.9295245065301844
+   },
+   "ER": {
+    "lower": 0.027866481213768224,
+    "rate": 0.1,
+    "successes": 2,
+    "total": 20,
+    "upper": 0.3010336452284873
+   },
+   "IV": {
+    "excluded_items": 0,
+    "items": 2,
+    "rate": {
+     "lower": 0.09453120573423074,
+     "rate": 0.5,
+     "successes": 1,
+     "total": 2,
+     "upper": 0.9054687942657693
+    },
+    "violating_item_ids": [
+     "SYN-G-002"
+    ]
+   },
+   "abstention_decay": {
+    "by_turn_depth": {
+     "1": {
+      "lower": 0.34238022750665303,
+      "rate": 1.0,
+      "successes": 2,
+      "total": 2,
+      "upper": 1.0
+     },
+     "2": {
+      "lower": 0.34238022750665303,
+      "rate": 1.0,
+      "successes": 2,
+      "total": 2,
+      "upper": 1.0
+     }
+    },
+    "slope": 0.0
+   },
+   "citation_existence": {
+    "lower": 0.8241207763533425,
+    "rate": 1.0,
+    "successes": 18,
+    "total": 18,
+    "upper": 1.0
+   },
+   "fabrication": {
+    "lower": 0.0,
+    "rate": 0.0,
+    "successes": 0,
+    "total": 15,
+    "upper": 0.20388330103584862
+   },
+   "provider_failures_excluded": 0,
+   "units": 20
+  },
+  "GATE+V1": {
+   "AR": {
+    "lower": 0.49743624053272495,
+    "rate": 0.7692307692307693,
+    "successes": 10,
+    "total": 13,
+    "upper": 0.9182047128150143
+   },
+   "CA": {
+    "lower": 0.6456695649333126,
+    "rate": 1.0,
+    "successes": 7,
+    "total": 7,
+    "upper": 1.0
+   },
+   "CF": {
+    "lower": 0.6226415635484043,
+    "rate": 0.9090909090909091,
+    "successes": 10,
+    "total": 11,
+    "upper": 0.9837678271141151
+   },
+   "CP": {
+    "lower": 0.7575059933447592,
+    "proxy": "claim-level: resolving citations of supported claims",
+    "rate": 1.0,
+    "successes": 12,
+    "total": 12,
+    "upper": 1.0
+   },
+   "CR": {
+    "lower": 0.6226415635484043,
+    "proxy": "claim-level: supported claims with a resolving citation",
+    "rate": 0.9090909090909091,
+    "successes": 10,
+    "total": 11,
+    "upper": 0.9837678271141151
+   },
+   "ER": {
+    "lower": 0.0,
+    "rate": 0.0,
+    "successes": 0,
+    "total": 20,
+    "upper": 0.16112515805281938
+   },
+   "IV": {
+    "excluded_items": 0,
+    "items": 2,
+    "rate": {
+     "lower": 0.09453120573423074,
+     "rate": 0.5,
+     "successes": 1,
+     "total": 2,
+     "upper": 0.9054687942657693
+    },
+    "violating_item_ids": [
+     "SYN-G-001"
+    ]
+   },
+   "abstention_decay": {
+    "by_turn_depth": {
+     "1": {
+      "lower": 0.34238022750665303,
+      "rate": 1.0,
+      "successes": 2,
+      "total": 2,
+      "upper": 1.0
+     },
+     "2": {
+      "lower": 0.34238022750665303,
+      "rate": 1.0,
+      "successes": 2,
+      "total": 2,
+      "upper": 1.0
+     }
+    },
+    "slope": 0.0
+   },
+   "citation_existence": {
+    "lower": 0.7575059933447592,
+    "rate": 1.0,
+    "successes": 12,
+    "total": 12,
+    "upper": 1.0
+   },
+   "fabrication": {
+    "lower": 0.0,
+    "rate": 0.0,
+    "successes": 0,
+    "total": 11,
+    "upper": 0.2588329669680317
+   },
+   "provider_failures_excluded": 0,
+   "units": 20
+  },
+  "LEX": {
+   "AR": {
+    "lower": 0.7719046276458016,
+    "rate": 1.0,
+    "successes": 13,
+    "total": 13,
+    "upper": 0.9999999999999999
+   },
+   "CA": {
+    "lower": 0.2504583645276572,
+    "rate": 0.5714285714285714,
+    "successes": 4,
+    "total": 7,
+    "upper": 0.8417801447485302
+   },
+   "CF": {
+    "lower": 0.3861904160223791,
+    "rate": 0.6111111111111112,
+    "successes": 11,
+    "total": 18,
+    "upper": 0.7969475342783638
+   },
+   "CP": {
+    "lower": 0.46010407675327475,
+    "proxy": "claim-level: resolving citations of supported claims",
+    "rate": 0.6842105263157895,
+    "successes": 13,
+    "total": 19,
+    "upper": 0.8463562091220773
+   },
+   "CR": {
+    "lower": 0.3861904160223791,
+    "proxy": "claim-level: supported claims with a resolving citation",
+    "rate": 0.6111111111111112,
+    "successes": 11,
+    "total": 18,
+    "upper": 0.7969475342783638
+   },
+   "ER": {
+    "lower": 0.1454772448676043,
+    "rate": 0.3,
+    "successes": 6,
+    "total": 20,
+    "upper": 0.5189728183535235
+   },
+   "IV": {
+    "excluded_items": 0,
+    "items": 2,
+    "rate": {
+     "lower": 0.09453120573423074,
+     "rate": 0.5,
+     "successes": 1,
+     "total": 2,
+     "upper": 0.9054687942657693
+    },
+    "violating_item_ids": [
+     "SYN-G-001"
+    ]
+   },
+   "abstention_decay": {
+    "by_turn_depth": {
+     "1": {
+      "lower": 0.34238022750665303,
+      "rate": 1.0,
+      "successes": 2,
+      "total": 2,
+      "upper": 1.0
+     },
+     "2": {
+      "lower": 0.09453120573423074,
+      "rate": 0.5,
+      "successes": 1,
+      "total": 2,
+      "upper": 0.9054687942657693
+     }
+    },
+    "slope": -0.5
+   },
+   "citation_existence": {
+    "lower": 0.5666572155618583,
+    "rate": 0.7894736842105263,
+    "successes": 15,
+    "total": 19,
+    "upper": 0.9149232336708375
+   },
+   "fabrication": {
+    "lower": 0.09000928108601694,
+    "rate": 0.2222222222222222,
+    "successes": 4,
+    "total": 18,
+    "upper": 0.45214584316212625
+   },
+   "provider_failures_excluded": 0,
+   "units": 20
+  },
+  "NR": {
+   "AR": {
+    "lower": 0.6668604907890041,
+    "rate": 0.9230769230769231,
+    "successes": 12,
+    "total": 13,
+    "upper": 0.9862895787574435
+   },
+   "CA": {
+    "lower": 0.35893445183261935,
+    "rate": 0.7142857142857143,
+    "successes": 5,
+    "total": 7,
+    "upper": 0.9177810759959433
+   },
+   "CF": {
+    "lower": 0.5699111903802586,
+    "rate": 0.8125,
+    "successes": 13,
+    "total": 16,
+    "upper": 0.9340840092857187
+   },
+   "CP": {
+    "lower": 0.0,
+    "proxy": "claim-level: resolving citations of supported claims",
+    "rate": 0.0,
+    "successes": 0,
+    "total": 2,
+    "upper": 0.6576197724933469
+   },
+   "CR": {
+    "lower": 0.0,
+    "proxy": "claim-level: supported claims with a resolving citation",
+    "rate": 0.0,
+    "successes": 0,
+    "total": 16,
+    "upper": 0.1936076805344365
+   },
+   "ER": {
+    "lower": 0.052368745896216595,
+    "rate": 0.15,
+    "successes": 3,
+    "total": 20,
+    "upper": 0.36041886474075696
+   },
+   "IV": {
+    "excluded_items": 0,
+    "items": 2,
+    "rate": {
+     "lower": 0.09453120573423074,
+     "rate": 0.5,
+     "successes": 1,
+     "total": 2,
+     "upper": 0.9054687942657693
+    },
+    "violating_item_ids": [
+     "SYN-G-002"
+    ]
+   },
+   "abstention_decay": {
+    "by_turn_depth": {
+     "1": {
+      "lower": 0.34238022750665303,
+      "rate": 1.0,
+      "successes": 2,
+      "total": 2,
+      "upper": 1.0
+     },
+     "2": {
+      "lower": 0.34238022750665303,
+      "rate": 1.0,
+      "successes": 2,
+      "total": 2,
+      "upper": 1.0
+     }
+    },
+    "slope": 0.0
+   },
+   "citation_existence": {
+    "lower": 0.0,
+    "rate": 0.0,
+    "successes": 0,
+    "total": 2,
+    "upper": 0.6576197724933469
+   },
+   "fabrication": {
+    "lower": 0.03497748774324047,
+    "rate": 0.125,
+    "successes": 2,
+    "total": 16,
+    "upper": 0.36022827265758695
+   },
+   "provider_failures_excluded": 0,
+   "units": 20
+  },
+  "SEM": {
+   "AR": {
+    "lower": 0.5776536898051745,
+    "rate": 0.8461538461538461,
+    "successes": 11,
+    "total": 13,
+    "upper": 0.9567418216419186
+   },
+   "CA": {
+    "lower": 0.4868721707256811,
+    "rate": 0.8571428571428571,
+    "successes": 6,
+    "total": 7,
+    "upper": 0.9743203756552565
+   },
+   "CF": {
+    "lower": 0.524107694133997,
+    "rate": 0.7857142857142857,
+    "successes": 11,
+    "total": 14,
+    "upper": 0.9242861328730683
+   },
+   "CP": {
+    "lower": 0.7719046276458016,
+    "proxy": "claim-level: resolving citations of supported claims",
+    "rate": 1.0,
+    "successes": 13,
+    "total": 13,
+    "upper": 0.9999999999999999
+   },
+   "CR": {
+    "lower": 0.524107694133997,
+    "proxy": "claim-level: supported claims with a resolving citation",
+    "rate": 0.7857142857142857,
+    "successes": 11,
+    "total": 14,
+    "upper": 0.9242861328730683
+   },
+   "ER": {
+    "lower": 0.008881448800795402,
+    "rate": 0.05,
+    "successes": 1,
+    "total": 20,
+    "upper": 0.23613119344674205
+   },
+   "IV": {
+    "excluded_items": 0,
+    "items": 2,
+    "rate": {
+     "lower": 0.09453120573423074,
+     "rate": 0.5,
+     "successes": 1,
+     "total": 2,
+     "upper": 0.9054687942657693
+    },
+    "violating_item_ids": [
+     "SYN-G-002"
+    ]
+   },
+   "abstention_decay": {
+    "by_turn_depth": {
+     "1": {
+      "lower": 0.34238022750665303,
+      "rate": 1.0,
+      "successes": 2,
+      "total": 2,
+      "upper": 1.0
+     },
+     "2": {
+      "lower": 0.34238022750665303,
+      "rate": 1.0,
+      "successes": 2,
+      "total": 2,
+      "upper": 1.0
+     }
+    },
+    "slope": 0.0
+   },
+   "citation_existence": {
+    "lower": 0.7719046276458016,
+    "rate": 1.0,
+    "successes": 13,
+    "total": 13,
+    "upper": 0.9999999999999999
+   },
+   "fabrication": {
+    "lower": 1.3877787807814457e-17,
+    "rate": 0.0,
+    "successes": 0,
+    "total": 14,
+    "upper": 0.2153108027376358
+   },
+   "provider_failures_excluded": 0,
+   "units": 20
+  },
+  "VLOOP": {
+   "AR": {
+    "lower": 0.6668604907890041,
+    "rate": 0.9230769230769231,
+    "successes": 12,
+    "total": 13,
+    "upper": 0.9862895787574435
+   },
+   "CA": {
+    "lower": 0.6456695649333126,
+    "rate": 1.0,
+    "successes": 7,
+    "total": 7,
+    "upper": 1.0
+   },
+   "CF": {
+    "lower": 0.7846891972623643,
+    "rate": 1.0,
+    "successes": 14,
+    "total": 14,
+    "upper": 1.0
+   },
+   "CP": {
+    "lower": 0.8241207763533425,
+    "proxy": "claim-level: resolving citations of supported claims",
+    "rate": 1.0,
+    "successes": 18,
+    "total": 18,
+    "upper": 1.0
+   },
+   "CR": {
+    "lower": 0.7846891972623643,
+    "proxy": "claim-level: supported claims with a resolving citation",
+    "rate": 1.0,
+    "successes": 14,
+    "total": 14,
+    "upper": 1.0
+   },
+   "ER": {
+    "lower": 0.0,
+    "rate": 0.0,
+    "successes": 0,
+    "total": 20,
+    "upper": 0.16112515805281938
+   },
+   "IV": {
+    "excluded_items": 0,
+    "items": 2,
+    "rate": {
+     "lower": 0.0,
+     "rate": 0.0,
+     "successes": 0,
+     "total": 2,
+     "upper": 0.6576197724933469
+    },
+    "violating_item_ids": []
+   },
+   "abstention_decay": {
+    "by_turn_depth": {
+     "1": {
+      "lower": 0.34238022750665303,
+      "rate": 1.0,
+      "successes": 2,
+      "total": 2,
+      "upper": 1.0
+     },
+     "2": {
+      "lower": 0.34238022750665303,
+      "rate": 1.0,
+      "successes": 2,
+      "total": 2,
+      "upper": 1.0
+     }
+    },
+    "slope": 0.0
+   },
+   "citation_existence": {
+    "lower": 0.8241207763533425,
+    "rate": 1.0,
+    "successes": 18,
+    "total": 18,
+    "upper": 1.0
+   },
+   "fabrication": {
+    "lower": 1.3877787807814457e-17,
+    "rate": 0.0,
+    "successes": 0,
+    "total": 14,
+    "upper": 0.2153108027376358
+   },
+   "provider_failures_excluded": 0,
+   "units": 20
+  }
+ },
+ "mode": "stub",
+ "outputs": {
+  "payload_log_sha256": "b720c3d99170504f16fb12a2cc59aedd0c3349165905404ac6659103572243f5",
+  "responses_sha256": "3ca82eacc8b5f03527d17ef4add4de94caa4ba9d17710354873375e8f68be062"
+ },
+ "pins": {
+  "analysis_plan": {
+   "family": "E1",
+   "sha256": "065177a6d750641e0ac561dd6df0451836a97f7b28def5357a06addd77ce2891"
+  },
+  "arms": {
+   "parity": "pass",
+   "selected": [
+    "NR",
+    "LEX",
+    "SEM",
+    "GATE",
+    "GATE+SV",
+    "GATE+V1",
+    "VLOOP"
+   ],
+   "sha256": "b704af4f515246d93b793c6897a6f45b97a9c5bd79f664eabb35113d30ba84ab"
+  },
+  "bootstrap": {
+   "level": "0.95",
+   "resamples": 1000,
+   "rule": "hash-resample-v1"
+  },
+  "code": {
+   "evaluation/qcai_eval/__init__.py": "524194f1b39573250f83784a2bf6d8e5327f0a5a95ea33de39c05f13a23ef3fe",
+   "evaluation/qcai_eval/ablation.py": "1d81533948408d36991a42113e4aff70a73963d310874aed26455b9c63dafec9",
+   "evaluation/qcai_eval/abstention.py": "91d0c1c3e9ca741ffa15e5ac1af6b37279abacb271bcaec20c23672338edad91",
+   "evaluation/qcai_eval/access_log.py": "895490fcf3ddaee70a89f9ba1a3446ada5b0a5e91d55fa34b5f36bd14dc911cb",
+   "evaluation/qcai_eval/agreement.py": "6a9f6383cb07bf2813c738e4086b2a44aebdd60ea6ab2337e125e653a6a4bc7e",
+   "evaluation/qcai_eval/analysis_plans.py": "6cd1052ba4ff83bedeea7f14208072fe0d4c7ca885130841209913425b7497e6",
+   "evaluation/qcai_eval/canonical.py": "2f41c627b746ed0161e42ab71681c1af004083ff9fc7dcaa1d3bc650186a2859",
+   "evaluation/qcai_eval/citation.py": "b42439d6ed5826094e02573895c0b64153834a1b6cdac7450140b05adfd8cf42",
+   "evaluation/qcai_eval/claims.py": "0b49dcb6ec658b8c72cb7bdc544e5ffb1af63c727b775d05a4c24766c791846b",
+   "evaluation/qcai_eval/contamination.py": "1405f66e580ca67ebce0e6109b1b8795f79e675f6e43c2767043cad1f23b15ce",
+   "evaluation/qcai_eval/fabrication.py": "b1e6d10453720a9f8174ca3e54945231984dfa816ba19dca24112d9664d5459e",
+   "evaluation/qcai_eval/faithfulness.py": "9020a01d7d9730ce678e5e04c1d14e89e2e725e8a5af88c9b8696f3dbbf981e5",
+   "evaluation/qcai_eval/governance.py": "7801947a75153c4c9a3b96a2db35aa4c8649481a688ae67705d246577708fd00",
+   "evaluation/qcai_eval/invariance.py": "ce9ee7a549925283809de0e68fc400dfb81286f95b01ca25c99f0661fef1e576",
+   "evaluation/qcai_eval/lqs_loader.py": "e5e492c0a43a537d74ca48516603340f89a1998d932577696c78a026c1664d4c",
+   "evaluation/qcai_eval/payload_log.py": "9db958fc0d7099f2ab8e0cfec450a00e6691793e73f694c959a357888bf8c3e5",
+   "evaluation/qcai_eval/planes.py": "6b04dc10e49999775e369044b7b2e8497df65ce15a20bfb5719566abaf7d0aaa",
+   "evaluation/qcai_eval/pointers.py": "258ffc77e98483c78603f1f173829a35c9d25f5d0b5dfc705e9b29103213a5b4",
+   "evaluation/qcai_eval/providers.py": "34e6da921170b068a01bdb014f897b61846035174585000cdda02d21ec9dc7c4",
+   "evaluation/qcai_eval/reporting.py": "3cc299f92ad3b9086f1335afe3f1f8668df1369c13a44d114931f86ed77f0c6f",
+   "evaluation/qcai_eval/retrieval.py": "fad7346aea2e3b850eb73c0b9410fcf67d9ab910ad058855bcee767100d42e16",
+   "evaluation/qcai_eval/runner.py": "e97be7d834661e60a3d8bd338713e0ccdc1e395c0c4606de8d3f9fec5be344ea",
+   "evaluation/qcai_eval/seeded_faults.py": "714368082eee65a7d24468c73d80af1d774b2fc0bea5d451bd5e487f52541dd2",
+   "evaluation/qcai_eval/statistics.py": "91205e33c244d670f27196a7ba29f1ab86d3b9df08266bae5a694c695b3b8c00",
+   "evaluation/qcai_eval/synthetic.py": "c6a134ee54986aac08cd10601719fce76559535b76940a8209cac1202960c228",
+   "evaluation/qcai_eval/ulqs.py": "fa01bdf4504387ab4ea91c0689f575c4884746e2d96b308b26cf52282bf17497",
+   "scripts/run_evaluation.py": "189b3f8ce1f211c4b0ab42f0c7bcdad80ba01494a4232746037e1f6702a6af88"
+  },
+  "evidence_catalog": {
+   "corpus_version": "SYNTHETIC-CORPUS-v1",
+   "sha256": "67fe97fde1e1274e7f42d7fa4a2cc1434df8844d996ff467f4c2ec8392121d09"
+  },
+  "items": {
+   "corpus_version": "SYNTHETIC-CORPUS-v1",
+   "count": 14,
+   "sha256": "1f4006a6e72ed1ac3e232fd3c7d6dc51cd7334cc0658d6756be1eeeb9ef2b597",
+   "states": {
+    "candidate": 14
+   }
+  },
+  "models": null,
+  "package": {
+   "owner_decisions": {
+    "D-07": "open",
+    "D-08": "open",
+    "D-12": "open",
+    "D-14": "open"
+   },
+   "package_version": "7.0.0",
+   "path": "apps/api/app/config_package/v7.json",
+   "sha256": "30c65633a31a5f06d6f985f0bdc62af761171415fd43800ae4c43b4e8c0fd5e6"
+  },
+  "prompt_version": "e1-prompt-v1",
+  "replicates": {
+   "default": 1,
+   "subsample": {
+    "replicates": 3,
+    "rule": "sha256-order-v1",
+    "size": 2,
+    "stratum": "A"
+   }
+  },
+  "responder": {
+   "rule": "stub-responder-v1"
+  },
+  "retries": 3,
+  "seeds": {
+   "rule": "sha256-run-arm-item-replicate-v1"
+  }
+ },
+ "purpose": "exploratory",
+ "replicate_variance": {
+  "GATE": {
+   "er_by_replicate": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "rule": "sample-variance-v1",
+   "variance": 0.3333333333333333
+  },
+  "GATE+SV": {
+   "er_by_replicate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rule": "sample-variance-v1",
+   "variance": 0.0
+  },
+  "GATE+V1": {
+   "er_by_replicate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rule": "sample-variance-v1",
+   "variance": 0.0
+  },
+  "LEX": {
+   "er_by_replicate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rule": "sample-variance-v1",
+   "variance": 0.0
+  },
+  "NR": {
+   "er_by_replicate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rule": "sample-variance-v1",
+   "variance": 0.0
+  },
+  "SEM": {
+   "er_by_replicate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rule": "sample-variance-v1",
+   "variance": 0.0
+  },
+  "VLOOP": {
+   "er_by_replicate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rule": "sample-variance-v1",
+   "variance": 0.0
+  }
+ },
+ "report": "ulqs-run-record",
+ "requests": {
+  "completed": 168,
+  "digest": "a566f93aa072f4629dcc108a3f657be838f7377cc2f7098feb6311ded93ec3c9",
+  "planned": 168
+ },
+ "run_id": "synthetic-stub-v1",
+ "slis": {
+  "attempts": 168,
+  "completed_requests": 168,
+  "completion_rate": 1.0,
+  "cost_unit": "provider usage units (not USD; D-06, A-15)",
+  "cost_units": {
+   "GATE": 48,
+   "GATE+SV": 48,
+   "GATE+V1": 48,
+   "LEX": 48,
+   "NR": 48,
+   "SEM": 48,
+   "VLOOP": 48
+  },
+  "planned_requests": 168,
+  "provider_failures": {},
+  "retries": 0
+ },
+ "synthetic": true
+}

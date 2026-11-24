@@ -1,0 +1,83 @@
+{
+ "rules": "ulqs-v1.0-freeze-rules-v1",
+ "provisional": true,
+ "authority": "P1-D-18 (plan default: Phase 10 D task 2); ratified under DI-136 (targets) and DI-140",
+ "source": "VBT RevB p. 15, Sec. VIII-B, Table XIII; p. 17-18, Sec. VIII-E, Table XVI",
+ "items": {
+  "min": 120,
+  "max": 200
+ },
+ "strata": {
+  "A": {
+   "paper": "S1",
+   "name": "Single source",
+   "target": 40,
+   "unit": "items"
+  },
+  "B": {
+   "paper": "S2",
+   "name": "Multi-hop",
+   "target": 25,
+   "unit": "items"
+  },
+  "C": {
+   "paper": "S3",
+   "name": "Near-miss",
+   "target": 20,
+   "unit": "items"
+  },
+  "D": {
+   "paper": "S4",
+   "name": "Adversarial",
+   "target": 15,
+   "unit": "items"
+  },
+  "E": {
+   "paper": "S5",
+   "name": "Unanswerable",
+   "target": 15,
+   "unit": "items"
+  },
+  "F": {
+   "paper": "S6",
+   "name": "Multi-turn",
+   "target": 20,
+   "unit": "dialogues"
+  },
+  "G": {
+   "paper": "S7",
+   "name": "Invariance",
+   "target": 25,
+   "unit": "items"
+  }
+ },
+ "stratum_rule": "exact-at-freeze-v1",
+ "agreement": {
+  "statistic": "krippendorff-alpha-nominal-unit-label",
+  "alpha_min": "0.667",
+  "second_rated_share_min": "1/4",
+  "per_stratum": "ceil"
+ },
+ "e1_label_agreement": {
+  "double_labelled_claims_min": 200,
+  "applies_to": "E1 response claim labels (Table XVI); not a ULQS freeze condition",
+  "record": "spec conflict 30; DI-134; DI-138"
+ },
+ "coverage": {
+  "bloom_understand_or_above_min": "4/5",
+  "bibliographic_max": "1/10"
+ },
+ "conflicting_allocation": {
+  "source": "ULQS v1.0-rc1 dataset card (private), freeze allocation",
+  "strata": {
+   "A": 44,
+   "B": 28,
+   "C": 20,
+   "D": 14,
+   "E": 14,
+   "F": 12,
+   "G": 28
+  },
+  "record": "spec conflict 6; DI-136"
+ }
+}

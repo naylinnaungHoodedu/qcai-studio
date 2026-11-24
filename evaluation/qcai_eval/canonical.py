@@ -1,0 +1,64 @@
+"""Canonical JSON, hashing and LF-normalised file helpers for the research harness (Phase 10 spec 3, 4.1).
+
+Standard library only. `canonical_json` and `canonical_sha256` equal `app.core.config_package`'s (a unit test checks it),
+so a configuration package pinned here hashes exactly as the application hashes it.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+from typing import Any
+
+
+def canonical_json(value: Any) -> bytes:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+def canonical_sha256(value: Any) -> str:
+    return hashlib.sha256(canonical_json(value)).hexdigest()
+
+
+def lf_sha256(path: Path) -> str:
+    """The sha256 of a text file with CRLF read as LF, so a checkout under core.autocrlf hashes as the repository does."""
+    return hashlib.sha256(Path(path).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
+def read_jsonl(path: Path) -> list[dict]:
+    """The objects of a JSONL file. An error names the line number only, never the line's content."""
+    records: list[dict] = []
+    for number, line in enumerate(Path(path).read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            raise ValueError(f"line {number}: not valid JSON") from None
+        if not isinstance(value, dict):
+            raise ValueError(f"line {number}: not a JSON object")
+        records.append(value)
+    return records
+
+
+def dumps_record(value: Any) -> str:
+    return json.dumps(value, indent=1, sort_keys=True, ensure_ascii=False) + "\n"
+
+
+def dumps_line(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
+
+
+def write_lf(path: Path, text: str) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+
+
+def hashed_hex(*parts: str) -> str:
+    return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
+
+
+def hashed_int(*parts: str, bits: int = 64) -> int:
+    return int(hashed_hex(*parts), 16) >> (256 - bits)

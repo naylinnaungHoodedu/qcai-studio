@@ -1,0 +1,146 @@
+{
+ "plans": "analysis-plans-v1",
+ "status": "registered-draft (not filed; DI-131)",
+ "provisional": true,
+ "authority": "P1-D-18 (plan 12.7); ratified under DI-140 (PD-70)",
+ "alpha": "0.05",
+ "correction": "holm-per-family",
+ "source": "VBT RevB p. 18, Sec. X-A; Table XVII; Table XVIII; plan 12.7",
+ "families": {
+  "E1": {
+   "rq": "RQ1",
+   "data": "all ULQS items x seven arms; production generator",
+   "hypotheses": [
+    {
+     "id": "H1a",
+     "endpoint": "item-level error (eq. 12)",
+     "comparison": [
+      "VLOOP",
+      "GATE"
+     ],
+     "test": "mcnemar_exact",
+     "sided": "two",
+     "criteria": [
+      "HR-1",
+      "HR-2"
+     ]
+    },
+    {
+     "id": "H1b",
+     "endpoint": "item-level error (eq. 12)",
+     "comparison": [
+      "VLOOP",
+      "GATE+SV"
+     ],
+     "test": "mcnemar_exact",
+     "sided": "two",
+     "criteria": []
+    },
+    {
+     "id": "H1c",
+     "endpoint": "answer rate (eq. 17)",
+     "comparison": [
+      "VLOOP",
+      "GATE"
+     ],
+     "test": "paired_bootstrap_one_sided",
+     "margin": "-0.05",
+     "criteria": [
+      "LQ-3"
+     ]
+    }
+   ],
+   "criteria_only": [
+    "HR-3 (wilson_upper_bound, >= 125 audited answers, zero delivered B1)"
+   ],
+   "labelling": "GATE, GATE+SV and VLOOP fully labelled; other arms on a random 25% of items with prediction-powered inference (not implemented; DI-138)"
+  },
+  "E2": {
+   "rq": "RQ2",
+   "hypotheses": [
+    {
+     "id": "H2a",
+     "endpoint": "panel vs best single verifier, F1",
+     "test": "cluster_bootstrap_bca_one_sided",
+     "resamples": 10000,
+     "criteria": [
+      "V-2"
+     ]
+    },
+    {
+     "id": "H2b",
+     "endpoint": "DR > 1",
+     "test": "cluster_bootstrap_lower_bound",
+     "resamples": 10000,
+     "criteria": [
+      "V-4"
+     ]
+    },
+    {
+     "id": "H2c",
+     "endpoint": "novice trust AUC",
+     "test": "bootstrap_one_sided",
+     "criteria": [
+      "UE-2"
+     ]
+    }
+   ]
+  },
+  "E3": {
+   "rq": "RQ3",
+   "hypotheses": [
+    {
+     "id": "H3a",
+     "endpoint": "invariance violation (eq. 18), two-pass vs single-pass, 25 S7 items",
+     "test": "mcnemar_exact",
+     "criteria": [
+      "LQ-1"
+     ]
+    },
+    {
+     "id": "H3b",
+     "endpoint": "presentation features across levels (manipulation check)",
+     "test": "friedman",
+     "criteria": []
+    }
+   ]
+  },
+  "E4": {
+   "rq": "RQ4",
+   "hypotheses": [
+    {
+     "id": "H4a",
+     "endpoint": "verified quality per USD vs static-best and round-robin",
+     "test": "two_level_bootstrap_share_le_zero",
+     "criteria": [
+      "MR-1"
+     ]
+    },
+    {
+     "id": "H4b",
+     "endpoint": "local vs commercial: error rate and EQC",
+     "test": "mcnemar_exact+paired_tost",
+     "margin": "0.5",
+     "criteria": []
+    }
+   ],
+   "criteria_only": [
+    "MR-2",
+    "MR-3",
+    "LQ-2"
+   ]
+  }
+ },
+ "tests": {
+  "mcnemar_exact": "implemented",
+  "wilson_upper_bound": "implemented",
+  "holm": "implemented",
+  "paired_bootstrap_one_sided": "not implemented (DI-138)",
+  "cluster_bootstrap_bca_one_sided": "not implemented (DI-138)",
+  "cluster_bootstrap_lower_bound": "not implemented (DI-138)",
+  "bootstrap_one_sided": "not implemented (DI-138)",
+  "two_level_bootstrap_share_le_zero": "not implemented (DI-138)",
+  "friedman": "not implemented (DI-138)",
+  "paired_tost": "not implemented (DI-138)"
+ }
+}

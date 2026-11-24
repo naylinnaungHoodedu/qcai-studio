@@ -1,0 +1,99 @@
+{
+ "mapping": "ulqs-rc1-to-v1.0",
+ "format_version": 1,
+ "provisional": true,
+ "authority": "P1-D-18 (plan Phase 10 G); ratified under DI-140 (PD-61)",
+ "source": {
+  "schema_version": "1.0",
+  "status": [
+   "draft",
+   "candidate"
+  ]
+ },
+ "target": {
+  "schema_version": "1.1",
+  "dataset_version": "ULQS-v1.0"
+ },
+ "fields": {
+  "item_id": "copy",
+  "schema_version": "set 1.1",
+  "corpus_version": "copy",
+  "status": "copy",
+  "stratum": "copy",
+  "corpus_scope": "copy",
+  "topic": "copy",
+  "concepts": "copy",
+  "difficulty": "copy",
+  "bloom": "copy",
+  "retrieval_type": "copy",
+  "question": "copy",
+  "weight": "copy",
+  "leakage_risk": "copy",
+  "license_class": "copy",
+  "quality_scores": "copy",
+  "provenance": "copy, with author replaced (provenance_author)",
+  "validation": "copy",
+  "expected_behavior": "copy",
+  "gold_answer": "copy",
+  "evidence_ids": "copy",
+  "atomic_claims": "copy",
+  "reasoning_chain": "copy",
+  "notes": "copy",
+  "abstention_rationale": "copy",
+  "negative_evidence": "copy",
+  "conversation": "copy",
+  "base_question": "copy",
+  "replays": "copy",
+  "invariance_checked": "copy"
+ },
+ "added": {
+  "validation.human_reviewed": false,
+  "item_kind": null,
+  "split": "assign_splits(ulqs-split-v1)",
+  "dataset_version": "ULQS-v1.0"
+ },
+ "provenance_author": "replaced by the role code given with --author-role (the name stays in the private rc1 file)",
+ "states": {
+  "draft": "draft",
+  "candidate": "candidate"
+ },
+ "strata": {
+  "A": {
+   "paper": "S1",
+   "legacy": "answerable_single_source"
+  },
+  "B": {
+   "paper": "S2",
+   "legacy": "answerable_multi_hop"
+  },
+  "C": {
+   "paper": "S3",
+   "legacy": "near_miss_outside_corpus"
+  },
+  "D": {
+   "paper": "S4",
+   "legacy": "out_of_scope_adversarial"
+  },
+  "E": {
+   "paper": "S5",
+   "legacy": "unanswerable_by_construction"
+  },
+  "F": {
+   "paper": "S6",
+   "legacy": "multi_turn"
+  },
+  "G": {
+   "paper": "S7",
+   "legacy": "progress_conditioned"
+  }
+ },
+ "pointers": {
+  "EV-": "research-plane evidence catalog (pointers.EvidenceCatalog)",
+  "span-": "Phase 2 span records, public plane"
+ },
+ "corpus_version": "copied unchanged; separate from the dataset sha256 pin and never part of an id (R-19)",
+ "never": [
+  "auto-promotion past candidate",
+  "copying text into the repository"
+ ]
+}

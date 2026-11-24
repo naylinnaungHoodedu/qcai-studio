@@ -1,0 +1,679 @@
+"""The E1-E4 runner: pins, holds, units, requests, checkpointed execution and the run record (spec 3.9-3.12, 4.12-4.13).
+
+Plan task 5: "Pinned configuration package [Evidence E-97]; E1-E4 per Section 15 [Evidence E-99]; statistics with hashed
+seeds [Evidence E-103]." A run pins the package (path and sha256, read-only), the items, the evidence catalog, the arms and
+the analysis plan by sha256; its seeds are hashed from (run_id, arm, item_id, replicate). Stub and recorded runs repeat
+byte for byte: no output carries the wall clock or an absolute path, and the record and payload log depend only on the
+plan and the responses. Hold H12 refuses every run over non-synthetic data while D-14 is open; live runs are refused here.
+Every run is exploratory unless its spec says confirmatory, and E1-E4 runs must be confirmatory (plan 12.7).
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from dataclasses import dataclass, field
+import hashlib
+import json
+import os
+from pathlib import Path
+from typing import Any, Mapping, Sequence
+
+from . import ablation, analysis_plans, governance, planes, statistics, ulqs
+from .abstention import abstention_by_turn_depth, correct_abstention
+from .canonical import canonical_json, canonical_sha256, dumps_line, dumps_record, hashed_hex, lf_sha256, read_jsonl, write_lf
+from .citation import citation_existence
+from .fabrication import fabrication_rate
+from .faithfulness import citation_faithfulness
+from .invariance import invariance_violations
+from .payload_log import PayloadLogViolation, log_record, validate_log_record
+from .pointers import EvidenceCatalog, PointerResolver, public_span_lookup, resolve_items
+from .providers import RecordedResponder
+
+REPO_ROOT = planes.REPO_ROOT
+SPEC_FORMAT = "ulqs-run-spec-v1"
+RECORD_FORMAT = "ulqs-run-record"
+MODES = ("stub", "recorded", "live")
+PURPOSES = ("exploratory", "confirmatory")
+EXPERIMENTS = ("harness-check", "E1", "E2", "E3", "E4")
+SEEDS_RULE = "sha256-run-arm-item-replicate-v1"
+SUBSAMPLE_RULE = "sha256-order-v1"
+RESPONSES = "responses.jsonl"
+PAYLOAD_LOG = "payload_log.jsonl"
+RUN_EVENTS = "run_events.jsonl"
+RUN_RECORD = "run_record.json"
+ERROR_LABELS = frozenset({"fabricated", "attribution_error"})
+SYNTHETIC_COMPARISON_NOTE = "synthetic: no arm effect by construction (R-f)"
+EXPLORATORY_CLASS = ("exploratory run; not a confirmatory test; no Table XVII row or HR-1..MR-3 outcome is asserted (invariant 9)")
+CONFIRMATORY_CLASS = "confirmatory run under the filed pre-registration; outcomes are reported by the PI, never asserted by the harness"
+CODE_FILES = ("scripts/run_evaluation.py",)
+
+
+class RunRefused(Exception):
+    def __init__(self, code: int, reasons: Sequence[str]) -> None:
+        super().__init__(f"exit {code}: {', '.join(reasons)}")
+        self.code = code
+        self.reasons = list(reasons)
+
+
+class RunInterrupted(Exception):
+    """A provider outage stopped the run at its checkpoint (exit 5); `--resume` continues it."""
+
+
+@dataclass(frozen=True)
+class Request:
+    request_key: str
+    arm: str
+    item_id: str
+    unit: str | None
+    turn_depth: int | None
+    replicate: int
+    seed_hex: str
+    evidence: tuple[str, ...]
+    gold: str
+    gold_claims: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class Plan:
+    spec: Mapping[str, Any]
+    package_raw: Mapping[str, Any]
+    items: tuple[Mapping[str, Any], ...]
+    arms: ablation.ArmTable
+    requests: tuple[Request, ...]
+    pins: dict
+    resolver: PointerResolver | None = None
+    synthetic: bool = True
+    recording_source: str | None = None
+    extra: dict = field(default_factory=dict)
+
+
+# ------------------------------------------------------------------------------------------------------------ helpers
+
+
+def _path(value: str, repo_root: Path) -> Path:
+    path = Path(value)
+    return path if path.is_absolute() else Path(repo_root) / path
+
+
+def load_spec(path: Path) -> dict[str, Any]:
+    spec = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(spec, dict):
+        raise RunRefused(2, ["spec_not_an_object"])
+    return spec
+
+
+def seed_hex(run_id: str, arm: str, item_id: str, replicate: int) -> str:
+    return hashed_hex(run_id, arm, item_id, str(replicate))[:16]
+
+
+def request_key(arm_config_sha256: str, item_id: str, unit: str | None, replicate: int, package_sha256: str, prompt_version: str,
+                evidence: Sequence[str]) -> str:
+    return canonical_sha256({"arm_config": arm_config_sha256, "item_id": item_id, "unit": unit, "replicate": replicate,
+                             "package": package_sha256, "prompt_version": prompt_version, "evidence": sorted(evidence)})
+
+
+def _units(item: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """A-E: one unit; F: one unit per turn (with its depth); G: one unit per level, with identical evidence."""
+    stratum = item["stratum"]
+    claims = lambda record: tuple(claim["claim_id"] for claim in record.get("atomic_claims", []) or [])  # noqa: E731
+    if stratum == "F":
+        return [{"unit": turn["turn_id"], "turn_depth": depth, "evidence": tuple(turn.get("evidence_ids", []) or []),
+                 "gold": turn["expected_behavior"], "gold_claims": claims(turn)}
+                for depth, turn in enumerate(item.get("conversation", []), start=1)]
+    if stratum == "G":
+        return [{"unit": level, "turn_depth": None, "evidence": tuple(item.get("evidence_ids", []) or []), "gold": "answer",
+                 "gold_claims": claims(item)} for level in ulqs.REPLAY_LEVELS]
+    return [{"unit": None, "turn_depth": None, "evidence": tuple(item.get("evidence_ids", []) or []),
+             "gold": item["expected_behavior"], "gold_claims": claims(item)}]
+
+
+def subsample(items: Sequence[Mapping[str, Any]], replicates: Mapping[str, Any]) -> list[str]:
+    block = replicates.get("subsample")
+    if not block:
+        return []
+    members = sorted((item["item_id"] for item in items if item.get("stratum") == block["stratum"] and item.get("status") != "retired"),
+                     key=lambda item_id: hashed_hex(SUBSAMPLE_RULE, item_id))
+    return members[: int(block["size"])]
+
+
+def _decided(package_raw: Mapping[str, Any], name: str) -> bool:
+    return ((package_raw.get("owner_decisions") or {}).get(name) or {}).get("state") == "decided"
+
+
+def _sidecar(path: Path) -> str | None:
+    sidecar = path.with_name(path.name + ".sha256")
+    if not sidecar.exists():
+        return None
+    return sidecar.read_text(encoding="utf-8").strip() or None
+
+
+def arm_manifest(table: ablation.ArmTable, arm: str, common: Mapping[str, Any]) -> dict[str, Any]:
+    return {**ablation.arm_configuration(table, arm), **common}
+
+
+def code_pins(repo_root: Path = REPO_ROOT) -> dict[str, str]:
+    package = Path(repo_root) / Path(__file__).resolve().parent.relative_to(REPO_ROOT)
+    modules = sorted(package.glob("*.py"))
+    pins = {path.relative_to(repo_root).as_posix(): lf_sha256(path) for path in modules}
+    for name in CODE_FILES:
+        path = Path(repo_root) / name
+        if path.exists():
+            pins[name] = lf_sha256(path)
+    return pins
+
+
+def recording_pins(package_sha: str, items_sha: str, catalog_sha: str | None, arms_sha: str, prompt_version: str) -> str:
+    return canonical_sha256({"package": package_sha, "items": items_sha, "catalog": catalog_sha, "arms": arms_sha,
+                             "prompt_version": prompt_version})
+
+
+# ------------------------------------------------------------------------------------------------------------ planning
+
+
+def _check_shape(spec: Mapping[str, Any]) -> None:
+    reasons = []
+    if spec.get("run_spec") != SPEC_FORMAT:
+        reasons.append("run_spec")
+    for key in ("run_id", "created_at", "package", "items", "arms", "analysis_plan", "responder", "governance"):
+        if key not in spec:
+            reasons.append(f"missing:{key}")
+    if spec.get("mode") not in MODES:
+        reasons.append("mode")
+    if spec.get("purpose") not in PURPOSES:
+        reasons.append("purpose")
+    if spec.get("experiment") not in EXPERIMENTS:
+        reasons.append("experiment")
+    if spec.get("seeds", {}).get("rule", SEEDS_RULE) != SEEDS_RULE:
+        reasons.append("seeds.rule")
+    run_id = spec.get("run_id")
+    import re
+
+    if not isinstance(run_id, str) or not re.match(r"^[a-z0-9][a-z0-9.+:-]{0,63}$", run_id):
+        reasons.append("run_id")
+    if reasons:
+        raise RunRefused(2, reasons)
+    if spec["experiment"] in ("E1", "E2", "E3", "E4") and spec["purpose"] != "confirmatory":
+        raise RunRefused(2, ["experiment_requires_confirmatory"])
+    if spec["experiment"] == "harness-check" and spec["purpose"] == "confirmatory":
+        raise RunRefused(2, ["harness_check_not_confirmatory"])
+
+
+def plan_run(spec: Mapping[str, Any], *, repo_root: Path = REPO_ROOT, environ: Mapping[str, str] = os.environ,
+             out_dir: Path | None = None, access_log: Path | None = None) -> Plan:
+    repo_root = Path(repo_root)
+    _check_shape(spec)
+    # 2. The package, by explicit path and sha256 (never the application's default path).
+    package_path = _path(spec["package"]["path"], repo_root)
+    try:
+        package_raw = json.loads(package_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise RunRefused(6, ["package_unreadable"]) from None
+    package_sha = canonical_sha256(package_raw)
+    if package_sha != spec["package"].get("sha256") or _sidecar(package_path) != package_sha:
+        raise RunRefused(6, ["package_sha256"])
+    # 3. The items.
+    try:
+        items = tuple(read_jsonl(_path(spec["items"]["path"], repo_root)))
+    except (OSError, ValueError):
+        raise RunRefused(3, ["items_unreadable"]) from None
+    problems = ulqs.validate_dataset(items)
+    if problems:
+        raise RunRefused(3, ["items_invalid"] + [str(problem) for problem in problems[:20]])
+    items_sha = ulqs.dataset_sha256(items)
+    if items_sha != spec["items"].get("sha256") or len(items) != spec["items"].get("count"):
+        raise RunRefused(6, ["items_sha256"])
+    states = Counter(item["status"] for item in items)
+    if spec["items"].get("required_state", "any") == "frozen" and any(
+            item["status"] not in ulqs.FROZEN_STATES for item in items if item["status"] != "retired"):
+        raise RunRefused(3, ["items_not_frozen"])
+    # 4. The evidence catalog and every pointer.
+    catalog = None
+    catalog_sha = None
+    if spec.get("evidence_catalog"):
+        try:
+            catalog = EvidenceCatalog.load(_path(spec["evidence_catalog"]["path"], repo_root))
+        except (OSError, ValueError):
+            raise RunRefused(3, ["catalog_invalid"]) from None
+        catalog_sha = catalog.sha256
+        if catalog_sha != spec["evidence_catalog"].get("sha256"):
+            raise RunRefused(6, ["catalog_sha256"])
+    corpus_versions = {item["corpus_version"] for item in items}
+    needs_spans = any(pointer.startswith("span-") for item in items for _p, pointer in ulqs.pointers_of(item))
+    resolver = PointerResolver(catalog=catalog, span_lookup=public_span_lookup() if needs_spans else None,
+                               corpus_version=next(iter(corpus_versions)) if len(corpus_versions) == 1 else None)
+    report = resolve_items(items, resolver)
+    if report.problems:
+        raise RunRefused(3, ["unresolved_pointers"] + [f"{item}:{path}:{status}" for item, path, status, _kind in report.problems[:20]])
+    # 5. The arms and parity.
+    try:
+        arms_raw = json.loads(_path(spec["arms"]["path"], repo_root).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise RunRefused(6, ["arms_unreadable"]) from None
+    arms_sha = canonical_sha256(arms_raw)
+    if arms_sha != spec["arms"].get("sha256"):
+        raise RunRefused(6, ["arms_sha256"])
+    selected = list(spec["arms"].get("selected") or ablation.ARM_IDS)
+    try:
+        table = ablation.table_from_raw(arms_raw)
+        ablation.check_table(table)
+        if any(arm not in ablation.ARM_IDS for arm in selected) or "GATE" not in selected or len(set(selected)) != len(selected):
+            raise ablation.ParityError("arms.selected: a subset of the seven arms that includes GATE")
+        prompt_version = str(table.gate_configuration.get("prompt_version"))
+        responder_rule = _responder_rule(spec)
+        common = {"package_sha256": package_sha, "items_sha256": items_sha, "catalog_sha256": catalog_sha,
+                  "prompt_version": prompt_version, "seeds_rule": SEEDS_RULE, "replicates": spec.get("replicates", {"default": 1}),
+                  "retries": int(spec.get("retries", 3)), "responder_rule": responder_rule}
+        manifests = {arm: arm_manifest(table, arm, common) for arm in selected}
+        manifests = _manifest_hook(manifests)
+        ablation.assert_arm_parity(manifests, table=table, required=selected)
+    except ablation.ParityError as error:
+        raise RunRefused(7, [str(error)]) from None
+    # 6. The analysis plan.
+    try:
+        plans_raw = json.loads(_path(spec["analysis_plan"]["path"], repo_root).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise RunRefused(6, ["analysis_plan_unreadable"]) from None
+    plans_sha = canonical_sha256(plans_raw)
+    if plans_sha != spec["analysis_plan"].get("sha256"):
+        raise RunRefused(6, ["analysis_plan_sha256"])
+    try:
+        analysis_plans.validate_plans(plans_raw)
+    except analysis_plans.PlanError as error:
+        raise RunRefused(2, [f"analysis_plan_invalid:{error}"]) from None
+    if spec["analysis_plan"].get("family") not in analysis_plans.FAMILIES:
+        raise RunRefused(2, ["analysis_plan.family"])
+    # 7. Hold H12: no run over non-synthetic data while the research data plane (D-14) is not decided.
+    synthetic = planes.all_synthetic(items) and (catalog is None or all(r.volume == "synthetic" for r in catalog.records.values()))
+    if not synthetic:
+        if not _decided(package_raw, "D-14"):
+            raise RunRefused(9, ["hold_h12_data_plane"])
+        missing = []
+        if access_log is None:
+            missing.append("access_log_required")
+        if not spec.get("pre_run_scan"):
+            missing.append("pre_run_scan_required")
+        if missing:
+            raise RunRefused(2, missing)
+    # The recorded responder and its pins.
+    recording_source = None
+    if spec["mode"] == "recorded":
+        recorded = (spec.get("responder") or {}).get("recorded") or {}
+        try:
+            recording_path = _path(recorded["path"], repo_root)
+            responder = RecordedResponder(recording_path)
+        except (KeyError, OSError, ValueError):
+            raise RunRefused(6, ["recording_unreadable"]) from None
+        if lf_sha256(recording_path) != recorded.get("sha256"):
+            raise RunRefused(6, ["recording_sha256"])
+        if responder.header.get("run_pins_sha256") != recording_pins(package_sha, items_sha, catalog_sha, arms_sha, prompt_version):
+            raise RunRefused(6, ["recording_pins_mismatch"])
+        recording_source = responder.source
+    # 8. The confirmatory gate (AC-10-5).
+    if spec["purpose"] == "confirmatory":
+        reasons = governance.confirmatory_refusals(spec, analysis_plan_sha256=plans_sha, dataset_sha256=items_sha, items_states=states,
+                                                   package_raw=package_raw, repo_root=repo_root, recording_source=recording_source)
+        if reasons:
+            if any(reason.startswith(("irb_", "osf_")) for reason in reasons):
+                code = 8
+            elif any(reason == "items_not_frozen" or reason.startswith("freeze_record_") for reason in reasons):
+                code = 3
+            else:
+                code = 2
+            raise RunRefused(code, reasons)
+    # 9. Live runs.
+    if spec["mode"] == "live":
+        from .providers import live_refusal_reasons
+
+        reasons = live_refusal_reasons(spec, package_raw, environ, table, out_dir=out_dir, repo_root=repo_root)
+        if reasons:
+            raise RunRefused(9, reasons)
+    # 10. The output directory.
+    if out_dir is not None:
+        if synthetic:
+            if planes.inside_checkout(out_dir, repo_root):
+                raise RunRefused(2, ["output_inside_checkout"])
+        else:
+            try:
+                planes.require_private_output(out_dir, root=repo_root)
+            except planes.PathRefused:
+                raise RunRefused(2, ["output_not_private"]) from None
+    requests = _requests(spec, items, table, selected, package_sha, prompt_version)
+    pins = {
+        "package": {"path": spec["package"]["path"] if not Path(spec["package"]["path"]).is_absolute() else package_path.name,
+                    "sha256": package_sha, "package_version": package_raw.get("package_version"),
+                    "owner_decisions": {name: ((package_raw.get("owner_decisions") or {}).get(name) or {}).get("state")
+                                        for name in ("D-07", "D-08", "D-12", "D-14")}},
+        "models": None,
+        "items": {"sha256": items_sha, "count": len(items), "states": dict(sorted(states.items())),
+                  "corpus_version": sorted(corpus_versions)[0] if len(corpus_versions) == 1 else sorted(corpus_versions)},
+        "evidence_catalog": None if catalog is None else {"sha256": catalog_sha, "corpus_version": catalog.corpus_version},
+        "arms": {"sha256": arms_sha, "selected": selected, "parity": "pass"},
+        "analysis_plan": {"sha256": plans_sha, "family": spec["analysis_plan"]["family"]},
+        "seeds": {"rule": SEEDS_RULE},
+        "replicates": spec.get("replicates", {"default": 1}),
+        "bootstrap": spec.get("bootstrap"),
+        "prompt_version": prompt_version,
+        "retries": int(spec.get("retries", 3)),
+        "code": code_pins(repo_root),
+    }
+    return Plan(spec=dict(spec), package_raw=package_raw, items=items, arms=table, requests=tuple(requests), pins=pins,
+                resolver=resolver, synthetic=synthetic, recording_source=recording_source)
+
+
+def _manifest_hook(manifests: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """The per-arm manifests as the run will use them (a seam the parity tests replace)."""
+    return manifests
+
+
+def _responder_rule(spec: Mapping[str, Any]) -> str:
+    responder = spec.get("responder") or {}
+    if spec.get("mode") == "stub":
+        return str(responder.get("rule", "stub-responder-v1"))
+    if spec.get("mode") == "recorded":
+        return "recorded-responses-v1"
+    return "live:" + str((responder.get("live") or {}).get("adapter"))
+
+
+def _requests(spec, items, table, selected, package_sha, prompt_version) -> list[Request]:
+    replicates = spec.get("replicates", {"default": 1})
+    default = int(replicates.get("default", 1))
+    sampled = set(subsample(items, replicates))
+    extra = int((replicates.get("subsample") or {}).get("replicates", default))
+    requests = []
+    ordered_items = sorted((item for item in items if item.get("status") != "retired"), key=lambda item: item["item_id"])
+    for arm in [arm for arm in ablation.ARM_IDS if arm in selected]:
+        configuration = ablation.arm_configuration(table, arm)
+        config_sha = canonical_sha256(configuration)
+        for item in ordered_items:
+            count = max(default, extra) if item["item_id"] in sampled else default
+            for unit in _units(item):
+                evidence = () if configuration["retrieval"] == "none" else tuple(sorted(unit["evidence"]))
+                for replicate in range(1, count + 1):
+                    key = request_key(config_sha, item["item_id"], unit["unit"], replicate, package_sha, prompt_version, evidence)
+                    requests.append(Request(request_key=key, arm=arm, item_id=item["item_id"], unit=unit["unit"],
+                                            turn_depth=unit["turn_depth"], replicate=replicate,
+                                            seed_hex=seed_hex(spec["run_id"], arm, item["item_id"], replicate), evidence=evidence,
+                                            gold=unit["gold"], gold_claims=unit["gold_claims"]))
+    return requests
+
+
+# ------------------------------------------------------------------------------------------------------------ execution
+
+
+def _append_event(out_dir: Path, event: Mapping[str, Any]) -> None:
+    with (Path(out_dir) / RUN_EVENTS).open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(dumps_line(event))
+
+
+def _read_checkpoint(path: Path, *, resume: bool) -> dict[str, dict]:
+    if not path.exists():
+        return {}
+    data = path.read_bytes()
+    lines = data.split(b"\n")
+    tail = lines.pop()  # the bytes after the last newline: empty when the file ends with one
+    completed: dict[str, dict] = {}
+    good = 0
+    for line in lines:
+        try:
+            record = json.loads(line.decode("utf-8"))
+        except ValueError:
+            break
+        completed[record["request_key"]] = record
+        good += len(line) + 1
+    partial = bool(tail) or good != len(data) - len(tail)
+    if partial:
+        if not resume:
+            raise RunRefused(2, ["partial_checkpoint"])
+        with path.open("r+b") as handle:
+            handle.truncate(good)
+        completed = {key: value for key, value in completed.items()}
+    elif completed and not resume:
+        raise RunRefused(2, ["output_exists"])
+    return completed
+
+
+def _prompt_envelope(plan: Plan, request: Request) -> bytes:
+    return canonical_json({"prompt_version": plan.pins["prompt_version"], "item_id": request.item_id, "unit": request.unit,
+                           "arm": request.arm, "evidence": list(request.evidence)})
+
+
+def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = False, commit: str | None = None) -> dict:
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    responses_path = out_dir / RESPONSES
+    completed = _read_checkpoint(responses_path, resume=resume)
+    spec = plan.spec
+    base = {"run_id": spec["run_id"], "purpose": spec["purpose"], "planned_requests": len(plan.requests)}
+    start = {"event": "resumed" if resume else "start", **base, "completed_requests": len(completed)}
+    if commit:
+        start["commit"] = commit
+    _append_event(out_dir, start)
+    retries = int(plan.pins["retries"])
+    from .providers import ProviderOutage, TransientFailure
+
+    with responses_path.open("a", encoding="utf-8", newline="\n") as handle:
+        for request in plan.requests:
+            if request.request_key in completed:
+                continue
+            attempts: list[dict[str, str]] = []
+            response = None
+            for _attempt in range(1 + retries):
+                try:
+                    response = responder.respond(request)
+                except TransientFailure as failure:
+                    attempts.append({"status": failure.reason})
+                    continue
+                except ProviderOutage:
+                    _append_event(out_dir, {"event": "interrupted", **base, "completed_requests": len(completed),
+                                            "reason": "provider_outage"})
+                    raise RunInterrupted(f"provider outage after {len(completed)} of {len(plan.requests)} requests") from None
+                attempts.append({"status": "ok"})
+                break
+            line = _response_line(request, response, attempts)
+            handle.write(dumps_line(line))
+            handle.flush()
+            os.fsync(handle.fileno())
+            completed[request.request_key] = line
+    responses = [completed[request.request_key] for request in plan.requests]
+    log_lines = []
+    for request, response in zip(plan.requests, responses):
+        record = log_record(request, response, run_id=spec["run_id"], purpose=spec["purpose"], prompt_version=plan.pins["prompt_version"],
+                            prompt_bytes=_prompt_envelope(plan, request), resolver=plan.resolver)
+        validate_log_record(record)
+        log_lines.append(dumps_line(record))
+    payload_text = "".join(log_lines)
+    write_lf(out_dir / PAYLOAD_LOG, payload_text)
+    record = build_record(plan, responses, responder_rule=getattr(responder, "rule", "unknown"),
+                          payload_log_sha256=hashlib.sha256(payload_text.encode("utf-8")).hexdigest())
+    write_lf(out_dir / RUN_RECORD, dumps_record(record))
+    _append_event(out_dir, {"event": "completed", **base, "completed_requests": len(responses)})
+    return record
+
+
+def _response_line(request: Request, response: Mapping[str, Any] | None, attempts: list[dict[str, str]]) -> dict[str, Any]:
+    base = {"request_key": request.request_key, "arm": request.arm, "item_id": request.item_id, "unit": request.unit,
+            "replicate": request.replicate, "seed_hex": request.seed_hex, "attempts": attempts}
+    if response is None:
+        return {**base, "outcome": "provider_failure", "failure_reason": attempts[-1]["status"] if attempts else "server_error",
+                "claims": [], "text": None, "usage": {"input_units": 0, "output_units": 0}, "model_id": None}
+    return {**base, "outcome": response["outcome"], "failure_reason": None, "claims": list(response.get("claims", [])),
+            "text": response.get("text"), "usage": dict(response.get("usage") or {"input_units": 0, "output_units": 0}),
+            "model_id": response.get("model_id")}
+
+
+# ------------------------------------------------------------------------------------------------------------ metrics
+
+
+def _unit_error(response: Mapping[str, Any], request: Request) -> int:
+    if any(claim.get("label") in ERROR_LABELS for claim in response.get("claims", [])):
+        return 1
+    return int(request.gold == "abstain" and response["outcome"] == "answered")
+
+
+def _pairs(plan: Plan, responses: Sequence[Mapping[str, Any]]):
+    return list(zip(plan.requests, responses))
+
+
+def compute_metrics(plan: Plan, responses: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    resolvable = set()
+    if plan.resolver is not None:
+        cited = {pointer for response in responses for claim in response.get("claims", []) for pointer in claim.get("cited", [])}
+        resolvable = {pointer for pointer in cited if plan.resolver.resolve(pointer).status == "resolved"}
+    metrics: dict[str, Any] = {}
+    pairs = _pairs(plan, responses)
+    for arm in plan.pins["arms"]["selected"]:
+        rows = [(request, response) for request, response in pairs if request.arm == arm and request.replicate == 1]
+        done = [(request, response) for request, response in rows if response["outcome"] != "provider_failure"]
+        claims = [claim for _request, response in done for claim in response.get("claims", [])]
+        unlabelled = sum(1 for claim in claims if claim.get("label") is None)
+        if unlabelled:
+            metrics[arm] = {"status": "awaiting_labels", "units": len(rows)}
+            continue
+        adapted = [{"cited_span_ids": list(claim.get("cited", [])), "category": claim.get("label")} for claim in claims]
+        errors = sum(_unit_error(response, request) for request, response in done)
+        citations = [(claim, pointer) for claim in claims for pointer in claim.get("cited", [])]
+        supporting = [(claim, pointer) for claim, pointer in citations if pointer in resolvable and claim.get("label") == "supported"]
+        covered = [claim for claim in claims if any(pointer in resolvable for pointer in claim.get("cited", [])) and claim.get("label") == "supported"]
+        abstain_units = [{"expected_answerable": False, "abstained": response["outcome"] == "abstained"}
+                         for request, response in done if request.gold == "abstain"]
+        answer_units = [{"expected_answerable": True, "abstained": response["outcome"] == "abstained"}
+                        for request, response in done if request.gold == "answer"]
+        turns = [{"expected_answerable": request.gold == "answer", "abstained": response["outcome"] == "abstained",
+                  "turn_depth": request.turn_depth} for request, response in done if request.turn_depth is not None]
+        decay = {str(depth): value for depth, value in abstention_by_turn_depth(turns).items()} if turns else {}
+        slope = statistics.least_squares_slope([(int(depth), value["rate"]) for depth, value in decay.items()])
+        by_item: dict[str, dict[str, Mapping]] = {}
+        for request, response in rows:
+            if request.unit in ulqs.REPLAY_LEVELS:
+                by_item.setdefault(request.item_id, {})[request.unit] = response
+        complete = {item: levels for item, levels in sorted(by_item.items())
+                    if len(levels) == 3 and all(r["outcome"] != "provider_failure" for r in levels.values())}
+        replays = {item: [{"factual_claims": sorted(c["claim_id"] for c in levels[level].get("claims", [])),
+                           "cited_span_ids": sorted({p for c in levels[level].get("claims", []) for p in c.get("cited", [])})}
+                          for level in ulqs.REPLAY_LEVELS] for item, levels in complete.items()}
+        metrics[arm] = {
+            "units": len(rows),
+            "provider_failures_excluded": len(rows) - len(done),
+            "ER": statistics.wilson_interval(errors, len(done)),
+            "CF": citation_faithfulness(adapted),
+            "CP": {**statistics.wilson_interval(len(supporting), len(citations)), "proxy": "claim-level: resolving citations of supported claims"},
+            "CR": {**statistics.wilson_interval(len(covered), len(claims)), "proxy": "claim-level: supported claims with a resolving citation"},
+            "fabrication": fabrication_rate(adapted),
+            "citation_existence": citation_existence(adapted, resolvable),
+            "CA": correct_abstention(abstain_units),
+            "AR": correct_abstention(answer_units),
+            "abstention_decay": {"by_turn_depth": decay, "slope": slope},
+            "IV": {**invariance_violations(replays), "items": len(replays), "excluded_items": len(by_item) - len(complete)},
+        }
+    return metrics
+
+
+def _paired_errors(plan: Plan, responses, arm: str) -> dict[tuple, int]:
+    return {(request.item_id, request.unit): _unit_error(response, request) for request, response in _pairs(plan, responses)
+            if request.arm == arm and request.replicate == 1 and response["outcome"] != "provider_failure"}
+
+
+def compute_comparisons(plan: Plan, responses, metrics) -> dict[str, Any]:
+    selected = plan.pins["arms"]["selected"]
+    if any(isinstance(metrics.get(arm), dict) and metrics[arm].get("status") == "awaiting_labels" for arm in selected):
+        return {"status": "awaiting_labels"}
+    gate = _paired_errors(plan, responses, "GATE")
+    tests: dict[str, Any] = {}
+    for arm in selected:
+        if arm == "GATE":
+            continue
+        other = _paired_errors(plan, responses, arm)
+        keys = sorted(set(gate) & set(other), key=lambda key: (key[0], key[1] or ""))
+        tests[f"GATE-vs-{arm}"] = statistics.mcnemar_exact([bool(gate[key]) for key in keys], [bool(other[key]) for key in keys])
+    corrected = statistics.holm({name: value["p_value"] for name, value in tests.items()}) if tests else {}
+    return {"test": "mcnemar_exact", "correction": "holm", "pairs": tests, "holm": corrected,
+            "note": SYNTHETIC_COMPARISON_NOTE if plan.synthetic else "exploratory comparison; not a pre-registered test"}
+
+
+def compute_bootstrap(plan: Plan, responses, metrics) -> dict[str, Any] | None:
+    selected = plan.pins["arms"]["selected"]
+    settings = plan.spec.get("bootstrap")
+    if not settings or "VLOOP" not in selected:
+        return None
+    if any(isinstance(metrics.get(arm), dict) and metrics[arm].get("status") == "awaiting_labels" for arm in ("VLOOP", "GATE")):
+        return {"status": "awaiting_labels"}
+    gate, vloop = _paired_errors(plan, responses, "GATE"), _paired_errors(plan, responses, "VLOOP")
+    per_item: dict[str, list[int]] = {}
+    for key in sorted(set(gate) & set(vloop), key=lambda key: (key[0], key[1] or "")):
+        per_item.setdefault(key[0], []).append(vloop[key] - gate[key])
+    clusters = [sum(values) / len(values) for _item, values in sorted(per_item.items())]
+    if not clusters:
+        return None
+    seed = hashed_hex(plan.spec["run_id"], "bootstrap", "VLOOP-GATE-ER")
+    result = statistics.bootstrap(clusters, lambda sample: sum(sample) / len(sample), resamples=int(settings.get("resamples", 1000)),
+                                  seed=seed, level=str(settings.get("level", "0.95")))
+    return {"quantity": "VLOOP - GATE item-level error difference", "clusters": "items", **result}
+
+
+def compute_replicate_variance(plan: Plan, responses) -> dict[str, Any]:
+    sampled = set(subsample(plan.items, plan.spec.get("replicates", {})))
+    variance: dict[str, Any] = {}
+    if not sampled:
+        return variance
+    for arm in plan.pins["arms"]["selected"]:
+        rates = []
+        by_replicate: dict[int, list[int]] = {}
+        for request, response in _pairs(plan, responses):
+            if request.arm == arm and request.item_id in sampled and response["outcome"] != "provider_failure":
+                if any(claim.get("label") is None for claim in response.get("claims", [])):
+                    by_replicate = {}
+                    break
+                by_replicate.setdefault(request.replicate, []).append(_unit_error(response, request))
+        for replicate in sorted(by_replicate):
+            values = by_replicate[replicate]
+            rates.append(sum(values) / len(values))
+        variance[arm] = {"er_by_replicate": rates, "variance": statistics.sample_variance(rates), "rule": "sample-variance-v1"}
+    return variance
+
+
+def compute_slis(plan: Plan, responses: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    failures = Counter(response["failure_reason"] for response in responses if response["outcome"] == "provider_failure")
+    attempts = sum(len(response.get("attempts", [])) for response in responses)
+    cost: dict[str, int] = {arm: 0 for arm in plan.pins["arms"]["selected"]}
+    for response in responses:
+        usage = response.get("usage") or {}
+        cost[response["arm"]] = cost.get(response["arm"], 0) + int(usage.get("input_units", 0)) + int(usage.get("output_units", 0))
+    completed = sum(1 for response in responses if response["outcome"] != "provider_failure")
+    planned = len(plan.requests)
+    return {"planned_requests": planned, "completed_requests": completed, "completion_rate": completed / planned if planned else 0.0,
+            "provider_failures": dict(sorted(failures.items())), "retries": attempts - len(responses), "attempts": attempts,
+            "cost_units": cost, "cost_unit": "provider usage units (not USD; D-06, A-15)"}
+
+
+def build_record(plan: Plan, responses: Sequence[Mapping[str, Any]], *, responder_rule: str, payload_log_sha256: str) -> dict[str, Any]:
+    spec = plan.spec
+    confirmatory = spec["purpose"] == "confirmatory"
+    metrics = compute_metrics(plan, responses)
+    digest = hashlib.sha256("".join(f"{line}\n" for line in sorted(f"{r.request_key} {r.seed_hex}" for r in plan.requests)).encode()).hexdigest()
+    pins = dict(plan.pins)
+    pins["responder"] = {"rule": responder_rule}
+    model_ids = sorted({response["model_id"] for response in responses if response.get("model_id")})
+    pins["models"] = None if spec["mode"] != "live" else {"model_ids": model_ids, "prices": None}
+    governance_block = spec.get("governance") or {}
+    return {
+        "report": RECORD_FORMAT,
+        "format_version": 1,
+        "run_id": spec["run_id"],
+        "purpose": spec["purpose"],
+        "experiment": spec["experiment"],
+        "evidence_class": CONFIRMATORY_CLASS if confirmatory else EXPLORATORY_CLASS,
+        "synthetic": plan.synthetic,
+        "mode": spec["mode"],
+        "created_at": spec["created_at"],
+        "pins": pins,
+        "requests": {"planned": len(plan.requests), "completed": sum(r["outcome"] != "provider_failure" for r in responses), "digest": digest},
+        "metrics": metrics,
+        "comparisons": compute_comparisons(plan, responses, metrics),
+        "bootstrap": compute_bootstrap(plan, responses, metrics),
+        "replicate_variance": compute_replicate_variance(plan, responses),
+        "slis": compute_slis(plan, responses),
+        "governance": {"confirmatory": confirmatory,
+                       "irb": "supplied" if governance_block.get("irb_record") else "not supplied",
+                       "osf": "supplied" if governance_block.get("osf_record") else "not supplied"},
+        "outputs": {"payload_log_sha256": payload_log_sha256, "responses_sha256": canonical_sha256(list(responses))},
+    }

@@ -1,0 +1,91 @@
+{
+ "all_known_answers_met": true,
+ "cases": 24,
+ "clean_controls": 6,
+ "detector": "reference-detector-v1",
+ "false_alarm_cases": [],
+ "fixture": "seeded-faults-v1",
+ "fixture_sha256": "1b7e3ecfb6dc5578bc819af8b3183c4d9472fc65932fb11f511127a5497e7df1",
+ "format_version": 1,
+ "per_type": {
+  "A": {
+   "detected": 3,
+   "false_alarms_on_clean": 0,
+   "misattributed": [],
+   "recall": {
+    "lower": 0.4385029682449546,
+    "rate": 1.0,
+    "successes": 3,
+    "total": 3,
+    "upper": 1.0
+   },
+   "seeded": 3
+  },
+  "B1": {
+   "detected": 3,
+   "false_alarms_on_clean": 0,
+   "misattributed": [],
+   "recall": {
+    "lower": 0.4385029682449546,
+    "rate": 1.0,
+    "successes": 3,
+    "total": 3,
+    "upper": 1.0
+   },
+   "seeded": 3
+  },
+  "B2": {
+   "detected": 3,
+   "false_alarms_on_clean": 0,
+   "misattributed": [],
+   "recall": {
+    "lower": 0.4385029682449546,
+    "rate": 1.0,
+    "successes": 3,
+    "total": 3,
+    "upper": 1.0
+   },
+   "seeded": 3
+  },
+  "C": {
+   "detected": 3,
+   "false_alarms_on_clean": 0,
+   "misattributed": [],
+   "recall": {
+    "lower": 0.4385029682449546,
+    "rate": 1.0,
+    "successes": 3,
+    "total": 3,
+    "upper": 1.0
+   },
+   "seeded": 3
+  },
+  "D": {
+   "detected": 3,
+   "false_alarms_on_clean": 0,
+   "misattributed": [],
+   "recall": {
+    "lower": 0.4385029682449546,
+    "rate": 1.0,
+    "successes": 3,
+    "total": 3,
+    "upper": 1.0
+   },
+   "seeded": 3
+  },
+  "E": {
+   "detected": 3,
+   "false_alarms_on_clean": 0,
+   "misattributed": [],
+   "recall": {
+    "lower": 0.4385029682449546,
+    "rate": 1.0,
+    "successes": 3,
+    "total": 3,
+    "upper": 1.0
+   },
+   "seeded": 3
+  }
+ },
+ "report": "seeded-faults-report"
+}

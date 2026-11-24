@@ -1,0 +1,72 @@
+{
+ "analysis_plan": {
+  "family": "E1",
+  "path": "evaluation/config/analysis_plans_v1.json",
+  "sha256": "065177a6d750641e0ac561dd6df0451836a97f7b28def5357a06addd77ce2891"
+ },
+ "arms": {
+  "path": "evaluation/config/arms_v1.json",
+  "selected": [
+   "NR",
+   "LEX",
+   "SEM",
+   "GATE",
+   "GATE+SV",
+   "GATE+V1",
+   "VLOOP"
+  ],
+  "sha256": "b704af4f515246d93b793c6897a6f45b97a9c5bd79f664eabb35113d30ba84ab"
+ },
+ "bootstrap": {
+  "level": "0.95",
+  "resamples": 1000,
+  "rule": "hash-resample-v1"
+ },
+ "created_at": "2026-11-24T00:00:00Z",
+ "evidence_catalog": {
+  "path": "evaluation/fixtures/synthetic_evidence_catalog_v1.jsonl",
+  "sha256": "67fe97fde1e1274e7f42d7fa4a2cc1434df8844d996ff467f4c2ec8392121d09"
+ },
+ "experiment": "harness-check",
+ "freeze_record": null,
+ "governance": {
+  "irb_record": null,
+  "osf_record": null
+ },
+ "items": {
+  "count": 14,
+  "path": "evaluation/fixtures/synthetic_ulqs_v1.jsonl",
+  "required_state": "any",
+  "sha256": "1f4006a6e72ed1ac3e232fd3c7d6dc51cd7334cc0658d6756be1eeeb9ef2b597"
+ },
+ "labels": null,
+ "licence_ruling": null,
+ "mode": "stub",
+ "package": {
+  "package_version": "7.0.0",
+  "path": "apps/api/app/config_package/v7.json",
+  "sha256": "30c65633a31a5f06d6f985f0bdc62af761171415fd43800ae4c43b4e8c0fd5e6"
+ },
+ "pre_run_scan": null,
+ "provider_terms": null,
+ "purpose": "exploratory",
+ "replicates": {
+  "default": 1,
+  "subsample": {
+   "replicates": 3,
+   "rule": "sha256-order-v1",
+   "size": 2,
+   "stratum": "A"
+  }
+ },
+ "research_use_confirmation": null,
+ "responder": {
+  "rule": "stub-responder-v1"
+ },
+ "retries": 3,
+ "run_id": "synthetic-stub-v1",
+ "run_spec": "ulqs-run-spec-v1",
+ "seeds": {
+  "rule": "sha256-run-arm-item-replicate-v1"
+ }
+}

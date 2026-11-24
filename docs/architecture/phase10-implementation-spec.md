@@ -1,0 +1,612 @@
+# QC+AI Studio: Phase 10 Implementation Spec
+## Evaluation and research harness (plan L1680-1742)
+
+- **Repository:** `D:\QC_AI_Studio\Codex_Webapp_QC_AI_Studio`.
+- **Branch:** `phase10/evaluation-research-harness`, cut from `origin/main` `d366e20` (Phase 9 merged, PR #40; its tree is identical to `83e7078`).
+- **Plan:** `D:\QC_AI_Studio\QC_AI_Studio_Ultimate_Software_Upgrade_Plan.txt`. Plan locations used here:
+  - The Phase 10 block: L1680-1742.
+  - 6.5 (Table XVII classes, E1-E4 rows): L751-790. Section 7 data planes (two planes; "research runs use a separate gateway and span store"): L922-929. 7.8 invariants: L960-982.
+  - Phase 2 (boundary, span identity): L1155-1222. Phase 9 (E4 replay source): L1616-1677. Phase 11: L1744-1799. Phase 12: L1801-1850.
+  - 9.1-9.4 (dependencies; 9.3 preparation; holds H8, H10 and H12): L1858-1926.
+  - 10.4 licensing: L2030-2062. 10.5 research governance: L2064-2076. 12.7 research statistics: L2296-2303. 12.8 retention: L2305-2310. 13.1 environments: L2318-2325.
+  - Risks: L2470-2530 (R-10, R-19, R-25, R-26, R-43, R-44, R-45). Decisions: L2538-2562 (D-07, D-08, D-14) and L2976-2992 (D-15, 18.3).
+  - Section 15: L2580-2729. Open questions Q-07, Q-17, Q-18: L2922-2958. Evidence E-56, E-57, E-95..E-108: L3110-3168. Assumptions A-9, A-10, A-11: L3186-3188. 20.1(c) research claims and the go/no-go tail: L3250-3285.
+- **Paper:** VBT RevB.
+  - p. 14-18 (Sec. VIII-A..F): Table XII, Table XIII, the seeded faults, the arms in Table XV, the raters in Table XVI, and the release policy.
+  - p. 18 (Sec. X-A): the confirmatory analyses.
+  - p. 19-20: Tables XVII, XVIII and XIX.
+- **Fixed decisions:** E1-E16 (`BEP-2-12/00_meta/workflows/p10/p10_design.txt`). Every one is implemented. Section 1 lists each refinement and conflict; none of them reverses a fixed decision.
+
+Sections 0-13 describe the behaviour the code has. They are authoritative and are kept current in place (P2-12-D-03). Section 14 holds one history-table row per round. This file is LF in every checkout (`.gitattributes`).
+
+---
+
+## 0. Ground rules, measured facts, readings
+
+### 0.1 Binding constraints
+
+**Git and files**
+- Stay on the branch. No branch switch, `git stash`, push, history rewrite or git-config change.
+- Commit messages end with a blank line, then `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Temporary files go only to the scratchpad, and nothing is written to the repository root. When CI's report outputs are produced locally, they go to the scratchpad.
+
+**Forbidden reads and calls**
+- Never open `infra/cloudrun/*.env.yaml`, `apps/frontend/.env.local` or any `.env*` file.
+- No cloud, gcloud, gh, provider or LLM call, and no deploy. No test touches the network (`apps/api/tests/network_guard.py`; `evaluation/tests/conftest.py` installs it when `evaluation/tests` runs alone).
+- No `pip install`. Nothing is added to `apps/api/requirements.txt`: no jsonschema, numpy, scipy or krippendorff.
+
+**Scope (E1)**
+- Phase 10 edits only these paths:
+  - `evaluation/`;
+  - `scripts/` (new research-plane scripts and a rewritten `run_evaluation.py`);
+  - `lqs/` (schema, mapping, rules, README and rubric; never items);
+  - `docs/evaluation/`, `docs/architecture/phase10-implementation-spec.md`, `docs/adr/` (ADR-012 and an ADR-007 revision) and `docs/testing/test-strategy.md`;
+  - `.github/workflows/ci.yml` (new steps);
+  - `.gitignore` and `.gitattributes` (conflict 27);
+  - `apps/api/tests/` (the AC module, the E15 tests and one strengthened guard);
+  - the BEP.
+- Nothing changes in `apps/api/app/`, any configuration package, the loader's schema constants, Alembic, `Settings`, `/ready` or `apps/frontend/`.
+- The learner path and the public-payload golden are untouched (freeze D-05), and `capture_public_payloads.py --check` passes unchanged. D-19 containment and D-31 are not touched: the harness serves nothing to anyone.
+
+**Research data (R-25, R-26; plan 9.3, 12.7)**
+- No ULQS item text, question, claim, gold answer, evidence text or licensed text is copied into the repository, tests, fixtures, logs, reports, commit messages or the BEP.
+- The spec author read the private ULQS rc1 item file and the rc1 card once, read-only, to derive field names, vocabularies, counts and id formats (0.2 M5).
+- No code path, test or CI step reads the private research data folder. The outside-read guard enforces this (8.3).
+- Validation problems, refusals and reports name item ids, field paths and codes only, never values.
+
+**Owner and factual items (E16, P1-D-18)**
+- Nothing here decides D-07, D-08, D-12, D-14, Q-07, Q-17, Q-18, A-10 or A-11, the strata targets, the 120-200 item count or the alpha floor.
+- Plan defaults and paper values are applied as provisional defaults (12.1). Unmet items are deferred (12.2).
+
+**Learner data and erasure (plan 10.3, AC-1-2)**
+- The harness reads no learner data, production telemetry or database. It opens no SQLAlchemy session and writes no learner identifier.
+- Erasure is therefore unaffected. `test_plan_e_phase_10_adds_no_production_component` asserts that `evaluation/` and the new scripts import no `app.models`, `app.core.db`, `app.db`, `app.db_models` or `sqlalchemy` module.
+- Rater and actor fields hold role or pseudonymous codes only.
+
+**Parallel Phase 8 track**
+- PD-200..PD-299 and DI-300..DI-499 are never used. The configuration package is not edited, so there is no renumbering race.
+- `v7.json` is read by explicit path and sha256 (conflict 17). No harness code or test depends on `DEFAULT_PACKAGE_PATH`.
+
+**Tests**
+- No existing test or guard is weakened, and no new skip or xfail is added.
+- A changed test keeps its intent (8.3), and its commit message says why.
+- Each fix and guard is mutation-checked: revert it, see the named test fail, then restore the file byte for byte (8.4).
+- AC tests go in `apps/api/tests/test_phase10_acceptance.py`. Unit tests go in `evaluation/tests/` modules, one per feature (8.2).
+- No test file is created per review round.
+- No new test module basename equals one in `apps/api/tests/`: pytest's prepend import mode fails on duplicate test basenames. `conftest.py` is exempt, because pytest removes the conftest module before importing the next one (M10).
+- No test reads a private file or the private research data folder.
+- No test, script or mutation run writes into the checkout (`_the_checkout_stays_unchanged`). Tests write only to `tmp_path`.
+- No new source identifier or literal starts with `qcai_` (the privacy guard reads such names as cookie names). New format strings use hyphens, for example `qcai-ulqs-fingerprints/1`.
+- New scripts, CI comments and docs pass the record guards listed in M9.
+
+### 0.2 Measured facts (on the branch at `d366e20`, 2026-11-24)
+
+- **M1. Baseline.**
+  - SQLite: 2073 passed, 2 skipped, 1 deselected, 3 xfailed (strict) at `d366e20`. The E15 commit `8561610` measured 2074 passed, 2 skipped, 1 deselected, 3 xfailed (the base plus its one new test).
+  - PostgreSQL 17: 2070 passed, 1 deselected, 3 xfailed, under both psycopg and pg8000.
+  - CI main run 45438485114 is green on every job.
+  - At the base: `pytest -q evaluation/tests` gives 4 passed, and `scripts/validate_lqs.py --allow-draft` validates 0 items.
+- **M2. Evaluation package (at the base).**
+  - `evaluation/qcai_eval/` held `ablation, abstention, citation, claims, fabrication, faithfulness, invariance, lqs_loader, reporting, retrieval, statistics`.
+  - `ablation.ARMS` (L16-21) was A none/no gate, B lexical/gate, C semantic/no gate and D semantic/gate.
+  - `reporting.build_report` stamped the wall-clock `generated_at`, and its only caller was `scripts/run_evaluation.py`, which wrote `metrics={}` (E-57).
+  - The API tests import `evaluation.qcai_eval.statistics` (`test_citation_migration.py:20`, `test_phase6_acceptance.py:370`) and `evaluation.qcai_eval.invariance` (`test_phase2_acceptance.py:99`).
+  - `scripts/calibrate_abstention.py:48` and `scripts/run_v3_residual_report.py:203` import `wilson_interval`, and the committed calibration record depends on its values. `wilson_interval` and `mcnemar_exact` stay byte-identical.
+  - The existing evaluators take these keys: `citation_existence(claims, resolvable)` reads `cited_span_ids`; `fabrication_rate` and `citation_faithfulness` read `category`; `correct_abstention` and `abstention_by_turn_depth` read `expected_answerable`, `abstained` and `turn_depth`; `invariance_violations` needs exactly three replays per item.
+- **M3. Legacy LQS.** `lqs/manifest.jsonl` is empty. `lqs/schema.json` uses long-name strata. `test_phase7_acceptance.py::test_golden_set_is_public_or_synthetic_and_disjoint_from_ulqs` reads both files, and both stay unchanged.
+- **M4. Paper facts.**
+  - **Table XIII:** S1 Single source 40, S2 Multi-hop 25, S3 Near-miss 20, S4 Adversarial 15, S5 Unanswerable 15, S6 Multi-turn "20 dialogues", S7 Invariance 25. Its note: "S1–S7 correspond to ULQS strata A–G. The planning allocation for 160 items is adjusted to corpus capacity at freeze."
+  - **States:** "Items move through Draft, Candidate, Review, Frozen and Release states."
+  - **Verification before use:** every pointer must resolve and match the corpus text "character for character", and an item leaves Review only after human review.
+  - **Coverage:** at least 80% of items at Bloom Understand or above; bibliographic items capped at 10%.
+  - **Table XV arms:** NR (Base-1), LEX (Base-2, "The fallback path and its floor"), SEM (Base-3), GATE (Base-4), GATE+SV (Prior), GATE+V1 (Own-1), VLOOP (Own-2).
+  - **Raters:** "α ≥ 0.667 is the floor for tentative conclusions". Table XVI: "second raters double-label a stratified ≥25% subsample (≥200 claims)".
+  - **Execution:** three replicates on a 40-item S1 subsample; "API failures are retried three times, then logged and counted"; "Abstentions are outcomes, not missing data".
+  - **Sec. X-A:** exact McNemar for H1a, H1b, H3a and the H4b error-rate part; the TOST for H4b; one-sided bootstrap for H1c, H2a, H2b and H2c; Friedman for H3b; the bootstrap share for H4a; Holm within each family H1-H4 at α = 0.05.
+  - **Table XIX:** with zero errors, "95% upper bound 2.5% at 150 responses and 1.3% at 300; the 3% bound of HR-3 needs at least 125".
+- **M5. rc1 (private; field names, vocabularies and counts only).**
+  - 88 items, all `schema_version` "1.0", `corpus_version` `QCAI-CORPUS-2026-08-27`, `status` candidate, `license_class` `private_eval_full_span`, `weight` 1.0, one `provenance.author`, every `validation` flag true.
+  - Strata: A 47, B 12, C 6, D 6, E 5, F 4, G 8.
+  - Required fields: `item_id`, `schema_version`, `corpus_version`, `status`, `stratum`, `corpus_scope`, `topic`, `concepts`, `difficulty`, `bloom`, `retrieval_type`, `question`, `weight`, `leakage_risk`, `license_class`, `quality_scores`, `provenance`, `validation`. Optional: `expected_behavior`, `gold_answer`, `evidence_ids`, `atomic_claims`, `reasoning_chain`, `notes`, `abstention_rationale`, `negative_evidence`, `conversation`, `base_question`, `replays`, `invariance_checked`.
+  - Structure by stratum: A answer with 1 evidence id; B exactly 2; C, D, E abstain with `negative_evidence` and `abstention_rationale`; F `conversation` turns; G `base_question`, 3 `replays`, `evidence_ids`, `atomic_claims`.
+  - Evidence pointers: 51 distinct, of the form `EV-(2025|2026|IND)-pNNN-NN`.
+  - The card's companion files are not on disk; its freeze allocation is A44 B28 C20 D14 E14 F12 G28 = 160.
+- **M6. Span identity.** `content_hash(text) = sha256(text.encode("utf-8"))`; span ids are `span-<hex64>`. `SpanResolver.resolve_current(span_id)` returns `None` for a private-plane span and an unknown span. EV-ids cannot resolve there.
+- **M7. Configuration package.** `v7.json`: `package_version` 7.0.0, sidecar sha256 `30c65633a31a5f06d6f985f0bdc62af761171415fd43800ae4c43b4e8c0fd5e6`. `owner_decisions[*].state`: D-07, D-08, D-12 and D-14 `open`; D-15 `recommended`. `semantic.enabled_by_default` is false. The `boundary` block's `private_plane_globs` include `lqs/private/**`, `lqs/ratings/*.private.jsonl`, `evaluation/reports/*.private.json`, `**/*.private.json` and `**/*.private.jsonl`.
+- **M8. Boundary scan.** `scripts/scan_boundary.py` defines `FINGERPRINT_FORMAT = "qcai-licensed-fingerprints/1"`, `normalized_words`, `fingerprint_shingles` (HMAC-SHA256 truncated to 32 hex), `TEXT_EXTENSIONS` and `MAX_SCAN_BYTES` (20 MiB); `load_fingerprints` reads the salt from the file.
+- **M9. Guards that cover new code (all green).** `test_python_sources.py` (compiles every source; the outside-read scan of both test roots), `test_gateway_egress_guard.py` (no provider host strings under `scripts/` and `evaluation/`), `test_phase3_docs.py` (`test_k3_*` NARRATIVE over `scripts/*.py` and `ci.yml`; `test_g2_*` SUPERSEDED_D12 over docs, scripts and CI), `test_phase4_acceptance.py::test_plan_d_*` and `test_phase5_acceptance.py::test_plan_e_*`.
+- **M10. Test collection.** Run together from the repository root, the rootdir is `apps/api` and the repository root is on `sys.path`. Run alone, `evaluation/tests` uses its `conftest.py` path insert. The import mode is prepend; test basenames are unique across both roots.
+- **M11. Image.** `apps/api/Dockerfile` copies `apps/api/app`, `corpus/public`, `transcripts` and `docs/evaluation/phase7/golden_set_v1.json` only.
+- **M12. Dependencies.** `jsonschema` is not in `apps/api/requirements.txt`; the ULQS validator is hand-written (conflict 21).
+- **M13. Ignore rules.** `.gitignore` now ignores `**/*.private.json` and `**/*.private.jsonl` (conflict 27); no tracked file matches them. Repository scans read `git ls-files` only.
+- **M14. Known answers (exact `Fraction` arithmetic).** Krippendorff (2011) 4 coders × 12 units: nominal 113/152, ordinal 108577/133160. 2 coders × 10 binary units: α = 2/21, Cohen's κ = 1/11. Wilson 95% upper bounds: 0/125 → 0.029815393708326456; 0/124 → 0.030048615340677695; 0/150 → 0.0249702443680766; 0/300 → 0.012642971224546034. `mcnemar_exact` with 1 and 9 discordant pairs gives p = 11/512.
+- **M15. Phase 9 records (E15).** Rewritten by the first commit `8561610` (11.1).
+- **M16. Registers.** The last PD was PD-59 and the last DI DI-128. Phase 10 uses PD-60..PD-74 and DI-129..DI-141.
+
+### 0.3 Readings
+
+- **R-a. The research plane (D-14 OPEN; PD-74).** Until D-14 is decided, a research-plane path is either a location outside the repository checkout, or a repository path that matches the pinned package's `private_plane_globs` and that git ignores. Research-plane scripts refuse any input or output path outside that rule (`planes.require_private_input`, `planes.require_private_output`). The rule governs preparation only (plan 9.3: "Preparation stays in the private research plane"); it does not release hold H12 (R-g). Nothing in the repository creates a research plane (DI-130).
+- **R-b. "Outside the research plane" (AC-10-4)** means the tracked repository tree (`git ls-files`), CI workspaces and logs, committed evaluation records (`docs/evaluation/**`) and every output a public-plane script writes.
+- **R-c. Logs versus research data (AC-10-6).** A run directory holds logs (`payload_log.jsonl`, `run_events.jsonl`, `run_record.json`: pointers, hashes, sizes, counts and ids only) and one research-data file (`responses.jsonl`, model outputs). The scanner scans every file except `responses.jsonl`, a fixed exclusion the run's own files cannot widen, and lists that file as excluded research data.
+- **R-d. Exploratory and confirmatory.** Every run is exploratory unless its spec says `"purpose": "confirmatory"`. E1-E4 are confirmatory by definition (plan 12.7): a run whose `experiment` is E1-E4 must be confirmatory, and exploratory runs are `harness-check` only. No confirmatory run happens in Phase 10.
+- **R-e. Synthetic proof.** AC-10-1, AC-10-4, AC-10-5 and AC-10-6 are proven in code on synthetic data, and AC-10-3's live half with a scripted fake provider. The real-data halves are deferred (12.2). AC-10-2 and AC-10-3's stub/recorded half are fully exercised.
+- **R-f. Stub responder.** The stub's decisions come from hashed request keys, with the same rule for every arm, so synthetic metrics carry no arm effect by construction and cannot read as results (invariant 9).
+- **R-g. Holds on runs.** Plan 9.4: "H12 | Data plane [Decision D-14] | P10 runs; private spans". While the pinned package's D-14 is not `decided`, the runner refuses every run whose items or catalog are not all synthetic, in any mode. Plan H(c) "IRB approval is filed [Decision D-08]": live runs need a valid IRB record, whatever their purpose.
+
+---
+
+## 1. Conflicts between plan text, paper and the fixed decisions, with resolutions
+
+Each resolution is a refinement. None reverses a fixed decision.
+
+1. **Item states (E2 vs paper).** E2 says "draft/candidate/frozen/retired"; the paper says "Draft, Candidate, Review, Frozen and Release". **Resolution:** six states, `draft, candidate, review, frozen, release, retired`. An item leaves `review` for `frozen` only with `validation.human_reviewed` true; frozen and release content is immutable.
+2. **Where the AC tests live.** **Resolution:** `apps/api/tests/test_phase10_acceptance.py`, as in Phases 2-9; the feature unit modules live in `evaluation/tests/` (E14).
+3. **Plan 6.5 "strict validate_lqs; freeze hash" vs R-25.** **Resolution:** the strict freeze check runs only in the research plane (`scripts/validate_ulqs.py --freeze`, which refuses synthetic items), where it records the dataset sha256. Public CI keeps `validate_lqs.py --allow-draft` and adds `validate_ulqs.py` on the synthetic set (plan 6.1: "public CI checks schemas on non-licensed stubs only").
+4. **"EV-ids resolved to span records [Evidence E-96]" vs Phase 2 ("No API path to the private plane").** **Resolution (E3):** EV-ids resolve through a private evidence catalog to records shaped like span records (document, volume, page, offsets, byte length, content sha256 under the Phase 2 rule); public `span-<hex64>` ids resolve through the Phase 2 `SpanResolver`; `corpus_spans` never holds a private span.
+5. **Plan E "no production component".** **Resolution:** the harness code is public but runs only on synthetic inputs in CI; nothing of it is in the image (M11).
+6. **Strata targets (E4).** The paper gives S1-S7 = 40/25/20/15/15/20/25; the card gives A44 B28 C20 D14 E14 F12 G28. **Resolution:** the paper's targets, mapped S1-S7 → A-G by the paper's note, are PD-63, in the one data file `lqs/ulqs-v1.0-freeze-rules.json`, which records the card's allocation as the conflicting source. The choice is the PI's (DI-136). The comparison at freeze is exact; adjusting the allocation to corpus capacity is a data edit.
+7. **S4's correct behaviour.** "Correct the premise or abstain". **Resolution:** a D item's `expected_behavior` ∈ {abstain, answer}, where `answer` is a premise correction with evidence and claims.
+8. **Second raters.** Plan task 2: "second raters on >= 25%". **Resolution (PD-64):** at least 1/4 of non-retired items are second-rated overall, and at least ⌈n_s/4⌉ in each stratum. A second-rated item is one whose every rated unit (3.5) has at least two main-round labels.
+9. **Agreement statistic.** **Resolution:** Krippendorff's α (nominal, over the rated units' labels) ≥ 0.667, compared literally as `Fraction("0.667")`, so α = 2/3 fails. Cohen's κ is reported when exactly two raters label the same units. The rubric's step 5 states this.
+10. **LEX and the gate.** **Resolution:** LEX keeps the gate and differs from GATE only in `retrieval`; "its floor" is the gate's floor on the lexical path.
+11. **NR differs in two variables.** NR declares `retrieval: none` and `abstention_gate: false`; AC-10-2 holds because both are declared ablation variables. NR sends and logs no evidence.
+12. **Replicates.** **Resolution:** the run spec's `replicates` block has a default of 1 and a subsample (stratum A, 40 items, 3 replicates, in sha256 order; PD-68). The synthetic spec uses 2 A items × 3 replicates. Metrics use replicate 1; the replicates feed `replicate_variance`.
+13. **Retries.** **Resolution:** 3 retries (4 attempts). A failure after them is an outcome, `provider_failure` with its reason, counted in the SLIs.
+14. **The scanner's location (task 7) vs E10's public CI.** **Resolution:** CI runs the same scanner on fingerprints built in memory from a committed synthetic fixture with a published salt. Real fingerprints are DI-141.
+15. **Short ULQS texts.** A 12-word shingle cannot match short questions. **Resolution:** a ULQS fingerprint family `qcai-ulqs-fingerprints/1`: a salted HMAC of every normalized whole text field of at least 3 words plus 6-word shingles (PD-71). The scanner applies the exact family to every line, sentence and decoded JSON string.
+16. **The fingerprint file holds its salt.** **Resolution:** a real fingerprint file is research-plane material, and the builder refuses a public path. Only the synthetic fixture's salt is public.
+17. **Pinning v7 vs Phase 8's renumbering.** **Resolution:** the run spec pins `apps/api/app/config_package/v7.json` by path and sha256, never through `DEFAULT_PACKAGE_PATH`. When v7 is retired, the synthetic spec is re-pinned in the change that removes it (`docs/evaluation/phase10/README.md`).
+18. **Plan F "configuration package" vs E1.** **Resolution:** the deliverable is `docs/evaluation/phase10/pinned_configuration_v1.json`, pinning the v7 package and the harness data files by canonical sha256. Its `models` block is `null` with reason "D-07 OPEN (hold H8)" (E-97; DI-132). Plan 15.3's windows and counting rules bind only when a research row is reported (DI-138).
+19. **Plan 12.8 "commit SHA ... model IDs".** **Resolution:** the run record pins the LF sha256 of every evaluation module and of `scripts/run_evaluation.py`, the package sha256, `corpus_version`, the prompt version and the model ids (null for stub and recorded). The commit SHA goes into `run_events.jsonl`, outside the byte-compared outputs. No byte-compared output contains an absolute path or the wall clock.
+20. **Plan B "Phase 5 and 9 exits" not met.** **Resolution:** Phase 10 builds preparation only. No E1-E4 run happens (DI-138), and R-d makes E1-E4 runs confirmatory-only.
+21. **E2 "a versioned schema" vs M12.** **Resolution:** `lqs/ulqs-v1.0.schema.json` (JSON Schema 2020-12) is for interoperability; `ulqs.validate_item` is the validator CI runs; a unit test proves the two agree on required fields, enumerations, patterns and conditional rules.
+22. **E6 "Type A-E faults".** **Resolution:** the fixture uses the six EHMF finding types `("A","B1","B2","C","D","E")`; a test asserts the copy equals `app.services.ehmf.vocabulary.FINDING_TYPES`.
+23. **E2 "the old LQS loader kept working".** **Resolution:** `lqs_loader.py`, `lqs/schema.json`, `lqs/manifest.jsonl` and `scripts/validate_lqs.py` are unchanged; the mapping file records the long-name ↔ letter correspondence.
+24. **AC-10-3 "live runs match hashes and seeds".** **Reading:** a live run's request keys and seeds equal those of a stub run of the same spec; the record names them and adds `replicate_variance`.
+25. **Paper rules not in the plan.** **Resolution:** Bloom, bibliographic, human review and negative evidence become freeze conditions or schema rules (PD-64). `item_kind` ∈ {instructional, bibliographic, null}: null is allowed in every state; the `review → frozen` transition and the freeze require non-null; the migrator leaves it null (DI-135).
+26. **Released benchmark.** No release is cut (DI-139); the format is described in the dataset card template only.
+27. **E1's file list omits `.gitignore` and `.gitattributes`.** **Resolution:** `.gitignore` gains `**/*.private.json` and `**/*.private.jsonl`; `.gitattributes` gains LF rules for this spec, `docs/evaluation/phase10/*.json`, `docs/evaluation/phase10/preregistration-draft.md`, `evaluation/config/*.json`, `evaluation/fixtures/*` and `lqs/ulqs-*.json`.
+28. **E15's register edit of a Phase 9 row.** The register DI-115 text said the repository texts "still give the pre-merge state until the next phase's records commit (E15)". **Resolution:** the E15 edit removed that sentence and added the run list, so the spec row and the register row are equal (11.1).
+29. **Hold H12 vs runs on private items (plan 9.4).** **Resolution (R-g):** while D-14 is not decided, every run with a non-synthetic item or catalog is refused (`hold_h12_data_plane`, exit 9). Preparation scripts (migrate, validate, fingerprints) follow R-a.
+30. **Table XVI's "(≥200 claims)".** Table XVI describes the claim raters' labels of E1 responses; a 120-200-item ULQS with 1-2 gold claims per answerable item cannot reach 200 double-labelled claims at a 25% share. **Resolution:** the 200-claim minimum is not a ULQS freeze condition; the freeze-rules file records it under `e1_label_agreement` (DI-134, DI-138), and the agreement record reports the double-labelled count.
+31. **Rating abstention items.** C and E items, abstain D items and abstain turns carry no claims. **Resolution:** a rated unit is a gold claim (`claim_id`) or an abstention unit `<item_id or turn_id>-abstention`, labelled `supported_abstention` or `unsupported_abstention`.
+32. **Plan L stops.** "Stop: contamination, negative licence determination, low agreement, no IRB." **Resolution:** contamination: the scanner exits 1, and non-synthetic and confirmatory runs need a passing pre-run scan report (plan 10.5(3)); negative licence: live refusal `licence_negative`; low agreement: confirmatory runs need a passing, current freeze record that includes α; no IRB: confirmatory refusal `irb_missing` and live refusal `irb_not_filed`.
+33. **A separate gateway (plan section 7).** **Resolution:** a live adapter never uses the app's process gateway; `evaluation/` and the new scripts import no network or model-client module and no `app.services.gateway` (AST test).
+34. **Build refinements forced by the code (none reverses a decision).**
+    - The validator adds the problem code `unexpected` (an undeclared field, so no free-text field can ride along) and `check_transition` the code `transition` (a move outside `TRANSITIONS`).
+    - G items carry their gold answers in the replays; the item-level `gold_answer` is not required for G (M5).
+    - The corpus-scope vocabulary is read from the schema file, its one written source, so no source literal starts with `qcai_` (0.1).
+    - The mapping table's `source.status` is `["draft", "candidate"]`, matching its `states` table; rc1 itself is all candidate.
+    - H4b's test is encoded `mcnemar_exact+paired_tost` with `"margin": "0.5"` as a separate field, so every `+` part is a registry key.
+    - A `harness-check` run cannot be confirmatory (`harness_check_not_confirmatory`, exit 2): a confirmatory run names E1-E4.
+    - A run directory whose `responses.jsonl` is complete is refused without `--resume` (`output_exists`), as a partial one is (`partial_checkpoint`).
+    - A recording pins the run inputs it was made from (`run_pins_sha256`); a mismatch exits 6 (`recording_pins_mismatch`).
+    - `Request` carries the gold claim ids, and `Plan` carries the pointer resolver, the synthetic flag and the recording's source.
+    - The parity check runs over the manifests returned by `runner._manifest_hook`, the seam the AC-10-2 runner test replaces.
+    - The access log has its own module, `evaluation/qcai_eval/access_log.py`, and the access-log path is itself a research-plane path.
+    - The salt is hex (`--salt-env NAME` names a variable holding hex; `--salt-file` holds hex), at least 32 bytes.
+    - `--corpus-text DIR` holds one `<document_id>.txt` per catalog document.
+    - A live record's `models` pin is `{"model_ids": [...], "prices": null}`; stub and recorded records keep `null`.
+    - `scan_research_logs.py` always exits 1 on a match; `--require-zero` states the requirement in CI.
+
+---
+
+## 2. Architecture
+
+```
+research plane (private; D-14 OPEN)                     public repository / CI (synthetic only)
+-------------------------------------                    ---------------------------------------
+rc1 items (private research data; never read by code here)
+   | scripts/migrate_ulqs_rc1.py  ------------------>  lqs/ulqs-rc1-to-v1.0-mapping.json (data)
+   v
+ULQS v1.0 items (private)  -- evaluation.qcai_eval.ulqs  <--  lqs/ulqs-v1.0.schema.json, ulqs-v1.0-freeze-rules.json
+evidence catalog (private) -- evaluation.qcai_eval.pointers (EV-ids) ; Phase 2 SpanResolver (span ids)
+ratings (*.private.jsonl)  -- evaluation.qcai_eval.agreement (alpha, kappa, coverage)
+   | scripts/validate_ulqs.py --freeze  -> freeze record (private) + dataset sha256
+   v
+run spec ---------------> evaluation.qcai_eval.runner  <---- evaluation/config/arms_v1.json (parity)
+ (pins; holds H12/H8/H10)  | modes: stub | recorded |      evaluation/config/analysis_plans_v1.json
+                           |        live (refused here)    evaluation/fixtures/* (synthetic)
+                           v
+run dir: run_record.json, payload_log.jsonl, run_events.jsonl (logs) ; responses.jsonl (research data)
+   | scripts/scan_research_logs.py  <-- fingerprints (scripts/build_licensed_fingerprints.py, private)
+   v
+contamination report (zero matches)                     CI: the same scanner on synthetic fingerprints
+```
+
+- The modules use the standard library only.
+- `evaluation.qcai_eval` imports `app` lazily, and only in `planes.boundary_policy`, `pointers.public_span_lookup` and test-only cross-checks.
+
+---
+
+## 3. Data shapes
+
+- All JSON is UTF-8. Script records use `canonical.dumps_record` (`json.dumps(value, indent=1, sort_keys=True, ensure_ascii=False) + "\n"`, written LF); JSONL lines use `canonical.dumps_line` (sorted keys, compact separators).
+- JSON values are hashed with `canonical.canonical_sha256`, which matches `app.core.config_package.canonical_sha256`. Text files are hashed with `canonical.lf_sha256`.
+
+### 3.1 ULQS v1.0 record (`lqs/ulqs-v1.0.schema.json`, `$id` `ulqs-item-schema-1.1`)
+
+| Field | Rule |
+|---|---|
+| `item_id` | `^(ULQS\|SYN)-([A-G])-([0-9]{3,})$`. The letter equals `stratum`. `SYN-` ⇔ `license_class == "synthetic"`. |
+| `schema_version` | `"1.0"` (rc1 input) or `"1.1"` (v1.0 records) |
+| `dataset_version` | `"ULQS-v1.0"`, required when `schema_version` is 1.1 |
+| `corpus_version` | `^QCAI-CORPUS-[0-9]{4}-[0-9]{2}-[0-9]{2}$` or `SYNTHETIC-CORPUS-v1`. Never part of an id (R-19). |
+| `status` | `draft \| candidate \| review \| frozen \| release \| retired` |
+| `stratum` | `A`..`G` (S1..S7) |
+| `corpus_scope` | non-empty unique list of the schema's four scope values (the three corpus volumes and `synthetic`) |
+| `topic`, `concepts` | a non-empty string; a non-empty list of non-empty strings |
+| `difficulty` | `easy \| medium \| hard` |
+| `bloom` | `remember \| understand \| apply \| analyze \| evaluate \| create` |
+| `retrieval_type` | `single_span \| multi_span \| negative_evidence \| multi_turn` |
+| `question`, `weight`, `leakage_risk` | a non-empty string; a number > 0; `low \| medium \| high` |
+| `license_class` | `private_eval_full_span \| synthetic` |
+| `quality_scores` | exactly the five keys, integers 0..3 |
+| `provenance` | `created_utc`, `author` (a role code in records the migrator writes; PD-61), optional `migrated_from`, `migration_disposition` ∈ {convert, revise}, `note` |
+| `validation` | `citation_resolved`, `evidence_verified`, `duplicate_checked`, `human_reviewed` (booleans; `human_reviewed` optional, default false) |
+| `item_kind` | `instructional \| bibliographic \| null` |
+| `split` | `calibration \| confirmation \| null` |
+| `expected_behavior` | `answer \| abstain`. Required for A-E; absent for F and G. |
+| `evidence_ids` | a unique list of `^EV-(2025\|2026\|IND\|SYN)-p[0-9]{3}-[0-9]{2}$` or `^span-[0-9a-f]{64}$`; `EV-SYN` only on synthetic items |
+| `atomic_claims` | `[{claim_id, text, evidence_ids}]`; `claim_id` is `<owner id>-c<n>` (item or turn), unique in the dataset; `evidence_ids` non-empty and ⊆ the owner's |
+| `gold_answer`, `abstention_rationale`, `reasoning_chain`, `notes` | a string or a string list |
+| `negative_evidence` | `{corpus_version, sections_searched[str], queries[str], methods ⊆ {lexical_bm25, regex, semantic}, verdict: none_found, verified_utc, limitations}` |
+| `base_question`, `replays`, `invariance_checked` | G only; `replays` holds three entries with the levels beginner, intermediate and advanced, each once |
+| `conversation` | F only; at least 2 turns `{turn_id <item_id>-t<n>, user_utterance, resolved_query, expected_behavior, gold_answer?, evidence_ids?, atomic_claims?, abstention_rationale?, negative_evidence?}` |
+
+Conditional rules: **A** answer, at least 1 evidence id, at least 1 claim and a gold answer; **B** as A with at least 2 evidence ids; **C, E** abstain, with `negative_evidence` and `abstention_rationale`, and no `evidence_ids`, `atomic_claims` or `gold_answer`; **D** as C, or answer (a premise correction) as A; **F** every turn valid by its own `expected_behavior`, no item-level evidence, claims or gold answer; **G** `base_question`, 3 replays, at least 1 evidence id and at least 1 claim. Every abstain item or turn carries `negative_evidence`.
+
+### 3.2 Freeze rules and strata targets (`lqs/ulqs-v1.0-freeze-rules.json`)
+
+`{"rules": "ulqs-v1.0-freeze-rules-v1", "provisional": true, "items": {"min": 120, "max": 200}, "strata": {A..G with paper S1..S7, name, target 40/25/20/15/15/20/25, unit (F "dialogues")}, "stratum_rule": "exact-at-freeze-v1", "agreement": {"alpha_min": "0.667", "second_rated_share_min": "1/4", "per_stratum": "ceil"}, "e1_label_agreement": {"double_labelled_claims_min": 200, "applies_to": "E1 response claim labels (Table XVI); not a ULQS freeze condition"}, "coverage": {"bloom_understand_or_above_min": "4/5", "bibliographic_max": "1/10"}, "conflicting_allocation": {"strata": A44 B28 C20 D14 E14 F12 G28}}`. Rationals are decimal or `p/q` strings parsed with `Fraction`. `load_freeze_rules` refuses a file whose target total lies outside [min, max].
+
+### 3.3 rc1 → v1.0 mapping (`lqs/ulqs-rc1-to-v1.0-mapping.json`)
+
+`{"mapping": "ulqs-rc1-to-v1.0", "format_version": 1, "provisional": true, "source": {"schema_version": "1.0", "status": ["draft", "candidate"]}, "target": {"schema_version": "1.1", "dataset_version": "ULQS-v1.0"}, "fields": {every rc1 field: "copy" (schema_version "set 1.1"; provenance copied with the author replaced)}, "added": {"validation.human_reviewed": false, "item_kind": null, "split": "assign_splits(ulqs-split-v1)", "dataset_version": "ULQS-v1.0"}, "states": {"draft": "draft", "candidate": "candidate"}, "strata": {A..G: paper and legacy long name}, "pointers": {...}, "corpus_version": "copied unchanged; separate from the dataset sha256 pin and never part of an id (R-19)", "never": ["auto-promotion past candidate", "copying text into the repository"]}`.
+
+### 3.4 Evidence catalog (research plane; JSONL)
+
+Each line is `{"evidence_id", "document_id", "volume" (one of the three corpus volumes or synthetic), "page" (int ≥ 1), "char_start", "char_end" (0 ≤ start < end), "byte_length" (int ≥ 1), "content_sha256" (hex64), "corpus_version", "text"?}`. When `text` is present the loader checks `sha256(text) == content_sha256` and `len(text.encode()) == byte_length`, then drops it; the text is never kept, returned or logged. The catalog's sha256 is `canonical_sha256` of its lines without `text`, sorted by `evidence_id`. A catalog has exactly one `corpus_version`.
+
+### 3.5 Ratings and the agreement record
+
+- **Ratings** (`lqs/ratings/<name>.private.jsonl` or outside the repository): `{"item_id", "unit_id", "rater" (^R[0-9]{1,3}$), "label", "ehmf_type" (A|B1|B2|C|D|E|null), "round" (calibration|main|adjudication), "rubric_sha256"}`. `unit_id` is a gold `claim_id` (labels supported|attribution_error|unsupported_but_true|fabricated) or `<item_id or turn_id>-abstention` (labels supported_abstention|unsupported_abstention). Only `main` rounds count.
+- **Agreement record** (private; `validate_ulqs.py --ratings ... --agreement-out`): `{"record": "ulqs-agreement-v1", "ratings_sha256", "dataset_content_sha256", "rubric_sha256", "raters", "units", "alpha_nominal_label": "p/q", "alpha_nominal_ehmf": "p/q"|null, "cohen_kappa_label": "p/q"|null, "coverage": {"items", "second_rated_items", "share": "p/q", "per_stratum": {S: [rated, n]}, "double_labelled_claims"}, "gate": {"passed", "failures"}}`. `dataset_content_sha256` is `canonical_sha256` of the items sorted by `item_id` with `status` removed, so moving items to frozen does not make the record stale. The record holds no labels and no text.
+
+### 3.6 Arms (`evaluation/config/arms_v1.json`)
+
+`{"arms_version": "arms-v1", "provisional": true, "baseline": "GATE", "variables": {"retrieval": [none, lexical, semantic], "abstention_gate": [true, false], "verification": [none, single-verifier-refine-or-refuse, v1-only, v1-v2-panel-2oo3-correction]}, "gate_configuration": {retrieval semantic, abstention_gate true, verification none, generator, prompt_version e1-prompt-v1, retrieval_parameters, decoding, context_length, items, seeds}, "arms": [NR Base-1 {retrieval none, abstention_gate false}; LEX Base-2 {retrieval lexical}; SEM Base-3 {abstention_gate false}; GATE Base-4 {}; GATE+SV Prior {verification single-verifier-refine-or-refuse}; GATE+V1 Own-1 {verification v1-only}; VLOOP Own-2 {verification v1-v2-panel-2oo3-correction}], "verification_modes": {...}}`. `docs/evaluation/protocol.md` records the former letters' correspondence: A to NR, B to LEX, C to SEM, D to GATE. An arm's retrieval behaviour is configuration only until a live adapter exists (DI-132).
+
+### 3.7 Analysis plans (`evaluation/config/analysis_plans_v1.json`)
+
+The E1-E4 families with H1a, H1b, H1c, H2a, H2b, H2c, H3a, H3b, H4a and H4b (endpoint, comparison, test, sidedness or margin, Table XVII criteria), `alpha` "0.05", `correction` "holm-per-family", and the test registry: `mcnemar_exact`, `wilson_upper_bound` and `holm` implemented; `paired_bootstrap_one_sided`, `cluster_bootstrap_bca_one_sided`, `cluster_bootstrap_lower_bound`, `bootstrap_one_sided`, `two_level_bootstrap_share_le_zero`, `friedman` and `paired_tost` "not implemented (DI-138)". The loader refuses any key named `result`, `results`, `p_value`, `estimate`, `met`, `supported`, `outcome`, `decision` or `observed` at any depth; requires each hypothesis id once, every `test` (each `+` part) to be a registry key, every criterion to be a Table XVII row, and every `implemented` entry to name a callable of `statistics.py`. The pre-registration draft is generated from this file (10).
+
+### 3.8 Seeded-fault fixture (`evaluation/fixtures/seeded_faults_v1.json`; synthetic)
+
+`{"fixture": "seeded-faults-v1", "synthetic": true, "ehmf_version": "ehmf-v1", "finding_types": ["A","B1","B2","C","D","E"], "parameters": {"max_sentence_words": 40}, "spans": {EV-SYN pointer: invented sentence}, "misconceptions": [...], "cases": [{case_id, seeded_type, base?, claims [{claim_id, text, cited}], presentation, disclosure, expect {types, claims}}]}`: 24 cases, 6 clean controls and 3 insertions per finding type, every text invented. Insertion rules: **A** a number or negation contradicting the cited span; **B1** an unknown `EV-SYN-p9NN-NN` pointer; **B2** a citation to a span sharing no content word; **C** the claim equals a listed misconception; **D** two cited spans with different numbers for one quantity and no disclosure; **E** a presentation sentence longer than `max_sentence_words`.
+
+### 3.9 Run spec (`ulqs-run-spec-v1`)
+
+`{"run_spec", "run_id", "mode": "stub|recorded|live", "purpose": "exploratory|confirmatory", "experiment": "harness-check|E1|E2|E3|E4", "created_at", "package": {"path", "sha256", "package_version"}, "items": {"path", "sha256" (dataset sha256), "count", "required_state": "any|frozen"}, "evidence_catalog": {"path", "sha256"}|null, "arms": {"path", "sha256", "selected"}, "analysis_plan": {"path", "sha256", "family"}, "seeds": {"rule": "sha256-run-arm-item-replicate-v1"}, "replicates": {"default", "subsample": {"stratum", "size", "replicates", "rule"}}, "responder": {"rule"}|{"recorded": {"path", "sha256"}}|{"live": {"adapter"}}, "labels": null, "bootstrap": {"resamples", "rule", "level"}, "retries": 3, "governance": {"irb_record", "osf_record"}, "freeze_record", "pre_run_scan", "provider_terms", "licence_ruling", "research_use_confirmation"}`. Record references are `{"path", "sha256"}` (LF sha256 of the file). `created_at` is an input; no output carries the wall clock. Paths are repository-relative (POSIX) or absolute; no byte-compared output contains an absolute path. The synthetic spec (`docs/evaluation/phase10/synthetic_run_spec_v1.json`) uses the committed fixtures, all seven arms and the subsample `{"stratum": "A", "size": 2, "replicates": 3}`.
+
+### 3.10 Responses (`responses.jsonl`; research data; append-only; the checkpoint)
+
+Each line is `{"request_key", "arm", "item_id", "unit", "replicate", "seed_hex", "outcome": "answered|abstained|provider_failure", "failure_reason", "attempts": [{"status"}], "claims": [{"claim_id", "cited", "label", "ehmf_type"}], "text", "usage": {"input_units", "output_units"}, "model_id"}`. In stub mode `text` is `"stub:" + request_key[:16]`. A recording (`recorded-responses-v1`) starts with `{"recording", "source": "synthetic|live", "run_pins_sha256"}`; each later line is `{"request_key", "attempts", "response"}`.
+
+### 3.11 Payload log, run events, access log
+
+- **`payload_log.jsonl`** (`payload-log-v1`): one line per request, in plan order, with exactly `log, purpose, run_id, request_key, arm, item_id, unit, replicate, seed_hex, prompt_version, prompt_sha256, prompt_bytes, evidence [{pointer, content_sha256, bytes}], response_sha256, response_bytes, outcome, failure_reason, attempts, model_id, cost_units`. Every string matches an id, hex, enumeration or null pattern, and sizes are integers; there is no free-text field. `evidence` is empty for an arm whose retrieval is `none`. In stub and recorded modes `prompt_sha256` and `prompt_bytes` come from the canonical envelope `{prompt_version, item_id, unit, arm, evidence}`.
+- **`run_events.jsonl`** (`start|interrupted|resumed|completed`, with `run_id`, `purpose`, `completed_requests`, `planned_requests`, `reason`?, `commit`?): scanned, not byte-compared.
+- **Access log** (`access-log-v1`; `docs/evaluation/phase10/access-log-format.md`): roles, actions, artifact kinds and sha256 only; required whenever inputs are not all synthetic.
+
+### 3.12 Run record (`run_record.json`; `ulqs-run-record`, format 1)
+
+`{"report", "format_version", "run_id", "purpose", "experiment", "evidence_class", "synthetic", "mode", "created_at", "pins": {"package" (path, sha256, package_version, owner decisions D-07, D-08, D-12, D-14), "models", "items" (sha256, count, states, corpus_version), "evidence_catalog", "arms" (sha256, selected, parity), "analysis_plan", "responder", "seeds", "replicates", "bootstrap", "prompt_version", "retries", "code" (LF sha256 of each evaluation module and the runner script)}, "requests": {"planned", "completed", "digest"}, "metrics", "comparisons", "bootstrap", "replicate_variance", "slis", "governance", "outputs": {"payload_log_sha256", "responses_sha256"}}`. The exploratory `evidence_class` reads "exploratory run; not a confirmatory test; no Table XVII row or HR-1..MR-3 outcome is asserted (invariant 9)".
+
+### 3.13 Governance records (research plane)
+
+- **IRB** (`irb-approval-v1`): `protocol_number` ^[A-Za-z0-9-]{3,40}$, `determination` ∈ {approved, exempt}, `approval_date`, `expiry_date` (YYYY-MM-DD or null, not before approval), `letter_sha256`.
+- **OSF** (`osf-registration-v1`): `doi` ^10\.17605/OSF\.IO/[A-Z0-9]{5,}$, `registered_date`, `analysis_plan_sha256`.
+- **Freeze record** (`ulqs-freeze-record-v1`, `validate_ulqs.py --freeze-out`): `dataset_sha256`, `dataset_content_sha256`, `rules_sha256`, `agreement_sha256`, `passed`, `failures`.
+- These checks are consistency checks, not proof: the dates and `created_at` are self-declared.
+
+### 3.14 Fingerprints and the scan report
+
+- **Licensed fingerprints:** `{"format": "qcai-licensed-fingerprints/1", "hash": "hmac-sha256-trunc32", "fingerprint_set_id", "salt_hex", "shingle_words": 12, "fingerprints", "sources"}`, which `scan_boundary.load_fingerprints` reads.
+- **ULQS fingerprints:** `{"format": "qcai-ulqs-fingerprints/1", ..., "shingle_words": 6, "min_words_exact": 3, "exact", "fingerprints", "sources"}`.
+- **Scan report:** `{"report": "qcai-research-log-scan", "format_version": 1, "fingerprint_sets", "targets": [{"target": "repository|path|research-logs", "root", "files", "scanned", "excluded": [{"path", "reason"}], "files_with_hits": [{"path", "licensed_hits", "ulqs_hits"}]}], "matches_total", "result": "pass|fail"}`: paths and counts only.
+
+### 3.15 Synthetic fixtures (committed; invented text; `license_class` synthetic; `corpus_version` `SYNTHETIC-CORPUS-v1`)
+
+- `evaluation/fixtures/synthetic_ulqs_v1.jsonl`: 14 items, two per stratum (`synthetic.synthetic_dataset(SMALL)`); one D item is a premise correction; F items have an answer turn and an abstain turn; G items have 3 replays; every item `candidate`, `human_reviewed` false, `item_kind` instructional.
+- `evaluation/fixtures/synthetic_evidence_catalog_v1.jsonl`: the `EV-SYN-…` lines with text, sha256 and byte length.
+- `evaluation/fixtures/recorded_responses_synthetic_v1.jsonl`: a `source: synthetic` recording from `run_evaluation.py --record-stub`; two requests fail transiently (`timeout`, `rate_limited`) and recover, one fails all 4 attempts (`server_error`).
+- `evaluation/fixtures/contamination_synthetic_v1.json`: a published salt, 3 invented passages of at least 30 words and 3 invented questions of 4-9 words; the scanner excludes this file from its own targets, and its texts appear in no other tracked file.
+
+---
+
+## 4. Algorithms (`evaluation/qcai_eval/*.py`; standard library only)
+
+### 4.1 `canonical.py`
+
+`canonical_json`, `canonical_sha256`, `lf_sha256`, `read_jsonl` (errors name the line number only), `dumps_record`, `dumps_line`, `write_lf`, `hashed_hex(*parts)` (sha256 of the parts joined by `\x1f`), `hashed_int`.
+
+### 4.2 `ulqs.py`
+
+- `STRATA`, `PAPER`, `STATES`, `TRANSITIONS` (`draft → {candidate, retired}`, `candidate → {review, draft, retired}`, `review → {frozen, candidate, retired}`, `frozen → {release, retired}`, `release → {retired}`), `Problem(item_id, path, code)` (its string never contains a value), `Dataset`, `FreezeRules`, `FreezeReport`.
+- `validate_item`, `validate_dataset` (plus unique item, claim and turn ids), `load_ulqs`, `dataset_sha256`, `dataset_content_sha256`, `stratum_counts`, `pointers_of`, `rated_units`, `check_transition`, `assign_splits`, `load_freeze_rules`, `freeze_check`.
+- **Problem codes:** `missing`, `type`, `enum`, `pattern`, `empty`, `duplicate`, `unexpected`, `stratum_mismatch`, `forbidden_for_stratum`, `required_for_stratum`, `claim_pointer_not_in_item`, `replay_levels`, `synthetic_mismatch`, `schema_version`.
+- **`check_transition`:** a new item starts in draft or candidate; a move must be in `TRANSITIONS` (`transition`); `review → frozen` requires `human_reviewed` (`human_review_missing`), all three validation flags (`validation_flags_false`) and a non-null `item_kind` (`item_kind_unmarked`); a frozen or release item's content minus `status` must equal its predecessor's (`frozen_content_changed`).
+- **`assign_splits` (`ulqs-split-v1`):** within each stratum, items sorted by `hashed_hex("ulqs-split-v1", item_id)` alternate calibration and confirmation.
+- **`freeze_check`** collects, in order: `schema_problems`; `synthetic_items` (when `require_licensed`); `count_out_of_range`; `stratum_missing:<S>`, `stratum_off_target:<S>`; `state_not_frozen` (frozen or release required); `human_review_missing`; `validation_flags_false`; `item_kind_unmarked`; `bloom_below_share`; `bibliographic_above_share`; `corpus_versions_differ`; `unresolved_pointers`, `pointer_hash_mismatch`; `no_agreement_record`, `agreement_stale`, `alpha_below_floor` (α < `Fraction("0.667")`), `second_rated_below_share`, `stratum_second_rated_below_share:<S>`. `passed` is true only with no failure.
+
+### 4.3 `pointers.py`
+
+`EvidenceRecord`, `EvidenceCatalog.load` / `from_lines`, `PointerResolver(catalog, span_lookup, corpus_text, corpus_version).resolve(pointer) -> Resolution(pointer, kind, status, locator)`, `byte_length`, `content_hash`, `PointerReport`, `resolve_items`, `public_span_lookup()` (lazy: `SpanResolver(get_course_store()).resolve_current`, reduced to `{item_id, item_version, start, end, byte_length, content_hash}`). Statuses: `resolved`, `malformed`, `no_catalog`, `unknown_pointer`, `corpus_version_mismatch`, `hash_mismatch`, `no_span_lookup`. With `corpus_text`, `sha256(text[char_start:char_end]) == content_sha256` is checked. No locator holds text.
+
+### 4.4 `agreement.py`
+
+`coincidence_matrix`, `krippendorff_alpha(units, level="nominal"|"ordinal", ranking=None)`, `cohen_kappa`, `load_ratings`, `units_from_ratings` (one unit per `unit_id`, main round only), `coverage`, `agreement_record`. The definitions follow Krippendorff (2011) in exact Fractions; one value only, or no pairable unit, raises `ValueError("no variation")`; interval and ratio levels are not implemented.
+
+### 4.5 `seeded_faults.py`
+
+`FINDING_TYPES` (equal to `app.services.ehmf.vocabulary.FINDING_TYPES`), `load_fixture`, `reference_detect` (`reference-detector-v1`: B1 a cited pointer absent; A a number or negation of the claim absent from or contradicting every cited span; B2 no shared content word, only when B1 does not fire; C the normalized claim equals a misconception; D different numbers before the same noun across cited spans without disclosure; E a presentation sentence over `max_sentence_words`), `detection_report` (per type: seeded, detected, Wilson recall, false alarms on clean, misattributed; `all_known_answers_met`), `reference_report`.
+
+### 4.6 `ablation.py`
+
+`ARMS_PATH`, `ARM_IDS`, `ABLATION_VARIABLES`, `Arm`, `ArmTable`, `ParityError`, `table_from_raw`, `load_arms`, `arm_configuration` (`{**gate_configuration, **ablation}`), `check_table` (exactly the seven arms; baseline GATE with no ablation; keys and values in their domains; `declared_but_equal`; no two identical configurations), `assert_arm_parity(run_manifests, table, required)` (GATE present; the arm set equals `required`; GATE's variables equal its configuration; per arm `key_set_differs`, `declared_mismatch` and `undeclared_difference:<key>`; messages name the arm and key only).
+
+### 4.7 `statistics.py` (`wilson_interval` and `mcnemar_exact` unchanged; additions)
+
+`holm` (sorted by (p, name); adjusted_i = min(1, max_{j ≤ i} (m − j + 1)·p_(j)); reject when adjusted ≤ α), `wilson_upper_bound`, `sample_variance` (`sample-variance-v1`), `least_squares_slope`, `hash_resample_indices` (`hash-resample-v1`: first 8 bytes of `sha256(f"{seed}\x1f{resample}\x1f{j}")` mod n), `bootstrap` (percentile; bounds at the sorted replicates ⌊(1−level)/2 · B⌋ and ⌈(1+level)/2 · B⌉ − 1). BCa and the hypothesis-specific bootstraps are not implemented (DI-138).
+
+### 4.8 `contamination.py`
+
+`LICENSED_FORMAT`, `ULQS_FORMAT`, `normalized_words` and `fingerprint_shingles` (identical to `scan_boundary`'s), `exact_fingerprint` (at least 3 words), `ulqs_texts`, `build_licensed`, `build_ulqs`, `FingerprintSet`, `load_fingerprint_file`, `synthetic_sets`, `scan_text` (shingles per set, plus the exact family over lines, sentences and decoded JSON strings), `scan_files`, `repository_target` (`git ls-files` only), `path_target`, `research_logs_target` (every file except `RESEARCH_DATA_FILES = {"responses.jsonl"}`), `report`. Text extensions equal `scan_boundary.TEXT_EXTENSIONS`; `.docx` is read as text; files over 20 MiB are excluded as `too_large`.
+
+### 4.9 `providers.py`
+
+- `ProviderOutage`, `TransientFailure(reason)`, `StubResponder` (`stub-responder-v1`: b = sha256(b"stub-responder-v1" + request_key); follows the gold behaviour when b[0] < 224; one claim per gold claim when answering an answer unit, labelled from b[1+i] % 16 (0 fabricated citing `EV-SYN-p999-99` with EHMF B1, 1 attribution_error with B2, 2 unsupported_but_true without a citation, else supported); one `<owner>-stub-c1` claim, fabricated or unsupported_but_true, when answering an abstain unit; usage {1, 1}; never reads the arm), `RecordedResponder` (replays each recorded failed attempt in order; a missing key raises `recorded_missing`), `ScriptedProvider` (the stub rule under its own prefix; `outage_at` raises `ProviderOutage` once per instance; scripted transient failures).
+- `LIVE_ADAPTERS = {}` (DI-132); a live adapter never uses `app.services.gateway`.
+- `live_refusal_reasons(spec, package_raw, environ, arms, out_dir=, repo_root=)` returns, in order: `no_live_adapter`; `research_plane_absent` (`RESEARCH_PLANE_ROOT` unset, not a directory, inside the checkout, or not containing the output directory); `D-14 open`, `D-07 open`, `D-08 open`, `D-12 open`; `irb_not_filed`; `provider_terms_unrecorded` (A-11); `licence_ruling_unrecorded` (Q-07) or `licence_negative`; `research_use_unconfirmed`; `semantic_backend_off`.
+
+### 4.10 `governance.py`
+
+`load_irb`, `load_osf`, `load_freeze_record`, `resolve_record` (checks a reference's LF sha256), `confirmatory_refusals(spec, analysis_plan_sha256, dataset_sha256, items_states, package_raw, repo_root, recording_source)`, in order: `irb_missing`, `irb_invalid:<field>`, `irb_not_yet_approved`, `irb_expired`; `osf_missing`, `osf_invalid:<field>`, `osf_registered_after_run`, `osf_plan_mismatch`; `governance_record_public`; `D-14 open`; `items_not_frozen`; `freeze_record_missing` or `freeze_record_failed`; `pre_run_scan_missing`; `stub_not_confirmatory`, `recording_not_live`.
+
+### 4.11 `payload_log.py`
+
+`LOG_KEYS`, `EVIDENCE_KEYS`, `PATTERNS`, `PayloadLogViolation`, `log_record`, `validate_log_record` (runs before every write; a violation aborts the run with exit 3). Evidence `bytes` is the locator's byte length.
+
+### 4.12 `runner.py`
+
+- `Request`, `Plan`, `RunRefused(code, reasons)`, `RunInterrupted`, `load_spec`, `plan_run(spec, repo_root=, environ=, out_dir=, access_log=)`, `request_key`, `seed_hex` (`hashed_hex(run_id, arm, item_id, str(replicate))[:16]`), `execute_run(plan, responder, out_dir, resume=, commit=)`, `compute_metrics`, `compute_comparisons`, `compute_bootstrap`, `compute_replicate_variance`, `compute_slis`, `build_record`.
+- **`plan_run` checks, in order:** 1 the spec shape (exit 2; E1-E4 not confirmatory → `experiment_requires_confirmatory`; a confirmatory harness-check → `harness_check_not_confirmatory`); 2 the package's canonical sha256 against the spec and the sidecar (exit 6); 3 the items: validation (exit 3), sha and count (exit 6), `required_state` (exit 3); 4 the catalog sha (exit 6) and every pointer (exit 3, `unresolved_pointers`); 5 the arms sha (exit 6), `check_table`, the selected arms and `assert_arm_parity` over the per-arm manifests (exit 7; a manifest is the arm configuration plus the package, items and catalog shas, prompt version, seeds rule, replicates, retries and responder rule); 6 the analysis-plan sha (exit 6) and validation (exit 2); 7 hold H12 (exit 9, `hold_h12_data_plane`; a non-synthetic run also needs `--access-log` and a pre-run scan, exit 2); the recording's sha and pins (exit 6); 8 the confirmatory gate (IRB or OSF reasons exit 8; `items_not_frozen` or `freeze_record_*` exit 3; the rest exit 2); 9 the live refusals (exit 9); 10 the output directory (synthetic runs outside the checkout, `output_inside_checkout`; non-synthetic runs a research-plane path, `output_not_private`; exit 2).
+- **Units:** A-E one unit; F one per turn with `turn_depth`; G three level units with identical evidence and arm configuration.
+- **Requests:** `request_key = canonical_sha256({arm_config sha256, item_id, unit, replicate, package sha, prompt_version, sorted evidence})`, with no `run_id`; NR's evidence is empty; the subsample is the stratum's items in `hashed_hex("sha256-order-v1", item_id)` order, first `size`; order arm (`ARM_IDS`), item, unit, replicate.
+- **`execute_run`:** read the checkpoint (a trailing partial line is truncated with `resume` and refused without it; a complete one is refused without `resume`); up to 1 + `retries` attempts per request, then `provider_failure`; `ProviderOutage` appends an `interrupted` event and raises `RunInterrupted` (exit 5); each response line is appended and fsynced; at the end the payload log (validated), the run record and a `completed` event are written. The record and the payload log depend only on (plan, responses).
+- **`compute_metrics`** (per arm, replicate 1): any null label → `{"status": "awaiting_labels"}`; `ER` (eq. 12; provider failures excluded and counted); `CF`; `CP` and `CR` (claim-level proxies, labelled); `fabrication`; `citation_existence`; `CA` and `AR` (through `correct_abstention`); `abstention_decay` (by turn depth, with a slope); `IV` over the G items whose three levels completed (others excluded and counted).
+- **Comparisons:** GATE vs each other arm, `mcnemar_exact` on paired unit errors, then `holm`; synthetic runs are labelled "synthetic: no arm effect by construction (R-f)". **Bootstrap:** the VLOOP − GATE item-level error difference, items as clusters, percentile, seed `hashed_hex(run_id, "bootstrap", "VLOOP-GATE-ER")`. **Replicate variance:** per arm, the ER of each replicate over the subsample, then `sample_variance`.
+
+### 4.13 SLIs (`compute_slis`; plan I)
+
+`{"planned_requests", "completed_requests", "completion_rate", "provider_failures": {reason: n}, "retries", "attempts", "cost_units": {arm: input + output units}, "cost_unit": "provider usage units (not USD; D-06, A-15)"}`. `completion_rate` is the requests with an outcome other than `provider_failure` over the planned requests. There is no production SLO.
+
+---
+
+## 5. Scripts
+
+Each script has `main(argv) -> int` and puts the repository root and `apps/api` on `sys.path`; tests call `main` in-process.
+
+| Script | Synopsis | Exit codes |
+|---|---|---|
+| `scripts/run_evaluation.py` (rewritten) | `--spec PATH --output-dir DIR [--resume] [--access-log PATH]`; `--write RECORD --spec PATH` (all-synthetic specs only; outputs in a temporary directory); `--check RECORD --spec PATH` (a fresh run outside the checkout, LF bytes and the payload-log sha compared); `--record-stub OUT --spec PATH` | 0; 1 drift; 2 usage, path or experiment refused; 3 invalid items, unresolved pointers, freeze record or log violation; 5 interrupted; 6 pin mismatch; 7 parity; 8 confirmatory refused (IRB/OSF); 9 live or hold-H12 refused |
+| `scripts/validate_ulqs.py` | `--items PATH [--catalog PATH] [--corpus-text DIR] [--public-spans] [--rules PATH] [--ratings PATH --rubric PATH --agreement-out PATH] [--freeze] [--freeze-out PATH] [--access-log PATH]` | 0; 2 usage or path refused (non-synthetic items not private; `--freeze` on synthetic items; non-synthetic without `--access-log`; a public output path); 3 schema problems; 4 freeze failed; 5 unresolved pointers |
+| `scripts/migrate_ulqs_rc1.py` | `--input PATH --output PATH --author-role PI\|RL --access-log PATH [--mapping PATH]`; input and output private; counts only | 0; 2 refused path; 3 an input item fails rc1 validation |
+| `scripts/build_licensed_fingerprints.py` | `--licensed-text PATH ... --ulqs PATH --set-id ID --output-licensed PATH --output-ulqs PATH (--salt-env NAME \| --salt-file PATH) --access-log PATH`; hex salt of at least 32 bytes, never printed; inputs and outputs private | 0; 2 refused; 3 bad salt |
+| `scripts/scan_research_logs.py` | `(--fingerprints PATH [--ulqs-fingerprints PATH] \| --synthetic-fixture PATH) [--repo] [--path P ...] [--research-logs DIR ...] [--require-zero] [--self-test] [--report PATH]` | 0 zero matches (or the self-test detected); 1 matches (or the self-test missed); 2 usage |
+| `scripts/check_research_harness.py` | `--check` (default) or `--write` `[--dir DIR]`, over `pinned_configuration_v1.json`, `seeded_faults_report_v1.json` and `preregistration-draft.md` | 0; 1 drift; 3 a known answer not met or an invalid plan; 6 pin; 7 parity |
+
+`scripts/validate_lqs.py` is unchanged.
+
+---
+
+## 6. Settings, configuration package, start-up, `/ready`, migrations, frontend
+
+- **Settings and flags:** none (E1). The research-plane scripts read only `RESEARCH_PLANE_ROOT` and the salt variable named on the command line; neither name starts with `qcai_`.
+- **Configuration package:** no change and no version bump.
+- **Start-up and `/ready`:** unchanged; no start-up writes; the image ships no evaluation code.
+- **Migrations:** none. The Alembic head stays `20261123_phase9_ranking`.
+- **Database behaviour:** no code path opens a database session, so behaviour is identical on SQLite, psycopg and pg8000; the AC module runs in both PostgreSQL legs without touching the database.
+- **Frontend:** unchanged.
+
+---
+
+## 7. File-by-file changes
+
+### 7.1 NEW
+- **Evaluation modules:** `evaluation/qcai_eval/canonical.py`, `planes.py`, `ulqs.py`, `pointers.py`, `agreement.py`, `seeded_faults.py`, `runner.py`, `providers.py`, `governance.py`, `payload_log.py`, `contamination.py`, `analysis_plans.py`, `access_log.py` and `synthetic.py` (the builders `synthetic_item`, `synthetic_dataset`, `synthetic_catalog`, `corpus_text`, `synthetic_ratings`, `spec_dict`, `write_spec`, `write_fixture_set`, `irb_record`, `osf_record`, `freeze_record`, `pass_scan` and `SENTINEL`).
+- **`planes.py`:** `PathRefused`, `REPO_ROOT`, `V7_PATH`, `boundary_policy(package_path=V7_PATH)` (lazy app import; `load_config_package(path, governed=False).boundary`), `inside_checkout`, `require_private_output`, `require_private_input`, `all_synthetic`. Inside the checkout a path must match `is_private_plane_path` and `git check-ignore --no-index` must report it ignored (R-a, PD-74).
+- **Configuration:** `evaluation/config/arms_v1.json`, `evaluation/config/analysis_plans_v1.json`.
+- **Fixtures:** `evaluation/fixtures/seeded_faults_v1.json`, `synthetic_ulqs_v1.jsonl`, `synthetic_evidence_catalog_v1.jsonl`, `recorded_responses_synthetic_v1.jsonl`, `contamination_synthetic_v1.json`.
+- **LQS files:** `lqs/ulqs-v1.0.schema.json`, `lqs/ulqs-v1.0-freeze-rules.json`, `lqs/ulqs-rc1-to-v1.0-mapping.json`.
+- **Scripts:** `scripts/validate_ulqs.py`, `migrate_ulqs_rc1.py`, `build_licensed_fingerprints.py`, `scan_research_logs.py`, `check_research_harness.py`.
+- **`docs/evaluation/phase10/`:** `README.md`, `synthetic_run_spec_v1.json`, `synthetic_run_record_v1.json`, `pinned_configuration_v1.json`, `seeded_faults_report_v1.json`, `ulqs-v1.0-dataset-card.md`, `preregistration-draft.md`, `contamination-report-template.md`, `access-log-format.md`, `research-plane-runbook.md`.
+- **Docs:** `docs/adr/ADR-012-evaluation-and-research-harness.md` and this spec.
+- **Tests:** `apps/api/tests/test_phase10_acceptance.py`, `evaluation/tests/conftest.py` and the unit modules of 8.2.
+
+### 7.2 MOD
+- `evaluation/qcai_eval/ablation.py` (the seven arms), `statistics.py` (additions only), `reporting.py` (`build_report(*, run_manifest, metrics, generated_at)`: the wall clock is removed; no caller after the rewrite; kept for import compatibility).
+- `scripts/run_evaluation.py` (rewritten); `evaluation/tests/test_evaluators.py` (the arm test, 8.3).
+- `lqs/README.md`; `lqs/rubric.md` (step 5, the abstention-unit labels, the EHMF type label and Table XVI's calibration on 20 items with a mid-point drift check).
+- `docs/evaluation/protocol.md`, `docs/evaluation/README.md`, `docs/adr/ADR-007-evaluation-harness.md` (`## Revision 2026-11-24 (Phase 10)`), `docs/testing/test-strategy.md`.
+- `docs/architecture/phase9-implementation-spec.md` (E15 only, 11.1).
+- `apps/api/tests/test_phase9_acceptance.py` (E15) and `apps/api/tests/test_python_sources.py` (`OUTSIDE_NAMES`).
+- `.github/workflows/ci.yml`, `.gitignore`, `.gitattributes`.
+
+---
+
+## 8. Tests
+
+### 8.1 `apps/api/tests/test_phase10_acceptance.py`
+
+All data is synthetic and built in `tmp_path`; scripts are called through `main(argv)`; a test that exercises `RESEARCH_PLANE_ROOT` sets or deletes it with `monkeypatch`.
+
+- **AC-10-1** ("ULQS v1.0 has 120-200 items across S1-S7, all pointers resolve, alpha >= 0.667 recorded."): `test_ac_10_1_a_v1_0_set_at_the_paper_targets_with_resolving_pointers_and_alpha_passes_the_freeze_check` (160 frozen, human-reviewed synthetic items at 40/25/20/15/15/20/25 with a hash-checked catalog and corpus text; ratings over claim and abstention units with α ≥ 0.667 and ⌈n/4⌉ per stratum, computed before freezing and current after; `freeze_check(require_licensed=False)` passes; `validate_ulqs.py --freeze` refuses the same set, exit 2), `test_ac_10_1_each_unmet_freeze_condition_fails_with_its_code` (20 cases, each rebuilding its own pointer report and agreement record: 119 and 201 items with directly built `FreezeRules`, a stratum off target, a stratum missing, an unknown EV pointer, a corpus-text hash mismatch, α 666/1000 and 2/3 failing and 667/1000 passing, coverage below 1/4, one stratum below ⌈n/4⌉, no record, a stale record, an item in review, human review missing, Bloom 79%, bibliographic 11%, `item_kind` null, two corpus versions, synthetic items with `require_licensed=True`; the failure set equals the expected codes exactly), `test_ac_10_1_freeze_rules_outside_the_item_range_are_refused`, `test_ac_10_1_the_strata_targets_are_the_paper_s_in_one_provisional_data_file`, `test_ac_10_1_the_rc1_shape_migrates_to_v1_0_and_the_migrator_writes_only_private_paths`, `test_ac_10_1_ev_ids_resolve_through_the_catalog_and_span_ids_through_the_phase_2_resolver`.
+- **AC-10-2** ("Each arm differs from GATE only in its ablation variables."): `test_ac_10_2_each_of_the_seven_arms_differs_from_gate_only_in_its_declared_ablation_variables`, `test_ac_10_2_an_undeclared_difference_or_a_declared_variable_equal_to_gate_is_refused` (top_k differing in SEM, LEX declaring the gate, a missing arm, an unknown variable, GATE with an ablation), `test_ac_10_2_the_runner_refuses_a_run_whose_arm_manifests_break_parity` (exit 7, no output).
+- **AC-10-3** ("Stub or recorded-response runs repeat byte-identically; live runs match hashes and seeds and report replicate variance."): `test_ac_10_3_a_stub_run_repeats_byte_identically` (the clock monkeypatched to two instants; no output holds the output path), `test_ac_10_3_a_recorded_run_repeats_byte_identically_and_replays_its_failures`, `test_ac_10_3_the_committed_synthetic_run_record_is_current`, `test_ac_10_3_a_live_run_with_a_scripted_provider_matches_the_stub_run_s_keys_and_seeds_and_reports_replicate_variance`, `test_ac_10_3_live_mode_is_refused_here_with_every_named_reason`, `test_ac_10_3_seeds_are_hashed_from_run_arm_item_and_replicate`, `test_ac_10_3_metrics_are_computed_not_empty` (E-57), `test_ac_10_3_level_units_carry_identical_evidence_and_nr_sends_none`.
+- **AC-10-4** ("Zero ULQS or licensed-span matches outside the research plane."): `test_ac_10_4_the_repository_and_the_evaluation_outputs_hold_zero_synthetic_fingerprint_matches`, `test_ac_10_4_the_scanner_finds_a_licensed_passage_and_a_short_ulqs_text_placed_outside_the_research_plane`, `test_ac_10_4_research_plane_scripts_refuse_public_output_paths`, `test_ac_10_4_the_fingerprint_builder_writes_format_1_that_scan_boundary_reads`, `test_ac_10_4_no_tracked_file_holds_a_real_catalog_pointer_or_ulqs_item_record`.
+- **AC-10-5** ("Without IRB letter or OSF DOI, the runner refuses confirmatory runs."): `test_ac_10_5_without_an_irb_letter_or_an_osf_doi_the_runner_refuses_confirmatory_runs` (8 cases, each exit 8 with nothing written), `test_ac_10_5_with_both_records_valid_the_refusal_moves_to_the_next_condition`, `test_ac_10_5_a_public_path_governance_record_is_refused`, `test_ac_10_5_exploratory_runs_are_labelled_exploratory_in_every_output`, `test_ac_10_5_an_e1_to_e4_experiment_cannot_run_exploratory`.
+- **AC-10-6** ("Provider payload logs record span pointers, hashes and sizes only, never span text; the contamination scanner runs over all research-plane logs and reports zero licensed-span matches."): `test_ac_10_6_payload_logs_record_pointers_hashes_and_sizes_only` (20 sentinels), `test_ac_10_6_a_logger_that_writes_text_is_caught_by_the_scanner` (exit 3 with the validator; the scanner names `payload_log.jsonl` without it), `test_ac_10_6_the_scanner_covers_every_research_plane_log_and_reports_zero`.
+- **Plan rows:** `test_plan_b_hold_h12_refuses_runs_on_non_synthetic_items`, `test_plan_e_phase_10_adds_no_production_component`, `test_plan_g_the_mapping_table_keeps_corpus_version_separate`, `test_plan_h_spans_reach_no_model_until_the_four_conditions_hold`, `test_plan_i_harness_slis_report_completion_failures_and_cost_per_arm`, `test_plan_j_each_seeded_fault_type_is_detected_and_no_clean_control_is_flagged`, `test_plan_j_a_provider_outage_resumes_to_the_same_bytes`, `test_plan_l_each_stop_condition_refuses`, `test_plan_p_no_hr_1_to_mr_3_outcome_is_asserted`.
+- **Docs:** `test_phase10_docs_quote_the_plan_and_state_the_current_rules`, `test_phase10_docs_the_test_strategy_maps_every_test_module_the_phase_added`, `test_phase10_docs_the_spec_ends_in_one_review_history_table`, `test_phase10_docs_the_preregistration_is_a_draft_with_holm_alpha_0_05`, `test_phase10_no_new_source_literal_starts_with_qcai_`.
+
+### 8.2 `evaluation/tests/` (unit modules; basenames unique across both roots)
+
+- `conftest.py`: the repository root, `apps/api` and `apps/api/tests` on `sys.path`; `DATABASE_URL=sqlite:///:memory:` and `ENVIRONMENT=development` by `setdefault`; `network_guard.install()` and an autouse blocked-attempt fixture.
+- `test_ulqs_schema.py`, `test_ulqs_pointers.py`, `test_rater_agreement.py`, `test_ablation_arms.py`, `test_evaluation_runner.py`, `test_research_statistics.py`, `test_analysis_plans.py`, `test_seeded_fault_fixtures.py`, `test_contamination_scan.py`, `test_payload_log.py`, `test_governance_records.py` (contents in the test strategy's Phase 10 map).
+
+### 8.3 Existing tests that change (intent kept) and guards that stay green
+
+- `evaluation/tests/test_evaluators.py::test_abstention_and_arm_parity_follow_frozen_design`: the parity half uses the seven arms through `arm_configuration` plus a shared block, and shows an undeclared difference refused; the abstention half is unchanged.
+- `apps/api/tests/test_phase9_acceptance.py::test_phase9_docs_no_document_scopes_the_branch_ci_run_to_some_acs`: still forbids the stale scope; now requires each text to name `d366e20` and 45438485114 and none to contain "no AC is CI-green".
+- `apps/api/tests/test_python_sources.py`: `OUTSIDE_NAMES` gains the private research data folder's and the paper folder's names, and the catch test gains a sample of each.
+- Unchanged and passing: `test_phase7_acceptance.py::test_golden_set_is_public_or_synthetic_and_disjoint_from_ulqs`; `test_citation_migration.py`, `test_phase2_acceptance.py`, `test_phase6_acceptance.py`; `test_gateway_egress_guard.py`; `test_phase3_docs.py` (`test_k3_*`, `test_g2_*`); `test_phase4_acceptance.py::test_plan_d_*`; `test_phase5_acceptance.py::test_plan_e_*`; `test_boundary_scan.py`.
+
+### 8.4 Mutation checks
+
+Each check reverts or breaks one item, runs the named test, sees it fail, and restores the file byte for byte. The checks and the tests that failed are recorded in the BEP phase record (`BEP-2-12/phase10/PHASE_RECORD.md`).
+
+---
+
+## 9. CI changes (`.github/workflows/ci.yml`, job `api-and-evaluation`, after `validate_lqs.py --allow-draft`)
+
+```yaml
+      # Phase 10 (evaluation and research harness): synthetic inputs only; no ULQS item, gold label or licensed text
+      # enters CI (plan 12.7, R-25, R-26). Exit 3 invalid items or a known answer missed; 6 a pin; 7 arm parity.
+      - run: python scripts/validate_ulqs.py --items evaluation/fixtures/synthetic_ulqs_v1.jsonl --catalog evaluation/fixtures/synthetic_evidence_catalog_v1.jsonl
+      - run: python scripts/check_research_harness.py --check
+      # AC-10-3: the stub run reproduces the committed synthetic run record byte for byte (exit 1 drift, 6 a pin, 7 parity).
+      - run: python scripts/run_evaluation.py --check docs/evaluation/phase10/synthetic_run_record_v1.json --spec docs/evaluation/phase10/synthetic_run_spec_v1.json
+      # AC-10-4 (synthetic half): zero synthetic-fingerprint matches in the tracked tree; the self-test proves a planted
+      # sentinel is found. Real fingerprints run only in the research plane (DI-141).
+      - run: python scripts/scan_research_logs.py --synthetic-fixture evaluation/fixtures/contamination_synthetic_v1.json --repo --require-zero --report "$RUNNER_TEMP/research-log-scan.json"
+      - run: python scripts/scan_research_logs.py --synthetic-fixture evaluation/fixtures/contamination_synthetic_v1.json --self-test
+```
+
+The pytest step is unchanged; `test_phase10_acceptance.py` runs in it and in both `api-postgres` legs. No other job changes.
+
+---
+
+## 10. Docs and evidence
+
+- **This spec**, LF.
+- **ADR-012:** context (E-57, the four arms, rc1), the decision (2026-11-24), consequences, and residuals quoting plan M "[Risk R-10][Risk R-25][Risk R-43][Risk R-45]. Residual: pre-training contamination, reported as limitation." and plan L.
+- **ADR-007 revision 2026-11-24:** Table XV's seven arms replace the four arms, and the strict freeze runs in the research plane.
+- **`docs/evaluation/protocol.md`:** the current procedure only (not executed).
+- **`docs/evaluation/phase10/README.md`:** the records and exit codes, the evidence class, the v7 re-pin rule, the SLIs and holds H8, H10 and H12.
+- **The dataset card template:** fields, states, strata targets, the freeze conditions, the rated units, the pointer policy, the "pointers only" release, licence and access, the contamination statement and limitation R-25.
+- **`preregistration-draft.md`:** generated by `check_research_harness.py --write` and checked by `--check`; marked "DRAFT - not filed with OSF (DI-131)"; α = 0.05 with Holm per family, the E1-E4 hypotheses and the status of every test.
+- **Templates and runbook:** `contamination-report-template.md`, `access-log-format.md`, `research-plane-runbook.md` (migrate, fingerprints, validate and freeze, ratings and agreement, pre-run scan, run after H12, scan, access log).
+- **Other docs:** `lqs/README.md`, `lqs/rubric.md`, `docs/evaluation/README.md`.
+- **`docs/testing/test-strategy.md`:** `## Phase 10 acceptance map (plan Phase 10 K)` with the AC table, the test files and the changed modules, and an "**Exit gate.**" paragraph ending "The exit is not passed."
+- **BEP:** `phase10/PHASE_RECORD.md` (current state and history table) and `CLOSURE_EVIDENCE_NOTES.md`; the register rows and the STATUS row 10; `check_records.py` Phase 10 checks (the registers hold this spec's PD-60..PD-74 and DI-129..DI-141 rows, all below 200; the header names each row's engineering parameters; the phase record states "The exit gate is NOT passed (DI-129)."; no record holds a real catalog pointer).
+
+---
+
+## 11. Records
+
+### 11.1 First commit `8561610` (E15; no behaviour change)
+
+- `docs/architecture/phase9-implementation-spec.md`: the 16.2 DI-115 row (equal to the register row's text), section 17 (the CI paragraph names main run 45438485114 at `d366e20`, PR run 45435838850 and branch runs 45433086376 (`83e7078`) and 45360174794 (`40bdc57`); the exit bullets name the cited main run), M21, and a last section 18 row `| Merge | `d366e20` | ...`.
+- `docs/testing/test-strategy.md`: the Phase 9 exit gate line (prefix "**Exit gate.** The Phase 9 exit") with the same facts, ending "`phase9_exit_passed` stays false in the package. The exit is not passed."
+- Tests: the changed test (8.3) and `test_phase9_docs_the_records_name_the_merge_and_the_cited_main_run`.
+- BEP (outside the repository): the register DI-115 row; `check_p9_build_the_registers_hold_the_spec_s_phase_9_rows` requires `row(phase9, key) == row(section, key)` for every key; `check_p9_f1_no_current_record_scopes_the_branch_run_to_some_acs` requires the repository texts to name `d366e20` and 45438485114 and none to say "no AC is CI-green". `check_records.py` passes.
+
+### 11.2 Records written from the committed code
+
+`docs/evaluation/phase10/synthetic_run_record_v1.json` (`run_evaluation.py --write`), `pinned_configuration_v1.json`, `seeded_faults_report_v1.json` and `preregistration-draft.md` (`check_research_harness.py --write`), and `evaluation/fixtures/recorded_responses_synthetic_v1.jsonl` (`run_evaluation.py --record-stub`). The synthetic run record pins the LF sha256 of every evaluation module, so it is rewritten whenever that code changes.
+
+---
+
+## 12. Provisional defaults and deferred items
+
+### 12.1 Provisional defaults
+
+- Every row is `provisional: true` in its data file and is ratified under DI-140.
+- The clause "Engineering parameters (no plan value; Claude's, ratified under DI-140)" names the values that are neither the plan's nor the paper's.
+
+| # | Decision | Plan text | Default applied | Where |
+|---|---|---|---|---|
+| PD-60 | ULQS v1.0 schema and states | Task 1: "ULQS v1.0 schema, states, rc1 mapping, loader; EV-ids resolved to span records [Evidence E-96]." | The rc1 record shape with strata A-G = S1-S7; the paper's states plus retired; review → frozen only after human review; frozen content immutable; per-stratum rules (D may be a premise correction); `negative_evidence` on every abstain unit. Engineering parameters (no plan value; Claude's, ratified under DI-140): `schema_version` 1.1 with `dataset_version` ULQS-v1.0, the `SYN-` prefix, the `item_kind` and `human_reviewed` fields, the problem codes and the hand-written validator. | `lqs/ulqs-v1.0.schema.json`; `ulqs.py` |
+| PD-61 | rc1 → v1.0 mapping and migration | G: "rc1 -> v1.0 mapping table; corpus_version separate [Risk R-19]." | Identity field map; `corpus_version` copied and never in an id; candidate never auto-promoted; output to private paths only. Engineering parameters (no plan value; Claude's, ratified under DI-140): `human_reviewed` false and `item_kind` null on migration, the role-code author, the `ulqs-split-v1` split rule and the canonical JSONL output. | `lqs/ulqs-rc1-to-v1.0-mapping.json`; `scripts/migrate_ulqs_rc1.py` |
+| PD-62 | Evidence pointers | Task 1: "EV-ids resolved to span records [Evidence E-96]." | EV-ids through a research-plane catalog with the Phase 2 content-hash rule and a character-for-character check; span ids through the Phase 2 resolver, public plane only. Engineering parameters (no plan value; Claude's, ratified under DI-140): the catalog line format (with `byte_length`), the `EV-SYN` prefix and the resolution statuses. | `pointers.py` |
+| PD-63 | Strata targets (OPEN, PI) | Task 2: "120-200 items, S1-S7 = 40/25/20/15/15/20/25 [VBT RevB: p. 15, Sec. VIII-B, Table XIII]" | A..G = 40/25/20/15/15/20/25 (Table XIII note), 120-200 items, exact at freeze against the one data file; the card's allocation recorded as the conflicting source (DI-136). Engineering parameters (no plan value; Claude's, ratified under DI-140): the exact-at-freeze rule. | `lqs/ulqs-v1.0-freeze-rules.json` |
+| PD-64 | Freeze conditions and raters | Task 2: "second raters on >= 25% [VBT RevB: p. 18, Sec. VIII-E, Table XVI]; alpha >= 0.667 [VBT RevB: p. 17, Sec. VIII-E]." | Krippendorff α (nominal) ≥ 0.667 compared literally; at least 1/4 of items second-rated, ⌈n/4⌉ per stratum; Bloom understand-or-above ≥ 4/5 and bibliographic ≤ 1/10 (paper p. 15); items frozen, human-reviewed and pointer-resolved; one corpus version; the dataset sha256 as the freeze hash. Table XVI's ≥200 double-labelled claims are recorded for E1 labels, not the freeze (conflict 30). Engineering parameters (no plan value; Claude's, ratified under DI-140): the ceiling rule per stratum, the abstention rated units, the failure codes and the content-hash staleness rule. | freeze rules; `ulqs.freeze_check` |
+| PD-65 | Agreement statistics and ratings files | Task 2: "alpha >= 0.667 [VBT RevB: p. 17, Sec. VIII-E]" | Krippendorff α (nominal, ordinal) and Cohen κ in exact Fractions; main-round labels only; private ratings with pseudonymous rater codes. Engineering parameters (no plan value; Claude's, ratified under DI-140): the ratings line format, the round vocabulary, the abstention labels and the rater-code pattern. | `agreement.py` |
+| PD-66 | Seeded faults | Task 3: "Fixtures with seeded Type A-E faults [VBT RevB: p. 15, Sec. VIII-B, seeded faults]." | 24 synthetic cases: 6 clean controls and 3 insertions each of A, B1, B2, C, D and E, with a pinned sha256 and known-answer detection. Engineering parameters (no plan value; Claude's, ratified under DI-140): the insertion rules, `reference-detector-v1` and the 40-word E rule. | `seeded_faults_v1.json`; `seeded_faults.py` |
+| PD-67 | Seven arms and parity | Task 4: "Seven arms (NR, LEX, SEM, GATE, GATE+SV, GATE+V1, VLOOP) with a parity check [Evidence E-98]." | Table XV as data: GATE plus a declared diff; LEX keeps the gate; NR turns retrieval and the gate off and sends no evidence; a declared variable must differ and nothing else may. Engineering parameters (no plan value; Claude's, ratified under DI-140): the variable names and domains, the verification-mode ids and the manifest key set. | `arms_v1.json`; `ablation.py` |
+| PD-68 | Runner, seeds, replicates and determinism | Task 5: "Pinned configuration package [Evidence E-97]; E1-E4 per Section 15 [Evidence E-99]; statistics with hashed seeds [Evidence E-103]." | Stub, recorded and live modes (live refused here); package path and sha256 pins; item, arm, catalog and plan pins; models null until D-07; seed = sha256(run_id, arm, item_id, replicate); 3 retries; 3 replicates on a 40-item S1 subsample; abstentions as outcomes; byte-identical outputs; resume to the same bytes; E1-E4 confirmatory only; hold H12 enforced. Engineering parameters (no plan value; Claude's, ratified under DI-140): the request-key composition, `stub-responder-v1`, the recorded format, the unit expansion, the subsample order, the output layout and the exit codes. | `runner.py`, `providers.py`, `run_evaluation.py` |
+| PD-69 | Confirmatory gate | Task 6: "No confirmatory run without IRB letter and OSF DOI [Evidence E-108]." | Valid IRB and OSF records (DOI `10.17605/OSF.IO/...`, the analysis-plan sha256 matching, both dated on or before the run) kept in the research plane; D-14 decided; frozen items with a passing freeze record; a passing pre-run scan; exploratory labelling everywhere. Engineering parameters (no plan value; Claude's, ratified under DI-140): the record formats, the date rules and the refusal order. | `governance.py` |
+| PD-70 | Statistics and analysis plans | 12.7: "E1-E4 are pre-registered hypothesis tests (alpha = 0.05, Holm per family), not software gates" | Holm per family at 0.05; exact McNemar; Wilson; a seeded percentile bootstrap; the E1-E4 plans as data with no outcome fields and an honest implemented/not-implemented registry. Engineering parameters (no plan value; Claude's, ratified under DI-140): `hash-resample-v1`, the 1,000 resamples of synthetic runs, `sample-variance-v1` and the hypothesis encoding. | `statistics.py`; `analysis_plans_v1.json` |
+| PD-71 | Contamination fingerprints and scanner | Task 7: "Contamination scanner runs in the research plane on salted fingerprints only; no ULQS or licensed text enters public CI, production jobs or reports [Risk R-26]." | Licensed format `/1` at 12 words; a ULQS family with whole-text and 6-word shingles; a salt of at least 32 bytes; private outputs only; a hit at 1; a synthetic CI fixture with a published salt; `git ls-files` scope. Engineering parameters (no plan value; Claude's, ratified under DI-140): the ULQS format, the 6-word n, the 3-word exact minimum, the text fields and the fixed `responses.jsonl` exclusion. | `contamination.py`; the two scripts |
+| PD-72 | Payload and access logs | AC-10-6: "Provider payload logs record span pointers, hashes and sizes only, never span text" | An exact key whitelist with pointers, sha256 and byte sizes, validated before every write; an access log of roles, actions and artifact sha256, required for non-synthetic inputs. Engineering parameters (no plan value; Claude's, ratified under DI-140): the key sets, patterns and access-log vocabulary. | `payload_log.py`; `access-log-format.md` |
+| PD-73 | Harness SLIs | I: "Harness SLIs only (completion, provider failures, cost); no production SLO." | Completion rate, provider failures by reason, retries and cost units per arm. Engineering parameters (no plan value; Claude's, ratified under DI-140): cost in provider usage units, not USD (D-06, A-15), and the completion denominator (requests). | `runner.compute_slis` |
+| PD-74 | Research-plane path rule (pending D-14) | 9.3: "Preparation stays in the private research plane [Decision D-14]" | Until D-14 is decided, preparation outputs go outside the checkout, or to a path matched by the boundary's `private_plane_globs` that git ignores. Runs on non-synthetic data stay refused (H12). Engineering parameters (no plan value; Claude's, ratified under DI-140): the outside-or-ignored-private rule and the `RESEARCH_PLANE_ROOT` containment rule. | `planes.py` |
+
+### 12.2 Deferred items
+
+| # | Item | Who | State |
+|---|---|---|---|
+| DI-129 | The Phase 10 exit (plan P: "AC-10-1 to AC-10-6 passed; OSF DOI and IRB letter filed; no HR-1 to MR-3 outcome asserted."). AC-10-2 and the stub and recorded half of AC-10-3 are proven in code. AC-10-1, AC-10-4, AC-10-5 and AC-10-6 are proven on synthetic data only, and the live half of AC-10-3 with a scripted fake provider only; none is met on the real ULQS or in a research plane. No OSF DOI or IRB letter is filed. No HR-1 to MR-3 outcome is asserted (none is executed). The exit is not passed. Blocked by: DI-130, DI-131, DI-132, DI-133, DI-134, DI-135, DI-136, DI-137 and DI-141, and the Phase 5 and 9 exits (DI-74, DI-115). | Eng / PI | Open |
+| DI-130 | The research data plane (hold H12, release evidence "Hash manifest; log"): real migration, the evidence catalog, fingerprints, freeze and runs; the runner refuses non-synthetic runs until then. Blocked by: the OPEN owner decision D-14 (PI, PfO). | PI / PfO, then Eng | Open |
+| DI-131 | IRB letter and OSF DOI (hold H10; A-10; Q-08); filing the pre-registration draft. Confirmatory and live runs are refused until both are filed. Blocked by: the OPEN owner decision D-08 (PI). | PI | Open |
+| DI-132 | Live runs: a pinned model set with recorded identifiers and prices (hold H8; E-97), the provider and its terms (D-12, hold H6), recorded provider retention, training and publication terms (A-11), and a live adapter on a research gateway separate from the app's. Blocked by: the OPEN decisions D-07 (PI, PO) and D-12 (PO, counsel), and the unverified assumption A-11. | PI / PO / counsel, then Eng | Open |
+| DI-133 | Spans reaching the E1-E4 models (plan H (a) and (d)): the licence ruling and the research-use confirmation. Blocked by: Q-07 (PI; counsel) and the paper's PENDING research-use confirmation. | PI / counsel | Open |
+| DI-134 | Raters: second raters on at least 25% of ULQS items and α ≥ 0.667 recorded; Table XVI's ≥200 double-labelled E1 claims; Group A experts and Group B novices. rc1 has one author and no agreement data. Blocked by: Q-17 (PI) and D-08 for the participant groups. | PI | Open |
+| DI-135 | ULQS beyond rc1: 88 items to 120-200, human review, `item_kind` marking, the Bloom share, the split and frozen states. Blocked by: Q-18 (Research Lead), DI-134 and DI-130. | RL / PI | Open |
+| DI-136 | The strata allocation: the paper's 40/25/20/15/15/20/25 (PD-63) against the rc1 card's A44/B28/C20/D14/E14/F12/G28 (spec conflict 6), adjusted to corpus capacity at freeze. Blocked by: a PI decision. | PI | Open |
+| DI-137 | The rc1 companion files are not on disk (`evidence_catalog.jsonl`, `validate_ulqs.py`, `ulqs_item.schema.json`, the benchmark specification); without the catalog no rc1 EV pointer resolves. Blocked by: the Research Lead supplying them in the research plane (DI-130). | RL | Open |
+| DI-138 | E1-E4 execution and the research rows of Table XVII; the analyses not implemented (the paired, cluster, BCa and two-level bootstraps, Friedman, TOST, cumulative-link models, ICC and prediction-powered inference for the 25%-labelled arms); the windows and counting rules fixed before any row is reported (15.3). Never asserted before execution (invariant 9). Blocked by: DI-129's blockers and the Phase 5 and 9 exits; advances DI-75 and DI-124. | PI / MLE | Deferred |
+| DI-139 | The released benchmark (pointers only; plan H; paper Sec. VIII-F) and its repository DOI (PENDING in the paper). Blocked by: the study (DI-138), DI-133 and a PI decision. | PI | Deferred |
+| DI-140 | Ratify PD-60..PD-74. Blocked by: the PI (OPEN). | PI | Open |
+| DI-141 | AC-10-4 and AC-10-6 over real research-plane logs with real salted fingerprints of the licensed corpus and the ULQS, the pre-run scan, and a filed contamination report. Blocked by: DI-130 (D-14) and DI-137. | MLE / PI | Open |
+
+### 12.3 Rows of other phases that Phase 10 advances
+
+- **DI-28 and DI-67:** the split rule and the scanner exist. The split of real items is DI-135.
+- **DI-75:** the harness, seeded faults and statistics exist. Execution is DI-138.
+- **DI-124:** the recorded mode and the pins exist. E4 is DI-138.
+- **DI-94:** unchanged. DI-130 and DI-131 carry Phase 10's part.
+
+No other phase's row is edited, except the sanctioned E15 edit of DI-115 (11.1).
+
+---
+
+## 13. Verification, work order and exit
+
+**Work order.** 1 the SQLite baseline at `d366e20` (venv restored and touched if needed); 2 the E15 commit (11.1); 3 `canonical`, `planes`, `ulqs`, `pointers` and `agreement`; 4 the arms, analysis plans and seeded faults, with `check_research_harness.py`; 5 `providers`, `governance`, `payload_log` and `runner`, with `run_evaluation.py`; 6 `contamination`, the builder and the scanner; 7 the AC module, docs, CI, registers and the BEP phase record, then the records (11.2) from the committed code; 8 the mutation checks (8.4); 9 review rounds, each in its own commits and one row in section 14 and in the BEP phase record.
+
+**Commands** (`<py>` is the scratchpad venv's `python.exe`):
+- `<py> -m pytest -q -m "not release_artifacts" apps/api/tests evaluation/tests -p no:cacheprovider` (the M1 baseline plus the new tests), and `<py> -m pytest -q evaluation/tests -p no:cacheprovider` alone.
+- Every CI validator of `api-and-evaluation`, in order, with report outputs in the scratchpad, including the five new steps and `run_golden_set.py --check ... --base-ref origin/main`; `pip-audit` is skipped locally (network).
+- A scratch PostgreSQL 17 cluster (scratchpad data dir, port 57xxx) running `apps/api/tests` under `postgresql+psycopg://` and `postgresql+pg8000://`, stopped afterwards.
+- BEP `check_records.py`, and `git status --short` (no stray files).
+
+**Exit (plan P).**
+- AC-10-1..AC-10-6 are proven on synthetic data in code (R-e). The real-data halves, the OSF DOI and the IRB letter are deferred (DI-129..DI-141).
+- No HR-1 to MR-3 outcome is asserted.
+- The exit is not passed (DI-129).
+
+---
+
+## 14. Review history
+
+The rows below record what each round fixed, in order. Sections 0-13 are authoritative.
+
+| Round | Commit | Findings fixed (one line each, with their tests) |
+|---|---|---|
+| Spec (pre-code) | — (sections 0-13) | The design: the AC-10-1..AC-10-6 tests in 8.1 and the unit modules in 8.2 |
+| Spec review 1 (pre-code) | — | Hold H12 enforced on non-synthetic runs; E1-E4 confirmatory only; live needs a filed IRB and refuses a negative licence; the four plan L stops; abstention rated units and the 200-claim minimum moved to E1 labels (conflicts 30, 31); agreement bound to the status-free content hash; freeze cases testable alone; the analysis-plan registry made honest; a fixed research-data exclusion; NR sends no evidence and the catalog carries `byte_length`; no `DEFAULT_PACKAGE_PATH` dependency; a monkeypatched-clock determinism test; the pre-registration draft checked and LF-pinned; PD-74 added |
+| E15 | `8561610` | The Phase 9 records after the merge (11.1; `test_phase9_docs_the_records_name_the_merge_and_the_cited_main_run`) |
+| Build | the commit after `8561610` | The harness, records, docs and CI of sections 2-11; the code-forced refinements of conflict 34 (each with its test in 8.1 or 8.2) |

@@ -33,8 +33,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 # Not repository sources: installed packages, caches and build output.
 SKIPPED_PARTS = {".git", "__pycache__", "node_modules", ".next", ".venv", "venv", "dist"}
 TEST_ROOTS = (REPO_ROOT / "apps" / "api" / "tests", REPO_ROOT / "evaluation" / "tests")
-# Names of what lies beside the checkout on the workstation: the evidence packages and the plan.
-OUTSIDE_NAMES = ("BEP-2-12", "BEP-1", "BEP-0", "QC_AI_Studio_Ultimate_Software_Upgrade_Plan")
+# Names of what lies beside the checkout on the workstation: the evidence packages, the plan, the private research data
+# folder (the ULQS working files, Phase 10 spec R-25) and the paper's folder.
+OUTSIDE_NAMES = ("BEP-2-12", "BEP-1", "BEP-0", "QC_AI_Studio_Ultimate_Software_Upgrade_Plan", "Working_Data", "Verify_Before_You_Teach")
 
 
 def _sources() -> list[Path]:
@@ -103,7 +104,8 @@ def test_no_test_reads_outside_the_repository():
 def test_the_outside_read_scan_catches_each_way_a_test_reached_the_evidence_package():
     for source in ('BEP_ROOT = REPO_ROOT.parent / "BEP-2-12"\n', 'PLAN = REPO_ROOT.parent / "QC_AI_Studio_Ultimate_Software_Upgrade_Plan.txt"\n',
                    'ROOT = REPO_ROOT.parents[0]\n', 'ROOT = Path(__file__).resolve().parents[4]\n', 'register = Path("../BEP-2-12/00_meta")\n',
-                   'register = Path(r"D:\\QC_AI_Studio\\BEP-2-12")\n'):
+                   'register = Path(r"D:\\QC_AI_Studio\\BEP-2-12")\n', 'ITEMS = Path("../Working_Data/items.jsonl")\n',
+                   'ITEMS = Path(r"D:\\QC_AI_Studio\\Working_Data\\items.jsonl")\n', 'PAPER = Path("../Verify_Before_You_Teach/paper.pdf")\n'):
         assert _outside_reads(source, "sample.py", 3), source
     assert _outside_reads('REPO_ROOT = Path(__file__).resolve().parents[3]\nAPI_ROOT = REPO_ROOT / "apps" / "api"\n', "sample.py", 3) == []
     assert _outside_reads('"""The score floor, approved as P1-D-04 (BEP-1)."""\n', "sample.py", 3) == []

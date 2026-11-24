@@ -1,0 +1,617 @@
+{
+ "fixture": "seeded-faults-v1",
+ "synthetic": true,
+ "provisional": true,
+ "note": "Invented sentences only; no ULQS item, licensed or course text (PD-66).",
+ "ehmf_version": "ehmf-v1",
+ "finding_types": [
+  "A",
+  "B1",
+  "B2",
+  "C",
+  "D",
+  "E"
+ ],
+ "parameters": {
+  "max_sentence_words": 40
+ },
+ "spans": {
+  "EV-SYN-p001-01": "The Velmora bridge has 7 arches built from pale granite.",
+  "EV-SYN-p001-02": "The Velmora bridge was finished in 1840 by the river guild.",
+  "EV-SYN-p002-01": "Copper kettles in the Tarsel valley are polished every morning.",
+  "EV-SYN-p002-02": "The Orvane lighthouse stands 40 metres above the harbour.",
+  "EV-SYN-p002-03": "The Orvane lighthouse stands 55 metres above the harbour.",
+  "EV-SYN-p003-01": "Mountain goats in the Keldra range never descend below the tree line.",
+  "EV-SYN-p003-02": "Weavers in Pellith dye their wool with crushed marigold petals.",
+  "EV-SYN-p003-03": "The Pellith market opens at 6 each morning and closes at noon."
+ },
+ "misconceptions": [
+  {
+   "id": "syn-m1",
+   "statement": "The Velmora bridge was built in a single summer."
+  },
+  {
+   "id": "syn-m2",
+   "statement": "Mountain goats in the Keldra range never drink from streams."
+  },
+  {
+   "id": "syn-m3",
+   "statement": "Weavers in Pellith buy their dye from distant traders."
+  }
+ ],
+ "cases": [
+  {
+   "case_id": "sf-base-01",
+   "seeded_type": null,
+   "claims": [
+    {
+     "claim_id": "sf-base-01-c1",
+     "text": "The Velmora bridge has 7 arches.",
+     "cited": [
+      "EV-SYN-p001-01"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [],
+    "claims": {}
+   }
+  },
+  {
+   "case_id": "sf-base-02",
+   "seeded_type": null,
+   "claims": [
+    {
+     "claim_id": "sf-base-02-c1",
+     "text": "The Velmora bridge was finished in 1840.",
+     "cited": [
+      "EV-SYN-p001-02"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [],
+    "claims": {}
+   }
+  },
+  {
+   "case_id": "sf-base-03",
+   "seeded_type": null,
+   "claims": [
+    {
+     "claim_id": "sf-base-03-c1",
+     "text": "Copper kettles in the Tarsel valley are polished every morning.",
+     "cited": [
+      "EV-SYN-p002-01"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [],
+    "claims": {}
+   }
+  },
+  {
+   "case_id": "sf-base-04",
+   "seeded_type": null,
+   "claims": [
+    {
+     "claim_id": "sf-base-04-c1",
+     "text": "The Orvane lighthouse stands 40 metres above the harbour.",
+     "cited": [
+      "EV-SYN-p002-02"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [],
+    "claims": {}
+   }
+  },
+  {
+   "case_id": "sf-base-05",
+   "seeded_type": null,
+   "claims": [
+    {
+     "claim_id": "sf-base-05-c1",
+     "text": "Mountain goats in the Keldra range never descend below the tree line.",
+     "cited": [
+      "EV-SYN-p003-01"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [],
+    "claims": {}
+   }
+  },
+  {
+   "case_id": "sf-base-06",
+   "seeded_type": null,
+   "claims": [
+    {
+     "claim_id": "sf-base-06-c1",
+     "text": "Weavers in Pellith dye their wool with marigold petals.",
+     "cited": [
+      "EV-SYN-p003-02"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [],
+    "claims": {}
+   }
+  },
+  {
+   "case_id": "sf-A-01",
+   "base": "sf-base-01",
+   "seeded_type": "A",
+   "claims": [
+    {
+     "claim_id": "sf-A-01-c1",
+     "text": "The Velmora bridge has 9 arches.",
+     "cited": [
+      "EV-SYN-p001-01"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [
+     "A"
+    ],
+    "claims": {
+     "sf-A-01-c1": [
+      "A"
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "sf-A-02",
+   "base": "sf-base-02",
+   "seeded_type": "A",
+   "claims": [
+    {
+     "claim_id": "sf-A-02-c1",
+     "text": "The Velmora bridge was finished in 1866.",
+     "cited": [
+      "EV-SYN-p001-02"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [
+     "A"
+    ],
+    "claims": {
+     "sf-A-02-c1": [
+      "A"
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "sf-A-03",
+   "base": "sf-base-05",
+   "seeded_type": "A",
+   "claims": [
+    {
+     "claim_id": "sf-A-03-c1",
+     "text": "Mountain goats in the Keldra range often descend below the tree line.",
+     "cited": [
+      "EV-SYN-p003-01"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [
+     "A"
+    ],
+    "claims": {
+     "sf-A-03-c1": [
+      "A"
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "sf-B1-01",
+   "base": "sf-base-01",
+   "seeded_type": "B1",
+   "claims": [
+    {
+     "claim_id": "sf-B1-01-c1",
+     "text": "The Velmora bridge has 7 arches.",
+     "cited": [
+      "EV-SYN-p901-01"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [
+     "B1"
+    ],
+    "claims": {
+     "sf-B1-01-c1": [
+      "B1"
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "sf-B1-02",
+   "base": "sf-base-03",
+   "seeded_type": "B1",
+   "claims": [
+    {
+     "claim_id": "sf-B1-02-c1",
+     "text": "Copper kettles in the Tarsel valley are polished every morning.",
+     "cited": [
+      "EV-SYN-p902-02"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [
+     "B1"
+    ],
+    "claims": {
+     "sf-B1-02-c1": [
+      "B1"
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "sf-B1-03",
+   "base": "sf-base-06",
+   "seeded_type": "B1",
+   "claims": [
+    {
+     "claim_id": "sf-B1-03-c1",
+     "text": "Weavers in Pellith dye their wool with marigold petals.",
+     "cited": [
+      "EV-SYN-p903-03"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [
+     "B1"
+    ],
+    "claims": {
+     "sf-B1-03-c1": [
+      "B1"
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "sf-B2-01",
+   "base": "sf-base-03",
+   "seeded_type": "B2",
+   "claims": [
+    {
+     "claim_id": "sf-B2-01-c1",
+     "text": "Copper kettles in the Tarsel valley are polished every morning.",
+     "cited": [
+      "EV-SYN-p001-01"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [
+     "B2"
+    ],
+    "claims": {
+     "sf-B2-01-c1": [
+      "B2"
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "sf-B2-02",
+   "base": "sf-base-06",
+   "seeded_type": "B2",
+   "claims": [
+    {
+     "claim_id": "sf-B2-02-c1",
+     "text": "Weavers in Pellith dye their wool with marigold petals.",
+     "cited": [
+      "EV-SYN-p002-01"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [
+     "B2"
+    ],
+    "claims": {
+     "sf-B2-02-c1": [
+      "B2"
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "sf-B2-03",
+   "base": "sf-base-01",
+   "seeded_type": "B2",
+   "claims": [
+    {
+     "claim_id": "sf-B2-03-c1",
+     "text": "The Velmora bridge has granite arches.",
+     "cited": [
+      "EV-SYN-p003-02"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [
+     "B2"
+    ],
+    "claims": {
+     "sf-B2-03-c1": [
+      "B2"
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "sf-C-01",
+   "base": "sf-base-02",
+   "seeded_type": "C",
+   "claims": [
+    {
+     "claim_id": "sf-C-01-c1",
+     "text": "The Velmora bridge was built in a single summer.",
+     "cited": [
+      "EV-SYN-p001-02"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [
+     "C"
+    ],
+    "claims": {
+     "sf-C-01-c1": [
+      "C"
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "sf-C-02",
+   "base": "sf-base-05",
+   "seeded_type": "C",
+   "claims": [
+    {
+     "claim_id": "sf-C-02-c1",
+     "text": "Mountain goats in the Keldra range never drink from streams.",
+     "cited": [
+      "EV-SYN-p003-01"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [
+     "C"
+    ],
+    "claims": {
+     "sf-C-02-c1": [
+      "C"
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "sf-C-03",
+   "base": "sf-base-06",
+   "seeded_type": "C",
+   "claims": [
+    {
+     "claim_id": "sf-C-03-c1",
+     "text": "Weavers in Pellith buy their dye from distant traders.",
+     "cited": [
+      "EV-SYN-p003-02"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [
+     "C"
+    ],
+    "claims": {
+     "sf-C-03-c1": [
+      "C"
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "sf-D-01",
+   "base": "sf-base-04",
+   "seeded_type": "D",
+   "claims": [
+    {
+     "claim_id": "sf-D-01-c1",
+     "text": "The Orvane lighthouse stands 40 metres above the harbour.",
+     "cited": [
+      "EV-SYN-p002-02",
+      "EV-SYN-p002-03"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [
+     "D"
+    ],
+    "claims": {
+     "sf-D-01-c1": [
+      "D"
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "sf-D-02",
+   "base": "sf-base-04",
+   "seeded_type": "D",
+   "claims": [
+    {
+     "claim_id": "sf-D-02-c1",
+     "text": "The Orvane lighthouse stands 55 metres above the harbour.",
+     "cited": [
+      "EV-SYN-p002-03",
+      "EV-SYN-p002-02"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [
+     "D"
+    ],
+    "claims": {
+     "sf-D-02-c1": [
+      "D"
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "sf-D-03",
+   "base": "sf-base-04",
+   "seeded_type": "D",
+   "claims": [
+    {
+     "claim_id": "sf-D-03-c1",
+     "text": "The Orvane lighthouse is a tall harbour landmark.",
+     "cited": [
+      "EV-SYN-p002-02",
+      "EV-SYN-p002-03"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [
+     "D"
+    ],
+    "claims": {
+     "sf-D-03-c1": [
+      "D"
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "sf-E-01",
+   "base": "sf-base-01",
+   "seeded_type": "E",
+   "claims": [
+    {
+     "claim_id": "sf-E-01-c1",
+     "text": "The Velmora bridge has 7 arches.",
+     "cited": [
+      "EV-SYN-p001-01"
+     ]
+    }
+   ],
+   "presentation": "This presentation sentence keeps going far beyond the patience of any careful reader because it strings together clause after clause about bridges kettles lighthouses goats weavers markets and harbours without ever pausing for breath or offering the learner a single place to stop and think about what was said.",
+   "disclosure": false,
+   "expect": {
+    "types": [
+     "E"
+    ],
+    "claims": {}
+   }
+  },
+  {
+   "case_id": "sf-E-02",
+   "base": "sf-base-03",
+   "seeded_type": "E",
+   "claims": [
+    {
+     "claim_id": "sf-E-02-c1",
+     "text": "Copper kettles in the Tarsel valley are polished every morning.",
+     "cited": [
+      "EV-SYN-p002-01"
+     ]
+    }
+   ],
+   "presentation": "A short and plain explanation. This presentation sentence keeps going far beyond the patience of any careful reader because it strings together clause after clause about bridges kettles lighthouses goats weavers markets and harbours without ever pausing for breath or offering the learner a single place to stop and think about what was said.",
+   "disclosure": false,
+   "expect": {
+    "types": [
+     "E"
+    ],
+    "claims": {}
+   }
+  },
+  {
+   "case_id": "sf-E-03",
+   "base": "sf-base-06",
+   "seeded_type": "E",
+   "claims": [
+    {
+     "claim_id": "sf-E-03-c1",
+     "text": "Weavers in Pellith dye their wool with marigold petals.",
+     "cited": [
+      "EV-SYN-p003-02"
+     ]
+    }
+   ],
+   "presentation": "This presentation sentence keeps going far beyond the patience of any careful reader because it strings together clause after clause about bridges kettles lighthouses goats weavers markets and harbours without ever pausing for breath or offering the learner a single place to stop and think about what was said. A short and plain explanation.",
+   "disclosure": false,
+   "expect": {
+    "types": [
+     "E"
+    ],
+    "claims": {}
+   }
+  }
+ ]
+}
