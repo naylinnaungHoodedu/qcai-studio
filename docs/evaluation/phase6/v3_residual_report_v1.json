@@ -1,8 +1,8 @@
 {
  "report": "qcai-v3-residual-report",
  "format_version": 1,
- "created_at": "2026-11-24T05:33:50+00:00",
- "commit": "ef99f9da667d99423abb71503d337480d4e2ddc2",
+ "created_at": "2026-11-24T14:23:13+00:00",
+ "commit": "c466957f9021e93ec2c5d670432095a347a19447",
  "evidence_class": "synthetic telemetry, not research results (plan Phase 6 H: audit counts are telemetry, not research results)",
  "public_corpus_only": true,
  "config_package": {
@@ -96,7 +96,7 @@
    "apps/api/app/core/guest_tokens.py": "669ff47886948bad02563610fbb42c856459544ef11cc03a5169591b98e8a319",
    "apps/api/app/core/log_redaction.py": "ac76ce9520ac9b42986775b36bb803b00105edb9a6b256748f541022437582c3",
    "apps/api/app/core/manifest_v2.py": "68648be870c49c6182c96fa30c2e28edfb321f251cfcb56d3e426367bbb3bab2",
-   "apps/api/app/core/phase8_settings.py": "8713daa60d6e362530c1fd6878fb953d43f1d297b2cc1ef881790d267a8fdf52",
+   "apps/api/app/core/phase8_settings.py": "81ddbf48e35c0207c77e1cadb6ad51b3979c84713907e8a81f94781d7da768f5",
    "apps/api/app/core/safe_input.py": "6f0475c6c09062c0103f7f973f65706a88a8605a0430a0e54c581ac3876023fb",
    "apps/api/app/core/schema_upgrades.py": "a08a3553986bce1d4e19a0f5c1be5a878fa85e42714ae5c06f9a29e4b2289a57",
    "apps/api/app/core/source_assets.py": "1889e9d025697c0d928b6e068325c0569adc7b8a802394a6dd3750f451e39ce5",
@@ -110,7 +110,7 @@
    "apps/api/app/gateway/pinning.py": "287551250014af40b3655c83a02e57998515422fd05f55b112351b9bbe2b4594",
    "apps/api/app/gateway/registry.py": "c7ebbbb02cebe0977afa9e3235b01cb9af9775ce1d810cb0f64fba685292bed4",
    "apps/api/app/gateway/retired.py": "e5744df75d606a0d80cbf2ad51f13cbe9c6fd4684532df8ea917d83dc968b015",
-   "apps/api/app/schemas.py": "0ea45aa7f7fd117ef92cd5358a41a22f4e52922bc576060bbc28bdab7573bb65",
+   "apps/api/app/schemas.py": "f5beb3b27b019f6035a4b945ee4374b5be9e35b38903b156d43f6ceecedd1855",
    "apps/api/app/services/citation_migration.py": "15968f9b4d25c3d5fe16dd93d4bb2c58c5a6ce8be78e221262bb2fa29a6d357e",
    "apps/api/app/services/claim_gate.py": "dd3fa79d6a39f3cf30141471622e0f487059eaa80669332c1eab7d5adbe6ca28",
    "apps/api/app/services/contained_answers.py": "b32a28b65f294fb7de09229679ca2503666de9c45e8179f1f4f52c0302c96e99",
@@ -130,7 +130,7 @@
    "apps/api/app/services/provenance.py": "cbea0a9970dac7fe17b653e1308d26b99846e92d0c9e04b5b15be4c3a96e5857",
    "apps/api/app/services/qa_engine.py": "678ab941468f21da8376ec305a82cc904ee16bc0da2551165146eebd0d4a41ca",
    "apps/api/app/services/quiz_keys.py": "c839f3da7fce2abada021d5a454cada57ed209474db93abf479fc6a6ad538131",
-   "apps/api/app/services/retention.py": "6ac86f9703ab599ad79098167e901f9d94c4081f95433e7c659abe14f6ca5c08",
+   "apps/api/app/services/retention.py": "d40e98f1c1074ac3b9cad12f67b7a078bd60fd76ccc62da1bb5e654b809e0815",
    "apps/api/app/services/retrieval_engine.py": "052ec247b23a534be350623d0d85fce6351b8db03e8a6e012a5ebe67f912de1b",
    "apps/api/app/services/retrieval_metrics.py": "58428daac4565b8df6b77bf424442a21ee647a64f19701649cb6751042be603d",
    "apps/api/app/services/retrieval_p1.py": "a15a1431407ba90d04ba7a2c089fee9f3f4d66d6c1a9030a7680cb6194c7cb37",
@@ -170,6 +170,6 @@
    "apps/api/app/services/v3/triggers.py": "7634c7eb14f7c98aab3516648e2c7a597b51e8a8fa1232cdf430e43ea32b89e0",
    "scripts/run_v3_residual_report.py": "03996c3f3f5b102ba6cb38e9328fcfd8107856d3e0782f4fb26dfbd46832adbd"
   },
-  "sha256": "9439b95371f9a9fcae0b867269ab563c1115e0db76bbf8bd45e50cad75baac4b"
+  "sha256": "b9beb5f8d25fd7f139fc5fd093ed155ea6317ab00d897b687bc2c2cae71a9347"
  }
 }

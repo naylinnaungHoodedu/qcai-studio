@@ -1,8 +1,8 @@
 {
  "report": "qcai-v1-fixture-report",
  "format_version": 1,
- "created_at": "2026-11-24T05:33:31+00:00",
- "commit": "ef99f9da667d99423abb71503d337480d4e2ddc2",
+ "created_at": "2026-11-24T14:22:58+00:00",
+ "commit": "c466957f9021e93ec2c5d670432095a347a19447",
  "evidence_class": "fixture measurements, not research results (plan Phase 4 H)",
  "public_corpus_only": true,
  "fixtures": {
@@ -1258,7 +1258,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 7.101,
+    "p95_ms": 4.164,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2485,7 +2485,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 9.744,
+    "p95_ms": 4.454,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2539,7 +2539,7 @@
   "contained": true
  },
  "latency": {
-  "p95_ms": 6.448,
+  "p95_ms": 4.096,
   "budget_ms": 250,
   "within_budget": true
  },
@@ -2556,7 +2556,7 @@
    "apps/api/app/core/db.py": "81d5e54a250dc4e3d6d477ad33bb37f78cee4a98854330e39e223f1ab44b6014",
    "apps/api/app/core/log_redaction.py": "ac76ce9520ac9b42986775b36bb803b00105edb9a6b256748f541022437582c3",
    "apps/api/app/core/manifest_v2.py": "68648be870c49c6182c96fa30c2e28edfb321f251cfcb56d3e426367bbb3bab2",
-   "apps/api/app/core/phase8_settings.py": "8713daa60d6e362530c1fd6878fb953d43f1d297b2cc1ef881790d267a8fdf52",
+   "apps/api/app/core/phase8_settings.py": "81ddbf48e35c0207c77e1cadb6ad51b3979c84713907e8a81f94781d7da768f5",
    "apps/api/app/core/source_assets.py": "1889e9d025697c0d928b6e068325c0569adc7b8a802394a6dd3750f451e39ce5",
    "apps/api/app/core/structured_logging.py": "854ef58ab42efdb665dc20cff8595e296241ccd63c5322eb77bcb7830b691ea1",
    "apps/api/app/db_models.py": "cf65bee0dd96634f36bd3615be315690d4c13dc75ce3b25ccc97ee031cc05132",
@@ -2568,7 +2568,7 @@
    "apps/api/app/gateway/pinning.py": "287551250014af40b3655c83a02e57998515422fd05f55b112351b9bbe2b4594",
    "apps/api/app/gateway/registry.py": "c7ebbbb02cebe0977afa9e3235b01cb9af9775ce1d810cb0f64fba685292bed4",
    "apps/api/app/gateway/retired.py": "e5744df75d606a0d80cbf2ad51f13cbe9c6fd4684532df8ea917d83dc968b015",
-   "apps/api/app/schemas.py": "0ea45aa7f7fd117ef92cd5358a41a22f4e52922bc576060bbc28bdab7573bb65",
+   "apps/api/app/schemas.py": "f5beb3b27b019f6035a4b945ee4374b5be9e35b38903b156d43f6ceecedd1855",
    "apps/api/app/services/claim_gate.py": "dd3fa79d6a39f3cf30141471622e0f487059eaa80669332c1eab7d5adbe6ca28",
    "apps/api/app/services/contained_answers.py": "b32a28b65f294fb7de09229679ca2503666de9c45e8179f1f4f52c0302c96e99",
    "apps/api/app/services/content_assembler.py": "f7ac4499fe077f3b540323eceff37de5a80e59fabc510ddaec93e688458914fa",
@@ -2627,6 +2627,6 @@
    "apps/api/app/services/v3/rules.py": "bcc960dc344571871449d9724130ec0f4532cc8b87d973ffa699d806473e53c2",
    "scripts/run_v1_fixtures.py": "9b9d59106859db8251783ac8d6d963a8453d0b90cd8573f5461a903b1efb616e"
   },
-  "sha256": "b78aace6ecc72cbb1ed29ad76580542b3509ec9007eba2deb12bb403a41ae0e8"
+  "sha256": "4d8e7a13aee994f9aaa94364702cf4ddd47e561c9c34d4ed0c73ec51ee38790f"
  }
 }
