@@ -2262,3 +2262,21 @@ def test_phase9_docs_the_spec_ends_in_one_review_history_table():
     for name in re.findall(r"`(test_[a-z0-9_]+)`", spec):
         assert name in names or name.endswith("_") or name.endswith("..."), name
     assert SPEC_PATH.read_bytes().count(b"\r\n") == 0
+
+
+def test_phase9_docs_no_document_scopes_the_branch_ci_run_to_some_acs():
+    # Branch run 45360174794 ran every AC test against the code, the v7 package and the tests as they were at 40bdc57;
+    # all three changed later, so the documents say no AC is CI-green at the head and never name a subset of the ACs as
+    # the ones that changed (the BEP's check_records.py holds the BEP copies to the same rule).
+    stale = re.compile(r"AC-9-1, AC-9-5, AC-9-6,? and AC-9-8|green in branch run 45360174794|covers the tests as they were")
+    spec = spec_text()
+    strategy = (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
+    texts = {
+        "spec DI-115": next(line for line in spec.splitlines() if line.startswith("| DI-115 |")),
+        "spec 17": spec.split("\n## 17.", 1)[1].split("\n## 18.", 1)[0],
+        "test strategy": next(line for line in strategy.splitlines() if "**Exit gate.** The Phase 9 exit" in line),
+    }
+    for name, text in texts.items():
+        assert not stale.search(text), name
+        assert "no AC is CI-green at the head" in text, name
+    assert not stale.search(spec.split("\n## 18. Review history\n", 1)[0])
