@@ -350,6 +350,18 @@ All six reports were regenerated from clean source commit `cb2a33e`. The invaria
 
 The regression checks detected 43 process-local mutations. The checks exercised the original retention signature and readiness constraints, erasure races and post-erasure recovery, quota scope, event fields, trusted mastery, package policy, and drift in the spec and runbooks. A separate hand-back check verifies the required response fields.
 
+The full §9.1 checklist passed on `b8a423b`. Frontend lint, type checking, and 167 integration tests passed. Local PostgreSQL used an isolated PostgreSQL 17 cluster, and CI uses PostgreSQL 16.
+
+| Local leg | Main test paths | Passed | Skipped | Deselected | Expected failures | Template tests passed separately | Combined passed |
+|---|---|---:|---:|---:|---:|---:|---:|
+| SQLite | `apps/api/tests evaluation/tests` | 2002 | 2 | 11 | 3 | 10 | 2012 |
+| PostgreSQL psycopg | `apps/api/tests` | 2000 | 0 | 11 | 3 | 10 | 2010 |
+| PostgreSQL pg8000 | `apps/api/tests` | 2000 | 0 | 11 | 3 | 10 | 2010 |
+
+The separate runs used exactly the ten template-reading IDs listed in §§17 and 17.1, each on all three backends. The remaining deselection is the release-only test named in §17.1. The SQLite leg includes four evaluation tests and skips two PostgreSQL-specific cases, which accounts for its two additional passes. Each combined total is 24 higher than its round 1 total.
+
+All 21 local validator invocations passed, including v1 through v6 readability, the authorization matrix, the corpus and recall checks, draft LQS, manifest and calibration, the six evidence records, and all 1,192 frozen public response bodies. The repository and Docker-context path checks passed. Licensed-passage coverage requires the fingerprint input, and CI runs the dependency audits and built-image boundary scan.
+
 ## 18. Review history
 
 The rows record the build and each review round in order. Sections 0–17 describe the current implementation. Each review row summarizes the changes and names representative regression tests.
