@@ -1519,3 +1519,30 @@ def test_phase7_docs_the_spec_ends_in_one_review_history_table():
         names |= set(re.findall(r"^def (test_\w+)\(", path.read_text(encoding="utf-8"), flags=re.MULTILINE))
     for name in re.findall(r"`(test_[a-z0-9_]+)`", history):
         assert name in names, name
+
+
+def test_phase7_docs_the_records_name_the_merge_and_the_cited_main_run():
+    # PR #39 was squash-merged as 512b8a6 (tree identical to 4e682db); main run 45308186298 passed every job and is the
+    # cited run (Phase 9 design E15). The spec's DI-104 row, its section 17 exit bullet and the test strategy's Phase 7 exit
+    # paragraph name the merge, the merged tree and that run, none keeps a pre-merge phrase, and the exit stays not passed.
+    spec = spec_text()
+    head, history = spec.split("\n## 18. Review history\n", 1)
+    exit_block = head.split("**Exit (plan P).**", 1)[1]
+    strategy = (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
+    texts = {
+        "DI-104": next(line for line in head.splitlines() if line.startswith("| DI-104 |")),
+        "spec 17": next(line for line in exit_block.splitlines() if line.startswith("- The AC tests are done in code.")),
+        "test strategy": next(line for line in strategy.split("## Phase 7 acceptance map", 1)[1].splitlines() if line.startswith("**Exit gate.**")),
+    }
+    for name, text in texts.items():
+        for fact in ("`512b8a6`", "`4e682db`", "45308186298"):
+            assert fact in text, (name, fact)
+        for stale in ("each later commit needs its own run", "the cited run must be on `main`", "the cited CI run must be on `main`",
+                      "45234227899"):
+            assert stale.lower() not in text.lower(), (name, stale)
+    assert "The exit is not passed." in texts["DI-104"] and texts["DI-104"].endswith("| Eng / PI / CO | Open |")
+    for blocker in ("DI-105", "DI-108", "DI-109", "DI-89"):
+        assert blocker in texts["DI-104"], blocker
+    assert "The exit is not passed." in texts["test strategy"]
+    assert "- `phase7_exit_passed` stays `false`. The exit is not passed." in exit_block
+    assert "| Merge | `512b8a6` |" in history
