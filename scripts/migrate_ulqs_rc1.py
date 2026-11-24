@@ -28,6 +28,8 @@ for path in (REPO_ROOT, API_ROOT):
 from evaluation.qcai_eval import access_log, planes, ulqs  # noqa: E402
 from evaluation.qcai_eval.canonical import dumps_line, read_jsonl, write_lf  # noqa: E402
 
+PROVISIONAL_DEFAULTS = ("PD-61",)  # Phase 10 spec 12.1; ratified under DI-140
+
 MAPPING_PATH = REPO_ROOT / "lqs" / "ulqs-rc1-to-v1.0-mapping.json"
 ROLES = ("PI", "RL")
 

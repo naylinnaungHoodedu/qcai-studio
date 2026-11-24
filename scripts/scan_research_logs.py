@@ -1,16 +1,20 @@
 """Scan for licensed-passage and ULQS fingerprint matches outside the research plane (Phase 10 spec 5; AC-10-4, AC-10-6).
 
 Run: python scripts/scan_research_logs.py (--fingerprints PATH [--ulqs-fingerprints PATH] | --synthetic-fixture PATH)
-         [--repo] [--path P ...] [--research-logs DIR ...] [--require-zero] [--self-test] [--report PATH]
+         [--repo] [--path P ...] [--research-logs DIR ...] [--include-env-files] [--require-zero] [--self-test] [--report PATH]
 
 Targets: --repo scans the tracked tree (git ls-files only); --path scans a file or directory; --research-logs scans a run
 directory, every file except the fixed research-data file responses.jsonl (model outputs). Real fingerprints are
 research-plane files (they hold their salt); public CI passes --synthetic-fixture, whose fingerprints are built in memory
 from invented passages with a published salt, and the fixture file itself is not a scan target. --self-test plants a
 sentinel in a temporary run directory and requires the scanner to find it, and to skip it in responses.jsonl. The report
-holds paths and counts only.
+holds paths and counts only. Any file that is text is scanned, whatever its suffix (Dockerfiles, dotfiles, .puml, .sh,
+...); environment files (`.env*`, such as the tracked `.env.example` templates) are read only with --include-env-files
+(CI passes it) and are otherwise listed as excluded. A match always exits 1; --require-zero also fails (exit 1) when the
+coverage cannot prove zero: a target that scanned no file, or a file excluded as too large or unreadable.
 
-Exit codes: 0 zero matches (or the self-test detected the sentinel); 1 matches (or the self-test missed); 2 usage.
+Exit codes: 0 zero matches with full coverage (or the self-test detected the sentinel); 1 matches, incomplete coverage
+under --require-zero (or the self-test missed); 2 usage.
 """
 
 from __future__ import annotations
@@ -66,6 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", action="store_true")
     parser.add_argument("--path", type=Path, action="append", default=[])
     parser.add_argument("--research-logs", type=Path, action="append", default=[])
+    parser.add_argument("--include-env-files", action="store_true")
     parser.add_argument("--require-zero", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--report", type=Path)
@@ -98,13 +103,14 @@ def main(argv: list[str] | None = None) -> int:
                 exclude.append(fixture.relative_to(REPO_ROOT.resolve()).as_posix())
             except ValueError:
                 pass
-        targets.append(contamination.repository_target(REPO_ROOT, sets, exclude=exclude))
+        targets.append(contamination.repository_target(REPO_ROOT, sets, exclude=exclude, include_env=args.include_env_files))
     for path in args.path:
         absolute = path if path.is_absolute() else REPO_ROOT / path
         label = path.as_posix() if not path.is_absolute() else path.name
-        targets.append(contamination.path_target(absolute, sets, label=label, exclude_paths=[fixture] if fixture else []))
+        targets.append(contamination.path_target(absolute, sets, label=label, exclude_paths=[fixture] if fixture else [],
+                                                 include_env=args.include_env_files))
     for directory in args.research_logs:
-        targets.append(contamination.research_logs_target(directory, sets, label=directory.name))
+        targets.append(contamination.research_logs_target(directory, sets, label=directory.name, include_env=args.include_env_files))
     result = contamination.report(targets, sets)
     if args.report:
         write_lf(args.report, dumps_record(result))
@@ -114,7 +120,14 @@ def main(argv: list[str] | None = None) -> int:
         for hit in target["files_with_hits"]:
             print(f"  match: {hit['path']} (licensed {hit['licensed_hits']}, ulqs {hit['ulqs_hits']})")
     print(f"matches: {result['matches_total']} ({result['result']})")
-    return 0 if result["matches_total"] == 0 else 1
+    if result["matches_total"]:
+        return 1
+    incomplete = contamination.incomplete_targets(targets)
+    if args.require_zero and incomplete:
+        print(f"coverage incomplete (exit 1): {', '.join(incomplete)} (no file scanned, or a file too large or unreadable)",
+              file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

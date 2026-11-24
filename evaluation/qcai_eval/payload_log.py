@@ -10,6 +10,8 @@ import hashlib
 import re
 from typing import Any, Mapping
 
+PROVISIONAL_DEFAULTS = ("PD-72",)  # Phase 10 spec 12.1; ratified under DI-140
+
 LOG_FORMAT = "payload-log-v1"
 LOG_KEYS = frozenset({"log", "purpose", "run_id", "request_key", "arm", "item_id", "unit", "replicate", "seed_hex", "prompt_version",
                       "prompt_sha256", "prompt_bytes", "evidence", "response_sha256", "response_bytes", "outcome", "failure_reason",

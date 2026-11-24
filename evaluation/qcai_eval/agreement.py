@@ -19,6 +19,8 @@ from typing import Any, Hashable, Literal, Mapping, Sequence
 
 from .canonical import read_jsonl
 
+PROVISIONAL_DEFAULTS = ("PD-65",)  # Phase 10 spec 12.1; ratified under DI-140
+
 RATER = re.compile(r"^R[0-9]{1,3}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 CLAIM_LABELS = ("supported", "attribution_error", "unsupported_but_true", "fabricated")

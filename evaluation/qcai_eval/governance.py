@@ -1,9 +1,11 @@
-"""Governance records and the confirmatory gate (spec 3.13, 4.10; AC-10-5; plan Phase 10 D task 6; PD-69).
+"""Governance records, the confirmatory gate and the pre-run scan check (spec 3.13, 4.10; AC-10-5; plan Phase 10 D task 6, H, L).
 
 Plan task 6: "No confirmatory run without IRB letter and OSF DOI [Evidence E-108]." A confirmatory run needs a valid IRB
 record and a valid OSF record (both in the research plane), the research data plane (D-14), frozen items with a passing
-freeze record and a passing pre-run contamination scan. These checks are consistency checks, not proof: the dates and
-`created_at` are self-declared. A run that is not confirmatory skips this gate and is labelled exploratory everywhere.
+freeze record and a passing pre-run contamination scan bound to the run's items. A live run needs a valid, unexpired IRB
+record and the plan H records (provider terms, licence ruling, research-use confirmation), each resolved by path and
+sha256 and kept off public paths. These checks are consistency checks, not proof: the dates and `created_at` are
+self-declared. A run that is not confirmatory skips the confirmatory gate and is labelled exploratory everywhere.
 """
 
 from __future__ import annotations
@@ -13,15 +15,20 @@ import json
 import os
 from pathlib import Path
 import re
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from .canonical import canonical_sha256, lf_sha256
 
+PROVISIONAL_DEFAULTS = ("PD-69",)
 PROTOCOL = re.compile(r"^[A-Za-z0-9-]{3,40}$")
 DOI = re.compile(r"^10\.17605/OSF\.IO/[A-Z0-9]{5,}$")
 DATE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 FROZEN_STATES = ("frozen", "release")
+SCAN_REPORT = "qcai-research-log-scan"
+# Fingerprint sets whose ids carry these prefixes are the public synthetic fixture's or the scanner's self-test's: they
+# prove nothing about the research data, so a pre-run scan made only of them does not pass the gate.
+NON_RESEARCH_SET_PREFIXES = ("synthetic-", "self-test-")
 
 
 class GovernanceError(ValueError):
@@ -39,6 +46,11 @@ def _date(value: Any, field: str, *, nullable: bool = False) -> _dt.date | None:
         return _dt.date.fromisoformat(value)
     except ValueError:
         raise GovernanceError(field) from None
+
+
+def _hex(raw: Mapping[str, Any], field: str) -> None:
+    if not isinstance(raw[field], str) or not HEX64.match(raw[field]):
+        raise GovernanceError(field)
 
 
 def _load(path: Path, record: str, keys: tuple[str, ...]) -> dict[str, Any]:
@@ -67,8 +79,7 @@ def load_irb(path: Path) -> dict[str, Any]:
     expiry = _date(raw["expiry_date"], "expiry_date", nullable=True)
     if expiry is not None and expiry < approval:
         raise GovernanceError("expiry_date")
-    if not isinstance(raw["letter_sha256"], str) or not HEX64.match(raw["letter_sha256"]):
-        raise GovernanceError("letter_sha256")
+    _hex(raw, "letter_sha256")
     return raw
 
 
@@ -77,8 +88,7 @@ def load_osf(path: Path) -> dict[str, Any]:
     if not isinstance(raw["doi"], str) or not DOI.match(raw["doi"]):
         raise GovernanceError("doi")
     _date(raw["registered_date"], "registered_date")
-    if not isinstance(raw["analysis_plan_sha256"], str) or not HEX64.match(raw["analysis_plan_sha256"]):
-        raise GovernanceError("analysis_plan_sha256")
+    _hex(raw, "analysis_plan_sha256")
     return raw
 
 
@@ -90,18 +100,56 @@ def load_freeze_record(path: Path) -> dict[str, Any]:
     return raw
 
 
+def load_provider_terms(path: Path) -> dict[str, Any]:
+    """`provider-terms-v1` (plan H (b), A-11): the provider's retention, training and publication terms are recorded."""
+    raw = _load(path, "provider-terms-v1", ("provider_id", "recorded_date", "retention_recorded", "training_recorded",
+                                             "publication_recorded", "terms_sha256"))
+    if not isinstance(raw["provider_id"], str) or not PROTOCOL.match(raw["provider_id"]):
+        raise GovernanceError("provider_id")
+    _date(raw["recorded_date"], "recorded_date")
+    for field in ("retention_recorded", "training_recorded", "publication_recorded"):
+        if raw[field] is not True:
+            raise GovernanceError(field)
+    _hex(raw, "terms_sha256")
+    return raw
+
+
+def load_licence_ruling(path: Path) -> dict[str, Any]:
+    """`licence-ruling-v1` (plan H (a), Q-07): counsel's determination, `permits` or `negative`."""
+    raw = _load(path, "licence-ruling-v1", ("determination", "ruling_date", "letter_sha256"))
+    if raw["determination"] not in ("permits", "negative"):
+        raise GovernanceError("determination")
+    _date(raw["ruling_date"], "ruling_date")
+    _hex(raw, "letter_sha256")
+    return raw
+
+
+def load_research_use(path: Path) -> dict[str, Any]:
+    """`research-use-confirmation-v1` (plan H (d)): the paper's PENDING research-use confirmation, resolved."""
+    raw = _load(path, "research-use-confirmation-v1", ("confirmation", "confirmed_date", "letter_sha256"))
+    if raw["confirmation"] != "confirmed":
+        raise GovernanceError("confirmation")
+    _date(raw["confirmed_date"], "confirmed_date")
+    _hex(raw, "letter_sha256")
+    return raw
+
+
 def resolve_record(reference: Any, repo_root: Path) -> Path:
     """A spec's record reference ({"path", "sha256"}) as a path, after its sha256 (LF-normalised bytes) is checked."""
     if not isinstance(reference, Mapping) or not isinstance(reference.get("path"), str):
         raise GovernanceError("reference")
     path = Path(reference["path"])
     path = path if path.is_absolute() else Path(repo_root) / path
-    if lf_sha256(path) != reference.get("sha256"):
+    try:
+        digest = lf_sha256(path)
+    except OSError:
+        raise GovernanceError("file") from None
+    if digest != reference.get("sha256"):
         raise GovernanceError("sha256")
     return path
 
 
-def _run_date(spec: Mapping[str, Any]) -> _dt.date:
+def run_date(spec: Mapping[str, Any]) -> _dt.date:
     created = str(spec.get("created_at", ""))
     try:
         return _dt.date.fromisoformat(created[:10])
@@ -109,7 +157,7 @@ def _run_date(spec: Mapping[str, Any]) -> _dt.date:
         raise GovernanceError("created_at") from None
 
 
-def _is_public(reference: Any, repo_root: Path) -> bool:
+def is_public(reference: Any, repo_root: Path) -> bool:
     from .planes import PathRefused, require_private_input
 
     if not isinstance(reference, Mapping) or not isinstance(reference.get("path"), str):
@@ -123,39 +171,87 @@ def _is_public(reference: Any, repo_root: Path) -> bool:
     return False
 
 
-def confirmatory_refusals(spec: Mapping[str, Any], *, analysis_plan_sha256: str, dataset_sha256: str, items_states: Mapping[str, int],
-                          package_raw: Mapping[str, Any], repo_root: Path, recording_source: str | None = None) -> list[str]:
+def irb_refusals(reference: Any, on: _dt.date, repo_root: Path, *, missing: str) -> list[str]:
+    """The IRB condition, shared by the confirmatory gate and live runs: present, valid, approved on or before the run
+    date and not expired on it."""
+    if not reference:
+        return [missing]
+    try:
+        irb = load_irb(resolve_record(reference, repo_root))
+    except GovernanceError as error:
+        return [f"irb_invalid:{error.field}"]
+    reasons = []
+    if _dt.date.fromisoformat(irb["approval_date"]) > on:
+        reasons.append("irb_not_yet_approved")
+    if irb["expiry_date"] is not None and _dt.date.fromisoformat(irb["expiry_date"]) < on:
+        reasons.append("irb_expired")
+    return reasons
+
+
+def record_refusals(reference: Any, loader: Callable[[Path], dict[str, Any]], repo_root: Path, *, missing: str,
+                    invalid: str) -> tuple[list[str], dict[str, Any] | None]:
+    """A plan H record: (reasons, the loaded record or None)."""
+    if not reference:
+        return [missing], None
+    try:
+        return [], loader(resolve_record(reference, repo_root))
+    except GovernanceError as error:
+        return [f"{invalid}:{error.field}"], None
+
+
+def scan_refusals(reference: Any, repo_root: Path, *, dataset_content_sha256: str, missing: str) -> list[str]:
+    """The pre-run contamination scan (plan L "Stop: contamination"; 10.5(3)): a resolved `qcai-research-log-scan` report
+    that passed with zero matches, made with a licensed and a ULQS research fingerprint set (never only the synthetic
+    fixture's or the self-test's), whose ULQS set was built from this run's items (the status-free content sha256), over
+    the tracked repository (tests and public artifacts) and at least one research-logs or path target (logs, prompts),
+    each of which scanned a file (plan 10.5(3): "pre-run scan proving no ULQS text in prompts, tests, logs or public
+    artifacts")."""
+    if not reference:
+        return [missing]
+    try:
+        scan = json.loads(resolve_record(reference, repo_root).read_text(encoding="utf-8"))
+    except GovernanceError as error:
+        return [f"pre_run_scan_invalid:{error.field}"]
+    except (OSError, ValueError):
+        return ["pre_run_scan_invalid:file"]
+    if not isinstance(scan, dict) or scan.get("report") != SCAN_REPORT or scan.get("format_version") != 1:
+        return ["pre_run_scan_invalid:report"]
+    reasons = []
+    if scan.get("result") != "pass" or scan.get("matches_total") != 0:
+        reasons.append("pre_run_scan_invalid:result")
+    sets = [entry for entry in scan.get("fingerprint_sets") or [] if isinstance(entry, Mapping) and isinstance(entry.get("id"), str)
+            and not entry["id"].startswith(NON_RESEARCH_SET_PREFIXES)]
+    if not {"licensed", "ulqs"} <= {entry.get("kind") for entry in sets}:
+        reasons.append("pre_run_scan_invalid:fingerprint_sets")
+    if not any(entry.get("kind") == "ulqs" and entry.get("dataset_content_sha256") == dataset_content_sha256 for entry in sets):
+        reasons.append("pre_run_scan_invalid:dataset")
+    scanned = {target.get("target") for target in scan.get("targets") or [] if isinstance(target, Mapping)
+               and isinstance(target.get("scanned"), int) and not isinstance(target.get("scanned"), bool) and target["scanned"] > 0}
+    if "repository" not in scanned or not scanned & {"research-logs", "path"}:
+        reasons.append("pre_run_scan_invalid:targets")
+    return reasons
+
+
+def confirmatory_refusals(spec: Mapping[str, Any], *, analysis_plan_sha256: str, dataset_sha256: str, dataset_content_sha256: str,
+                          items_states: Mapping[str, int], package_raw: Mapping[str, Any], repo_root: Path,
+                          recording_source: str | None = None) -> list[str]:
     reasons: list[str] = []
-    run_date = _run_date(spec)
+    on = run_date(spec)
     governance = spec.get("governance") or {}
     irb_ref, osf_ref = governance.get("irb_record"), governance.get("osf_record")
-    if not irb_ref:
-        reasons.append("irb_missing")
-    else:
-        try:
-            irb = load_irb(resolve_record(irb_ref, repo_root))
-            if _dt.date.fromisoformat(irb["approval_date"]) > run_date:
-                reasons.append("irb_not_yet_approved")
-            if irb["expiry_date"] is not None and _dt.date.fromisoformat(irb["expiry_date"]) < run_date:
-                reasons.append("irb_expired")
-        except GovernanceError as error:
-            reasons.append(f"irb_invalid:{error.field}")
-        except OSError:
-            reasons.append("irb_invalid:file")
+    reasons += irb_refusals(irb_ref, on, repo_root, missing="irb_missing")
     if not osf_ref:
         reasons.append("osf_missing")
     else:
         try:
             osf = load_osf(resolve_record(osf_ref, repo_root))
-            if _dt.date.fromisoformat(osf["registered_date"]) > run_date:
+            if _dt.date.fromisoformat(osf["registered_date"]) > on:
                 reasons.append("osf_registered_after_run")
             if osf["analysis_plan_sha256"] != analysis_plan_sha256:
                 reasons.append("osf_plan_mismatch")
         except GovernanceError as error:
             reasons.append(f"osf_invalid:{error.field}")
-        except OSError:
-            reasons.append("osf_invalid:file")
-    if any(_is_public(reference, repo_root) for reference in (irb_ref, osf_ref) if reference):
+    if any(is_public(reference, repo_root) for reference in (irb_ref, osf_ref) if reference):
         reasons.append("governance_record_public")
     if ((package_raw.get("owner_decisions") or {}).get("D-14") or {}).get("state") != "decided":
         reasons.append("D-14 open")
@@ -169,18 +265,10 @@ def confirmatory_refusals(spec: Mapping[str, Any], *, analysis_plan_sha256: str,
             freeze = load_freeze_record(resolve_record(freeze_ref, repo_root))
             if freeze["passed"] is not True or freeze["dataset_sha256"] != dataset_sha256:
                 reasons.append("freeze_record_failed")
-        except (GovernanceError, OSError):
+        except GovernanceError:
             reasons.append("freeze_record_failed")
-    scan_ref = spec.get("pre_run_scan")
-    scan_ok = False
-    if scan_ref:
-        try:
-            scan = json.loads(resolve_record(scan_ref, repo_root).read_text(encoding="utf-8"))
-            scan_ok = scan.get("report") == "qcai-research-log-scan" and scan.get("result") == "pass"
-        except (GovernanceError, OSError, ValueError):
-            scan_ok = False
-    if not scan_ok:
-        reasons.append("pre_run_scan_missing")
+    reasons += scan_refusals(spec.get("pre_run_scan"), repo_root, dataset_content_sha256=dataset_content_sha256,
+                             missing="pre_run_scan_missing")
     if spec.get("mode") == "stub":
         reasons.append("stub_not_confirmatory")
     if spec.get("mode") == "recorded" and recording_source != "live":

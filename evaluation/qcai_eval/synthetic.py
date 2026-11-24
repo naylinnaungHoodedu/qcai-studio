@@ -200,9 +200,57 @@ def freeze_record(path: Path, *, dataset_sha256: str, passed: bool = True, **ove
     return _write_record(path, value)
 
 
-def pass_scan(path: Path) -> dict[str, str]:
-    return _write_record(path, {"report": "qcai-research-log-scan", "format_version": 1, "fingerprint_sets": [], "targets": [],
-                                "matches_total": 0, "result": "pass"})
+def provider_terms_record(path: Path, **overrides: Any) -> dict[str, str]:
+    value = {"record": "provider-terms-v1", "provider_id": "SYN-PROVIDER-1", "recorded_date": "2026-11-01", "retention_recorded": True,
+             "training_recorded": True, "publication_recorded": True, "terms_sha256": "0" * 64}
+    value.update(overrides)
+    return _write_record(path, value)
+
+
+def licence_ruling_record(path: Path, **overrides: Any) -> dict[str, str]:
+    value = {"record": "licence-ruling-v1", "determination": "permits", "ruling_date": "2026-11-01", "letter_sha256": "0" * 64}
+    value.update(overrides)
+    return _write_record(path, value)
+
+
+def research_use_record(path: Path, **overrides: Any) -> dict[str, str]:
+    value = {"record": "research-use-confirmation-v1", "confirmation": "confirmed", "confirmed_date": "2026-11-01",
+             "letter_sha256": "0" * 64}
+    value.update(overrides)
+    return _write_record(path, value)
+
+
+def decided_package(directory: Path, **changes: Any) -> dict[str, str]:
+    """A copy of the v7 package (with its sha256 sidecar) in `directory` whose owner decisions D-07, D-08, D-12 and D-14 read
+    `decided` and whose semantic backend is on: the state a live or non-synthetic run needs, which no committed package
+    has. For tests only; returns the spec's `package` block."""
+    import json
+
+    raw = json.loads((REPO_ROOT / PACKAGE_PATH).read_text(encoding="utf-8"))
+    for name in ("D-07", "D-08", "D-12", "D-14"):
+        raw.setdefault("owner_decisions", {}).setdefault(name, {})["state"] = "decided"
+    raw.setdefault("semantic", {})["enabled_by_default"] = True
+    raw.update(changes)
+    path = Path(directory) / "package-decided.json"
+    write_lf(path, dumps_record(raw))
+    sha = canonical_sha256(raw)
+    write_lf(path.with_name(path.name + ".sha256"), sha + "\n")
+    return {"path": str(path), "sha256": sha, "package_version": raw.get("package_version")}
+
+
+def pass_scan(path: Path, *, dataset_content_sha256: str, **overrides: Any) -> dict[str, str]:
+    """A pre-run scan report shaped like one that passes the gate (governance.scan_refusals): a licensed and a ULQS set
+    with research ids, the ULQS set bound to the items, a repository and a research-logs target that each scanned a file.
+    Its counts are invented; tests pass `overrides` to break one condition at a time."""
+    value = {"report": "qcai-research-log-scan", "format_version": 1,
+             "fingerprint_sets": [{"id": "research-licensed-t1", "kind": "licensed", "dataset_content_sha256": None},
+                                  {"id": "research-ulqs-t1", "kind": "ulqs", "dataset_content_sha256": dataset_content_sha256}],
+             "targets": [{"target": "repository", "root": ".", "files": 3, "scanned": 2, "excluded": [], "files_with_hits": []},
+                         {"target": "research-logs", "root": "prior-run", "files": 4, "scanned": 3, "excluded": [],
+                          "files_with_hits": []}],
+             "matches_total": 0, "result": "pass"}
+    value.update(overrides)
+    return _write_record(path, value)
 
 
 def _json_sha(path: Path) -> str:

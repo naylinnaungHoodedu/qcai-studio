@@ -30,9 +30,9 @@ from evaluation.qcai_eval.pointers import EvidenceCatalog  # noqa: E402
 
 RECORD_DIR = REPO_ROOT / "docs" / "evaluation" / "phase10"
 PACKAGE = "apps/api/app/config_package/v7.json"
-JSON_FILES = ("evaluation/config/arms_v1.json", "evaluation/config/analysis_plans_v1.json", "evaluation/fixtures/seeded_faults_v1.json",
-              "evaluation/fixtures/contamination_synthetic_v1.json", "lqs/ulqs-v1.0.schema.json", "lqs/ulqs-v1.0-freeze-rules.json",
-              "lqs/ulqs-rc1-to-v1.0-mapping.json")
+JSON_FILES = ("evaluation/config/arms_v1.json", "evaluation/config/analysis_plans_v1.json", "evaluation/config/harness_parameters_v1.json",
+              "evaluation/fixtures/seeded_faults_v1.json", "evaluation/fixtures/contamination_synthetic_v1.json",
+              "lqs/ulqs-v1.0.schema.json", "lqs/ulqs-v1.0-freeze-rules.json", "lqs/ulqs-rc1-to-v1.0-mapping.json")
 RECORDS = ("pinned_configuration_v1.json", "seeded_faults_report_v1.json", "preregistration-draft.md")
 
 

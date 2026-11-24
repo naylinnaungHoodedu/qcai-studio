@@ -91,7 +91,7 @@
   "EV-": "research-plane evidence catalog (pointers.EvidenceCatalog)",
   "span-": "Phase 2 span records, public plane"
  },
- "corpus_version": "copied unchanged; separate from the dataset sha256 pin and never part of an id (R-19)",
+ "corpus_version": "copied unchanged; never part of an id (R-19); recorded on its own in the run record pins (pins.items.corpus_version) and the evidence catalog pin, and covered by the dataset sha256, which hashes whole items",
  "never": [
   "auto-promotion past candidate",
   "copying text into the repository"

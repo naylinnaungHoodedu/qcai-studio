@@ -3,7 +3,8 @@
 No responder here touches the network or imports a model client. Live adapters are not wired (DI-132): `LIVE_ADAPTERS` is
 empty, and a live adapter, once one exists, runs on a research gateway separate from the application's process gateway
 (plan section 7: "research runs use a separate gateway and span store"). `live_refusal_reasons` names every condition a
-live run still lacks; in this repository a live run is always refused.
+live run still lacks, plan H's four conditions among them as resolved, hash-checked records; in this repository a
+live run is always refused.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from typing import Any, Callable, Mapping, Protocol
 
 from .canonical import read_jsonl
 
+PROVISIONAL_DEFAULTS = ("PD-68",)
 UNRESOLVABLE_POINTER = "EV-SYN-p999-99"
 FAILURE_REASONS = ("timeout", "rate_limited", "server_error", "refused_payload", "recorded_missing")
 RECORDING_FORMAT = "recorded-responses-v1"
@@ -141,10 +143,14 @@ def _decided(package_raw: Mapping[str, Any], name: str) -> bool:
 
 def live_refusal_reasons(spec: Mapping[str, Any], package_raw: Mapping[str, Any], environ: Mapping[str, str], arms: Any, *,
                          out_dir: Path | None = None, repo_root: Path | None = None) -> list[str]:
-    """Every condition a live run lacks, in order (spec 4.9). An empty list is never reached in this repository."""
+    """Every condition a live run lacks, in order (spec 4.9). An empty list is never reached in this repository.
+
+    Plan H's four conditions are records, each resolved by path and sha256 (`governance.resolve_record`) and read under its
+    own format: (a) `licence-ruling-v1`, (b) `provider-terms-v1`, (c) `irb-approval-v1`, approved on or before the run date
+    and not expired on it, and (d) `research-use-confirmation-v1`. None may sit on a public path."""
+    from . import governance
     from .ablation import arm_configuration
-    from .governance import GovernanceError, load_irb, resolve_record
-    from .planes import REPO_ROOT, inside_checkout
+    from .planes import REPO_ROOT, checkout_relative, inside_checkout
 
     root = repo_root or REPO_ROOT
     reasons: list[str] = []
@@ -155,39 +161,33 @@ def live_refusal_reasons(spec: Mapping[str, Any], package_raw: Mapping[str, Any]
     plane_ok = False
     if plane:
         plane_path = Path(os.path.abspath(plane))
-        if plane_path.is_dir() and not inside_checkout(plane_path, root):
-            if out_dir is not None:
-                try:
-                    Path(os.path.abspath(out_dir)).relative_to(plane_path)
-                    plane_ok = True
-                except ValueError:
-                    plane_ok = False
+        if plane_path.is_dir() and not inside_checkout(plane_path, root) and out_dir is not None:
+            plane_ok = checkout_relative(out_dir, plane_path) is not None
     if not plane_ok:
         reasons.append("research_plane_absent")
     for name in ("D-14", "D-07", "D-08", "D-12"):
         if not _decided(package_raw, name):
             reasons.append(f"{name} open")
-    irb_ok = False
-    reference = (spec.get("governance") or {}).get("irb_record")
-    if reference:
-        try:
-            load_irb(resolve_record(reference, root))
-            irb_ok = True
-        except (GovernanceError, OSError, ValueError):
-            irb_ok = False
-    if not irb_ok:
-        reasons.append("irb_not_filed")
-    if not spec.get("provider_terms"):
-        reasons.append("provider_terms_unrecorded")
-    ruling = spec.get("licence_ruling")
-    if not ruling:
-        reasons.append("licence_ruling_unrecorded")
-    elif ruling.get("determination") == "negative":
+    try:
+        on = governance.run_date(spec)
+    except governance.GovernanceError:
+        return reasons + ["created_at"]
+    irb_ref = (spec.get("governance") or {}).get("irb_record")
+    reasons += governance.irb_refusals(irb_ref, on, root, missing="irb_not_filed")
+    found, _terms = governance.record_refusals(spec.get("provider_terms"), governance.load_provider_terms, root,
+                                               missing="provider_terms_unrecorded", invalid="provider_terms_invalid")
+    reasons += found
+    found, ruling = governance.record_refusals(spec.get("licence_ruling"), governance.load_licence_ruling, root,
+                                               missing="licence_ruling_unrecorded", invalid="licence_ruling_invalid")
+    reasons += found
+    if ruling is not None and ruling["determination"] == "negative":
         reasons.append("licence_negative")
-    elif ruling.get("determination") != "permits":
-        reasons.append("licence_ruling_unrecorded")
-    if not spec.get("research_use_confirmation"):
-        reasons.append("research_use_unconfirmed")
+    found, _confirmation = governance.record_refusals(spec.get("research_use_confirmation"), governance.load_research_use, root,
+                                                      missing="research_use_unconfirmed", invalid="research_use_invalid")
+    reasons += found
+    references = [irb_ref] + [spec.get(key) for key in ("provider_terms", "licence_ruling", "research_use_confirmation")]
+    if any(governance.is_public(reference, root) for reference in references if reference):
+        reasons.append("governance_record_public")
     selected = (spec.get("arms") or {}).get("selected") or []
     semantic_on = bool((package_raw.get("semantic") or {}).get("enabled_by_default"))
     if not semantic_on and any(arm_configuration(arms, arm).get("retrieval") == "semantic" for arm in selected if arm in arms.arms):

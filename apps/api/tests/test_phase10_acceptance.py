@@ -13,6 +13,7 @@ import datetime as datetime_module
 from fractions import Fraction
 import importlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -70,8 +71,9 @@ def run_main(argv):
 
 
 def _freeze_case(tmp_path, *, counts=synthetic.PAPER_TARGETS, mutate=None, rules=None, corpus_edit=None, agreement_edit=None,
-                 share="1/4", require_licensed=False, frozen=True):
-    """One freeze case built from its own dataset: items, catalog, corpus text, ratings and the agreement record."""
+                 share="1/4", require_licensed=False, frozen=True, previous_edit=None, corpus_check=True):
+    """One freeze case built from its own dataset: items, catalog, corpus text, ratings, the agreement record and the review
+    set the freeze starts from (every candidate moved to review, then to frozen)."""
     items = synthetic.synthetic_dataset(counts, human_reviewed=True)
     catalog = EvidenceCatalog.from_lines(synthetic.synthetic_catalog(items))
     corpus = synthetic.corpus_text(items)
@@ -84,10 +86,14 @@ def _freeze_case(tmp_path, *, counts=synthetic.PAPER_TARGETS, mutate=None, rules
     record = agreement.agreement_record(ratings, items, rules=rules, rubric_sha256=RUBRIC_SHA, ratings_sha256="b" * 64)
     if agreement_edit:
         record = agreement_edit(record, items)
+    previous = [{**item, "status": "review"} if item["status"] == "candidate" else item for item in items]
+    if previous_edit:
+        previous = previous_edit(json.loads(json.dumps(previous)))
     if frozen:  # the agreement record is computed before freezing and stays current after it
         items = [{**item, "status": "frozen"} if item["status"] == "candidate" else item for item in items]
-    report = resolve_items(items, PointerResolver(catalog=catalog, corpus_text=corpus.get))
-    result = ulqs.freeze_check(items, rules=rules, pointer_report=report, agreement=record, require_licensed=require_licensed)
+    report = resolve_items(items, PointerResolver(catalog=catalog, corpus_text=corpus.get if corpus_check else None))
+    result = ulqs.freeze_check(items, rules=rules, pointer_report=report, agreement=record, previous=previous,
+                               require_licensed=require_licensed)
     return result, items, record
 
 
@@ -101,9 +107,19 @@ def test_ac_10_1_a_v1_0_set_at_the_paper_targets_with_resolving_pointers_and_alp
     for letter, (rated, total) in record["coverage"]["per_stratum"].items():
         assert rated * 4 >= total, letter
     assert record["dataset_content_sha256"] == ulqs.dataset_content_sha256(items)
-    # The strict freeze check is the research plane's: the script refuses the same synthetic set (exit 2).
+    # The strict freeze check is the research plane's: the script refuses the same synthetic set (exit 2), and refuses a
+    # freeze without the set it starts from or without the corpus text before it reads anything.
     items_path = synthetic.write_jsonl(tmp_path / "frozen.jsonl", items)
-    assert script("validate_ulqs").main(["--items", str(items_path), "--freeze"]) == 2
+    previous_path = synthetic.write_jsonl(tmp_path / "review.jsonl", [{**item, "status": "review"} for item in items])
+    corpus_dir = tmp_path / "text"
+    corpus_dir.mkdir()
+    validate = script("validate_ulqs")
+    capsys.readouterr()
+    assert validate.main(["--items", str(items_path), "--freeze", "--previous", str(previous_path), "--corpus-text", str(corpus_dir)]) == 2
+    assert "--freeze refuses synthetic items" in capsys.readouterr().err
+    for missing in (["--previous", str(previous_path)], ["--corpus-text", str(corpus_dir)], []):
+        assert validate.main(["--items", str(items_path), "--freeze", *missing]) == 2
+        assert "--freeze needs --previous" in capsys.readouterr().err
 
 
 def _rules_with(targets):
@@ -160,6 +176,17 @@ def _bibliographic(items):
         item["item_kind"] = "bibliographic"
 
 
+def _first_previous(change):
+    def edit(previous):
+        previous[0].update(change)
+        return previous
+    return edit
+
+
+def _extra_previous(previous):
+    return previous + [{**previous[0], "item_id": "SYN-A-999"}]
+
+
 def _bad_corpus(corpus):
     key = sorted(corpus)[0]
     corpus[key] = corpus[key].replace("Synthetic", "Synthetik")
@@ -187,6 +214,13 @@ FREEZE_CASES = {
     "item_kind null": (dict(mutate=_set_one(("item_kind",), None)), {"item_kind_unmarked"}),
     "two corpus versions": (dict(mutate=_set_one(("corpus_version",), "QCAI-CORPUS-2026-08-27")), {"corpus_versions_differ"}),
     "synthetic items when licensed are required": (dict(require_licensed=True), {"synthetic_items"}),
+    "no corpus-text check": (dict(corpus_check=False), {"pointers_not_text_verified"}),
+    "no previous set": (dict(previous_edit=lambda previous: None), {"no_previous_set"}),
+    "candidate straight to frozen": (dict(previous_edit=_first_previous({"status": "candidate"})), {"transition_invalid"}),
+    "draft straight to frozen": (dict(previous_edit=_first_previous({"status": "draft"})), {"transition_invalid"}),
+    "frozen content changed": (dict(previous_edit=_first_previous({"status": "frozen", "topic": "an older invented topic"})),
+                               {"frozen_content_changed"}),
+    "an item dropped instead of retired": (dict(previous_edit=_extra_previous), {"transition_invalid"}),
 }
 
 
@@ -448,18 +482,34 @@ def test_ac_10_3_the_committed_synthetic_run_record_is_current(tmp_path):
     assert run_main(["--check", changed, "--spec", SYNTHETIC_SPEC]) == 1
 
 
-def test_ac_10_3_a_live_run_with_a_scripted_provider_matches_the_stub_run_s_keys_and_seeds_and_reports_replicate_variance(tmp_path):
-    plan = runner.plan_run(stub_spec(tmp_path))
-    stub_record = runner.execute_run(plan, providers.StubResponder(), tmp_path / "stub")
-    live_plan = dataclasses.replace(plan, spec={**plan.spec, "mode": "live", "responder": {"live": {"adapter": "scripted"}}})
-    live_record = runner.execute_run(live_plan, providers.ScriptedProvider(), tmp_path / "live")
-    assert live_record["requests"]["digest"] == stub_record["requests"]["digest"]
+def test_ac_10_3_a_live_run_with_a_scripted_provider_matches_the_stub_run_s_keys_and_seeds_and_reports_replicate_variance(tmp_path,
+                                                                                                                         monkeypatch):
+    # The live spec is planned on its own through plan_run, with every live condition met in a temporary research plane
+    # and a package copy whose decisions read decided; the stub spec is planned separately against the same package. The
+    # keys and seeds of the two plans, of their payload logs and of their records are then compared.
+    live_spec, _package, out = _live_ready(tmp_path, monkeypatch)
+    package = synthetic.decided_package(tmp_path)
+    stub = stub_spec(tmp_path, package=package)
+    live = {**stub, **{key: live_spec[key] for key in ("governance", "provider_terms", "licence_ruling", "research_use_confirmation")},
+            "mode": "live", "responder": {"live": {"adapter": "fake-adapter"}}}
+    stub_plan = runner.plan_run(stub)
+    live_plan = runner.plan_run(live, out_dir=out)
+    assert live_plan.requests is not stub_plan.requests and live_plan.pins["package"]["owner_decisions"]["D-07"] == "decided"
+    assert [(r.request_key, r.seed_hex) for r in live_plan.requests] == [(r.request_key, r.seed_hex) for r in stub_plan.requests]
+    stub_record = runner.execute_run(stub_plan, providers.StubResponder(), tmp_path / "stub")
+    live_record = runner.execute_run(live_plan, providers.LIVE_ADAPTERS["fake-adapter"](), out)
+    assert live_record["requests"]["digest"] == stub_record["requests"]["digest"] == runner.requests_digest(stub_plan)
     columns = lambda directory: [(line["request_key"], line["seed_hex"]) for line in read_jsonl(Path(directory) / "payload_log.jsonl")]  # noqa: E731
-    assert columns(tmp_path / "live") == columns(tmp_path / "stub")
+    assert columns(out) == columns(tmp_path / "stub")
+    assert [(line["request_key"], line["seed_hex"]) for line in read_jsonl(out / "responses.jsonl")] == columns(out)
     assert live_record["mode"] == "live" and live_record["pins"]["models"] == {"model_ids": ["scripted-model-v1"], "prices": None}
     assert stub_record["pins"]["models"] is None
+    assert set(live_record["replicate_variance"]) == set(ablation.ARM_IDS)
     for arm, block in live_record["replicate_variance"].items():
         assert len(block["er_by_replicate"]) == 3 and block["variance"] is not None, arm
+    # A live plan whose seeds differed from the stub plan's (another run id) is caught by the same comparison.
+    other = runner.plan_run({**live, "run_id": "synthetic-live-other"}, out_dir=out)
+    assert [r.seed_hex for r in other.requests] != [r.seed_hex for r in stub_plan.requests]
 
 
 def test_ac_10_3_live_mode_is_refused_here_with_every_named_reason(tmp_path, monkeypatch, capsys):
@@ -470,10 +520,16 @@ def test_ac_10_3_live_mode_is_refused_here_with_every_named_reason(tmp_path, mon
     assert refused.value.code == 9 and refused.value.reasons == LIVE_REASONS
     assert run_main(["--spec", write_spec(tmp_path, spec), "--output-dir", tmp_path / "out"]) == 9
     assert not (tmp_path / "out").exists()
-    negative = {**spec, "licence_ruling": {"determination": "negative", "record_sha256": "0" * 64}}
+    negative = {**spec, "licence_ruling": synthetic.licence_ruling_record(tmp_path / "ruling.json", determination="negative")}
     with pytest.raises(runner.RunRefused) as refused:
         runner.plan_run(negative)
     assert "licence_negative" in refused.value.reasons and "licence_ruling_unrecorded" not in refused.value.reasons
+    # The IRB condition of a live run checks the dates as the confirmatory gate does.
+    for record, reason in ((synthetic.irb_record(tmp_path / "old.json", approval_date="2025-01-01", expiry_date="2026-06-30"), "irb_expired"),
+                           (synthetic.irb_record(tmp_path / "late.json", approval_date="2026-12-01", expiry_date=None), "irb_not_yet_approved")):
+        with pytest.raises(runner.RunRefused) as refused:
+            runner.plan_run({**spec, "governance": {"irb_record": record, "osf_record": None}})
+        assert reason in refused.value.reasons and "irb_not_filed" not in refused.value.reasons
 
 
 def test_ac_10_3_seeds_are_hashed_from_run_arm_item_and_replicate(tmp_path):
@@ -518,15 +574,22 @@ def test_ac_10_3_level_units_carry_identical_evidence_and_nr_sends_none(tmp_path
 # ===================================================================================================== AC-10-4
 
 
-def test_ac_10_4_the_repository_and_the_evaluation_outputs_hold_zero_synthetic_fingerprint_matches(tmp_path):
+def test_ac_10_4_the_repository_and_the_evaluation_outputs_hold_zero_synthetic_fingerprint_matches(tmp_path, monkeypatch):
+    # The whole tracked tree is scanned once, in evaluation/tests
+    # (test_contamination_scan.py::test_the_whole_tracked_tree_holds_zero_synthetic_fingerprint_matches) and in CI's --repo
+    # step; here the repository target runs over the Phase 10 records and the fixture through the same script.
     scan = script("scan_research_logs")
+    records = sorted(name for name in contamination.git_files(REPO_ROOT)
+                     if name.startswith(("docs/evaluation/phase10/", "evaluation/", "lqs/")))
+    assert "evaluation/fixtures/contamination_synthetic_v1.json" in records and len(records) > 40
+    monkeypatch.setattr(contamination, "git_files", lambda root: records)
     report = tmp_path / "scan.json"
     assert scan.main(["--synthetic-fixture", str(synthetic.CONTAMINATION_FIXTURE), "--repo", "--path", "docs/evaluation/phase10",
                       "--require-zero", "--report", str(report)]) == 0
     result = json.loads(report.read_text(encoding="utf-8"))
     repository = result["targets"][0]
-    assert result["result"] == "pass" and repository["target"] == "repository" and repository["scanned"] > 500
-    assert {"path": "evaluation/fixtures/contamination_synthetic_v1.json", "reason": "synthetic contamination fixture"} in repository["excluded"]
+    assert result["result"] == "pass" and repository["target"] == "repository" and repository["scanned"] == len(records) - 1
+    assert repository["excluded"] == [{"path": "evaluation/fixtures/contamination_synthetic_v1.json", "reason": "synthetic contamination fixture"}]
     plan = runner.plan_run(stub_spec(tmp_path))
     runner.execute_run(plan, providers.StubResponder(), tmp_path / "run")
     assert scan.main(["--synthetic-fixture", str(synthetic.CONTAMINATION_FIXTURE), "--research-logs", str(tmp_path / "run"), "--require-zero"]) == 0
@@ -560,7 +623,7 @@ def test_ac_10_4_research_plane_scripts_refuse_public_output_paths(tmp_path):
         assert script("migrate_ulqs_rc1").main(["--input", str(rc1), "--output", str(target), "--author-role", "PI", "--access-log", str(access)]) == 2
         assert script("build_licensed_fingerprints").main([
             "--licensed-text", str(licensed), "--ulqs", str(items_path), "--set-id", "t", "--output-licensed", str(target),
-            "--output-ulqs", str(tmp_path / "u.json"), "--salt-file", str(salt), "--access-log", str(access)]) == 2
+            "--output-ulqs", str(tmp_path / "u.json"), "--salt-file", str(salt), "--access-log", str(access), "--actor-role", "MLE"]) == 2
         assert script("validate_ulqs").main(["--items", str(items_path), "--catalog", str(catalog_path), "--ratings", str(ratings),
                                              "--rubric", str(REPO_ROOT / "lqs" / "rubric.md"), "--agreement-out", str(target)]) == 2
         assert not target.exists()
@@ -573,6 +636,36 @@ def test_ac_10_4_research_plane_scripts_refuse_public_output_paths(tmp_path):
     assert not (REPO_ROOT / "lqs" / "private" / "x").exists()
     with pytest.raises(planes.PathRefused, match="git does not ignore"):
         planes.require_private_output(REPO_ROOT / "docs" / "x-unignored.txt", boundary=_globs_with("docs/x-unignored.txt"))
+
+
+def _link_into(link, target):
+    """A directory link to `target`: a symlink, or on Windows without the symlink privilege a junction."""
+    try:
+        os.symlink(target, link, target_is_directory=True)
+    except OSError:
+        import _winapi
+
+        _winapi.CreateJunction(str(target), str(link))
+
+
+def test_ac_10_4_a_checkout_path_in_another_spelling_is_still_refused(tmp_path):
+    link = tmp_path / "alias"
+    _link_into(link, REPO_ROOT / "docs")
+    try:
+        through_link = link / "evaluation" / "x.json"
+        assert planes.checkout_relative(through_link) == "docs/evaluation/x.json" and planes.inside_checkout(through_link)
+        with pytest.raises(planes.PathRefused, match="not a private-plane path"):
+            planes.require_private_output(through_link)
+        if os.name == "nt":
+            extended = "\\\\?\\" + str(REPO_ROOT / "docs" / "x.json")
+            assert planes.checkout_relative(extended) == "docs/x.json"
+            with pytest.raises(planes.PathRefused):
+                planes.require_private_output(extended)
+        assert planes.require_private_output(tmp_path / "private" / "x.json") == tmp_path / "private" / "x.json"
+        assert planes.checkout_relative(tmp_path / "private") is None and planes.checkout_relative(REPO_ROOT) == "."
+    finally:
+        os.unlink(link) if link.is_symlink() else os.rmdir(link)
+    assert not (REPO_ROOT / "docs" / "evaluation" / "x.json").exists() and not (REPO_ROOT / "docs" / "x.json").exists()
 
 
 def _globs_with(pattern):
@@ -590,7 +683,14 @@ def test_ac_10_4_the_fingerprint_builder_writes_format_1_that_scan_boundary_read
     argv = ["--licensed-text", str(licensed), "--ulqs", str(items_path), "--set-id", "syn-1", "--output-licensed", str(out_l),
             "--output-ulqs", str(out_u), "--salt-env", "FINGERPRINT_SALT_FOR_TEST", "--access-log", str(access)]
     builder = script("build_licensed_fingerprints")
+    assert builder.main(argv) == 2 and not access.exists()  # the access log needs the actor's role
+    argv += ["--actor-role", "DS"]
     assert builder.main(argv) == 0
+    lines = read_jsonl(access)
+    assert [(line["action"], line["artifact_kind"]) for line in lines] == [
+        ("read", "licensed_text"), ("read", "ulqs_items"), ("write", "fingerprints"), ("write", "fingerprints")]
+    assert {line["actor_role"] for line in lines} == {"DS"}
+    assert lines[0]["artifact_sha256"] == __import__("hashlib").sha256(licensed.read_bytes()).hexdigest()
     loaded = script("scan_boundary").load_fingerprints(out_l)
     assert loaded["n"] == 12 and loaded["id"] == "syn-1" and loaded["set"]
     ulqs_set = contamination.load_fingerprint_file(out_u)
@@ -608,18 +708,21 @@ def test_ac_10_4_no_tracked_file_holds_a_real_catalog_pointer_or_ulqs_item_recor
     listed = subprocess.run(["git", "ls-files", "-z"], cwd=REPO_ROOT, capture_output=True, check=True).stdout.decode("utf-8")
     pointer = re.compile(r"EV-(?:2025|2026|IND)-p[0-9]{3}-[0-9]{2}")
     record = re.compile(r"\"item_id\"\s*:\s*\"ULQS-[A-G]-[0-9]{3,}\"")
-    offenders = []
+    offenders, scanned = [], 0
     for name in filter(None, listed.split("\0")):
-        if Path(name).suffix.lower() not in contamination.TEXT_EXTENSIONS:
+        # Every text file, whatever its suffix, as the scanner reads them; environment files are CI's (0.1).
+        if Path(name).suffix.lower() in contamination.BINARY_EXTENSIONS or contamination.is_env_file(name):
             continue
-        path = REPO_ROOT / name
         try:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            text = contamination._text_of(name, (REPO_ROOT / name).read_bytes())
         except OSError:
             continue
+        if text is None:
+            continue
+        scanned += 1
         if pointer.search(text) or record.search(text):
             offenders.append(name)
-    assert offenders == []
+    assert offenders == [] and scanned > 700
 
 
 # ===================================================================================================== AC-10-5
@@ -812,6 +915,89 @@ def test_plan_b_hold_h12_refuses_runs_on_non_synthetic_items(tmp_path):
     assert not (tmp_path / "out").exists()
 
 
+def _non_synthetic_set(tmp_path):
+    items = json.loads(json.dumps(synthetic.synthetic_dataset({"C": 2, "E": 1})).replace("SYN-", "ULQS-"))
+    for item in items:
+        item["license_class"] = "private_eval_full_span"
+    return items, synthetic.write_jsonl(tmp_path / "items.jsonl", items)
+
+
+def test_plan_b_after_d14_a_non_synthetic_run_needs_the_access_log_and_a_research_pre_run_scan(tmp_path):
+    # D-14 decided only in a package copy (no committed package decides it): hold H12 then gives way to the pre-run scan,
+    # which must be a passing research scan bound to these items, never CI's synthetic report or an empty one.
+    items, items_path = _non_synthetic_set(tmp_path)
+    spec = synthetic.spec_dict(items_path=items_path, catalog_path=None, package=synthetic.decided_package(tmp_path))
+    access, out = tmp_path / "access.jsonl", tmp_path / "private-run"
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(spec, out_dir=out)
+    assert refused.value.code == 2 and refused.value.reasons == ["access_log_required", "pre_run_scan_required"]
+    content = ulqs.dataset_content_sha256(items)
+    empty = synthetic.pass_scan(tmp_path / "empty.json", dataset_content_sha256=content, fingerprint_sets=[], targets=[])
+    ci_like = synthetic.pass_scan(tmp_path / "ci.json", dataset_content_sha256=content, fingerprint_sets=[
+        {"id": "synthetic-licensed-v1", "kind": "licensed", "dataset_content_sha256": None},
+        {"id": "synthetic-ulqs-v1", "kind": "ulqs", "dataset_content_sha256": content}])
+    other_items = synthetic.pass_scan(tmp_path / "other.json", dataset_content_sha256="f" * 64)
+    for scan, reason in ((empty, "pre_run_scan_invalid:fingerprint_sets"), (ci_like, "pre_run_scan_invalid:fingerprint_sets"),
+                         (other_items, "pre_run_scan_invalid:dataset")):
+        with pytest.raises(runner.RunRefused) as refused:
+            runner.plan_run({**spec, "pre_run_scan": scan}, out_dir=out, access_log=access)
+        assert refused.value.code == 2 and reason in refused.value.reasons
+    good = synthetic.pass_scan(tmp_path / "good.json", dataset_content_sha256=content)
+    plan = runner.plan_run({**spec, "pre_run_scan": good}, out_dir=out, access_log=access)
+    assert plan.synthetic is False and not out.exists()
+
+
+def _access(path):
+    return [(line["action"], line["artifact_kind"], line.get("outcome")) for line in read_jsonl(path)]
+
+
+def test_plan_f_the_access_log_records_every_read_and_each_run_s_outcome(tmp_path, monkeypatch):
+    spec_path = write_spec(tmp_path, stub_spec(tmp_path))
+    access = tmp_path / "access.jsonl"
+    assert run_main(["--spec", spec_path, "--output-dir", tmp_path / "x", "--access-log", access]) == 2 and not access.exists()
+    reads = [("read", "run_spec", None), ("read", "ulqs_items", None), ("read", "evidence_catalog", None)]
+    # An interrupted run (a provider outage after its inputs were read and requests sent) leaves its reads and outcome.
+    run_evaluation = script("run_evaluation")
+    monkeypatch.setattr(run_evaluation, "_responder", lambda plan: providers.ScriptedProvider(outage_at=5))
+    out = tmp_path / "run"
+    assert run_main(["--spec", spec_path, "--output-dir", out, "--access-log", access, "--actor-role", "MLE"]) == 5
+    assert _access(access) == reads + [("run", "run_spec", "started"), ("run", "run_output", "interrupted")]
+    assert read_jsonl(access)[-1]["artifact_sha256"] == lf_sha256(out / "responses.jsonl")
+    # Resumed by the same responder (the stub would not match the checkpoint: checkpoint_mismatch).
+    monkeypatch.setattr(run_evaluation, "_responder", lambda plan: providers.ScriptedProvider())
+    assert run_main(["--spec", spec_path, "--output-dir", out, "--resume", "--access-log", access, "--actor-role", "MLE"]) == 0
+    assert _access(access)[5:] == reads + [("run", "run_spec", "started"), ("run", "run_output", "completed")]
+    record = json.loads((out / "run_record.json").read_text(encoding="utf-8"))
+    assert read_jsonl(access)[-1]["artifact_sha256"] == record["outputs"]["payload_log_sha256"]
+    # A refused run (here an E1 run that is not confirmatory) logs the spec read and the refusal.
+    access.unlink()
+    refused = write_spec(tmp_path, stub_spec(tmp_path, experiment="E1"), "e1.json")
+    assert run_main(["--spec", refused, "--output-dir", tmp_path / "e1", "--access-log", access, "--actor-role", "PI"]) == 2
+    assert _access(access) == [("read", "run_spec", None), ("run", "run_spec", "refused")]
+    lines = read_jsonl(access)
+    assert {line["actor_role"] for line in lines} == {"PI"} and all(set(line) <= {
+        "log", "at", "actor_role", "action", "artifact_kind", "artifact_sha256", "purpose", "run_id", "outcome"} for line in lines)
+
+
+def test_plan_f_the_validator_logs_each_input_it_reads_and_each_record_it_writes(tmp_path):
+    items_path, catalog_path, items = synthetic.write_fixture_set(tmp_path, synthetic.SMALL)
+    ratings = synthetic.write_jsonl(tmp_path / "r.private.jsonl", synthetic.synthetic_ratings(items, rubric_sha256=RUBRIC_SHA))
+    text = tmp_path / "text"
+    text.mkdir()
+    for document, body in synthetic.corpus_text(items).items():
+        write_lf(text / f"{document}.txt", body)
+    access = tmp_path / "access.jsonl"
+    argv = ["--items", str(items_path), "--catalog", str(catalog_path), "--corpus-text", str(text), "--ratings", str(ratings), "--rubric",
+            str(REPO_ROOT / "lqs" / "rubric.md"), "--agreement-out", str(tmp_path / "agreement.json"), "--access-log", str(access)]
+    validate = script("validate_ulqs")
+    assert validate.main(argv) == 2 and not access.exists()  # --access-log needs --actor-role
+    assert validate.main(argv + ["--actor-role", "RL"]) == 0
+    assert _access(access) == [("read", "ulqs_items", None), ("read", "evidence_catalog", None), ("read", "corpus_text", None),
+                               ("read", "ratings", None), ("write", "agreement_record", None)]
+    assert read_jsonl(access)[0]["artifact_sha256"] == ulqs.dataset_sha256(items)
+    assert read_jsonl(access)[3]["artifact_sha256"] == lf_sha256(ratings)
+
+
 def _imports(path):
     found = set()
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
@@ -854,6 +1040,13 @@ def test_plan_e_phase_10_adds_no_production_component():
 def test_plan_g_the_mapping_table_keeps_corpus_version_separate(tmp_path):
     mapping = json.loads((REPO_ROOT / "lqs" / "ulqs-rc1-to-v1.0-mapping.json").read_text(encoding="utf-8"))
     assert mapping["fields"]["corpus_version"] == "copy" and "R-19" in mapping["corpus_version"]
+    # The text states what the code does: corpus_version is never in an id, is pinned on its own, and the dataset sha256
+    # (which hashes whole items) covers it.
+    assert "never part of an id" in mapping["corpus_version"] and "covered by the dataset sha256" in mapping["corpus_version"]
+    assert "separate from the dataset sha256" not in json.dumps(mapping)
+    plan = runner.plan_run(stub_spec(tmp_path))
+    assert plan.pins["items"]["corpus_version"] == synthetic.CORPUS_VERSION
+    assert plan.pins["evidence_catalog"]["corpus_version"] == synthetic.CORPUS_VERSION
     assert mapping["provisional"] is True and "auto-promotion past candidate" in mapping["never"]
     assert set(mapping["strata"]) == set(ulqs.STRATA) and mapping["states"] == {"draft": "draft", "candidate": "candidate"}
     assert "CORPUS" not in ulqs.ITEM_ID.pattern and "CORPUS" not in ulqs.EVIDENCE_ID.pattern
@@ -869,10 +1062,11 @@ def _live_ready(tmp_path, monkeypatch):
     plane.mkdir()
     monkeypatch.setenv("RESEARCH_PLANE_ROOT", str(plane))
     monkeypatch.setattr(providers, "LIVE_ADAPTERS", {"fake-adapter": providers.ScriptedProvider})
-    irb = synthetic.irb_record(plane / "irb.json")
-    spec = {"responder": {"live": {"adapter": "fake-adapter"}}, "governance": {"irb_record": irb, "osf_record": None},
-            "provider_terms": {"record_sha256": "0" * 64}, "licence_ruling": {"determination": "permits", "record_sha256": "0" * 64},
-            "research_use_confirmation": {"record_sha256": "0" * 64}, "arms": {"selected": list(ablation.ARM_IDS)}}
+    spec = {"created_at": synthetic.CREATED, "responder": {"live": {"adapter": "fake-adapter"}},
+            "governance": {"irb_record": synthetic.irb_record(plane / "irb.json"), "osf_record": None},
+            "provider_terms": synthetic.provider_terms_record(plane / "terms.json"),
+            "licence_ruling": synthetic.licence_ruling_record(plane / "ruling.json"),
+            "research_use_confirmation": synthetic.research_use_record(plane / "research-use.json"), "arms": {"selected": list(ablation.ARM_IDS)}}
     package = {"owner_decisions": {name: {"state": "decided"} for name in ("D-07", "D-08", "D-12", "D-14")},
                "semantic": {"enabled_by_default": True}}
     return spec, package, plane / "out"
@@ -882,12 +1076,28 @@ def test_plan_h_spans_reach_no_model_until_the_four_conditions_hold(tmp_path, mo
     spec, package, out = _live_ready(tmp_path, monkeypatch)
     table = ablation.load_arms()
     reasons = lambda s: providers.live_refusal_reasons(s, package, __import__("os").environ, table, out_dir=out)  # noqa: E731
+    plane = out.parent
     assert reasons(spec) == []
     assert reasons({**spec, "licence_ruling": None}) == ["licence_ruling_unrecorded"]                      # (a) Q-07
-    assert reasons({**spec, "licence_ruling": {"determination": "negative"}}) == ["licence_negative"]       # plan L
+    negative = synthetic.licence_ruling_record(plane / "negative.json", determination="negative")
+    assert reasons({**spec, "licence_ruling": negative}) == ["licence_negative"]                           # plan L
     assert reasons({**spec, "provider_terms": None}) == ["provider_terms_unrecorded"]                      # (b) A-11
     assert reasons({**spec, "governance": {"irb_record": None}}) == ["irb_not_filed"]                       # (c) D-08
     assert reasons({**spec, "research_use_confirmation": None}) == ["research_use_unconfirmed"]             # (d)
+    # Each condition is a record resolved by path and sha256 and read under its format, never a mere non-empty value.
+    dangling = {"path": str(plane / "absent.json"), "sha256": "0" * 64}
+    assert reasons({**spec, "provider_terms": {"record_sha256": "0" * 64}}) == ["provider_terms_invalid:reference"]
+    assert reasons({**spec, "provider_terms": dangling}) == ["provider_terms_invalid:file"]
+    assert reasons({**spec, "licence_ruling": {"determination": "permits", "record_sha256": "0" * 64}}) == ["licence_ruling_invalid:reference"]
+    assert reasons({**spec, "licence_ruling": dict(spec["licence_ruling"], sha256="0" * 64)}) == ["licence_ruling_invalid:sha256"]
+    assert reasons({**spec, "research_use_confirmation": dangling}) == ["research_use_invalid:file"]
+    unrecorded = synthetic.provider_terms_record(plane / "partial.json", publication_recorded=False)
+    assert reasons({**spec, "provider_terms": unrecorded}) == ["provider_terms_invalid:publication_recorded"]
+    expired = synthetic.irb_record(plane / "old.json", approval_date="2025-01-01", expiry_date="2026-06-30")
+    assert reasons({**spec, "governance": {"irb_record": expired}}) == ["irb_expired"]
+    public = REPO_ROOT / "docs" / "evaluation" / "phase10" / "README.md"
+    assert "governance_record_public" in reasons({**spec, "provider_terms": {"path": "docs/evaluation/phase10/README.md",
+                                                                             "sha256": lf_sha256(public)}})
     assert providers.live_refusal_reasons(spec, package, {}, table, out_dir=out) == ["research_plane_absent"]
     assert providers.live_refusal_reasons(spec, package, {"RESEARCH_PLANE_ROOT": str(REPO_ROOT / "lqs" / "private")}, table,
                                           out_dir=REPO_ROOT / "lqs" / "private" / "out") == ["research_plane_absent"]
@@ -941,7 +1151,7 @@ def test_plan_l_each_stop_condition_refuses(tmp_path, monkeypatch):
     assert "pre_run_scan_missing" in refused.value.reasons
     # Negative licence determination.
     spec_live, package, out = _live_ready(tmp_path, monkeypatch)
-    negative = {**spec_live, "licence_ruling": {"determination": "negative"}}
+    negative = {**spec_live, "licence_ruling": synthetic.licence_ruling_record(out.parent / "negative.json", determination="negative")}
     assert providers.live_refusal_reasons(negative, package, __import__("os").environ, ablation.load_arms(), out_dir=out) == ["licence_negative"]
     # Low agreement: a freeze record that failed (alpha below the floor) refuses a confirmatory run.
     items = read_jsonl(Path(spec["items"]["path"]))
@@ -1008,6 +1218,11 @@ def test_phase10_docs_quote_the_plan_and_state_the_current_rules():
     assert "Stop: contamination, negative licence determination, low agreement, no IRB." in adr
     adr7 = (REPO_ROOT / "docs" / "adr" / "ADR-007-evaluation-harness.md").read_text(encoding="utf-8")
     assert "## Revision 2026-11-24 (Phase 10)" in adr7 and "GATE+SV" in adr7
+    # The README's exit codes say what each script's docstring says.
+    readme = " ".join((RECORDS / "README.md").read_text(encoding="utf-8").split())
+    harness_doc = " ".join(script("check_research_harness").__doc__.split())
+    assert "3 a known answer not met or an invalid analysis plan" in harness_doc
+    assert "`check_research_harness.py`: 0; 1 drift; 3 a known answer not met or an invalid analysis plan; 6 a pin; 7 parity." in readme
     protocol = (REPO_ROOT / "docs" / "evaluation" / "protocol.md").read_text(encoding="utf-8")
     for arm in ablation.ARM_IDS:
         assert f"`{arm}`" in protocol, arm
@@ -1064,6 +1279,36 @@ def test_phase10_docs_the_preregistration_is_a_draft_with_holm_alpha_0_05():
     assert text == analysis_plans.preregistration_markdown(analysis_plans.load_plans()).replace("\r\n", "\n") or \
         text.replace("\r\n", "\n") == analysis_plans.preregistration_markdown(analysis_plans.load_plans())
     assert (RECORDS / "preregistration-draft.md").read_bytes().count(b"\r\n") == 0
+
+
+def _provisional_markers(path):
+    for node in ast.parse(path.read_text(encoding="utf-8")).body:
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "PROVISIONAL_DEFAULTS" for t in node.targets):
+            return set(ast.literal_eval(node.value))
+    return set()
+
+
+def test_phase10_docs_every_provisional_default_is_marked_where_it_lives():
+    # Spec 12.1: each PD row's "Where" column names its files; a data file carries "provisional": true and a code module a
+    # PROVISIONAL_DEFAULTS tuple naming the row. No row names only prose.
+    section = spec_text().split("### 12.1 Provisional defaults", 1)[1].split("### 12.2", 1)[0]
+    rows = re.findall(r"^\| (PD-\d+) \|.*\| ([^|]+) \|$", section, flags=re.MULTILINE)
+    assert [key for key, _where in rows] == [f"PD-{n}" for n in range(60, 75)]
+    modules = {path.name: path for path in [*Path(ulqs.__file__).resolve().parent.glob("*.py"),
+                                            *[REPO_ROOT / "scripts" / name for name in NEW_SCRIPTS]]}
+    for key, where in rows:
+        names = re.findall(r"`([^`]+)`", where)
+        assert names and len(names) == where.count(";") + 1, (key, where)
+        for name in names:
+            if name.endswith(".json"):
+                assert json.loads((REPO_ROOT / name).read_text(encoding="utf-8"))["provisional"] is True, (key, name)
+            else:
+                assert name.endswith(".py") and key in _provisional_markers(modules[name]), (key, name)
+    harness = json.loads(runner.HARNESS_PARAMETERS.read_text(encoding="utf-8"))
+    assert harness["replicates"]["subsample"] == {"stratum": "A", "size": 40, "replicates": 3, "rule": "sha256-order-v1"}
+    assert harness["retries"] == 3 and "PD-68" in harness["authority"]
+    pinned = json.loads((RECORDS / "pinned_configuration_v1.json").read_text(encoding="utf-8"))
+    assert pinned["harness_files"]["evaluation/config/harness_parameters_v1.json"] == canonical_sha256(harness)
 
 
 def test_phase10_no_new_source_literal_starts_with_qcai_():

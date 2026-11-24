@@ -6,10 +6,11 @@ import dataclasses
 import inspect
 import json
 from pathlib import Path
+import sys
 
 import pytest
 
-from evaluation.qcai_eval import reporting, runner, synthetic
+from evaluation.qcai_eval import reporting, runner, synthetic, ulqs
 from evaluation.qcai_eval.canonical import hashed_hex, read_jsonl
 from evaluation.qcai_eval.providers import ScriptedProvider, StubResponder, TransientFailure
 
@@ -168,3 +169,146 @@ def test_build_report_takes_the_time_as_an_input():
 def test_the_plan_is_frozen_and_the_responder_is_never_told_the_run_id(tmp_path):
     plan = runner.plan_run(small_spec(tmp_path)[0])
     assert dataclasses.is_dataclass(plan) and not any(f.name == "run_id" for f in dataclasses.fields(runner.Request))
+
+
+def _interrupted(tmp_path, spec, at=7):
+    plan = runner.plan_run(spec)
+    out = tmp_path / "out"
+    with pytest.raises(runner.RunInterrupted):
+        runner.execute_run(plan, ScriptedProvider(outage_at=at), out)
+    return plan, out
+
+
+def _changed_text(spec, tmp_path):
+    items = read_jsonl(Path(spec["items"]["path"]))
+    items[0] = {**items[0], "question": "A different invented question about the Quillfen archive?"}
+    path = synthetic.write_jsonl(tmp_path / "changed.jsonl", items)
+    return {**spec, "items": {**spec["items"], "path": str(path), "sha256": ulqs.dataset_sha256(items)}}
+
+
+@pytest.mark.parametrize("change", ["another run_id", "changed item text", "another responder"])
+def test_resume_refuses_a_checkpoint_of_another_run_and_leaves_it_untouched(tmp_path, change):
+    spec, _ = small_spec(tmp_path)
+    _plan, out = _interrupted(tmp_path, spec)
+    before = {name: (out / name).read_bytes() for name in ("responses.jsonl", "run_events.jsonl")}
+    if change == "another run_id":
+        other, responder = runner.plan_run({**spec, "run_id": "another-run"}), ScriptedProvider()
+    elif change == "changed item text":
+        other, responder = runner.plan_run(_changed_text(spec, tmp_path)), ScriptedProvider()
+    else:
+        other, responder = runner.plan_run(spec), StubResponder()
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.execute_run(other, responder, out, resume=True)
+    assert refused.value.code == 2 and refused.value.reasons == ["checkpoint_mismatch"]
+    assert {name: (out / name).read_bytes() for name in before} == before and not (out / "run_record.json").exists()
+
+
+def test_resume_refuses_a_response_line_whose_seed_or_unit_differs_from_its_request(tmp_path):
+    spec, _ = small_spec(tmp_path)
+    plan, out = _interrupted(tmp_path, spec)
+    lines = (out / "responses.jsonl").read_text(encoding="utf-8").splitlines()
+    first = json.loads(lines[0])
+    for field, value in (("seed_hex", "0" * 16), ("replicate", 9), ("arm", "NR" if first["arm"] != "NR" else "LEX")):
+        edited = [json.dumps({**first, field: value}, sort_keys=True)] + lines[1:]
+        (out / "responses.jsonl").write_text("\n".join(edited) + "\n", encoding="utf-8", newline="\n")
+        with pytest.raises(runner.RunRefused, match="checkpoint_mismatch"):
+            runner.execute_run(plan, ScriptedProvider(), out, resume=True)
+    stray = {**first, "request_key": "f" * 64}
+    (out / "responses.jsonl").write_text("\n".join(lines + [json.dumps(stray)]) + "\n", encoding="utf-8", newline="\n")
+    with pytest.raises(runner.RunRefused, match="checkpoint_mismatch"):
+        runner.execute_run(plan, ScriptedProvider(), out, resume=True)
+    (out / "responses.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    (out / "run_events.jsonl").unlink()
+    with pytest.raises(runner.RunRefused, match="checkpoint_mismatch"):  # a checkpoint whose start event is gone
+        runner.execute_run(plan, ScriptedProvider(), out, resume=True)
+
+
+@pytest.mark.parametrize("line", ["[1]", '{"outcome": "answered"}', '{"request_key": "short"}', "7"])
+def test_a_checkpoint_line_that_is_not_a_response_record_is_refused(tmp_path, line):
+    spec, _ = small_spec(tmp_path)
+    plan, out = _interrupted(tmp_path, spec)
+    with (out / "responses.jsonl").open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(line + "\n")
+    for resume in (True, False):
+        with pytest.raises(runner.RunRefused) as refused:
+            runner.execute_run(plan, ScriptedProvider(), out, resume=resume)
+        assert refused.value.code == 2 and refused.value.reasons == ["checkpoint_invalid"]
+
+
+MALFORMED = [
+    (lambda s: s.update(package="v7.json"), "package.path"),
+    (lambda s: s["package"].pop("path"), "package.path"),
+    (lambda s: s.update(items=["x"]), "items.path"),
+    (lambda s: s["items"].update(count="14"), "items.count"),
+    (lambda s: s["items"].update(required_state="frozen-ish"), "items.required_state"),
+    (lambda s: s.update(evidence_catalog="catalog.jsonl"), "evidence_catalog.path"),
+    (lambda s: s["arms"].update(selected="GATE"), "arms.selected"),
+    (lambda s: s["analysis_plan"].update(family=1), "analysis_plan.family"),
+    (lambda s: s.update(seeds=None), "seeds"),
+    (lambda s: s.update(created_at="garbage"), "created_at"),
+    (lambda s: s.update(created_at="2026-13-40T00:00:00Z"), "created_at"),
+    (lambda s: s.update(replicates={"default": "x"}), "replicates"),
+    (lambda s: s.update(replicates={"default": 0}), "replicates"),
+    (lambda s: s.update(replicates={"default": 1, "subsample": {"stratum": "Q", "size": 2, "replicates": 3}}), "replicates.subsample"),
+    (lambda s: s.update(replicates={"default": 1, "subsample": {"stratum": "A", "size": 0, "replicates": 3}}), "replicates.subsample"),
+    (lambda s: s.update(retries=-5), "retries"),
+    (lambda s: s.update(retries="many"), "retries"),
+    (lambda s: s.update(retries=True), "retries"),
+    (lambda s: s.update(responder="stub"), "responder"),
+    (lambda s: s.update(governance=[]), "governance"),
+    (lambda s: s.update(bootstrap={"resamples": 0, "level": "0.95"}), "bootstrap"),
+    (lambda s: s.update(bootstrap={"resamples": 10, "level": 0.95}), "bootstrap"),
+    (lambda s: s.update(pre_run_scan="scan.json"), "pre_run_scan"),
+]
+
+
+@pytest.mark.parametrize(("edit", "reason"), MALFORMED)
+def test_a_malformed_spec_is_refused_with_exit_2_naming_the_field(tmp_path, edit, reason):
+    spec, _ = small_spec(tmp_path)
+    edit(spec)
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(spec)
+    assert refused.value.code == 2 and reason in refused.value.reasons
+
+
+def test_the_cli_refuses_a_malformed_or_unreadable_spec_with_exit_2(tmp_path, capsys):
+    import importlib
+
+    if str(REPO_ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    run_evaluation = importlib.import_module("run_evaluation")
+    spec, _ = small_spec(tmp_path)
+    spec["package"] = "v7.json"
+    path = tmp_path / "spec.json"
+    path.write_text(json.dumps(spec), encoding="utf-8")
+    (tmp_path / "broken.json").write_text("{not json", encoding="utf-8")
+    for argv in (["--spec", str(path), "--output-dir", str(tmp_path / "out")], ["--spec", str(tmp_path / "broken.json"), "--output-dir",
+                 str(tmp_path / "out")], ["--check", str(tmp_path / "r.json"), "--spec", str(tmp_path / "broken.json")],
+                 ["--write", str(tmp_path / "r.json"), "--spec", str(path)], ["--record-stub", str(tmp_path / "r.jsonl"), "--spec",
+                 str(tmp_path / "absent.json")]):
+        assert run_evaluation.main(argv) == 2, argv
+    assert "Traceback" not in capsys.readouterr().err
+
+
+def test_omitted_replicates_and_retries_take_the_provisional_harness_parameters(tmp_path):
+    parameters = runner.load_harness_parameters()
+    assert parameters["provisional"] is True and parameters["retries"] == 3
+    assert parameters["replicates"] == {"default": 1, "subsample": {"stratum": "A", "size": 40, "replicates": 3, "rule": "sha256-order-v1"}}
+    spec, _ = small_spec(tmp_path)
+    del spec["replicates"], spec["retries"]
+    plan = runner.plan_run(spec)
+    assert plan.pins["replicates"] == parameters["replicates"] and plan.pins["retries"] == 3
+    assert plan.pins["harness_parameters"]["used_for"] == ["replicates", "retries"]
+    # Both A items (fewer than 40) are in the subsample, each with three replicates.
+    assert sorted(r.replicate for r in plan.requests if r.arm == "GATE" and r.item_id.startswith("SYN-A-")) == [1, 1, 2, 2, 3, 3]
+
+
+@pytest.mark.parametrize("replicates", [{"default": 1}, {"default": 1, "subsample": {"stratum": "A", "size": 2, "replicates": 1}}])
+def test_live_and_confirmatory_specs_must_keep_a_replicate_subsample(tmp_path, replicates):
+    spec, _ = small_spec(tmp_path, replicates=replicates)
+    for changes in ({"mode": "live", "responder": {"live": {"adapter": "none"}}},
+                    {"purpose": "confirmatory", "experiment": "E1"}):
+        with pytest.raises(runner.RunRefused) as refused:
+            runner.plan_run({**spec, **changes})
+        assert refused.value.code == 2 and refused.value.reasons == ["replicate_subsample_required"]
+    runner.plan_run(spec)  # an exploratory stub run may drop the subsample

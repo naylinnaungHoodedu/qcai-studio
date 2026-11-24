@@ -6,6 +6,11 @@ shingles (`qcai-licensed-fingerprints/1`, the format `scripts/scan_boundary.py` 
 every normalized whole text field of at least 3 words plus 6-word shingles (`qcai-ulqs-fingerprints/1`), so a short
 question is still found. A fingerprint file holds its salt, so a real one is research-plane material. Reports hold paths
 and counts only, never a text.
+
+A file is text when its suffix is a known text suffix, or, for any other suffix that is not a known binary one (no suffix,
+a dotfile, `.puml`, `.sh`, `.mako`, `Dockerfile`, ...), when its bytes decode as UTF-8 without a NUL. Environment files
+(a basename starting `.env`, such as the tracked `.env.example` templates) are read only when the caller asks
+(`include_env`; CI passes `--include-env-files`), and are otherwise listed as excluded.
 """
 
 from __future__ import annotations
@@ -25,10 +30,19 @@ LICENSED_FORMAT = "qcai-licensed-fingerprints/1"
 ULQS_FORMAT = "qcai-ulqs-fingerprints/1"
 HASH = "hmac-sha256-trunc32"
 WORDS = re.compile(r"[^\W_]+")
+PROVISIONAL_DEFAULTS = ("PD-71",)
+# scan_boundary's text suffixes plus the other text-bearing suffixes of the tracked tree.
 TEXT_EXTENSIONS = frozenset({
     ".py", ".md", ".txt", ".json", ".jsonl", ".csv", ".ts", ".tsx", ".js", ".mjs", ".html", ".css", ".yaml", ".yml",
     ".toml", ".ini", ".cfg", ".sql", ".xml", ".svg",
+    ".puml", ".sh", ".mako", ".example", ".tex", ".rst", ".ipynb", ".ps1", ".bat", ".cmd", ".sha256", ".cjs", ".jsx", ".scss",
 })
+BINARY_EXTENSIONS = frozenset({
+    ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".bmp", ".pdf", ".zip", ".gz", ".tgz", ".7z", ".woff", ".woff2", ".ttf",
+    ".otf", ".eot", ".mp3", ".mp4", ".wav", ".mov", ".webm", ".pyc", ".pptx", ".xlsx", ".doc", ".xls", ".ppt", ".db", ".sqlite",
+})
+ENV_EXCLUSION = "environment file (not read; --include-env-files)"
+INCOMPLETE_REASONS = frozenset({"too_large", "unreadable"})
 MAX_SCAN_BYTES = 20 * 1024 * 1024
 MIN_WORDS_EXACT = 3
 LICENSED_N = 12
@@ -118,9 +132,11 @@ def build_ulqs(items: Iterable[Mapping[str, Any]], salt: bytes, *, set_id: str, 
             fingerprint = exact_fingerprint(text, salt)
             if fingerprint:
                 exact.add(fingerprint)
+    from .ulqs import dataset_content_sha256
+
     return {"format": ULQS_FORMAT, "hash": HASH, "fingerprint_set_id": set_id, "salt_hex": salt.hex(), "shingle_words": n,
             "min_words_exact": MIN_WORDS_EXACT, "exact": sorted(exact), "fingerprints": sorted(shingles),
-            "sources": {"items": len(items), "texts": count}}
+            "dataset_content_sha256": dataset_content_sha256(items), "sources": {"items": len(items), "texts": count}}
 
 
 @dataclass(frozen=True)
@@ -131,6 +147,7 @@ class FingerprintSet:
     n: int
     shingles: frozenset[str]
     exact: frozenset[str]
+    dataset_content_sha256: str | None = None  # a ULQS set: the status-free content sha256 of the items it was built from
 
 
 def set_from_payload(payload: Mapping[str, Any]) -> FingerprintSet:
@@ -140,7 +157,7 @@ def set_from_payload(payload: Mapping[str, Any]) -> FingerprintSet:
     default_n = LICENSED_N if kind == "licensed" else ULQS_N
     return FingerprintSet(id=str(payload.get("fingerprint_set_id", "unknown")), kind=kind, salt=bytes.fromhex(payload["salt_hex"]),
                           n=int(payload.get("shingle_words", default_n)), shingles=frozenset(payload["fingerprints"]),
-                          exact=frozenset(payload.get("exact", [])))
+                          exact=frozenset(payload.get("exact", [])), dataset_content_sha256=payload.get("dataset_content_sha256"))
 
 
 def load_fingerprint_file(path: Path) -> FingerprintSet:
@@ -193,6 +210,10 @@ def _json_strings(text: str) -> list[str]:
     return found
 
 
+def is_env_file(name: str) -> bool:
+    return PurePosixPath(name).name.lower().startswith(".env")
+
+
 def _text_of(name: str, data: bytes) -> str | None:
     suffix = PurePosixPath(name).suffix.lower()
     if suffix == ".docx":
@@ -204,37 +225,53 @@ def _text_of(name: str, data: bytes) -> str | None:
             return None
     if suffix in TEXT_EXTENSIONS:
         return data.decode("utf-8", errors="replace")
-    return None
+    if suffix in BINARY_EXTENSIONS or b"\x00" in data:
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
 
 
-Entry = tuple[str, Callable[[], "bytes | None"]]
+Entry = tuple[str, Callable[[], bytes]]
 
 
-def _reader(path: Path) -> Callable[[], bytes | None]:
-    def read() -> bytes | None:
-        try:
-            if path.stat().st_size > MAX_SCAN_BYTES:
-                return None
-            return path.read_bytes()
-        except OSError:
-            return None
+class TooLarge(Exception):
+    """A file over MAX_SCAN_BYTES."""
+
+
+def _reader(path: Path) -> Callable[[], bytes]:
+    def read() -> bytes:
+        if path.stat().st_size > MAX_SCAN_BYTES:
+            raise TooLarge(path.name)
+        return path.read_bytes()
 
     return read
 
 
-def scan_files(entries: Iterable[Entry], sets: Sequence[FingerprintSet], *, excluded: Sequence[Mapping[str, str]] = ()) -> dict[str, Any]:
-    """Scan (name, read) entries. Unknown extensions are not text; files over 20 MiB are excluded as too large."""
+def scan_files(entries: Iterable[Entry], sets: Sequence[FingerprintSet], *, excluded: Sequence[Mapping[str, str]] = (),
+               include_env: bool = False) -> dict[str, Any]:
+    """Scan (name, read) entries. Known binary suffixes are skipped unread; a file of another suffix is read and scanned
+    when it is text (see the module docstring). Files over 20 MiB are excluded as `too_large`, files that cannot be read as
+    `unreadable`, and environment files (unless `include_env`) as not read."""
     files = scanned = 0
     out_excluded = [dict(entry) for entry in excluded]
     hit_files = []
     for name, read in entries:
         files += 1
         suffix = PurePosixPath(name).suffix.lower()
-        if suffix not in TEXT_EXTENSIONS and suffix != ".docx":
+        if suffix in BINARY_EXTENSIONS:
             continue
-        data = read()
-        if data is None:
+        if is_env_file(name) and not include_env:
+            out_excluded.append({"path": name, "reason": ENV_EXCLUSION})
+            continue
+        try:
+            data = read()
+        except TooLarge:
             out_excluded.append({"path": name, "reason": "too_large"})
+            continue
+        except OSError:
+            out_excluded.append({"path": name, "reason": "unreadable"})
             continue
         text = _text_of(name, data)
         if text is None:
@@ -251,31 +288,36 @@ def git_files(root: Path) -> list[str]:
     return sorted(name for name in listed.split("\0") if name)
 
 
-def repository_target(root: Path, sets: Sequence[FingerprintSet], *, exclude: Sequence[str] = ()) -> dict[str, Any]:
+def repository_target(root: Path, sets: Sequence[FingerprintSet], *, exclude: Sequence[str] = (),
+                      include_env: bool = False) -> dict[str, Any]:
     """The tracked tree (git ls-files only: untracked, ignored files on a workstation are never read)."""
     names = git_files(root)
     skipped = [{"path": name, "reason": "synthetic contamination fixture"} for name in names if name in exclude]
     entries = [(name, _reader(Path(root) / name)) for name in names if name not in exclude]
-    return {"target": "repository", "root": ".", **scan_files(entries, sets, excluded=skipped), "files": len(names)}
+    return {"target": "repository", "root": ".", **scan_files(entries, sets, excluded=skipped, include_env=include_env),
+            "files": len(names)}
 
 
-def path_target(path: Path, sets: Sequence[FingerprintSet], *, label: str, exclude_paths: Sequence[Path] = ()) -> dict[str, Any]:
+def path_target(path: Path, sets: Sequence[FingerprintSet], *, label: str, exclude_paths: Sequence[Path] = (),
+                include_env: bool = False) -> dict[str, Any]:
     path = Path(path)
     excluded_set = {Path(item).resolve() for item in exclude_paths}
     files = sorted(p for p in ([path] if path.is_file() else path.rglob("*")) if p.is_file())
     skipped = [{"path": _rel(p, path), "reason": "synthetic contamination fixture"} for p in files if p.resolve() in excluded_set]
     entries = [(_rel(p, path), _reader(p)) for p in files if p.resolve() not in excluded_set]
-    return {"target": "path", "root": label, **scan_files(entries, sets, excluded=skipped), "files": len(files)}
+    return {"target": "path", "root": label, **scan_files(entries, sets, excluded=skipped, include_env=include_env),
+            "files": len(files)}
 
 
-def research_logs_target(directory: Path, sets: Sequence[FingerprintSet], *, label: str) -> dict[str, Any]:
+def research_logs_target(directory: Path, sets: Sequence[FingerprintSet], *, label: str, include_env: bool = False) -> dict[str, Any]:
     """Every file of a run directory except the fixed research-data file (responses.jsonl). The exclusion is a constant:
     nothing a run writes can widen it."""
     directory = Path(directory)
     files = sorted(p for p in directory.rglob("*") if p.is_file())
     skipped = [{"path": _rel(p, directory), "reason": "research data (model outputs)"} for p in files if p.name in RESEARCH_DATA_FILES]
     entries = [(_rel(p, directory), _reader(p)) for p in files if p.name not in RESEARCH_DATA_FILES]
-    return {"target": "research-logs", "root": label, **scan_files(entries, sets, excluded=skipped), "files": len(files)}
+    return {"target": "research-logs", "root": label, **scan_files(entries, sets, excluded=skipped, include_env=include_env),
+            "files": len(files)}
 
 
 def _rel(path: Path, root: Path) -> str:
@@ -285,7 +327,14 @@ def _rel(path: Path, root: Path) -> str:
         return path.name
 
 
+def incomplete_targets(targets: Sequence[Mapping[str, Any]]) -> list[str]:
+    """The roots of targets whose coverage cannot prove zero matches: no file scanned, or a file too large or unreadable."""
+    return [str(target["root"]) for target in targets
+            if target["scanned"] == 0 or any(entry.get("reason") in INCOMPLETE_REASONS for entry in target["excluded"])]
+
+
 def report(targets: Sequence[Mapping[str, Any]], sets: Sequence[FingerprintSet]) -> dict[str, Any]:
     total = sum(hit["licensed_hits"] + hit["ulqs_hits"] for target in targets for hit in target["files_with_hits"])
-    return {"report": "qcai-research-log-scan", "format_version": 1, "fingerprint_sets": [s.id for s in sets], "targets": list(targets),
-            "matches_total": total, "result": "pass" if total == 0 else "fail"}
+    return {"report": "qcai-research-log-scan", "format_version": 1,
+            "fingerprint_sets": [{"id": s.id, "kind": s.kind, "dataset_content_sha256": s.dataset_content_sha256} for s in sets],
+            "targets": list(targets), "matches_total": total, "result": "pass" if total == 0 else "fail"}

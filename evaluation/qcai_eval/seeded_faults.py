@@ -15,6 +15,8 @@ from typing import Any, Mapping
 from .canonical import canonical_sha256
 from .statistics import wilson_interval
 
+PROVISIONAL_DEFAULTS = ("PD-66",)  # Phase 10 spec 12.1; ratified under DI-140
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_FIXTURE = REPO_ROOT / "evaluation" / "fixtures" / "seeded_faults_v1.json"
 FINDING_TYPES = ("A", "B1", "B2", "C", "D", "E")

@@ -101,6 +101,28 @@ def test_no_test_reads_outside_the_repository():
     assert scanned > 50 and found == []
 
 
+# The research harness's code and the CI workflow: no code path or CI step names what lies beside the checkout (Phase 10
+# spec 0.1: the private research data folder is never read).
+HARNESS_CODE = (REPO_ROOT / "evaluation" / "qcai_eval",)
+HARNESS_SCRIPTS = ("run_evaluation.py", "validate_ulqs.py", "migrate_ulqs_rc1.py", "build_licensed_fingerprints.py", "scan_research_logs.py",
+                   "check_research_harness.py")
+CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+
+
+def test_no_harness_code_or_ci_step_reads_outside_the_repository():
+    found, scanned = [], 0
+    modules = [path for root in HARNESS_CODE for path in sorted(root.rglob("*.py")) if "__pycache__" not in path.parts]
+    for path in modules + [REPO_ROOT / "scripts" / name for name in HARNESS_SCRIPTS]:
+        depth = len(path.parent.relative_to(REPO_ROOT).parts)
+        scanned += 1
+        found += _outside_reads(path.read_text(encoding="utf-8"), path.relative_to(REPO_ROOT).as_posix(), depth)
+    for number, line in enumerate(CI_WORKFLOW.read_text(encoding="utf-8").splitlines(), start=1):
+        for word in re.split(r"[\s\"'=]+", line):
+            if _names_a_path_outside(word):
+                found.append(f"ci.yml:{number}: names {word[:60]!r}")
+    assert scanned >= 20 and found == []
+
+
 def test_the_outside_read_scan_catches_each_way_a_test_reached_the_evidence_package():
     for source in ('BEP_ROOT = REPO_ROOT.parent / "BEP-2-12"\n', 'PLAN = REPO_ROOT.parent / "QC_AI_Studio_Ultimate_Software_Upgrade_Plan.txt"\n',
                    'ROOT = REPO_ROOT.parents[0]\n', 'ROOT = Path(__file__).resolve().parents[4]\n', 'register = Path("../BEP-2-12/00_meta")\n',

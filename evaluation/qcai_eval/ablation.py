@@ -14,6 +14,8 @@ from typing import Any, Mapping, Sequence
 
 from .canonical import canonical_sha256
 
+PROVISIONAL_DEFAULTS = ("PD-67",)  # Phase 10 spec 12.1; ratified under DI-140
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ARMS_PATH = REPO_ROOT / "evaluation" / "config" / "arms_v1.json"
 ARM_IDS = ("NR", "LEX", "SEM", "GATE", "GATE+SV", "GATE+V1", "VLOOP")

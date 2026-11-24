@@ -209,3 +209,18 @@ def test_the_legacy_loader_still_reads_and_validates_its_own_schema():
     items = load_lqs(REPO_ROOT / "lqs" / "manifest.jsonl")
     assert items == []
     validate_lqs(items, enforce_proposal_range=False)
+
+
+def test_transition_problems_compare_an_item_set_with_its_predecessor():
+    reviewed = [{**item, "status": "review", "item_kind": "instructional",
+                 "validation": {**item["validation"], "human_reviewed": True}} for item in synthetic.synthetic_dataset({"A": 2, "C": 1})]
+    frozen = [{**item, "status": "frozen"} for item in reviewed]
+    assert ulqs.transition_problems(reviewed, frozen) == []
+    assert ulqs.transition_problems(frozen, frozen) == []
+    skipped = [{**reviewed[0], "status": "candidate"}] + reviewed[1:]
+    assert [(p.item_id, p.code) for p in ulqs.transition_problems(skipped, frozen)] == [("SYN-A-001", "transition")]
+    edited = [{**frozen[0], "topic": "another invented topic"}] + frozen[1:]
+    assert [p.code for p in ulqs.transition_problems(frozen, edited)] == ["frozen_content_changed"]
+    assert [(p.item_id, p.code) for p in ulqs.transition_problems(frozen, frozen[1:])] == [("SYN-A-001", "removed")]
+    assert [p.code for p in ulqs.transition_problems(frozen[1:], frozen)] == ["transition"]  # a new item cannot start frozen
+    assert ulqs.transition_problems(frozen, [{**frozen[0], "status": "retired"}] + frozen[1:]) == []

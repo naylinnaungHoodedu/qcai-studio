@@ -1,0 +1,20 @@
+{
+ "authority": "P1-D-18 (plan Phase 10 D task 5); the paper's execution values (spec M4: three replicates on a 40-item S1 subsample, API failures retried three times); ratified under DI-140 (PD-68)",
+ "format_version": 1,
+ "parameters": "harness-parameters-v1",
+ "provisional": true,
+ "replicate_variance_required": {
+  "applies_to": "live runs and confirmatory runs (AC-10-3: live runs report replicate variance)",
+  "min_replicates": 2
+ },
+ "replicates": {
+  "default": 1,
+  "subsample": {
+   "replicates": 3,
+   "rule": "sha256-order-v1",
+   "size": 40,
+   "stratum": "A"
+  }
+ },
+ "retries": 3
+}

@@ -5,17 +5,24 @@ seeds [Evidence E-103]." A run pins the package (path and sha256, read-only), th
 the analysis plan by sha256; its seeds are hashed from (run_id, arm, item_id, replicate). Stub and recorded runs repeat
 byte for byte: no output carries the wall clock or an absolute path, and the record and payload log depend only on the
 plan and the responses. Hold H12 refuses every run over non-synthetic data while D-14 is open; live runs are refused here.
-Every run is exploratory unless its spec says confirmatory, and E1-E4 runs must be confirmatory (plan 12.7).
+Every run is exploratory unless its spec says confirmatory, and E1-E4 runs must be confirmatory (plan 12.7). A spec that
+omits `replicates` or `retries` takes the provisional paper values in `evaluation/config/harness_parameters_v1.json`
+(PD-68), and a live or confirmatory spec must keep a replicate subsample so that the record reports replicate variance.
+A resumed run continues only its own checkpoint: the start event pins a run digest, and every reused response line must
+match its planned request.
 """
 
 from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
+import datetime as _dt
+from fractions import Fraction
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
 from typing import Any, Mapping, Sequence
 
 from . import ablation, analysis_plans, governance, planes, statistics, ulqs
@@ -29,7 +36,13 @@ from .payload_log import PayloadLogViolation, log_record, validate_log_record
 from .pointers import EvidenceCatalog, PointerResolver, public_span_lookup, resolve_items
 from .providers import RecordedResponder
 
+PROVISIONAL_DEFAULTS = ("PD-68", "PD-73")
 REPO_ROOT = planes.REPO_ROOT
+HARNESS_PARAMETERS = REPO_ROOT / "evaluation" / "config" / "harness_parameters_v1.json"
+RUN_ID = re.compile(r"^[a-z0-9][a-z0-9.+:-]{0,63}$")
+CREATED_AT = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
+HEX64 = re.compile(r"^[0-9a-f]{64}$")
+MAX_RETRIES = 10
 SPEC_FORMAT = "ulqs-run-spec-v1"
 RECORD_FORMAT = "ulqs-run-record"
 MODES = ("stub", "recorded", "live")
@@ -96,7 +109,10 @@ def _path(value: str, repo_root: Path) -> Path:
 
 
 def load_spec(path: Path) -> dict[str, Any]:
-    spec = json.loads(Path(path).read_text(encoding="utf-8"))
+    try:
+        spec = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise RunRefused(2, ["spec_unreadable"]) from None
     if not isinstance(spec, dict):
         raise RunRefused(2, ["spec_not_an_object"])
     return spec
@@ -125,6 +141,42 @@ def _units(item: Mapping[str, Any]) -> list[dict[str, Any]]:
                  "gold_claims": claims(item)} for level in ulqs.REPLAY_LEVELS]
     return [{"unit": None, "turn_depth": None, "evidence": tuple(item.get("evidence_ids", []) or []),
              "gold": item["expected_behavior"], "gold_claims": claims(item)}]
+
+
+def load_harness_parameters(path: Path = HARNESS_PARAMETERS) -> dict[str, Any]:
+    """The provisional run defaults (PD-68): the paper's replicate subsample and retries, and the replicate-variance rule."""
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    if raw.get("parameters") != "harness-parameters-v1" or raw.get("provisional") is not True:
+        raise ValueError("not a provisional harness-parameters-v1 file")
+    if _replicate_problems(raw.get("replicates")) or not _integer(raw.get("retries"), 0, MAX_RETRIES):
+        raise ValueError("harness parameters: replicates or retries out of range")
+    if not _integer((raw.get("replicate_variance_required") or {}).get("min_replicates"), 2):
+        raise ValueError("harness parameters: replicate_variance_required.min_replicates")
+    return raw
+
+
+def _integer(value: Any, low: int, high: int | None = None) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= low and (high is None or value <= high)
+
+
+def _replicate_problems(value: Any) -> list[str]:
+    if not isinstance(value, Mapping) or not _integer(value.get("default"), 1, 100):
+        return ["replicates"]
+    block = value.get("subsample")
+    if block is None:
+        return []
+    if (not isinstance(block, Mapping) or block.get("stratum") not in ulqs.STRATA or not _integer(block.get("size"), 1)
+            or not _integer(block.get("replicates"), 1, 100) or block.get("rule", SUBSAMPLE_RULE) != SUBSAMPLE_RULE):
+        return ["replicates.subsample"]
+    return []
+
+
+def effective_replicates(spec: Mapping[str, Any], parameters: Mapping[str, Any]) -> dict[str, Any]:
+    return json.loads(json.dumps(spec["replicates"] if "replicates" in spec else parameters["replicates"]))
+
+
+def effective_retries(spec: Mapping[str, Any], parameters: Mapping[str, Any]) -> int:
+    return int(spec["retries"] if "retries" in spec else parameters["retries"])
 
 
 def subsample(items: Sequence[Mapping[str, Any]], replicates: Mapping[str, Any]) -> list[str]:
@@ -170,7 +222,70 @@ def recording_pins(package_sha: str, items_sha: str, catalog_sha: str | None, ar
 # ------------------------------------------------------------------------------------------------------------ planning
 
 
-def _check_shape(spec: Mapping[str, Any]) -> None:
+def _created_at_ok(value: Any) -> bool:
+    if not isinstance(value, str) or not CREATED_AT.match(value):
+        return False
+    try:
+        _dt.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return False
+    return True
+
+
+def _type_problems(spec: Mapping[str, Any]) -> list[str]:
+    """Every nested shape the planner reads, so that a malformed spec is refused (exit 2), never a traceback."""
+    reasons = []
+    for key in ("package", "items", "arms", "analysis_plan", "evidence_catalog"):
+        if key not in spec or (key == "evidence_catalog" and spec[key] is None):
+            continue
+        value = spec[key]
+        if not isinstance(value, Mapping) or not isinstance(value.get("path"), str) or not value["path"]:
+            reasons.append(f"{key}.path")
+    items = spec.get("items")
+    if isinstance(items, Mapping):
+        if not _integer(items.get("count"), 0):
+            reasons.append("items.count")
+        if items.get("required_state", "any") not in ("any", "frozen"):
+            reasons.append("items.required_state")
+    arms = spec.get("arms")
+    if isinstance(arms, Mapping) and arms.get("selected") is not None and (
+            not isinstance(arms["selected"], list) or not all(isinstance(arm, str) for arm in arms["selected"])):
+        reasons.append("arms.selected")
+    plan = spec.get("analysis_plan")
+    if isinstance(plan, Mapping) and not isinstance(plan.get("family"), str):
+        reasons.append("analysis_plan.family")
+    seeds = spec.get("seeds", {})
+    if not isinstance(seeds, Mapping):
+        reasons.append("seeds")
+    elif seeds.get("rule", SEEDS_RULE) != SEEDS_RULE:
+        reasons.append("seeds.rule")
+    if "created_at" in spec and not _created_at_ok(spec["created_at"]):
+        reasons.append("created_at")
+    if "replicates" in spec:
+        reasons += _replicate_problems(spec["replicates"])
+    if "retries" in spec and not _integer(spec["retries"], 0, MAX_RETRIES):
+        reasons.append("retries")
+    for key in ("responder", "governance"):
+        if key in spec and not isinstance(spec[key], Mapping):
+            reasons.append(key)
+    bootstrap = spec.get("bootstrap")
+    if bootstrap is not None:
+        ok = isinstance(bootstrap, Mapping) and _integer(bootstrap.get("resamples", 1000), 1)
+        if ok:
+            level = bootstrap.get("level", "0.95")
+            try:
+                ok = isinstance(level, str) and 0 < Fraction(level) < 1
+            except (ValueError, ZeroDivisionError):
+                ok = False
+        if not ok:
+            reasons.append("bootstrap")
+    for key in ("freeze_record", "pre_run_scan", "provider_terms", "licence_ruling", "research_use_confirmation"):
+        if spec.get(key) is not None and not isinstance(spec[key], Mapping):
+            reasons.append(key)
+    return reasons
+
+
+def _check_shape(spec: Mapping[str, Any], parameters: Mapping[str, Any]) -> None:
     reasons = []
     if spec.get("run_spec") != SPEC_FORMAT:
         reasons.append("run_spec")
@@ -183,25 +298,34 @@ def _check_shape(spec: Mapping[str, Any]) -> None:
         reasons.append("purpose")
     if spec.get("experiment") not in EXPERIMENTS:
         reasons.append("experiment")
-    if spec.get("seeds", {}).get("rule", SEEDS_RULE) != SEEDS_RULE:
-        reasons.append("seeds.rule")
     run_id = spec.get("run_id")
-    import re
-
-    if not isinstance(run_id, str) or not re.match(r"^[a-z0-9][a-z0-9.+:-]{0,63}$", run_id):
+    if not isinstance(run_id, str) or not RUN_ID.match(run_id):
         reasons.append("run_id")
+    reasons += _type_problems(spec)
     if reasons:
         raise RunRefused(2, reasons)
     if spec["experiment"] in ("E1", "E2", "E3", "E4") and spec["purpose"] != "confirmatory":
         raise RunRefused(2, ["experiment_requires_confirmatory"])
     if spec["experiment"] == "harness-check" and spec["purpose"] == "confirmatory":
         raise RunRefused(2, ["harness_check_not_confirmatory"])
+    # AC-10-3: live runs report replicate variance; confirmatory runs too (PD-68). Both need a subsample with at least
+    # `min_replicates` replicates.
+    if spec["mode"] == "live" or spec["purpose"] == "confirmatory":
+        block = effective_replicates(spec, parameters).get("subsample") or {}
+        if int(block.get("replicates", 0)) < int(parameters["replicate_variance_required"]["min_replicates"]):
+            raise RunRefused(2, ["replicate_subsample_required"])
 
 
 def plan_run(spec: Mapping[str, Any], *, repo_root: Path = REPO_ROOT, environ: Mapping[str, str] = os.environ,
              out_dir: Path | None = None, access_log: Path | None = None) -> Plan:
     repo_root = Path(repo_root)
-    _check_shape(spec)
+    try:
+        parameters_raw = load_harness_parameters()
+    except (OSError, ValueError):
+        raise RunRefused(6, ["harness_parameters_invalid"]) from None
+    _check_shape(spec, parameters_raw)
+    replicates = effective_replicates(spec, parameters_raw)
+    retries = effective_retries(spec, parameters_raw)
     # 2. The package, by explicit path and sha256 (never the application's default path).
     package_path = _path(spec["package"]["path"], repo_root)
     try:
@@ -220,6 +344,7 @@ def plan_run(spec: Mapping[str, Any], *, repo_root: Path = REPO_ROOT, environ: M
     if problems:
         raise RunRefused(3, ["items_invalid"] + [str(problem) for problem in problems[:20]])
     items_sha = ulqs.dataset_sha256(items)
+    items_content_sha = ulqs.dataset_content_sha256(items)
     if items_sha != spec["items"].get("sha256") or len(items) != spec["items"].get("count"):
         raise RunRefused(6, ["items_sha256"])
     states = Counter(item["status"] for item in items)
@@ -261,8 +386,8 @@ def plan_run(spec: Mapping[str, Any], *, repo_root: Path = REPO_ROOT, environ: M
         prompt_version = str(table.gate_configuration.get("prompt_version"))
         responder_rule = _responder_rule(spec)
         common = {"package_sha256": package_sha, "items_sha256": items_sha, "catalog_sha256": catalog_sha,
-                  "prompt_version": prompt_version, "seeds_rule": SEEDS_RULE, "replicates": spec.get("replicates", {"default": 1}),
-                  "retries": int(spec.get("retries", 3)), "responder_rule": responder_rule}
+                  "prompt_version": prompt_version, "seeds_rule": SEEDS_RULE, "replicates": replicates,
+                  "retries": retries, "responder_rule": responder_rule}
         manifests = {arm: arm_manifest(table, arm, common) for arm in selected}
         manifests = _manifest_hook(manifests)
         ablation.assert_arm_parity(manifests, table=table, required=selected)
@@ -290,8 +415,8 @@ def plan_run(spec: Mapping[str, Any], *, repo_root: Path = REPO_ROOT, environ: M
         missing = []
         if access_log is None:
             missing.append("access_log_required")
-        if not spec.get("pre_run_scan"):
-            missing.append("pre_run_scan_required")
+        missing += governance.scan_refusals(spec.get("pre_run_scan"), repo_root, dataset_content_sha256=items_content_sha,
+                                            missing="pre_run_scan_required")
         if missing:
             raise RunRefused(2, missing)
     # The recorded responder and its pins.
@@ -310,7 +435,8 @@ def plan_run(spec: Mapping[str, Any], *, repo_root: Path = REPO_ROOT, environ: M
         recording_source = responder.source
     # 8. The confirmatory gate (AC-10-5).
     if spec["purpose"] == "confirmatory":
-        reasons = governance.confirmatory_refusals(spec, analysis_plan_sha256=plans_sha, dataset_sha256=items_sha, items_states=states,
+        reasons = governance.confirmatory_refusals(spec, analysis_plan_sha256=plans_sha, dataset_sha256=items_sha,
+                                                   dataset_content_sha256=items_content_sha, items_states=states,
                                                    package_raw=package_raw, repo_root=repo_root, recording_source=recording_source)
         if reasons:
             if any(reason.startswith(("irb_", "osf_")) for reason in reasons):
@@ -337,7 +463,7 @@ def plan_run(spec: Mapping[str, Any], *, repo_root: Path = REPO_ROOT, environ: M
                 planes.require_private_output(out_dir, root=repo_root)
             except planes.PathRefused:
                 raise RunRefused(2, ["output_not_private"]) from None
-    requests = _requests(spec, items, table, selected, package_sha, prompt_version)
+    requests = _requests(spec, items, table, selected, package_sha, prompt_version, replicates)
     pins = {
         "package": {"path": spec["package"]["path"] if not Path(spec["package"]["path"]).is_absolute() else package_path.name,
                     "sha256": package_sha, "package_version": package_raw.get("package_version"),
@@ -350,10 +476,12 @@ def plan_run(spec: Mapping[str, Any], *, repo_root: Path = REPO_ROOT, environ: M
         "arms": {"sha256": arms_sha, "selected": selected, "parity": "pass"},
         "analysis_plan": {"sha256": plans_sha, "family": spec["analysis_plan"]["family"]},
         "seeds": {"rule": SEEDS_RULE},
-        "replicates": spec.get("replicates", {"default": 1}),
+        "replicates": replicates,
         "bootstrap": spec.get("bootstrap"),
         "prompt_version": prompt_version,
-        "retries": int(spec.get("retries", 3)),
+        "retries": retries,
+        "harness_parameters": {"sha256": canonical_sha256(parameters_raw), "used_for": sorted(
+            key for key in ("replicates", "retries") if key not in spec)},
         "code": code_pins(repo_root),
     }
     return Plan(spec=dict(spec), package_raw=package_raw, items=items, arms=table, requests=tuple(requests), pins=pins,
@@ -374,8 +502,7 @@ def _responder_rule(spec: Mapping[str, Any]) -> str:
     return "live:" + str((responder.get("live") or {}).get("adapter"))
 
 
-def _requests(spec, items, table, selected, package_sha, prompt_version) -> list[Request]:
-    replicates = spec.get("replicates", {"default": 1})
+def _requests(spec, items, table, selected, package_sha, prompt_version, replicates) -> list[Request]:
     default = int(replicates.get("default", 1))
     sampled = set(subsample(items, replicates))
     extra = int((replicates.get("subsample") or {}).get("replicates", default))
@@ -405,6 +532,17 @@ def _append_event(out_dir: Path, event: Mapping[str, Any]) -> None:
         handle.write(dumps_line(event))
 
 
+def requests_digest(plan: Plan) -> str:
+    """sha256 of the sorted "request_key seed_hex" lines of the plan: the run record's `requests.digest`."""
+    return hashlib.sha256("".join(f"{line}\n" for line in sorted(f"{r.request_key} {r.seed_hex}" for r in plan.requests)).encode()).hexdigest()
+
+
+def run_digest(plan: Plan, responder_rule: str) -> str:
+    """What a checkpoint belongs to: the run id, mode, purpose, responder rule, every pin and the planned keys and seeds."""
+    return canonical_sha256({"run_id": plan.spec["run_id"], "mode": plan.spec["mode"], "purpose": plan.spec["purpose"],
+                             "responder_rule": responder_rule, "pins": plan.pins, "requests": requests_digest(plan)})
+
+
 def _read_checkpoint(path: Path, *, resume: bool) -> dict[str, dict]:
     if not path.exists():
         return {}
@@ -418,6 +556,8 @@ def _read_checkpoint(path: Path, *, resume: bool) -> dict[str, dict]:
             record = json.loads(line.decode("utf-8"))
         except ValueError:
             break
+        if not isinstance(record, dict) or not isinstance(record.get("request_key"), str) or not HEX64.match(record["request_key"]):
+            raise RunRefused(2, ["checkpoint_invalid"])
         completed[record["request_key"]] = record
         good += len(line) + 1
     partial = bool(tail) or good != len(data) - len(tail)
@@ -432,6 +572,30 @@ def _read_checkpoint(path: Path, *, resume: bool) -> dict[str, dict]:
     return completed
 
 
+def _read_events(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    events = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            raise RunRefused(2, ["checkpoint_mismatch"]) from None
+        if not isinstance(event, dict):
+            raise RunRefused(2, ["checkpoint_mismatch"])
+        events.append(event)
+    return events
+
+
+def verify_responses(plan: Plan, responses: Mapping[str, Mapping[str, Any]]) -> None:
+    """Every response line belongs to a planned request and carries that request's arm, item, unit, replicate and seed."""
+    planned = {request.request_key: request for request in plan.requests}
+    for key, line in responses.items():
+        request = planned.get(key)
+        if request is None or any(line.get(name) != getattr(request, name) for name in ("arm", "item_id", "unit", "replicate", "seed_hex")):
+            raise RunRefused(2, ["checkpoint_mismatch"])
+
+
 def _prompt_envelope(plan: Plan, request: Request) -> bytes:
     return canonical_json({"prompt_version": plan.pins["prompt_version"], "item_id": request.item_id, "unit": request.unit,
                            "arm": request.arm, "evidence": list(request.evidence)})
@@ -441,10 +605,23 @@ def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = Fal
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     responses_path = out_dir / RESPONSES
+    responder_rule = getattr(responder, "rule", "unknown")
+    digest = run_digest(plan, responder_rule)
+    events = _read_events(out_dir / RUN_EVENTS)
+    if resume:
+        # The checkpoint must be this run's: the first event pins the run digest (run id, mode, responder rule, pins and
+        # the planned keys and seeds). Nothing in another run's directory is touched before this check.
+        if events and (events[0].get("event") not in ("start", "resumed") or events[0].get("run_digest") != digest):
+            raise RunRefused(2, ["checkpoint_mismatch"])
+        if not events and responses_path.exists() and responses_path.stat().st_size:
+            raise RunRefused(2, ["checkpoint_mismatch"])
     completed = _read_checkpoint(responses_path, resume=resume)
+    if not resume and events:
+        raise RunRefused(2, ["output_exists"])
+    verify_responses(plan, completed)
     spec = plan.spec
     base = {"run_id": spec["run_id"], "purpose": spec["purpose"], "planned_requests": len(plan.requests)}
-    start = {"event": "resumed" if resume else "start", **base, "completed_requests": len(completed)}
+    start = {"event": "resumed" if events else "start", **base, "completed_requests": len(completed), "run_digest": digest}
     if commit:
         start["commit"] = commit
     _append_event(out_dir, start)
@@ -475,6 +652,7 @@ def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = Fal
             os.fsync(handle.fileno())
             completed[request.request_key] = line
     responses = [completed[request.request_key] for request in plan.requests]
+    verify_responses(plan, {line["request_key"]: line for line in responses})
     log_lines = []
     for request, response in zip(plan.requests, responses):
         record = log_record(request, response, run_id=spec["run_id"], purpose=spec["purpose"], prompt_version=plan.pins["prompt_version"],
@@ -483,7 +661,7 @@ def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = Fal
         log_lines.append(dumps_line(record))
     payload_text = "".join(log_lines)
     write_lf(out_dir / PAYLOAD_LOG, payload_text)
-    record = build_record(plan, responses, responder_rule=getattr(responder, "rule", "unknown"),
+    record = build_record(plan, responses, responder_rule=responder_rule,
                           payload_log_sha256=hashlib.sha256(payload_text.encode("utf-8")).hexdigest())
     write_lf(out_dir / RUN_RECORD, dumps_record(record))
     _append_event(out_dir, {"event": "completed", **base, "completed_requests": len(responses)})
@@ -611,7 +789,7 @@ def compute_bootstrap(plan: Plan, responses, metrics) -> dict[str, Any] | None:
 
 
 def compute_replicate_variance(plan: Plan, responses) -> dict[str, Any]:
-    sampled = set(subsample(plan.items, plan.spec.get("replicates", {})))
+    sampled = set(subsample(plan.items, plan.pins["replicates"]))
     variance: dict[str, Any] = {}
     if not sampled:
         return variance
@@ -649,7 +827,7 @@ def build_record(plan: Plan, responses: Sequence[Mapping[str, Any]], *, responde
     spec = plan.spec
     confirmatory = spec["purpose"] == "confirmatory"
     metrics = compute_metrics(plan, responses)
-    digest = hashlib.sha256("".join(f"{line}\n" for line in sorted(f"{r.request_key} {r.seed_hex}" for r in plan.requests)).encode()).hexdigest()
+    digest = requests_digest(plan)
     pins = dict(plan.pins)
     pins["responder"] = {"rule": responder_rule}
     model_ids = sorted({response["model_id"] for response in responses if response.get("model_id")})

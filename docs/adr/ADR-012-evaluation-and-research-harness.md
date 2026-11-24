@@ -48,6 +48,7 @@ The scanner finds verbatim and near-verbatim reuse only; pre-training contaminat
 limitation in the dataset card.
 
 Plan L: "Stop: contamination, negative licence determination, low agreement, no IRB." Each stop is a refusal: the scanner
-exits 1 on a match and a non-synthetic or confirmatory run needs a passing pre-run scan; a negative licence ruling refuses a
+exits 1 on a match and a non-synthetic or confirmatory run needs a passing pre-run scan made with the research
+fingerprint sets and bound to its items; a negative licence ruling (a hash-checked record) refuses a
 live run (`licence_negative`); low agreement fails the freeze record a confirmatory run needs; a missing IRB refuses a
 confirmatory run (`irb_missing`) and a live run (`irb_not_filed`).

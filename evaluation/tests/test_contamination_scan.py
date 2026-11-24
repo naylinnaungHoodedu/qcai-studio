@@ -39,7 +39,7 @@ def test_the_shingles_and_normalisation_equal_scan_boundary_s():
     text = fixture()["licensed_passages"][0] + " Ünïcode ＦＵＬＬＷＩＤＴＨ under_score"
     assert contamination.normalized_words(text) == module.normalized_words(text)
     assert contamination.fingerprint_shingles(text, SALT, 12) == module.fingerprint_shingles(text, SALT, 12)
-    assert contamination.TEXT_EXTENSIONS == frozenset(module.TEXT_EXTENSIONS)
+    assert frozenset(module.TEXT_EXTENSIONS) <= contamination.TEXT_EXTENSIONS  # at least every suffix scan_boundary scans
     assert contamination.MAX_SCAN_BYTES == module.MAX_SCAN_BYTES
     assert contamination.LICENSED_FORMAT == module.FINGERPRINT_FORMAT
 
@@ -90,12 +90,91 @@ def test_the_research_log_target_excludes_only_responses_jsonl(tmp_path):
     assert contamination.RESEARCH_DATA_FILES == frozenset({"responses.jsonl"})
 
 
-def test_unknown_extensions_are_not_text_and_large_files_are_excluded(tmp_path):
+def _raise(error):
+    def read():
+        raise error
+    return read
+
+
+def test_binary_files_are_not_text_and_large_or_unreadable_files_are_excluded(tmp_path):
     sets = contamination.synthetic_sets(synthetic.CONTAMINATION_FIXTURE)
     passage = fixture()["licensed_passages"][2]
-    (tmp_path / "data.bin").write_text(passage, encoding="utf-8")
-    result = contamination.scan_files([("data.bin", lambda: passage.encode()), ("big.txt", lambda: None)], sets)
-    assert result["scanned"] == 0 and result["excluded"] == [{"path": "big.txt", "reason": "too_large"}]
+    read_png = []
+    entries = [("image.png", lambda: read_png.append(1) or passage.encode()), ("data.bin", lambda: b"\x00" + passage.encode()),
+               ("latin.dat", lambda: passage.encode("utf-16")), ("big.txt", _raise(contamination.TooLarge("big.txt"))),
+               ("gone.md", _raise(OSError("gone")))]
+    result = contamination.scan_files(entries, sets)
+    assert result["scanned"] == 0 and read_png == []
+    assert result["excluded"] == [{"path": "big.txt", "reason": "too_large"}, {"path": "gone.md", "reason": "unreadable"}]
+
+
+TEXT_NAMES = ("docs/uml/flow.puml", "apps/api/Dockerfile", ".gitignore", ".dockerignore", "infra/hydrate.sh", "alembic/script.py.mako",
+              "README", "LICENSE", "notes.tex", "page.rst", "corpus/x.mp4.sha256", "unknown.suffix")
+
+
+@pytest.mark.parametrize("name", TEXT_NAMES)
+def test_a_text_file_of_any_suffix_is_scanned(name):
+    sets = contamination.synthetic_sets(synthetic.CONTAMINATION_FIXTURE)
+    passage = fixture()["licensed_passages"][0]
+    result = contamination.scan_files([(name, lambda: f"# {passage}\n".encode())], sets)
+    assert result["scanned"] == 1 and [hit["path"] for hit in result["files_with_hits"]] == [name]
+
+
+def test_environment_files_are_read_only_when_asked(tmp_path):
+    sets = contamination.synthetic_sets(synthetic.CONTAMINATION_FIXTURE)
+    passage = fixture()["licensed_passages"][0]
+    read = []
+    entries = [("apps/api/.env.example", lambda: read.append(1) or f"X={passage}\n".encode())]
+    result = contamination.scan_files(entries, sets)
+    assert read == [] and result["scanned"] == 0 and result["files_with_hits"] == []
+    assert result["excluded"] == [{"path": "apps/api/.env.example", "reason": contamination.ENV_EXCLUSION}]
+    result = contamination.scan_files(entries, sets, include_env=True)
+    assert read == [1] and [hit["path"] for hit in result["files_with_hits"]] == ["apps/api/.env.example"]
+    # The planted file is the test's own (tmp_path), never a workstation .env file.
+    (tmp_path / ".env.example").write_text(f"X={passage}\n", encoding="utf-8")
+    module = scanner()
+    argv = ["--synthetic-fixture", str(synthetic.CONTAMINATION_FIXTURE), "--path", str(tmp_path)]
+    assert module.main(argv) == 0 and module.main(argv + ["--include-env-files"]) == 1
+
+
+def test_require_zero_fails_on_incomplete_coverage(tmp_path, monkeypatch):
+    module = scanner()
+    base = ["--synthetic-fixture", str(synthetic.CONTAMINATION_FIXTURE)]
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert module.main(base + ["--path", str(empty)]) == 0
+    assert module.main(base + ["--path", str(empty), "--require-zero"]) == 1
+    full = tmp_path / "full"
+    full.mkdir()
+    (full / "a.txt").write_text("nothing licensed here", encoding="utf-8")
+    (full / "b.txt").write_text("x" * 64, encoding="utf-8")
+    assert module.main(base + ["--path", str(full), "--require-zero"]) == 0
+    monkeypatch.setattr(contamination, "MAX_SCAN_BYTES", 32)
+    assert module.main(base + ["--path", str(full)]) == 0
+    assert module.main(base + ["--path", str(full), "--require-zero"]) == 1
+
+
+def test_the_report_names_each_set_s_kind_and_the_ulqs_set_s_dataset():
+    items = synthetic.synthetic_dataset({"A": 1})
+    ulqs_set = contamination.set_from_payload(contamination.build_ulqs(items, SALT, set_id="u"))
+    licensed = contamination.set_from_payload(contamination.build_licensed(["x"], SALT, set_id="l"))
+    from evaluation.qcai_eval import ulqs
+
+    report = contamination.report([], [licensed, ulqs_set])
+    assert report["fingerprint_sets"] == [{"id": "l", "kind": "licensed", "dataset_content_sha256": None},
+                                          {"id": "u", "kind": "ulqs", "dataset_content_sha256": ulqs.dataset_content_sha256(items)}]
+
+
+def test_the_whole_tracked_tree_holds_zero_synthetic_fingerprint_matches(tmp_path):
+    # AC-10-4 over the tracked tree, every text file whatever its suffix. It runs once, in api-and-evaluation (the
+    # api-postgres legs run apps/api/tests only), beside CI's own --repo step, which also reads the .env.example templates.
+    report = tmp_path / "scan.json"
+    assert scanner().main(["--synthetic-fixture", str(synthetic.CONTAMINATION_FIXTURE), "--repo", "--require-zero", "--report", str(report)]) == 0
+    result = json.loads(report.read_text(encoding="utf-8"))
+    (repository,) = result["targets"]
+    assert result["result"] == "pass" and repository["target"] == "repository" and repository["scanned"] > 700
+    assert {"path": "evaluation/fixtures/contamination_synthetic_v1.json", "reason": "synthetic contamination fixture"} in repository["excluded"]
+    assert {entry["reason"] for entry in repository["excluded"]} <= {"synthetic contamination fixture", contamination.ENV_EXCLUSION}
 
 
 def test_the_repository_target_reads_git_ls_files_only(tmp_path, monkeypatch):
@@ -126,7 +205,8 @@ def test_a_salt_shorter_than_32_bytes_is_refused_by_the_builder(tmp_path, monkey
     items = synthetic.write_jsonl(tmp_path / "items.jsonl", synthetic.synthetic_dataset({"A": 1}))
     monkeypatch.setenv("SALT_FOR_TEST", "ab" * 16)
     args = ["--licensed-text", str(text), "--ulqs", str(items), "--set-id", "t", "--output-licensed", str(tmp_path / "l.json"),
-            "--output-ulqs", str(tmp_path / "u.json"), "--salt-env", "SALT_FOR_TEST", "--access-log", str(tmp_path / "access.jsonl")]
+            "--output-ulqs", str(tmp_path / "u.json"), "--salt-env", "SALT_FOR_TEST", "--access-log", str(tmp_path / "access.jsonl"),
+            "--actor-role", "MLE"]
     assert builder.main(args) == 3 and not (tmp_path / "l.json").exists()
     monkeypatch.setenv("SALT_FOR_TEST", "not hex")
     assert builder.main(args) == 3

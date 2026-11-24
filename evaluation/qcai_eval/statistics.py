@@ -7,6 +7,8 @@ import hashlib
 from math import ceil, comb, floor, sqrt
 from typing import Any, Callable, Mapping, Sequence
 
+PROVISIONAL_DEFAULTS = ("PD-70",)  # Phase 10 spec 12.1; ratified under DI-140
+
 
 def wilson_interval(successes: int, total: int, z: float = 1.959963984540054) -> dict[str, float | int]:
     if total < 0 or successes < 0 or successes > total:

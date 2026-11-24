@@ -1,6 +1,6 @@
 """The E1-E4 research harness runner (Phase 10 spec 5; plan Phase 10 D tasks 5-6; AC-10-3, AC-10-5).
 
-Run:    python scripts/run_evaluation.py --spec SPEC --output-dir DIR [--resume] [--access-log PATH]
+Run:    python scripts/run_evaluation.py --spec SPEC --output-dir DIR [--resume] [--access-log PATH --actor-role ROLE]
 Write:  python scripts/run_evaluation.py --write RECORD --spec SPEC     (a spec whose inputs are all synthetic)
 Check:  python scripts/run_evaluation.py --check RECORD --spec SPEC     (CI: the stub run reproduces RECORD byte for byte)
 Record: python scripts/run_evaluation.py --record-stub OUT --spec SPEC  (a synthetic recorded-responses-v1 file)
@@ -8,9 +8,11 @@ Record: python scripts/run_evaluation.py --record-stub OUT --spec SPEC  (a synth
 A run pins the configuration package by path and sha256, the items, the evidence catalog, the arms and the analysis plan;
 its seeds are hashed. Stub and recorded runs repeat byte for byte. Hold H12 refuses every run over non-synthetic data while
 D-14 is open, live runs are refused in this repository, and a confirmatory run needs a valid IRB record and OSF record.
---write and --check run in a temporary directory outside the checkout; nothing else is written there.
+--write and --check run in a temporary directory outside the checkout; nothing else is written there. With --access-log
+(required for non-synthetic inputs, with --actor-role) the run logs the spec read, every input the plan read, its start
+and its outcome (completed, interrupted or refused). --resume continues only this run's own checkpoint.
 
-Exit codes: 0 ok; 1 drift; 2 usage, path or experiment refused; 3 invalid items, unresolved pointers, a freeze record or a
+Exit codes: 0 ok; 1 drift; 2 usage, a malformed spec, a path, an experiment or a foreign checkpoint refused; 3 invalid items, unresolved pointers, a freeze record or a
 payload-log violation; 5 interrupted (provider outage; --resume continues); 6 a pin mismatch; 7 arm parity; 8 confirmatory
 run refused (IRB or OSF); 9 live run or hold H12 refused.
 """
@@ -36,6 +38,7 @@ from evaluation.qcai_eval.canonical import dumps_line, dumps_record, lf_sha256, 
 from evaluation.qcai_eval.payload_log import PayloadLogViolation  # noqa: E402
 from evaluation.qcai_eval.providers import RecordedResponder, StubResponder, stub_response  # noqa: E402
 
+PROVISIONAL_DEFAULTS = ("PD-68",)
 RECORDED_FAILURES = ([{"status": "timeout"}, {"status": "ok"}], [{"status": "rate_limited"}, {"status": "ok"}],
                      [{"status": "server_error"}] * 4)
 
@@ -64,27 +67,79 @@ def _refused(error: runner.RunRefused) -> int:
     return error.code
 
 
-def run(spec_path: Path, out_dir: Path, *, resume: bool = False, access: Path | None = None) -> int:
+def _purpose(spec: dict) -> str:
+    return spec.get("purpose") if spec.get("purpose") in runner.PURPOSES else "invalid"
+
+
+def _run_id(spec: dict) -> str | None:
+    value = spec.get("run_id")
+    return value if isinstance(value, str) and runner.RUN_ID.match(value) else None
+
+
+def _input_reads(plan: runner.Plan) -> list[tuple[str, str]]:
+    """(artifact kind, sha256) for every research-plane input the plan read: the items, the catalog, the governance
+    records and the recording."""
+    spec = plan.spec
+    reads = [("ulqs_items", plan.pins["items"]["sha256"])]
+    if plan.pins["evidence_catalog"]:
+        reads.append(("evidence_catalog", plan.pins["evidence_catalog"]["sha256"]))
+    governance = spec.get("governance") or {}
+    for kind, reference in (("irb_record", governance.get("irb_record")), ("osf_record", governance.get("osf_record")),
+                            ("freeze_record", spec.get("freeze_record")), ("scan_report", spec.get("pre_run_scan")),
+                            ("governance_record", spec.get("provider_terms")), ("governance_record", spec.get("licence_ruling")),
+                            ("governance_record", spec.get("research_use_confirmation")),
+                            ("recording", (spec.get("responder") or {}).get("recorded"))):
+        if isinstance(reference, dict) and isinstance(reference.get("sha256"), str):
+            reads.append((kind, reference["sha256"]))
+    return reads
+
+
+def run(spec_path: Path, out_dir: Path, *, resume: bool = False, access: Path | None = None, actor_role: str | None = None) -> int:
+    """A run. With --access-log every access is logged before the outcome is known: the spec read, each input the plan
+    read, the run start, and its outcome (completed, interrupted or refused)."""
+    if access is not None:
+        if actor_role is None:
+            print("usage (exit 2): --access-log needs --actor-role", file=sys.stderr)
+            return 2
+        try:
+            planes.require_private_output(access)
+        except planes.PathRefused as error:
+            print(f"refused (exit 2): {error}", file=sys.stderr)
+            return 2
+
+    def log(action: str, kind: str, sha256: str, spec: dict, outcome: str | None = None) -> None:
+        if access is not None:
+            access_log.append(access, actor_role=actor_role, action=action, artifact_kind=kind, artifact_sha256=sha256,
+                              purpose=_purpose(spec), run_id=_run_id(spec), outcome=outcome)
+
     try:
         spec = runner.load_spec(spec_path)
-        if access is not None:
-            planes.require_private_output(access)
-        plan = runner.plan_run(spec, out_dir=out_dir, access_log=access)
-        record = runner.execute_run(plan, _responder(plan), out_dir, resume=resume, commit=_commit())
     except runner.RunRefused as error:
         return _refused(error)
-    except planes.PathRefused as error:
-        print(f"refused (exit 2): {error}", file=sys.stderr)
-        return 2
+    spec_sha = lf_sha256(spec_path)
+    log("read", "run_spec", spec_sha, spec)
+    try:
+        plan = runner.plan_run(spec, out_dir=out_dir, access_log=access)
+    except runner.RunRefused as error:
+        log("run", "run_spec", spec_sha, spec, "refused")
+        return _refused(error)
+    for kind, sha256 in _input_reads(plan):
+        log("read", kind, sha256, spec)
+    log("run", "run_spec", spec_sha, spec, "started")
+    try:
+        record = runner.execute_run(plan, _responder(plan), out_dir, resume=resume, commit=_commit())
     except runner.RunInterrupted as error:
+        log("run", "run_output", lf_sha256(Path(out_dir) / runner.RESPONSES), spec, "interrupted")
         print(f"interrupted (exit 5): {error}", file=sys.stderr)
         return 5
+    except runner.RunRefused as error:
+        log("run", "run_spec", spec_sha, spec, "refused")
+        return _refused(error)
     except PayloadLogViolation as error:
+        log("run", "run_spec", spec_sha, spec, "refused")
         print(f"payload-log violation (exit 3): {error}", file=sys.stderr)
         return 3
-    if access is not None:
-        access_log.append(access, actor_role="MLE", action="run", artifact_kind="run_output",
-                          artifact_sha256=record["outputs"]["payload_log_sha256"], purpose=spec["purpose"], run_id=spec["run_id"])
+    log("run", "run_output", record["outputs"]["payload_log_sha256"], spec, "completed")
     slis = record["slis"]
     print(f"run {spec['run_id']} ({record['mode']}, {record['purpose']}): {slis['completed_requests']} of {slis['planned_requests']} "
           f"requests completed; record {Path(out_dir) / runner.RUN_RECORD}")
@@ -92,10 +147,10 @@ def run(spec_path: Path, out_dir: Path, *, resume: bool = False, access: Path | 
 
 
 def _synthetic_record(spec_path: Path) -> tuple[int, str | None, dict | None]:
-    spec = runner.load_spec(spec_path)
     with tempfile.TemporaryDirectory(prefix="qcai-eval-") as temporary:
         out_dir = Path(temporary) / "run"
         try:
+            spec = runner.load_spec(spec_path)
             plan = runner.plan_run(spec, out_dir=out_dir)
         except runner.RunRefused as error:
             return _refused(error), None, None
@@ -169,6 +224,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--access-log", type=Path)
+    parser.add_argument("--actor-role", choices=access_log.ROLES)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--write", type=Path, metavar="RECORD")
     group.add_argument("--check", type=Path, metavar="RECORD")
@@ -186,7 +242,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.output_dir is None:
         print("usage: --output-dir is required for a run", file=sys.stderr)
         return 2
-    return run(args.spec, args.output_dir, resume=args.resume, access=args.access_log)
+    return run(args.spec, args.output_dir, resume=args.resume, access=args.access_log, actor_role=args.actor_role)
 
 
 if __name__ == "__main__":

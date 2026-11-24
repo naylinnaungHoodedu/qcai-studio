@@ -80,3 +80,16 @@ def test_resolve_items_reports_item_path_and_status():
     items[0]["evidence_ids"] = ["EV-SYN-p990-01"]
     report = resolve_items(items, PointerResolver(catalog=catalog))
     assert report.problems == (("SYN-A-001", "evidence_ids[0]", "unknown_pointer", "evidence"),)
+
+
+def test_a_resolution_says_whether_the_corpus_text_was_checked():
+    items = synthetic.synthetic_dataset({"A": 1, "B": 1})
+    catalog = EvidenceCatalog.from_lines(synthetic.synthetic_catalog(items))
+    corpus = synthetic.corpus_text(items)
+    unchecked = resolve_items(items, PointerResolver(catalog=catalog))
+    checked = resolve_items(items, PointerResolver(catalog=catalog, corpus_text=corpus.get))
+    assert unchecked.problems == checked.problems == () and unchecked.evidence_resolved == checked.evidence_resolved == 3
+    assert unchecked.text_verified == 0 and checked.text_verified == 3
+    pointer = items[0]["evidence_ids"][0]
+    assert PointerResolver(catalog=catalog).resolve(pointer).verified is False
+    assert PointerResolver(catalog=catalog, corpus_text=corpus.get).resolve(pointer).verified is True

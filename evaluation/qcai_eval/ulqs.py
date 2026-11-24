@@ -21,6 +21,7 @@ from typing import Any, Mapping, Sequence
 
 from .canonical import canonical_sha256, hashed_hex, read_jsonl
 
+PROVISIONAL_DEFAULTS = ("PD-60", "PD-64")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "lqs" / "ulqs-v1.0.schema.json"
 DEFAULT_FREEZE_RULES = REPO_ROOT / "lqs" / "ulqs-v1.0-freeze-rules.json"
@@ -612,6 +613,21 @@ def check_transition(before: Mapping[str, Any] | None, after: Mapping[str, Any])
     return problems
 
 
+def transition_problems(previous: Sequence[Mapping[str, Any]], items: Sequence[Mapping[str, Any]]) -> list[Problem]:
+    """`check_transition` for every item against its predecessor in `previous` (matched by `item_id`; an item absent there
+    is new), plus `removed` for a predecessor with no successor (an item leaves only by moving to `retired`)."""
+    before = {item["item_id"]: item for item in previous if isinstance(item, Mapping) and isinstance(item.get("item_id"), str)}
+    problems: list[Problem] = []
+    seen: set[str] = set()
+    for item in items:
+        item_id = item.get("item_id")
+        if isinstance(item_id, str):
+            seen.add(item_id)
+        problems += check_transition(before.get(item_id) if isinstance(item_id, str) else None, item)
+    problems += [Problem(item_id, "", "removed") for item_id in sorted(set(before) - seen)]
+    return problems
+
+
 def assign_splits(items: Sequence[Mapping[str, Any]]) -> dict[str, str]:
     """`ulqs-split-v1`: within each stratum, items in sha256 order alternate calibration and confirmation."""
     splits: dict[str, str] = {}
@@ -663,7 +679,11 @@ def _alpha(value: Any) -> Fraction | None:
 
 
 def freeze_check(items: Sequence[Mapping[str, Any]], *, rules: FreezeRules, pointer_report: Any, agreement: Mapping[str, Any] | None,
-                 require_licensed: bool = True) -> FreezeReport:
+                 previous: Sequence[Mapping[str, Any]] | None = None, require_licensed: bool = True) -> FreezeReport:
+    """The freeze conditions (spec 4.2). `previous` is the item set the freeze starts from (the review set, or the last
+    frozen set): every item's move from it must be in `TRANSITIONS` (`transition_invalid`) and frozen content may not change
+    (`frozen_content_changed`); with no previous set the freeze fails (`no_previous_set`). Every resolved EV pointer must
+    have been checked against the corpus text (`pointers_not_text_verified`)."""
     failures: list[str] = []
     live = [item for item in items if item.get("status") != "retired"]
     if validate_dataset(items):
@@ -680,6 +700,14 @@ def freeze_check(items: Sequence[Mapping[str, Any]], *, rules: FreezeRules, poin
             failures.append(f"stratum_off_target:{letter}")
     if any(item.get("status") not in FROZEN_STATES for item in live):
         failures.append("state_not_frozen")
+    if previous is None:
+        failures.append("no_previous_set")
+    else:
+        codes = {problem.code for problem in transition_problems(previous, items)}
+        if codes & {"transition", "removed"}:
+            failures.append("transition_invalid")
+        if "frozen_content_changed" in codes:
+            failures.append("frozen_content_changed")
     if any((item.get("validation") or {}).get("human_reviewed") is not True for item in live):
         failures.append("human_review_missing")
     if any(not all((item.get("validation") or {}).get(flag) is True for flag in VALIDATION_FLAGS) for item in live):
@@ -703,6 +731,8 @@ def freeze_check(items: Sequence[Mapping[str, Any]], *, rules: FreezeRules, poin
             failures.append("unresolved_pointers")
         if "hash_mismatch" in statuses:
             failures.append("pointer_hash_mismatch")
+        if getattr(pointer_report, "text_verified", 0) != getattr(pointer_report, "evidence_resolved", 0):
+            failures.append("pointers_not_text_verified")
     if agreement is None:
         failures.append("no_agreement_record")
     else:

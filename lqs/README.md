@@ -17,8 +17,9 @@ no gold label and no restricted evidence text: those stay in the private researc
 
 `python scripts/validate_ulqs.py --items evaluation/fixtures/synthetic_ulqs_v1.jsonl --catalog
 evaluation/fixtures/synthetic_evidence_catalog_v1.jsonl` validates the synthetic fixture in CI. The strict freeze check
-(`--freeze`) refuses synthetic items: it runs only in the research plane, on the real items, and records the dataset
-sha256 (`docs/evaluation/phase10/research-plane-runbook.md`).
+(`--freeze`, with `--previous` and `--corpus-text`) refuses synthetic items: it runs only in the research plane, on the
+real items, checks every state transition from the previous set and every EV pointer against the corpus text, and
+records the dataset sha256 (`docs/evaluation/phase10/research-plane-runbook.md`).
 
 ## Legacy LQS
 

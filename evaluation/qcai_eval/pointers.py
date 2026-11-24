@@ -3,7 +3,9 @@
 An EV-id resolves to a catalog record shaped like a span record (document, volume, page, character offsets, byte length,
 content sha256 under the Phase 2 rule `sha256(text.encode("utf-8"))`). A public `span-<hex64>` id resolves through the
 Phase 2 SpanResolver, which returns nothing for a private-plane or unknown span. No locator ever holds text: the catalog
-loader checks a line's text against its hash and length, then drops it.
+loader checks a line's text against its hash and length, then drops it. Only a check against the corpus text itself
+(`corpus_text`) verifies an EV pointer character for character; a resolution says whether that check ran (`verified`),
+and the freeze requires it for every resolved EV pointer.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from .canonical import canonical_sha256, read_jsonl
 
+PROVISIONAL_DEFAULTS = ("PD-62",)
 EV_ID = re.compile(r"^EV-(2025|2026|IND|SYN)-p[0-9]{3}-[0-9]{2}$")
 SPAN_ID = re.compile(r"^span-[0-9a-f]{64}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -113,6 +116,7 @@ class Resolution:
     kind: str
     status: str
     locator: Mapping[str, Any] | None
+    verified: bool = False  # an EV pointer whose span was checked against the corpus text, character for character
 
 
 class PointerResolver:
@@ -132,12 +136,13 @@ class PointerResolver:
                 return Resolution(pointer, "evidence", "unknown_pointer", None)
             if self.corpus_version is not None and record.corpus_version != self.corpus_version:
                 return Resolution(pointer, "evidence", "corpus_version_mismatch", None)
-            if self.corpus_text is not None:
-                document = self.corpus_text(record.document_id)
-                span = None if document is None else document[record.char_start:record.char_end]
-                if span is None or content_sha256(span) != record.content_sha256:
-                    return Resolution(pointer, "evidence", "hash_mismatch", None)
-            return Resolution(pointer, "evidence", "resolved", record.locator())
+            if self.corpus_text is None:
+                return Resolution(pointer, "evidence", "resolved", record.locator())
+            document = self.corpus_text(record.document_id)
+            span = None if document is None else document[record.char_start:record.char_end]
+            if span is None or content_sha256(span) != record.content_sha256:
+                return Resolution(pointer, "evidence", "hash_mismatch", None)
+            return Resolution(pointer, "evidence", "resolved", record.locator(), verified=True)
         if isinstance(pointer, str) and SPAN_ID.match(pointer):
             if self.span_lookup is None:
                 return Resolution(pointer, "span", "no_span_lookup", None)
@@ -166,12 +171,14 @@ class PointerReport:
     total: int
     resolved: int
     problems: tuple[tuple[str, str, str, str], ...]   # (item_id, field path, status, pointer kind)
+    evidence_resolved: int = 0   # EV pointers that resolved
+    text_verified: int = 0       # of those, the ones checked against the corpus text
 
 
 def resolve_items(items: Sequence[Mapping[str, Any]], resolver: PointerResolver) -> PointerReport:
     from .ulqs import pointers_of
 
-    total = resolved = 0
+    total = resolved = evidence_resolved = text_verified = 0
     problems: list[tuple[str, str, str, str]] = []
     for item in items:
         for path, pointer in pointers_of(item):
@@ -179,9 +186,13 @@ def resolve_items(items: Sequence[Mapping[str, Any]], resolver: PointerResolver)
             resolution = resolver.resolve(pointer)
             if resolution.status == "resolved":
                 resolved += 1
+                if resolution.kind == "evidence":
+                    evidence_resolved += 1
+                    text_verified += int(resolution.verified)
             else:
                 problems.append((str(item.get("item_id")), path, resolution.status, resolution.kind))
-    return PointerReport(total=total, resolved=resolved, problems=tuple(problems))
+    return PointerReport(total=total, resolved=resolved, problems=tuple(problems), evidence_resolved=evidence_resolved,
+                         text_verified=text_verified)
 
 
 def public_span_lookup() -> SpanLookup:
