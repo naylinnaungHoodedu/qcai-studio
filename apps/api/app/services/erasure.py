@@ -132,13 +132,31 @@ def erasure_verification_conditions(db: Session, identifiers: tuple[str, ...]) -
     return conditions
 
 
-def erase_stale_guest_rows(db: Session, cutoff, *, age_columns: dict[str, str], bound_guest_subjects=None) -> dict[str, int]:
-    """Expire legacy and bound guest study rows by the retention-class time column."""
+def guest_retention_age_columns(privacy_on: bool) -> dict[str, str]:
+    if not privacy_on:
+        return {table.name: "created_at" for table in user_keyed_tables() if "created_at" in table.c}
+    from app.services.retention import retention_classes
+
+    columns = {"guest-created/durable-until-erasure": "created_at", "guest-updated/durable-until-erasure": "updated_at"}
+    return {
+        name: columns[kind] for name, kind in retention_classes().items()
+        if kind in columns and name not in RETENTION_EXEMPT_TABLES
+    }
+
+
+def erase_stale_guest_rows(db: Session, cutoff) -> dict[str, int]:
+    """Expire guest study rows using the legacy rule or the enabled Phase 8 classes."""
+    from app.core.config import get_settings
+    from app.db_models import LearnerSubject
+
+    privacy_on = get_settings().learner_privacy == "on"
+    age_columns = guest_retention_age_columns(privacy_on)
+    bound_guest_subjects = select(LearnerSubject.user_id).where(LearnerSubject.provider == "guest") if privacy_on else None
 
     def leaf(table: Table) -> ColumnElement[bool] | None:
         columns = [table.c[name] for name in USER_KEY_COLUMNS if name in table.c]
         time_column = age_columns.get(table.name)
-        if not columns or not time_column or table.name in RETENTION_EXEMPT_TABLES:
+        if not columns or not time_column:
             return None
         predicates = [column.like("guest-%") for column in columns]
         if bound_guest_subjects is not None:

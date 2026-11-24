@@ -855,8 +855,7 @@ def test_plan_i_ready_reports_package_v5_and_the_v3_fields_and_no_count():
     finally:
         event.remove(engine, "before_cursor_execute", seen)
     assert after == before
-    allowed = ("SELECT gateway_stops.reason FROM gateway_stops", "SELECT learner_adaptation_stops.reason FROM learner_adaptation_stops")
-    assert all(statement.startswith(allowed) for statement in statements), statements
+    assert all(statement.startswith("SELECT gateway_stops.reason FROM gateway_stops") for statement in statements), statements
     staging = v3_fakes.staging_settings()
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(main_module, "settings", staging)

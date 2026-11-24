@@ -6,7 +6,7 @@ Sections 0-17 describe the behaviour the code has and identify deferred integrat
 
 ## 0. Ground rules, measured facts, readings
 
-Apply the branch rules and the Phase 8 handoff's shared-file restrictions. Keep smoke and acceptance fixtures synthetic and run verification offline. The verified Phase 6 integration base is `31343c86c23007cec227b38413e0e53140f714a5` (PR #38, main CI run 45180967316, reported green by the owner). The branch ships package v6 and Alembic head `20261123_phase8_learner`. Phase 6 added package v5, migration `20261122_phase6_v3_audit`, and the user-keyed `v3_claims` and `v3_flags` tables. Their erasure and retention scope is explicit.
+Smoke and acceptance checks use synthetic fixtures and run offline under the branch rules and shared-file limits in §0.1. The verified Phase 6 integration base is `31343c86c23007cec227b38413e0e53140f714a5` (PR #38, main CI run 45180967316, reported green by the owner). The branch ships package v6 and Alembic head `20261123_phase8_learner`. Phase 6 added package v5, migration `20261122_phase6_v3_audit`, and the user-keyed `v3_claims` and `v3_flags` tables. Their erasure and retention scope is explicit.
 
 Phase 5 added `gateway_budget_days`, `gateway_stops`, and `evidential_cache_entries` to the shared ORM and updated the migration chain. The retrieval engine delegates embedding egress to `app/gateway/embeddings.py`. Its import guard allows only the Pinecone index SDK exception in the retrieval engine. The handoff's Phase 5 snapshot of untouched database files and its earlier embedding exception no longer describe the integrated code. Phase 8 uses the existing shared-file ownership limits and treats the added gateway tables and embedding implementation as Phase 5-owned.
 
@@ -14,17 +14,33 @@ The learner-record baseline uses the get-or-create path for reads, rejects chang
 
 ### 0.1 Shared file ownership
 
-Phase 8 keeps route policies in one block after the existing learner-record entries. New browser transport lives in its own module. The shared API client changes only its existing learner-record operations function. The orchestrator handles observation in the shadow branch. The gateway, V1/V2/V3, evidential pipeline, frozen payload record, pinned schemas and secrets stay within their existing ownership. The package bump and reversible migration use the narrowly scoped integration exceptions in handoff §8.1. Production enablement requires the owner decisions and DI-300 evidence.
+The §8.1 boundaries apply to the following files and entry points.
+
+| Shared area | Permitted edits |
+|---|---|
+| `core/config.py`, `core/auth.py`, `core/authorization.py` | One learner settings block and validator. Preserve the `AuthUser` fields and the `get_current_user` signature. Place all Phase 8 policies together after the existing learner-record entries. |
+| `app/main.py` | Keep existing routers and add readiness fields and configuration-override keys after the main integration. Phase 8 readiness uses in-process state and issues no database query. |
+| `services/erasure.py`, `services/retention.py`, `workers/retention.py` | Preserve `erase_user(db, user_id)`, `erase_stale_guest_rows(db, cutoff)` and `run_retention_cleanup(db, now=None)`. Every intentional exemption has a documented reason. |
+| `app/gateway/**`, `services/v2_panel/**`, `services/v1_checks/**`, `services/teaching_assistant.py` and the evidential pipeline | Keep the verifier and gateway code and contracts under main-track ownership. The bump-docstring exception covers shipped-version text in the designated modules only. The hashes and published schemas stay fixed. |
+| `services/ledger.py`, `core/schema_upgrades.py`, and Alembic | Change `SCHEMA_REVISION` and add Phase 8 schema reconciliation and one additive revision after the merge. Keep the earlier revisions and ledger behavior. |
+| `core/config_package.py`, `config_package/*`, `scripts/config_package.py` | The package bump adds one version, its loader validation and test pins. Existing version files and schemas remain readable. |
+| `services/tutor_orchestrator.py` and the frontend integration | Observe the planner in shadow only. Keep new browser transport separate. Change only the existing learner-record functions and types in the shared frontend client. |
+| `.github/workflows/ci.yml`, `test-strategy.md` and `.gitattributes` | Add the predecessor readability and invariance checks to CI. Test strategy and attributes take append-only Phase 8 sections, with the duplicate merged exit paragraph removed under R2-07. |
+| `test_phase3_acceptance.py`, `test_response_ledger_migrations.py` | Only §7.5 migration-head generalisation. The inherited readiness SQL assertion is protected. |
+| `test_phase4_acceptance.py`, `test_phase5_acceptance.py` | Only the specified shipped-version pins in the isolated bump. The Phase 5 gateway-stop assertion is protected. The Phase 8 guard pins the unchanged Phase 5 source. |
+| `test_configuration_overrides.py`, `test_api.py` | The former takes the package-copy docstring and one case per Phase 8 override. The latter permits only the consent fixture for progress aggregation. |
+| Templates, generated freeze baseline, shared test harness and dependencies | Keep protected templates out of ordinary suite output. Preserve the public-payload golden file, test setup and lockfiles. |
 
 ## 1. Conflicts between plan text and fixed decisions
 
 - **H13 and D-27.** Plan L1566 requires a consent model, and L1907 says "a hold stops the named work until its release evidence is filed". The owner authorized isolated engineering under P1-D-18, with the main-track record P2-12-D-04. H13 remains held. DI-300 and DI-301 keep the Phase 1 and 3 prerequisites and the consent decision visible.
 - **Baseline and ownership.** The baseline already scores quizzes on the server and runs scheduled retention. The designated learner tables use the bound subject, including assessment facts and issued replicas. Notes, threads, quiz attempts, credentials, and other legacy activity keep the authenticated principal, including the federated subject value where applicable. Export and erasure traverse both keys. Existing bindings remain authoritative through flag rollback. First bind preserves a lone record's version. Identity defaults off in development to preserve the baseline demo and authentication contracts.
-- **Revocation and finality.** `guest_sessions.py` uses a domain-separated SHA-256 tombstone in `learner_guest_revocations` so recognition survives signing-key rotation. Guest erasure removes the corresponding raw legacy revocation. `learner_record_lock.py` persists digest-only write guards and refuses an erased key after a waiting transaction acquires its lock. Identifiers of self-erased or claimed guests stay revoked through rollback.
+- **Revocation and finality.** `guest_sessions.py` uses a domain-separated SHA-256 tombstone in `learner_guest_revocations` so recognition survives signing-key rotation. Guest erasure removes the corresponding raw legacy revocation. The first managed writer and both erasure routes serialize on the same principal guard. The locked path rechecks local and guest credentials. Retained federated and explicit demo principals can resume after a fresh request observes the new erasure epoch. Earlier observations are refused under the lock. Both guard states expire after 365 days of inactivity. Guest revocation survives guard expiry and flag rollback.
 - **Assessment and R-03.** Stage-9 ratings and flags are operational signals. Only server assessment facts feed planner mastery, and the quota counts attempts by authenticated principal and lesson. Sequential quiz attempt IDs remain opaque response metadata for a caller's own activity and are not accepted on an ID-addressed cross-learner endpoint.
-- **Consent and retention.** Plan L938 ties `consent_version` to analytics admission and `retention_class` to automatic cleanup. Durable rows stay until erasure unless a specific expiry applies. PD-200 controls provisional grants. P2-12-D-05 records the owner's decision to keep the 540-day rule for independently submitted support requests, even when the address matches a deleted account. DI-316 is closed. A-17 and Q-19 remain unresolved.
+- **Consent and retention.** Plan L938 ties `consent_version` to analytics admission and `retention_class` to automatic cleanup. With privacy off, `erase_stale_guest_rows(db, cutoff)` selects timestamped guest-prefixed rows by `created_at`, matching Phase 6. Privacy on selects the class-specific age rules and recognizes bound guests. Durable rows stay until erasure unless a specific expiry applies. PD-200 controls provisional grants. P2-12-D-05 keeps the 540-day rule for independently submitted support requests, even when the address matches a deleted account. DI-316 is closed. A-17 and Q-19 remain unresolved.
 - **Method and test layout.** The harness feeds plan IDs from the pure planner using synthetic mastery values and the existing presentation request seam. It uses public two-pass engineering fixtures. Research designs remain governed by D-08 and DI-312 covers live presentation wiring. The document guard compares section 3's table with the ORM's columns, and the acceptance map resolves tests across feature-specific modules.
 - **Shadow timing.** The planner issues set-based reads within a savepoint. PostgreSQL bounds each statement and restores the prior budget. Work exceeding 150 ms is recorded as degraded and the existing shadow job proceeds. The elapsed budget also detects slow local work after it returns.
+- **Readiness and shared tests.** The integration exposes the configured planner mode and the process's last observation of the stop. The authoritative check stays in the planner. This meets the Phase 8 readiness requirement without adding SQL or changing the protected Phase 3 and Phase 5 assertions.
 
 ## 2. Architecture
 
@@ -39,7 +55,7 @@ The first build adds the following shapes:
 | Model | Fields |
 |---|---|
 | `LearnerIssuedReplica` | `replica_id` (random server-issued string, primary key), `user_id` (indexed erasure key), `created_at`, `last_used_at`, `retired`. |
-| `LearnerWriteGuard` | `key_digest` (primary key), `erased`. |
+| `LearnerWriteGuard` | `key_digest` (primary key), `erased`, `erasure_epoch`, `last_used_at`. |
 | `LearnerPresentation` | `plan_id` (`concise`, `stepwise`, or `socratic`), `lesson_order` (ordered tuple of lesson identifiers), `planner_version` (`learner-planner-v1`). |
 | `LearnerSubject` | `principal_digest` (provider-scoped primary key), `user_id` (random erasure key), `provider`, `created_at`. |
 | `LearnerGuestRevocation` | `credential_digest` (primary key), `revoked_at`. |
@@ -54,24 +70,26 @@ The client operations service accepts a subject, expected version, and existing 
 
 ## 4. Algorithms
 
-- Bind replicas to the subject. Resolve existing receipts before rejecting a stale clock, so a repeated request can recover a prior outcome. Validate new operations' replica ownership, monotonicity, and causal-vector scope. Serialize the version check and record, receipt, and clock updates in one transaction. Resolve first-insert races with a bounded retry or conflict response.
-- Preserve server-scored mastery and merge semantics. Choose assessment-operation counters under the same transaction as the attempt. Refuse client mastery operations and server-owned operation and replica identifiers.
-- Select lesson order and style from server mastery, completion, and attempt state. Use static course order when the planner is unavailable or adaptation consent is absent.
-- Erase through metadata-derived, child-first table coverage. Resolve the guest revocation representation against rotation and legacy-upgrade tests before wiring identity. Persist the canonical receipt digest and coverage summary in the durable audit path. A receipt describes local data scope and the information available about processors and backups.
+- Issued replicas belong to a subject. Existing receipts are evaluated before stale clocks. New operations validate replica ownership, monotonicity and causal-vector scope. A conflict-tolerant insert and one transaction handle first writes and version checks without a server retry.
+- Assessment counters and facts commit with the server-scored attempt. The client writer refuses client mastery and server-owned operation or replica identifiers.
+- The planner selects lesson order and style from trusted assessment facts and attempt state. The default plan and static order cover unavailability and absent adaptation consent.
+- Erasure follows metadata-derived, child-first table coverage and persists the canonical receipt digest and coverage summary. The guest revocation digest survives signing-key rotation. The receipt states the local data scope and available processor and backup information.
 
 In `learner_record_sync.py`, a conflict-tolerant insert creates the record when needed. A version-preserving row update acquires the transaction's write lock, then the service checks the expected version and reads the subject's issued replicas. All new operations have strictly increasing clocks and known causal counters. Identical operations in the same batch generate one applied receipt followed by duplicate receipts. A replay containing only known operations can recover its receipts after the record advances. The read-only entry point returns a version-zero record for a missing subject without issuing an insert.
 
 The planner maps the mean finite course-local server mastery below 0.4 to stepwise, from 0.4 through values below 0.75 to concise, and from 0.75 to socratic. It keeps unfinished lessons in course order and applies PD-204 to the review order. With adaptation disabled or no valid course mastery, it returns the configured default plan and static order. Any eventual caller must source mastery from trusted assessment evidence.
 
-With synchronization enabled, acquire the record lock before inserting the attempt. Count the subject's attempts on that lesson over the preceding 15 minutes and refuse the thirteenth. For a durable writer, allocate assessment clocks from the locked server replica and keep the attempt, learner record, and assessment fact in the same transaction. Preview identities record the attempt and take the quota lock without writing mastery. The synchronization-off path retains its baseline behavior. The planner reads mastery from the dedicated assessment-fact table. Legacy materialized mastery and operation identifiers alone are insufficient evidence of provenance.
+With synchronization enabled, the quiz writer acquires the record lock before inserting the attempt. The quota counts the authenticated principal's attempts on that lesson over the preceding 15 minutes and refuses the thirteenth. Durable writers allocate assessment clocks from the locked server replica and commit the attempt, learner record and assessment fact together. Preview identities record the attempt without writing mastery. The synchronization-off path preserves the baseline protocol. The planner uses only the dedicated assessment facts for mastery.
 
 The one-shot guest claim retains the account's unique profile, public handle, and duplicate receipt records. It joins convergent learner state before transferring remaining study rows. The guest's consent does not transfer. Transactional claim audit and the stable revocation digest support retry and credential-key rotation without retaining a raw guest credential in the tombstone.
 
-The consent service stores a current row and erasable change history. Analytics grant is checked before writing when privacy is enabled. Scoped NDJSON export omits credential data and counterpart identity fields. Erasure locks both identifiers, deletes their local rows and dependencies, verifies zero counts, and appends the receipt digest in the same transaction. The receipt reports the active package and its registry. Backup, support, historical processing, and external identity-provider scope stay explicit.
+The consent service stores a current row and erasable change history. Analytics checks the grant before writing when privacy is enabled. Managed write paths serialize on the principal guard while Phase 8 flags are active, including when synchronization is off. An existing guard or binding also preserves serialization on rollback. Both erasure routes publish a new epoch in their deletion transaction. Durable local and guest credentials are rechecked after the lock. Retained principals resume only when their request observes the current epoch. Scoped NDJSON export omits credential data and counterpart identity fields. The erasure receipt verifies the deletion scope and records the active package and registry, including the exclusions for backups, support, historical processing, and external identity providers.
 
 ## 5. Configuration package
 
 Package v6 (6.0.0) supersedes v5 (5.0.0, SHA-256 `ed91a98f8f3cca200e2164381da966ce9ec8f8a2de2120d2c2fc6fd77e9b2e68`). It adds the provisional learner settings, `phase8_exit_passed: false`, and the D-26 and D-27 entries. V5's D-08 and all prior decision entries are preserved. The evidence, gateway, and V3 contract pins carry forward. DI-317 identifies the v5 readability step. Phase 7 must renumber if Phase 8 merges first, and Phase 8 must renumber if Phase 7 takes v6 on main first.
+
+The loader compares each engineering sub-block with the code policy. `sync` records the active replica cap, retirement order and retry limits. `assessment` has the attempt limit, window and completion threshold. `planner` has the bands, budget, renderer hand-back and harness levels. `privacy` records NDJSON export, canonical receipt hashing, audit retention and guard retention. The provisional marker, authority, consent version and consent-class policy are validated separately.
 
 ## 6. Settings
 
@@ -99,16 +117,29 @@ All default to off outside development. Settings reject every non-off value outs
 | `services/learner_record_planner.py`, `services/learner_record_shadow.py`, `services/tutor_orchestrator.py` | Pure planner, policy and stop enforcement, and shadow observation only. |
 | `services/erasure.py`, `services/retention.py`, `services/guest_sessions.py`, `services/local_accounts.py` | Metadata coverage, class-based expiry, stable revocation, and compatibility with account deletion. |
 | `src/lib/api.ts`, `src/lib/learner-record-api.ts`, `src/lib/learner-record-sync.ts` | Existing versioned writer, replica transport, and offline-safe clock and retry behavior. |
+| `app/main.py` | §8.3(c) adds the Phase 8 settings, last observed stop and configuration override keys. |
+| `core/config_package.py`, `config_package/v6.json` and its sidecar, `scripts/config_package.py` | The §7.4 exception adds schema 6 validation and the predecessor hash. |
+| `services/ledger.py`, `core/schema_upgrades.py`, `alembic/versions/20261123_phase8_learner.py` | §7.5 advances `SCHEMA_REVISION` and adds the additive migration and reconciliation for early guard tables. |
+| `services/tutor_followups.py`, `tutor_pipeline/__init__.py`, `tutor_pipeline/contracts.py`, `tutor_pipeline/package_check.py` | Shipped-version text under the §7.4 bump-docstring exception. |
+| `.github/workflows/ci.yml` | §7.4 keeps v5 readable and §8.3(g) checks the invariance report. |
+| `scripts/prove_erasure.py`, `scripts/run_invariance_harness.py` | Phase 8 owns the independent proof and the public fixture replay. The checks run offline. |
+| `docs/architecture/phase3-implementation-spec.md`, `docs/architecture/phase4-implementation-spec.md`, `docs/architecture/phase5-implementation-spec.md`, `docs/architecture/phase6-implementation-spec.md` | The §7.4 and §7.5 exceptions update shipped-version and migration references. R2-02 restores the Phase 3 readiness boundary. |
+| `docs/adr/ADR-001-grounding-separation.md`, `docs/adr/ADR-003-learner-record-synchronization.md` | Describe the implemented presentation boundary and add the dated synchronization record. |
+| `docs/security/authorization-matrix.md`, `docs/security/threat-model.md` | Regenerate the route matrix from policy and document the D-26 controls. |
+| `infra/cloudrun/deployment.md`, `infra/cloudrun/observability.md`, `infra/cloudrun/retention-job.md` | Record the §7.5 rollback step and add the Phase 8 operator sections for startup, signals, and cleanup. |
+| `docs/testing/test-strategy.md` and `.gitattributes` | Append this phase's acceptance map and LF spec entry. Round 2 removes a duplicate inherited exit paragraph. |
 
 ## 8. Database
 
-Revision `20261123_phase8_learner` follows `20261122_phase6_v3_audit` and adds the ten Phase 8 tables. Upgrade accepts tables already built from matching ORM metadata. Downgrade verifies that Phase 8 tables are empty before removing the schema. An image rollback leaves the database and protection markers intact. Verify fresh and existing-row paths on SQLite and both PostgreSQL drivers.
+Revision `20261123_phase8_learner` follows `20261122_phase6_v3_audit` and adds the ten Phase 8 tables. The revision accepts ORM-created tables and adds missing epoch and activity columns to the early guard table. Startup initializes those columns for earlier rows without resetting an existing epoch. Downgrade verifies that all Phase 8 tables are empty before removing their schema. An image rollback leaves the schema and protection markers intact.
 
 ## 9. Routes and request-path behaviour
 
 The existing routers serve replica issuance and synchronization under `/learner-record`, and claim, consent, export, and erasure under `/auth`. Claim requires a durable credential, a verified guest token, matching guest CSRF proof, and a trusted origin. The other privacy operations are caller-scoped. Local erasure confirms the password and clears cookies after commit. Guest erasure revokes the credential. Federated erasure covers local application data. Each new endpoint refuses requests when its feature flag is off.
 
 Replica issuance returns 201. Record reads and applied or duplicate writes return 200. A version conflict returns 409 with `reason: cas_conflict` and the current `record_version`. Invalid inputs, untrusted mastery, reserved operations and nonfinite JSON return 422. Invalid replica ownership, retirement, clocks and changed replays return 409. New routes return 404 with their flags off. Claim proof failures return 403, unavailable guests return 409, and success returns 200. Consent returns 200 or 409 for an unavailable grant. Export returns 200 with no-store NDJSON. Erasure returns 200 with a receipt or 401 for refused password confirmation. Assessment quota refusal returns 429 with Retry-After 900.
+
+Claim uses `guest_legacy_upgrade_rate_limit` (default 5/hour). Erasure uses `auth_login_rate_limit` (default 10/minute) and requires a trusted origin for every provider. Both routes return 429 when their corresponding limit is exceeded. The shared unauthenticated demo identity is refused with 403. A stale write observation is refused with 409.
 
 ## 10. Start-up, /ready, logs and SLIs
 
@@ -125,10 +156,10 @@ Settings fail startup on refused values. Phase 8 records the following signals:
 | `learner.harness.violation` | Invariance or evidential-state reason and process count. |
 | `learner.harness.stop`, `learner.harness.clear` | Explicit local stop or clearance, with the reason. |
 | `learner.export` | Digest-only security event for an authorized export. |
-| `learner.erasure` | Digest-only security event with refusal status or deleted row total. |
+| `learner.erasure` | Digest-only security event with refusal status or deleted row total and `duration_ms`. Successful events feed the Phase 1 erasure-time distribution. |
 | `subject.claimed`, `subject.claim_refused` | Claim outcome and transferred-row total on success. |
 
-Readiness appends `phase8_exit_passed`, each learner setting and effective value, and development-only `learner_slis`. The only new readiness query reads the shared adaptation stop when the planner is enabled. The operator keys are `learner_sync_on`, `learner_identity_on`, `learner_privacy_on`, `learner_planner_shadow`, and `learner_planner_on`. Runtime evidence and tool handling stays within the existing gateway and verifier boundaries. DI-318 tracks dedicated runtime refusal counters. Production F-3 and cloud metrics remain deferred under DI-300 and DI-305.
+Readiness reports `phase8_exit_passed`, the configured modes and development-only `learner_slis`. It issues no new database read. The planner reads the shared stop at its own boundary. The development gauge `planner_stop_observed` reflects the most recent local observation, while the configured planner mode remains visible. The operator keys are `learner_sync_on`, `learner_identity_on`, `learner_privacy_on`, `learner_planner_shadow`, and `learner_planner_on`. The owner assigned the reserved verifier and tool counters to the main track under DI-318. Production F-3 and cloud metrics remain deferred under DI-300 and DI-305.
 
 ## 11. Frontend
 
@@ -140,17 +171,19 @@ The erasure proof seeds user-keyed and dependent rows for local, guest, federate
 
 ## 13. Tests
 
-| Criterion | Required coverage |
-|---|---|
-| AC-8-1 | Two concurrent replicas, conflict retry, and first-insert races preserve the expected mastery join. |
-| AC-8-2 | Reject stale or equal counters on new operations and reject foreign replicas. Preserve receipt replay and trusted counter ordering. |
-| AC-8-3 | Compare three mastery levels with different presentation choices and invariant delivered claims, citations, and answer decision. |
-| AC-8-4 | Scan evidential templates, captured payloads, and configuration. Guard learner-module imports. The versioned learner-tool integration belongs to DI-312. |
-| AC-8-5 | Verify each subject-keyed table and receipt digest while preserving the control subject's rows. |
-| AC-8-6 | `test_a_client_sent_score_is_ignored` and `test_durable_mastery_follows_the_server_score` verify server scoring. `test_phase8_sync_rejects_other_subjects_and_server_operations` verifies rejection of client mastery. |
-| AC-8-7 | Compare disclosed cookies and storage keys with implementation in both frontend inventory and API acceptance coverage. |
+### 13.1 Acceptance map
 
-Add authorization, retention, export, failover, stop persistence, migration, and freeze checks as each feature lands. Record the actual test names and regression checks with the build.
+| Criterion | Regression tests |
+|---|---|
+| AC-8-1 | `test_learner_record_merges_divergent_replicas_without_losing_completion`, `test_phase8_sync_parallel_replicas_conflict_and_retry_without_losing_updates`, `test_ac_8_1_concurrent_trusted_updates_preserve_each_mastery_value`. These cover same-skill maximum in both merge orders, concurrent client conflict and retry, and concurrent trusted mastery on separate skills. |
+| AC-8-2 | `test_phase8_sync_duplicate_receipts_and_monotonic_clock`, `test_phase8_sync_rejects_other_subjects_and_server_operations` |
+| AC-8-3 | `test_ac_8_3_three_mastery_levels_yield_identical_claim_set_cited_spans_and_decision` |
+| AC-8-4 | `test_ac_8_4_no_evidential_or_verifier_module_imports_a_phase8_module`, `test_ac_8_4_evidential_prompts_and_the_abstention_configuration_hold_zero_learner_state_fields`, `test_ac_8_4_a_learner_value_in_an_evidential_payload_is_detected` |
+| AC-8-5 | `test_plan_f_the_committed_erasure_proof_matches_a_fresh_run`, `test_phase8_export_and_erasure_cover_bound_subject_and_legacy_rows`, `test_phase8_claimed_guest_and_account_erasure_leave_no_keyed_rows`, `test_phase8_erasure_refuses_an_in_flight_subject_rebind`, `test_phase8_erasure_serializes_with_unguarded_and_first_writers`, `test_phase8_a_principal_erased_and_signing_in_again_gets_a_fresh_empty_record` |
+| AC-8-6 | `test_a_client_sent_score_is_ignored`, `test_durable_mastery_follows_the_server_score`, `test_phase8_sync_rejects_other_subjects_and_server_operations`, `test_phase8_privacy_http_consent_export_erasure_and_assessment` |
+| AC-8-7 | `test_ac_8_7_the_privacy_inventory_equals_the_cookies_and_storage_keys_in_code` |
+
+### 13.2 Module coverage
 
 | Test module | Coverage implemented |
 |---|---|
@@ -165,15 +198,40 @@ Add authorization, retention, export, failover, stop persistence, migration, and
 
 ### 13.3 Changes to existing tests
 
-| Test | Change and preserved intent |
-|---|---|
-| `test_progress_endpoint_aggregates_activity` | Keeps the baseline aggregation path by pinning the privacy gate off in this one fixture. |
-| `test_a_refused_caller_is_refused` | Activates the development claim route before checking a denied principal. |
-| `test_no_caller_scoped_read_returns_another_learners_data` | Grants analytics and uses issued replicas so the owner marker reaches both storage and the scoped export. |
-| `test_learner_record_api_requires_a_durable_session_and_accepts_idempotent_operations` | Acquires an issued replica and sets the expected version in the test request. |
-| `test_retention_removes_stale_guest_rows_in_every_table_and_keeps_the_rest` | Preserves the stale-guest test while asserting dedicated account, session, and binding rules. |
-| `test_a_learner_record_value_that_cannot_be_stored_is_refused_and_the_record_still_reads` | Exercises the finite server-side validation in both modes. |
-| `test_non_finite_preference_follows_the_flagged_backend_contract` | Pins both legacy database-specific behavior and uniform sync-on validation. |
+| Module | Test or fixture | Exception | Change and preserved intent |
+|---|---|---|---|
+| `test_api.py` | `test_progress_endpoint_aggregates_activity` | §8.1 progress fixture | Pins privacy off for this fixture, preserving the existing analytics aggregation check. |
+| `test_authorization.py` | `test_a_refused_caller_is_refused` | §8.1 authorization coverage | Enables the development claim route for the denied-principal case. |
+| `test_authorization.py` | `_write_everything` | §8.1 authorization coverage | Obtains an issued replica and analytics consent so the fixture stores the owner marker. |
+| `test_authorization.py` | `test_no_caller_scoped_read_returns_another_learners_data` | §8.1 authorization coverage | Requires the marker in the owner's export and still excludes it from a different learner's responses. |
+| `test_config_package.py` | `test_the_shipped_package_validates_and_matches_its_hash` | §7.4 bump | Pins v6 and schema 6 as shipped while retaining the hash, gateway and audit checks. |
+| `test_config_package.py` | `test_v4_structural_errors_always_stop_the_load` | §7.4 bump | Checks v4, v5 and v6, choosing the unsupported schema 7 mutation where schema 5 is now supported. |
+| `test_config_package.py` | `test_v4_stays_readable_for_one_release` | §7.4 bump | Checks the v4 digest against v5's predecessor instead of v6's, preserving v4 readability. |
+| `test_config_package.py` | `test_v5_keeps_every_v4_value_but_the_listed_changes` | §7.4 bump | Reads the explicit v5 fixture to preserve the v4-to-v5 change assertions. |
+| `test_config_package.py` | `test_v5_structural_errors_always_stop_the_load` | §7.4 bump | Runs v5 refusals against both v5 and v6 and uses an actually unsupported schema number. |
+| `test_configuration_overrides.py` | `write_package` | §7.4 bump docstring | Names the actual shipped package while the helper still copies the package and its schemas. |
+| `test_configuration_overrides.py` | `test_c2_each_refused_relaxation_is_refused_and_still_recorded_under_its_own_key` | §8.3(c) override cases | Adds inherited parametrizations for the five Phase 8 keys. Each case still tests refusal and the corresponding audit key. |
+| `test_cs595_increment.py` | `test_learner_record_api_requires_a_durable_session_and_accepts_idempotent_operations` | §8.1 sync contract | Obtains the issued replica and sends the expected version. The durable-session and completion assertions remain. |
+| `test_erasure_retention.py` | `_seed_everything` | §8.1 metadata coverage | Seeds assessment foreign keys from their parent rows, preserving coverage across all user-keyed tables. |
+| `test_erasure_retention.py` | `test_retention_removes_stale_guest_rows_in_every_table_and_keeps_the_rest` | §8.1 retention compatibility | Preserves stale, fresh and durable coverage and classifies intentionally retained credentials and bindings when privacy is on. |
+| `test_malformed_input.py` | `_learner_record_write` | §8.1 sync contract | Acquires a replica only in the guarded mode, preserving the legacy malformed input path. |
+| `test_malformed_input.py` | `test_a_learner_record_value_that_cannot_be_stored_is_refused_and_the_record_still_reads` | §8.1 sync contract | Exercises both modes while preserving rejection and the subsequent read. |
+| `test_malformed_input.py` | `test_non_finite_preference_follows_the_flagged_backend_contract` | §8.1 sync contract | Separately pins the legacy backend-specific result and uniform guarded validation. |
+| `test_phase3_acceptance.py` | `test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_empty_ledger` | §7.5 migration | Steps through the Phase 8 head before testing the older downgrade and data-loss refusal. |
+| `test_phase3_acceptance.py` | `test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode` | R2-02 restored protected text | Round 1 widened the allowed queries. Round 2 restores the Phase 6 source and uses in-process observation for Phase 8 readiness. |
+| `test_phase4_acceptance.py` | `test_phase4_docs_the_phase3_spec_states_what_phase4_changed` | §7.4 bump | Repoints the shipped name, schema tuple and fixture-version pins to v6 while preserving the text and fixture checks. |
+| `test_phase4_acceptance.py` | `test_phase4_docs_the_code_texts_name_the_shipped_package` | §7.4 bump | Repoints the module text and inherited schema sets to v6 while retaining the Phase 4 and Phase 5 constraints. |
+| `test_phase5_acceptance.py` | `test_phase5_docs_the_runbooks_and_registers_state_the_gateway_s_operations_exactly` | R2-02 restored protected text | Round 1 widened the pinned readiness phrase. Round 2 restores the inherited test and its gateway-only query scope. |
+| `test_phase6_acceptance.py` | `test_plan_g_the_phase_6_revision_is_additive_reversible_and_keeps_its_rows` | §7.5 migration | Checks the v6-era descendant and unwinds the empty Phase 8 schema before exercising the V3 retention guards. |
+| `test_phase6_acceptance.py` | `test_plan_i_ready_reports_package_v5_and_the_v3_fields_and_no_count` | §7.4 version pin and R2-02 restoration | The historical name says v5. The test checks the shipped package dynamically (v6 here) and retains the V3 assertions and gateway-only SQL allow-list. |
+| `test_phase6_acceptance.py` | `test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_head` | §7.5 migration | Checks the Phase 8 head and absolute Phase 6 rollback step while retaining the earlier rollback and data-protection checks. |
+| `test_response_ledger_migrations.py` | `test_e10_the_absolute_downgrade_target_is_safe_in_every_stamp_state_the_runbook_allows` | §7.5 migration | Stamps the Phase 8 head, steps through the empty successor, and retains the absolute-target and ledger refusal checks. |
+| `test_response_ledger_migrations.py` | `test_f14_the_forward_alembic_step_runs_only_on_a_phase2_stamp` | §7.5 migration | Checks the ordered Phase 3, 5, 6 and 8 upgrades without changing the Phase 2 stamp and invalid-replay assertions. |
+| `apps/frontend/tests/privacy-inventory.integration.test.ts` | `AC-8-7: the privacy page lists exactly the cookies the code sets or reads` | §8.1 inventory coverage | Names AC-8-7 explicitly and preserves the exact cookie comparison. |
+| `apps/frontend/tests/privacy-inventory.integration.test.ts` | `AC-8-7: the privacy page lists exactly the browser-storage keys the code uses` | §8.1 inventory coverage | Names AC-8-7 explicitly and preserves the exact storage-key comparison. |
+| `test_phase8_sync.py` | `test_phase8_assessment_quota_and_server_clock_when_principal_equals_subject` | R2-09 | Renamed the helper-level case to state when principal and subject match. The bound-account HTTP test guards the distinction. |
+| `test_phase8_identity.py` | `test_phase8_claim_requires_guest_csrf_and_is_one_shot` | R2-28 | Renamed the one-shot and missing-CSRF test. Separate tests exercise forged and revoked credentials. |
+| `test_phase8_evidence.py` | `test_phase8_readiness_reports_the_last_stop_observation_without_querying` | R2-02 | Replaces the SQL-based expectation with a query-free observation test. |
 
 ## 14. CI changes
 
@@ -187,16 +245,16 @@ Subject linking and consent have security documentation, with a generated consen
 
 ### 16.1 Provisional defaults
 
-The following defaults are provisional. Implementation locations in this section refer to the code or artifact responsible for enforcing each default when it lands.
+The defaults are provisional. Each row names the code or artifact that enforces it.
 
 | # | Decision | Plan text | Default applied | Where |
 |---|---|---|---|---|
-| PD-200 | D-27, consent classes and H13 (Product Owner and Principal Investigator) | 18.4 L3017: "D-27 OPEN DECISION: consent classes before Phase 8 [Risk R-09]. PO, PI." 9.4 L1924: "H13 \| Consent [Decision D-27] \| P8 start \| Consent classes". | H13 remains held. Version `d27-unresolved-v1` classifies existing processing as unclassified and permits synthetic development grants for adaptation and analytics. Outside development those grants are refused, the planner uses the static order, and the analytics gate is off. Research is refused everywhere. The default establishes no legal basis or toggle-free status. | `learner_record_privacy.py`, `consent-schema.md`, `phase8_settings.py`. |
+| PD-200 | D-27, consent classes and H13 (Product Owner and Principal Investigator) | 18.4 L3017: "- D-27 OPEN DECISION: consent classes before Phase 8 [Risk R-09]. PO, PI." 9.4 L1924: "\| H13  \| Consent [Decision D-27]       \| P8 start                       \| Consent classes        \|". | H13 remains held. Version `d27-unresolved-v1` classifies existing processing as unclassified and permits synthetic development grants for adaptation and analytics. Outside development those grants are refused, the planner uses the static order, and the analytics gate is off. Research is refused everywhere. The default establishes no legal basis or toggle-free status. | `learner_record_privacy.py`, `consent-schema.md`, `phase8_settings.py`. |
 | PD-201 | D-26 compare-and-set (Security Lead) | Phase 8 D L1573: "2) Server-issued replica clocks, monotonic counters, compare-and-set on record_version [Decision D-26]." | Check the expected version and serialize writes to the learner record. An out-of-date client re-reads and retries. Identical receipts remain idempotent. | `learner_record_sync.py` and the trusted assessment write path. |
-| PD-202 | D-08 research timing and D-14 research data plane (Principal Investigator) | 18.3 L2987: "(a) before research use; (b) fixtures" and L2988: "first". | Apply D-08 option (a). Refuse research grants and research export everywhere. Use synthetic learners and the public fixture for engineering evidence. D-14 remains with DI-09. | `learner_record_privacy.py`, `run_invariance_harness.py`. |
+| PD-202 | D-08 research timing and D-14 research data plane (Principal Investigator) | 18.3 L2987: "D-08 \|IRB and OSF timing (PI)             \|(a) before research use; (b) fixtures     \|No Phase 10 [Assumption A-10]" and L2988: "     \|                                    \|first                                     \|". | Apply D-08 option (a). Refuse research grants and research export everywhere. Use synthetic learners and the public fixture for engineering evidence. D-14 remains with DI-09. | `learner_record_privacy.py`, `run_invariance_harness.py`. |
 | PD-203 | D-05 feature freeze | Phase 8 L L1606: "Flags for planner and sync. Stop: any harness violation blocks adaptation (never evidence)." | Keep all Phase 8 switches off outside development and refuse non-off values before the verified Phase 8 exit. Development defaults are sync on, planner shadow, identity off, and privacy on. Refuse planner on pending DI-312. | `phase8_settings.py`. |
-| PD-204 | Engineering parameters (Engineering) | Phase 8 D L1574: "3) Mastery from server-scored assessments [Risk R-42]; planner (Loop 2) [E-74]." Phase 8 D L1577: "5) Consent record, scheduled retention, export, erasure across all providers with receipt [Risk R-08]." | Cap active replicas at 16 per subject. Confirm a preferred active replica, including one without an applied operation, or retire least-recently-used replicas to make room while preserving their clock and receipt history. Allow 12 attempts per principal and lesson per 15 minutes, then return 429 with Retry-After 900. CAS returns 409 with the current version and no server retry. The browser re-reads and retries once if the same principal's version advanced. The planner uses per-lesson maximum assessed mastery, completion at 0.7, a 150 ms shadow budget, bands at 0.4 and 0.75, and harness levels 0.1, 0.5, and 0.9. Preserve unfinished course order. Order completed review by ascending mastery, descending attempt count, then course order. Export streams NDJSON with credential tables withheld. The receipt contains a random ID, UTC time, consent version, zero counts, table-set SHA-256, package version and SHA-256, gateway registry, and scope. The audit holds the canonical receipt digest, table-set digest, and deleted count. | `learner_record_sync.py`, `learner-record-sync.ts`, `learner_record_planner.py`, `learner_record_shadow.py`, `learner_record_privacy.py`, `run_invariance_harness.py`. |
-| PD-205 | Retention classes (Engineering and Data Steward) | Phase 8 D L1577: "5) Consent record, scheduled retention, export, erasure across all providers with receipt [Risk R-08]." | Reuse the existing retention constants and provider-independent account and session rules. Keep the response ledger outside the expiry schedule pending PLAN-12.8. | `retention.py`, `consent-schema.md`, the scheduled retention worker. |
+| PD-204 | Engineering parameters (Engineering) | Phase 8 D L1574: "3) Mastery from server-scored assessments [Risk R-42]; planner (Loop 2) [Evidence E-74]." Phase 8 D L1577: "5) Consent record, scheduled retention, export, erasure across all providers with receipt [Risk R-08]." | Cap active replicas at 16 per subject. Confirm a preferred active replica, including one without an applied operation, or retire least-recently-used replicas to make room while preserving their clock and receipt history. Allow 12 attempts per principal and lesson per 15 minutes, then return 429 with Retry-After 900. CAS returns 409 with the current version and no server retry. The browser re-reads and retries once if the same principal's version advanced. The planner uses per-lesson maximum assessed mastery, completion at 0.7, a 150 ms shadow budget, bands at 0.4 and 0.75, and harness levels 0.1, 0.5, and 0.9. Preserve unfinished course order. Order completed review by ascending mastery, descending attempt count, then course order. Export streams NDJSON with credential tables withheld. The receipt contains a random ID, UTC time, consent version, zero counts, table-set SHA-256, package version and SHA-256, gateway registry, and scope. The audit holds the canonical receipt digest, table-set digest, and deleted count. | `learner_record_sync.py`, `learner-record-sync.ts`, `learner_record_planner.py`, `learner_record_shadow.py`, `learner_record_privacy.py`, `run_invariance_harness.py`. |
+| PD-205 | Retention classes (Engineering and Data Steward) | Phase 8 D L1577: "5) Consent record, scheduled retention, export, erasure across all providers with receipt [Risk R-08]." | Privacy off uses the inherited guest-prefixed created_at rule. Privacy on uses class ages and bound guests, expires guest consent from updated_at, retires legacy upgrade records into stable revocation digests, and applies 365-day audit and write-guard cleanup. Both guard states age from last_used_at, and stale observations share that maximum lifetime. Sessions follow their own expiry. The response ledger remains outside the expiry schedule pending PLAN-12.8. | `retention.py`, `consent-schema.md`, the scheduled retention worker. |
 
 ### 16.2 Deferred items
 
@@ -220,7 +278,7 @@ The following defaults are provisional. Implementation locations in this section
 | DI-315 | Re-review R-51 at the Phase 8 exit. Production carries the existing client mastery path until `LEARNER_SYNC` is enabled. Blocked by: open D-24, D-05, and DI-300. | Product Owner | Open |
 | DI-316 | Closed 2026-11-22 by owner decision P2-12-D-05 following the rule-12 question. Account erasure keeps independently submitted support requests on the 540-day rule. `services/learner_record_privacy.py` and `services/erasure.py` record and enforce that scope. | Product Owner | Closed |
 | DI-317 | Remove v5 and its readability check after one release. Blocked by: a production release after the Phase 8 merge, under D-05. | Engineering | Deferred |
-| DI-318 | Dedicated counters at runtime evidential contract refusals and `ToolNotVisible` in `tutor_pipeline/contracts.py` and `gateway/tools.py`. The isolated harness and sync signals are implemented. Stopped under rule 12 and §8.1, which reserve these shared paths. | Engineering (main track) | Stopped |
+| DI-318 | Dedicated counters at runtime evidential contract refusals and `ToolNotVisible` in `tutor_pipeline/contracts.py` and `gateway/tools.py`. Round 1 stopped these changes under rule 12 and §8.1. The owner answered the round-2 question by assigning both reserved changes to the main track. The Phase 8 harness and sync signals operate independently. | Engineering (main track) | Handed over |
 
 Plan M: "[Risk R-01][Risk R-08][Risk R-41][Risk R-42][Risk R-51]; residual: backups keep erased rows for a window."
 
@@ -279,10 +337,11 @@ Forty process-local Python mutation cases and one frontend mutation case produce
 
 ## 18. Review history
 
-The rows below record what each round fixed, in order. They may describe behaviour that a later round superseded. Sections 0-17 are authoritative after implementation. Each finding is one line naming the tests that fail if its defect comes back.
+The rows record the build and each review round in order. Sections 0–17 describe the current implementation. Each review row summarizes the changes and names representative regression tests.
 
 | Round | Commit | Findings fixed (one line each, with their tests) |
 |---|---|---|
 | Spec (pre-code) | - | Initial design and verification map. |
-| Build | `cb142b1` | Settings, synchronization, identity, privacy lifecycle, shadow planner, and engineering evidence. Regression guards include `test_settings_phase8_defaults_and_refusals`, `test_ac_8_1_concurrent_trusted_updates_preserve_each_mastery_value`, `test_plan_j_a_forged_or_revoked_guest_token_cannot_claim`, `test_plan_f_the_committed_erasure_proof_matches_a_fresh_run`, and `test_plan_p_the_committed_invariance_report_matches_a_fresh_run`. |
+| Build | `cb142b1` | Settings, synchronization, identity, privacy lifecycle, shadow planner, and engineering evidence. Regression guards include `test_settings_phase8_defaults_and_refusals`, `test_ac_8_1_concurrent_trusted_updates_preserve_each_mastery_value`, `test_phase8_claim_requires_guest_csrf_and_is_one_shot`, `test_plan_f_the_committed_erasure_proof_matches_a_fresh_run`, and `test_plan_p_the_committed_invariance_report_matches_a_fresh_run`. |
 | Review 1 | `8c7b7d4` | Route ownership and PD register guards, serialized cutover and erasure, claim and privacy HTTP coverage, active replica lifecycle, measurable invariance, retention, and spec controls. See `test_phase8_route_policies_form_one_block_after_the_learner_record_rows`, `test_phase8_docs_pd_204_states_the_engineering_constants_in_code`, `test_phase8_erasure_refuses_an_in_flight_subject_rebind`, `test_phase8_privacy_http_consent_export_erasure_and_assessment`, and `test_ac_8_4_a_learner_value_in_an_evidential_payload_is_detected`. |
+| Review 2 | Pending commit | Restored the §8.1 retention and readiness contracts. Verified erasure serialization, retained-principal recovery, guard expiry, F-3, trusted mastery, package-code equality, and documentation traceability. The owner assigned DI-318 to the main track. See `test_phase8_erase_stale_guest_rows_keeps_its_two_argument_signature`, `test_phase8_keeps_protected_acceptance_tests_at_the_phase6_baseline`, `test_phase8_erasure_serializes_with_unguarded_and_first_writers`, and `test_phase8_a_principal_erased_and_signing_in_again_gets_a_fresh_empty_record`. |

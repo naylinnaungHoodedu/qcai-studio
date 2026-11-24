@@ -1642,7 +1642,8 @@
     "privacy": {
       "export": "ndjson",
       "receipt_digest": "canonical-json-sha256",
-      "audit_retention_days": 365
+      "audit_retention_days": 365,
+      "guard_retention_days": 365
     }
   }
 }

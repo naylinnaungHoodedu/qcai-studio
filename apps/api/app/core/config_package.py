@@ -2,7 +2,7 @@
 configuration package v2"; Phase 4 P: "fixture hashes in configuration package v3"; Phase 2 spec 2.5 and 4.2;
 Phase 3 spec section 5; Phase 4 spec section 5).
 
-A versioned JSON file shipped in the API image (apps/api/app/config_package/v3.json) that freezes every Phase 2
+A versioned JSON file in the API image freezes every Phase 2
 value: the span-identity scheme, the BM25 parameters and stopword list, the provisional abstention floor and
 margin, the near-duplicate thresholds, the D-30 legacy-citation rule, the provisional owner decisions (D-17, D-30,
 Q-10) and the boundary policy. Version 2 (Phase 3) copies every v1 block and adds the two-channel tutor: the
@@ -18,12 +18,15 @@ schemas (LedgerEntryV3 and the four gateway request and verdict contracts) and a
 adapter registry per environment, the pinning rule, the D-23 egress opt-in, budgets, the evidential cache, the payload
 policy, the stop guards and the retired settings), the V2 panel (`v2`: families, tiers, the voting matrix, correction,
 degraded modes, the alignment item), the tool contracts (`tools`) and the model_gateway flag policy. Version 5 (Phase 6,
-apps/api/app/config_package/v5.json, the shipped package) copies every v4 block and adds the V3 audit (`v3`: the trigger
+apps/api/app/config_package/v5.json) copies every v4 block and adds the V3 audit (`v3`: the trigger
 registry x-triggers-v1, the queue priority and its EHMF weights, the seeded audit draw, the adjudication workflow, the
 gold store, the critical-claim registry per environment, the queue-age SLO and the stop, the residual statistic, the
 reviewer gate and the two pinned V3 schemas), the v3_queue flag policy and the D-08, D-14 and D-18 owner decisions.
+The shipped package v6 (Phase 8, apps/api/app/config_package/v6.json) adds the learner policy and the pre-exit
+flag defaults. The Phase 8 loader verifies the engineering values and provisional consent policy.
 Next to each file, <name>.json.sha256 holds the sha256 of its canonical JSON, so a CRLF checkout hashes the same.
-v4.json, v3.json, v2.json and v1.json stay readable for one release (DI-100, DI-84, DI-63, DI-42).
+v5.json remains readable under DI-317. v4.json, v3.json, v2.json and v1.json also remain readable
+(DI-100, DI-84, DI-63, DI-42).
 
 Start-up loads and validates it before any database work. A structural error always stops start-up; a hash
 mismatch stops a governed build and is a logged warning in development. The loader never opens the calibration

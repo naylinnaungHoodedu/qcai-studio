@@ -38,7 +38,7 @@ def test_phase8_subject_is_stable_and_provider_scoped(identity_engine):
         assert local != federated and principal not in local
 
 
-def test_plan_j_a_forged_or_revoked_guest_token_cannot_claim(identity_engine):
+def test_phase8_claim_requires_guest_csrf_and_is_one_shot(identity_engine):
     guest = f"guest-{uuid4()}"
     account = f"account-{uuid4()}"
     settings = Settings(_env_file=None, learner_identity="on")

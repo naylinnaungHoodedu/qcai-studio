@@ -5,11 +5,10 @@ from dataclasses import dataclass
 from math import fsum, isfinite
 from typing import Literal
 
+from app.core.phase8_settings import ADVANCED_THRESHOLD, FOUNDATION_THRESHOLD
 
 PlanId = Literal["concise", "stepwise", "socratic"]
 PLANNER_VERSION = "learner-planner-v1"
-FOUNDATION_THRESHOLD = 0.4
-ADVANCED_THRESHOLD = 0.75
 
 
 @dataclass(frozen=True, slots=True)

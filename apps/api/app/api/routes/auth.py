@@ -1,8 +1,10 @@
+from time import monotonic
+
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.core.auth import AuthUser, get_current_user, require_durable_learner
+from app.core.auth import AuthUser, get_current_user, learner_write_observation, require_durable_learner
 from app.core.config import Settings, get_settings
 from app.core.db import get_db
 from app.core.rate_limit import limiter
@@ -54,9 +56,12 @@ def get_learner_consent(user: AuthUser = Depends(get_current_user), db: Session 
 
 @router.put("/learner-consent", dependencies=[Depends(require_privacy_enabled)])
 def put_learner_consent(
-    payload: LearnerConsentUpdate, user: AuthUser = Depends(get_current_user), db: Session = Depends(get_db),
+    request: Request, payload: LearnerConsentUpdate, user: AuthUser = Depends(get_current_user), db: Session = Depends(get_db),
 ):
-    states = set_consent(db, user.provider, user.user_id, payload.consent_class, payload.granted, get_settings())
+    states = set_consent(
+        db, user.provider, user.user_id, payload.consent_class, payload.granted, get_settings(),
+        observation=learner_write_observation(request),
+    )
     db.commit()
     return {"consent_version": CONSENT_VERSION, "consent": states}
 
@@ -80,6 +85,10 @@ def post_learner_erasure(
     request: Request, payload: LearnerPrivacyErasureRequest, response: Response,
     user: AuthUser = Depends(get_current_user), db: Session = Depends(get_db),
 ):
+    settings = get_settings()
+    validate_request_origin(request, settings)
+    if user.provider == "demo" and (user.user_id == "demo-learner" or not request.headers.get("x-demo-user", "").strip()):
+        raise HTTPException(403, "The shared demo record cannot be erased.")
     if user.provider == "local":
         account = db.get(UserAccount, user.user_id)
         if account is None or not payload.password or not verify_password(payload.password, account.password_hash):
@@ -87,11 +96,12 @@ def post_learner_erasure(
             record_security_event("learner.erasure", "failure", connection=request, actor_role=user.role,
                                   subject=user.user_id, details={"status": 401})
             raise HTTPException(401, "Password confirmation failed.")
-    receipt = erase_subject(db, user.provider, user.user_id, get_settings())
+    started = monotonic()
+    receipt = erase_subject(db, user.provider, user.user_id, settings)
     deleted_total = db.get(LearnerErasureAudit, receipt["id"]).deleted_total
     db.commit()
     record_security_event("learner.erasure", "success", connection=request, actor_role=user.role,
-                          subject=user.user_id, details={"rows": deleted_total})
+                          subject=user.user_id, details={"rows": deleted_total, "duration_ms": round((monotonic() - started) * 1000)})
     _clear_auth_cookies(response)
     response.delete_cookie(GUEST_TOKEN_COOKIE, path="/")
     response.headers["Cache-Control"] = "no-store"
@@ -117,6 +127,7 @@ def claim_guest_record(
         moved = claim_guest(
             db, user.provider, user.user_id, request.cookies.get(GUEST_TOKEN_COOKIE),
             request.headers.get("x-guest-claim-csrf"), settings, verify_account=True,
+            observation=learner_write_observation(request),
         )
         db.commit()
     except HTTPException:

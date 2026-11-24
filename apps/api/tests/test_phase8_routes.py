@@ -237,3 +237,149 @@ def test_phase8_legacy_delete_account_erases_the_bound_subject():
     assert response.status_code == 200, response.text
     with SessionLocal() as db:
         assert not independently_remaining(db, (principal, subject))
+
+
+@pytest.mark.parametrize("identity", ["on", "off"])
+def test_phase8_a_principal_erased_and_signing_in_again_gets_a_fresh_empty_record(monkeypatch, identity):
+    from app.core import auth
+    from app.services.learner_record_identity import find_subject
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "learner_identity", identity)
+    principal = f"fixture-{uuid4().hex}"
+    monkeypatch.setattr(auth, "_decode_auth0_token", lambda *_: auth.AuthUser(principal, None, "learner", "auth0"))
+    headers = {"authorization": "Bearer fixture", "origin": ORIGIN}
+    first = TestClient(app)
+    assert quiz(first, headers).status_code == 200
+    with SessionLocal() as db:
+        previous = find_subject(db, "auth0", principal)
+    assert first.post("/auth/learner-erasure", headers={"authorization": "Bearer fixture"}, json={}).status_code == 403
+    assert first.post("/auth/learner-erasure", headers=headers, json={}).status_code == 200
+    with SessionLocal() as db:
+        assert not independently_remaining(db, tuple(filter(None, (principal, previous))))
+
+    returning = TestClient(app)
+    empty = returning.get("/learner-record", headers=headers).json()
+    assert empty["record_version"] == 0 and empty["mastery"] == {}
+    assert quiz(returning, headers).status_code == 200
+    issued = returning.post("/learner-record/replicas", headers=headers)
+    assert issued.status_code == 201
+    version = returning.get("/learner-record", headers=headers).json()["record_version"]
+    assert returning.post("/learner-record/operations", headers=headers,
+                          json=batch(issued.json()["replica_id"], 1, "returning", version)).status_code == 200
+    consent = returning.put("/auth/learner-consent", headers=headers, json={"consent_class": "analytics", "granted": True})
+    assert consent.status_code == 200 and consent.json()["consent"]["analytics"]
+    assert returning.post("/analytics/events", headers=headers, json={"event_type": "fixture"}).status_code == 200
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(AnalyticsEvent).where(AnalyticsEvent.user_id == principal)) == 1
+        if previous is not None:
+            assert find_subject(db, "auth0", principal) != previous
+            assert not independently_remaining(db, (previous,))
+
+
+def test_phase8_shared_demo_fallback_cannot_erase():
+    browser = TestClient(app)
+    assert browser.post("/auth/learner-erasure", headers={"origin": ORIGIN}, json={}).status_code == 403
+    assert browser.post("/auth/learner-erasure", headers={
+        "origin": ORIGIN, "x-demo-user": "demo-learner",
+    }, json={}).status_code == 403
+
+
+def test_phase8_an_explicit_demo_principal_can_resume_after_erasure():
+    principal = f"fixture-{uuid4().hex}"
+    headers = {"x-demo-user": principal, "origin": ORIGIN}
+    first = TestClient(app)
+    assert quiz(first, headers).status_code == 200
+    assert first.post("/auth/learner-erasure", headers=headers, json={}).status_code == 200
+    with SessionLocal() as db:
+        assert not independently_remaining(db, (principal,))
+
+    returning = TestClient(app)
+    assert quiz(returning, headers).status_code == 200
+    consent = returning.put("/auth/learner-consent", headers=headers, json={"consent_class": "analytics", "granted": True})
+    assert consent.status_code == 200 and consent.json()["consent"]["analytics"]
+    assert returning.post("/analytics/events", headers=headers, json={"event_type": "fixture"}).status_code == 200
+
+
+def test_phase8_erasure_confirmation_is_limited_and_audits_duration(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "auth_login_rate_limit", "2/minute")
+    browser, headers, principal, _ = account()
+    assert quiz(browser, headers).status_code == 200
+    for _ in range(2):
+        assert browser.post("/auth/learner-erasure", headers=headers, json={"password": "wrong"}).status_code == 401
+    refused = browser.post("/auth/learner-erasure", headers=headers, json={"password": PASSWORD})
+    assert refused.status_code == 429
+    with SessionLocal() as db:
+        assert "quiz_attempts" in independently_remaining(db, (principal,))
+
+    monkeypatch.setattr(settings, "auth_login_rate_limit", "3/minute")
+    with SessionLocal() as db:
+        before = db.scalar(select(func.max(SecurityEvent.seq))) or 0
+    erased = browser.post("/auth/learner-erasure", headers=headers, json={"password": PASSWORD})
+    assert erased.status_code == 200
+    with SessionLocal() as db:
+        audit = db.scalars(select(SecurityEvent).where(
+            SecurityEvent.seq > before, SecurityEvent.event_type == "learner.erasure", SecurityEvent.outcome == "success",
+        ).order_by(SecurityEvent.seq)).one()
+        assert isinstance(audit.details["duration_ms"], int) and audit.details["duration_ms"] >= 0
+
+
+def test_phase8_assessment_quota_counts_the_authenticated_principal_of_a_bound_account(monkeypatch):
+    from app.services.learner_record_identity import find_subject
+    from app.services.learner_record_sync import ASSESSMENT_LIMIT
+
+    monkeypatch.setattr(get_settings(), "learner_identity", "on")
+    first, first_headers, first_principal, _ = account()
+    second, second_headers, second_principal, _ = account()
+    with SessionLocal() as db:
+        first_subject = bind_subject(db, "local", first_principal)
+        second_subject = bind_subject(db, "local", second_principal)
+        assert first_subject != first_principal and second_subject != second_principal
+        db.add_all(
+            QuizAttempt(user_id=owner, lesson_slug=LESSON, score=0, responses={})
+            for owner in (first_principal, second_subject) for _ in range(ASSESSMENT_LIMIT)
+        )
+        db.commit()
+    refused = quiz(first, first_headers)
+    assert refused.status_code == 429 and refused.headers["retry-after"] == "900"
+    accepted = quiz(second, second_headers)
+    assert accepted.status_code == 200, accepted.text
+    with SessionLocal() as db:
+        assert find_subject(db, "local", second_principal) == second_subject
+        assert db.get(LearnerAssessmentFact, accepted.json()["attempt_id"]).user_id == second_subject
+
+
+def test_plan_i_f3_a_server_scored_attempt_logs_the_record_update_within_the_interaction(caplog, monkeypatch):
+    from app.core.structured_logging import FIELDS
+    from app.services.learner_record_metrics import snapshot
+
+    def update_events():
+        return [getattr(log, FIELDS) for log in caplog.records
+                if getattr(log, FIELDS, {}).get("event") == "learner.record.updated"]
+
+    caplog.set_level("INFO")
+    settings = get_settings()
+    browser, headers, _, _ = account()
+    committed = snapshot().get("learner.record.committed", 0)
+    assert quiz(browser, headers).status_code == 200
+    updates = update_events()
+    assert len(updates) == 1
+    update = updates[0]
+    assert set(update) == {"event", "interaction_started_at", "record_committed_at", "record_version"}
+    assert datetime.fromisoformat(update["interaction_started_at"]) <= datetime.fromisoformat(update["record_committed_at"])
+    assert update["record_version"] == browser.get("/learner-record", headers=headers).json()["record_version"]
+    assert snapshot()["learner.record.committed"] == committed + 1
+
+    caplog.clear()
+    monkeypatch.setattr(settings, "learner_sync", "off")
+    assert quiz(browser, headers).status_code == 200
+    monkeypatch.setattr(settings, "learner_sync", "on")
+    assert quiz(TestClient(app), {"x-demo-user": f"fixture-{uuid4().hex}"}).status_code == 200
+    guest = f"guest-{uuid4()}"
+    issued = int(time.time())
+    guest_client = TestClient(app)
+    guest_client.cookies.set(GUEST_TOKEN_COOKIE, issue_guest_token(settings.guest_token_secret, guest, issued))
+    assert quiz(guest_client, {"origin": ORIGIN, "x-qcai-csrf": guest_csrf_for(settings.guest_token_secret, guest, issued)}).status_code == 200
+    assert not update_events()
+    assert snapshot()["learner.record.committed"] == committed + 1

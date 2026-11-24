@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
-from app.core.auth import AuthUser, require_durable_learner
+from app.core.auth import AuthUser, learner_write_observation, require_durable_learner
 from app.core.db import get_db
 from app.core.rate_limit import limiter
 from app.core.config import get_settings
@@ -42,7 +42,10 @@ def post_learner_replica(
     user: AuthUser = Depends(require_durable_learner),
     db: Session = Depends(get_db),
 ):
-    subject = write_subject(db, user.provider, user.user_id, bind=get_settings().learner_identity == "on", guarded=True)
+    subject = write_subject(
+        db, user.provider, user.user_id, bind=get_settings().learner_identity == "on",
+        guarded=True, observation=learner_write_observation(request),
+    )
     replica_id = issue_learner_replica(db, subject, payload.preferred_replica_id if payload else None)
     db.commit()
     return LearnerReplicaIssued(replica_id=replica_id)
@@ -62,10 +65,15 @@ def post_learner_record_operations(
         version = payload.expected_record_version
         if type(version) is not int or not 0 <= version <= 2_147_483_647:
             raise HTTPException(422, "An integer expected_record_version is required.")
-        subject = write_subject(db, user.provider, user.user_id, bind=get_settings().learner_identity == "on", guarded=True)
+        subject = write_subject(
+            db, user.provider, user.user_id, bind=get_settings().learner_identity == "on",
+            guarded=True, observation=learner_write_observation(request),
+        )
         receipts, record = synchronize_client_operations(db, subject, version, payload.operations)
     else:
-        subject = write_subject(db, user.provider, user.user_id, bind=False, guarded=False)
+        subject = write_subject(
+            db, user.provider, user.user_id, bind=False, guarded=False, observation=learner_write_observation(request),
+        )
         receipts, record = apply_learner_record_operations(db, subject, payload.operations)
     db.commit()
     return LearnerRecordOperationsResponse(receipts=receipts, record=record)

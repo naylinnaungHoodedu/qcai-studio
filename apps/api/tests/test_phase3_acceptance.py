@@ -1671,8 +1671,9 @@ def test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode(monkeypatch
     finally:
         event.remove(engine, "before_cursor_execute", seen)
     assert fields["two_pass_tutor"] == "shadow" and fields["tutor_pipeline"]["version"] == "two-pass-v1"
-    allowed = ("SELECT gateway_stops.reason FROM gateway_stops", "SELECT learner_adaptation_stops.reason FROM learner_adaptation_stops")
-    assert statements and all(statement.startswith(allowed) for statement in statements), statements
+    # No session read; since Phase 5 the only statements are the shared gateway stop's reads, where the V2 mode is not
+    # off by settings (development): the V2 mode and the gateway state adopt the registry's stop (Phase 5 spec 10.2).
+    assert statements and all(statement.startswith("SELECT gateway_stops.reason FROM gateway_stops") for statement in statements), statements
     assert main_module._ledger_head() == {"chain": "tutor-responses", "status": "unavailable"}  # fails open
 
 

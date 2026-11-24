@@ -1,6 +1,7 @@
 """Phase 8 synthetic privacy lifecycle checks."""
 
 import json
+import inspect
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from threading import Event
@@ -19,6 +20,31 @@ from app.services.guest_sessions import is_guest_revoked
 from app.services.learner_record_identity import bind_subject, find_subject
 from app.services.learner_record_privacy import erase_subject, iter_export, read_consent, set_consent
 from scripts.prove_erasure import _present, _seed, independently_remaining, seed_bound, seed_claimed
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_phase8_erase_stale_guest_rows_keeps_its_two_argument_signature(privacy_engine, monkeypatch, enabled):
+    from app.core.config import get_settings
+    from app.services.erasure import erase_stale_guest_rows, user_keyed_tables
+    from test_erasure_retention import _seed_everything, _surviving
+
+    assert list(inspect.signature(erase_stale_guest_rows).parameters)[:2] == ["db", "cutoff"]
+    assert all(parameter.default is not inspect.Parameter.empty
+               for parameter in list(inspect.signature(erase_stale_guest_rows).parameters.values())[2:])
+    monkeypatch.setattr(get_settings(), "learner_privacy", "on" if enabled else "off")
+    now = datetime.now(UTC)
+    with Session(privacy_engine) as db:
+        stale = _seed_everything(db, f"guest-{uuid4()}", created_at=now - timedelta(days=5))
+        fresh = _seed_everything(db, f"guest-{uuid4()}", created_at=now)
+        db.commit()
+        erased = erase_stale_guest_rows(db, now - timedelta(days=1))
+        assert set(_surviving(db, fresh)) == set(fresh)
+        if enabled:
+            assert "notes" in erased and {"user_accounts", "user_sessions", "learner_subjects"} <= _surviving(db, stale)
+        else:
+            expected = {table.name for table in user_keyed_tables() if "created_at" in table.c}
+            assert expected <= erased.keys()
+            assert not expected & _surviving(db, stale)
 
 
 @pytest.fixture()
@@ -148,6 +174,93 @@ def test_phase8_erasure_refuses_an_in_flight_subject_rebind(privacy_engine):
         assert "learner_records" in receipt["zero_counts"]
 
 
+@pytest.mark.parametrize("legacy_delete", [False, True], ids=["sync-off-self-service", "first-write-legacy-delete"])
+def test_phase8_erasure_serializes_with_unguarded_and_first_writers(privacy_engine, monkeypatch, legacy_delete):
+    from app.core.config import get_settings
+    from app.db_models import QuizAttempt, UserAccount
+    from app.schemas import LearnerRecordOperationInput
+    from app.services.learner_record import apply_learner_record_operations
+    from app.services import learner_record_identity
+    from app.services.learner_record_lock import has_write_guard
+    from app.services.learner_record_sync import begin_server_assessment
+    from app.services.local_accounts import delete_local_account, hash_password
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "learner_identity", "off")
+    monkeypatch.setattr(settings, "learner_privacy", "on")
+    monkeypatch.setattr(settings, "learner_sync", "on" if legacy_delete else "off")
+    owner, password = f"acct-{uuid4().hex}", uuid4().hex
+    attempted, finished = Event(), Event()
+    original_mark = learner_record_identity.mark_erased_subjects
+
+    def mark(*args):
+        attempted.set()
+        return original_mark(*args)
+
+    if legacy_delete:
+        monkeypatch.setattr(learner_record_identity, "mark_erased_subjects", mark)
+
+    def erase():
+        with Session(privacy_engine) as db:
+            if not legacy_delete:
+                attempted.set()
+            try:
+                if legacy_delete:
+                    delete_local_account(db, owner, password)
+                else:
+                    erase_subject(db, "local", owner, settings)
+                    db.commit()
+            finally:
+                finished.set()
+
+    with Session(privacy_engine) as writer:
+        writer.add(UserAccount(user_id=owner, email=f"{uuid4().hex}@example.invalid", password_hash=hash_password(password)))
+        writer.commit()
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            subject = learner_record_identity.write_subject(writer, "local", owner, bind=False, guarded=legacy_delete)
+            assert has_write_guard(writer, owner), "A first writer must create its guard before any learner state."
+            if legacy_delete:
+                begin_server_assessment(writer, subject, "fixture")
+            else:
+                apply_learner_record_operations(writer, subject, [LearnerRecordOperationInput(
+                    operation_id=f"fixture-{uuid4().hex}", replica_id=f"fixture-{uuid4().hex}",
+                    logical_counter=1, operation_type="complete_item", payload={"item_id": "fixture"},
+                )])
+            writer.add(QuizAttempt(user_id=owner, lesson_slug="fixture", score=0, responses={}))
+            writer.flush()
+            pending = pool.submit(erase)
+            try:
+                assert attempted.wait(5)
+                assert not finished.wait(0.25), "Erasure skipped a still-uncommitted first writer."
+            finally:
+                writer.commit()
+            pending.result(timeout=10)
+        assert not independently_remaining(writer, (owner, subject))
+
+
+def test_phase8_erasure_rejects_a_stale_observation_and_accepts_a_fresh_one(privacy_engine):
+    from app.services.learner_record_identity import write_subject
+    from app.services.learner_record_lock import observe_learner_write
+
+    owner = f"fixture-{uuid4().hex}"
+    settings = Settings(_env_file=None)
+    with Session(privacy_engine) as first:
+        observation = observe_learner_write(first, owner)
+        first.commit()
+    with Session(privacy_engine) as erasing:
+        erase_subject(erasing, "auth0", owner, settings)
+        erasing.commit()
+    with Session(privacy_engine) as stale:
+        with pytest.raises(HTTPException, match="unavailable"):
+            write_subject(stale, "auth0", owner, bind=False, guarded=True, observation=observation)
+    with Session(privacy_engine) as returning:
+        same = write_subject(returning, "auth0", owner, bind=False, guarded=True,
+                             observation=observe_learner_write(returning, owner))
+        assert same == owner
+        returning.commit()
+        assert not independently_remaining(returning, (owner,))
+
+
 @pytest.mark.parametrize("provider", ["local", "guest", "auth0", "demo"])
 @pytest.mark.parametrize("without_gateway", [False, True])
 def test_phase8_erasure_receipt_scope_matches_the_principal_type(privacy_engine, provider, without_gateway, monkeypatch):
@@ -231,3 +344,24 @@ def test_plan_f_linking_and_erasure_audits_expire_after_the_security_retention_p
             db.commit()
             run_retention_cleanup(db, now=now)
             assert db.get(model, stale) is None and db.get(model, fresh) is not None
+
+
+def test_plan_f_write_guards_expire_by_their_retention_rule(privacy_engine, monkeypatch):
+    from app.core.config import get_settings
+    from app.db_models import LearnerWriteGuard
+    from app.services.learner_record_lock import GUARD_RETENTION_DAYS
+    from app.services.retention import run_retention_cleanup
+
+    monkeypatch.setattr(get_settings(), "learner_privacy", "on")
+    now = datetime.now(UTC)
+    with Session(privacy_engine) as db:
+        for erased in (False, True):
+            for stale in (False, True):
+                db.add(LearnerWriteGuard(
+                    key_digest=f"fixture-{erased}-{stale}", erased=erased,
+                    erasure_epoch=uuid4().hex if erased else None,
+                    last_used_at=now - timedelta(days=GUARD_RETENTION_DAYS + (1 if stale else -1)),
+                ))
+        db.commit()
+        assert run_retention_cleanup(db, now=now)["learner_write_guards"] == 2
+        assert set(db.scalars(select(LearnerWriteGuard.key_digest))) == {"fixture-False-False", "fixture-True-False"}

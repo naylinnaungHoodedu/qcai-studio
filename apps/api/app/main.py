@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from slowapi.errors import RateLimitExceeded
 from slowapi.extension import _rate_limit_exceeded_handler
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.exc import DataError, DBAPIError, OperationalError
 
 from app.api.routes import admin, analytics, arena, assets, assistant, auth, builder, content, insights, learner_record, ledger, projects, qa, search, spans, support, tutor, v3
@@ -636,23 +636,15 @@ def _build_fields() -> dict:
 
 def _phase8_fields(package) -> dict:
     from app.core.phase8_settings import PHASE8_FLAGS
-    from app.db_models import LearnerAdaptationStop
-    from app.services.learner_record_metrics import snapshot
+    from app.services.learner_record_metrics import planner_stop_observed, snapshot
 
     phase8 = {"phase8_exit_passed": package.raw.get("flag_policy", {}).get("phase8_exit_passed") is True}
     for key in PHASE8_FLAGS:
         phase8[f"{key}_setting"] = phase8[key] = getattr(settings, key)
-    if phase8["learner_planner"] != "off":
-        try:
-            with engine.connect() as connection:
-                stopped = connection.scalar(select(LearnerAdaptationStop.reason).where(
-                    LearnerAdaptationStop.control_id == "planner"
-                ))
-            if stopped is not None:
-                phase8["learner_planner"] = "off"
-        except DBAPIError:
-            phase8["learner_planner"] = "off"
-    phase8["learner_slis"] = snapshot() if settings.environment.lower() == "development" else {}
+    development = settings.environment.lower() == "development"
+    phase8["learner_slis"] = snapshot() if development else {}
+    if development:
+        phase8["learner_slis"]["planner_stop_observed"] = planner_stop_observed()
     return phase8
 
 

@@ -3,13 +3,16 @@
 from types import SimpleNamespace
 from copy import deepcopy
 import json
+from pathlib import Path
+import re
+from shutil import copytree
 
 import pytest
 from pydantic import ValidationError
 
 from app.core import config_package
 from app.core.config import Settings
-from app.core.phase8_settings import PHASE8_FLAGS
+from app.core.phase8_settings import CLIENT_CAS_RETRIES, PHASE8_FLAGS, learner_engineering_policy
 
 
 def test_settings_phase8_defaults_and_refusals():
@@ -89,6 +92,30 @@ def test_phase8_package_v6_preserves_v5_contracts_and_hash_chain():
         "completion_threshold": COMPLETION_THRESHOLD,
     }
     assert after["learner"]["planner"]["shadow_budget_ms"] == PLANNER_BUDGET_MS
+    from app.services.retention import SECURITY_EVENT_RETENTION_DAYS
+
+    for name, block in learner_engineering_policy().items():
+        assert after["learner"][name] == block
+    assert after["learner"]["privacy"]["audit_retention_days"] == SECURITY_EVENT_RETENTION_DAYS
+    source = Path(__file__).resolve().parents[3] / "apps/frontend/src/lib/learner-record-sync.ts"
+    match = re.search(r"^const CLIENT_CAS_RETRIES = (\d+);", source.read_text(encoding="utf-8"), re.M)
+    assert match and int(match[1]) == CLIENT_CAS_RETRIES
+
+
+@pytest.mark.parametrize(("section", "field", "value"), [
+    ("assessment", "attempt_limit", 15), ("planner", "bands", [0.2, 0.8]),
+    ("sync", "client_retries", 3), ("privacy", "guard_retention_days", 100),
+])
+def test_phase8_package_refuses_rehashed_engineering_drift(tmp_path, section, field, value):
+    source = config_package.DEFAULT_PACKAGE_PATH
+    raw = json.loads(source.read_text(encoding="utf-8"))
+    raw["learner"][section][field] = value
+    target = tmp_path / source.name
+    target.write_text(json.dumps(raw), encoding="utf-8")
+    target.with_name(f"{target.name}.sha256").write_text(config_package.canonical_sha256(raw) + "\n", encoding="utf-8")
+    copytree(source.parent / "schemas", tmp_path / "schemas")
+    with pytest.raises(config_package.ConfigPackageError, match=f"learner\\.{section} engineering policy"):
+        config_package.load_config_package(target, governed=True)
 
 
 @pytest.mark.parametrize("case", ["invalid-exit", "missing-evidence", "default-drift", "open-consent-grant"])

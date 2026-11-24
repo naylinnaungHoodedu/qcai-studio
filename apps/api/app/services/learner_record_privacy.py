@@ -17,7 +17,7 @@ from app.schemas import LearnerConsentRecord
 from app.services.erasure import USER_KEY_COLUMNS, erase_user, erasure_verification_conditions, learner_table_conditions
 from app.services.guest_sessions import guest_credential_digest
 from app.services.learner_record_identity import find_subject, mark_erased_subjects, write_subject
-from app.services.learner_record_lock import insert_for
+from app.services.learner_record_lock import WriteObservation, insert_for
 from app.services.retention import retention_classes
 
 
@@ -49,12 +49,13 @@ def read_consent(db: Session, provider: str, identifier: str) -> dict[str, bool]
 
 def set_consent(
     db: Session, provider: str, identifier: str, kind: str, granted: bool, settings: Settings,
+    *, observation: WriteObservation | None = None,
 ) -> dict[str, bool]:
     if kind not in CONSENT_CLASSES:
         raise HTTPException(422, "Unknown consent class.")
     if granted and (kind == "research" or settings.environment.lower() != "development"):
         raise HTTPException(409, "Consent class is unavailable under D-27.")
-    subject = write_subject(db, provider, identifier, bind=False, guarded=True)
+    subject = write_subject(db, provider, identifier, bind=False, guarded=True, observation=observation)
     record = LearnerConsentRecord(
         user_id=subject, consent_class=kind, consent_version=CONSENT_VERSION, granted=granted,
         updated_at=datetime.now(UTC), source="self-service",
@@ -129,7 +130,7 @@ def erase_subject(db: Session, provider: str, identifier: str, settings: Setting
             "external_processing": "historical egress unverified; external processors are outside this erasure",
             "identity_provider": "account retained at issuer (DI-306)" if provider == "auth0" else "no external identity provider",
             "audit_retention": "linking and erasure digests and counts are retained for 365 days",
-            "credential_protection": "revocation and erased-principal guards remain to prevent recreation",
+            "credential_protection": "guest revocation is retained. Write guards prevent stale writes and expire after inactivity",
             "backups": "deleted rows may remain through the backup window",
             "support_requests": "independently submitted records follow their 540-day support retention rule (P2-12-D-05)",
         },

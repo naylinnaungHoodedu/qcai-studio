@@ -1539,7 +1539,7 @@ def test_phase5_docs_the_runbooks_and_registers_state_the_gateway_s_operations_e
         assert "openai-embeddings" in path.read_text(encoding="utf-8"), path.name
     # The Phase 3 spec's test 31 and the Phase 4 spec's loader line state the current code; the cache keeps no learner text.
     phase4 = (REPO_ROOT / "docs" / "architecture" / "phase4-implementation-spec.md").read_text(encoding="utf-8")
-    assert "`_build_fields()` makes no DB call." not in phase3 and "only the shared gateway and planner stop reads" in phase3
+    assert "`_build_fields()` makes no DB call." not in phase3 and "its only statements are the shared gateway stop's reads" in phase3
     assert "`schema_version in (1, 2, 3)`, and 4 since Phase 5 and 5 since Phase 6" in phase4
     cache_doc = " ".join((API_ROOT / "app" / "services" / "v2_panel" / "cache.py").read_text(encoding="utf-8").split('"""', 2)[1].split())
     assert "or any text: keys are hashes" not in cache_doc and "whose only text is corpus text" in cache_doc

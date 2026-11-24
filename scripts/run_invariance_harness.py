@@ -19,6 +19,7 @@ from scripts.run_v2_fixtures import Environment, _gateway, _pipeline, run_inputs
 from scripts.replay_tutor_plans import FIXTURE, REGRESSIONS, _commit, fixture_items, regression_items
 
 from app.core.config_package import canonical_sha256, get_config_package
+from app.core.phase8_settings import LEVELS
 from app.gateway.contracts import AlignmentRequest
 from app.services.learner_record_metrics import record_signal
 from app.services.learner_record_planner import plan_presentation
@@ -28,7 +29,6 @@ from app.services.tutor_pipeline.resolve import LearnerTurn, resolve_turns
 from app.services.v2_panel.cache import ProcessEvidentialCache
 
 
-LEVELS = (0.1, 0.5, 0.9)
 LEARNER_FIELDS = frozenset(LEARNER_STATE_FIELDS) | {"expected_record_version", "consent_class", "replica_id"}
 PLANNER_VALUE = re.compile(r"(?<![\w.])(?:concise|stepwise|socratic|0\.[159])(?![\w.])", re.IGNORECASE)
 

@@ -9,6 +9,7 @@ from app.core.config import Settings, get_settings
 from app.core.db import get_db
 from app.core.guest_tokens import GUEST_TOKEN_COOKIE, verify_guest_token
 from app.services.guest_sessions import is_guest_revoked
+from app.services.learner_record_lock import WriteObservation, observe_learner_write
 from app.services.local_accounts import AUTH_SESSION_COOKIE_NAME, resolve_local_account_from_session
 from app.services.security_log import record_security_event, route_template
 
@@ -19,6 +20,17 @@ class AuthUser:
     email: str | None
     role: str
     provider: str = "guest"
+
+
+_LEARNER_MUTATIONS = {
+    ("POST", "/content/quiz-attempts"), ("POST", "/learner-record/replicas"),
+    ("POST", "/learner-record/operations"), ("PUT", "/auth/learner-consent"),
+    ("POST", "/auth/guest-claim"), ("POST", "/analytics/events"),
+}
+
+
+def learner_write_observation(request: Request) -> WriteObservation | None:
+    return getattr(request.state, "learner_write_observation", None)
 
 
 def _decode_auth0_token(token: str, settings: Settings) -> AuthUser:
@@ -70,6 +82,8 @@ def get_current_user(
     )
     # The rate limiter keys on this validated principal, never on a client header (task 1.6).
     request.state.principal = user
+    if user.provider in {"auth0", "demo"} and (request.method, route_template(request)) in _LEARNER_MUTATIONS:
+        request.state.learner_write_observation = observe_learner_write(db, user.user_id)
     return user
 
 

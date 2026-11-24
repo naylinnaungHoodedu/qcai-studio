@@ -53,8 +53,9 @@ def test_phase8_planner_uses_static_order_without_consent_or_valid_mastery(allow
     assert (result.plan_id, result.lesson_order) == ("concise", ("intro", "next"))
 
 
-@pytest.mark.parametrize("condition", ["fault", "slow", "sql", "off", "no-consent"])
+@pytest.mark.parametrize("condition", ["fault", "slow", "sql", "off", "no-consent", "wall-clock-delay"])
 def test_plan_j_planner_down_timeout_or_flag_off_serves_the_static_order_and_logs_degraded(monkeypatch, caplog, condition):
+    from time import sleep
     from types import SimpleNamespace
     from uuid import uuid4
 
@@ -80,17 +81,17 @@ def test_plan_j_planner_down_timeout_or_flag_off_serves_the_static_order_and_log
             raise RuntimeError("fixture fault")
         if condition == "sql":
             db.execute(text("SELECT 1 FROM phase8_missing_fixture_table"))
+        if condition == "wall-clock-delay":
+            sleep(0.2)
         return original(db, *args)
 
     monkeypatch.setattr(learner_record_shadow, "shadow_presentation", planner)
     if condition == "slow":
         clock = iter([0, 1])
-        import time
-        with monkeypatch.context() as timer:
-            timer.setattr(time, "monotonic", lambda: next(clock, 1))
-            _assert_shadow(model, package, uuid4, SessionLocal, AuthUser)
+        monkeypatch.setattr(learner_record_shadow, "planner_clock", lambda: next(clock, 1))
     else:
-        _assert_shadow(model, package, uuid4, SessionLocal, AuthUser)
+        monkeypatch.setattr(learner_record_shadow, "planner_clock", lambda: 0.0)
+    _assert_shadow(model, package, uuid4, SessionLocal, AuthUser)
     assert seen == ([] if condition == "off" else [condition])
     degraded = [getattr(row, FIELDS) for row in caplog.records if
                 getattr(row, FIELDS, {}).get("event") == "learner.planner.degraded"]
@@ -142,3 +143,48 @@ def test_phase8_shadow_planner_failure_leaves_the_http_answer_and_job_intact(mon
     }
     default = get_config_package(settings).tutor_pipeline.default_plan
     assert [job.presentation.plan_id for job in jobs] == [default, default]
+
+
+def test_plan_d_task_3_the_planner_ignores_client_and_self_rated_mastery(monkeypatch, fresh_database_url):
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from fastapi import Request
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app.api.routes import content
+    from app.core.auth import AuthUser
+    from app.core.config import Settings, get_settings
+    from app.db_models import Base, LearnerAssessmentFact, LearnerProfile, LearnerRecord
+    from app.schemas import QuizAttemptCreate
+    from app.services.learner_record_privacy import set_consent
+    from app.services.learner_record_shadow import shadow_presentation
+
+    principal = f"fixture-{uuid4().hex}"
+    order = ("first", "second")
+    settings = get_settings()
+    monkeypatch.setattr(settings, "learner_identity", "off")
+    monkeypatch.setattr(settings, "learner_sync", "on")
+    store = SimpleNamespace(lessons={"first": object()}, quiz_keys=SimpleNamespace(for_lesson=lambda _: list(range(10))))
+    monkeypatch.setattr(content, "get_course_store", lambda: store)
+    monkeypatch.setattr(content, "score_attempt", lambda *_: (1, {}, []))
+    engine = create_engine(fresh_database_url)
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as db:
+            set_consent(db, "auth0", principal, "adaptation", True, Settings(_env_file=None))
+            db.add(LearnerRecord(user_id=principal, mastery={"lesson:first": 0.9}))
+            db.add(LearnerProfile(user_id=principal, self_ratings={"first": 0.9}))
+            db.commit()
+            plan = shadow_presentation(db, "auth0", principal, order, "concise")
+            assert (plan.plan_id, plan.lesson_order) == ("concise", order)
+            assert db.query(LearnerAssessmentFact).count() == 0
+            attempt = content.record_quiz_attempt(
+                Request({"type": "http", "method": "POST", "path": "/content/quiz-attempts"}),
+                QuizAttemptCreate(lesson_slug="first", responses={}), db, AuthUser(principal, None, "learner", "auth0"),
+            )
+            assert db.get(LearnerAssessmentFact, attempt.attempt_id).mastery == 0.1
+            assert shadow_presentation(db, "auth0", principal, order, "concise").plan_id == "stepwise"
+    finally:
+        engine.dispose()

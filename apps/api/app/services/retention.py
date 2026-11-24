@@ -5,12 +5,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db_models import (
-    GuestLegacyUpgrade, LearnerClaimAudit, LearnerErasureAudit, LearnerGuestRevocation, LearnerSubject,
+    GuestLegacyUpgrade, LearnerClaimAudit, LearnerErasureAudit, LearnerGuestRevocation, LearnerWriteGuard,
     PublicWebVital, RateLimitCounter, SecurityEvent, SupportRequest, UserSession,
 )
-from app.services.erasure import RETENTION_EXEMPT_TABLES, erase_stale_guest_rows
+from app.services.erasure import erase_stale_guest_rows
 from app.services.guest_sessions import guest_credential_digest
-from app.services.learner_record_lock import insert_for
+from app.services.learner_record_lock import GUARD_RETENTION_DAYS, insert_for
 
 
 PUBLIC_WEB_VITAL_RETENTION_DAYS = 30
@@ -64,15 +64,7 @@ def run_retention_cleanup(db: Session, now: datetime | None = None) -> dict[str,
     # Guest study rows in every user-keyed table, with the rows that depend on them.
     cutoff = now - timedelta(days=GUEST_STUDY_RETENTION_DAYS)
     privacy_on = get_settings().learner_privacy == "on"
-    bound_guests = select(LearnerSubject.user_id).where(LearnerSubject.provider == "guest") if privacy_on else None
-    age_columns = {
-        name: "updated_at" if kind == "guest-updated/durable-until-erasure" else "created_at"
-        for name, kind in retention_classes().items()
-        if name not in RETENTION_EXEMPT_TABLES and (
-            kind == "guest-created/durable-until-erasure" or privacy_on and kind == "guest-updated/durable-until-erasure"
-        )
-    }
-    for table, deleted in erase_stale_guest_rows(db, cutoff, age_columns=age_columns, bound_guest_subjects=bound_guests).items():
+    for table, deleted in erase_stale_guest_rows(db, cutoff).items():
         record(table, deleted)
     if privacy_on and retention_classes()["guest_legacy_upgrades"] == "guest-upgrade-age":
         # The digest preserves the one-shot property when the raw upgrade row expires.
@@ -88,6 +80,10 @@ def run_retention_cleanup(db: Session, now: datetime | None = None) -> dict[str,
         audit_cutoff = now - timedelta(days=SECURITY_EVENT_RETENTION_DAYS)
         for model in (LearnerClaimAudit, LearnerErasureAudit):
             record(model.__tablename__, db.execute(delete(model).where(model.created_at < audit_cutoff)).rowcount)
+        guard_cutoff = now - timedelta(days=GUARD_RETENTION_DAYS)
+        record("learner_write_guards", db.execute(delete(LearnerWriteGuard).where(
+            LearnerWriteGuard.last_used_at < guard_cutoff,
+        )).rowcount)
     record(
         "public_web_vitals",
         db.execute(

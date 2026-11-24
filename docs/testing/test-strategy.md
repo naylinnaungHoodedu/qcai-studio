@@ -235,19 +235,17 @@ Tests are in `apps/api/tests/test_phase6_acceptance.py` unless named otherwise; 
 
 **Exit gate.** The Phase 6 exit needs AC-6-1 to AC-6-7 green, one staging audit cycle and D-25 filed (plan Phase 6 P: "AC-6-1 to AC-6-7 green; one staging audit cycle; [Decision D-25] filed."). The AC tests are done in code and passed in branch push run 45081528107 at `da00224` (every job green; release-artifacts skipped by design); each later commit needs its own run, and the cited CI run must be on `main` after the merge (DI-89). The staging audit cycle needs a deployment and a staffed reviewer pool (DI-92, DI-91), D-25 is an owner decision (DI-90), and holds H4 and H10 stay held (DI-91, DI-94). `phase6_exit_passed` stays false in the package. The exit is not passed.
 
-**Exit gate.** The Phase 5 exit needs AC-5-1 to AC-5-11 green in a cited CI run, D-07 closed and ledger verdicts for 100% of test responses (F-1) (plan Phase 5 P). The AC tests and F-1 over the fixture responses are done in code. The branch's push run 44998840311 (at `3498b52`) passed every job; each later commit needs its own run, and the cited run must be on `main` (DI-74); D-07 is an owner decision (DI-69); holds H6, H8, H9 and H14 stay held. `phase5_exit_passed` stays false in the package. The exit is not passed.
-
 ## Phase 8 acceptance map (plan Phase 8 K)
 
 Phase 8 uses synthetic principals, local databases, and public engineering fixtures.
 
 | AC | Tests |
 |---|---|
-| AC-8-1 | `test_phase8_sync_parallel_replicas_conflict_and_retry_without_losing_updates`, `test_ac_8_1_concurrent_trusted_updates_preserve_each_mastery_value` |
+| AC-8-1 | `test_learner_record_merges_divergent_replicas_without_losing_completion`, `test_phase8_sync_parallel_replicas_conflict_and_retry_without_losing_updates`, `test_ac_8_1_concurrent_trusted_updates_preserve_each_mastery_value` |
 | AC-8-2 | `test_phase8_sync_duplicate_receipts_and_monotonic_clock`, `test_phase8_sync_rejects_other_subjects_and_server_operations` |
 | AC-8-3 | `test_ac_8_3_three_mastery_levels_yield_identical_claim_set_cited_spans_and_decision` |
 | AC-8-4 | `test_ac_8_4_no_evidential_or_verifier_module_imports_a_phase8_module`, `test_ac_8_4_evidential_prompts_and_the_abstention_configuration_hold_zero_learner_state_fields`, `test_ac_8_4_a_learner_value_in_an_evidential_payload_is_detected` |
-| AC-8-5 | `test_plan_f_the_committed_erasure_proof_matches_a_fresh_run`, `test_phase8_export_and_erasure_cover_bound_subject_and_legacy_rows`, `test_phase8_claimed_guest_and_account_erasure_leave_no_keyed_rows`, `test_phase8_erasure_refuses_an_in_flight_subject_rebind` |
+| AC-8-5 | `test_plan_f_the_committed_erasure_proof_matches_a_fresh_run`, `test_phase8_export_and_erasure_cover_bound_subject_and_legacy_rows`, `test_phase8_claimed_guest_and_account_erasure_leave_no_keyed_rows`, `test_phase8_erasure_refuses_an_in_flight_subject_rebind`, `test_phase8_erasure_serializes_with_unguarded_and_first_writers`, `test_phase8_a_principal_erased_and_signing_in_again_gets_a_fresh_empty_record` |
 | AC-8-6 | `test_a_client_sent_score_is_ignored`, `test_durable_mastery_follows_the_server_score`, `test_phase8_sync_rejects_other_subjects_and_server_operations`, `test_phase8_privacy_http_consent_export_erasure_and_assessment` |
 | AC-8-7 | `test_ac_8_7_the_privacy_inventory_equals_the_cookies_and_storage_keys_in_code` |
 
@@ -277,9 +275,9 @@ Phase 8 uses synthetic principals, local databases, and public engineering fixtu
 | `apps/frontend/tests/privacy-inventory.integration.test.ts` | The two inventory assertions explicitly identify AC-8-7 and continue to compare exactly the discovered keys and cookie names. |
 | `test_config_package.py` | Repoints v5's preserved contract checks and the shipped version and unsupported-schema checks across the v6 package chain. |
 | `test_configuration_overrides.py` | Adds one case for each Phase 8 override key and preserves the production-default check. |
-| `test_phase3_acceptance.py` | Traverses the Phase 8 migration before earlier downgrades and verifies that public readiness reads only the narrow stop controls. |
+| `test_phase3_acceptance.py` | Traverses the Phase 8 migration before earlier downgrades. Readiness retains the original Phase 3 SQL assertion. |
 | `test_phase4_acceptance.py` | Repoints the shipped-version and loader-tuple pins while preserving the fixture, schema, and code-text checks. |
-| `test_phase5_acceptance.py` | Reconciles the readiness SQL documentation with the separate Phase 8 stop read. |
+| `test_phase5_acceptance.py` | Round 2 restores the original gateway-stop documentation assertion. The protected file matches the Phase 6 baseline. |
 | `test_phase6_acceptance.py` | Preserves the V3 read and downgrade behavior while testing the shipped package and the successor revision. |
 | `test_response_ledger_migrations.py` | Verifies absolute upgrade and downgrade targets across the Phase 8 head while retaining the existing ledger refusal checks. |
 

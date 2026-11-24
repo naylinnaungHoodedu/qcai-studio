@@ -2,13 +2,14 @@ from datetime import UTC, datetime
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.auth import AuthUser, get_current_user
+from app.core.auth import AuthUser, get_current_user, learner_write_observation
 from app.core.config import get_settings
 from app.core.db import get_db
+from app.core.phase8_settings import COMPLETION_THRESHOLD
 from app.core.structured_logging import FIELDS
 from app.db_models import LearnerAssessmentFact, Note, QuizAttempt
 from app.schemas import (
@@ -152,6 +153,7 @@ def create_note(
 
 @router.post("/quiz-attempts", response_model=QuizAttemptResult)
 def record_quiz_attempt(
+    request: Request,
     payload: QuizAttemptCreate,
     db: Session = Depends(get_db),
     user: AuthUser = Depends(get_current_user),
@@ -169,6 +171,7 @@ def record_quiz_attempt(
     subject = write_subject(
         db, user.provider, user.user_id,
         bind=durable and get_settings().learner_identity == "on", guarded=sync_enabled,
+        observation=learner_write_observation(request),
     )
     server_clock = (
         begin_server_assessment(db, subject, payload.lesson_slug, attempt_owner=user.user_id)
@@ -209,7 +212,7 @@ def record_quiz_attempt(
                 payload={"item_id": f"lesson:{payload.lesson_slug}", "delta": 1},
             ),
         ]
-        if mastery >= 0.7:
+        if mastery >= COMPLETION_THRESHOLD:
             operations.append(
                 LearnerRecordOperationInput(
                     operation_id=f"{operation_prefix}-{record.id}-complete",

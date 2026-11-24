@@ -387,6 +387,8 @@ class LearnerWriteGuard(Base):
 
     key_digest: Mapped[str] = mapped_column(String(64), primary_key=True)
     erased: Mapped[bool] = mapped_column(Boolean, default=False)
+    erasure_epoch: Mapped[str | None] = mapped_column(String(32))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class LearnerSubject(Base):

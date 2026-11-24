@@ -1,13 +1,15 @@
 """Phase 8 authoring, ownership, and test traceability guards."""
 
 import ast
+import hashlib
 from pathlib import Path
 import re
 
 from app import db_models
 from app.core.authorization import ROUTE_POLICIES
+from app.core.config import Settings
 from app.core.phase8_settings import PHASE8_FLAGS
-from app.services.erasure import RETENTION_EXEMPT_TABLES, user_keyed_tables
+from app.services.erasure import RETENTION_EXEMPT_TABLES, guest_retention_age_columns, user_keyed_tables
 from app.services.learner_record_planner import ADVANCED_THRESHOLD, FOUNDATION_THRESHOLD
 from app.services.learner_record_privacy import CONSENT_CLASSES, CONSENT_VERSION
 from app.services.learner_record_shadow import COMPLETION_THRESHOLD, PLANNER_BUDGET_MS
@@ -32,6 +34,77 @@ PHASE8_EXTENDED_MODULES = {
     "test_config_package.py", "test_configuration_overrides.py", "test_phase3_acceptance.py",
     "test_phase4_acceptance.py", "test_phase5_acceptance.py", "test_phase6_acceptance.py",
     "test_response_ledger_migrations.py",
+}
+PHASE8_CHANGED_TESTS = {
+    "test_api.py": (
+        "test_progress_endpoint_aggregates_activity",
+    ),
+    "test_authorization.py": (
+        "test_a_refused_caller_is_refused",
+        "_write_everything",
+        "test_no_caller_scoped_read_returns_another_learners_data",
+    ),
+    "test_config_package.py": (
+        "test_the_shipped_package_validates_and_matches_its_hash",
+        "test_v4_structural_errors_always_stop_the_load",
+        "test_v4_stays_readable_for_one_release",
+        "test_v5_keeps_every_v4_value_but_the_listed_changes",
+        "test_v5_structural_errors_always_stop_the_load",
+    ),
+    "test_configuration_overrides.py": (
+        "write_package",
+        "test_c2_each_refused_relaxation_is_refused_and_still_recorded_under_its_own_key",
+    ),
+    "test_cs595_increment.py": (
+        "test_learner_record_api_requires_a_durable_session_and_accepts_idempotent_operations",
+    ),
+    "test_erasure_retention.py": (
+        "_seed_everything",
+        "test_retention_removes_stale_guest_rows_in_every_table_and_keeps_the_rest",
+    ),
+    "test_malformed_input.py": (
+        "_learner_record_write",
+        "test_a_learner_record_value_that_cannot_be_stored_is_refused_and_the_record_still_reads",
+        "test_non_finite_preference_follows_the_flagged_backend_contract",
+    ),
+    "test_phase3_acceptance.py": (
+        "test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_empty_ledger",
+        "test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode",
+    ),
+    "test_phase4_acceptance.py": (
+        "test_phase4_docs_the_phase3_spec_states_what_phase4_changed",
+        "test_phase4_docs_the_code_texts_name_the_shipped_package",
+    ),
+    "test_phase5_acceptance.py": (
+        "test_phase5_docs_the_runbooks_and_registers_state_the_gateway_s_operations_exactly",
+    ),
+    "test_phase6_acceptance.py": (
+        "test_plan_g_the_phase_6_revision_is_additive_reversible_and_keeps_its_rows",
+        "test_plan_i_ready_reports_package_v5_and_the_v3_fields_and_no_count",
+        "test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_head",
+    ),
+    "test_response_ledger_migrations.py": (
+        "test_e10_the_absolute_downgrade_target_is_safe_in_every_stamp_state_the_runbook_allows",
+        "test_f14_the_forward_alembic_step_runs_only_on_a_phase2_stamp",
+    ),
+    "apps/frontend/tests/privacy-inventory.integration.test.ts": (
+        "AC-8-7: the privacy page lists exactly the cookies the code sets or reads",
+        "AC-8-7: the privacy page lists exactly the browser-storage keys the code uses",
+    ),
+}
+PLAN_QUOTE_LINES = {
+    "L1573": "2) Server-issued replica clocks, monotonic counters, compare-and-set on record_version [Decision D-26].",
+    "L1574": "3) Mastery from server-scored assessments [Risk R-42]; planner (Loop 2) [Evidence E-74].",
+    "L1577": "5) Consent record, scheduled retention, export, erasure across all providers with receipt [Risk R-08].",
+    "L1606": "Flags for planner and sync. Stop: any harness violation blocks adaptation (never evidence).",
+    "L1924": "| H13  | Consent [Decision D-27]       | P8 start                       | Consent classes        |",
+    "L3017": "- D-27 OPEN DECISION: consent classes before Phase 8 [Risk R-09]. PO, PI.",
+    "L2987": "D-08 |IRB and OSF timing (PI)             |(a) before research use; (b) fixtures     |No Phase 10 [Assumption A-10]",
+    "L2988": "     |                                    |first                                     |",
+}
+RETIRED_PHASE8_TEST_NAMES = {
+    "test_plan_j_a_forged_or_revoked_guest_token_cannot_claim",
+    "test_phase8_assessment_quota_and_server_clock_are_subject_scoped",
 }
 API_EXPORTS_AT_PHASE5 = """
     getApiBaseUrl getClientApiBaseUrl fetchCourseOverview fetchCourseProgress fetchModule
@@ -77,6 +150,15 @@ def test_phase8_route_policies_form_one_block_after_the_learner_record_rows():
     assert "export async function issueLearnerRecordReplica" in (lib / "learner-record-api.ts").read_text(encoding="utf-8")
 
 
+def test_phase8_keeps_protected_acceptance_tests_at_the_phase6_baseline():
+    # LF-normalized source from 31343c8, excluding only the permitted Phase 3 migration function.
+    phase3 = (TESTS / "test_phase3_acceptance.py").read_text(encoding="utf-8")
+    phase3 = re.sub(r"(?ms)^def test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_empty_ledger\(.*?(?=^def )", "", phase3)
+    phase5 = (TESTS / "test_phase5_acceptance.py").read_text(encoding="utf-8")
+    assert hashlib.sha256(phase3.encode()).hexdigest() == "e6f34990290d48b604b18314bcbcbd5f258a1b447870760229aaff98a22b162f"
+    assert hashlib.sha256(phase5.encode()).hexdigest() == "d640e9e5abbf5ef2ef8dfda0cd1efc3d08b565cb93373ccfb0ae78939351c984"
+
+
 def test_phase8_docs_pd_204_states_the_engineering_constants_in_code():
     row = _row("PD-204")
     for value in (
@@ -90,6 +172,17 @@ def test_phase8_docs_pd_204_states_the_engineering_constants_in_code():
     for index in range(200, 206):
         decision = _row(f"PD-{index}")
         assert re.search(r'L\d+: "', decision) and "future" not in decision
+    quota = next(line for line in _section(4).splitlines() if "quota counts" in line)
+    assert "authenticated principal's attempts" in quota and "subject's attempts" not in _section(4)
+
+
+def test_phase8_docs_pd_quotes_match_the_plan_lines_verbatim():
+    seen = {}
+    for index in range(200, 206):
+        for label, quote in re.findall(r'(L\d+): "([^"]+)"', _row(f"PD-{index}")):
+            assert quote.replace(r"\|", "|") == PLAN_QUOTE_LINES[label], (index, label)
+            seen[label] = quote
+    assert set(seen) == set(PLAN_QUOTE_LINES)
 
 
 def test_phase8_docs_section_1_records_the_h13_deviation():
@@ -107,11 +200,20 @@ def test_phase8_docs_di_300_names_its_open_items_and_blockers():
     assert "P2-12-D-05" in _row("DI-316") and "| Closed |" in _row("DI-316")
 
 
+def test_phase8_docs_stopped_rows_record_an_open_owner_question():
+    for line in _section(16).splitlines():
+        if line.startswith("| DI-") and line.rstrip().endswith("| Stopped |"):
+            assert "Owner question (open)" in line and "?" in line
+    handback = _row("DI-318")
+    assert all(term in handback for term in ("owner answered", "main track", "| Handed over |", "rule 12"))
+
+
 def test_phase8_docs_spec_headings_shapes_and_plan_quotes():
     spec = SPEC.read_text(encoding="utf-8")
     assert [int(name) for name in re.findall(r"^## (\d+)\.", spec, re.M)] == list(range(19))
     assert _section(18).count("| Round |") == 1 and not re.search(r"^#+ ", _section(18), re.M)
     assert _section(18).count("| Review 1 |") == 1
+    assert _section(18).count("| Review 2 |") == 1
     for model in PHASE8_MODELS:
         line = next(line for line in _section(3).splitlines() if line.startswith(f"| `{model}` |"))
         listed = set(re.findall(r"`([a-z][a-z_]+)`", line.split("|")[2]))
@@ -122,6 +224,9 @@ def test_phase8_docs_spec_headings_shapes_and_plan_quotes():
     for number in range(300, 319):
         assert _row(f"DI-{number}")
     retention = (ROOT / "infra" / "cloudrun" / "retention-job.md").read_text(encoding="utf-8").split("\n## Phase 8\n")[1]
+    assert all(name in retention for name in (
+        "learner_claim_audits", "learner_erasure_audits", "learner_write_guards", "last_used_at", "updated_at", "tombstone",
+    ))
     for flag in PHASE8_FLAGS:
         assert flag.upper() in retention and flag.upper() in _section(6)
         assert flag.upper() in (ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8").split("\n## Phase 8: ", 1)[1]
@@ -144,6 +249,21 @@ def test_phase8_docs_the_test_strategy_maps_every_test_module_the_phase_added():
         assert set(re.findall(r"`(test_\w+)`", text)) <= names
     ac_lines = [line for line in phase.splitlines() if line.startswith("| AC-8-")]
     assert len(ac_lines) == 7 and all(re.search(r"`test_\w+`", line) for line in ac_lines)
+    def mapped(text):
+        return {match[1]: set(re.findall(r"`(test_\w+)`", match[2]))
+                for match in re.finditer(r"^\| (AC-8-[1-7]) \| (.+) \|$", text, re.M)}
+    coverage = mapped(_section(13).split("### 13.2 ", 1)[0])
+    assert coverage == mapped(phase)
+    assert "test_learner_record_merges_divergent_replicas_without_losing_completion" in coverage["AC-8-1"]
+    assert not any(name in SPEC.read_text(encoding="utf-8") for name in RETIRED_PHASE8_TEST_NAMES)
+
+
+def test_phase8_docs_the_strategy_has_one_exit_gate_per_phase_section():
+    sections = re.split(r"^## Phase (\d+) acceptance map[^\n]*\n", STRATEGY.read_text(encoding="utf-8"), flags=re.M)
+    for number, body in zip(sections[1::2], sections[2::2]):
+        exits = [line for line in body.splitlines() if line.startswith("**Exit gate.**")]
+        assert len(exits) == 1, number
+        assert f"Phase {number}" in exits[0] or f"phase{number}_exit_passed" in exits[0], number
 
 
 def test_phase8_docs_the_authoritative_text_describes_current_behavior():
@@ -157,10 +277,24 @@ def test_phase8_docs_the_authoritative_text_describes_current_behavior():
         ROOT / "docs" / "security" / "consent-schema.md",
         ROOT / "docs" / "security" / "identity-linking.md",
     ]
-    assert not NARRATIVE.search(spec)
-    assert not NARRATIVE.search(STRATEGY.read_text(encoding="utf-8").split("## Phase 8 acceptance map", 1)[1])
-    for path in paths:
-        assert not NARRATIVE.search(path.read_text(encoding="utf-8")), path.name
+    phase3 = (ROOT / "docs" / "architecture" / "phase3-implementation-spec.md").read_text(encoding="utf-8")
+    texts = {
+        "Phase 8 spec": spec,
+        "Phase 3 spec": phase3.split("### 18.4 Review history", 1)[0],
+        "test strategy": STRATEGY.read_text(encoding="utf-8").split("## Phase 3 acceptance map", 1)[1],
+    }
+    for name in ("deployment.md", "observability.md", "retention-job.md"):
+        value = (ROOT / "infra" / "cloudrun" / name).read_text(encoding="utf-8")
+        heading = "## Phase 8" if name == "retention-job.md" else "## Phase 3"
+        texts[name] = value.split(heading, 1)[1]
+        assert "## Phase 8" in value
+    for name in ("ADR-001-grounding-separation.md", "ADR-005-abstention-gate.md"):
+        texts[name] = (ROOT / "docs" / "adr" / name).read_text(encoding="utf-8").split("## Revision 2026-11-19", 1)[1]
+    paths.append(ROOT / "docs" / "evaluation" / "phase3" / "README.md")
+    texts.update({str(path.relative_to(ROOT)): path.read_text(encoding="utf-8") for path in paths})
+    for name, value in texts.items():
+        assert not NARRATIVE.search(value), name
+    assert not any(term in spec.lower() for term in ("when it lands", "as each feature lands", "before wiring"))
 
 
 def test_phase8_docs_spec_section_10_names_every_learner_event_in_code():
@@ -171,6 +305,15 @@ def test_phase8_docs_spec_section_10_names_every_learner_event_in_code():
         events.update(re.findall(r'"((?:learner|subject)\.[a-z_.]+|analytics\.consent_withheld)"',
                                 path.read_text(encoding="utf-8")))
     assert events and all(f"`{name}`" in _section(10) for name in events), events
+    observability = (ROOT / "infra/cloudrun/observability.md").read_text(encoding="utf-8").split("\n## Phase 8 ", 1)[1]
+    erasure_time = next(line for line in observability.splitlines() if line.startswith("| Erasure time |"))
+    assert all(value in erasure_time for value in ('"account.delete"', '"learner.erasure"', "details.duration_ms"))
+    identity = (ROOT / "docs/security/identity-linking.md").read_text(encoding="utf-8")
+    for key in ("auth_login_rate_limit", "guest_legacy_upgrade_rate_limit"):
+        default = Settings.model_fields[key].default
+        assert f"`{key}` (default {default})" in _section(9)
+        assert f"`{key}` ({default} by default)" in identity
+    assert "429" in _section(9) and "429" in identity
 
 
 def test_phase8_docs_the_consent_schema_lists_the_retention_classes_in_code():
@@ -181,9 +324,23 @@ def test_phase8_docs_the_consent_schema_lists_the_retention_classes_in_code():
     assert all(cls in doc for cls in (*CONSENT_CLASSES, CONSENT_VERSION, "LEARNER_PRIVACY=on"))
 
 
-def test_retention_exempt_tables_each_have_a_reason():
+def _unexplained_retention_skips(privacy_on):
+    timestamped = {table.name for table in user_keyed_tables() if {"created_at", "updated_at"} & set(table.c.keys())}
+    classified = set(guest_retention_age_columns(privacy_on))
+    reasons = {name for name, reason in RETENTION_EXEMPT_TABLES.items() if reason.strip()}
+    # The frozen path has no updated-at rule. This table's update age activates with privacy.
+    separate = set() if privacy_on else {"learner_consents"}
+    return timestamped - classified - reasons - separate
+
+
+def test_retention_exempt_tables_each_have_a_reason(monkeypatch):
+    from app.services import retention
+
     assert {"learner_subjects", "user_accounts", "user_sessions"} <= RETENTION_EXEMPT_TABLES.keys()
     assert all(reason.strip() for reason in RETENTION_EXEMPT_TABLES.values())
+    assert all(not _unexplained_retention_skips(enabled) for enabled in (False, True))
+    monkeypatch.setitem(retention._RETENTION_CLASSES, "notes", "until-erasure")
+    assert _unexplained_retention_skips(True) == {"notes"}
 
 
 def test_phase8_docs_adr_003_has_a_phase8_revision():
@@ -199,15 +356,50 @@ def test_phase8_docs_names_the_shared_files_and_changes_to_existing_tests():
         "core/phase8_settings.py", "core/config.py", "core/auth.py", "core/authorization.py", "db_models.py",
         "schemas.py", "api/routes/learner_record.py", "api/routes/auth.py", "api/routes/content.py",
         "api/routes/analytics.py", "services/tutor_orchestrator.py", "src/lib/api.ts", "src/lib/learner-record-api.ts",
+        "app/main.py", "core/config_package.py", "config_package/v6.json", "scripts/config_package.py",
+        "services/ledger.py", "services/tutor_followups.py", "tutor_pipeline/__init__.py",
+        "tutor_pipeline/contracts.py", "tutor_pipeline/package_check.py", "alembic/versions/20261123_phase8_learner.py",
+        ".github/workflows/ci.yml", "scripts/prove_erasure.py", "scripts/run_invariance_harness.py",
     }
     assert all(f"`{path}`" in _section(7) for path in app_modules)
     table = _section(13).split("### 13.3 Changes to existing tests", 1)[1]
-    for name in (
-        "test_progress_endpoint_aggregates_activity", "test_a_refused_caller_is_refused",
-        "test_no_caller_scoped_read_returns_another_learners_data",
-        "test_learner_record_api_requires_a_durable_session_and_accepts_idempotent_operations",
-        "test_retention_removes_stale_guest_rows_in_every_table_and_keeps_the_rest",
-        "test_non_finite_preference_follows_the_flagged_backend_contract",
-        "test_a_learner_record_value_that_cannot_be_stored_is_refused_and_the_record_still_reads",
-    ):
-        assert name in table and name in _names()
+    trace = {
+        (module, name): (exception, reason)
+        for module, name, exception, reason in re.findall(
+            r"^\| `([^`]+)` \| `([^`]+)` \| ([^|]+) \| ([^|]+) \|$", table, re.M
+        )
+    }
+    assert PHASE8_CHANGED_TESTS.keys() == PHASE8_EXTENDED_MODULES
+    for module, names in PHASE8_CHANGED_TESTS.items():
+        path = (ROOT if "/" in module else TESTS) / module
+        source = path.read_text(encoding="utf-8")
+        actual = (set(re.findall(r'test\("([^"]+)"', source)) if module.endswith(".ts")
+                  else {node.name for node in ast.parse(source).body if isinstance(node, ast.FunctionDef)})
+        for name in names:
+            assert name in actual and (module, name) in trace, (module, name)
+            exception, reason = trace[module, name]
+            assert exception.strip() and reason.strip(), (module, name)
+    ownership = _section(0).split("### 0.1", 1)[1]
+    assert "handoff" not in ownership.lower()
+    assert all(term in ownership for term in (
+        "ci.yml", "test-strategy.md", "bump-docstring", "test_phase3_acceptance.py", "test_phase5_acceptance.py",
+    ))
+
+
+def test_phase8_docs_describe_the_shipped_package_and_inherited_version_guards():
+    paths = [APP / "core/config_package.py", ROOT / "scripts/config_package.py"]
+    for path in paths:
+        doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8")))
+        assert "shipped package v6" in doc and "shipped package v5" not in doc and "DI-317" in doc
+    phase4 = (ROOT / "docs/architecture/phase4-implementation-spec.md").read_text(encoding="utf-8")
+    assert "`v6.json` with Phase 8" in phase4.split("### 5.2 Loader", 1)[1].split("\n### ", 1)[0]
+    phase6 = (ROOT / "docs/architecture/phase6-implementation-spec.md").read_text(encoding="utf-8")
+    inherited = (TESTS / "test_phase6_acceptance.py").read_text(encoding="utf-8")
+    assert "test_plan_i_ready_reports_package_v5_and_the_v3_fields_and_no_count" in phase6
+    assert "makes no statement beyond the shared gateway stop's" in phase6
+    assert "statement.startswith(\"SELECT gateway_stops.reason FROM gateway_stops\")" in inherited
+    assert "SELECT learner_adaptation_stops.reason" not in inherited
+    structural = (TESTS / "test_config_package.py").read_text(encoding="utf-8").split("def test_v4_structural_errors", 1)[1].split("\ndef ", 1)[0]
+    unsupported = re.search(r'payload\["schema_version"\] = (\d+)', structural)
+    assert unsupported and f"`schema_version={unsupported[1]}`" in phase6
+    assert "V5_RAW" in structural and "`v4.json`, `v5.json` and the shipped v6" in phase6

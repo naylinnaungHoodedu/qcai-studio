@@ -4,6 +4,7 @@ import { issueLearnerRecordReplica } from "@/lib/learner-record-api";
 
 const REPLICA_STORAGE_KEY = "qcai-learner-record-replica";
 const CLOCK_STORAGE_KEY = "qcai-learner-record-clock";
+const CLIENT_CAS_RETRIES = 1;
 const pendingReplicas = new Map<string, Promise<string>>();
 
 function safeRead(key: string): string | null {
@@ -59,12 +60,15 @@ export async function createLearnerRecordOperation(
 }
 
 export async function synchronizeLearnerRecord(operations: LearnerRecordOperation[]) {
-  const before = await fetchLearnerRecord();
-  try {
-    return await postLearnerRecordOperations(operations, before.record_version);
-  } catch (error) {
-    const current = await fetchLearnerRecord();
-    if (current.user_id !== before.user_id || current.record_version <= before.record_version) throw error;
-    return postLearnerRecordOperations(operations, current.record_version);
+  let before = await fetchLearnerRecord();
+  for (let retries = 0; ; retries++) {
+    try {
+      return await postLearnerRecordOperations(operations, before.record_version);
+    } catch (error) {
+      if (retries >= CLIENT_CAS_RETRIES) throw error;
+      const current = await fetchLearnerRecord();
+      if (current.user_id !== before.user_id || current.record_version <= before.record_version) throw error;
+      before = current;
+    }
   }
 }

@@ -43,6 +43,15 @@ Evidence for the plan's "job log" requirement: the JSON line of the first schedu
 
 ## Phase 8
 
-The scheduled retention worker uses the same cleanup service as API startup. With `LEARNER_PRIVACY` enabled, retention applies the existing guest-study period to bound guest subjects and guest legacy-upgrade records. The worker leaves credential-protection tombstones in place. `LEARNER_SYNC`, `LEARNER_PLANNER`, and `LEARNER_IDENTITY` are independent of the retention pass. All four switches default to off outside development pending the Phase 8 exit.
+The scheduled retention worker uses the same cleanup service as API startup. With `LEARNER_PRIVACY=off`, the two-argument guest eraser uses the legacy `guest-` prefix and `created_at` rule. When privacy is on, the worker applies the class register to guest-prefixed rows and bound guest subjects. `LEARNER_SYNC`, `LEARNER_PLANNER`, and `LEARNER_IDENTITY` do not select retention rules.
+
+| Table or class | Rule with privacy enabled |
+|---|---|
+| Guest study rows and foreign-key dependents | Expire after 365 days using each class's age column. Durable study records stay until erasure. |
+| `learner_consents` | Guest consent ages from `updated_at`. Durable consent stays until erasure. |
+| `guest_legacy_upgrades` and `learner_guest_revocations` | Delete legacy upgrade records older than 365 days and retain a credential-protection tombstone. |
+| `learner_claim_audits` and `learner_erasure_audits` | Expire after 365 days from creation. |
+| `learner_write_guards` | Both active guards and erasure markers expire after 365 days of inactivity, measured by `last_used_at`. Stale observations expire across the same horizon. |
+| `learner_subjects`, `user_accounts`, and `user_sessions` | Keep bindings and durable credentials until erasure. Sessions follow their separate expiry. |
 
 Plan L: "Flags for planner and sync. Stop: any harness violation blocks adaptation (never evidence)." The lifecycle worker leaves the shared adaptation-stop row alone.

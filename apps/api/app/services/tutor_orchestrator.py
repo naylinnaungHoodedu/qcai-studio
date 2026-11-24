@@ -313,12 +313,11 @@ class TutorOrchestrator:
             if effective_mode(self.settings, package) != "shadow" or package.tutor_pipeline is None:
                 return None
             if self.settings.learner_planner == "shadow" and db is not None and learner is not None:
-                from time import monotonic
                 from sqlalchemy import text
-                from app.services.learner_record_shadow import PLANNER_BUDGET_MS, shadow_presentation
+                from app.services.learner_record_shadow import PLANNER_BUDGET_MS, planner_clock, shadow_presentation
 
                 try:
-                    started = monotonic()
+                    started = planner_clock()
                     with db.begin_nested():
                         connection = db.connection()
                         if connection.dialect.name == "postgresql":
@@ -329,7 +328,7 @@ class TutorOrchestrator:
                             db, learner.provider, learner.user_id, tuple(self._store().lessons),
                             package.tutor_pipeline.default_plan,
                         )
-                        if (monotonic() - started) * 1000 > PLANNER_BUDGET_MS:
+                        if (planner_clock() - started) * 1000 > PLANNER_BUDGET_MS:
                             raise TimeoutError("Shadow planner budget exceeded.")
                         if connection.dialect.name == "postgresql":
                             connection.execute(text("SELECT set_config('statement_timeout', :limit, true)"),

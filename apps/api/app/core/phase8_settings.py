@@ -14,6 +14,40 @@ PHASE8_FLAGS = {
     "learner_privacy": (("off", "on"), "on"),
 }
 
+MAX_ISSUED_REPLICAS = 16
+ASSESSMENT_LIMIT = 12
+ASSESSMENT_WINDOW_MINUTES = 15
+COMPLETION_THRESHOLD = 0.7
+FOUNDATION_THRESHOLD = 0.4
+ADVANCED_THRESHOLD = 0.75
+PLANNER_BUDGET_MS = 150
+LEVELS = (0.1, 0.5, 0.9)
+SERVER_CAS_RETRIES = 0
+CLIENT_CAS_RETRIES = 1  # Mirrored by the dormant browser client and verified by the package test.
+AUDIT_RETENTION_DAYS = 365
+GUARD_RETENTION_DAYS = 365
+
+
+def learner_engineering_policy() -> dict:
+    return {
+        "sync": {
+            "active_replicas": MAX_ISSUED_REPLICAS, "retirement": "least-recently-used",
+            "server_retries": SERVER_CAS_RETRIES, "client_retries": CLIENT_CAS_RETRIES,
+        },
+        "assessment": {
+            "attempt_limit": ASSESSMENT_LIMIT, "window_minutes": ASSESSMENT_WINDOW_MINUTES,
+            "completion_threshold": COMPLETION_THRESHOLD,
+        },
+        "planner": {
+            "bands": [FOUNDATION_THRESHOLD, ADVANCED_THRESHOLD], "shadow_budget_ms": PLANNER_BUDGET_MS,
+            "renderer_wiring": "DI-312", "harness_levels": list(LEVELS),
+        },
+        "privacy": {
+            "export": "ndjson", "receipt_digest": "canonical-json-sha256",
+            "audit_retention_days": AUDIT_RETENTION_DAYS, "guard_retention_days": GUARD_RETENTION_DAYS,
+        },
+    }
+
 
 def check_phase8_package(raw: Mapping) -> None:
     """Validate the package's Phase 8 release policy against its runtime switches."""
@@ -42,6 +76,9 @@ def check_phase8_package(raw: Mapping) -> None:
         )
     learner = raw.get("learner")
     require(isinstance(learner, Mapping) and learner.get("provisional") is True, "learner policy")
+    require(learner.get("authority") == "PD-200 through PD-205", "learner authority")
+    for name, policy in learner_engineering_policy().items():
+        require(learner.get(name) == policy, f"learner.{name} engineering policy")
     classes = learner.get("consent_classes")
     require(isinstance(classes, Mapping), "learner consent classes")
     decision = raw["owner_decisions"].get("D-27")

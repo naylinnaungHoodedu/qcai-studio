@@ -28,7 +28,8 @@ def phase8_tables() -> tuple[sa.Table, ...]:
               sa.Column("replica_id", sa.String(128), primary_key=True), owner(index=True), timestamp("created_at"),
               sa.Column("last_used_at", sa.DateTime(timezone=True)), sa.Column("retired", sa.Boolean(), nullable=False)),
         table("learner_write_guards", sa.Column("key_digest", sa.String(64), primary_key=True),
-              sa.Column("erased", sa.Boolean(), nullable=False)),
+              sa.Column("erased", sa.Boolean(), nullable=False), sa.Column("erasure_epoch", sa.String(32)),
+              sa.Column("last_used_at", sa.DateTime(timezone=True))),
         table("learner_subjects", sa.Column("principal_digest", sa.String(64), primary_key=True), owner(unique=True),
               sa.Column("provider", sa.String(16), nullable=False), timestamp("created_at")),
         table("learner_guest_revocations", sa.Column("credential_digest", sa.String(64), primary_key=True),
@@ -63,6 +64,13 @@ def upgrade() -> None:
     for table in phase8_tables():
         # Some development databases have already created these tables from ORM metadata.
         table.create(bind=bind, checkfirst=True)
+    existing = {column["name"] for column in sa.inspect(bind).get_columns("learner_write_guards")}
+    for column in (
+        sa.Column("erasure_epoch", sa.String(32)),
+        sa.Column("last_used_at", sa.DateTime(timezone=True)),
+    ):
+        if column.name not in existing:
+            op.add_column("learner_write_guards", column)
 
 
 def downgrade() -> None:

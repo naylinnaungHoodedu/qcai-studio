@@ -1,25 +1,26 @@
 """Check or re-hash the configuration package (Phase 2 spec 2.5; Phase 3 spec 5.5; Phase 4 spec 5.4; Phase 5 spec 5.4;
-Phase 6 spec 5.3).
+Phase 6 spec 5.3; Phase 8 spec section 5).
 
 Run: python scripts/config_package.py --check [--path P]   (validates the package and its sidecar hash; for packages
-                                                             v2 to v5 also the tutor-pipeline schema pins, prompt hashes
-                                                             and schema structure, for v3 to v5 the V1 block: rule ids
+                                                             v2 to v6 also the tutor-pipeline schema pins, prompt hashes
+                                                             and schema structure, for v3 to v6 the V1 block: rule ids
                                                              and their hash, and the adversarial fixture set's pin, for
-                                                             v4 and v5 the gateway, v2 and tools blocks, the committed
-                                                             tool contract document included, and for v5 the v3 block:
+                                                             v4 to v6 the gateway, v2 and tools blocks, the committed
+                                                             tool contract document included, and for v5 and v6 the v3 block:
                                                              its two schema pins and structure, its rule ids and the
                                                              development registry's fixture; exit 1 on a problem)
-     python scripts/config_package.py --rehash [--path P]  (recomputes the stopword hash and, for v2 to v5, the schema
+     python scripts/config_package.py --rehash [--path P]  (recomputes the stopword hash and, for v2 to v6, the schema
                                                              pins, the three prompt hashes and the legacy containment
-                                                             rule hash from the code; for v3 to v5 also v1.rules_hash,
+                                                             rule hash from the code; for v3 to v6 also v1.rules_hash,
                                                              the misconception library sha256 and the fixture set's
-                                                             sha256 and case count; for v4 and v5 the tool contract
-                                                             file's sha256 and the two V2 prompt hashes; for v5 the two
+                                                             sha256 and case count; for v4 to v6 the tool contract
+                                                             file's sha256 and the two V2 prompt hashes; for v5 and v6 the two
                                                              V3 schema pins; rewrites the sidecar)
      python scripts/config_package.py --write-schemas      (writes the pinned contract schemas from the pydantic models,
-                                                             fourteen and the tool contract document for v4 and v5, the
-                                                             two V3 schemas for v5, then --rehash)
-The default path is the shipped package v5; v4, v3, v2 and v1 stay readable for one release (--path .../v4.json, DI-100;
+                                                             fourteen and the tool contract document for v4 to v6, the
+                                                             two V3 schemas for v5 and v6, then --rehash)
+The default path is the shipped package v6. The v6 loader checks the learner policy against the Phase 8 code.
+Package v5 remains readable under DI-317. Earlier packages remain readable (--path .../v4.json, DI-100;
 --path .../v3.json, DI-84; --path .../v2.json, DI-63; --path .../v1.json, DI-42).
 """
 

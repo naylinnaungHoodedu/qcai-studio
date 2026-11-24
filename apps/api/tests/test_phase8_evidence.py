@@ -180,15 +180,20 @@ def test_phase8_durable_stop_is_visible_to_a_new_session(fresh_database_url):
         engine.dispose()
 
 
-def test_phase8_readiness_reports_effective_and_configured_modes(monkeypatch):
+def test_phase8_readiness_reports_the_last_stop_observation_without_querying(monkeypatch):
     from app import main
     from app.core.config_package import get_config_package
     from app.core.db import SessionLocal
+    from app.services.learner_record_metrics import observe_planner_stop
 
     settings = Settings(_env_file=None, learner_planner="shadow")
     monkeypatch.setattr(main, "settings", settings)
+    def unexpected_connection():
+        raise AssertionError("Phase 8 readiness must not open a database connection.")
+    monkeypatch.setattr(main, "engine", type("ReadinessEngine", (), {"connect": staticmethod(unexpected_connection)})())
     package = get_config_package(settings)
     with SessionLocal() as db:
+        observe_planner_stop(False)
         clear_adaptation_stop(db)
         db.commit()
         try:
@@ -196,12 +201,15 @@ def test_phase8_readiness_reports_effective_and_configured_modes(monkeypatch):
             assert active["learner_planner"] == active["learner_planner_setting"] == "shadow"
             stop_adaptation(db, "invariance")
             db.commit()
+            assert not main._phase8_fields(package)["learner_slis"]["planner_stop_observed"]
+            shadow_presentation(db, "demo", "local-fixture", ("lesson",), "concise")
             stopped = main._phase8_fields(package)
-            assert stopped["learner_planner"] == "off" and stopped["learner_planner_setting"] == "shadow"
-            assert stopped["phase8_exit_passed"] is False and "learner_slis" in stopped
+            assert stopped["learner_planner"] == stopped["learner_planner_setting"] == "shadow"
+            assert stopped["phase8_exit_passed"] is False and stopped["learner_slis"]["planner_stop_observed"]
         finally:
             clear_adaptation_stop(db)
             db.commit()
+            observe_planner_stop(False)
 
 
 def test_phase8_migration_retains_existing_tables_and_refuses_data_loss(fresh_database_url):

@@ -3,7 +3,7 @@ from statistics import mean
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
-from app.core.auth import AuthUser, get_current_user
+from app.core.auth import AuthUser, get_current_user, learner_write_observation
 from app.core.config import Settings, get_settings
 from app.core.db import get_db
 from app.core.rate_limit import limiter
@@ -33,12 +33,16 @@ def _p75(values: list[float]) -> float:
 
 @router.post("/events")
 def record_event(
+    request: Request,
     payload: AnalyticsEventCreate,
     db: Session = Depends(get_db),
     user: AuthUser = Depends(get_current_user),
 ):
-    if get_settings().learner_privacy == "on":
-        write_subject(db, user.provider, user.user_id, bind=False, guarded=True)
+    privacy_on = get_settings().learner_privacy == "on"
+    write_subject(
+        db, user.provider, user.user_id, bind=False, guarded=privacy_on, observation=learner_write_observation(request),
+    )
+    if privacy_on:
         if not read_consent(db, user.provider, user.user_id)["analytics"]:
             record_signal("analytics.consent_withheld")
             return {"status": "ok"}

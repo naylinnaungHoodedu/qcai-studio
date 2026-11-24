@@ -235,9 +235,13 @@ The service events log on `qcai.v3`, the V2 track's on `qcai.tutor`, the worker'
 
 ## Phase 8 SLIs: learner record and privacy
 
-`/ready` reports the settings and effective modes for the four learner switches and `phase8_exit_passed`. A shared adaptation stop makes the planner's effective mode off. The `learner_slis` counters are available in development only.
+`/ready` reports the four configured learner switches and `phase8_exit_passed`. In development `learner_slis.planner_stop_observed` shows the last local observation of the shared stop, along with process counters. The planner checks the authoritative stop during its own work. Readiness issues no Phase 8 database query.
 
 - F-3 uses `learner.record.updated` with interaction start and commit time. Keep the production measure on the DI-305 evidence path until authorized.
 - `learner.sync.conflict` records the reason from version, counter, ownership, replay, and untrusted-write checks. `learner.harness.violation` records failed engineering invariants and the CLI exits with the stop status.
-- `learner.erasure` uses the security log for password refusal and committed deletion counts. Claim and export events carry digests and counts only. `analytics.consent_withheld` measures withheld events without recording their contents.
+- `learner.erasure` uses the security log for password refusal, committed deletion counts and `duration_ms`. Claim and export events carry digests and counts only. `analytics.consent_withheld` measures withheld events without recording their contents.
 - Outside development, `learner_sync_on`, `learner_identity_on`, `learner_privacy_on`, `learner_planner_shadow`, and `learner_planner_on` are recognized `config.override` details.
+
+| Phase 8 SLI | Log filter and value | Measure |
+|---|---|---|
+| Erasure time | `(jsonPayload.event_type="account.delete" OR jsonPayload.event_type="learner.erasure") AND jsonPayload.outcome="success"`, value `jsonPayload.details.duration_ms` | Phase 1 distribution extended to Phase 8. Both routes time from erasure start through commit, after password confirmation where applicable. |

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.safe_input import text_matches
 from app.core.client_identity import keyed_digest
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
 from app.core.guest_tokens import verify_guest_token
 from app.db_models import (
     GuestLegacyUpgrade, LearnerClaimAudit, LearnerGuestRevocation, LearnerRecord, LearnerRecordOperation,
@@ -18,7 +18,7 @@ from app.db_models import (
 from app.services.erasure import USER_KEY_COLUMNS, user_keyed_tables
 from app.services.guest_sessions import _was_ever_public, guest_credential_digest, is_guest_revoked
 from app.services.learner_record import _wins
-from app.services.learner_record_lock import has_write_guard, insert_for, lock_learner_write
+from app.services.learner_record_lock import WriteObservation, has_write_guard, insert_for, lock_learner_write, phase8_writes_enabled
 from app.services.learner_record_sync import lock_learner_record
 
 
@@ -114,15 +114,20 @@ def _transfer(db: Session, former: str, target: str, *, learner_only: bool) -> d
     return moved
 
 
-def _require_existing_local_account(db: Session, provider: str, identifier: str) -> None:
+def _recheck_principal(db: Session, provider: str, identifier: str) -> None:
     if provider == "local" and db.get(UserAccount, identifier, populate_existing=True) is None:
         raise HTTPException(401, "Authentication required.")
+    if provider == "guest" and is_guest_revoked(db, identifier):
+        raise HTTPException(401, "Guest session revoked.")
 
 
-def bind_subject(db: Session, provider: str, identifier: str, *, verify_account: bool = False) -> str:
-    lock_learner_write(db, identifier)
+def bind_subject(
+    db: Session, provider: str, identifier: str, *, verify_account: bool = False,
+    observation: WriteObservation | None = None,
+) -> str:
+    lock_learner_write(db, identifier, observation=observation if provider in {"auth0", "demo"} else None)
     if verify_account:
-        _require_existing_local_account(db, provider, identifier)
+        _recheck_principal(db, provider, identifier)
     digest = principal_digest(provider, identifier)
     candidate = f"subj-{uuid4().hex}"
     db.execute(
@@ -139,13 +144,16 @@ def bind_subject(db: Session, provider: str, identifier: str, *, verify_account:
     return subject
 
 
-def write_subject(db: Session, provider: str, identifier: str, *, bind: bool, guarded: bool) -> str:
+def write_subject(
+    db: Session, provider: str, identifier: str, *, bind: bool, guarded: bool,
+    observation: WriteObservation | None = None,
+) -> str:
     if bind:
-        return bind_subject(db, provider, identifier, verify_account=True)
+        return bind_subject(db, provider, identifier, verify_account=True, observation=observation)
     subject = find_subject(db, provider, identifier)
-    if guarded or subject or has_write_guard(db, identifier):
-        lock_learner_write(db, identifier)
-        _require_existing_local_account(db, provider, identifier)
+    if guarded or phase8_writes_enabled(get_settings()) or subject or has_write_guard(db, identifier):
+        lock_learner_write(db, identifier, observation=observation if provider in {"auth0", "demo"} else None)
+        _recheck_principal(db, provider, identifier)
         # Binding and erasure both use the principal lock.
         subject = find_subject(db, provider, identifier)
         if subject:
@@ -166,7 +174,7 @@ def mark_erased_subjects(db: Session, provider: str, identifier: str) -> tuple[s
 
 def claim_guest(
     db: Session, provider: str, identifier: str, token: str | None, csrf: str | None, settings: Settings,
-    *, verify_account: bool = False,
+    *, verify_account: bool = False, observation: WriteObservation | None = None,
 ) -> dict[str, int]:
     guest = verify_guest_token(token, settings)
     if provider not in {"local", "auth0"} or guest is None or not csrf or not text_matches(guest.csrf, csrf):
@@ -183,7 +191,7 @@ def claim_guest(
     )
     if accepted is None:
         raise HTTPException(409, "Guest record is unavailable for claim.")
-    subject = bind_subject(db, provider, identifier, verify_account=verify_account)
+    subject = bind_subject(db, provider, identifier, verify_account=verify_account, observation=observation)
     formerly_bound = find_subject(db, "guest", guest.guest_id)
     lock_learner_write(db, guest.guest_id, erase=True)
     if formerly_bound:

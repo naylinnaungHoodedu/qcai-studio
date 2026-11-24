@@ -6,6 +6,8 @@ The consent row uses `user_id` and `consent_class` as its key and records `conse
 
 The retention register covers every user-keyed table. Durable records stay until erasure unless a specific expiry applies. With `LEARNER_PRIVACY=on`, the job recognizes bound guests by provider. Guest consent ages from its update time, and guest legacy-upgrade records expire after 365 days while a digest protects the one-shot rule. Sessions use explicit expiry. Bindings remain until erasure. Identifier-free linking and erasure audit rows expire after 365 days with privacy enabled. Support contacts retain their separate 540-day rule under P2-12-D-05.
 
+The digest-keyed `learner_write_guards` table holds active guards and erasure epochs. With privacy cleanup enabled, rows in either state expire after 365 days without a guarded write or erasure, measured by `last_used_at`. Earlier request observations also expire after 365 days. The guest credential tombstone remains a separate control.
+
 | Table | Retention class |
 |---|---|
 | `analytics_events` | `guest-created/durable-until-erasure` |

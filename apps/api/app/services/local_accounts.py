@@ -155,10 +155,15 @@ def delete_local_account(db: Session, user_id: str, password: str) -> AccountEra
     # had missed the learner-record and tutor tables.
     started = time.monotonic()
     from app.services.learner_record_identity import find_subject, mark_erased_subjects
-    from app.services.learner_record_lock import has_write_guard
+    from app.core.config import get_settings
+    from app.services.learner_record_lock import has_write_guard, phase8_writes_enabled
 
     subject = find_subject(db, "local", user_id)
-    identifiers = mark_erased_subjects(db, "local", user_id) if subject or has_write_guard(db, user_id) else (user_id,)
+    identifiers = (
+        mark_erased_subjects(db, "local", user_id)
+        if phase8_writes_enabled(get_settings()) or subject or has_write_guard(db, user_id)
+        else (user_id,)
+    )
     counts = {}
     for identifier in identifiers:
         for table, count in erase_user(db, identifier).items():

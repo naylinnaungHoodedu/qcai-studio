@@ -209,7 +209,7 @@ def test_plan_i_each_sync_refusal_logs_and_counts_its_reason(sync_engine, caplog
             db.rollback()
 
 
-def test_phase8_assessment_quota_and_server_clock_are_subject_scoped(sync_engine):
+def test_phase8_assessment_quota_and_server_clock_when_principal_equals_subject(sync_engine):
     subject, other = (f"subj-{uuid4().hex}" for _ in range(2))
     with Session(sync_engine, autoflush=False) as db:
         for index in range(ASSESSMENT_LIMIT):

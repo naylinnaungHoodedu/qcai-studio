@@ -1656,7 +1656,7 @@ Security events are read ordered by `seq`. A test that counts denials uses `monk
 1. **`test_config_package.py`.**
    - The shipped package is "5.0.0", schema 5, with `package.v3` set.
    - `V4_RAW` reads `V4_PACKAGE_PATH` for `test_v4_keeps_every_v3_value_but_the_listed_changes` and for every `test_v4_*` assertion on v4-only values.
-   - `test_v4_structural_errors_always_stop_the_load` applies its refusals to `v4.json` and to the shipped v5. For v5 the `schema_version=5` edit becomes `schema_version=6`, the one edit that is a no-op on v5.
+   - `test_v4_structural_errors_always_stop_the_load` applies its refusals to `v4.json`, `v5.json` and the shipped v6. For v5 and v6 the schema-version mutation uses `schema_version=7`, an unsupported version after v6. Setting it to 5 would be a no-op on v5.
    - `test_v3_structural_errors_always_stop_the_load` applies its refusals to v3.json, v4.json and v5.
    - `test_v3_stays_readable_for_one_release` compares `canonical_sha256(V3_RAW)` with `V4_RAW["supersedes"]["sha256"]`.
    - `test_gateway_package_check_problems` also checks v4.json; it reads the default package, which keeps the gateway block.

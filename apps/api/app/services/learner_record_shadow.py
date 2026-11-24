@@ -1,16 +1,17 @@
 """Read trusted assessment history at the pedagogical boundary."""
 
+from time import monotonic as planner_clock
+
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app.core.phase8_settings import COMPLETION_THRESHOLD, PLANNER_BUDGET_MS
 from app.db_models import LearnerAdaptationStop, LearnerAssessmentFact, QuizAttempt
 from app.services.learner_record_identity import find_subject
 from app.services.learner_record_lock import insert_for
+from app.services.learner_record_metrics import observe_planner_stop
 from app.services.learner_record_planner import LearnerPresentation, PlanId, plan_presentation
 from app.services.learner_record_privacy import read_consent
-
-COMPLETION_THRESHOLD = 0.7
-PLANNER_BUDGET_MS = 150
 
 
 def stop_adaptation(db: Session, reason: str) -> None:
@@ -27,7 +28,9 @@ def clear_adaptation_stop(db: Session) -> None:
 def shadow_presentation(
     db: Session, provider: str, identifier: str, course_order: tuple[str, ...], default_plan: PlanId,
 ) -> LearnerPresentation:
-    if db.get(LearnerAdaptationStop, "planner") is not None or not read_consent(db, provider, identifier)["adaptation"]:
+    stopped = db.get(LearnerAdaptationStop, "planner", populate_existing=True) is not None
+    observe_planner_stop(stopped)
+    if stopped or not read_consent(db, provider, identifier)["adaptation"]:
         return LearnerPresentation(default_plan, course_order)
     subject = find_subject(db, provider, identifier) or identifier
     attempts = dict(db.execute(select(QuizAttempt.lesson_slug, func.count()).where(
