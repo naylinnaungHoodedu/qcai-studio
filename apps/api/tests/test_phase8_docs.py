@@ -306,6 +306,7 @@ def test_phase8_docs_spec_section_10_names_every_learner_event_in_code():
                                 path.read_text(encoding="utf-8")))
     assert events and all(f"`{name}`" in _section(10) for name in events), events
     observability = (ROOT / "infra/cloudrun/observability.md").read_text(encoding="utf-8").split("\n## Phase 8 ", 1)[1]
+    assert {len(re.findall(r"(?<!\\)\|", line)) for line in observability.splitlines() if line.startswith("|")} == {3}
     erasure_time = next(line for line in observability.splitlines() if line.startswith("| Erasure time |"))
     assert all(value in erasure_time for value in ('"account.delete"', '"learner.erasure"', "details.duration_ms"))
     identity = (ROOT / "docs/security/identity-linking.md").read_text(encoding="utf-8")

@@ -242,6 +242,6 @@ The service events log on `qcai.v3`, the V2 track's on `qcai.tutor`, the worker'
 - `learner.erasure` uses the security log for password refusal, committed deletion counts and `duration_ms`. Claim and export events carry digests and counts only. `analytics.consent_withheld` measures withheld events without recording their contents.
 - Outside development, `learner_sync_on`, `learner_identity_on`, `learner_privacy_on`, `learner_planner_shadow`, and `learner_planner_on` are recognized `config.override` details.
 
-| Phase 8 SLI | Log filter and value | Measure |
-|---|---|---|
-| Erasure time | `(jsonPayload.event_type="account.delete" OR jsonPayload.event_type="learner.erasure") AND jsonPayload.outcome="success"`, value `jsonPayload.details.duration_ms` | Phase 1 distribution extended to Phase 8. Both routes time from erasure start through commit, after password confirmation where applicable. |
+| SLI or event | Log-based metric or alert |
+|---|---|
+| Erasure time | Extend the Phase 1 distribution with `(jsonPayload.event_type="account.delete" OR jsonPayload.event_type="learner.erasure") AND jsonPayload.outcome="success"` and value `jsonPayload.details.duration_ms`. Both routes time from erasure start through commit, after password confirmation where applicable. |

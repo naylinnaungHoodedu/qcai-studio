@@ -348,7 +348,7 @@ All six reports were regenerated from clean source commit `cb2a33e`. The invaria
 | Phase 8 invariance | `dd2d2921445429a66480b00decb3bf652fb54b7228f68584760da2ea50b35602` |
 | Phase 8 erasure proof (report content) | `551caa3b40c7944b73ac355400947a54886f7d06d718a4b689c3ac4e5cf24204` |
 
-The regression checks detected 42 process-local mutations. The checks exercised the original retention signature and readiness constraints, erasure races and post-erasure recovery, quota scope, event fields, trusted mastery, package policy, and drift in the spec and runbooks. A separate hand-back check verifies the required response fields.
+The regression checks detected 43 process-local mutations. The checks exercised the original retention signature and readiness constraints, erasure races and post-erasure recovery, quota scope, event fields, trusted mastery, package policy, and drift in the spec and runbooks. A separate hand-back check verifies the required response fields.
 
 ## 18. Review history
 
