@@ -55,6 +55,7 @@ Nothing learner-facing changes outside development: the legacy contained answers
   member's identity, for development shadow generation only (`RANKING_SHADOW_GENERATION`): `model_id` is
   `<model_id>@<model_version>` and its prompt hash covers the clone rule and the package's evidential prompt hash. It makes
   no gateway or network call, and its V2 panel excludes its family as for every generator.
-- **The clone provenance rule.** `ledger._provenance_problems` checks a shadow record of a development clone member against
-  the clone prompt hash (`ledger.clone_prompt_hashes`) instead of the package's evidential hash and allowed generators;
-  every other generator id is checked as before.
+- **The clone provenance rule.** In development only (`ledger_provenance(..., environment="development")`),
+  `ledger._provenance_problems` checks a shadow record of a development clone member against the clone prompt hash
+  (`ledger.clone_prompt_hashes`) instead of the package's evidential hash and allowed generators; elsewhere, and by
+  default, such a record is reported, since a clone is refused there. Every other generator id is checked as before.

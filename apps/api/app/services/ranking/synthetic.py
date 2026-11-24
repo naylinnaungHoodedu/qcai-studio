@@ -16,6 +16,7 @@ from decimal import Decimal
 from app.services.ranking.controller import apply_in_place
 from app.services.ranking.numeric import to_str, uniform
 from app.services.ranking.state import canonical, empty_state, sha256_hex, state_sha256
+from app.services.ranking.vocabulary import INPUT_KINDS
 
 EPOCH = datetime(2026, 11, 23, 0, 0, 0, tzinfo=UTC)
 STEP_S = 30
@@ -66,7 +67,7 @@ def build(block: dict, scenario: str) -> tuple[list[dict], dict]:
     seed = f"synthetic-{scenario}-v1"
     stream = Stream(block, seed)
     a, b = model("model-a", "family-a"), model("model-b", "family-b")
-    meta: dict = {"shift_at": None}
+    meta: dict = {"shift_at": None, "disturbance_at": None}   # ledger seqs: the first request after the shift / disturbance
     if scenario == "flapping":
         stream.models(a, b)
         for i in range(2000):
@@ -80,6 +81,7 @@ def build(block: dict, scenario: str) -> tuple[list[dict], dict]:
         stream.models(a, b)
         for i in range(300):
             stream.outcome(("model-a", "model-b")[i % 2], p_error="0.01", v="1" if i % 2 == 0 else "0.9")
+        meta["disturbance_at"] = stream.index + 1
         stream.add("availability", {"models": {"model-a": "down", "model-b": None}})
         for i in range(300):
             stream.outcome("model-b", p_error="0.01", v="0.9")
@@ -91,7 +93,7 @@ def build(block: dict, scenario: str) -> tuple[list[dict], dict]:
         for i in range(1200):
             shifted = i >= 600
             if i == 600:
-                meta["shift_at"] = stream.index + 1
+                meta["shift_at"] = meta["disturbance_at"] = stream.index + 1
             stream.outcome("model-a", p_error="0.15" if shifted else "0.05", cluster="nisq-hybrid-workflows")
             if i % 4 == 0:
                 stream.outcome("model-b", p_error="0.05", cluster="industry-use-cases")
@@ -99,6 +101,7 @@ def build(block: dict, scenario: str) -> tuple[list[dict], dict]:
         stream.models(a, b)
         for i in range(200):
             stream.outcome(("model-a", "model-b")[i % 2], p_error="0.01")
+        meta["disturbance_at"] = stream.index + 1
         stream.add("model_change", {"adapter_id": "model-b", "from_version": "2026-11-21", "to_version": "2026-11-22", "source": "registry"})
         for i in range(100):
             stream.outcome("model-a", p_error="0.01")
@@ -112,6 +115,7 @@ def build(block: dict, scenario: str) -> tuple[list[dict], dict]:
         stream.models(a, b)
         for i in range(100):
             stream.outcome(("model-a", "model-b")[i % 2], p_error="0.01")
+        meta["disturbance_at"] = stream.index + 1
         stream.add("availability", {"models": {"model-a": "down", "model-b": "kill_switch"}})
         for i in range(100):
             stream.outcome("model-a", p_error="0.01")
@@ -141,31 +145,46 @@ def materialise(inputs: list[dict]) -> list[dict]:
 
 
 def measurements(log: list[dict], meta: dict) -> dict:
-    """Switches per 1000 drift-free requests (the first incumbent is not a switch), false alarms per 1000 (before a shift),
-    the detection delay (requests from the shift to the first later alarm), and the fallback, promotion and demotion counts."""
+    """MR-3's shape (Table XVII "<= 2 incumbent switches per context per 1,000 drift-free requests"), measured, never
+    asserted here: the drift-free window is every request before the scenario's first scheduled disturbance (the shift,
+    an outage, a model change, an emptied eligible set; meta disturbance_at), so a disturbance and the switches it causes
+    are never counted as drift-free. Per context: the incumbent switches in that window (the first incumbent is not a
+    switch) per 1000 of the context's drift-free requests; the window's switch causes (a promotion, or a demotion below
+    the tier threshold, AC-9-4). Also: false alarms per 1000 (before a shift), the detection delay (requests from the
+    shift to the first later alarm), and the fallback, promotion and demotion counts."""
     import json
 
     selects = [json.loads(row["payload"]) for row in log if row["kind"] == "select"]
     shift = meta.get("shift_at")
-    drift_free = [item for item in selects if shift is None or int(item["ledger_seq"]) < int(shift)]
+    cut = meta.get("disturbance_at")
+    drift_free = [item for item in selects if cut is None or int(item["ledger_seq"]) < int(cut)]
     previous: dict = {}
-    switches = 0
+    contexts: dict = {}
     for item in drift_free:
+        entry = contexts.setdefault(item["context"], {"requests": 0, "switches": 0})
+        entry["requests"] += 1
         if item["kind"] != "incumbent":
             continue
         last = previous.get(item["context"])
         if last is not None and last != item["model"]:
-            switches += 1
+            entry["switches"] += 1
         previous[item["context"]] = item["model"]
+    switches = sum(entry["switches"] for entry in contexts.values())
     alarms = [json.loads(row["payload"]) for row in log if row["kind"] == "alarm"]
     outcome_seqs = [json.loads(row["payload"])["ledger_seq"] for row in log if row["kind"] == "outcome"]
     alarm_ledger = []
-    last_ledger = 0
+    causes = {"promote": 0, "demote": 0}
+    last_ledger, in_window = 0, True   # in_window: the input before this derived row is an outcome or tick of the window
     for row in log:
         if row["kind"] == "outcome":
             last_ledger = json.loads(row["payload"])["ledger_seq"]
+            in_window = cut is None or int(last_ledger) < int(cut)
+        elif row["kind"] in INPUT_KINDS and row["kind"] != "tick" and last_ledger:
+            in_window = cut is None   # a disturbance's own input (an availability change, a model change, ...)
         elif row["kind"] == "alarm":
             alarm_ledger.append(last_ledger)
+        elif row["kind"] in causes and in_window:
+            causes[row["kind"]] += 1
     false_alarms = sum(1 for seq in alarm_ledger if shift is None or seq < int(shift))
     delay = None
     if shift is not None:
@@ -177,7 +196,8 @@ def measurements(log: list[dict], meta: dict) -> dict:
         return to_str(Decimal(count) * 1000 / Decimal(total)) if total else "0"
 
     return {"requests": len(selects), "drift_free_requests": requests, "switches_drift_free": switches,
-            "switches_per_1000_drift_free": per_1000(switches, requests),
+            "switches_per_context_per_1000_drift_free": {key: per_1000(entry["switches"], entry["requests"]) for key, entry in sorted(contexts.items())},
+            "switch_causes_drift_free": causes,
             "false_alarms": false_alarms, "false_alarms_per_1000": per_1000(false_alarms, len([s for s in outcome_seqs if shift is None or s < int(shift)])),
             "alarms": len(alarms), "detection_delay": delay,
             "fallbacks": sum(1 for item in selects if item["kind"] == "fallback"),

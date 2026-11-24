@@ -623,9 +623,12 @@ def ledger_coverage(db: Session, since: datetime, *, now: datetime | None = None
     }
 
 
-def clone_prompt_hashes(package: ConfigPackage) -> dict[str, str]:
+def clone_prompt_hashes(package: ConfigPackage, *, environment: str | None) -> dict[str, str]:
     """Package v7 (Phase 9 spec 4.12): each development-registry fake generate member with the extractive-clone-v1 rule,
-    with the evidential prompt hash its shadow records carry; empty for a package without a ranking block."""
+    with the evidential prompt hash its shadow records carry; empty for a package without a ranking block, and empty
+    outside development (a clone generator is refused there, so no clone record can be legitimate: the strictest check)."""
+    if (environment or "").lower() != "development":
+        return {}
     if getattr(package, "ranking", None) is None or package.gateway is None or package.tutor_pipeline is None:
         return {}
     from app.services.ranking.generators import clone_prompt_hash
@@ -701,7 +704,7 @@ def _provenance_problems(seq: int, entry: dict[str, Any], params: TutorPipelineP
     return problems
 
 
-def ledger_provenance(db: Session, package: ConfigPackage) -> dict[str, Any]:
+def ledger_provenance(db: Session, package: ConfigPackage, *, environment: str | None = None) -> dict[str, Any]:
     """F-2's audit until a provider prompt exists (plan 15.1 "Zero learner-state fields in evidential-pass prompts";
     DI-49): no evidential prompt is logged or ledgered, so instead every record must name the pinned, learner-free
     evidential input of its pipeline. A record stamped with the package in force (versions.config_package_sha256) is
@@ -711,10 +714,13 @@ def ledger_provenance(db: Session, package: ConfigPackage) -> dict[str, Any]:
                                       pedagogical prompt);
       two-pass (tutor_pipeline)       the evidential, pedagogical and resolver prompt hashes are the package's, the
                                       pipeline version is its version, and the generator is one it allows;
-    and every claim carries its record's provenance. A record stamped with another package is counted
+    and every claim carries its record's provenance. Only with environment "development" is a shadow record of a
+    development clone generator checked against its clone prompt hash (clone_prompt_hashes); otherwise, the default,
+    no generator is a clone. A record stamped with another package is counted
     (other_package) and not compared: its pins are that package's. Counts and seq numbers only, never record text.
     Read-only; run by the worker's and the script's --check-provenance."""
     params = ledger_params(package)
+    clones = clone_prompt_hashes(package, environment=environment)
     problems: list[str] = []
     records = checked = other_package = 0
     config_versions: dict[str, int] = {}
@@ -735,7 +741,7 @@ def ledger_provenance(db: Session, package: ConfigPackage) -> dict[str, Any]:
             other_package += 1
             continue
         checked += 1
-        problems.extend(_provenance_problems(seq, entry, params, package.v1, phase5_blocks(package), clone_prompt_hashes(package)))
+        problems.extend(_provenance_problems(seq, entry, params, package.v1, phase5_blocks(package), clones))
     return {
         "package_version": package.package_version,
         "package_sha256": package.sha256,

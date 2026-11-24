@@ -9,7 +9,9 @@ after_shadow() is called by tutor_pipeline.shadow.run_shadow after a successful 
 RANKING_SHADOW_GENERATION is true (development only) and the mode is shadow: a fallback decision runs nothing; otherwise
 it runs at most one more two-pass shadow run, for the exploration challenger if one was drawn, else for the incumbent when
 it is not the record's generator, with the same learner-free input, a new shadow- id, delivery "shadow", the same
-shadowed_response_id and the shadow budget that remains. The V2 panel excludes the clone's family (Panel.build with the
+shadowed_response_id and the shadow budget that remains. That run goes through a shallow copy of the factory's pipeline
+with the candidate's generator: the factory's own pipeline (the process's shared, cached one in the request path) keeps
+static assignment's generator for every later shadow run. The V2 panel excludes the clone's family (Panel.build with the
 generator's family), and a candidate whose family does not resolve is refused. A fault is logged
 (ranking.shadow_generation_failed) and counted, never marks the original shadow run failed and never reaches a learner.
 """
@@ -102,10 +104,11 @@ def after_shadow(job: Any, result: Any, *, pipeline_factory: Any, settings: Any,
     if remaining <= 0:
         SHADOW_GENERATION["skipped"] += 1
         return
-    pipeline.generator = generator_for(known[chosen], package=package, settings=settings)
+    extra = copy.copy(pipeline)   # never pipeline.generator = ...: the factory's pipeline is shared by every request
+    extra.generator = generator_for(known[chosen], package=package, settings=settings)
     with session_factory() as db:
         resolved = resolve_thread(db, job.thread_id, job.user_message_id, package=package)
-    pipeline.run(PipelineInput(resolved=resolved, lesson_slug=job.lesson_slug, presentation=job.presentation, response_id=f"shadow-{uuid4()}",
+    extra.run(PipelineInput(resolved=resolved, lesson_slug=job.lesson_slug, presentation=job.presentation, response_id=f"shadow-{uuid4()}",
                                delivery="shadow", shadowed_response_id=job.shadowed_response_id, legacy_decision=job.legacy_decision),
                  budget_ms=remaining)
     SHADOW_GENERATION["runs"] += 1

@@ -49,7 +49,9 @@ from ranking_fakes import (
     package_copy,
     ranking_settings,
     scan,
+    session_factory_for,
     shadow_record,
+    small_window_package,
     stored_state,
 )
 
@@ -223,6 +225,59 @@ def test_ac_9_1_y_is_one_only_for_an_uncorrected_first_pass():
     tree = ast.parse((API_ROOT / "app" / "services" / "ranking" / "signals.py").read_text(encoding="utf-8"))
     names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)} | {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
     assert "ClaimPlan" not in names and "kind" not in names and "prompt_hash" not in names
+
+
+def test_ac_9_1_a_post_generation_v2_or_ehmf_abstention_is_a_failed_first_pass_never_a_skip(monkeypatch):
+    import dataclasses
+
+    from app.services.ranking import signals
+    from app.services.tutor_pipeline import contracts
+    from app.services.v1_checks import runner
+    from app.services.v2_panel.rules import V2_WITHHOLD_REASONS
+    from ehmf_fakes import leaking_alignment, typed_record
+    from v1_fakes import dev_pipeline, run
+    from v2_fakes import adapters_of, claim_key, fresh_gateway, make_registry, v2_pipeline
+
+    registry = make_registry(("fake-alpha", "fake-beta", "fake-gamma"))
+    claims = run(dev_pipeline(), TIER2).locked.claims
+    # Every member contradicts every claim: the corrections run out (v2_correction_exhausted).
+    script = {claim_key(claim.text, span_id): ("CONTRADICTED", "A") for claim in claims for span_id in claim.span_ids}
+    contradicting = adapters_of(registry, **{member.adapter_id: {"script": script} for member in registry.members})
+    exhausted = run(v2_pipeline(gateway=fresh_gateway(adapters=contradicting), registry=registry), TIER2).entry
+    # A leaking alignment the re-renders never fix (v2_alignment_failed).
+    leaky = adapters_of(registry, **{"fake-alpha-v1": {"alignment": {"rating": 2, "leakage": True}}})
+    misaligned = run(v2_pipeline(gateway=fresh_gateway(adapters=leaky), registry=registry), TIER2).entry
+    # A re-render that changes the claim set is refused (ehmf_set_changed; as AC-7-4's test builds it).
+    other = typed_record("What is the difference between QAI and AI4QC?", settings=Settings(model_gateway="on", ehmf="off")).v1.locked
+    original = runner.V1Track._render
+
+    def changed(self, ctx, state, generation, budget_over, stopwords, *, presentation=None, omit_extra=frozenset()):
+        decision = original(self, ctx, state, generation, budget_over, stopwords, presentation=presentation, omit_extra=omit_extra)
+        if presentation is not None and presentation.plan_id == self.v1.socratic_plan and isinstance(decision, runner.V1Passed):
+            return dataclasses.replace(decision, locked=other, verdicts=())
+        return decision
+
+    monkeypatch.setattr(runner.V1Track, "_render", changed)
+    refused = typed_record(adapters=leaking_alignment()).entry
+    monkeypatch.undo()
+    for entry, reason in ((exhausted, "v2_correction_exhausted"), (misaligned, "v2_alignment_failed"), (refused, "ehmf_set_changed")):
+        verification = entry.verification
+        assert (verification.final, verification.final_reason, verification.generation_attempts) == ("abstain", reason, 1), reason
+        result = _outcome(entry)
+        assert not isinstance(result, Skip) and result.y == 0 and result.model == STATIC, (reason, result)
+    # Rule 7 decides on the final reason itself, whatever the cycle counts (here a record edited to cycles 0).
+    for reason in signals.FAILED_AFTER_GENERATION:
+        result = _outcome(_verdict(_typed_entry(), final="abstain", final_reason=reason))
+        assert not isinstance(result, Skip) and result.y == 0, reason
+    # A pre-generation abstention reason is still not_generated.
+    for reason in (*contracts.GATE_ABSTENTION_REASONS, contracts.NO_QUOTABLE_EVIDENCE, "corpus_version_mismatch"):
+        result = _outcome(_verdict(_typed_entry(), final="abstain", final_reason=reason))
+        assert isinstance(result, Skip) and result.reason == "not_generated", reason
+    # Every final reason a record can carry is classified exactly once (a withhold is not an abstention).
+    groups = (signals.PRE_GENERATION, signals.POST_GENERATION_V1, signals.FAILED_AFTER_GENERATION, tuple(signals.NON_VERDICT_FINALS))
+    assert sum(len(group) for group in groups) == len(set().union(*groups))
+    finals = set(contracts.V2_FINAL_REASONS) | set(contracts.EHMF_FINAL_REASONS)
+    assert finals - set(contracts.V1_WITHHOLD_REASONS) - set(V2_WITHHOLD_REASONS) <= set().union(*groups)
 
 
 # ===================================================================================================== AC-9-2
@@ -504,6 +559,109 @@ def test_ac_9_5_the_x5_window_raises_the_next_delivery_s_draw_to_one_in_five(tmp
             assert (draw.rate_numerator, draw.rate_denominator, draw.x5_active) == (1, 5, True)
 
 
+def test_ac_9_5_the_active_deflation_scales_alpha_and_beta_in_every_context_and_the_prior():
+    from decimal import localcontext
+
+    from app.services.ranking.numeric import CTX, D, q, to_str
+    from app.services.ranking.trust import trust
+
+    half = block_with(lambda block: block["recommission"].update(deflation="0.5"))
+    log = Log(half).models(A, B)
+    log.batch("model-a", 25).batch("model-a", 25, cluster="industry-use-cases").batch("model-b", 25)
+    before, _ = apply_all(log.events)
+    log.add("model_change", {"adapter_id": "model-a", "from_version": "2026-11-21", "to_version": "2026-11-22", "source": "registry"})
+    after, derived = apply_all(log.events)
+    params = params_of(after)
+    touched = sorted(key for key, context in before["contexts"].items() if "model-a" in context["models"])
+    assert len(touched) >= 2 and "industry-use-cases|explanation|2" in touched
+    with localcontext(CTX):
+        for key in touched:
+            old, new = before["contexts"][key]["models"]["model-a"], after["contexts"][key]["models"]["model-a"]
+            for field in ("alpha", "beta"):
+                assert new[field] == to_str(q(D(old[field]) * D("0.5"))) != old[field], (key, field)
+            assert new["T"] == to_str(trust(new["alpha"], new["beta"], params.quantile)) != old["T"], key
+            assert after["contexts"][key]["models"].get("model-b") == before["contexts"][key]["models"].get("model-b"), key
+        for field in ("alpha", "beta"):
+            assert after["models"]["model-a"]["prior"][field] == to_str(q(D(before["models"]["model-a"]["prior"][field]) * D("0.5")))
+    assert after["models"]["model-b"]["prior"] == before["models"]["model-b"]["prior"]
+    assert after["models"]["model-a"]["capped"] is True and [p["cause"] for k, p in derived if k == "hold"][-1:] == ["model_change"]
+
+
+def test_ac_9_5_the_recommission_command_runs_the_golden_regression_and_only_its_pass_lifts_the_cap(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from app.gateway.registry import registry_for
+    from app.services.ranking import recommission
+    from app.services.ranking.generators import CloneGenerator
+    from app.services.tutor_pipeline import pipeline as pipeline_module
+    from app.workers import ranking as worker
+    from v1_fakes import AlwaysContradictedChecker, dev_pipeline, run
+    from v2_fakes import adapters_of, claim_key, fresh_gateway, v2_pipeline
+    from v3_fakes import fresh_v3_sessions
+
+    bumped = _clone_package(tmp_path, "2026-11-22")
+    settings = ranking_settings(config_package_path=str(bumped.path))
+    monkeypatch.setattr(worker, "get_settings", lambda: settings)
+    monkeypatch.setattr(worker, "get_config_package", lambda _settings: bumped)
+    queries = recommission.recommission_queries(bumped)
+    minimum = int(bumped.ranking.block["recommission"]["min_generated"])
+    assert len(queries) > minimum
+
+    def regression(subset: list[str]) -> int:
+        monkeypatch.setattr(recommission, "recommission_queries", lambda _package: list(subset))
+        return worker.main(["recommission", CLONE], session_factory=factory, now=FIXED_NOW)
+
+    with fresh_v3_sessions() as (factory, _engine):
+        commission_static(factory)
+        clone = _candidates()[CLONE]
+        from app.services.ranking.scan import append_inputs
+
+        with factory() as db:
+            append_inputs(db, [("commission", {"adapter_id": CLONE, "version": clone.model_version, "clean": 200, "failed": 0, "generated": 200,
+                                               "mean_q": "0.9", "run_sha256": "0" * 64})], settings=ranking_settings(), package=PACKAGE, now=FIXED_NOW,
+                          gateway=fresh_gateway())
+            db.commit()
+        scan(factory, settings=settings, package=bumped)
+
+        def capped() -> bool:
+            return stored_state(factory)["models"][CLONE]["capped"]
+
+        assert capped() is True
+        # Fewer generated records than min_generated: recommission_fail, exit 1, the cap stays.
+        assert regression(queries[: minimum - 1]) == 1
+        failed = events_of(factory, "recommission_fail")[-1]["payload"]
+        assert (failed["generated"], failed["failed"], failed["version"]) == (minimum - 1, 0, "2026-11-22") and capped() is True
+        # Enough records, but one first pass failed (the V1.3 checker contradicts every claim): fail.
+        real = pipeline_module.TwoPassPipeline
+        monkeypatch.setattr(pipeline_module, "TwoPassPipeline", lambda *args, **kwargs: real(*args, checker=AlwaysContradictedChecker(), **kwargs))
+        assert regression(queries[:minimum]) == 1
+        assert events_of(factory, "recommission_fail")[-1]["payload"]["failed"] >= 1 and capped() is True
+        monkeypatch.setattr(pipeline_module, "TwoPassPipeline", real)
+        # A record whose V2 corrections ran out (a real V2-on clone run) is a failed first pass, never a skip: with one
+        # more query than min_generated, a skip would have passed.
+        dev = Settings(environment="development", model_gateway="on", ehmf="off", config_package_path=str(bumped.path))
+        spec = next(member for member in registry_for(bumped, dev).members if member.adapter_id == CLONE)
+        claims = run(dev_pipeline(), queries[0]).locked.claims
+        registry = registry_for(bumped, dev)   # the development registry: the clone's family resolves, and the panel excludes it
+        script = {claim_key(claim.text, span_id): ("CONTRADICTED", "A") for claim in claims for span_id in claim.span_ids}
+        contradicting = adapters_of(registry, **{member.adapter_id: {"script": script} for member in registry.members})
+        exhausted = run(v2_pipeline(dev, gateway=fresh_gateway(adapters=contradicting), registry=registry,
+                                    generator=CloneGenerator(spec, bumped, settings=dev)), queries[0]).entry
+        assert exhausted.verification.final_reason == "v2_correction_exhausted" and exhausted.versions.generator_id == CLONE
+        real_query = recommission._run_query
+        monkeypatch.setattr(recommission, "_run_query", lambda pipeline, query, index: SimpleNamespace(entry=exhausted) if index == 0
+                            else real_query(pipeline, query, index))
+        assert regression(queries[: minimum + 1]) == 1
+        failed = events_of(factory, "recommission_fail")[-1]["payload"]
+        assert (failed["generated"], failed["failed"]) == (minimum + 1, 1) and capped() is True
+        monkeypatch.setattr(recommission, "_run_query", real_query)
+        # A clean regression of at least min_generated records: recommission_pass, exit 0, the cap lifts.
+        assert regression(queries[:minimum]) == 0
+        passed = events_of(factory, "recommission_pass")
+        assert len(passed) == 1 and (passed[0]["payload"]["generated"], passed[0]["payload"]["failed"]) == (minimum, 0) and capped() is False
+        assert len(events_of(factory, "recommission_fail")) == 3
+
+
 # ===================================================================================================== AC-9-6
 
 
@@ -599,7 +757,83 @@ def test_ac_9_7_a_cusum_alarm_raises_the_audit_to_the_x5_rate_holds_promotions_a
     assert len([p for k, p in apply_all(released.events)[1] if k == "promote"]) == 1
 
 
-def test_ac_9_7_the_scan_records_the_alarm_through_phase_6_and_releases_the_hold_when_the_window_closes():
+def failed_first_passes(factory, n: int) -> None:
+    """n shadow records of the static generator whose first pass failed: the V1.3 checker contradicts every claim (y = 0)."""
+    from v1_fakes import AlwaysContradictedChecker
+
+    for _ in range(n):
+        shadow_record(factory, checker=AlwaysContradictedChecker())
+
+
+def test_ac_9_7_a_scan_alarm_raises_x5_through_phase_6_and_its_hold_waits_for_every_window_it_raised(tmp_path):
+    from sqlalchemy import select
+
+    from app.db_models import V3Draw, V3Event
+    from app.services.ranking.batch import held
+    from app.services.ranking.cusum import cluster_stream, model_stream
+    from app.services.ranking.types import Context as ContextKey
+    from app.services.v3.scan import run_scan as v3_scan
+    from app.services.v3.scan import window_remaining
+    from v3_fakes import append_all, fresh_v3_sessions, synthetic_deliveries
+
+    small = small_window_package(tmp_path, 4)   # an X5 window of 4 learner deliveries, so the test can close one
+    settings = ranking_settings(config_package_path=str(small.path))
+    v3_settings = Settings(environment="development", v3_queue="shadow", config_package_path=str(small.path))
+    with fresh_v3_sessions() as (factory, _engine):
+
+        def deliver(start: int, n: int) -> None:
+            append_all(factory, synthetic_deliveries(n, start=start))
+            v3_scan(settings=v3_settings, package=small, session_factory=factory, now=FIXED_NOW)
+
+        commission_static(factory, settings=settings, package=small)
+        failed_first_passes(factory, 4)   # four errors take both charts above h = 4 (each adds ln 3)
+        scan(factory, settings=settings, package=small)
+        outcomes = events_of(factory, "outcome")
+        assert [row["payload"]["y"] for row in outcomes] == [0, 0, 0, 0]
+        key = outcomes[0]["context_key"]
+        cluster = ContextKey.from_key(key).cluster
+        alarms = events_of(factory, "alarm")
+        assert {row["payload"]["stream"] for row in alarms} == {model_stream(STATIC), cluster_stream(STATIC, cluster)}
+        assert [row["payload"]["sustained"] for row in alarms] == [False, False]
+        holds = {row["note"]: row for row in events_of(factory, "hold")}
+        with factory() as db:
+            for alarm in alarms:
+                event = db.get(V3Event, alarm["v3_event_seq"])
+                body = json.loads(event.payload)
+                assert event.kind == "cusum_alarm" and body["source"] == "phase9-cusum" and body["stream"] == alarm["payload"]["stream"]
+                assert event.window_deliveries == 4 and body["h"] == 4.0 and body["statistic"] > body["h"]
+                assert alarm["note"] == alarm["payload"]["hold_id"] and holds[alarm["note"]]["v3_event_seq"] == alarm["v3_event_seq"]
+        first = [row["v3_event_seq"] for row in alarms]
+        state = stored_state(factory)
+        assert set(state["holds"]) == set(holds) and held(state, key, (STATIC, CLONE))
+        # The next learner deliveries are audited at the X5 rate (1/5).
+        deliver(1, 2)
+        with factory() as db:
+            draws = [(draw.rate_numerator, draw.rate_denominator, draw.x5_active) for draw in db.execute(select(V3Draw).order_by(V3Draw.ledger_seq)).scalars()]
+        assert draws[-2:] == [(1, 5, True), (1, 5, True)]
+        # A sustained alarm on the same streams raises a later X5 window under the same holds (no new hold).
+        failed_first_passes(factory, 4)
+        scan(factory, settings=settings, package=small)
+        sustained = events_of(factory, "alarm")[2:]
+        assert [row["payload"]["sustained"] for row in sustained] == [True, True] and {row["note"] for row in sustained} == set(holds)
+        assert len(events_of(factory, "hold")) == 2
+        later = [row["v3_event_seq"] for row in sustained]
+        assert set(later).isdisjoint(first)
+        # The first windows close while the sustained alarms' are open: the holds stay and promotions stay held.
+        deliver(3, 2)
+        with factory() as db:
+            assert [window_remaining(db, seq) for seq in first] == [0, 0] and [window_remaining(db, seq) for seq in later] == [2, 2]
+        scan(factory, settings=settings, package=small)
+        assert events_of(factory, "hold_release") == [] and set(stored_state(factory)["holds"]) == set(holds)
+        # Every window closed: the scan releases each hold, and a promotion is no longer held.
+        deliver(5, 2)
+        scan(factory, settings=settings, package=small)
+        assert sorted(row["payload"]["hold_id"] for row in events_of(factory, "hold_release")) == sorted(holds)
+        state = stored_state(factory)
+        assert state["holds"] == {} and not held(state, key, (STATIC, CLONE))
+
+
+def test_ac_9_7_record_cusum_alarm_inserts_in_the_caller_s_session_and_its_window_raises_the_draw_rate():
     from sqlalchemy import select
 
     from app.db_models import V3Draw, V3Event
@@ -610,16 +844,10 @@ def test_ac_9_7_the_scan_records_the_alarm_through_phase_6_and_releases_the_hold
 
     with fresh_v3_sessions() as (factory, _engine):
         commission_static(factory)
-        # Records of the static generator whose first pass failed (a V1 regeneration) drive model:extractive-d19-v1 up.
-        from tutor_fakes import make_entry  # noqa: F401 - the legacy records below come from v3_fakes
-
-        for _ in range(12):
-            result = shadow_record(factory)
-        rows = events_of(factory)
+        shadow_record(factory)
         scan(factory)
-        # Inject an alarm through the controller's own path: a log the scan would write for 30 failing outcomes.
-        state = stored_state(factory)
-        assert state["models"][STATIC]["commissioned"] is True and result is not None
+        assert stored_state(factory)["models"][STATIC]["commissioned"] is True
+        # The alarm the controller derives for 30 failing outcomes, recorded through Phase 6's interface.
         log = Log().models(_candidates()[STATIC].as_dict())
         for _ in range(30):
             log.outcome(STATIC, 0)
@@ -645,7 +873,6 @@ def test_ac_9_7_the_scan_records_the_alarm_through_phase_6_and_releases_the_hold
             draws = db.execute(select(V3Draw).order_by(V3Draw.ledger_seq)).scalars().all()
             assert [(d.rate_numerator, d.rate_denominator) for d in draws][-2:] == [(1, 5), (1, 5)]
             assert window_remaining(db, seq) == int(PACKAGE.v3.x5_window_deliveries) - 2
-        assert rows is not None
 
 
 def test_ac_9_7_with_v3_off_the_hold_stays_open():
@@ -751,22 +978,66 @@ def test_ac_9_8_one_event_log_replayed_twice_gives_byte_identical_final_states()
 
 
 def test_ac_9_8_the_worker_replay_check_exits_1_on_a_mismatch_and_0_when_current():
-    from app.db_models import RankingState
+    from sqlalchemy import insert
+
+    from app.db_models import RankingEvent, RankingState
+    from app.services.ranking.scan import EventLog
     from app.services.ranking.vocabulary import STATE_KEY
-    from app.workers.ranking import main
+    from app.workers.ranking import clear_stop, main
     from v3_fakes import fresh_v3_sessions
+
+    def tamper_state(factory) -> None:
+        with factory() as db:
+            row = db.get(RankingState, STATE_KEY)
+            row.payload = row.payload + " "
+            db.commit()
 
     with fresh_v3_sessions() as (factory, _engine):
         commission_static(factory)
         shadow_record(factory)
         scan(factory)
         assert main(["replay", "--check"], session_factory=factory, now=FIXED_NOW) == 0
-        with factory() as db:
-            row = db.get(RankingState, STATE_KEY)
-            row.payload = row.payload + " "
-            db.commit()
+        tamper_state(factory)
         assert main(["replay", "--check"], session_factory=factory, now=FIXED_NOW) == 1
         assert main(["scan"], session_factory=factory, now=FIXED_NOW) == 2
+    # A scan that finds the state differing from its checkpoint stops the ranking and exits 1, --until-done included.
+    for argv in (["scan"], ["scan", "--until-done"]):
+        with fresh_v3_sessions() as (factory, _engine):
+            commission_static(factory)
+            shadow_record(factory)
+            scan(factory)
+            tamper_state(factory)
+            assert main(argv, session_factory=factory, now=FIXED_NOW) == 1, argv
+            last = events_of(factory)[-1]
+            assert (last["kind"], last["payload"]["reason"]) == ("stop", "state_mismatch"), argv
+            assert main(argv, session_factory=factory, now=FIXED_NOW) == 2, argv   # stopped: refused
+            # A stored-state mismatch is the one clear-stop resyncs.
+            assert main(["clear-stop", "--cause", "fixed_data"], session_factory=factory, now=FIXED_NOW) == 0
+            assert main(["replay", "--check"], session_factory=factory, now=FIXED_NOW) == 0
+            assert main(argv, session_factory=factory, now=FIXED_NOW) == 0, argv
+    # A stored checkpoint, a stored derived event or the chain that disagrees with the replay is never cleared:
+    # ranking_events is append-only, so clear-stop is refused (exit 2) and the ranking stays stopped.
+    with fresh_v3_sessions() as (factory, _engine):
+        commission_static(factory)
+        shadow_record(factory)
+        scan(factory)
+        with factory() as db:
+            EventLog(db, empty_state(), now=FIXED_NOW).control("checkpoint", {"state_sha256": "0" * 64, "last_input_seq": 0})
+            db.commit()
+        assert main(["replay", "--check"], session_factory=factory, now=FIXED_NOW) == 1
+        assert main(["clear-stop", "--cause", "fixed_data"], session_factory=factory, now=FIXED_NOW) == 2
+        refused = clear_stop("fixed_code", session_factory=factory, now=FIXED_NOW)
+        assert not refused and refused.reason == "checkpoint" and events_of(factory)[-1]["kind"] == "stop"
+        assert main(["scan"], session_factory=factory, now=FIXED_NOW) == 2
+    with fresh_v3_sessions() as (factory, _engine):
+        commission_static(factory)
+        scan(factory)
+        with factory() as db:
+            db.execute(insert(RankingEvent).values(kind="tick", payload="{}", prev_sha256="0" * 64, sha256="1" * 64, observed_at=FIXED_NOW))
+            db.commit()
+        assert main(["replay", "--check"], session_factory=factory, now=FIXED_NOW) == 1
+        refused = clear_stop("restored_backup", session_factory=factory, now=FIXED_NOW)
+        assert not refused and refused.reason == "chain" and events_of(factory)[-1]["kind"] == "stop"
 
 
 # ===================================================================================================== plan J
@@ -807,11 +1078,40 @@ def test_plan_j_flapping_near_equal_models_switch_no_more_than_the_hysteresis_al
     inputs, meta = synthetic.build(BLOCK, "flapping")
     numbers = synthetic.measurements(synthetic.materialise(inputs), meta)
     assert int(numbers["switches_drift_free"]) * 1000 <= 2 * int(numbers["drift_free_requests"])
+    assert all(Decimal(rate) <= 2 for rate in numbers["switches_per_context_per_1000_drift_free"].values())
     # Without hysteresis (delta 0, n_d 1) the same streams switch more.
     loose = block_with(lambda block: block["promotion"].update(delta="0", n_d=1))
     inputs, meta = synthetic.build(loose, "flapping")
     looser = synthetic.measurements(synthetic.materialise(inputs), meta)
     assert int(looser["switches_drift_free"]) > int(numbers["switches_drift_free"])
+
+
+def test_plan_j_the_drift_free_window_ends_at_the_first_scheduled_disturbance_and_is_counted_per_context():
+    # MR-3's shape: switches per context per 1000 drift-free requests. An outage, a model change, an emptied eligible set
+    # or a shift ends the window, so the switches they cause are never counted as drift-free.
+    measured = {}
+    for name in synthetic.SCENARIOS:
+        inputs, meta = synthetic.build(BLOCK, name)
+        measured[name] = (synthetic.measurements(synthetic.materialise(inputs), meta), meta)
+    outage, meta = measured["outage"]
+    assert meta["disturbance_at"] == 301 and outage["drift_free_requests"] == 300 < outage["requests"] == 900
+    assert (outage["demotions"], outage["promotions"]) == (1, 1)   # both after the outage began
+    assert outage["switches_drift_free"] == 0 and outage["switch_causes_drift_free"] == {"promote": 0, "demote": 0}
+    for name in ("model_change", "empty_eligible"):
+        numbers, meta = measured[name]
+        assert meta["disturbance_at"] is not None and numbers["drift_free_requests"] == meta["disturbance_at"] - 1 < numbers["requests"], name
+    drift, meta = measured["drift"]
+    assert meta["disturbance_at"] == meta["shift_at"] and drift["drift_free_requests"] == 750
+    # The pre-shift window's two switches: a warm-up promotion in one context, a tier-threshold demotion (AC-9-4) in the other.
+    assert drift["switch_causes_drift_free"] == {"promote": 1, "demote": 1} and drift["switches_drift_free"] == 2
+    assert sorted(drift["switches_per_context_per_1000_drift_free"]) == ["industry-use-cases|explanation|2", "nisq-hybrid-workflows|explanation|2"]
+    for name in ("flapping", "promotion", "rating_only"):
+        numbers, meta = measured[name]
+        assert meta["disturbance_at"] is None and numbers["drift_free_requests"] == numbers["requests"], name
+    record = json.loads(REPORT.read_text(encoding="utf-8"))
+    for item in record["scenarios"]:
+        assert item["drift_free_requests"] == measured[item["id"]][0]["drift_free_requests"], item["id"]
+        assert "switches_per_1000_drift_free" not in item, item["id"]
 
 
 def test_plan_j_outage_makes_a_model_ineligible_and_recovery_is_only_through_promotion():
@@ -1114,6 +1414,38 @@ def test_plan_i_metrics_report_micro_batch_latency_switch_rate_fallback_rate_and
     assert body["cost_units_mean"] == {STATIC: "0"} and body["fallback_rate"] == "0"
 
 
+def test_plan_i_metrics_compute_batch_latency_switch_rate_and_fallback_rate_from_the_log():
+    from datetime import timedelta
+
+    from app.services.ranking.metrics import slis
+    from app.services.ranking.scan import EventLog
+    from v3_fakes import append_all, fresh_v3_sessions, synthetic_deliveries
+
+    with fresh_v3_sessions() as (factory, _engine):
+        records = append_all(factory, synthetic_deliveries(4), now=FIXED_NOW)
+        # Four batches, each closed 10, 20, 30 and 40 s after its last record's time.
+        for index, record in enumerate(records):
+            with factory() as db:
+                EventLog(db, empty_state(), now=FIXED_NOW + timedelta(seconds=10 * (index + 1))).control(
+                    "batch", {"context": "c1", "batch_seq": index + 1, "ledger_seqs": [records[0].seq, record.seq], "trigger": "count", "states": {}})
+                db.commit()
+        # Context c1: a, a, b, b and a fallback (one switch in five requests); c2: five requests of a (none).
+        selects = [("c1", "incumbent", "model-a"), ("c1", "incumbent", "model-a"), ("c1", "incumbent", "model-b"), ("c1", "incumbent", "model-b"),
+                   ("c1", "fallback", None), *[("c2", "incumbent", "model-a")] * 5]
+        with factory() as db:
+            log = EventLog(db, empty_state(), now=FIXED_NOW)
+            for seq, (context, kind, chosen) in enumerate(selects, start=1):
+                log.control("select", {"ledger_seq": seq, "context": context, "eligible": [], "kind": kind, "model": chosen,
+                                       "explore": "model-b" if seq == 2 else None, "u_explore": "0"})
+            db.commit()
+        with factory() as db:
+            body = slis(db, PACKAGE)
+    # Nearest-rank on the sorted latencies (10, 20, 30, 40): p50 at index round(1.5) = 2, p95 at index round(2.85) = 3.
+    assert body["micro_batch_latency_s"] == {"p50": "30", "p95": "40", "batches": 4}
+    assert body["switch_rate_per_1000"] == {"c1": "200", "c2": "0"}
+    assert body["fallback_rate"] == "100" and body["exploration_share"] == "100" and body["requests"] == 10
+
+
 # ===================================================================================================== plan L
 
 
@@ -1162,20 +1494,82 @@ def test_plan_l_the_scan_refuses_while_the_static_generator_is_uncommissioned():
 
 
 def test_plan_l_the_scan_takes_the_ranking_then_the_v3_lock():
-    source = (API_ROOT / "app" / "services" / "ranking" / "scan.py").read_text(encoding="utf-8")
-    body = source.split("def _scan_once(", 1)[1]
-    first, second = body.index("RANKING_SCAN_LOCK_KEY"), body.index("V3_SCAN_LOCK_KEY}")
-    assert first < second < body.index("_load_state(db)")
-    inputs = source.split("def append_inputs(", 1)[1]
-    assert inputs.index("RANKING_SCAN_LOCK_KEY") < inputs.index("V3_SCAN_LOCK_KEY}") < inputs.index("_load_state(db)")
+    from app.services.ranking import scan as scan_module
     from app.services.ranking.vocabulary import RANKING_SCAN_LOCK_KEY
     from app.services.v3.scan import V3_SCAN_LOCK_KEY
 
+    source = (API_ROOT / "app" / "services" / "ranking" / "scan.py").read_text(encoding="utf-8")
+    body = source.split("def _scan_once(", 1)[1]
+    assert body.index("take_locks(db)") < body.index("stopped(db)") < body.index("_load_state(db)")
+    inputs = source.split("def append_inputs(", 1)[1]
+    assert inputs.index("take_locks(db)") < inputs.index("stopped(db)") < inputs.index("_load_state(db)")
+    worker = (API_ROOT / "app" / "workers" / "ranking.py").read_text(encoding="utf-8")
+    for name in ("def replay_check(", "def clear_stop("):
+        part = worker.split(name, 1)[1]
+        assert part.index("take_locks(db)") < part.index("load_log(db)"), name
+    # take_locks: the ranking key, then V3's, transaction-scoped, on PostgreSQL only.
+
+    class Bind:
+        def __init__(self, name):
+            self.dialect = type("Dialect", (), {"name": name})()
+
+    class FakeDb:
+        def __init__(self, name):
+            self.bind, self.statements = Bind(name), []
+
+        def get_bind(self):
+            return self.bind
+
+        def execute(self, statement, params=None):
+            self.statements.append((str(statement), dict(params or {})))
+
+    postgres, sqlite = FakeDb("postgresql"), FakeDb("sqlite")
+    scan_module.take_locks(postgres)
+    scan_module.take_locks(sqlite)
+    assert postgres.statements == [("SELECT pg_advisory_xact_lock(:key)", {"key": RANKING_SCAN_LOCK_KEY}),
+                                   ("SELECT pg_advisory_xact_lock(:key)", {"key": V3_SCAN_LOCK_KEY})] and sqlite.statements == []
+    lock_body = source.split("def take_locks(", 1)[1].split("\ndef ", 1)[0]
+    assert source.count("pg_advisory_xact_lock") == lock_body.count("pg_advisory_xact_lock") == 2 and "pg_advisory" not in worker
     assert RANKING_SCAN_LOCK_KEY == 7_401_209 and V3_SCAN_LOCK_KEY == 7_401_206
     # No other writer takes V3's lock and then the ranking lock.
     for path in (API_ROOT / "app").rglob("*.py"):
         if path.name != "scan.py" or "ranking" not in path.parts:
             assert "RANKING_SCAN_LOCK_KEY" not in path.read_text(encoding="utf-8") or path.name == "vocabulary.py", path
+
+
+def test_plan_l_every_ranking_writer_takes_the_locks_before_it_reads_the_log(monkeypatch):
+    from app.services.ranking import replay as replay_module
+    from app.services.ranking import scan as scan_module
+    from app.workers.ranking import clear_stop, replay_check
+    from v3_fakes import fresh_v3_sessions
+
+    calls: list[str] = []
+    real_lock, real_load, real_state = scan_module.take_locks, replay_module.load_log, scan_module._load_state
+
+    def lock(db):
+        calls.append("lock")
+        return real_lock(db)
+
+    def load(db):
+        calls.append("load")
+        return real_load(db)
+
+    def state(db):
+        calls.append("load")
+        return real_state(db)
+
+    monkeypatch.setattr(scan_module, "take_locks", lock)
+    monkeypatch.setattr(replay_module, "load_log", load)
+    monkeypatch.setattr(scan_module, "_load_state", state)
+    with fresh_v3_sessions() as (factory, _engine):
+        commission_static(factory)            # append_inputs
+        assert calls == ["lock", "load"]
+        shadow_record(factory)
+        for run in (lambda: scan(factory), lambda: replay_check(session_factory=factory, now=FIXED_NOW),
+                    lambda: clear_stop("fixed_data", session_factory=factory, now=FIXED_NOW)):
+            calls.clear()
+            assert run()
+            assert calls[:2] == ["lock", "load"], calls
 
 
 # ===================================================================================================== freeze
@@ -1220,13 +1614,20 @@ def test_freeze_no_learner_path_changes_and_the_payload_golden_is_unchanged():
 # ===================================================================================================== plan G
 
 
-def test_plan_g_shadow_generation_writes_only_undelivered_shadow_records(caplog):
+def test_plan_g_shadow_generation_writes_only_undelivered_shadow_records(caplog, monkeypatch):
+    import time
+    from unittest import mock
+
     from sqlalchemy import select
 
     from app.db_models import ResponseLedgerRecord
-    from app.services.ledger import ledger_provenance
+    from app.services.ledger import clone_prompt_hashes, ledger_provenance
     from app.services.ranking import hook
     from app.services.ranking.hook import guarded_after_shadow
+    from app.services.tutor_pipeline.contracts import PresentationPlan
+    from app.services.tutor_pipeline.resolve import LearnerTurn, resolve_turns
+    from v1_fakes import run
+    from v2_fakes import v2_pipeline
     from v3_fakes import fresh_v3_sessions
 
     with fresh_v3_sessions() as (factory, _engine):
@@ -1244,41 +1645,53 @@ def test_plan_g_shadow_generation_writes_only_undelivered_shadow_records(caplog)
         settings = ranking_settings(ranking_shadow_generation=True)
         decision = hook.select(hook.context_of(result.entry, package=PACKAGE), ledger_seq=result.appended.seq, settings=settings, package=PACKAGE,
                                session_factory=factory)
-        assert decision.kind == "incumbent"
+        # The incumbent is the clone (the higher commissioning prior), so the hook runs one clone shadow record.
+        assert decision.kind == "incumbent" and (decision.model == CLONE or decision.explore is not None), decision
 
         class Job:
             thread_id, user_message_id, lesson_slug, legacy_decision = "t", "m", None, "answer"
             shadowed_response_id = result.entry.shadowed_response_id
-            from app.services.tutor_pipeline.contracts import PresentationPlan
-
             presentation = PresentationPlan(plan_id="concise", source="request")
 
-        from unittest import mock
-
-        from v2_fakes import v2_pipeline
-
-        def factory_pipeline():
-            return v2_pipeline(Settings(environment="development", model_gateway="shadow", ehmf="shadow", ranking="shadow"), gateway=fresh_gateway(),
-                               session_factory=factory, v3_stop=lambda: False)
-
-        with mock.patch("app.services.tutor_pipeline.resolve.resolve_thread", return_value=result.envelope_resolved if hasattr(result, "envelope_resolved") else None):
-            from app.services.tutor_pipeline.resolve import LearnerTurn, resolve_turns
-
-            resolved = resolve_turns([], LearnerTurn("message-00000000-0000-0000-0000-000000000001", TIER2), package=PACKAGE)
-            with mock.patch("app.services.tutor_pipeline.resolve.resolve_thread", return_value=resolved):
-                import time
-
-                # The incumbent is the clone (the higher commissioning prior), so the hook runs one clone shadow record.
-                if decision.model != CLONE and decision.explore is None:
-                    pytest.skip("the commissioned incumbent is the static generator")
-                guarded_after_shadow(Job, result, pipeline_factory=factory_pipeline, settings=settings, session_factory=factory, started=time.perf_counter())
+        # The request path's factory returns one shared, cached pipeline (TeachingAssistantService.pipeline): the hook
+        # must leave its generator as static assignment's.
+        shared = v2_pipeline(Settings(environment="development", model_gateway="shadow", ehmf="shadow", ranking="shadow"), gateway=fresh_gateway(),
+                             session_factory=factory, v3_stop=lambda: False)
+        static_ref = shared.generator.ref
+        assert static_ref.generator_id == STATIC
+        resolved = resolve_turns([], LearnerTurn("message-00000000-0000-0000-0000-000000000001", TIER2), package=PACKAGE)
+        with mock.patch("app.services.tutor_pipeline.resolve.resolve_thread", return_value=resolved):
+            guarded_after_shadow(Job, result, pipeline_factory=lambda: shared, settings=settings, session_factory=factory, started=time.perf_counter())
+        assert shared.generator.ref == static_ref
+        # The next ordinary shadow run through the shared pipeline is static assignment's.
+        assert run(shared, TIER2, legacy_decision="answer", record=True).entry.versions.generator_id == STATIC
         with factory() as db:
             rows = db.execute(select(ResponseLedgerRecord.delivery, ResponseLedgerRecord.entry).order_by(ResponseLedgerRecord.seq)).all()
-        assert [row.delivery for row in rows] == ["shadow", "shadow"]
-        assert json.loads(rows[1].entry)["versions"]["generator_id"] == CLONE
+        assert [row.delivery for row in rows] == ["shadow", "shadow", "shadow"]
+        assert [json.loads(row.entry)["versions"]["generator_id"] for row in rows] == [STATIC, CLONE, STATIC]
+        # The provenance audit accepts the clone record in development only; elsewhere (and by default) it is flagged.
         with factory() as db:
-            provenance = ledger_provenance(db, PACKAGE)
-        assert provenance["problems"] == []
+            assert ledger_provenance(db, PACKAGE, environment="development")["problems"] == []
+            for environment in (None, "staging", "production"):
+                problems = ledger_provenance(db, PACKAGE, environment=environment)["problems"]
+                assert sorted(problems) == ["seq 2 provenance.evidential_prompt_hash is not the package pin",
+                                            "seq 2 versions.generator_id is not a generator the package allows"], environment
+        assert set(clone_prompt_hashes(PACKAGE, environment="development")) == {CLONE}
+        assert clone_prompt_hashes(PACKAGE, environment="production") == {} == clone_prompt_hashes(PACKAGE, environment=None)
+        # The worker's and the script's --check-provenance pass the environment of their settings.
+        from app.workers import response_ledger
+
+        verify = scripts_module("verify_ledger")
+        production = Settings(environment="production", allowed_origins=["https://qantumlearn.academy"])
+        monkeypatch.setattr(response_ledger, "SessionLocal", factory)
+        monkeypatch.setattr(verify, "create_engine", lambda _url: _engine)   # the script opens its own engine on the URL
+        monkeypatch.setattr(_engine, "dispose", lambda *args, **kwargs: None)   # and disposes of it: keep the in-memory database
+        for module in (response_ledger, verify):
+            monkeypatch.setattr(module, "get_config_package", lambda _settings: PACKAGE)
+            for chosen, expected in ((settings, 0), (production, 1)):
+                monkeypatch.setattr(module, "get_settings", lambda chosen=chosen: chosen)
+                argv = ["--check-provenance"] if module is response_ledger else ["--database-url", "sqlite://", "--check-provenance"]
+                assert module.main(argv) == expected, (module.__name__, chosen.environment)
         # A raising clone is logged and swallowed.
         with caplog.at_level(logging.WARNING, logger="qcai.ranking"):
             guarded_after_shadow(Job, result, pipeline_factory=lambda: (_ for _ in ()).throw(RuntimeError("boom")), settings=settings,
@@ -1376,6 +1789,87 @@ def test_plan_e_the_phase_9_downgrade_refuses_while_ranking_events_holds_rows_an
         assert not (phase9 & remaining) and remaining - {"alembic_version"} == others - {"alembic_version"}
     finally:
         engine.dispose()
+
+
+def test_plan_e_the_scan_replay_stop_and_locks_run_on_the_session_dialect(fresh_database_url, tmp_path):
+    # The AC paths on the suite's own dialect (PostgreSQL in CI's api-postgres legs, psycopg and pg8000): the advisory
+    # locks, input_key's ON CONFLICT DO NOTHING ... RETURNING, an alarm through record_cusum_alarm(db=...) and a fallback's
+    # V3 upsert inside the scan's transaction, replay --check, clear-stop and /ready's stop read (a SAVEPOINT there).
+    import threading
+    import time
+
+    from sqlalchemy import select, text
+
+    from app.db_models import RankingState, V3Event, V3QueueItem
+    from app.services.ranking.replay import check, process_stop_state, reset_stop_cache
+    from app.services.ranking.scan import EventLog
+    from app.services.ranking.vocabulary import RANKING_SCAN_LOCK_KEY, STATE_KEY
+    from app.workers.ranking import clear_stop, replay_check
+
+    small = small_window_package(tmp_path, 4)
+    settings = ranking_settings(config_package_path=str(small.path))
+    factory, engine = session_factory_for(fresh_database_url)
+    try:
+        commission_static(factory, settings=settings, package=small)
+        failed_first_passes(factory, 4)
+        scan(factory, settings=settings, package=small)
+        alarms = events_of(factory, "alarm")
+        assert len(alarms) == 2 and len(events_of(factory, "hold")) == 2
+        with factory() as db:
+            assert {db.get(V3Event, row["v3_event_seq"]).kind for row in alarms} == {"cusum_alarm"}
+        outcomes = events_of(factory, "outcome")
+        assert len(outcomes) == 4
+        scan(factory, settings=settings, package=small)   # nothing new past the cursor
+        assert events_of(factory, "outcome") == outcomes
+        with factory() as db:   # an input already in the log is not appended again
+            state = json.loads(db.get(RankingState, STATE_KEY).payload)
+            seq = outcomes[0]["ledger_seq"]
+            assert EventLog(db, state, now=FIXED_NOW).append("skipped", {"ledger_seq": seq, "reason": "unparsed", "model": None},
+                                                             input_key=f"ledger:{seq}") is None
+            db.rollback()
+        # A fallback (the kill switch empties the eligible set) enqueues its V3 item in the scan's transaction.
+        shadow_record(factory)
+        kill = ranking_settings(config_package_path=str(small.path), model_gateway_kill_switch="abstain_only")
+        scan(factory, settings=kill, package=small)
+        assert events_of(factory, "select")[-1]["payload"]["kind"] == "fallback"
+        with factory() as db:
+            assert ("ranking_empty_eligible_set", "response") in [(row.reasons, row.subject) for row in db.execute(select(V3QueueItem.reasons, V3QueueItem.subject))]
+        assert replay_check(session_factory=factory, now=FIXED_NOW)[0]
+        reset_stop_cache()
+        assert process_stop_state(settings, small, session_factory=factory) is False
+        with factory() as db:
+            row = db.get(RankingState, STATE_KEY)
+            row.payload = row.payload + " "
+            db.commit()
+        assert not replay_check(session_factory=factory, now=FIXED_NOW)[0]
+        reset_stop_cache()
+        assert process_stop_state(settings, small, session_factory=factory) is True
+        assert clear_stop("fixed_data", session_factory=factory, now=FIXED_NOW)
+        with factory() as db:
+            assert check(db).ok
+        if engine.dialect.name == "postgresql":
+            # While a scan holds the ranking lock, replay --check and clear-stop wait for it instead of reading the log
+            # half-written or chaining a row from the same prev_sha256.
+            for command in (lambda: replay_check(session_factory=factory, now=FIXED_NOW)[0],
+                            lambda: clear_stop("fixed_code", session_factory=factory, now=FIXED_NOW)):
+                done: list = []
+                with engine.connect() as holder:
+                    transaction = holder.begin()
+                    holder.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": RANKING_SCAN_LOCK_KEY})
+                    worker = threading.Thread(target=lambda: done.append(command()))
+                    worker.start()
+                    time.sleep(1.0)
+                    assert worker.is_alive() and done == []
+                    count = len(events_of(factory))
+                    transaction.rollback()
+                worker.join(60)
+                assert not worker.is_alive() and done and done[0]
+                assert len(events_of(factory)) >= count
+            with factory() as db:
+                assert check(db).ok
+    finally:
+        engine.dispose()
+    reset_stop_cache()
 
 
 # ===================================================================================================== source and docs

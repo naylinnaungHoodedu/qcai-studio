@@ -126,7 +126,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.export is not None:
                 extra["exported"] = {"rows": export_ledger(db, args.export)}
             if args.check_provenance:
-                extra["provenance"] = ledger_provenance(db, get_config_package(get_settings()))
+                settings = get_settings()
+                extra["provenance"] = ledger_provenance(db, get_config_package(settings), environment=settings.environment)
     except Exception:
         LOGGER.exception("Response ledger check failed", extra={FIELDS: {"job": "response_ledger", "status": "failed"}})
         return 1

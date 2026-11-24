@@ -1,8 +1,8 @@
 {
  "report": "qcai-ranking-replay",
  "format_version": 1,
- "created_at": "2026-11-24T04:52:59Z",
- "commit": "060ffd37ca5bd90623dd5350ef2e4865602aed75-dirty",
+ "created_at": "2026-11-24T08:06:24Z",
+ "commit": "fa1f01c7841a96d89d58d105a2e6eceb8628f9f3-dirty",
  "evidence_class": "engineering measurement on synthetic streams, not E4 results (invariant 9; Table XVII MR-1..MR-3 not asserted)",
  "pins": {
   "config_package": {
@@ -27,7 +27,13 @@
    "requests": 2000,
    "drift_free_requests": 2000,
    "switches_drift_free": 0,
-   "switches_per_1000_drift_free": "0",
+   "switches_per_context_per_1000_drift_free": {
+    "unscoped|explanation|2": "0"
+   },
+   "switch_causes_drift_free": {
+    "promote": 0,
+    "demote": 0
+   },
    "false_alarms": 0,
    "false_alarms_per_1000": "0",
    "alarms": 0,
@@ -48,7 +54,13 @@
    "requests": 1200,
    "drift_free_requests": 1200,
    "switches_drift_free": 1,
-   "switches_per_1000_drift_free": "0.833333333333333333",
+   "switches_per_context_per_1000_drift_free": {
+    "unscoped|explanation|2": "0.833333333333333333"
+   },
+   "switch_causes_drift_free": {
+    "promote": 1,
+    "demote": 0
+   },
    "false_alarms": 0,
    "false_alarms_per_1000": "0",
    "alarms": 0,
@@ -67,9 +79,15 @@
    "derived_sha256": "344d03ec5edc63fb2844abec605d6b204129b9a94da8e029d7969b1636f2b202",
    "replays_equal": true,
    "requests": 900,
-   "drift_free_requests": 900,
-   "switches_drift_free": 2,
-   "switches_per_1000_drift_free": "2.222222222222222222",
+   "drift_free_requests": 300,
+   "switches_drift_free": 0,
+   "switches_per_context_per_1000_drift_free": {
+    "unscoped|explanation|2": "0"
+   },
+   "switch_causes_drift_free": {
+    "promote": 0,
+    "demote": 0
+   },
    "false_alarms": 0,
    "false_alarms_per_1000": "0",
    "alarms": 0,
@@ -90,7 +108,14 @@
    "requests": 1500,
    "drift_free_requests": 750,
    "switches_drift_free": 2,
-   "switches_per_1000_drift_free": "2.666666666666666667",
+   "switches_per_context_per_1000_drift_free": {
+    "industry-use-cases|explanation|2": "6.666666666666666667",
+    "nisq-hybrid-workflows|explanation|2": "1.666666666666666667"
+   },
+   "switch_causes_drift_free": {
+    "promote": 1,
+    "demote": 1
+   },
    "false_alarms": 2,
    "false_alarms_per_1000": "2.666666666666666667",
    "alarms": 26,
@@ -109,9 +134,15 @@
    "derived_sha256": "549dbe1c73d344cd4d43ce1760d10739afe240a2ddc335405eb96546b33ed72a",
    "replays_equal": true,
    "requests": 500,
-   "drift_free_requests": 500,
+   "drift_free_requests": 200,
    "switches_drift_free": 0,
-   "switches_per_1000_drift_free": "0",
+   "switches_per_context_per_1000_drift_free": {
+    "unscoped|explanation|2": "0"
+   },
+   "switch_causes_drift_free": {
+    "promote": 0,
+    "demote": 0
+   },
    "false_alarms": 0,
    "false_alarms_per_1000": "0",
    "alarms": 0,
@@ -130,9 +161,15 @@
    "derived_sha256": "f4ff5671f5da76661c37b9e6d72a97664ead6c273527054e27e6f64716a74f0b",
    "replays_equal": true,
    "requests": 200,
-   "drift_free_requests": 200,
+   "drift_free_requests": 100,
    "switches_drift_free": 0,
-   "switches_per_1000_drift_free": "0",
+   "switches_per_context_per_1000_drift_free": {
+    "unscoped|explanation|2": "0"
+   },
+   "switch_causes_drift_free": {
+    "promote": 0,
+    "demote": 0
+   },
    "false_alarms": 0,
    "false_alarms_per_1000": "0",
    "alarms": 0,
@@ -153,7 +190,13 @@
    "requests": 60,
    "drift_free_requests": 60,
    "switches_drift_free": 0,
-   "switches_per_1000_drift_free": "0",
+   "switches_per_context_per_1000_drift_free": {
+    "unscoped|explanation|2": "0"
+   },
+   "switch_causes_drift_free": {
+    "promote": 0,
+    "demote": 0
+   },
    "false_alarms": 0,
    "false_alarms_per_1000": "0",
    "alarms": 0,
@@ -171,7 +214,7 @@
    "apps/api/app/services/ranking/controller.py": "e3278f90ae8a0e4ccfbafbc59156afc5d64c9736c6d5ad44fd5aa3b92fade2a3",
    "apps/api/app/services/ranking/cusum.py": "4c590d6b9279e649cd8df24f0e44a6ededeac2399501dab65a15effa0185930c",
    "apps/api/app/services/ranking/generators.py": "a3c3ad80806235142e702da7b1b7295326e41cf1b0838ba5c7ec42f2a8eca49d",
-   "apps/api/app/services/ranking/hook.py": "ae182f705d1edd70efb6cb1d0ff74ecf60b68b7d901689d738ea17b2c89708a5",
+   "apps/api/app/services/ranking/hook.py": "1d07a4a7837da18af4d4724efd9ae3745ee7224f24c2b357b890daeebfb729cd",
    "apps/api/app/services/ranking/metrics.py": "1a4e8f5fb578b21bafa69d9bec95b6efccb108ea3a847e548cec11f3ec2ce373",
    "apps/api/app/services/ranking/models.py": "c8d98ce6a3776798e57b4fac02cf5f38668b2e60e39a41280676b41b10fa897d",
    "apps/api/app/services/ranking/numeric.py": "65f53c620bcef68c6f202b2d1466137eedfbf4cf4f8db87bfed828529fa57076",
@@ -179,17 +222,17 @@
    "apps/api/app/services/ranking/quality.py": "6ac10964a71d3044f01df35fee1aafe3095099c5b870c7decd28a99f767fa52e",
    "apps/api/app/services/ranking/recommission.py": "e10a4bf09c7c86dc042cb4ab01448e7315bfaf3ae04832f2a318804abb3b126b",
    "apps/api/app/services/ranking/replay.py": "747ad144c4cbc4e7fc339f7abd7a4e2c4eb7917b5121ebbff544d149ec18cc67",
-   "apps/api/app/services/ranking/scan.py": "c814989058e643940cc7c59c2f0c586fbbdc3c9eb58d1ab923fa471fc04d3aab",
+   "apps/api/app/services/ranking/scan.py": "b04730a2954a0169290548a83224c02e634fb68cf0ff84167d3775588e6e4a49",
    "apps/api/app/services/ranking/score.py": "1d46c752f2a78b1f5689b59f32e81901113bf286aa5e4cf5d7f6ea66ef196970",
    "apps/api/app/services/ranking/selection.py": "3fe91a08fbd69ec69bb5b1ae45b2e31a23e43ec901e5777201987f0399d7ec88",
-   "apps/api/app/services/ranking/signals.py": "3683b89cea7edf3ab5d6720c9d872d99b4d2257674b08a2a587b15216b95faad",
+   "apps/api/app/services/ranking/signals.py": "944394ebaef46edd1d20d403990d4e20510e3c9da197bba2b75506e62079621d",
    "apps/api/app/services/ranking/state.py": "2252bc516d72506fcdb8931a71ba0bad35e7ae3f09f94d5c33cd4fe549732561",
-   "apps/api/app/services/ranking/synthetic.py": "bde9b408b01a195547fe4a6b1f690fef24601a93f9dc9f0232a7ce9e0c1d5a1d",
+   "apps/api/app/services/ranking/synthetic.py": "29736e7b34ba0d5f2d0eef84dc50a2509f36a7cf5effc411d1e5e39714170177",
    "apps/api/app/services/ranking/trust.py": "400c9c4d1b59c5771e760b5154ce597f5fcca4773a0ea4e399c146e9f22389d6",
    "apps/api/app/services/ranking/types.py": "c6b5924d928108b6754e60389df31d39e527b9eb3447f4aac23ad2e737dcbd21",
    "apps/api/app/services/ranking/vocabulary.py": "17820cf921619f6738deb591801d030f271dbf9387c1f289fb947a525042d216",
-   "scripts/run_ranking_replay.py": "4c83b28be2bead450608417db5b8e17ba0bdb8651b0e91bc92e65587a47b1ffd"
+   "scripts/run_ranking_replay.py": "6830e5d2bd68ee395c406fde7f9d02a9829b65b8893fdbe8c3ae167fb1e7ed94"
   },
-  "sha256": "62fe29d2619cbbeb7e4fec6dffcefd434860bd6efd29f6352efaa6203faaaa91"
+  "sha256": "e8c88f85451e648c95cc27f594efb1a575217efe474ceefebe440b9729da04f9"
  }
 }

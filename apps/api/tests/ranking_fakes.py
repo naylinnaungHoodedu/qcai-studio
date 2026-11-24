@@ -133,12 +133,15 @@ def package_copy(tmp_path: Path, edit) -> Path:
     return path
 
 
-def shadow_record(factory, query: str = TIER2, *, settings: Settings | None = None, generator=None, adapters=None, now=None):
-    """A development shadow run through the V2 pipeline, appended to the ledger of `factory`."""
+def shadow_record(factory, query: str = TIER2, *, settings: Settings | None = None, generator=None, adapters=None, now=None, checker=None):
+    """A development shadow run through the V2 pipeline, appended to the ledger of `factory`. A checker (v1_fakes'
+    AlwaysContradictedChecker) gives a record whose first pass failed (y = 0)."""
     from v1_fakes import run
     from v2_fakes import fresh_gateway, v2_pipeline
 
     kwargs = {"generator": generator} if generator is not None else {}
+    if checker is not None:
+        kwargs["checker"] = checker
     pipeline = v2_pipeline(settings or Settings(environment="development", model_gateway="shadow", ehmf="shadow", ranking="off"),
                            gateway=fresh_gateway(adapters=adapters), session_factory=factory, v3_stop=lambda: False, **kwargs)
     return run(pipeline, query, legacy_decision="answer", record=True)
@@ -178,6 +181,29 @@ def events_of(factory, kind: str | None = None) -> list[dict]:
             query = query.where(RankingEvent.kind == kind)
         return [{"seq": row.seq, "kind": row.kind, "payload": json.loads(row.payload), "v3_event_seq": row.v3_event_seq, "note": row.note,
                  "ledger_seq": row.ledger_seq, "context_key": row.context_key} for row in db.execute(query).scalars()]
+
+
+def small_window_package(tmp_path: Path, deliveries: int = 4):
+    """A package copy whose X5 window is `deliveries` learner deliveries (v3.triggers.x5.window_deliveries), so a test
+    can close a window; the ranking block is unchanged."""
+    return load_config_package(package_copy(tmp_path, lambda payload: payload["v3"]["triggers"]["x5"].update(window_deliveries=int(deliveries))),
+                               governed=False)
+
+
+def session_factory_for(database_url: str):
+    """(session_factory, engine) over a database of the session's dialect (conftest's fresh_database_url), with every table
+    and trigger; the caller disposes of the engine."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.core.db import Base
+    from app.core.schema_upgrades import run_schema_upgrades
+
+    connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+    engine = create_engine(database_url, connect_args=connect_args)
+    Base.metadata.create_all(engine)
+    run_schema_upgrades(engine)
+    return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False), engine
 
 
 def stored_state(factory) -> dict:

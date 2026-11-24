@@ -139,6 +139,13 @@ ranking replay report (`python scripts/run_ranking_replay.py --write docs/evalua
 which pins the package and the block's sha256; CI's `--check` exits 6 on a pin mismatch). The ranking scan appends a
 `config` event with the new block, so the controller and the replay read the block from the event log.
 
+A change to the controller's code (any pure ranking module: a rule, a parameter rule, a bug fix) is different: the
+replay recomputes every stored derived event with the new code, so on an existing log `replay --check` reports a
+`derived` (or `checkpoint`) mismatch and stops the ranking (plan Phase 9 L), and `clear-stop` refuses it, because
+`ranking_events` is append-only. Such a release therefore archives the existing log and starts a new one where a log
+exists (infra/cloudrun/deployment.md, Phase 9, "The stop"), and rewrites the replay report (its inputs pin the ranking
+modules' sha256).
+
 ## Renumbering the Phase 9 package
 
 If Phase 8 reaches `main` first with v7 and a revision after `20261123_phase7_ehmf`, the Phase 9 branch merges `main` and

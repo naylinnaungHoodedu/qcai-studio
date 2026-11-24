@@ -4,15 +4,18 @@ outcome_of reads a validated ledger record and gives an Outcome (a completed ver
 Skip (no completed verdict: the controller only counts it, AC-9-1). The rules apply in order; the first match decides:
   1 no entry: unparsed            2 no verification block (every legacy record): no_verification
   3 the record's generator is not a candidate: generator_unknown; not at the candidate's current version: stale_version
-  4 no generation attempt: not_generated (a pre-generation abstention included)
+  4 no generation attempt: not_generated
   5 final reasons that are not verdicts: budget_exceeded; checker_unavailable, ehmf_detector_down or a recorded EHMF
     detector down: detector_down; v2_kill_switch: kill_switch; v2_degraded_withheld: v2_withheld; conflict_withheld:
-    corpus_conflict
+    corpus_conflict; an abstention with a pre-generation reason (PRE_GENERATION: a gate reason, no_quotable_evidence,
+    corpus_version_mismatch): not_generated
   6 a V1 first-pass failure gives y = 0: a hard fail, a regeneration or re-render (cycle_count > 0), a post-generation V1
     abstention, or an accepted-attempt V1 result outside pass/mark other than V1.7's and V1.3's no_checker
-  7 no V2 block: no_v2_verdict    8 the panel not reached: panel_not_reached
-  9 a V1-passed claim without a V2 verdict, or withheld by V2: v2_withheld
- 10 otherwise y = 1 when the first pass is clean (R-d), else 0.
+  7 a post-generation V2 or EHMF abstention (FAILED_AFTER_GENERATION: v2_correction_exhausted, v2_alignment_failed,
+    ehmf_set_changed) gives y = 0: the panel's corrections ran out, the alignment failed or a re-render was refused
+  8 no V2 block: no_v2_verdict    9 the panel not reached: panel_not_reached
+ 10 a V1-passed claim without a V2 verdict, or withheld by V2: v2_withheld
+ 11 otherwise y = 1 when the first pass is clean (R-d), else 0.
 Clean (R-d): V1 passed with no regeneration; V2 cycles 0, every judged claim pass at cycle 0, the alignment item absent or
 pass; and no generator-attributable escalation (X1: a critical claim with an objection; X2; a V3 intent reason v1_3_flag
 from a V1.3 result other than no_checker, or v1_8_misconception). X3 feeds F only (AC-9-2); X4, X5, X6 and V1.7 are not
@@ -34,10 +37,15 @@ from app.services.ranking.contexts import cluster_for, task_type_for, tier_for
 from app.services.ranking.models import model_of_record
 from app.services.ranking.numeric import CTX, ONE, ZERO, q
 from app.services.ranking.types import Context, ModelRef, Outcome, Signals, Skip
+from app.services.tutor_pipeline.contracts import GATE_ABSTENTION_REASONS, NO_QUOTABLE_EVIDENCE
 
 DETECTOR_DOWN_REASONS = ("checker_unavailable", "ehmf_detector_down")
 POST_GENERATION_V1 = ("claim_plan_invalid", "no_claims", "no_bound_claims", "subset_check_failed", "render_failed", "no_whole_sentence",
                       "unresolvable_citation", "keyed_answer_leak", "readability_out_of_band", "response_envelope_invalid")
+# Abstention reasons given before the generator ran (spec 4.3 step 5): the gate's, no quotable evidence, a corpus mismatch.
+PRE_GENERATION = (*GATE_ABSTENTION_REASONS, NO_QUOTABLE_EVIDENCE, "corpus_version_mismatch")
+# Abstentions after generation that are the first pass's failure (spec 4.3 step 7): never skipped.
+FAILED_AFTER_GENERATION = ("v2_correction_exhausted", "v2_alignment_failed", "ehmf_set_changed")
 NON_VERDICT_FINALS = {"budget_exceeded": "budget_exceeded", "checker_unavailable": "detector_down", "ehmf_detector_down": "detector_down",
                       "v2_kill_switch": "kill_switch", "v2_degraded_withheld": "v2_withheld", "conflict_withheld": "corpus_conflict"}
 DELIVERABLE = ("pass", "mark")
@@ -162,7 +170,7 @@ def outcome_of(entry: Any, *, ledger_seq: int, created_at: str, candidates: dict
     ehmf = getattr(verification, "ehmf", None)
     if ehmf is not None and ehmf.detector_down:
         return Skip(int(ledger_seq), "detector_down", model)
-    if verification.final == "abstain" and reason is not None and reason not in POST_GENERATION_V1 and not verification.hard_fail:
+    if verification.final == "abstain" and reason in PRE_GENERATION and not verification.hard_fail:
         return Skip(int(ledger_seq), "not_generated", model)
     tier, tier_source = tier_for(entry, package)
     context = Context(cluster_for(entry, modules, corpus_version), task_type_for(tier, package), tier)
@@ -172,7 +180,7 @@ def outcome_of(entry: Any, *, ledger_seq: int, created_at: str, candidates: dict
         return Outcome(ledger_seq=int(ledger_seq), created_at=created_at, model=model, context=context, y=y, signals=signals_of(entry),
                        cost_units=cost, latency_ms=None, tier_source=tier_source)
 
-    if _v1_failed(verification):
+    if _v1_failed(verification) or (verification.final == "abstain" and reason in FAILED_AFTER_GENERATION):
         return outcome(0)
     block = getattr(verification, "v2", None)
     if block is None:

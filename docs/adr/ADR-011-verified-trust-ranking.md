@@ -19,11 +19,20 @@ fallback for an empty eligible set (plan Phase 9 A, D). Live routing is an OPEN 
   a learner: static assignment (`extractive-d19-v1`) keeps generating every record. `RANKING` is `off` outside
   development, `shadow` in development, and `on` (live routing) is refused everywhere while D-28 is open.
 - Drift: a Bernoulli CUSUM per model and per (model, cluster); an alarm goes through Phase 6's `record_cusum_alarm` (X5),
-  holds promotions until its window closes, and never demotes. A model-version change deflates trust by 0.3 and caps the
-  model at C until a recorded shadow golden regression passes.
-- An empty eligible set abstains and enqueues a V3 item (`ranking_empty_eligible_set`); no pre-verified store exists (DI-83).
+  holds promotions until every X5 window raised under its hold closes (a sustained alarm's later window included), and
+  never demotes. A model-version change deflates trust by the package's deflation (0.3) and caps the model at C until a
+  recorded shadow golden regression passes (no failed first pass, a V2 or EHMF abstention after generation included,
+  and at least min_generated generated records).
+- An empty eligible set abstains and, when V3 is not off, enqueues a V3 item (`ranking_empty_eligible_set`); with V3 off
+  the `select` row notes `v3_off`. No pre-verified store exists (DI-83).
 - Every parameter is the configuration package v7 `ranking` block (`ranking-params-v1`, provisional, PD-50..PD-59), carried
-  into the event log by a `config` event; a replay mismatch stops the ranking until an operator clears it (plan L).
+  into the event log by a `config` event; a replay mismatch stops the ranking (plan L). An operator clears a stored-state
+  mismatch only; a mismatch in the append-only log itself (the chain, a derived event, a checkpoint) needs a backup
+  restore or a new log, and a release that changes the controller's output makes every existing log mismatch.
+- Every writer of the ranking log (the scan, the operator inputs, `replay --check`, `clear-stop`) takes the ranking lock
+  and then V3's, so no two writers chain from the same row.
+- Development shadow generation runs the extra record through a copy of the request path's pipeline, never by changing
+  the shared pipeline's generator; the provenance audit accepts a clone record in development only.
 
 ## Consequences
 

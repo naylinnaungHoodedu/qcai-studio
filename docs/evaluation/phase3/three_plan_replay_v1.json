@@ -1,8 +1,8 @@
 {
  "report": "qcai-three-plan-replay",
  "format_version": 1,
- "created_at": "2026-11-24T04:51:37+00:00",
- "commit": "060ffd37ca5bd90623dd5350ef2e4865602aed75-dirty",
+ "created_at": "2026-11-24T08:20:11+00:00",
+ "commit": "fa1f01c7841a96d89d58d105a2e6eceb8628f9f3-dirty",
  "evidence_class": "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 evidence (plan Phase 3 H)",
  "public_corpus_only": true,
  "excluded_sources": [
@@ -197,7 +197,7 @@
    "apps/api/app/services/ehmf/library.py": "aac4cabddd18c10899a907e57937b8e59179f6ddfcf68a7fca01e0fc775971ea",
    "apps/api/app/services/ehmf/routing.py": "9ef0d00d92ed6295255f7ef6384d424fa2acf7554ca49afd4a1f5e8fd92bb4bd",
    "apps/api/app/services/ehmf/vocabulary.py": "66325cd0a261e5ad7163cc96b33068d38b1ab86def36c70758ec5959c265b89e",
-   "apps/api/app/services/ledger.py": "d78aaf948b489fba3a45d6702dcec61de62e8934312b85f34c3846b7eecec9a3",
+   "apps/api/app/services/ledger.py": "760e500c35ef59693b4e7e0007a80020fea276d982e527d038277893460fc638",
    "apps/api/app/services/lexical_index.py": "fe90eefb9f5d58f7201ca9ee6e641eac6ce78160604191481468b643882dba52",
    "apps/api/app/services/provenance.py": "cbea0a9970dac7fe17b653e1308d26b99846e92d0c9e04b5b15be4c3a96e5857",
    "apps/api/app/services/quiz_keys.py": "c839f3da7fce2abada021d5a454cada57ed209474db93abf479fc6a6ad538131",
@@ -247,6 +247,6 @@
    "apps/api/app/services/v3/rules.py": "0ae84335d5f83a8f76cd17b4f50357146b6a3ed06795acf0de0f9b87456a521a",
    "scripts/replay_tutor_plans.py": "287a264cea97c41d4e59c958c817c00d6a84e5b8f4d47dd76a867584cc11191a"
   },
-  "sha256": "e44f2232c3a344bec86678d17ea95dd3403b695685a3945eae804f8417dae47a"
+  "sha256": "aa10e971ff8879140a77f26112407ca4c09d946f2a75cc326c25760ab67425af"
  }
 }

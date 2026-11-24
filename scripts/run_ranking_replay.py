@@ -7,9 +7,13 @@ Seven synthetic scenarios (app.services.ranking.synthetic: flapping, promotion, 
 rating_only), numbers and identifiers only, are built from their seeds with the package's ranking block, folded by the
 controller into the full event log, and replayed twice; the record holds, per scenario, the sha256 of the input events,
 of the derived events and of the final state, whether the two replays equal the generated log byte for byte, and the
-engineering measurements (switches per 1000 drift-free requests with the first incumbent not counted, false alarms per
-1000 before an injected shift, the detection delay, fallbacks, promotions, demotions). They are engineering measurements
-on synthetic streams, not E4 results (invariant 9): Table XVII's MR-1..MR-3 are never asserted as met. The research replay
+engineering measurements: in MR-3's shape, the incumbent switches per context per 1000 drift-free requests (the window
+before the scenario's first scheduled disturbance: the shift, an outage, a model change, an emptied eligible set; the
+first incumbent not counted) and the window's switch causes (promotions, tier-threshold demotions); false alarms per
+1000 before an injected shift, the detection delay, fallbacks, promotions, demotions. They are engineering measurements
+on synthetic streams, not E4 results (invariant 9): Table XVII's MR-1..MR-3 are never asserted as met; only the
+flapping scenario, the stationary near-equal stream the hysteresis targets, is checked against MR-3's 2 per context
+per 1000 (an assertion, exit 3). The research replay
 over E4 logs runs only in the research environment (D-15; DI-124): this script has no database mode and refuses a path
 under lqs/ or a boundary-private path.
 --check, in order: a pin (the package version and sha256, the ranking parameters' sha256) differing from the record exits 6;
@@ -23,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import UTC, datetime
+from decimal import Decimal
 import fnmatch
 import hashlib
 import json
@@ -91,7 +96,7 @@ def run_scenario(block: dict, name: str) -> tuple[dict, list[str]]:
              and first.checkpoints == second.checkpoints)
     numbers = synthetic.measurements(log, meta)
     failures = []
-    if name == "flapping" and int(numbers["switches_drift_free"]) * 1000 > FLAPPING_MAX_PER_1000 * int(numbers["drift_free_requests"]):
+    if name == "flapping" and any(Decimal(rate) > FLAPPING_MAX_PER_1000 for rate in numbers["switches_per_context_per_1000_drift_free"].values()):
         failures.append("flapping: more incumbent switches per 1000 drift-free requests than the hysteresis allows")
     if name == "promotion" and numbers["promotions"] < 1:
         failures.append("promotion: the better challenger was never promoted")

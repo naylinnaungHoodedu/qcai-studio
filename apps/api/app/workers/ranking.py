@@ -2,17 +2,23 @@
 
 In-image; it connects as the API does and logs JSON lines on the qcai.worker logger (counts, ids, versions and hashes
 only; never a learner identifier, a response id or text). Every command but status needs RANKING=shadow.
-  scan [--limit N] [--until-done]        consume ledger records into the ranking event log (ranking.scan per batch)
+  scan [--limit N] [--until-done]        consume ledger records into the ranking event log (ranking.scan per batch);
+                                         exits 1 when a scan stops the ranking on a state mismatch (--until-done
+                                         included)
   status                                 ranking.status with the mode and the SLIs (ranking.metrics.slis)
-  replay --check                         replay the stored log twice; a mismatch appends `stop {replay_mismatch}`,
-                                         logs ranking.stop and exits 1 (the plan L stop)
+  replay --check                         under the ranking locks, replay the stored log twice; a mismatch appends
+                                         `stop {replay_mismatch}`, logs ranking.stop on qcai.worker and exits 1 (the
+                                         plan L stop)
   commission ADAPTER                     the shadow golden regression over the recommission set; appends `commission`
                                          (refused for a model with outcomes); exit 1 when it does not pass
   recommission ADAPTER                   the same regression; appends recommission_pass (the cap lifts) or
                                          recommission_fail (exit 1)
   clear-stop --cause {fixed_code,fixed_data,restored_backup}
-                                         refused unless two in-process replays are equal; rewrites ranking_states and
-                                         ranking_incumbents from the replay, appends a checkpoint and clear_stop
+                                         under the ranking locks; refused (exit 2) unless the hash chain, every stored
+                                         derived event and every stored checkpoint match the replay and two replays
+                                         are equal, so only a stored-state mismatch is cleared; rewrites
+                                         ranking_states and ranking_incumbents from the replay, appends a checkpoint
+                                         and clear_stop (deployment.md, Phase 9, for the other mismatches)
 Exit codes: 0 ok; 1 a stop, a failed check or a failed regression; 2 usage or a refusal (ranking off, stopped,
 uncommissioned, an unknown adapter). Run as: python -m app.workers.ranking <command> ...
 """
@@ -20,6 +26,7 @@ uncommissioned, an unknown adapter). Run as: python -m app.workers.ranking <comm
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from datetime import UTC, datetime
 import sys
 
@@ -38,14 +45,16 @@ def _refused(reason: str, **fields) -> int:
 
 
 def replay_check(*, session_factory=SessionLocal, now: datetime | None = None) -> tuple[bool, dict]:
-    """Replay the stored log twice; on a mismatch append the stop row. (ok, fields)."""
-    from app.services.ranking.replay import check, load_log, replay, stopped
-    from app.services.ranking.scan import EventLog
+    """Replay the stored log twice, under the ranking locks (so no scan appends between the reads or forks the chain); on a
+    mismatch append the stop row. (ok, fields)."""
+    from app.services.ranking.replay import compare, load_log, replay, stopped
+    from app.services.ranking.scan import EventLog, take_locks
     from app.services.ranking.state import canonical, empty_state
 
     with session_factory() as db:
+        take_locks(db)
         rows, stored = load_log(db)
-        first = check(db)
+        first = compare(rows, stored)
         second = replay(rows)
         again = replay(rows)
         same = canonical(second.state) == canonical(again.state) and second.derived == again.derived
@@ -59,22 +68,39 @@ def replay_check(*, session_factory=SessionLocal, now: datetime | None = None) -
     return ok, fields
 
 
-def clear_stop(cause: str, *, session_factory=SessionLocal, now: datetime | None = None) -> bool:
-    from app.services.ranking.replay import load_log, replay
-    from app.services.ranking.scan import EventLog, save_state
+@dataclass(frozen=True)
+class Cleared:
+    ok: bool
+    reason: str | None = None      # why it was refused: chain, derived, checkpoint, input:<error> or replays_differ
+
+    def __bool__(self) -> bool:
+        return self.ok
+
+
+def clear_stop(cause: str, *, session_factory=SessionLocal, now: datetime | None = None) -> Cleared:
+    """Resync the stored state from the replay and clear the stop, under the ranking locks. Refused unless the log itself
+    replays cleanly (compare() without the stored state: the chain, every stored derived event, every checkpoint) and two
+    replays are equal: ranking_events is append-only, so any other mismatch would stop the ranking again at the next
+    replay --check."""
+    from app.services.ranking.replay import compare, load_log, replay
+    from app.services.ranking.scan import EventLog, save_state, take_locks
     from app.services.ranking.state import canonical, state_sha256
 
     with session_factory() as db:
+        take_locks(db)
         rows, _stored = load_log(db)
+        verdict = compare(rows, None)
+        if not verdict.ok:
+            return Cleared(False, verdict.reason)
         first, second = replay(rows), replay(rows)
         if canonical(first.state) != canonical(second.state) or first.derived != second.derived:
-            return False
+            return Cleared(False, "replays_differ")
         log = EventLog(db, first.state, now=now or datetime.now(UTC))
         seq = log.control("checkpoint", {"state_sha256": state_sha256(first.state), "last_input_seq": int(first.state["last_input_seq"])})
         save_state(db, first.state, event_seq=seq)
         log.control("clear_stop", {"cause": cause})
         db.commit()
-    return True
+    return Cleared(True)
 
 
 def regression(adapter_id: str, *, settings, package):
@@ -124,11 +150,11 @@ def main(argv: list[str] | None = None, *, session_factory=SessionLocal, now: da
 
         try:
             if args.until_done:
-                scan_until_done(settings=settings, package=package, session_factory=session_factory, now=now, limit=args.limit)
+                result = scan_until_done(settings=settings, package=package, session_factory=session_factory, now=now, limit=args.limit)[-1]
             else:
                 result = run_scan(settings=settings, package=package, session_factory=session_factory, now=now, limit=args.limit)
-                if result.refused == "stopped":
-                    return EXIT_FAILED
+            if result.refused == "stopped":
+                return EXIT_FAILED
         except ranking.RankingStopped:
             return _refused("stopped")
         except ranking.RankingUncommissioned:
@@ -144,8 +170,9 @@ def main(argv: list[str] | None = None, *, session_factory=SessionLocal, now: da
         LOGGER.info("Ranking replay checked", extra={FIELDS: {"event": "ranking.replay_checked", **fields}})
         return EXIT_OK
     if args.command == "clear-stop":
-        if not clear_stop(args.cause, session_factory=session_factory, now=now):
-            return _refused("replays_differ")
+        cleared = clear_stop(args.cause, session_factory=session_factory, now=now)
+        if not cleared:
+            return _refused("replays_differ" if cleared.reason == "replays_differ" else "log_mismatch", mismatch=cleared.reason)
         LOGGER.info("The ranking stop was cleared", extra={FIELDS: {"event": "ranking.stop_cleared", "cause": args.cause}})
         return EXIT_OK
     run = regression(args.adapter, settings=settings, package=package)

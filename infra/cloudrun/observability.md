@@ -267,14 +267,14 @@ Plan Phase 9 I: "Micro-batch latency (F-3), switch rate (MR-3 is a Table XVII ga
 | SLI | Source and note |
 |---|---|
 | Micro-batch latency (F-3) | `micro_batch_latency_s.p50`, `.p95`: a `batch` row's `observed_at` minus its last outcome's ledger `created_at`; the scan runs on demand (no scheduler), so it includes the wait for the scan |
-| Switch rate | `switch_rate_per_1000` per context: incumbent changes per 1000 consumed requests (the first incumbent not counted); MR-3 (at most 2 per 1000 drift-free requests) is a Table XVII gate, reported only from the committed synthetic replay |
-| Fallback rate | `fallback_rate`: empty-eligible-set decisions per 1000 requests; each one enqueues a V3 item (`ranking_empty_eligible_set`) |
+| Switch rate | `switch_rate_per_1000` per context: incumbent changes per 1000 consumed requests (the first incumbent not counted); MR-3 (at most 2 per context per 1000 drift-free requests) is a Table XVII gate, measured in its shape only by the committed synthetic replay (asserted for the flapping scenario alone) |
+| Fallback rate | `fallback_rate`: empty-eligible-set decisions per 1000 requests; each one enqueues a V3 item (`ranking_empty_eligible_set`) when V3 is not off; otherwise the `select` row notes `v3_off` and no item is created |
 | Cost | `cost_units_mean` per model (units, not USD; A-15); `latency` is null (no record carries one; DI-122) |
-| Drift | `cusum.statistics`, `cusum.alarms`, `alarms_per_1000_requests`, `sustained`; an alarm raises the X5 audit and holds promotions, never demotes |
+| Drift | `cusum.statistics`, `cusum.alarms`, `alarms_per_1000_requests`, `sustained`; an alarm raises the X5 audit and holds promotions until every X5 window raised under its hold (a sustained alarm's included) closes, never demotes |
 | Skips | `skipped` by reason; an event without a completed verdict changes nothing (AC-9-1) |
-| The stop | `replay.stopped`; `/ready` `ranking.stop.stopped` (cached for `ranking.replay.stop_refresh_s`, read only when the mode is not off); a replay mismatch stops the ranking until `clear-stop` |
+| The stop | `replay.stopped`; `/ready` `ranking.stop.stopped` (cached for `ranking.replay.stop_refresh_s`, read only when the mode is not off); a replay mismatch stops the ranking until `clear-stop`, which clears a stored-state mismatch only (deployment.md, Phase 9) |
 
-Log events (logger `qcai.ranking`): `ranking.scan` (INFO), `ranking.batch` (INFO), `ranking.promote` and `ranking.demote` (WARNING), `ranking.alarm` and `ranking.sustained_alarm` (WARNING), `ranking.model_change` (WARNING), `ranking.fallback` (WARNING), `ranking.stop` (ERROR), `ranking.unavailable` (WARNING), `ranking.stop_unread` (WARNING), `ranking.shadow_generation` (INFO) and `ranking.shadow_generation_failed` (WARNING); on `qcai.worker`: `ranking.status`, `ranking.replay_checked`, `ranking.commissioned`, `ranking.recommissioned`, `ranking.stop_cleared` (INFO) and `ranking.scan_refused` (WARNING). No line carries a learner identifier, a response id or text.
+Log events (logger `qcai.ranking`): `ranking.scan` (INFO), `ranking.batch` (INFO), `ranking.promote` and `ranking.demote` (WARNING), `ranking.alarm` and `ranking.sustained_alarm` (WARNING), `ranking.model_change` (WARNING), `ranking.fallback` (WARNING), `ranking.stop` (ERROR, reason `state_mismatch`: the scan), `ranking.unavailable` (WARNING), `ranking.stop_unread` (WARNING), `ranking.shadow_generation` (INFO) and `ranking.shadow_generation_failed` (WARNING); on `qcai.worker`: `ranking.stop` (ERROR, reason `replay_mismatch`: `replay --check`, the plan L stop), `ranking.status`, `ranking.replay_checked`, `ranking.commissioned`, `ranking.recommissioned`, `ranking.stop_cleared` (INFO) and `ranking.scan_refused` (WARNING). A metric or alert on the stop filters on the event `ranking.stop` under both loggers. No line carries a learner identifier, a response id or text.
 
 | SLI or event | Log-based metric or alert |
 |---|---|

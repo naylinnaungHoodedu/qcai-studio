@@ -13,14 +13,17 @@ retried as the V3 scan does):
      under V3's lock with the key and version a record would carry (generator:<adapter_id>, <model_id>@<model_version>;
      generator-prompt:<id> for a static generator), reusing V3's event when V3 already knows that version (conflict 14);
   4. while a static candidate is uncommissioned, commit and refuse (RankingUncommissioned; conflict 26);
-  5. append `hold_release` for each open hold whose X5 window closed (v3.scan.window_remaining == 0);
+  5. append `hold_release` for each open hold once every X5 window raised under it closed (v3.scan.window_remaining == 0
+     for the v3_event_seq of its `hold` row and of every `alarm` row naming it, a sustained alarm's included; a row
+     without a V3 event keeps the hold open);
   6. read the ledger past the cursor (the largest ranking_scans.to_seq), in seq order, up to `limit`: each record is an
      `outcome` or `skipped` input (input_key ledger:<seq>), applied, with its derived events and their side effects: an
      alarm through Phase 6's record_cusum_alarm (source phase9-cusum; X5), a fallback through a V3 response item
      (ranking_empty_eligible_set) when V3 is not off, else the row notes v3_off;
   7. `feedback` for a pending outcome of a record the learner was shown with an X3 item (none exists today: conflict 12);
   8. `tick {at: now}`, then the ranking_scans row, the checkpoint, ranking_states and ranking_incumbents; commit.
-The ledger is only read. Every event is hash-chained (ranking-chain-v1) and its derived events follow it.
+The ledger is only read. Every event is hash-chained (ranking-chain-v1) and its derived events follow it. take_locks is
+the one lock order every ranking writer uses (the scan, append_inputs, and the worker's replay --check and clear-stop).
 """
 
 from __future__ import annotations
@@ -126,6 +129,7 @@ class EventLog:
         if kind == "alarm":
             self.counts["alarms"] += 1
             v3_seq = self._alarm(payload)
+            note = payload["hold_id"]   # the hold this alarm's X5 window keeps open (a sustained alarm's included)
         if kind == "hold":
             v3_seq = self._hold_window(payload, input_v3)
             columns["model_key"] = ",".join(payload["models"])
@@ -195,6 +199,25 @@ def log_derived(kind: str, payload: dict) -> None:
 
 def _dialect_name(db: Session) -> str:
     return db.get_bind().dialect.name
+
+
+def take_locks(db: Session) -> None:
+    """The ranking advisory lock, then V3's, transaction-scoped, on PostgreSQL (SQLite serialises writers on its database
+    lock). Every writer of ranking_events takes them first, so no two writers chain from the same prev_sha256."""
+    from app.services.v3.scan import V3_SCAN_LOCK_KEY
+
+    if _dialect_name(db) == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": RANKING_SCAN_LOCK_KEY})
+        db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": V3_SCAN_LOCK_KEY})
+
+
+def hold_windows_closed(db: Session, hold_id: str) -> bool:
+    """Whether every X5 window raised under a hold has closed: its `hold` row's and every `alarm` row's naming it (note)."""
+    from app.db_models import RankingEvent
+    from app.services.v3.scan import window_remaining
+
+    seqs = db.scalars(select(RankingEvent.v3_event_seq).where(RankingEvent.kind.in_(("hold", "alarm")), RankingEvent.note == hold_id)).all()
+    return bool(seqs) and all(seq is not None and window_remaining(db, int(seq)) == 0 for seq in seqs)
 
 
 def _load_state(db: Session) -> tuple[dict | None, str | None, str | None]:
@@ -321,12 +344,9 @@ def _scan_once(*, settings: Any, package: Any, session_factory: Callable[[], Ses
     from app.db_models import RankingScan, ResponseLedgerRecord
     from app.services.ranking.contexts import span_modules
     from app.services.v3.queue import parse_entry
-    from app.services.v3.scan import V3_SCAN_LOCK_KEY, window_remaining
 
     with session_factory() as db:
-        if _dialect_name(db) == "postgresql":
-            db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": RANKING_SCAN_LOCK_KEY})
-            db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": V3_SCAN_LOCK_KEY})
+        take_locks(db)
         if stopped(db):
             raise ranking.RankingStopped("the ranking log is stopped: run replay --check, fix the cause, then clear-stop")
         state, expected, actual = _load_state(db)
@@ -346,12 +366,8 @@ def _scan_once(*, settings: Any, package: Any, session_factory: Callable[[], Ses
             _finish(db, log, state)
             db.commit()
             return ScanResult(0, 0, 0, 0, 0, 0, 0, 0, True, refused="uncommissioned")
-        from app.db_models import RankingEvent
-
         for hold_id in sorted(state["holds"]):
-            v3_seq = db.scalar(select(RankingEvent.v3_event_seq).where(RankingEvent.kind == "hold", RankingEvent.note == hold_id)
-                               .order_by(RankingEvent.seq.desc()).limit(1))
-            if v3_seq is not None and window_remaining(db, int(v3_seq)) == 0:
+            if hold_windows_closed(db, hold_id):
                 log.append("hold_release", {"hold_id": hold_id})
         cursor = int(db.scalar(select(func.coalesce(func.max(RankingScan.to_seq), 0))) or 0)
         rows = db.execute(select(ResponseLedgerRecord.__table__).where(ResponseLedgerRecord.seq > cursor)
@@ -456,11 +472,7 @@ def scan_until_done(*, settings: Any, package: Any, session_factory: Callable[[]
 def append_inputs(db: Session, inputs: list[tuple[str, dict]], *, settings: Any, package: Any, now: datetime, gateway: Any = None) -> list[int]:
     """Append operator inputs (commission, recommission_pass, recommission_fail) with their derived events and a checkpoint,
     under the scan's locks, in the caller's transaction (the worker commits). The state must match its checkpoint."""
-    from app.services.v3.scan import V3_SCAN_LOCK_KEY
-
-    if _dialect_name(db) == "postgresql":
-        db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": RANKING_SCAN_LOCK_KEY})
-        db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": V3_SCAN_LOCK_KEY})
+    take_locks(db)
     if stopped(db):
         raise ranking.RankingStopped("the ranking log is stopped")
     state, _expected, _actual = _load_state(db)
