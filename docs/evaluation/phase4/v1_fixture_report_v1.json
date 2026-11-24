@@ -1,8 +1,8 @@
 {
  "report": "qcai-v1-fixture-report",
  "format_version": 1,
- "created_at": "2026-11-24T10:06:37+00:00",
- "commit": "40bdc57976dae70faed61b30cbdeaca1365f3e13-dirty",
+ "created_at": "2026-11-24T10:19:51+00:00",
+ "commit": "79584e0776e97f060f87f66e9edf6447782c19e5-dirty",
  "evidence_class": "fixture measurements, not research results (plan Phase 4 H)",
  "public_corpus_only": true,
  "fixtures": {
@@ -1258,7 +1258,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 3.684,
+    "p95_ms": 4.294,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2485,7 +2485,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 4.06,
+    "p95_ms": 4.179,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2539,7 +2539,7 @@
   "contained": true
  },
  "latency": {
-  "p95_ms": 3.561,
+  "p95_ms": 3.892,
   "budget_ms": 250,
   "within_budget": true
  },

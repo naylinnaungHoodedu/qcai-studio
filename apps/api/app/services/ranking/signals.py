@@ -22,7 +22,7 @@ intent reason v1_3_flag unless every V1.3 flag of that claim is the checker's ab
 X6 and V1.7 are not the generator's. The checker's absence (spec conflict 27; D-21) is exactly a V1.3 result with outcome
 flag and reason no_checker on a record that does not show the checker present (no EHMF block, or an EHMF block whose
 detector_absent lists V1.3): it is not a verdict on the generator. Any other V1.3 flag (not_enough_info, contradicted,
-below_support_threshold), a no_checker on a record whose EHMF block lists V1.3 present, and a v1_3_flag reason with no
+below_support_threshold), a no_checker on a record whose EHMF block does not list V1.3 as absent, and a v1_3_flag reason with no
 no_checker flag behind it all count against the first pass. No field the generator writes about itself is read (no
 generator self-confidence).
 Signals (first pass): V the share of verdicts whose V1 results pass and whose V2 outcome is pass at cycle 0; K the mean

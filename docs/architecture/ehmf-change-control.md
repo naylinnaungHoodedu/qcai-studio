@@ -146,14 +146,36 @@ replay recomputes every stored derived event with the new code, so on an existin
 exists (infra/cloudrun/deployment.md, Phase 9, "The stop"), and rewrites the replay report (its inputs pin the ranking
 modules' sha256).
 
+## Editing the unmerged Phase 9 package
+
+While package v7 (7.0.0) is only on the Phase 9 branch (not on `main`), an edit of `v7.json` keeps 7.0.0: no environment
+outside development has read it, and `main`'s history has no 7.0.0 entry. The edit then (1) reruns
+`python scripts/config_package.py --rehash`; (2) takes `main`'s `docs/evaluation/phase7/package_versions.json` and
+`golden_run_v1.json` (`git show origin/main:<path>`), so the history holds no 7.0.0 entry and the record pins 6.0.0;
+(3) runs `python scripts/run_golden_set.py --write docs/evaluation/phase7/golden_run_v1.json --base-ref origin/main
+--allow-dirty`, which appends the one 7.0.0 entry with the edited package's sha256; and (4) rewrites the ranking replay
+report and the Phase 3-6 records, whose pins name the package. The history then ends with exactly one 7.0.0 entry, the
+committed `v7.json`'s (`test_ac_7_6_a_same_version_edit_fails_the_ci_check_whatever_record_is_checked`), and CI's
+`--base-ref` check passes because `main`'s entries are unchanged. Once 7.0.0 is on `main`, an edit bumps
+`package_version` instead (the procedure above). No test writes the committed history: every test `--write` names a
+temporary `--history` (`test_ac_7_6_no_test_runs_a_golden_set_write_against_the_committed_history`).
+
 ## Renumbering the Phase 9 package
 
 If Phase 8 reaches `main` first with v7 and a revision after `20261123_phase7_ehmf`, the Phase 9 branch merges `main` and
-renumbers (Phase 9 spec 15, E16): rename `v7.json`, its sidecar and `schemas/v3-gold-label.v1.r7.schema.json` to the next
-free number; set `RANKING_SCHEMA_VERSION` and `app.services.ranking.vocabulary.RANKING_FIRST_MAJOR` to it
-(`LATEST_SCHEMA_VERSION` follows) and `DEFAULT_PACKAGE_PATH` to the new file, with `supersedes` naming Phase 8's package;
-set `down_revision` of `20261123_phase9_ranking.py` to Phase 8's head and update the downgrade-walk tests; take `main`'s
-`package_versions.json`, run `config_package.py --rehash` and `run_golden_set.py --write ... --base-ref origin/main`,
-rewrite the replay report and the fixture, replay and residual reports; and edit every text naming v7 or 7.0.0 for
-Phase 9 (the Phase 9 spec, ADR-011, the runbooks, the test strategy, the env example, the Phase 3 and Phase 4 specs'
-"since Phase 9" lines and the doc tests that quote them).
+renumbers (Phase 9 spec 15, E16). The number is one constant, `app.services.ranking.vocabulary.RANKING_FIRST_MAJOR`:
+`config_package.RANKING_SCHEMA_VERSION` is that constant and `LATEST_SCHEMA_VERSION` follows it, and no test or schema
+rule writes the number as a literal (`test_the_ranking_schema_number_is_one_constant_and_no_schema_rule_compares_with_a_literal_number`).
+The steps:
+
+1. Rename `v7.json`, its sidecar and `schemas/v3-gold-label.v1.r7.schema.json` to the next free number (v8, 8.0.0,
+   schema 8), carrying over what Phase 8's v7 added, with `supersedes` naming Phase 8's package.
+2. Set `RANKING_FIRST_MAJOR` to 8 and `DEFAULT_PACKAGE_PATH` to the new file; keep Phase 8's v7 readable for one release
+   (a `V7_PACKAGE_PATH` and its `config_package.py --check --path` CI step).
+3. Set `down_revision` of `20261123_phase9_ranking.py` to Phase 8's head and update the downgrade-walk tests.
+4. Take `main`'s `package_versions.json` and `golden_run_v1.json` (dropping the branch's 7.0.0), run
+   `config_package.py --rehash` and `run_golden_set.py --write ... --base-ref origin/main`, and rewrite the replay report
+   and the fixture, replay and residual reports.
+5. Edit every text naming v7 or 7.0.0 for Phase 9 (the Phase 9 spec, ADR-011, the runbooks, the test strategy, the env
+   example, code comments, the Phase 3 and Phase 4 specs' "since Phase 9" lines). The doc tests that quote those lines
+   read the number from the package, so they follow the texts without an edit.

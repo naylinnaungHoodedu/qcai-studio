@@ -299,20 +299,20 @@ Tests are in `apps/api/tests/test_phase9_acceptance.py` unless named otherwise; 
 | File | Covers |
 |---|---|
 | `test_phase9_acceptance.py` | AC-9-1 to AC-9-8, the plan E, F, G, H, I, J and L rows, tasks 1, 2 and 6, the freeze, the Phase 9 revision and the Phase 9 doc tests |
-| `test_ranking_units.py` | the unit tests of the ranking modules (spec 13.2): the Decimal numerics and the Beta quantile, K by vote entropy, quality, score, ratings and tier permissions, the tie-break and the seeded draw, the CUSUM, the tier source, every ranking-block refusal, the schema constants, the clone generator, the V3 helpers and the replay script's usage exits |
+| `test_ranking_units.py` | the unit tests of the ranking modules (spec 13.2): the Decimal numerics and the Beta quantile, K by vote entropy, quality, score, ratings and tier permissions, the tie-break and the seeded draw, the CUSUM, the tier source, every ranking-block refusal, the one schema constant (`RANKING_FIRST_MAJOR`, with no literal schema number in a rule or a test), the clone generator, the V3 helpers and the replay script's usage exits |
 | `ranking_fakes.py` | not a test module: ranking settings, a hand-built input log (`Log`), the pure fold, the two-family registry, the package copy (and one with a short X5 window), development shadow records (with a contradicting checker, a failed first pass), the commissioning input, the scan, and a database of the session's dialect |
 
 ### Phase 9 changes to existing test modules
 
 | File | Change (intent kept) |
 |---|---|
-| `test_config_package.py` | The shipped package is v7 (its schema and major read from `RANKING_SCHEMA_VERSION` and `LATEST_SCHEMA_VERSION`); the v6 assertions read `V6_PACKAGE_PATH` (readable for one release, DI-126); the v5 structural refusals run on v5, v6 and v7; `test_the_v6_edits_v7_changes_are_exactly_the_ones_it_makes`. |
-| `test_ehmf_units.py` | The Phase 7 number test reads v6 explicitly; the shipped package's number is the Phase 9 unit test's. |
-| `test_phase7_acceptance.py` | v5 and v6 read explicitly; the Phase 7 revision is followed by the Phase 9 one (the downgrade passes through it); the E15 merge-facts test. |
+| `test_config_package.py` | The shipped package is v7 (its schema and major read from `RANKING_SCHEMA_VERSION` and `LATEST_SCHEMA_VERSION`); the v6 assertions read `V6_PACKAGE_PATH` (readable for one release, DI-126), and `test_v6_stays_readable_for_one_release` also proves the v5 and v6 gold-label pins, the pinned file and both packages' sha256 unchanged (spec conflict 28); the v5 structural refusals run on v5, v6 and v7; `test_the_v6_edits_v7_changes_are_exactly_the_ones_it_makes`. |
+| `test_ehmf_units.py` | The Phase 7 number test reads v6 explicitly; the shipped package's number is the Phase 9 unit test's; the golden-runner exit test passes a temporary `--history`, so it never writes the committed history. |
+| `test_phase7_acceptance.py` | v5 and v6 read explicitly; the Phase 7 revision is followed by the Phase 9 one (the downgrade passes through it); the E15 merge-facts test; every golden-runner `--write` names a temporary `--history` (`test_ac_7_6_no_test_runs_a_golden_set_write_against_the_committed_history` keeps it so), and the history ends with exactly one entry for the shipped package, the sidecar's sha256. |
 | `test_phase6_acceptance.py` | The head is `20261123_phase9_ranking` (the Phase 3 rollback's bullet takes the Phase 9 step first); the Phase 6 walk drops the Phase 9 tables too; F_i is read by the V3 feedback service and, for the quality term, the ranking scan. |
-| `test_phase4_acceptance.py` | The doc tests name Phase 9's v7 and the loader bound `LATEST_SCHEMA_VERSION`. |
+| `test_phase4_acceptance.py` | The doc tests check Phase 9's lines in the Phase 3 spec and the code texts, reading the shipped number from the package (no literal 7), and the loader bound `LATEST_SCHEMA_VERSION`. |
 | `test_phase3_acceptance.py`, `test_response_ledger_migrations.py` | The Phase 9 revision and its tables: the downgrade path goes through it first. |
 | `test_configuration_overrides.py` | `ranking_shadow` and `ranking_shadow_generation` are recorded overrides. |
 | `conftest.py` | Each test reads the ranking stop afresh with the ranking available. |
 
-**Exit gate.** The Phase 9 exit needs AC-9-1 to AC-9-8 green, a staging shadow run and live routing off pending E4 (plan Phase 9 P: "AC-9-1 to AC-9-8 green; staging shadow run; live routing OFF pending E4 [Decision D-28]."). The AC tests are done in code; the cited run must be on `main` (DI-115). No staging shadow run exists (no non-fake generate member, D-07, D-12; DI-120), and live routing is refused while D-28 is open. `phase9_exit_passed` stays false in the package. The exit is not passed.
+**Exit gate.** The Phase 9 exit needs AC-9-1 to AC-9-8 green, a staging shadow run and live routing off pending E4 (plan Phase 9 P: "AC-9-1 to AC-9-8 green; staging shadow run; live routing OFF pending E4 [Decision D-28]."). The AC tests are green in code and in branch CI run 45360174794 (at `40bdc57`, every job); the cited run must be on `main` after the merge (DI-115). No staging shadow run exists (no non-fake generate member, D-07, D-12; DI-120), and live routing is refused while D-28 is open. `phase9_exit_passed` stays false in the package. The exit is not passed.

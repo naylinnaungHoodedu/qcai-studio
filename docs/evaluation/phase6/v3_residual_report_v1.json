@@ -1,8 +1,8 @@
 {
  "report": "qcai-v3-residual-report",
  "format_version": 1,
- "created_at": "2026-11-24T10:07:22+00:00",
- "commit": "40bdc57976dae70faed61b30cbdeaca1365f3e13-dirty",
+ "created_at": "2026-11-24T10:20:43+00:00",
+ "commit": "79584e0776e97f060f87f66e9edf6447782c19e5-dirty",
  "evidence_class": "synthetic telemetry, not research results (plan Phase 6 H: audit counts are telemetry, not research results)",
  "public_corpus_only": true,
  "config_package": {

@@ -14,15 +14,17 @@ fallback for an empty eligible set (plan Phase 9 A, D). Live routing is an OPEN 
   function of the log (AC-9-8). Arithmetic is Decimal in a fixed local context; the Beta quantile is a 60-step bisection
   over the regularized incomplete beta function; randomness is a seeded sha256 draw. No language model decides a rank.
 - Inputs are completed verdicts only: a skip changes only its counter (AC-9-1); y = 1 only for an uncorrected first pass;
-  learner feedback feeds F, the quality term, only (AC-9-2).
+  learner feedback feeds F, the quality term, only (AC-9-2). The V1.3 checker's absence under D-21 (a `no_checker` flag on
+  a record that does not show the checker present) is not a verdict on the generator; every other V1.3 flag is.
 - Algorithm 1 is evaluated when the ranking scan reads each ledger record; the decisions are recorded, never acted on for
   a learner: static assignment (`extractive-d19-v1`) keeps generating every record. `RANKING` is `off` outside
   development, `shadow` in development, and `on` (live routing) is refused everywhere while D-28 is open.
 - Drift: a Bernoulli CUSUM per model and per (model, cluster); an alarm goes through Phase 6's `record_cusum_alarm` (X5),
   holds promotions until every X5 window raised under its hold closes (a sustained alarm's later window included), and
   never demotes. A model-version change deflates trust by the package's deflation (0.3) and caps the model at C until a
-  recorded shadow golden regression passes (no failed first pass, a V2 or EHMF abstention after generation included,
-  and at least min_generated generated records).
+  recorded shadow golden regression passes: every one of the golden set's queries gives a completed verdict and none
+  fails its first pass (a V2 or EHMF abstention after generation counts as a failure, and any skipped query fails the
+  regression).
 - An empty eligible set abstains and, when V3 is not off, enqueues a V3 item (`ranking_empty_eligible_set`); with V3 off
   the `select` row notes `v3_off`. No pre-verified store exists (DI-83).
 - Every parameter is the configuration package v7 `ranking` block (`ranking-params-v1`, provisional, PD-50..PD-59), carried

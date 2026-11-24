@@ -1987,6 +1987,16 @@ def test_phase9_docs_quote_the_plan_and_state_the_current_rules():
     for number in range(115, 129):
         assert f"| DI-{number} |" in head
     assert "### Renumbering the Phase 9 package (E16)" in spec
+    # E16: the change-control doc writes the Phase 9 renumbering (one constant, the Alembic parent, the history) and the
+    # procedure for an edit of the unmerged package.
+    control = (REPO_ROOT / "docs" / "architecture" / "ehmf-change-control.md").read_text(encoding="utf-8")
+    renumbering = control.split("## Renumbering the Phase 9 package", 1)[1]
+    for name in ("RANKING_FIRST_MAJOR", "RANKING_SCHEMA_VERSION", "LATEST_SCHEMA_VERSION", "down_revision", "supersedes", "--rehash", "--write",
+                 "test_the_ranking_schema_number_is_one_constant_and_no_schema_rule_compares_with_a_literal_number"):
+        assert name in renumbering, name
+    unmerged = control.split("## Editing the unmerged Phase 9 package", 1)[1].split("## Renumbering the Phase 9 package", 1)[0]
+    for name in ("git show origin/main", "--base-ref origin/main", "exactly one 7.0.0 entry", "--history"):
+        assert name in unmerged, name
     for conflict in ("1. **Algorithm 1 line 6", "12. **Table X", "26. **Operational precondition"):
         assert conflict in spec, conflict
 
