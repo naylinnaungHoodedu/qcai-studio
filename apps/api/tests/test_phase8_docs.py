@@ -32,7 +32,7 @@ PHASE8_MODELS = (
 PHASE8_EXTENDED_MODULES = {
     "test_api.py", "test_authorization.py", "test_cs595_increment.py", "test_erasure_retention.py",
     "test_malformed_input.py", "apps/frontend/tests/privacy-inventory.integration.test.ts",
-    "test_config_package.py", "test_configuration_overrides.py", "test_phase3_acceptance.py",
+    "test_config_package.py", "test_configuration_overrides.py", "test_ehmf_units.py", "test_phase3_acceptance.py",
     "test_phase4_acceptance.py", "test_phase5_acceptance.py", "test_phase6_acceptance.py", "test_phase7_acceptance.py",
     "test_response_ledger_migrations.py",
 }
@@ -63,6 +63,7 @@ PHASE8_CHANGED_TESTS = {
     "test_cs595_increment.py": (
         "test_learner_record_api_requires_a_durable_session_and_accepts_idempotent_operations",
     ),
+    "test_ehmf_units.py": ("test_the_phase_7_package_number_is_read_from_one_constant_per_side",),
     "test_erasure_retention.py": (
         "_seed_everything",
         "test_retention_removes_stale_guest_rows_in_every_table_and_keeps_the_rest",
@@ -89,6 +90,7 @@ PHASE8_CHANGED_TESTS = {
         "test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_head",
     ),
     "test_phase7_acceptance.py": (
+        "test_ac_7_6_a_same_version_edit_hidden_by_editing_the_history_fails_the_ci_check_against_the_base",
         "test_plan_g_v5_stays_readable_and_v6_parses_v1_to_v4_records",
         "test_plan_e_the_phase_7_revision_is_additive_reversible_and_keeps_its_rows",
         "test_plan_e_the_phase_7_downgrade_refuses_while_ehmf_stops_holds_rows_and_the_table_refuses_truncate",

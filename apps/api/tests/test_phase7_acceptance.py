@@ -425,7 +425,11 @@ def test_ac_7_6_a_same_version_edit_hidden_by_editing_the_history_fails_the_ci_c
     base.write_bytes(golden.DEFAULT_HISTORY.read_bytes())
     shipped = golden.load_history(base)
     history = tmp_path / "history.json"
-    history.write_text(json.dumps({**shipped, "entries": [{"version": PACKAGE.package_version, "sha256": edited.sha256}]}), encoding="utf-8")
+    edited_entries = [
+        {**entry, "sha256": edited.sha256} if entry["version"] == edited.package_version else entry
+        for entry in shipped["entries"]
+    ]
+    history.write_text(json.dumps({**shipped, "entries": edited_entries}), encoding="utf-8")
     record = tmp_path / "run.json"
     common = ["--package", str(edited_path), "--history", str(history)]
     assert golden.main(["--write", str(record), *common, "--allow-dirty"]) == golden.EXIT_OK
