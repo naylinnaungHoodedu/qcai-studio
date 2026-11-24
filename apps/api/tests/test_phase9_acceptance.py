@@ -2264,19 +2264,37 @@ def test_phase9_docs_the_spec_ends_in_one_review_history_table():
     assert SPEC_PATH.read_bytes().count(b"\r\n") == 0
 
 
-def test_phase9_docs_no_document_scopes_the_branch_ci_run_to_some_acs():
-    # Branch run 45360174794 ran every AC test against the code, the v7 package and the tests as they were at 40bdc57;
-    # all three changed later, so the documents say no AC is CI-green at the head and never name a subset of the ACs as
-    # the ones that changed (the BEP's check_records.py holds the BEP copies to the same rule).
-    stale = re.compile(r"AC-9-1, AC-9-5, AC-9-6,? and AC-9-8|green in branch run 45360174794|covers the tests as they were")
+def _phase9_merge_texts() -> dict[str, str]:
     spec = spec_text()
     strategy = (REPO_ROOT / "docs" / "testing" / "test-strategy.md").read_text(encoding="utf-8")
-    texts = {
+    return {
         "spec DI-115": next(line for line in spec.splitlines() if line.startswith("| DI-115 |")),
         "spec 17": spec.split("\n## 17.", 1)[1].split("\n## 18.", 1)[0],
         "test strategy": next(line for line in strategy.splitlines() if "**Exit gate.** The Phase 9 exit" in line),
     }
-    for name, text in texts.items():
+
+
+def test_phase9_docs_no_document_scopes_the_branch_ci_run_to_some_acs():
+    # Branch run 45360174794 ran every AC test against code, a v7 package and tests that changed later, so no document
+    # names a subset of the ACs as the ones it covers. Phase 9 merged as main d366e20 (PR #40): each text names the merge
+    # and the cited main run 45438485114, and none keeps the pre-merge "no AC is CI-green" state (the BEP's
+    # check_records.py holds the BEP copies to the same rule).
+    stale = re.compile(r"AC-9-1, AC-9-5, AC-9-6,? and AC-9-8|green in branch run 45360174794|covers the tests as they were")
+    spec = spec_text()
+    for name, text in _phase9_merge_texts().items():
         assert not stale.search(text), name
-        assert "no AC is CI-green at the head" in text, name
+        assert "d366e20" in text and "45438485114" in text, name
+        assert "no AC is CI-green" not in text, name
     assert not stale.search(spec.split("\n## 18. Review history\n", 1)[0])
+
+
+def test_phase9_docs_the_records_name_the_merge_and_the_cited_main_run():
+    # Phase 10's first commit (E15): PR #40 merged as main d366e20 (tree identical to 83e7078); main run 45438485114 is cited.
+    texts = _phase9_merge_texts()
+    for name, text in texts.items():
+        for needed in ("`d366e20`", "`83e7078`", "45438485114"):
+            assert needed in text, (name, needed)
+        for stale in ("no AC is CI-green", "the cited run must be on `main`", "each later commit needs its own run"):
+            assert stale.lower() not in text.lower(), (name, stale)
+    assert "The exit is not passed." in texts["spec DI-115"] and texts["spec DI-115"].endswith("| Eng / PO / PI | Open |")
+    assert "| Merge | `d366e20` |" in spec_text().split("\n## 18. Review history\n", 1)[1]
