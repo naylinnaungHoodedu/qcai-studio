@@ -26,7 +26,8 @@ schema adds applies to every later schema, except the inline misconception libra
 library is a pinned file). From schema RANKING_SCHEMA_VERSION (package v7, Phase 9) --check also runs the ranking check (the
 hand fixtures, the clusters, the recommission golden set's sha256 and item count, the replay report) and prints its summary,
 and --rehash copies ehmf.golden_set's pin into ranking.recommission.golden_set.
-The default path is the shipped package v7; v6, v5, v4, v3, v2 and v1 stay readable for one release (--path .../v6.json,
+The default path is the shipped package v8. The loader validates the learner policy from schema 8 onward.
+Package v7 remains readable (DI-317). Earlier packages remain readable (--path .../v6.json,
 DI-126; --path .../v5.json, DI-112;
 --path .../v4.json, DI-100;
 --path .../v3.json, DI-84; --path .../v2.json, DI-63; --path .../v1.json, DI-42).

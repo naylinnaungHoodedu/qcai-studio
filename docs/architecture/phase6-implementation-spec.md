@@ -1094,7 +1094,7 @@ def item_view(db: Session, row: Any, *, store: Any, corpus_registry: Any, now: d
 
 ### 5.3 Scripts (`scripts/config_package.py`)
 
-- The default path is v7 with Phase 8. Phase 7's v6, Phase 6's v5, and the earlier package versions remain readable.
+- The default path is v8 with Phase 8. Phase 9's v7, Phase 7's v6, Phase 6's v5, and the earlier package versions remain readable.
 - `--check` for schema 5 also runs `check_v3_package(package, structural=True)` and prints a V3 summary: the trigger registry, the draw rate, the double review, the registry sizes per environment and `phase6_exit_passed`.
 - `--rehash` for schema 5 also recomputes the two v3 schema pins.
 - `--write-schemas` for v5 writes the two v3 schemas. The v4 schema files come out byte-identical in content.
@@ -1656,9 +1656,9 @@ Security events are read ordered by `seq`. A test that counts denials uses `monk
 ### 13.3 Existing tests that change (intent kept; each commit message says why)
 
 1. **`test_config_package.py`.**
-   - The shipped package is "5.0.0", schema 5, with `package.v3` set.
+   - The shipped package is "8.0.0", schema 8, with `package.v3` set. Phase 6 checks its version-specific contract by loading v5.
    - `V4_RAW` reads `V4_PACKAGE_PATH` for `test_v4_keeps_every_v3_value_but_the_listed_changes` and for every `test_v4_*` assertion on v4-only values.
-   - `test_v4_structural_errors_always_stop_the_load` applies its refusals to `v4.json`, `v5.json`, `v6.json`, and the shipped v7. On v5 it replaces the no-op `schema_version=5` with `LATEST_SCHEMA_VERSION + 1` (`schema_version=8`).
+   - `test_v4_structural_errors_always_stop_the_load` applies its refusals to `v4.json`, `v5.json`, `v6.json`, `v7.json`, and the shipped v8. On v5 it replaces the no-op `schema_version=5` with `LATEST_SCHEMA_VERSION + 1` (`schema_version=9`).
    - `test_v3_structural_errors_always_stop_the_load` applies its refusals to v3.json, v4.json and v5.
    - `test_v3_stays_readable_for_one_release` compares `canonical_sha256(V3_RAW)` with `V4_RAW["supersedes"]["sha256"]`.
    - `test_gateway_package_check_problems` also checks v4.json; it reads the default package, which keeps the gateway block.

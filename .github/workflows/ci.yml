@@ -36,6 +36,8 @@ jobs:
       - run: python scripts/config_package.py --check --path apps/api/app/config_package/v5.json
       # Phase 9: configuration package v6 stays readable for one release (DI-126).
       - run: python scripts/config_package.py --check --path apps/api/app/config_package/v6.json
+      # Phase 8: configuration package v7 stays readable for one release (DI-317).
+      - run: python scripts/config_package.py --check --path apps/api/app/config_package/v7.json
       # Plan Phase 9 F, J, L and AC-9-8: the ranking replay report over seven synthetic streams (an engineering measurement,
       # not E4 results). Exit 7 is the plan L stop (a replay that differs from its event log), 6 a pin mismatch (the package
       # or its ranking block changed without a replay run), 3 a scenario assertion, 1 drift.
