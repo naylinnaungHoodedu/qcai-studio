@@ -1,8 +1,8 @@
 {
  "report": "qcai-three-plan-replay",
  "format_version": 1,
- "created_at": "2026-11-24T12:32:25+00:00",
- "commit": "67e195ff5e527066ef9e72d35e19a5aba985e802-dirty",
+ "created_at": "2026-11-24T20:31:50+00:00",
+ "commit": "e61a766690e32e21a51f49be381d86625c207b5c",
  "evidence_class": "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 evidence (plan Phase 3 H)",
  "public_corpus_only": true,
  "excluded_sources": [
@@ -21,8 +21,8 @@
   }
  },
  "config_package": {
-  "version": "7.0.0",
-  "sha256": "30c65633a31a5f06d6f985f0bdc62af761171415fd43800ae4c43b4e8c0fd5e6"
+  "version": "8.0.0",
+  "sha256": "c14d28f110f0ddcf89aab4717ccd5e6555cba15ad6a266468b67b662229d1904"
  },
  "tutor_pipeline": {
   "resolver": "thread-resolver-v1",
@@ -80,7 +80,7 @@
     "bound_claim_ratio": null
    },
    "stop": false,
-   "items_digest": "0a60e525306281b25df1251cd09f77297680917478fc00835e38d6e2e8989242"
+   "items_digest": "fa7c3d5ebf52ba991edbe8386c7c638404c64d117ebd14447be7e4786984124f"
   },
   {
    "name": "all_public_approved",
@@ -121,7 +121,7 @@
     "bound_claim_ratio": 1.0
    },
    "stop": false,
-   "items_digest": "62fee2ddfd0910776c54052270a56e884fef61e6efe78a66e7567a5d85177ce0"
+   "items_digest": "26deaae8213f2c306b063e55956c85553d4cf0b76de8556deb613ad1f70ed24f"
   },
   {
    "name": "all_public_approved",
@@ -161,7 +161,7 @@
     "bound_claim_ratio": 1.0
    },
    "stop": false,
-   "items_digest": "3959add3282f82de847c7eb22728dc5027bd06199ee52df19732595eecc3f98e"
+   "items_digest": "0e0e3e8993090b8358319a05915d9631a66c89e2d337a36d03cad6a38704acab"
   }
  ],
  "result": "pass",
@@ -169,16 +169,17 @@
   "rule": "imported-repository-modules-sha256-lf-v1",
   "files": {
    "apps/api/app/__init__.py": "a45661633011b095a62071507cf3309e100424dd64d34feabf2cc6d084696348",
-   "apps/api/app/core/config.py": "a69ed0d3397185eb4cf67891aa9d63c7baacb173e03b5037210cf69ed5d28fe1",
-   "apps/api/app/core/config_package.py": "573502a002864d773136c3288fc67fedb901cba41de8e35e1679878ffa7258a4",
+   "apps/api/app/core/config.py": "27f9c302f61f1ed872189cb42d078c194aef3558af1786be2fb65e373e662b43",
+   "apps/api/app/core/config_package.py": "eef3fa0ded082dcb266847e876b136d5da58f15833bdde5fb12c1538f5100874",
    "apps/api/app/core/corpus_governance.py": "39153061b8d613ca0298a5210b4d9abeb4da2298608b1b471c0cf659a7f9a4fd",
    "apps/api/app/core/data_planes.py": "195f35a4a4a01cabeb32d48a0d81c1beb0ca714e943d7c154abe3e96a35a5976",
    "apps/api/app/core/db.py": "81d5e54a250dc4e3d6d477ad33bb37f78cee4a98854330e39e223f1ab44b6014",
    "apps/api/app/core/log_redaction.py": "ac76ce9520ac9b42986775b36bb803b00105edb9a6b256748f541022437582c3",
    "apps/api/app/core/manifest_v2.py": "68648be870c49c6182c96fa30c2e28edfb321f251cfcb56d3e426367bbb3bab2",
+   "apps/api/app/core/phase8_settings.py": "36cc4fa73fdd1988637e97b0b713a0ed585a938bbc766a221e678b352078a74c",
    "apps/api/app/core/source_assets.py": "1889e9d025697c0d928b6e068325c0569adc7b8a802394a6dd3750f451e39ce5",
    "apps/api/app/core/structured_logging.py": "854ef58ab42efdb665dc20cff8595e296241ccd63c5322eb77bcb7830b691ea1",
-   "apps/api/app/db_models.py": "455700fa5f464a79f0c01d31cdde0740213e9fdb7c9ab372fd7904f92741d938",
+   "apps/api/app/db_models.py": "c1133c8c51b742a83e2290257b48c2e8087a64321cdf482999f460764e99e40f",
    "apps/api/app/gateway/__init__.py": "f30aa888d009d0bfc94f7be7dcd0a67f371e323e2f2a33ade73b0a06e1b568f2",
    "apps/api/app/gateway/adapters.py": "6c9c0d934ce67e7797aa3f131c22a5f2c130e5f893a738b770aa702f1d9af99d",
    "apps/api/app/gateway/contracts.py": "aee71e23ee633a5d7f5b33c826f71528b21a38e843e2682843b4b739e78bdd61",
@@ -187,7 +188,7 @@
    "apps/api/app/gateway/pinning.py": "287551250014af40b3655c83a02e57998515422fd05f55b112351b9bbe2b4594",
    "apps/api/app/gateway/registry.py": "98d6f094cf40503bf5053c2112d793150adb5fa9dbe293e8eaa07ec32bb3bb38",
    "apps/api/app/gateway/retired.py": "e5744df75d606a0d80cbf2ad51f13cbe9c6fd4684532df8ea917d83dc968b015",
-   "apps/api/app/schemas.py": "dd4318765e3928f76aa533a77cfcc91678e84c7531f07875e057594a1cc94f4e",
+   "apps/api/app/schemas.py": "f5beb3b27b019f6035a4b945ee4374b5be9e35b38903b156d43f6ceecedd1855",
    "apps/api/app/services/claim_gate.py": "dd3fa79d6a39f3cf30141471622e0f487059eaa80669332c1eab7d5adbe6ca28",
    "apps/api/app/services/contained_answers.py": "b32a28b65f294fb7de09229679ca2503666de9c45e8179f1f4f52c0302c96e99",
    "apps/api/app/services/content_assembler.py": "f7ac4499fe077f3b540323eceff37de5a80e59fabc510ddaec93e688458914fa",
@@ -197,7 +198,7 @@
    "apps/api/app/services/ehmf/library.py": "aac4cabddd18c10899a907e57937b8e59179f6ddfcf68a7fca01e0fc775971ea",
    "apps/api/app/services/ehmf/routing.py": "9ef0d00d92ed6295255f7ef6384d424fa2acf7554ca49afd4a1f5e8fd92bb4bd",
    "apps/api/app/services/ehmf/vocabulary.py": "66325cd0a261e5ad7163cc96b33068d38b1ab86def36c70758ec5959c265b89e",
-   "apps/api/app/services/ledger.py": "760e500c35ef59693b4e7e0007a80020fea276d982e527d038277893460fc638",
+   "apps/api/app/services/ledger.py": "6fdc40a062b70537c240a8287a19fbd361b031d1655954a27a4664c1f4a00558",
    "apps/api/app/services/lexical_index.py": "fe90eefb9f5d58f7201ca9ee6e641eac6ce78160604191481468b643882dba52",
    "apps/api/app/services/provenance.py": "cbea0a9970dac7fe17b653e1308d26b99846e92d0c9e04b5b15be4c3a96e5857",
    "apps/api/app/services/quiz_keys.py": "c839f3da7fce2abada021d5a454cada57ed209474db93abf479fc6a6ad538131",
@@ -247,6 +248,6 @@
    "apps/api/app/services/v3/rules.py": "0ae84335d5f83a8f76cd17b4f50357146b6a3ed06795acf0de0f9b87456a521a",
    "scripts/replay_tutor_plans.py": "287a264cea97c41d4e59c958c817c00d6a84e5b8f4d47dd76a867584cc11191a"
   },
-  "sha256": "71400443e75aeae81cf49e874681d8152b9e4e4c9b24bdd963d65f4381ab52a2"
+  "sha256": "c4d5ca207424071354f99d3d997d82d5b0a703f6d50c00fb4c41e2883f1776a0"
  }
 }

@@ -344,7 +344,21 @@ python scripts/run_ranking_replay.py --check docs/evaluation/phase9/ranking_repl
 
 Repeat the package check for each version from v1 through v7. Run the corpus and question validators, authorization matrix, manifest, abstention calibration, frozen public payload check, source-fidelity check, and repository and Docker-context path scan. Run `npm run lint`, `npm run typecheck`, and `npm run test:integration` in `apps/frontend`.
 
-<!-- Current evidence digests and verification totals -->
+The reports were generated under package v8 from clean source commit `e61a766690e32e21a51f49be381d86625c207b5c`. The invariance harness covered 299 public items at three mastery levels, with 148 items showing distinct presentation, zero invariance violations, and zero learner-state fields in the evidential-path scan. The EHMF run resolved all 47 delivered citations across 40 golden-set items. The ranking replay produced byte-identical results on two runs of all seven synthetic scenarios. The erasure proof independently checked six principal and binding cases. These fixtures satisfy the engineering prerequisite in plan 15.2.
+
+| Record | Inputs SHA-256 (record `inputs.sha256`) |
+|---|---|
+| `docs/evaluation/phase3/three_plan_replay_v1.json` | `c4d5ca207424071354f99d3d997d82d5b0a703f6d50c00fb4c41e2883f1776a0` |
+| `docs/evaluation/phase4/v1_fixture_report_v1.json` | `58d0648172ee65243cb23187f8637023fb9eb3a8c7916cd39b8cb01f3d1e9b69` |
+| `docs/evaluation/phase5/v2_fixture_report_v1.json` | `a84fd90c8ea72d460ce74264d20d92a5e9b3c1a2622e19365d2ad8d2c792d905` |
+| `docs/evaluation/phase6/v3_residual_report_v1.json` | `c43f5caa64661daf7e07efbe75f519acef033be8445ff4b992a7e5cc6ced0d22` |
+| `docs/evaluation/phase7/golden_run_v1.json` | `5f222f7f94e8caee5efcfac11b3462945b5e6b96a96c6ababc34816d330ace19` |
+| `docs/evaluation/phase8/invariance_harness_report_v1.json` | `710e784beff9547ea429ccbc3dba4f182fb6a22d8f07f29236c3a2ab8d892fb4` |
+| `docs/evaluation/phase9/ranking_replay_v1.json` | `f73f7e836c278d5a3d717186cab6b922d0b95cc55ee0fb14f9cd69a58621bc5a` |
+
+`docs/evaluation/phase8/erasure_proof_v1.json` has record file SHA-256 `551caa3b40c7944b73ac355400947a54886f7d06d718a4b689c3ac4e5cf24204`. The proof has no inputs block.
+
+<!-- Verified test totals -->
 
 ### 17.2 Review response checks and exit
 
@@ -368,3 +382,4 @@ The rows record the build and each review round in order. Sections 0–17 descri
 | Review 1 | `8c7b7d4` | Route ownership and PD register guards, serialized cutover and erasure, claim and privacy HTTP coverage, active replica lifecycle, measurable invariance, retention, and spec controls. See `test_phase8_route_policies_form_one_block_after_the_learner_record_rows`, `test_phase8_docs_pd_204_states_the_engineering_constants_in_code`, `test_phase8_erasure_refuses_an_in_flight_subject_rebind`, `test_phase8_privacy_http_consent_export_erasure_and_assessment`, and `test_ac_8_4_a_learner_value_in_an_evidential_payload_is_detected`. |
 | Review 2 | `cb2a33e`, merge `bf4fe3a`, integration `ef99f9d` | Restored the retention and readiness contracts and verified erasure serialization, retained-principal recovery, expiry, F-3 and trusted mastery. The owner assigned DI-318 to the main track. Phase 7 main `512b8a6` entered through `bf4fe3a`. Package v7 SHA-256 is `adf3aed271aaf2c84c852f2e0169825b9889577d4aa64573ea7066f12c97d1e5`. Alembic `down_revision` is `20261123_phase7_ehmf`. The full rerun on `598ad9d` passed 2,105 on SQLite (+158 from the 1,947 main baseline) and 2,103 on each PostgreSQL driver, including 11 separately run template tests per backend. The SQLite leg included API and evaluation tests. The PostgreSQL legs ran the API tests. Regression guards include `test_phase8_erase_stale_guest_rows_keeps_its_two_argument_signature`, `test_phase8_keeps_protected_acceptance_tests_at_the_phase7_baseline`, `test_phase8_erasure_serializes_with_unguarded_and_first_writers`, `test_phase8_a_principal_erased_and_signing_in_again_gets_a_fresh_empty_record`, `test_phase8_loader_refuses_schema_versions_outside_the_latest_bound`, and `test_phase8_migration_retains_existing_tables_and_refuses_data_loss`. |
 | Review 3 | `c466957` | Verified receipts for both erasure routes, checked the privacy freeze and authenticated export and erasure, enforced D-27 and retention policy, and reconciled the shared-file and test records. DI-319 records the hand-over for the runtime stop trigger. See `test_ac_8_5_every_erasure_route_writes_a_verified_receipt`, `test_phase8_a_demo_header_cannot_export_or_erase_another_principal`, `test_freeze_phase8_privacy_requires_d27_even_after_exit`, and `test_phase8_docs_names_the_shared_files_and_changes_to_existing_tests`. |
+| Review 4 | `e61a766`, merge `832a431` | Integrated Phase 9 main `d366e20`. Package v8 SHA-256 is `c14d28f110f0ddcf89aab4717ccd5e6555cba15ad6a266468b67b662229d1904`. Alembic `20261123_phase8_learner` follows `20261123_phase9_ranking`. Covered the all-off freeze, derived evidence scan, authenticated write and erasure ordering, early-table upgrade, verified consent, guest/demo scoring, inherited test traceability, verification provenance, D-27 settings, and release instructions. See `test_freeze_phase8_flags_off_learner_record_and_quiz_routes_are_unchanged`, `test_ac_8_4_the_scan_covers_every_phase8_learner_state_field`, `test_phase8_erasure_serializes_with_unguarded_and_first_writers_http`, and `test_phase8_docs_section_17_states_only_the_current_verification`. <!-- Round 4 reconciled totals --> |
