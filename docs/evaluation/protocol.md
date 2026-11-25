@@ -8,7 +8,7 @@ DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-143). Not execu
    --agent-check <agent re-check record> --freeze-out <freeze record>` (with the catalog, ratings and rubric; the full
    command is the research-plane runbook's step 4) in the research plane (120-200 items at the strata targets of `lqs/ulqs-v1.0-freeze-rules.json`, every move from the previous
    set allowed by the state machine and no frozen content changed, every pointer resolved and checked against the corpus
-   text character for character, Krippendorff's alpha at least 0.667 and at least a quarter of items second-rated, and
+   text character for character, Krippendorff's alpha over the live items' rated units at least 0.667 and at least a quarter of items second-rated, and
    the AI-agent re-check of every item by a V2 verifier model chosen before the check, with each disagreement adjudicated
    by a claim rater who did not review that item; an item changed after one of the agent's flags is listed in the
    record with its reason, after a flag or for another reason, and an item retired since the check is listed the same

@@ -50,7 +50,7 @@ split balanced to within one counting retired items and a live item in each spli
 version, every pointer resolved and checked against the corpus text character for character, every item's move from the
 previous set (the review set or the last frozen set) allowed by the state machine with no frozen content changed, and a
 current agreement record with
-Krippendorff's alpha (nominal) of at least 0.667 and at least a quarter of items second-rated (and ceil(n/4) per stratum),
+Krippendorff's alpha (nominal, over the rated units of the live items) of at least 0.667 and at least a quarter of items second-rated (and ceil(n/4) per stratum),
 and then the AI-agent re-check (VBT RevB p. 15, "Benchmark verification before use"): a V2 verifier model chosen before
 the check and pinned in the freeze rules re-checked every item against its evidence, and a claim rater who did not review
 the item adjudicated each disagreement (an item changed or retired after one of its flags is listed). No verifier model is pinned until D-07 decides, so no freeze passes yet (DI-142).

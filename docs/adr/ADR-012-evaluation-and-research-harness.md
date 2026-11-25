@@ -24,10 +24,12 @@ ratified under DI-140). The Phase 10 exit is not passed (DI-129).
    pin first: DI-142) and an rc1 -> v1.0 mapping table (`lqs/`). The strata targets are the paper's Table XIII
    allocation in one provisional data file (PD-63), with the rc1 card's allocation recorded as the conflicting source.
 3. EV pointers resolve through a research-plane evidence catalog; public span ids through the Phase 2 resolver.
-4. Agreement is Krippendorff's alpha (nominal) at the 0.667 floor with at least a quarter of items second-rated, in exact
-   arithmetic.
+4. Agreement is Krippendorff's alpha (nominal) over the rated units of the live items, at the 0.667 floor, with at least a
+   quarter of the live items second-rated (rounded up in each stratum), in exact arithmetic. A main-round rating of a unit
+   its item does not own, or made under another rubric than the one the record names, is refused.
 5. The seven arms are data: GATE plus a declared ablation, with a parity check (AC-10-2).
-6. The runner pins the package by path and sha256, the items, the catalog, the arms and the analysis plan; seeds are
+6. The runner pins the package by path and sha256 (the synthetic spec pins v7, which stays readable under DI-317 while v8
+   ships; v8 keeps v7's boundary block and open decisions), the items, the catalog, the arms and the analysis plan; seeds are
    hashed. Stub and recorded runs repeat byte for byte. Live runs are refused here; hold H12 refuses every run over
    non-synthetic data while D-14 is open; a confirmatory run needs a valid IRB record and OSF record (AC-10-5); E1-E4 runs
    are confirmatory only. A confirmatory or live run is judged in its run window, never against its spec's

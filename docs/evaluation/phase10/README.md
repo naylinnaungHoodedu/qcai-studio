@@ -57,7 +57,10 @@ executed and no Table XVII row or HR-1..MR-3 outcome is asserted (plan Phase 10 
 
 ## Re-pinning v7
 
-The synthetic spec pins `apps/api/app/config_package/v7.json` by path and sha256. When v7 is retired, the change that
+The synthetic spec pins `apps/api/app/config_package/v7.json` by path and sha256. The shipped package is v8 (Phase 8);
+v7 stays readable for one release (DI-317), and every later package keeps v7's boundary block and the states of D-07,
+D-08, D-12 and D-14 (`test_plan_e_every_later_package_keeps_the_pinned_package_s_boundary_and_open_decisions`). When v7
+is retired, the change that
 removes it re-pins the synthetic spec to the current package and rewrites the synthetic run record and the pinned
 configuration record with `--write`.
 

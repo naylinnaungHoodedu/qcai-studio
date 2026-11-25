@@ -1489,6 +1489,26 @@ def test_plan_e_phase_10_adds_no_production_component():
     assert offenders == []
 
 
+def test_plan_e_every_later_package_keeps_the_pinned_package_s_boundary_and_open_decisions():
+    # The harness reads package v7 by explicit path and sha256 (spec conflict 17); since the merge of main 89f0563 at
+    # a27ba5b the shipped package is v8, and v7 stays readable under DI-317. The research-plane path rule
+    # (planes.boundary_policy) and hold H12 read v7's boundary block and decision states, so every later package must
+    # keep them: one that changed its boundary or decided D-07, D-08, D-12 or D-14 would leave the harness on a stale rule.
+    directory = API_ROOT / "app" / "config_package"
+    pinned = json.loads(planes.V7_PATH.read_text(encoding="utf-8"))
+    later = [path for path in sorted(directory.glob("v*.json")) if re.fullmatch(r"v\d+\.json", path.name) and int(path.stem[1:]) > 7]
+    assert later, "no package after v7"
+    for path in later:
+        package = json.loads(path.read_text(encoding="utf-8"))
+        assert package["boundary"] == pinned["boundary"], path.name
+        for key in ("D-07", "D-08", "D-12", "D-14"):
+            assert package["owner_decisions"][key]["state"] == pinned["owner_decisions"][key]["state"], (path.name, key)
+    sidecar = (directory / "v7.json.sha256").read_text(encoding="utf-8").split()[0]
+    assert synthetic.PACKAGE_PATH == planes.V7_PATH.relative_to(REPO_ROOT).as_posix()
+    assert json.loads(SYNTHETIC_SPEC.read_text(encoding="utf-8"))["package"] == {
+        "package_version": "7.0.0", "path": synthetic.PACKAGE_PATH, "sha256": sidecar}
+
+
 def test_plan_g_the_mapping_table_keeps_corpus_version_separate(tmp_path):
     mapping = json.loads((REPO_ROOT / "lqs" / "ulqs-rc1-to-v1.0-mapping.json").read_text(encoding="utf-8"))
     assert mapping["fields"]["corpus_version"] == "copy" and "R-19" in mapping["corpus_version"]
@@ -2012,6 +2032,25 @@ def test_phase10_docs_the_test_strategy_maps_every_test_module_the_phase_added()
     api = {path.name for path in (API_ROOT / "tests").glob("test_*.py")}
     evaluation = {path.name for path in (REPO_ROOT / "evaluation" / "tests").glob("test_*.py")}
     assert api & evaluation == set()  # pytest's prepend import mode needs unique test basenames across both roots
+
+
+def test_phase10_docs_section_6_names_the_current_alembic_head_and_the_shipped_package():
+    # Section 6 states the Alembic head and the shipped package as they are at HEAD (main's, since the merge a27ba5b), not
+    # as they were at the branch's first base.
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    config = Config(str(API_ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(API_ROOT / "alembic"))
+    head = ScriptDirectory.from_config(config).get_current_head()
+    section = spec_text().split("\n## 6. ", 1)[1].split("\n## 7. ", 1)[0]
+    lines = {line.split("**", 2)[1]: line for line in section.splitlines() if line.startswith("- **")}
+    assert re.findall(r"`([^`]+)`", lines["Migrations:"])[0] == head, head
+    directory = API_ROOT / "app" / "config_package"
+    newest = max(int(path.stem[1:]) for path in directory.glob("v*.json") if re.fullmatch(r"v\d+\.json", path.name))
+    version = json.loads((directory / f"v{newest}.json").read_text(encoding="utf-8"))["package_version"]
+    assert f"The shipped package is v{newest} (`{version}`" in lines["Configuration package:"], (newest, version)
+    assert "The harness reads v7 (`7.0.0`) by explicit path and sha256" in lines["Configuration package:"]
 
 
 def test_phase10_docs_the_spec_ends_in_one_review_history_table():
