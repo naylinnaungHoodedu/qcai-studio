@@ -548,7 +548,8 @@ def isolated_learner_route_sessions(fresh_database_url, monkeypatch):
 
 
 @pytest.mark.parametrize("identity", ["off", "on"])
-@pytest.mark.parametrize("claims", [{}, {"sub": ""}, {"sub": "  "}], ids=["missing", "blank", "whitespace"])
+@pytest.mark.parametrize("claims", [{}, {"sub": ""}, {"sub": "  "}, {"sub": "unknown"}],
+                         ids=["missing", "blank", "whitespace", "reserved"])
 def test_phase8_privacy_routes_refuse_a_bearer_token_without_sub(monkeypatch, isolated_learner_route_sessions, identity, claims):
     from app.db_models import LearnerConsent
     from app.services.learner_record_privacy import CONSENT_VERSION
@@ -585,7 +586,8 @@ def test_phase8_privacy_routes_refuse_a_bearer_token_without_sub(monkeypatch, is
 
 
 @pytest.mark.parametrize("identity", ["off", "on"])
-@pytest.mark.parametrize("claims", [{}, {"sub": ""}, {"sub": "  "}], ids=["missing", "blank", "whitespace"])
+@pytest.mark.parametrize("claims", [{}, {"sub": ""}, {"sub": "  "}, {"sub": "unknown"}],
+                         ids=["missing", "blank", "whitespace", "reserved"])
 def test_phase8_sync_routes_refuse_a_bearer_token_without_sub(monkeypatch, isolated_learner_route_sessions, identity, claims):
     from app.db_models import LearnerIssuedReplica, LearnerSubject, LearnerWriteGuard
 
@@ -650,6 +652,7 @@ def test_phase8_arena_rejects_a_legacy_ticket_without_an_issuer_subject(monkeypa
 
 def test_phase8_legacy_subject_fallback_never_creates_a_phase8_guard(monkeypatch, isolated_learner_route_sessions):
     from app.db_models import LearnerSubject, LearnerWriteGuard
+    from app.services.public_handles import public_handle
 
     settings = get_settings()
     monkeypatch.setattr(settings, "learner_sync", "off")
@@ -662,6 +665,8 @@ def test_phase8_legacy_subject_fallback_never_creates_a_phase8_guard(monkeypatch
     assert browser.post("/learner-record/operations", headers=headers, json=write).status_code == 200
     assert browser.post("/analytics/events", headers=headers, json={"event_type": "lesson_opened"}).status_code == 200
     with isolated_learner_route_sessions() as db:
+        # Builder feeds and project review queues call this allocation for the owner of a legacy row.
+        assert public_handle(db, "unknown").startswith("learner-")
         for model in (LearnerSubject, LearnerWriteGuard, LearnerAssessmentFact):
             assert db.scalar(select(func.count()).select_from(model)) == 0, model.__tablename__
 

@@ -7,6 +7,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.client_identity import is_legacy_auth0_fallback
 from app.core.config import get_settings
 from app.db_models import ArenaProfile, BuilderShare, LearnerWriteGuard, ProjectSubmission, PublicHandle
 from app.services.learner_record_lock import guard_key, lock_learner_write, phase8_writes_enabled
@@ -23,6 +24,9 @@ def _lock_projection(db: Session, user_id: str) -> None:
     writer = db.info.get("learner_writer")
     if writer is not None and writer.identifier == user_id:
         writer.lock(db)
+        return
+    # Older public rows can carry a shared Auth0 placeholder. It never owns a Phase 8 lock.
+    if is_legacy_auth0_fallback(user_id):
         return
     lock_learner_write(db, user_id)
     guard = db.get(LearnerWriteGuard, guard_key(user_id), populate_existing=True)

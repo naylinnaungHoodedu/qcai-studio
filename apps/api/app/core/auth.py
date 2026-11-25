@@ -6,6 +6,7 @@ from jwt import PyJWKClient
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app.core.client_identity import AUTH0_LEGACY_FALLBACK, is_legacy_auth0_fallback
 from app.core.config import Settings, get_settings
 from app.core.db import get_db
 from app.core.guest_tokens import GUEST_TOKEN_COOKIE, verify_guest_token
@@ -75,12 +76,12 @@ def _decode_auth0_token(token: str, settings: Settings) -> AuthUser:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid bearer token.") from exc
     roles = payload.get("https://qcai.dev/roles") or payload.get("roles") or ["learner"]
     subject = payload.get("sub")
-    has_subject = isinstance(subject, str) and bool(subject.strip())
+    has_subject = isinstance(subject, str) and not is_legacy_auth0_fallback(subject)
     if settings.learner_identity == "on" and not has_subject:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid bearer token.")
     principal_type = AuthUser if has_subject else _Auth0WithoutSubject
     return principal_type(
-        user_id=payload.get("sub", "unknown"),
+        user_id=payload.get("sub", AUTH0_LEGACY_FALLBACK),
         email=payload.get("email"),
         role=roles[0] if roles else "learner",
         provider="auth0",

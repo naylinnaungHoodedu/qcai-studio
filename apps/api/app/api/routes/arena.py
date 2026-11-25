@@ -11,6 +11,7 @@ from app.core.arena_tickets import (
     redeem_arena_ticket,
 )
 from app.core.auth import AuthUser, demo_principal_allowed, get_current_user, require_bearer_subject
+from app.core.client_identity import is_legacy_auth0_fallback
 from app.core.config import Settings, get_settings
 from app.core.db import SessionLocal
 from app.core.rate_limit import SlidingWindowLimiter, limiter
@@ -83,7 +84,7 @@ def _socket_principal(offered_protocols: list[str], settings: Settings) -> Arena
                 if not demo_principal_allowed(db, ticket.user_id, settings):
                     return None
         # Tickets from a legacy issuer may contain a fallback instead of an authenticated subject.
-        if ticket.provider == "auth0" and (ticket.user_id == "unknown" or not ticket.user_id.strip()):
+        if ticket.provider == "auth0" and is_legacy_auth0_fallback(ticket.user_id):
             return None
     return ticket
 
