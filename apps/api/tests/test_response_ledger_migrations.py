@@ -128,8 +128,7 @@ def test_e10_the_absolute_downgrade_target_is_safe_in_every_stamp_state_the_runb
         assert _alembic(fresh_database_url, *downgrade).returncode == 0
         assert _tables(engine) == everything and _stamp(engine) == [PHASE2_REVISION]
         # The runbook's path for a create_all schema: compare it with the models, stamp the head (create_all built the
-        # Phase 5, Phase 6, Phase 7 and Phase 9 tables too), then go down one revision at a time: the Phase 9 step drops its
-        # own (empty) tables only, then the Phase 7 step its own table, then the Phase 6 step its own, then the Phase 5 step its own.
+        # Phase 5, 6, 7, 9 and 8 tables too), then go down one revision at a time. Each step drops its own empty tables.
         with engine.connect() as connection:
             assert compare_metadata(MigrationContext.configure(connection, opts={"compare_type": True}), Base.metadata) == []
         engine.dispose()

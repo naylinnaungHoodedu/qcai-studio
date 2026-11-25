@@ -247,7 +247,7 @@ learner path: legacy contained answer; static generator in the two-pass shadow (
 ### 3.1 Vocabulary (`services/ranking/vocabulary.py`, standard library only)
 
 - `RANKING_VERSION "ranking-v1"`, `PARAMETERS_VERSION "ranking-params-v1"`, `EVENT_SCHEMA "ranking-event-v1"`, `STATE_SCHEMA "ranking-state-v1"`.
-- `RANKING_FIRST_MAJOR 7`: the one constant for the ranking block's first package schema and major. `config_package.RANKING_SCHEMA_VERSION` is this constant and `LATEST_SCHEMA_VERSION` follows it (E16).
+- `RANKING_FIRST_MAJOR 7` defines the ranking block's first package schema and major. `config_package.RANKING_SCHEMA_VERSION` uses that constant. Since Phase 8, `LATEST_SCHEMA_VERSION` follows `LEARNER_SCHEMA_VERSION`.
 - `CLUSTER_RULE "cluster-module-v1"`, `UNSCOPED "unscoped"`, `CLUSTERS` (the 11 `MODULE_BLUEPRINTS` slugs in order, kept equal by a test), `TASK_TYPE_RULE "tier-1-quiz-item-v1"`, `TIER_SOURCE_RULE "tier-source-v1"`.
 - `TASK_TYPES ("explanation","worked_example","hint","quiz_item","summary","video_script")`, `ACTIVE_TASK_TYPES ("explanation","quiz_item")`.
 - `RATINGS ("A","B","C","D")`.

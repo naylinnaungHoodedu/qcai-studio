@@ -237,6 +237,31 @@ def test_phase8_docs_stopped_rows_record_an_open_owner_question():
     assert all(term in handback for term in ("owner answered", "main track", "| Handed over |", "rule 12"))
 
 
+def test_phase8_docs_the_di_rows_form_one_contiguous_table():
+    spec = SPEC.read_text(encoding="utf-8")
+    deferred = _section(16).split("\n### 16.2 Deferred items", 1)[1].strip()
+    header, delimiter, *rows = deferred.split("\n\n", 1)[0].splitlines()
+    assert header == "| # | Item | Who | State |"
+    assert re.fullmatch(r"\|(?:\s*-{3,}\s*\|){4}", delimiter)
+    citations = {int(value) for value in re.findall(r"\bDI-(3\d\d)\b", spec)}
+    headings = set(re.findall(r"(?m)^#{2,6} (\d+(?:\.\d+)*)(?=[. ])", spec))
+    ids = []
+    for row in rows:
+        match = re.fullmatch(r"\| DI-(3\d\d) \| (.+) \| ([^|]+) \| ([^|]+) \|", row)
+        assert match is not None, row
+        number, item, _, state = match.groups()
+        ids.append(int(number))
+        assert set(re.findall(r"§(\d+(?:\.\d+)*)", item)) <= headings, row
+        if state not in {"Closed", "Handed over"}:
+            assert "Blocked by:" in item, row
+        if state == "Stopped":
+            assert "rule 12" in item and "Owner question (open)" in item, row
+    assert ids == list(range(300, max(citations) + 1))
+    assert set(ids) == citations
+    scope = _row("DI-320")
+    assert "§0.1" in scope and "| Closed |" in scope and "section-8.1" not in scope
+
+
 def test_phase8_docs_spec_headings_shapes_and_plan_quotes():
     spec = SPEC.read_text(encoding="utf-8")
     assert [int(name) for name in re.findall(r"^## (\d+)\.", spec, re.M)] == list(range(19))
@@ -246,6 +271,7 @@ def test_phase8_docs_spec_headings_shapes_and_plan_quotes():
     assert _section(18).count("| Review 3 |") == 1
     assert _section(18).count("| Review 4 |") == 1
     assert _section(18).count("| Review 5 |") == 1
+    assert _section(18).count("| Review 6 |") == 1
     for model in PHASE8_MODELS:
         line = next(line for line in _section(3).splitlines() if line.startswith(f"| `{model}` |"))
         listed = set(re.findall(r"`([a-z][a-z_]+)`", line.split("|")[2]))
@@ -253,8 +279,6 @@ def test_phase8_docs_spec_headings_shapes_and_plan_quotes():
     assert "Flags for planner and sync. Stop: any harness violation blocks adaptation (never evidence)." in _section(6)
     assert "residual: backups keep erased rows for a window." in _section(16)
     assert "AC-8-1 to AC-8-7 green; harness in CI." in _section(17)
-    for number in range(300, 320):
-        assert _row(f"DI-{number}")
     retention = (ROOT / "infra" / "cloudrun" / "retention-job.md").read_text(encoding="utf-8").split("\n## Phase 8\n")[1]
     assert all(name in retention for name in (
         "learner_claim_audits", "learner_erasure_audits", "learner_write_guards", "last_used_at", "updated_at", "tombstone",
@@ -319,6 +343,22 @@ def test_phase8_docs_the_test_strategy_maps_every_test_module_the_phase_added():
     assert not any(name in current for name in RETIRED_PHASE8_TEST_NAMES)
 
 
+def test_phase8_docs_plan_j_map_names_real_regressions():
+    def plan_j_rows(text):
+        return {item: set(re.findall(r"`(test_\w+)`", tests))
+                for item, tests in re.findall(r"(?m)^\| Plan J ([^|]+) \| ([^|]+) \|$", text)}
+
+    spec = _section(13).split("### 13.2 ", 1)[0]
+    strategy = STRATEGY.read_text(encoding="utf-8").split("\n## Phase 8 acceptance map", 1)[1].split("\n## ", 1)[0]
+    mapping = plan_j_rows(spec)
+    assert mapping == plan_j_rows(strategy)
+    assert set(mapping) == {"parallel-batch merge", "ID-enumeration", "erasure over every user-keyed table",
+                            "planner down gives static order"}
+    tests = _names()
+    assert all(names and names <= tests for names in mapping.values())
+    assert "test_plan_j_subject_replica_receipt_and_export_ids_are_random_and_another_learner_s_read_as_missing" in mapping["ID-enumeration"]
+
+
 def test_phase8_docs_section_14_names_the_ci_steps_phase8_adds():
     runs, marked = _api_ci_runs()
     section = _section(14)
@@ -342,7 +382,7 @@ def test_phase8_docs_section_14_names_the_ci_steps_phase8_adds():
 def test_phase8_docs_the_bump_docstrings_name_v8_as_shipped():
     shipped = f"v{LATEST_SCHEMA_VERSION} since Phase 8"
     budget_versions = f"{shipped}, v7 since Phase 9, v6 since Phase 7, v5 since Phase 6 and v4 since Phase 5"
-    for file in ("tutor_followups.py", "tutor_pipeline/package_check.py", "tutor_pipeline/__init__.py"):
+    for file in ("tutor_followups.py", "tutor_pipeline/package_check.py", "tutor_pipeline/__init__.py", "tutor_pipeline/contracts.py"):
         source = (APP / "services" / file).read_text(encoding="utf-8")
         doc = ast.get_docstring(ast.parse(source))
         assert shipped in doc and "v7 since Phase 9" in doc, file
@@ -352,6 +392,15 @@ def test_phase8_docs_the_bump_docstrings_name_v8_as_shipped():
     assert budget_versions in row and "v7 since Phase 8" not in row
     followups = (APP / "services/tutor_followups.py").read_text(encoding="utf-8")
     assert budget_versions in ast.get_docstring(ast.parse(followups))
+    inherited = next(line for line in _section(13).splitlines()
+                     if line.startswith("| `test_phase4_acceptance.py` | `test_phase4_docs_the_code_texts_name_the_shipped_package` |"))
+    strategy = STRATEGY.read_text(encoding="utf-8")
+    rows = [line for line in strategy.splitlines() if line.startswith("| `test_phase4_acceptance.py` |") and "DI-320" in line]
+    assert len(rows) == 2
+    for row in (*rows, inherited):
+        assert "DI-320" in row and "contracts.py" in row and "restored" in row and "v8" in row
+        assert not re.search(r"preserv\w+[^.]*code-text checks", row, re.I)
+    assert "docstring-only" in _section(0) and "| Closed |" in _row("DI-320")
 
 
 def test_phase8_docs_the_strategy_has_one_exit_gate_per_phase_section():
@@ -419,6 +468,26 @@ def test_phase8_docs_the_consent_schema_lists_the_retention_classes_in_code():
     assert dict(re.findall(r"^\| `(\w+)` \| `([^\x60]+)\x60 \|$", doc, re.M)) == retention_classes()
     assert names == retention_classes().keys() and retention_classes()["user_accounts"] == "until-erasure"
     assert all(cls in doc for cls in (*CONSENT_CLASSES, CONSENT_VERSION, "LEARNER_PRIVACY=on"))
+
+
+def test_phase8_docs_each_device_copy_disclosure_has_a_matching_proposal():
+    frontend = ROOT / "apps/frontend/src/lib"
+    disclosures = (frontend / "privacy-disclosures.ts").read_text(encoding="utf-8")
+    current = {
+        (key, field): text
+        for key, block in re.findall(r'\{\s*key: "([^"]+)",(.*?)\n\s*\}', disclosures, re.S)
+        for field, text in re.findall(r'(\w+):\s*"([^"]+)"', block)
+        if "device copy" in text.lower()
+    }
+    assert current
+    rows = re.findall(r"(?m)^\| `(qcai-[^`]+)` / `(\w+)` \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$", _section(15))
+    assert len(rows) == len(current)
+    assert {(key, field): text.strip() for key, field, text, _, _ in rows} == current
+    storage = (frontend / "learner-record-sync.ts").read_text(encoding="utf-8")
+    constants = {key: variable for variable, key in re.findall(r'const (\w+) = "(qcai-[^"]+)";', storage)}
+    for key, _, _, proposed, source in rows:
+        assert proposed.strip() and "device copy" not in proposed.lower()
+        assert "`apps/frontend/src/lib/learner-record-sync.ts`" in source and f"`{constants[key]}`" in source
 
 
 def _unexplained_retention_skips(privacy_on):
@@ -496,12 +565,18 @@ def _erasure_proof_digest_from_spec():
     return match[1]
 
 
-def test_phase8_docs_the_erasure_proof_digest_ignores_crlf_checkouts(tmp_path):
+def test_phase8_docs_the_erasure_proof_digest_ignores_crlf_checkouts(tmp_path, monkeypatch):
     proof = ROOT / ERASURE_PROOF
     crlf = tmp_path / proof.name
     crlf.write_bytes(proof.read_text(encoding="utf-8").replace("\n", "\r\n").encode("utf-8"))
     assert b"\r\n" in crlf.read_bytes()
-    assert text_sha256(crlf) == _erasure_proof_digest_from_spec()
+    read_bytes = Path.read_bytes
+
+    def with_crlf_checkout(path):
+        return read_bytes(crlf if path == proof else path)
+
+    monkeypatch.setattr(Path, "read_bytes", with_crlf_checkout)
+    test_phase8_docs_section_17_states_only_the_current_verification()
 
 
 def test_phase8_docs_section_17_states_only_the_current_verification():
@@ -559,6 +634,9 @@ def test_phase8_docs_shared_file_rules_resolve_inside_the_spec():
 
 
 def test_phase8_docs_describe_the_shipped_package_and_inherited_version_guards():
+    from io import StringIO
+    from tokenize import COMMENT, generate_tokens
+
     paths = [APP / "core/config_package.py", ROOT / "scripts/config_package.py"]
     for path in paths:
         doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8")))
@@ -608,12 +686,35 @@ def test_phase8_docs_describe_the_shipped_package_and_inherited_version_guards()
         assert "`V6_PACKAGE_PATH`" in text and "DI-317" in text
     revision = r"(20\d{6}_phase\w+)"
     head_claim = re.compile(
-        rf"\bhead(?: of `?\w+(?:\.py)?`?)?\s+(?:(?:is|at)\s+)?`{revision}`|"
+        rf"\bhead(?: of `?\w+(?:\.py)?`?)?\s+(?:(?:is|at)\s+)?`?{revision}`?|"
         rf"`{revision}`\s+as (?:the )?head\b|`{revision} \(head\)`", re.I,
     )
     phase7_units = acceptance.split("\n### 13.2 ", 1)[1]
     strategy_rows = [line for line in strategy.splitlines() if line.startswith("|")]
-    for line in [*phase7_units.splitlines(), *inherited_tests.splitlines(), *strategy_rows]:
+
+    phase9_spec = (ROOT / "docs/architecture/phase9-implementation-spec.md").read_text(encoding="utf-8")
+    vocabulary_section = phase9_spec.split("\n### 3.1 Vocabulary", 1)[1].split("\n### ", 1)[0]
+    vocabulary_code = (APP / "services/ranking/vocabulary.py").read_text(encoding="utf-8")
+    for text in (vocabulary_section, vocabulary_code):
+        plain = text.replace("`", "")
+        assert "LATEST_SCHEMA_VERSION follows it" not in plain
+        assert "LATEST_SCHEMA_VERSION follows LEARNER_SCHEMA_VERSION" in plain
+    runbook = (ROOT / "infra/cloudrun/deployment.md").read_text(encoding="utf-8")
+    phase9_runbook = runbook.split("\n## Phase 9", 1)[1].split("\n## ", 1)[0]
+    assert "`alembic current` shows `20261123_phase9_ranking`" in phase9_runbook
+
+    baseline = json.loads(BASELINE.read_text(encoding="utf-8"))
+    changed, _ = _test_changes(_main_test_symbols(baseline))
+    comments = []
+    for module in sorted({module for module, _ in changed if module.endswith(".py")}):
+        source = ((ROOT if "/" in module else TESTS) / module).read_text(encoding="utf-8")
+        spans = [node for node in ast.parse(source).body
+                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and (module, node.name) in changed]
+        comments.extend(token.string for token in generate_tokens(StringIO(source).readline) if token.type == COMMENT
+                        and any(node.lineno <= token.start[0] <= node.end_lineno for node in spans))
+
+    for line in [*phase7_units.splitlines(), *inherited_tests.splitlines(), *strategy_rows,
+                 *phase9_runbook.splitlines(), *comments]:
         for clause in re.split(r"(?<=[.!?])\s+|;", line):
             if re.search(r"\b(?:until Phase 8|before Phase 8|at the Phase [5679] release)\b", clause, re.I):
                 continue
@@ -654,8 +755,12 @@ def test_phase8_docs_distinguish_the_operator_stop_from_the_runtime_trigger():
         "runtime stop-the-line trigger", "Blocked", "tutor_pipeline/contracts.py", "gateway/tools.py", "Handed over",
     ))
     book = (ROOT / "infra/cloudrun/deployment.md").read_text(encoding="utf-8").split("\n## Phase 8:", 1)[1]
-    for text in (_section(6), book):
-        assert all(term in text for term in ("explicit operator", "runtime", "DI-319"))
+    assert all(term in _section(6) for term in ("explicit operator", "runtime", "DI-319"))
+    assert "runtime stop trigger to the main track" in book and "DI-319" in book
+    for action in ("status", "stop --reason invariance", "clear --confirm"):
+        command = f"`python -m app.workers.learner_planner {action}`"
+        assert command in book and command in _section(10)
+    assert "configured API database session" in book and "same transaction" in book
 
 
 def test_phase8_docs_explain_why_policy_fallbacks_are_not_degraded_logs():

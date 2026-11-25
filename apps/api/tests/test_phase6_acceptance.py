@@ -1330,15 +1330,13 @@ def test_phase6_docs_the_texts_phase6_made_false_state_the_current_code():
 
 
 def test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_head():
-    # The Phase 3 rollback's "Check the stamp" step names alembic's current head (`ledger.SCHEMA_REVISION`, which alembic
-    # current prints with "(head)") and takes the Phase 6, then the Phase 5 downgrade step from it; no other revision is
-    # called the head.
+    # The Phase 3 rollback's "Check the stamp" step uses the head reported by `alembic current`.
     from app.services.ledger import SCHEMA_REVISION
 
     runbook = (REPO_ROOT / "infra" / "cloudrun" / "deployment.md").read_text(encoding="utf-8")
     step = runbook.split("3. **Check the stamp:** `alembic current`.", 1)[1].split("\n4. ", 1)[0]
-    # Since Phase 9 the head is 20261123_phase9_ranking: its bullet takes the Phase 9 step, then the Phase 7, Phase 6 and
-    # Phase 5 steps.
+    # Since Phase 8 the head is 20261123_phase8_learner. Its bullet takes the Phase 8 step, then the Phase 9,
+    # Phase 7, Phase 6 and Phase 5 steps.
     assert re.findall(r"`([0-9a-z_]+) \(head\)`", step) == [SCHEMA_REVISION] == ["20261123_phase8_learner"]
     head_bullet = next(line for line in step.splitlines() if f"`{SCHEMA_REVISION} (head)`" in line)
     assert "alembic downgrade 20261123_phase9_ranking" in head_bullet

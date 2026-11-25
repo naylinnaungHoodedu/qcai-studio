@@ -203,6 +203,71 @@ def test_phase8_durable_stop_is_visible_to_a_new_session(fresh_database_url):
         engine.dispose()
 
 
+def test_plan_l_planner_stop_worker_round_trips_through_new_sessions(fresh_database_url, monkeypatch, capsys):
+    from sqlalchemy import select
+
+    from app.db_models import SecurityEvent
+    from app.services import security_log
+    from app.services.learner_record_planner import LearnerPresentation
+    from app.workers import learner_planner
+
+    engine = create_engine(fresh_database_url)
+    order = ("first", "second")
+    subject = f"demo-{uuid4().hex}"
+    monkeypatch.setattr(learner_planner, "SessionLocal", lambda: Session(engine))
+
+    def check_state(plan):
+        with Session(engine) as db:
+            assert shadow_presentation(db, "demo", subject, order, "concise") == plan
+
+    def run(*args):
+        assert learner_planner.main(list(args)) == 0
+        return json.loads(capsys.readouterr().out)
+
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as db:
+            set_consent(db, "demo", subject, "adaptation", True, Settings(_env_file=None))
+            attempt = QuizAttempt(user_id=subject, lesson_slug="first", score=1, responses={})
+            db.add(attempt)
+            db.flush()
+            db.add(LearnerAssessmentFact(attempt_id=attempt.id, user_id=subject, lesson_slug="first", mastery=0.9))
+            db.commit()
+        adapted = LearnerPresentation("socratic", ("second", "first"))
+        static = LearnerPresentation("concise", order)
+        check_state(adapted)
+        assert run("status") == {"state": "clear"}
+
+        def audit_fault(_):
+            raise RuntimeError("Synthetic audit write failure.")
+
+        with monkeypatch.context() as fail:
+            fail.setattr(security_log, "_row_hash", audit_fault)
+            assert learner_planner.main(["stop", "--reason", "invariance"]) == 1
+        assert "Synthetic audit write failure" not in capsys.readouterr().err
+        check_state(adapted)
+        assert run("status") == {"state": "clear"}
+
+        assert run("stop", "--reason", "invariance") == {"action": "stop", "outcome": "committed"}
+        assert run("status") == {"state": "stopped", "reason": "invariance"}
+        check_state(static)
+        assert learner_planner.main(["clear"]) == 2
+        assert "--confirm" in capsys.readouterr().err
+        check_state(static)
+        assert run("clear", "--confirm") == {"action": "clear", "outcome": "committed"}
+        assert run("status") == {"state": "clear"}
+        check_state(adapted)
+        with Session(engine) as db:
+            rows = list(db.scalars(select(SecurityEvent).order_by(SecurityEvent.seq)))
+            assert [(row.event_type, row.outcome, row.details) for row in rows] == [
+                ("learner.harness.stop", "success", {"reason": "invariance"}),
+                ("learner.harness.clear", "success", {"reason": "operator"}),
+            ]
+            assert all(row.subject_digest is row.source_digest is None for row in rows)
+    finally:
+        engine.dispose()
+
+
 def test_phase8_readiness_reports_the_last_stop_observation_without_querying(monkeypatch):
     from app import main
     from app.core.config_package import get_config_package

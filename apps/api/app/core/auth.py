@@ -217,10 +217,15 @@ def require_durable_learner(request: Request, user: AuthUser = Depends(get_curre
     return user
 
 
-def require_verified_principal(user: AuthUser = Depends(get_current_user)) -> AuthUser:
-    """Require an authenticated account or signed guest credential for privacy operations."""
+def require_bearer_subject(user: AuthUser) -> None:
+    """Reject an Auth0 credential that lacks a verified, nonblank subject."""
     if isinstance(user, _Auth0WithoutSubject):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="A bearer subject is required.")
+
+
+def require_verified_principal(user: AuthUser = Depends(get_current_user)) -> AuthUser:
+    """Require an authenticated account or signed guest credential for privacy operations."""
+    require_bearer_subject(user)
     if user.provider not in {"local", "auth0", "guest"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="A verified session is required.")
     return user

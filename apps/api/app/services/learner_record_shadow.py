@@ -1,5 +1,6 @@
 """Read trusted assessment history at the pedagogical boundary."""
 
+from collections.abc import Callable
 from time import monotonic as planner_clock
 
 from sqlalchemy import delete, func, select
@@ -14,8 +15,11 @@ from app.services.learner_record_planner import LearnerPresentation, PlanId, pla
 from app.services.learner_record_privacy import read_consent
 
 
+STOP_REASONS = ("invariance", "evidential-state")
+
+
 def stop_adaptation(db: Session, reason: str) -> None:
-    if reason not in {"invariance", "evidential-state"}:
+    if reason not in STOP_REASONS:
         raise ValueError("Unknown adaptation stop reason.")
     db.execute(insert_for(db)(LearnerAdaptationStop).values(control_id="planner", reason=reason)
                .on_conflict_do_nothing(index_elements=["control_id"]))
@@ -23,6 +27,26 @@ def stop_adaptation(db: Session, reason: str) -> None:
 
 def clear_adaptation_stop(db: Session) -> None:
     db.execute(delete(LearnerAdaptationStop).where(LearnerAdaptationStop.control_id == "planner"))
+
+
+def change_adaptation_stop(session_factory: Callable[[], Session], reason: str | None) -> None:
+    """Commit the operator's stop change and its audit event in the same transaction."""
+    from app.services.security_log import append_security_event
+
+    def session_with_change() -> Session:
+        db = session_factory()
+        try:
+            if reason is None:
+                clear_adaptation_stop(db)
+            else:
+                stop_adaptation(db, reason)
+        except BaseException:
+            db.close()
+            raise
+        return db
+
+    append_security_event("learner.harness.stop" if reason else "learner.harness.clear", "success",
+                          details={"reason": reason or "operator"}, session_factory=session_with_change)
 
 
 def shadow_presentation(

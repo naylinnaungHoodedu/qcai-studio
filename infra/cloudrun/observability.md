@@ -286,6 +286,7 @@ Log events (logger `qcai.ranking`): `ranking.scan` (INFO), `ranking.batch` (INFO
 
 - F-3 uses `learner.record.updated` with interaction start and commit time. Keep the production measure on the DI-305 evidence path until authorized.
 - `learner.sync.conflict` records the reason from version, counter, ownership, replay, and untrusted-write checks. `learner.harness.violation` records failed engineering invariants and the CLI exits with the stop status.
+- Operator stop and clear actions append `learner.harness.stop` and `learner.harness.clear` with a bounded reason and no principal digests. Use `python -m app.workers.learner_planner status` for the current database value.
 - `learner.erasure` uses the security log for password refusal, committed deletion counts and `duration_ms`. Claim and export events carry digests and counts only. `analytics.consent_withheld` measures withheld events without recording their contents.
 - Outside development, `learner_sync_on`, `learner_identity_on`, `learner_privacy_on`, `learner_planner_shadow`, and `learner_planner_on` are recognized `config.override` details.
 

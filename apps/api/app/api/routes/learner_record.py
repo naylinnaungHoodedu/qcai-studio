@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
-from app.core.auth import AuthUser, learner_write_observation, require_durable_learner
+from app.core.auth import AuthUser, learner_write_observation, require_bearer_subject, require_durable_learner
 from app.core.db import get_db
 from app.core.rate_limit import limiter
 from app.core.config import get_settings
@@ -22,8 +22,11 @@ def get_learner_record(
     user: AuthUser = Depends(require_durable_learner),
     db: Session = Depends(get_db),
 ):
+    sync = get_settings().learner_sync == "on"
+    if sync:
+        require_bearer_subject(user)
     subject = find_subject(db, user.provider, user.user_id)
-    if get_settings().learner_sync == "on" or subject:
+    if sync or subject:
         return read_existing_learner_record(db, subject or user.user_id)
     return read_learner_record(db, user.user_id)
 
@@ -42,6 +45,7 @@ def post_learner_replica(
     user: AuthUser = Depends(require_durable_learner),
     db: Session = Depends(get_db),
 ):
+    require_bearer_subject(user)
     subject = write_subject(
         db, user.provider, user.user_id, bind=get_settings().learner_identity == "on",
         guarded=True, observation=learner_write_observation(request),
@@ -62,6 +66,7 @@ def post_learner_record_operations(
 ):
     sync = get_settings().learner_sync == "on"
     if sync:
+        require_bearer_subject(user)
         version = payload.expected_record_version
         if type(version) is not int or not 0 <= version <= 2_147_483_647:
             raise HTTPException(422, "An integer expected_record_version is required.")

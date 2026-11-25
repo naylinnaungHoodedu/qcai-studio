@@ -52,6 +52,72 @@ def quiz(browser, headers):
                         headers=headers)
 
 
+def test_plan_j_subject_replica_receipt_and_export_ids_are_random_and_another_learner_s_read_as_missing(caplog, monkeypatch):
+    from uuid import UUID
+
+    from app.core.structured_logging import FIELDS
+
+    def assert_random(identifier, kind):
+        prefix, token = identifier.split("-", 1)
+        parsed = UUID(hex=token)
+        assert (prefix, token, parsed.version) == (kind, parsed.hex, 4)
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "learner_sync", "on")
+    monkeypatch.setattr(settings, "learner_identity", "on")
+    monkeypatch.setattr(settings, "learner_privacy", "on")
+    owner, owner_headers, owner_id, _ = account()
+    other, other_headers, other_id, _ = account()
+    issued = other.post("/learner-record/replicas", headers=other_headers)
+    assert issued.status_code == 201
+    foreign_id = issued.json()["replica_id"]
+    assert_random(foreign_id, "replica")
+    preferred = owner.post("/learner-record/replicas", headers=owner_headers, json={"preferred_replica_id": foreign_id})
+    assert preferred.status_code == 201
+    own_id = preferred.json()["replica_id"]
+    assert_random(own_id, "replica")
+    assert own_id != foreign_id
+
+    subjects = []
+    for browser in (owner, other):
+        response = browser.get("/learner-record")
+        assert response.status_code == 200
+        subject = response.json()["user_id"]
+        assert_random(subject, "subj")
+        subjects.append(subject)
+    assert len(set(subjects)) == 2
+
+    missing_id = f"replica-{uuid4().hex}"
+    caplog.set_level("INFO", logger="app.services.learner_record_metrics")
+    for use_own_replica in (False, True):
+        refusals = []
+        for candidate in (foreign_id, missing_id):
+            payload = batch(own_id if use_own_replica else candidate, 1, "fixture", 0)
+            payload["operations"][0]["causal_vector"] = {candidate: 1}
+            caplog.clear()
+            response = owner.post("/learner-record/operations", headers=owner_headers, json=payload)
+            conflicts = [getattr(log, FIELDS) for log in caplog.records
+                         if getattr(log, FIELDS, {}).get("event") == "learner.sync.conflict"]
+            refusals.append((response.status_code, response.json(), conflicts))
+        assert refusals[0] == refusals[1] == (
+            409, {"detail": "Replica was not issued to this learner."},
+            [{"event": "learner.sync.conflict", "reason": "unissued_replica"}],
+        )
+
+    export = owner.get("/auth/learner-export")
+    assert export.status_code == 200
+    assert own_id in export.text
+    assert all(identifier not in export.text for identifier in (foreign_id, owner_id, other_id, *subjects))
+    receipts = []
+    for browser, headers in ((owner, owner_headers), (other, other_headers)):
+        erased = browser.post("/auth/learner-erasure", headers=headers, json={"password": PASSWORD})
+        assert erased.status_code == 200
+        receipt = erased.json()["id"]
+        assert_random(receipt, "erasure")
+        receipts.append(receipt)
+    assert len(set(receipts)) == 2
+
+
 def test_freeze_phase8_flags_off_learner_record_and_quiz_routes_are_unchanged(monkeypatch):
     from app.core.phase8_settings import PHASE8_FLAGS
     from app.db_models import Base
@@ -443,28 +509,52 @@ def test_phase8_a_demo_header_cannot_read_or_change_another_principals_consent(m
     assert consent_snapshot() == before
 
 
-@pytest.mark.parametrize("identity", ["off", "on"])
-@pytest.mark.parametrize("claims", [{}, {"sub": ""}, {"sub": "  "}], ids=["missing", "blank", "whitespace"])
-def test_phase8_privacy_routes_refuse_a_bearer_token_without_sub(monkeypatch, fresh_database_url, identity, claims):
+def _offline_bearer_claims(monkeypatch, identity, claims):
     from types import SimpleNamespace
-
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
-
     from app.core import auth
-    from app.core.db import get_db
-    from app.db_models import Base, LearnerConsent
-    from app.services.learner_record_privacy import CONSENT_VERSION
 
     settings = get_settings()
     monkeypatch.setattr(settings, "learner_identity", identity)
-    monkeypatch.setattr(settings, "learner_privacy", "on")
     monkeypatch.setattr(settings, "auth0_domain", "issuer.invalid")
     monkeypatch.setattr(settings, "auth0_audience", "synthetic-audience")
     monkeypatch.setattr(auth, "PyJWKClient", lambda _: SimpleNamespace(
         get_signing_key_from_jwt=lambda _: SimpleNamespace(key=object())
     ))
     monkeypatch.setattr(auth.jwt, "decode", lambda *args, **kwargs: claims)
+    return {"authorization": "Bearer offline-fixture", "origin": ORIGIN}
+
+
+@pytest.fixture()
+def isolated_learner_route_sessions(fresh_database_url, monkeypatch):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.core.db import get_db
+    from app.db_models import Base
+
+    engine = create_engine(fresh_database_url)
+    sessions = sessionmaker(bind=engine, autoflush=False)
+
+    def test_db():
+        with sessions() as db:
+            yield db
+
+    monkeypatch.setitem(app.dependency_overrides, get_db, test_db)
+    try:
+        Base.metadata.create_all(engine)
+        yield sessions
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("identity", ["off", "on"])
+@pytest.mark.parametrize("claims", [{}, {"sub": ""}, {"sub": "  "}], ids=["missing", "blank", "whitespace"])
+def test_phase8_privacy_routes_refuse_a_bearer_token_without_sub(monkeypatch, isolated_learner_route_sessions, identity, claims):
+    from app.db_models import LearnerConsent
+    from app.services.learner_record_privacy import CONSENT_VERSION
+
+    monkeypatch.setattr(get_settings(), "learner_privacy", "on")
+    headers = _offline_bearer_claims(monkeypatch, identity, claims)
     legacy = ("unknown", "", "  ")
 
     def snapshot(db):
@@ -473,37 +563,98 @@ def test_phase8_privacy_routes_refuse_a_bearer_token_without_sub(monkeypatch, fr
             for table in (Note.__table__, LearnerConsent.__table__)
         ]
 
-    engine = create_engine(fresh_database_url)
+    with isolated_learner_route_sessions() as db:
+        db.add_all(Note(user_id=owner, lesson_slug=LESSON, body="Synthetic legacy record") for owner in legacy)
+        db.add_all(
+            LearnerConsent(user_id=owner, consent_class="adaptation", consent_version=CONSENT_VERSION,
+                           granted=True, source="self-service") for owner in legacy
+        )
+        db.commit()
+        seeded = snapshot(db)
+    browser = TestClient(app)
+    calls = [
+        ("GET", "/auth/learner-consent", None),
+        ("PUT", "/auth/learner-consent", {"consent_class": "adaptation", "granted": False}),
+        ("GET", "/auth/learner-export", None),
+        ("POST", "/auth/learner-erasure", {}),
+    ]
+    statuses = [browser.request(method, path, headers=headers, json=body).status_code for method, path, body in calls]
+    assert statuses == [401] * 4
+    with isolated_learner_route_sessions() as db:
+        assert snapshot(db) == seeded
 
-    def test_db():
-        with Session(engine, autoflush=False) as db:
-            yield db
 
-    monkeypatch.setitem(app.dependency_overrides, get_db, test_db)
-    try:
-        Base.metadata.create_all(engine)
-        with Session(engine) as db:
-            db.add_all(Note(user_id=owner, lesson_slug=LESSON, body="Synthetic legacy record") for owner in legacy)
-            db.add_all(
-                LearnerConsent(user_id=owner, consent_class="adaptation", consent_version=CONSENT_VERSION,
-                               granted=True, source="self-service") for owner in legacy
-            )
+@pytest.mark.parametrize("identity", ["off", "on"])
+@pytest.mark.parametrize("claims", [{}, {"sub": ""}, {"sub": "  "}], ids=["missing", "blank", "whitespace"])
+def test_phase8_sync_routes_refuse_a_bearer_token_without_sub(monkeypatch, isolated_learner_route_sessions, identity, claims):
+    from app.db_models import LearnerIssuedReplica, LearnerSubject, LearnerWriteGuard
+
+    monkeypatch.setattr(get_settings(), "learner_sync", "on")
+    monkeypatch.setattr(get_settings(), "learner_privacy", "off")
+    headers = _offline_bearer_claims(monkeypatch, identity, claims)
+    browser = TestClient(app)
+    replica = f"replica-{uuid4().hex}"
+    responses = [
+        browser.get("/learner-record", headers=headers),
+        browser.post("/learner-record/replicas", headers=headers, json={"preferred_replica_id": replica}),
+        browser.post("/learner-record/operations", headers=headers, json=batch(replica, 1, "fixture", 0)),
+    ]
+    assert [response.status_code for response in responses] == [401] * 3
+    with isolated_learner_route_sessions() as db:
+        for model in (LearnerIssuedReplica, LearnerRecord, LearnerRecordOperation, LearnerSubject, LearnerWriteGuard):
+            assert db.scalar(select(func.count()).select_from(model)) == 0, model.__tablename__
+
+
+@pytest.mark.parametrize("environment", ["production", "staging"])
+@pytest.mark.parametrize("kind", ["adaptation", "analytics"])
+@pytest.mark.parametrize("surface", ["service", "http"])
+def test_pd_200_adaptation_and_analytics_grants_are_refused_outside_development(
+    environment, kind, surface, isolated_learner_route_sessions, monkeypatch,
+):
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from app.api.routes import auth as auth_routes
+    from app.core import config_package
+    from app.core.config import Settings
+    from app.db_models import LearnerConsent, LearnerConsentChange
+    from app.services.learner_record_privacy import set_consent
+
+    browser, headers, principal, _ = account()
+    approved = SimpleNamespace(raw={
+        "flag_policy": {"phase8_exit_passed": True},
+        "owner_decisions": {"D-27": {"state": "decided", "ratified": True}},
+    }, is_default_path=True, hash_verified=True)
+    monkeypatch.setattr(config_package, "get_config_package", lambda _: approved)
+    settings = Settings(_env_file=None, environment=environment, learner_privacy="on")
+    monkeypatch.setattr(auth_routes, "get_settings", lambda: settings)
+    path = "/auth/learner-consent"
+    grant = {"consent_class": kind, "granted": True}
+
+    if surface == "service":
+        with isolated_learner_route_sessions() as db, pytest.raises(HTTPException, match="D-27") as refused:
+            set_consent(db, "local", principal, kind, True, settings)
+        assert refused.value.status_code == 409
+    else:
+        response = browser.put(path, headers=headers, json=grant)
+        assert response.status_code == 409 and "D-27" in response.json()["detail"]
+    with isolated_learner_route_sessions() as db:
+        for model in (LearnerConsent, LearnerConsentChange):
+            assert db.scalar(select(func.count()).select_from(model)) == 0
+
+    if surface == "service":
+        with isolated_learner_route_sessions() as db:
+            assert set_consent(db, "local", principal, kind, False, settings)[kind] is False
             db.commit()
-            seeded = snapshot(db)
-        browser = TestClient(app)
-        headers = {"authorization": "Bearer offline-fixture", "origin": ORIGIN}
-        calls = [
-            ("GET", "/auth/learner-consent", None),
-            ("PUT", "/auth/learner-consent", {"consent_class": "adaptation", "granted": False}),
-            ("GET", "/auth/learner-export", None),
-            ("POST", "/auth/learner-erasure", {}),
-        ]
-        statuses = [browser.request(method, path, headers=headers, json=body).status_code for method, path, body in calls]
-        assert statuses == [401] * 4
-        with Session(engine) as db:
-            assert snapshot(db) == seeded
-    finally:
-        engine.dispose()
+    else:
+        response = browser.put(path, headers=headers, json={**grant, "granted": False})
+        assert response.status_code == 200 and response.json()["consent"][kind] is False
+    with isolated_learner_route_sessions() as db:
+        current = db.scalars(select(LearnerConsent)).one()
+        change = db.scalars(select(LearnerConsentChange)).one()
+        assert current.consent_class == change.consent_class == kind
+        assert current.granted is change.granted is False
 
 
 def test_phase8_a_demo_header_cannot_consume_another_learners_assessment_quota(monkeypatch):

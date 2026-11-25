@@ -216,22 +216,14 @@ def _change_local_stop(path: Path, reason: str | None) -> None:
     from sqlalchemy.engine import URL
     from sqlalchemy.orm import Session
 
-    from app.services.learner_record_shadow import clear_adaptation_stop, stop_adaptation
-    from app.services.security_log import append_security_event
+    from app.services.learner_record_shadow import change_adaptation_stop
 
     database = path.resolve(strict=True)
     if not database.is_file() or str(database).startswith("\\\\"):
         raise ValueError("Supply an existing local development SQLite database.")
     engine = create_engine(URL.create("sqlite", database=database.as_posix()))
     try:
-        with Session(engine) as db:
-            if reason is None:
-                clear_adaptation_stop(db)
-            else:
-                stop_adaptation(db, reason)
-            db.commit()
-        append_security_event("learner.harness.stop" if reason else "learner.harness.clear", "success",
-                              details={"reason": reason or "operator"}, session_factory=lambda: Session(engine))
+        change_adaptation_stop(lambda: Session(engine), reason)
     finally:
         engine.dispose()
 
