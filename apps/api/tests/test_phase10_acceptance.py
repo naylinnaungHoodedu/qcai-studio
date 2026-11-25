@@ -2,7 +2,7 @@
 
 Every input is synthetic and built in the test's own tmp_path; scripts run in-process through main(argv). AC-10-1, AC-10-4,
 AC-10-5 and AC-10-6 are proven on synthetic data and the live half of AC-10-3 with a scripted fake provider (spec R-e);
-their real-data halves are deferred (DI-129..DI-141). No test reads a private file, and none writes into the checkout.
+their real-data halves are deferred (DI-129..DI-143). No test reads a private file, and none writes into the checkout.
 """
 
 from __future__ import annotations
@@ -51,8 +51,8 @@ def script(name):
 
 @pytest.fixture(autouse=True)
 def _the_run_day_is_the_synthetic_specs_day(monkeypatch):
-    """A confirmatory or live run must be planned on its created_at's UTC day (governance.run_date_refusals): these tests
-    plan theirs on synthetic.CREATED's day, whatever the clock says; a test of the rule sets another day."""
+    """A confirmatory or live run is judged on the UTC day it is planned (the run window, spec 3.13): these tests plan
+    theirs on synthetic.CREATED's day, whatever the clock says; a test of the rule sets another day."""
     monkeypatch.setattr(governance, "utc_today", lambda: datetime_module.date.fromisoformat(synthetic.CREATED[:10]))
 
 
@@ -1033,7 +1033,7 @@ def _confirmatory(tmp_path, case):
         "IRB only": (irb, None),
         "OSF only": (None, osf),
         "a bad DOI": (irb, synthetic.osf_record(tmp_path / "doi.private.json", analysis_plan_sha256=plan_sha, doi="10.17605/OSF/XY")),
-        "IRB approved after created_at": (synthetic.irb_record(tmp_path / "late.private.json", approval_date="2026-12-01", expiry_date=None), osf),
+        "IRB approved after the run starts": (synthetic.irb_record(tmp_path / "late.private.json", approval_date="2026-12-01", expiry_date=None), osf),
         "an expired IRB": (synthetic.irb_record(tmp_path / "old.private.json", approval_date="2025-01-01", expiry_date="2026-06-30"), osf),
         "an OSF plan sha mismatch": (irb, synthetic.osf_record(tmp_path / "mm.private.json", analysis_plan_sha256="e" * 64)),
         "OSF registered after the run": (irb, synthetic.osf_record(tmp_path / "after.private.json", analysis_plan_sha256=plan_sha,
@@ -1045,7 +1045,7 @@ def _confirmatory(tmp_path, case):
 
 
 IRB_OSF_CASES = {"no records": {"irb_missing", "osf_missing"}, "IRB only": {"osf_missing"}, "OSF only": {"irb_missing"},
-                 "a bad DOI": {"osf_invalid:doi"}, "IRB approved after created_at": {"irb_not_yet_approved"},
+                 "a bad DOI": {"osf_invalid:doi"}, "IRB approved after the run starts": {"irb_not_yet_approved"},
                  "an expired IRB": {"irb_expired"}, "an OSF plan sha mismatch": {"osf_plan_mismatch"},
                  "OSF registered after the run": {"osf_registered_after_run"}}
 
@@ -1453,17 +1453,21 @@ def test_plan_h_spans_reach_no_model_until_the_four_conditions_hold(tmp_path, mo
     assert reasons({**spec, "provider_terms": unrecorded}) == ["provider_terms_invalid:publication_recorded"]
     expired = synthetic.irb_record(plane / "old.json", approval_date="2025-01-01", expiry_date="2026-06-30")
     assert reasons({**spec, "governance": {"irb_record": expired}}) == ["irb_expired"]
-    # The run date is the day the live run starts: a spec dated synthetic.CREATED planned in 2028 is refused, though its
-    # IRB (expiring in 2027) would pass against the declared date; a future-dated spec is refused too.
+    # The run window: the IRB is judged on the day the run is planned, never on the spec's created_at, so a spec dated
+    # synthetic.CREATED planned in 2028 is refused by the IRB that expired in 2027, however it is dated; a future-dated
+    # spec is refused; a window that starts earlier (a resume) needs every record dated by that start.
     lasting = synthetic.irb_record(plane / "lasting.json", approval_date="2026-11-01", expiry_date="2027-06-30")
     dated = {**spec, "governance": {"irb_record": lasting}}
     assert reasons(dated) == []
     monkeypatch.setattr(governance, "utc_today", lambda: datetime_module.date(2028, 1, 10))
-    assert reasons(dated) == ["created_at_not_today"]
+    assert reasons(dated) == ["irb_expired"]
     assert reasons({**dated, "created_at": "2028-01-10T09:00:00Z"}) == ["irb_expired"]
     monkeypatch.setattr(governance, "utc_today", lambda: datetime_module.date.fromisoformat(synthetic.CREATED[:10]))
-    assert reasons({**dated, "created_at": "2026-12-01T00:00:00Z"}) == ["created_at_not_today"]
-    # Each record is bound to the run: (b) per provider the run queries, and no record dated after the run date.
+    assert reasons({**dated, "created_at": "2026-12-01T00:00:00Z"}) == ["created_at_in_future"]
+    early = datetime_module.date(2026, 10, 31)
+    assert providers.live_refusal_reasons(dated, package, __import__("os").environ, table, out_dir=out, start=early) == [
+        "irb_not_yet_approved", "provider_terms_after_run", "licence_ruling_after_run", "research_use_after_run"]
+    # Each record is bound to the run: (b) per provider the run queries, and no record dated after the run's start.
     live = lambda **changes: {**spec, "responder": {"live": {"adapter": "fake-adapter", **changes}}}  # noqa: E731
     assert reasons(live(providers=["SYN-PROVIDER-2"])) == ["provider_terms_missing:SYN-PROVIDER-2"]
     assert reasons(live(providers=["SYN-PROVIDER-1", "SYN-PROVIDER-2"])) == ["provider_terms_missing:SYN-PROVIDER-2"]
@@ -1525,45 +1529,52 @@ def test_plan_j_a_provider_outage_resumes_to_the_same_bytes(tmp_path):
                                                                                    "resumed", "completed"]
 
 
-def test_plan_j_a_live_run_interrupted_by_an_outage_resumes_on_a_later_utc_day_with_the_same_spec(tmp_path, monkeypatch, capsys):
-    # Plan J "provider outage resumes": a live run interrupted (exit 5) and resumed after 00:00 UTC with the same spec
-    # is judged against the start date its checkpoint records (and the run digest, which covers created_at), not refused
-    # as created_at_not_today; a fresh start on that day still is, and the IRB must be valid on the resume day too.
+def _live_stub(tmp_path, monkeypatch):
     live_spec, _package, out = _live_ready(tmp_path, monkeypatch)
     stub = stub_spec(tmp_path, package=synthetic.decided_package(tmp_path))
     live = {**stub, **{key: live_spec[key] for key in ("governance", "provider_terms", "licence_ruling", "research_use_confirmation")},
             "mode": "live", "responder": {"live": {"adapter": "fake-adapter", "providers": ["SYN-PROVIDER-1"]}}}
+    return live, out
+
+
+def test_plan_j_a_live_run_interrupted_by_an_outage_resumes_on_a_later_utc_day_with_the_same_spec(tmp_path, monkeypatch, capsys):
+    # Plan J "provider outage resumes": a live run interrupted (exit 5) is resumed on a later UTC day with the same spec.
+    # Its run window starts on the day its checkpoint's start event records, so the records must be dated by then, and
+    # the IRB must be unexpired on the resume day.
+    live, out = _live_stub(tmp_path, monkeypatch)
+    day = datetime_module.date.fromisoformat(synthetic.CREATED[:10])
     plan = runner.plan_run(live, out_dir=out)
-    assert plan.start_check is None
+    assert plan.dated and plan.planned_on == day and plan.checkpoint_start is None
     runner.execute_run(plan, providers.ScriptedProvider(), tmp_path / "reference")
     with pytest.raises(runner.RunInterrupted):
         runner.execute_run(plan, providers.ScriptedProvider(outage_at=len(plan.requests) // 2), out)
-    next_day = datetime_module.date.fromisoformat(synthetic.CREATED[:10]) + datetime_module.timedelta(days=1)
+    assert read_jsonl(out / "run_events.jsonl")[0]["started_on"] == day.isoformat()
+    next_day = day + datetime_module.timedelta(days=1)
     monkeypatch.setattr(governance, "utc_today", lambda: next_day)
-    with pytest.raises(runner.RunRefused) as refused:
-        runner.plan_run(live, out_dir=out)
-    assert refused.value.code == 9 and refused.value.reasons == ["created_at_not_today"]
     # run_evaluation.py --resume plans the run as a resume: its only refusal is then that no live adapter is wired here.
     spec_path = write_spec(tmp_path, live, "live.json")
     capsys.readouterr()
     assert run_main(["--spec", spec_path, "--output-dir", out, "--resume"]) == 9
     assert capsys.readouterr().err.strip() == "refused (exit 9): no_live_adapter"
     resumed = runner.plan_run(live, out_dir=out, resume=True)
-    assert resumed.start_check == 9
+    assert resumed.checkpoint_start == day and resumed.planned_on == next_day
     runner.execute_run(resumed, providers.ScriptedProvider(), out, resume=True)
     assert _outputs(out) == _outputs(tmp_path / "reference")
     assert [event["event"] for event in read_jsonl(out / "run_events.jsonl")] == ["start", "interrupted", "resumed", "completed"]
-    # --resume without this run's checkpoint is a fresh start on another day: refused before anything is written.
+    # The plan was judged on this checkpoint: it does not run into an output without it, nor a fresh plan into this one.
     fresh = out.parent / "fresh"
     with pytest.raises(runner.RunRefused) as refused:
         runner.execute_run(resumed, providers.ScriptedProvider(), fresh, resume=True)
-    assert refused.value.code == 9 and refused.value.reasons == ["created_at_not_today"] and not fresh.exists()
-    # created_at moved to the resume day: the checkpoint's start event was written on another day, so the record cannot
-    # say the run started on the day it was resumed.
-    moved = runner.plan_run({**live, "created_at": f"{next_day.isoformat()}T00:00:00Z"}, out_dir=out, resume=True)
+    assert refused.value.code == 2 and refused.value.reasons == ["checkpoint_mismatch"] and not fresh.exists()
     with pytest.raises(runner.RunRefused) as refused:
-        runner.execute_run(moved, providers.ScriptedProvider(), out, resume=True)
-    assert refused.value.code == 9 and refused.value.reasons == ["created_at_not_start_date"]
+        runner.execute_run(runner.plan_run(live, out_dir=fresh), providers.ScriptedProvider(), out, resume=True)
+    assert refused.value.reasons == ["checkpoint_mismatch"]
+    # A record dated after the checkpoint's start day refuses the resume, though a fresh start that day would pass it.
+    late = synthetic.licence_ruling_record(out.parent / "late-ruling.json", ruling_date=next_day.isoformat())
+    assert runner.plan_run({**live, "licence_ruling": late}, out_dir=fresh).checkpoint_start is None
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**live, "licence_ruling": late}, out_dir=out, resume=True)
+    assert refused.value.code == 9 and refused.value.reasons == ["licence_ruling_after_run"]
     # The IRB (expiring 2027-11-01) must still be valid on the day the resumed run queries providers.
     monkeypatch.setattr(governance, "utc_today", lambda: datetime_module.date(2027, 12, 1))
     with pytest.raises(runner.RunRefused) as refused:
@@ -1571,19 +1582,15 @@ def test_plan_j_a_live_run_interrupted_by_an_outage_resumes_on_a_later_utc_day_w
     assert refused.value.code == 9 and refused.value.reasons == ["irb_expired"]
 
 
-def test_plan_j_a_resume_is_judged_against_the_start_date_its_checkpoint_records(tmp_path, monkeypatch):
-    # A dated run's start event records the UTC day it was written. --resume into an output with no run events is a fresh
-    # start, which runs when dated today; with events, created_at may not be in the future and must be the day the start
-    # event records, so a hand-written start event carrying only the run digest (computable from the spec) does not let
-    # an old or future-dated spec through. The checkpoint is the operator's own file, not tamper evidence (DI-143): a
-    # start event forged with the backdated day as well is accepted, which is why the runbook keeps run outputs in the
-    # research plane and the access log records each run's start.
-    live_spec, _package, out = _live_ready(tmp_path, monkeypatch)
-    stub = stub_spec(tmp_path, package=synthetic.decided_package(tmp_path))
-    live = {**stub, **{key: live_spec[key] for key in ("governance", "provider_terms", "licence_ruling", "research_use_confirmation")},
-            "mode": "live", "responder": {"live": {"adapter": "fake-adapter", "providers": ["SYN-PROVIDER-1"]}}}
+def test_plan_j_a_checkpoint_s_start_day_can_only_tighten_the_run_window(tmp_path, monkeypatch):
+    # A dated run's start event records the UTC day the run was planned (`started_on`). --resume into an output without
+    # run events is a fresh start judged on today; with events, the first must be a `start` with an ISO started_on not
+    # after today (`run_start_invalid`) and this run's digest (`checkpoint_mismatch`). Whoever writes the output can write
+    # a start event (DI-143), but the window starts at the earliest day, so a hand-written one never passes a run that a
+    # fresh start today would refuse: an expired IRB refuses it whatever day it states, and an earlier day makes a record
+    # dated after it refuse.
+    live, out = _live_stub(tmp_path, monkeypatch)
     today = datetime_module.date.fromisoformat(synthetic.CREATED[:10])
-    assert governance.utc_today() == today
     same_day = out.parent / "same-day"
     record = runner.execute_run(runner.plan_run(live, out_dir=same_day, resume=True), providers.ScriptedProvider(), same_day, resume=True)
     events = read_jsonl(same_day / "run_events.jsonl")
@@ -1593,42 +1600,52 @@ def test_plan_j_a_resume_is_judged_against_the_start_date_its_checkpoint_records
     runner.execute_run(exploratory, providers.ScriptedProvider(), out.parent / "exploratory")
     assert "started_on" not in read_jsonl(out.parent / "exploratory" / "run_events.jsonl")[0]  # stub outputs stay date-free
 
-    def forged(created_at, **start):
-        spec = {**live, "created_at": created_at}
-        directory = out.parent / ("forged-" + created_at[:10] + "-" + str(len(start)))
-        plan = runner.plan_run(spec, out_dir=directory, resume=True)
+    def forged(spec, name, **event):
+        directory = out.parent / name
         directory.mkdir(parents=True)
-        event = {"event": "start", "run_digest": runner.run_digest(plan, providers.ScriptedProvider.rule), **start}
-        (directory / "run_events.jsonl").write_text(json.dumps(event) + "\n", encoding="utf-8")
-        return plan, directory
+        digest = runner.run_digest(runner.plan_run(spec, out_dir=directory), providers.ScriptedProvider.rule)
+        (directory / "run_events.jsonl").write_text(json.dumps({"event": "start", "run_digest": digest, **event}) + "\n", encoding="utf-8")
+        return directory
 
     future = (today + datetime_module.timedelta(days=30)).isoformat()
-    for start in ({}, {"started_on": future}):
-        plan, directory = forged(f"{future}T00:00:00Z", **start)
+    for name, event in (("no-day", {}), ("future-day", {"started_on": future}), ("timestamp", {"started_on": synthetic.CREATED}),
+                        ("resumed-first", {"event": "resumed", "started_on": today.isoformat()})):
         with pytest.raises(runner.RunRefused) as refused:
-            runner.execute_run(plan, providers.ScriptedProvider(), directory, resume=True)
-        assert refused.value.code == 9 and refused.value.reasons == ["created_at_in_future"], start
-    past = (today - datetime_module.timedelta(days=10)).isoformat()
-    plan, directory = forged(f"{past}T00:00:00Z")
+            runner.plan_run(live, out_dir=forged(live, name, **event), resume=True)
+        assert refused.value.code == 9 and refused.value.reasons == ["run_start_invalid"], name
+    # A future-dated spec is refused at once, a checkpoint or not.
     with pytest.raises(runner.RunRefused) as refused:
-        runner.execute_run(plan, providers.ScriptedProvider(), directory, resume=True)
-    assert refused.value.code == 9 and refused.value.reasons == ["created_at_not_start_date"]
-    # The checkpoint's first event must be its start: a first `resumed` event with the right digest and day is refused.
-    (directory / "run_events.jsonl").write_text(json.dumps({"event": "resumed", "run_digest": runner.run_digest(
-        plan, providers.ScriptedProvider.rule), "started_on": past}) + "\n", encoding="utf-8")
+        runner.plan_run({**live, "created_at": f"{future}T00:00:00Z"}, out_dir=out.parent / "none", resume=True)
+    assert refused.value.reasons == ["created_at_in_future"]
+    # A start event with another run's digest is refused before anything is touched.
+    other = forged({**live, "run_id": "another-run"}, "other-digest", started_on=today.isoformat())
     with pytest.raises(runner.RunRefused) as refused:
-        runner.execute_run(plan, providers.ScriptedProvider(), directory, resume=True)
+        runner.execute_run(runner.plan_run(live, out_dir=other, resume=True), providers.ScriptedProvider(), other, resume=True)
     assert refused.value.reasons == ["checkpoint_mismatch"]
-    plan, directory = forged(f"{past}T00:00:00Z", started_on=past)
-    runner.execute_run(plan, providers.ScriptedProvider(), directory, resume=True)  # the documented limit (DI-143)
+    # Monotone: a forged earlier start day turns records dated today into refusals; it never turns a refusal into a pass.
+    past = (today - datetime_module.timedelta(days=10)).isoformat()
+    ruled_today = {**live, "licence_ruling": synthetic.licence_ruling_record(out.parent / "today-ruling.json", ruling_date=today.isoformat())}
+    assert runner.plan_run(ruled_today, out_dir=out.parent / "fresh-today").checkpoint_start is None
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(ruled_today, out_dir=forged(ruled_today, "backdated", started_on=past), resume=True)
+    assert refused.value.reasons == ["licence_ruling_after_run"]
+    later = {name: forged(live, name, started_on=start) for name, start in (("old-day", past), ("late-day", "2028-01-10"))}
+    monkeypatch.setattr(governance, "utc_today", lambda: datetime_module.date(2028, 1, 10))
+    for name, directory in later.items():
+        with pytest.raises(runner.RunRefused) as refused:
+            runner.plan_run(live, out_dir=directory, resume=True)
+        assert refused.value.reasons == ["irb_expired"], name
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(live, out_dir=out.parent / "fresh-2028")
+    assert refused.value.reasons == ["irb_expired"]
 
 
-def test_ac_10_5_a_confirmatory_recorded_run_hands_the_gate_its_recording_s_start_and_is_dated(tmp_path, monkeypatch):
-    # The runner hands the gate the recording's source and its started_on (the day its live run started), which must be
-    # on or before the replay's created_at, itself today (test_governance_records covers the gate's rule); a resumed
-    # confirmatory replay is judged against its checkpoint like any dated run.
+def test_ac_10_5_a_confirmatory_recorded_run_starts_its_window_on_the_recording_s_live_start(tmp_path, monkeypatch):
+    # A confirmatory replay's data began to flow when its live run started: the runner moves the window's start to the
+    # recording header's started_on (never later than today) and hands the gate (start, today); a missing or future day
+    # is refused (test_governance_records covers recording_start_refusals). A resumed replay starts at the earliest day.
     lines = read_jsonl(synthetic.RECORDED_FIXTURE)
-    lines[0] = {**lines[0], "source": "live", "started_on": "2026-11-24"}
+    lines[0] = {**lines[0], "source": "live", "started_on": "2026-11-20"}
     recording = tmp_path / "recording.jsonl"
     write_lf(recording, "".join(dumps_line(line) for line in lines))
     spec = _recorded_spec(tmp_path, purpose="confirmatory", experiment="E1")
@@ -1636,16 +1653,25 @@ def test_ac_10_5_a_confirmatory_recorded_run_hands_the_gate_its_recording_s_star
     seen = {}
     monkeypatch.setattr(governance, "confirmatory_refusals", lambda spec, **kwargs: seen.update(kwargs) or ["stop"])
     monkeypatch.setattr(governance, "utc_today", lambda: datetime_module.date(2028, 1, 10))
+    monkeypatch.setattr(ulqs, "SPLITS", (*ulqs.SPLITS, None))  # the fixture items carry no split
     with pytest.raises(runner.RunRefused) as refused:
         runner.plan_run(spec, resume=True)
-    assert refused.value.reasons[0] == "stop"
-    assert seen["recording_source"] == "live" and seen["recording_started_on"] == "2026-11-24" and seen["resuming"] is True
-    # Planned past the gate (and the fixture items' missing split), a confirmatory replay is dated: resumed, it carries
-    # the start check that judges it against its checkpoint.
+    assert refused.value.reasons == ["stop"]
+    assert seen["recording_source"] == "live" and seen["start"] == datetime_module.date(2026, 11, 20)
+    assert seen["today"] == datetime_module.date(2028, 1, 10)
+    for started_on, reason in ((None, "recording_started_on_missing"), ("2028-01-11", "recording_after_run")):
+        lines[0] = {**lines[0], "started_on": started_on}
+        write_lf(recording, "".join(dumps_line(line) for line in lines))
+        refused_spec = {**spec, "responder": {"recorded": {"path": str(recording), "sha256": lf_sha256(recording)}}}
+        with pytest.raises(runner.RunRefused) as refused:
+            runner.plan_run(refused_spec)
+        assert refused.value.code == 2 and refused.value.reasons == [reason, "stop"] and seen["start"] == datetime_module.date(2028, 1, 10)
+    # Planned past the gate, a confirmatory replay is a dated plan.
     monkeypatch.setattr(governance, "confirmatory_refusals", lambda spec, **kwargs: [])
-    monkeypatch.setattr(ulqs, "SPLITS", (*ulqs.SPLITS, None))
-    assert runner.plan_run(spec).dated and runner.plan_run(spec).start_check is None
-    assert runner.plan_run(spec, resume=True).start_check == 2
+    lines[0] = {**lines[0], "started_on": "2026-11-20"}
+    write_lf(recording, "".join(dumps_line(line) for line in lines))
+    plan = runner.plan_run(spec)
+    assert plan.dated and plan.planned_on == datetime_module.date(2028, 1, 10) and plan.checkpoint_start is None
 
 
 def test_ac_10_5_a_confirmatory_run_covers_every_item_and_replicates_the_full_subsample(tmp_path, monkeypatch):
@@ -1669,7 +1695,7 @@ def test_ac_10_5_a_confirmatory_run_covers_every_item_and_replicates_the_full_su
     assert {item["split"] for item in items if item["item_id"] in replicated} == {"calibration", "confirmation"}
     exploratory = runner.plan_run({**spec, "purpose": "exploratory", "experiment": "harness-check"})
     assert {request.request_key for request in exploratory.requests} == {request.request_key for request in plan.requests}
-    assert plan.start_check is None and runner.plan_run(spec, resume=True).start_check == 2
+    assert plan.dated and plan.checkpoint_start is None
     (tmp_path / "short").mkdir()
     short_path, short_catalog, _short = synthetic.write_fixture_set(tmp_path / "short", _with(synthetic.PAPER_TARGETS, A=39), splits=True)
     short = synthetic.spec_dict(items_path=short_path, catalog_path=short_catalog, purpose="confirmatory", experiment="E1",
@@ -1781,7 +1807,7 @@ def test_phase10_docs_quote_the_plan_and_state_the_current_rules():
     head = spec_text().split("\n## 14. Review history\n", 1)[0]
     for number in range(60, 75):
         assert f"| PD-{number} |" in head
-    for number in range(129, 143):
+    for number in range(129, 144):
         assert f"| DI-{number} |" in head
     assert "The exit is not passed (DI-129)." in head
 
@@ -1798,8 +1824,12 @@ def test_phase10_docs_the_test_strategy_maps_every_test_module_the_phase_added()
     exit_gate = next(line for line in section.splitlines() if line.startswith("**Exit gate.** The Phase 10 exit"))
     assert exit_gate.endswith("The exit is not passed.")
     # Every module this phase added or changed, and every module of evaluation/tests (a new one must join the map).
+    # Each heads its own row of the "Phase 10 test files" or "Phase 10 changes to existing test modules" table, with a
+    # statement of what it proves (a mention elsewhere in the section is not enough).
+    rows = {cells[1].strip().strip("`").split("/")[-1]: cells[2].strip() for cells in
+            (line.split("|") for line in section.split("### Phase 10 test files", 1)[1].splitlines() if line.startswith("| `"))}
     for name in (*PHASE10_MODULES, *(path.name for path in (REPO_ROOT / "evaluation" / "tests").glob("*.py"))):
-        assert f"`{name}`" in section or f"`evaluation/tests/{name}`" in section or f"`apps/api/tests/{name}`" in section, name
+        assert len(rows.get(name, "")) > 40, name
     for ac in range(1, 7):
         assert f"| AC-10-{ac} |" in section, ac
     names = set()
@@ -1885,3 +1915,172 @@ def test_phase10_no_new_source_literal_starts_with_qcai_():
             if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.Name)) and getattr(node, "name", getattr(node, "id", "")).startswith(prefix):
                 offenders.append(f"{path.name}:{node.lineno}")
     assert offenders == []
+
+
+# ===================================================================================================== exit-code contract
+# One table for the six research-plane scripts (spec 5): each documented exit code is reached by a scenario, and the
+# script's docstring, the README, spec 5 and the CI comments name the same codes. A code a script can return but no
+# document names, or a documented code no scenario reaches, fails here.
+
+
+def _exit_codes(text):
+    """The codes an exit-code statement lists: each `N` that opens it or follows "; " ("0 ok; 1 drift; 2 usage ...")."""
+    return {int(code) for code in re.findall(r"(?:^|; )(\d)(?=[ ;])", " ".join(text.split()) + " ")}
+
+
+def _documented_exit_codes():
+    readme = (RECORDS / "README.md").read_text(encoding="utf-8").split("## Exit codes", 1)[1].split("\n## ", 1)[0]
+    bullets = {match[0]: match[1] for match in re.findall(r"^- `([a-z0-9_]+\.py)`: (.*?)(?=^- `|\Z)", readme, flags=re.MULTILINE | re.DOTALL)}
+    section = spec_text().split("\n## 5. Scripts", 1)[1].split("\n## 6.", 1)[0]
+    rows = {}
+    for line in section.splitlines():
+        cells = [cell.strip() for cell in re.split(r"(?<!\\)\|", line)]
+        if len(cells) == 5 and cells[1].startswith("`scripts/"):
+            rows[cells[1].split("`")[1].split("/")[1]] = cells[3]
+    documents = {}
+    for name in NEW_SCRIPTS:
+        doc = script(name[:-3]).__doc__
+        documents[name] = {"docstring": _exit_codes(doc.split("Exit codes:", 1)[1]), "README": _exit_codes(bullets[name]),
+                           "spec 5": _exit_codes(rows[name])}
+    return documents
+
+
+def _scenario_run_evaluation(tmp_path, monkeypatch, code):
+    spec = stub_spec(tmp_path)
+    if code == 1:
+        changed = tmp_path / "record.json"
+        write_lf(changed, SYNTHETIC_RECORD.read_text(encoding="utf-8").replace('"format_version": 1', '"format_version": 2', 1))
+        return ["--check", changed, "--spec", SYNTHETIC_SPEC]
+    if code == 2:
+        return ["--spec", write_spec(tmp_path, spec)]
+    if code == 3:
+        write_lf(Path(spec["items"]["path"]), dumps_line({"item_id": "SYN-A-001"}))
+    if code == 5:
+        monkeypatch.setattr(script("run_evaluation"), "_responder", lambda plan: providers.ScriptedProvider(outage_at=1))
+    if code == 6:
+        spec["package"] = {**spec["package"], "sha256": "0" * 64}
+    if code == 7:
+        monkeypatch.setattr(runner, "_manifest_hook", lambda manifests: {**manifests, "SEM": {**manifests["SEM"], "top_k": 9}})
+    if code == 8:
+        spec = _confirmatory(tmp_path, "OSF only")
+    if code == 9:
+        spec = {**spec, "mode": "live", "responder": {"live": {"adapter": None}}}
+    return ["--spec", write_spec(tmp_path, spec, "contract.json"), "--output-dir", tmp_path / "out"]
+
+
+def _scenario_validate_ulqs(tmp_path, monkeypatch, code):
+    items, catalog = synthetic.ITEMS_FIXTURE, synthetic.CATALOG_FIXTURE
+    if code == 2:
+        return ["--items", tmp_path / "absent.jsonl"]
+    if code == 3:
+        broken = read_jsonl(items)
+        del broken[0]["topic"]
+        return ["--items", synthetic.write_jsonl(tmp_path / "bad.jsonl", broken)]
+    if code == 4:
+        argv, _frozen, _agent = _research_plane_freeze(tmp_path)
+        rules = Path(argv[argv.index("--rules") + 1])
+        raw = json.loads(rules.read_text(encoding="utf-8"))
+        raw["agent_check"]["pinned_models"] = []  # agent_model_not_pinned: the freeze fails
+        write_lf(rules, json.dumps(raw) + "\n")
+        return argv
+    if code == 5:
+        return ["--items", items, "--catalog", synthetic.write_jsonl(tmp_path / "short.jsonl", read_jsonl(catalog)[1:])]
+    return ["--items", items, "--catalog", catalog]
+
+
+def _scenario_migrate_ulqs_rc1(tmp_path, monkeypatch, code):
+    source = synthetic.write_jsonl(tmp_path / "rc1.jsonl", _rc1(synthetic.synthetic_dataset(synthetic.SMALL)))
+    if code == 3:
+        source = tmp_path / "rc1-bad.jsonl"
+        write_lf(source, "not json\n")
+    output = REPO_ROOT / "docs" / "evaluation" / "contract-rc1.jsonl" if code == 2 else tmp_path / "v1.jsonl"
+    return ["--input", source, "--output", output, "--author-role", "RL", "--access-log", tmp_path / "access.jsonl"]
+
+
+def _scenario_build_licensed_fingerprints(tmp_path, monkeypatch, code):
+    items_path, _catalog, _items = synthetic.write_fixture_set(tmp_path, synthetic.SMALL)
+    if code == 4:
+        items_path = synthetic.write_jsonl(tmp_path / "bad.jsonl", [{"item_id": "SYN-A-001"}])
+    licensed = tmp_path / "licensed.txt"
+    licensed.write_text(fixture_texts()["licensed_passages"][0], encoding="utf-8")
+    monkeypatch.setenv("FINGERPRINT_SALT_FOR_TEST", "5a" * (16 if code == 3 else 32))
+    argv = ["--licensed-text", licensed, "--ulqs", items_path, "--set-id", "syn-1", "--output-licensed", tmp_path / "l.private.json",
+            "--output-ulqs", tmp_path / "u.private.json", "--salt-env", "FINGERPRINT_SALT_FOR_TEST", "--access-log", tmp_path / "access.jsonl"]
+    return argv if code == 2 else argv + ["--actor-role", "DS"]
+
+
+def _scenario_scan_research_logs(tmp_path, monkeypatch, code):
+    target = tmp_path / "logs"
+    target.mkdir()
+    (target / "log.txt").write_text(fixture_texts()["licensed_passages"][0] if code == 1 else "an invented clean log line\n", encoding="utf-8")
+    argv = ["--synthetic-fixture", synthetic.CONTAMINATION_FIXTURE, "--path", target, "--require-zero"]
+    return argv + ["--ulqs-fingerprints", tmp_path / "u.json"] if code == 2 else argv
+
+
+def _scenario_check_research_harness(tmp_path, monkeypatch, code):
+    copy = tmp_path / "records"
+    copy.mkdir()
+    for name in script("check_research_harness").RECORDS:
+        (copy / name).write_bytes((RECORDS / name).read_bytes())
+    if code == 1:
+        (copy / "seeded_faults_report_v1.json").write_text("{}\n", encoding="utf-8")
+    if code == 3:
+        monkeypatch.setattr(seeded_faults, "reference_report", lambda: {"all_known_answers_met": False})
+    if code == 6:
+        harness = script("check_research_harness")
+        monkeypatch.setattr(harness, "canonical_sha256", lambda value: "0" * 64)
+    if code == 7:
+        def broken():
+            raise ablation.ParityError("GATE: declared_mismatch")
+        monkeypatch.setattr(ablation, "load_arms", broken)
+    return ["--check", "--dir", copy]
+
+
+EXIT_CONTRACT = {
+    "run_evaluation.py": (_scenario_run_evaluation, (0, 1, 2, 3, 5, 6, 7, 8, 9)),
+    "validate_ulqs.py": (_scenario_validate_ulqs, (0, 2, 3, 4, 5)),
+    "migrate_ulqs_rc1.py": (_scenario_migrate_ulqs_rc1, (0, 2, 3)),
+    "build_licensed_fingerprints.py": (_scenario_build_licensed_fingerprints, (0, 2, 3, 4)),
+    "scan_research_logs.py": (_scenario_scan_research_logs, (0, 1, 2)),
+    "check_research_harness.py": (_scenario_check_research_harness, (0, 1, 3, 6, 7)),
+}
+
+
+def test_phase10_exit_codes_every_document_names_the_codes_the_contract_reaches():
+    documented = _documented_exit_codes()
+    assert set(documented) == set(EXIT_CONTRACT) == set(NEW_SCRIPTS)
+    for name, (_scenario, codes) in EXIT_CONTRACT.items():
+        for document, listed in documented[name].items():
+            assert listed == set(codes), (name, document, sorted(listed))
+    # Each CI comment names only codes its script documents.
+    ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    for name, prefix in (("validate_ulqs.py", "validate_ulqs: exit "), ("check_research_harness.py", "check_research_harness: exit ")):
+        comment = ci.split(prefix, 1)[1].split("- run:", 1)[0].replace("#", " ")
+        assert set(int(code) for code in re.findall(r"(?:^|, |\()(\d) ", " ".join(comment.split()))) <= set(EXIT_CONTRACT[name][1]), name
+
+
+@pytest.mark.parametrize(("name", "code"), [(name, code) for name, (_s, codes) in EXIT_CONTRACT.items() for code in codes])
+def test_phase10_exit_codes_each_documented_code_is_reached(tmp_path, monkeypatch, capsys, name, code):
+    scenario, _codes = EXIT_CONTRACT[name]
+    argv = scenario(tmp_path, monkeypatch, code)
+    assert script(name[:-3]).main([str(value) for value in argv]) == code, capsys.readouterr().err
+    assert "Traceback" not in capsys.readouterr().err
+    assert not (REPO_ROOT / "docs" / "evaluation" / "contract-rc1.jsonl").exists()
+
+
+# Terms of a superseded design that no authoritative document or source may state as current (P2-12-D-03): the run
+# window replaced the rule that a run's created_at be today and the start check of a resume (spec 3.13).
+RETIRED_TERMS = ("created_at_not_today", "created_at_not_start_date", "start_check", "start_date_refusals", "run_date_refusals",
+                 "resuming=")
+
+
+def test_phase10_docs_no_authoritative_text_states_a_retired_rule():
+    paths = [*sorted(Path(ulqs.__file__).resolve().parent.glob("*.py")), *[REPO_ROOT / "scripts" / name for name in NEW_SCRIPTS],
+             *sorted(RECORDS.glob("*.md")), REPO_ROOT / "docs" / "evaluation" / "protocol.md", REPO_ROOT / "docs" / "testing" / "test-strategy.md",
+             REPO_ROOT / "docs" / "adr" / "ADR-012-evaluation-and-research-harness.md", REPO_ROOT / "docs" / "adr" / "ADR-007-evaluation-harness.md",
+             REPO_ROOT / "lqs" / "README.md", REPO_ROOT / "evaluation" / "tests" / "conftest.py", REPO_ROOT / ".github" / "workflows" / "ci.yml"]
+    texts = {path.name: path.read_text(encoding="utf-8") for path in paths}
+    texts["spec sections 0-13"] = spec_text().split("\n## 14. Review history\n", 1)[0]
+    for name, text in texts.items():
+        for term in RETIRED_TERMS:
+            assert term not in text, (name, term)

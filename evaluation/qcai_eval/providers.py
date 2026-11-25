@@ -162,19 +162,18 @@ def _provider_binding(spec: Mapping[str, Any], adapter: Any, recorded: set[str])
 
 
 def live_refusal_reasons(spec: Mapping[str, Any], package_raw: Mapping[str, Any], environ: Mapping[str, str], arms: Any, *,
-                         out_dir: Path | None = None, repo_root: Path | None = None, resuming: bool = False) -> list[str]:
+                         out_dir: Path | None = None, repo_root: Path | None = None, start: Any = None,
+                         today: Any = None) -> list[str]:
     """Every condition a live run lacks, in order (spec 4.9). An empty list is never reached in this repository.
 
     Plan H's four conditions are records, each resolved by path and sha256 (`governance.resolve_record`) and read under its
-    own format: (a) `licence-ruling-v1`, (b) `provider-terms-v1`, (c) `irb-approval-v1`, approved on or before the run date
-    and not expired on it, and (d) `research-use-confirmation-v1`. None may sit on a public path, and none may be dated
-    after the run date, which must be the current UTC date when the run starts (`created_at_not_today`: an old or
-    future-dated spec is refused). On a resume (`resuming`) the date is not compared with today here: the runner judges
-    it against the output's checkpoint (`runner.start_date_refusals`: no run events, a fresh start dated today; events,
-    the UTC date the start event was written, never a future date, and this run's digest; a consistency check, not tamper
-    evidence, DI-143), and the IRB must also be valid today, since the resumed run queries providers today. Condition (b) is bound to the run: `responder.live.providers` names every provider the run
-    queries (it must include each provider the adapter declares in its `providers` attribute), and `provider_terms` (one
-    reference or a list) must hold a record whose `provider_id` is each of them."""
+    own format: (a) `licence-ruling-v1`, (b) `provider-terms-v1`, (c) `irb-approval-v1` and (d)
+    `research-use-confirmation-v1`. None may sit on a public path. They are judged in the run window the runner supplies
+    (`start`, `today`; both default to `governance.utc_today()`; governance module docstring): the IRB approved by `start`
+    and unexpired on `today`, and no other record dated after `start`; `created_at` may not be a future date. Condition (b)
+    is bound to the run: `responder.live.providers` names every provider the run queries (it must include each provider
+    the adapter declares in its `providers` attribute), and `provider_terms` (one reference or a list) must hold a record
+    whose `provider_id` is each of them."""
     from . import governance
     from .ablation import arm_configuration
     from .planes import REPO_ROOT, checkout_relative, inside_checkout
@@ -195,18 +194,11 @@ def live_refusal_reasons(spec: Mapping[str, Any], package_raw: Mapping[str, Any]
     for name in ("D-14", "D-07", "D-08", "D-12"):
         if not _decided(package_raw, name):
             reasons.append(f"{name} open")
-    try:
-        on = governance.run_date(spec)
-    except governance.GovernanceError:
-        return reasons + ["created_at"]
-    if not resuming:
-        reasons += governance.run_date_refusals(spec)  # the run date is the day the live run really starts
+    today = today or governance.utc_today()
+    on = min(start, today) if start else today
+    reasons += governance.created_at_refusals(spec, today)
     irb_ref = (spec.get("governance") or {}).get("irb_record")
-    irb = governance.irb_refusals(irb_ref, on, root, missing="irb_not_filed")
-    if resuming:
-        irb += [reason for reason in governance.irb_refusals(irb_ref, governance.utc_today(), root, missing="irb_not_filed")
-                if reason not in irb]
-    reasons += irb
+    reasons += governance.irb_refusals(irb_ref, on, root, missing="irb_not_filed", today=today)
     terms_refs = spec.get("provider_terms")
     terms_refs = list(terms_refs) if isinstance(terms_refs, list) else [terms_refs] if terms_refs else []
     terms = []

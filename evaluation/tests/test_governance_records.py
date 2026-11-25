@@ -193,36 +193,52 @@ def test_a_repository_target_s_binary_assets_leave_the_pre_run_scan_complete(tmp
         assert governance._incomplete_reasons(kind) == contamination.incomplete_reasons(kind)
 
 
-def test_a_confirmatory_run_is_refused_unless_created_at_is_today(tmp_path, monkeypatch):
-    # The run date is the spec's created_at, so it must be the day the run is planned: a spec dated 2026-11-24 run in
-    # 2028 would otherwise pass an IRB that expired in 2027, and a future-dated spec an OSF record filed after the run.
+def test_the_confirmatory_gate_judges_every_record_in_the_run_window(tmp_path, monkeypatch):
+    # The run window (spec 3.13): the IRB approved by `start` and unexpired on `today`, the OSF record registered by
+    # `start`; the spec's created_at only may not be in the future. A spec dated 2026-11-24 run in 2028 is judged on the
+    # 2028 day, so the IRB that expired in 2027 refuses it however the spec is dated.
     from datetime import date
 
     irb = synthetic.irb_record(tmp_path / "irb.private.json", approval_date="2026-11-01", expiry_date="2027-06-30")
-    osf = synthetic.osf_record(tmp_path / "osf.private.json", analysis_plan_sha256=PLAN_SHA)
+    osf = synthetic.osf_record(tmp_path / "osf.private.json", analysis_plan_sha256=PLAN_SHA, registered_date="2026-11-20")
     scan = synthetic.pass_scan(tmp_path / "scan.json", dataset_content_sha256=CONTENT_SHA)
     freeze = synthetic.freeze_record(tmp_path / "freeze.private.json", dataset_sha256="d" * 64)
     ok = {"governance": {"irb_record": irb, "osf_record": osf}, "freeze_record": freeze, "pre_run_scan": scan}
-    assert refusals(tmp_path, **ok) == []
+
+    def gate(start=None, today=None, **spec):
+        return governance.confirmatory_refusals(
+            {"created_at": "2026-11-24T00:00:00Z", "mode": "live", **ok, **spec}, analysis_plan_sha256=PLAN_SHA,
+            dataset_sha256="d" * 64, dataset_content_sha256=CONTENT_SHA, items_states={"frozen": 3},
+            package_raw={"owner_decisions": {"D-14": {"state": "decided"}}}, repo_root=REPO_ROOT, start=start, today=today)
+
+    assert gate() == [] and refusals(tmp_path, **ok) == []
+    # today: utc_today() by default, or the runner's day; the IRB must be unexpired on it, whatever created_at says.
     monkeypatch.setattr(governance, "utc_today", lambda: date(2028, 1, 10))
-    assert refusals(tmp_path, **ok) == ["created_at_not_today"]
-    assert refusals(tmp_path, **{**ok, "created_at": "2028-01-10T08:00:00Z"}) == ["irb_expired"]
-    monkeypatch.setattr(governance, "utc_today", lambda: date(2026, 11, 24))
-    assert refusals(tmp_path, **{**ok, "created_at": "2026-12-01T00:00:00Z"}) == ["created_at_not_today"]
-    assert governance.run_date_refusals({"created_at": "garbage"}) == ["created_at"]
-    assert governance.utc_today() == date(2026, 11, 24)
-    # A resume is not dated here (the runner judges it against the checkpoint), and its IRB is also judged against today.
-    monkeypatch.setattr(governance, "utc_today", lambda: date(2026, 11, 25))
-    assert refusals(tmp_path, **ok) == ["created_at_not_today"]
-    assert governance.confirmatory_refusals(
-        {"created_at": "2026-11-24T00:00:00Z", "mode": "live", **ok}, analysis_plan_sha256=PLAN_SHA, dataset_sha256="d" * 64,
-        dataset_content_sha256=CONTENT_SHA, items_states={"frozen": 3}, package_raw={"owner_decisions": {"D-14": {"state": "decided"}}},
-        repo_root=REPO_ROOT, resuming=True) == []
-    monkeypatch.setattr(governance, "utc_today", lambda: date(2027, 7, 1))
-    assert governance.confirmatory_refusals(
-        {"created_at": "2026-11-24T00:00:00Z", "mode": "live", **ok}, analysis_plan_sha256=PLAN_SHA, dataset_sha256="d" * 64,
-        dataset_content_sha256=CONTENT_SHA, items_states={"frozen": 3}, package_raw={"owner_decisions": {"D-14": {"state": "decided"}}},
-        repo_root=REPO_ROOT, resuming=True) == ["irb_expired"]
+    assert gate() == ["irb_expired"] and refusals(tmp_path, **ok) == ["irb_expired"]
+    assert gate(created_at="2028-01-10T08:00:00Z") == ["irb_expired"]
+    assert gate(today=date(2027, 6, 30)) == []
+    # created_at may not be after today; it is never a record's run date.
+    assert gate(today=date(2026, 11, 23)) == ["created_at_in_future"]
+    assert governance.created_at_refusals({"created_at": "garbage"}, date(2026, 11, 24)) == ["created_at"]
+    # start: approval and registration must precede the day the run's data began to flow; an earlier start only tightens.
+    assert gate(start=date(2026, 11, 22), today=date(2026, 12, 1)) == []
+    assert gate(start=date(2026, 10, 31), today=date(2026, 12, 1)) == ["irb_not_yet_approved", "osf_registered_after_run"]
+    assert gate(start=date(2026, 11, 19), today=date(2026, 12, 1)) == ["osf_registered_after_run"]
+    # A start after today is clamped to today (it can never loosen the check).
+    assert gate(start=date(2027, 9, 1), today=date(2026, 11, 24)) == gate(today=date(2026, 11, 24)) == []
+    for start in (date(2026, 11, 21), date(2026, 11, 25), date(2027, 6, 30)):  # monotone: never fewer reasons than later
+        assert set(gate(start=start, today=date(2027, 6, 30))) >= set(gate(start=date(2027, 6, 30), today=date(2027, 6, 30)))
+
+
+def test_the_confirmatory_exit_code_is_one_rule_over_the_reason_classes():
+    # Spec 5: 8 with any IRB or OSF reason, else 3 with any items or freeze-record reason, else 2.
+    table = {("irb_missing",): 8, ("osf_plan_mismatch", "items_not_frozen"): 8, ("pre_run_scan_missing", "irb_expired"): 8,
+             ("items_not_frozen",): 3, ("items_split_missing", "D-14 open"): 3, ("freeze_record_failed", "created_at_in_future"): 3,
+             ("pre_run_scan_missing",): 2, ("created_at_in_future",): 2, ("run_start_invalid",): 2, ("recording_after_run",): 2,
+             ("recording_started_on_missing",): 2, ("replicate_subsample_short",): 2, ("D-14 open", "governance_record_public"): 2,
+             ("stub_not_confirmatory",): 2, ("recording_not_live",): 2}
+    for reasons, code in table.items():
+        assert governance.confirmatory_exit_code(list(reasons)) == code, reasons
 
 
 def test_utc_today_is_the_utc_date_of_the_clock(monkeypatch):
@@ -242,41 +258,17 @@ def test_utc_today_is_the_utc_date_of_the_clock(monkeypatch):
     assert governance.utc_today() == datetime_module.date(2026, 11, 25)
 
 
-def test_a_confirmatory_recorded_run_is_dated_today_and_its_live_recording_must_state_an_earlier_start(tmp_path, monkeypatch):
-    # The recording's started_on is a header field its maker writes and no tool here writes a live one (DI-143), so a
-    # confirmatory replay is dated by its own created_at, which must be today: a backdated created_at paired with a
-    # matching started_on is refused, and an IRB that has expired refuses the replay with or without --resume.
+def test_a_live_recording_must_state_its_start_which_is_not_after_today():
+    # A confirmatory replay's recording header states the day its live run started; the runner moves the window's start
+    # to it (test_phase10_acceptance covers the runner). A missing, malformed or future day is refused.
     from datetime import date
 
-    irb = synthetic.irb_record(tmp_path / "irb.private.json", approval_date="2026-11-01", expiry_date="2027-06-30")
-    osf = synthetic.osf_record(tmp_path / "osf.private.json", analysis_plan_sha256=PLAN_SHA)
-    scan = synthetic.pass_scan(tmp_path / "scan.json", dataset_content_sha256=CONTENT_SHA)
-    freeze = synthetic.freeze_record(tmp_path / "freeze.private.json", dataset_sha256="d" * 64)
-    spec = {"created_at": "2026-11-24T00:00:00Z", "mode": "recorded", "governance": {"irb_record": irb, "osf_record": osf},
-            "freeze_record": freeze, "pre_run_scan": scan}
-
-    def recorded(started_on, source="live", created_at="2026-11-24T00:00:00Z", resuming=False):
-        return governance.confirmatory_refusals(
-            {**spec, "created_at": created_at}, analysis_plan_sha256=PLAN_SHA, dataset_sha256="d" * 64,
-            dataset_content_sha256=CONTENT_SHA, items_states={"frozen": 3},
-            package_raw={"owner_decisions": {"D-14": {"state": "decided"}}}, repo_root=REPO_ROOT, recording_source=source,
-            recording_started_on=started_on, resuming=resuming)
-
-    monkeypatch.setattr(governance, "utc_today", lambda: date(2026, 11, 24))
-    assert recorded("2026-11-24") == [] and recorded("2026-11-20") == []      # a replay on or after the live run's day
-    assert recorded("2026-11-25") == ["recording_after_run"]
+    today = date(2026, 11, 24)
+    assert governance.recording_start_refusals("2026-11-24", today) == governance.recording_start_refusals("2026-11-20", today) == []
+    assert governance.recording_start_refusals("2026-11-25", today) == ["recording_after_run"]
     for missing in (None, "", "2026-11-24T00:00:00Z", "2026-13-01", 20261124):
-        assert recorded(missing) == ["recording_started_on_missing"], missing
-    assert recorded(None, source="synthetic") == ["recording_not_live"]
-    assert governance.recording_start_refusals({"created_at": "garbage"}, "2026-11-24") == ["created_at"]
-    # In 2028 the spec dated 2026-11-24 is refused, though its started_on matches; re-dated, the expired IRB refuses it.
-    monkeypatch.setattr(governance, "utc_today", lambda: date(2028, 1, 10))
-    assert recorded("2026-11-24") == ["created_at_not_today"]
-    assert recorded("2026-11-24", created_at="2028-01-10T00:00:00Z") == ["irb_expired"]
-    # The same replay with --resume (the runner judges its date against the checkpoint) is refused for the IRB too.
-    assert recorded("2026-11-24", resuming=True) == ["irb_expired"]
-    monkeypatch.setattr(governance, "utc_today", lambda: date(2026, 12, 30))
-    assert recorded("2026-11-24", created_at="2026-12-30T00:00:00Z") == recorded("2026-11-24", resuming=True) == []
+        assert governance.recording_start_refusals(missing, today) == ["recording_started_on_missing"], missing
+        assert governance.iso_day(missing) is None
 
 
 def test_a_record_path_open_refuses_is_an_invalid_file_never_a_traceback(tmp_path):
@@ -333,3 +325,8 @@ def test_the_irb_condition_checks_the_dates_for_every_caller(tmp_path):
     old = synthetic.irb_record(tmp_path / "old.json", approval_date="2025-01-01", expiry_date="2026-01-01")
     assert governance.irb_refusals(old, on, REPO_ROOT, missing="x") == ["irb_expired"]
     assert governance.irb_refusals({"path": str(tmp_path / "none.json"), "sha256": "0" * 64}, on, REPO_ROOT, missing="x") == ["irb_invalid:file"]
+    # Approved by the window's start, unexpired on today: valid on every day the run's data flow.
+    window = synthetic.irb_record(tmp_path / "window.json", approval_date="2026-11-01", expiry_date="2026-12-31")
+    assert governance.irb_refusals(window, date(2026, 11, 1), REPO_ROOT, missing="x", today=date(2026, 12, 31)) == []
+    assert governance.irb_refusals(window, date(2026, 10, 31), REPO_ROOT, missing="x", today=date(2027, 1, 1)) == [
+        "irb_not_yet_approved", "irb_expired"]

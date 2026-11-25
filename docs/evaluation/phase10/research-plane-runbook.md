@@ -59,17 +59,20 @@ log is `<plane>/access.jsonl` (digests only).
    built from the run's items, step 5) and covered the repository and at least one logs or path target.
 7. **Run (after H12 is released).** `python scripts/run_evaluation.py --spec <plane>/records/spec.json --output-dir <plane>/runs/<id>
    --access-log <plane>/access.jsonl --actor-role MLE`; after an outage (exit 5), rerun with `--resume` and the same
-   spec and responder, the same day or later: a resumed confirmatory or live run is judged against its checkpoint,
-   whose start event records the UTC date it was written (`created_at` must be that date and never a future one,
-   `created_at_not_start_date`, `created_at_in_future`; the run digest covers `created_at`, so do not edit it; another
-   run's directory, or a changed spec, is refused, `checkpoint_mismatch`), and its IRB must still be valid on the
-   resume day. `--resume` without the run's checkpoint is a fresh start: it runs when dated today and is refused
-   otherwise (`created_at_not_today`). The checkpoint is the operator's own file, so this is a consistency check, not
-   tamper evidence (DI-143): keep run outputs in the research plane and review each run's start in the access log
-   (step 9). A confirmatory run covers every live item of both splits and gives the subsample's 40 S1 items their
-   replicates (fewer live items in the stratum: `replicate_subsample_short`). A confirmatory recorded run replays a
-   live recording whose header states the live run's start (`started_on`, on or before the replay: `recording_after_run`);
-   the replay is dated the day it runs (`created_at` today), so the IRB must be valid on that day.
+   spec and responder, the same day or later. Every confirmatory or live run is judged in its run window: today, and its
+   start, the day its checkpoint's start event records (`started_on`; a first event that is not a start with a valid
+   day not after today is refused, `run_start_invalid`). The IRB must be approved by the start and unexpired today, and
+   the OSF and plan H records dated by the start, so a record dated after the run started refuses the resume. The run
+   digest covers the spec, `created_at` included, so do not edit it: another run's directory, or a changed spec, is
+   refused (`checkpoint_mismatch`). `--resume` into a directory without run events is a fresh start, judged on today.
+   `created_at` may be any past day (never a future one, `created_at_in_future`). The checkpoint is the operator's
+   own file, so this is a consistency check, not tamper evidence (DI-143); an earlier start day only tightens the
+   checks. Keep run outputs in the research plane and review each run's start in the access log (step 9). A
+   confirmatory run covers every live item of both splits and gives the subsample's 40 S1 items their replicates
+   (fewer live items in the stratum: `replicate_subsample_short`). A confirmatory recorded run replays a live recording
+   whose header states the live run's start (`started_on`, required, `recording_started_on_missing`, and not after
+   today, `recording_after_run`); its window starts on that day, so the IRB must have been approved by then and be
+   unexpired on the replay day.
 8. **Scan.** `python scripts/scan_research_logs.py --fingerprints ... --research-logs <plane>/runs/<id> --require-zero
    --report <plane>/records/post-run-scan.json --access-log <plane>/access.jsonl --actor-role MLE`, and fill the contamination
    report.

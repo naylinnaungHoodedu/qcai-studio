@@ -33,8 +33,8 @@ DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-143). Not execu
    through all seven arms), and its three replicates fall on all 40 items of the S1 subsample (a subsample stratum with
    fewer live items is refused); the calibration split is for threshold calibration only (plan L470), which this harness
    does not do. A run interrupted by a provider outage resumes from its checkpoint with the same spec (`--resume`), on a
-   later day too: it is judged against the start date its checkpoint records, and its IRB must still be valid on the
-   resume day.
+   later day too: its run window starts on the day its checkpoint records, so its IRB must have been approved by then
+   and still be valid on the resume day, and every other record dated by its start.
 5. **Label.** Atomic claims are labelled supported, attribution error, unsupported but true, or fabricated, with the EHMF
    type; abstaining units are labelled supported or unsupported abstention (`lqs/rubric.md`).
 6. **Analyse.** Exact McNemar, the one-sided, paired, cluster, BCa, paired-AUC and two-level bootstraps, the Friedman test

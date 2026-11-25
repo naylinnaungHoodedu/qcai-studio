@@ -16,20 +16,13 @@ executed and no Table XVII row or HR-1..MR-3 outcome is asserted (plan Phase 10 
 
 - `run_evaluation.py`: 0 ok; 1 drift; 2 usage, a malformed spec, a path, an experiment or another run's checkpoint
   refused, a non-synthetic run without the access log or a passing pre-run scan (`access_log_required`,
-  `pre_run_scan_*`), or a confirmatory run refused for a reason that is not an IRB, OSF, items or freeze reason (its
-  pre-run scan, D-14 open, a public governance record, `created_at_not_today`, `created_at_in_future`,
-  `created_at_not_start_date`, `recording_started_on_missing`, `recording_after_run`, `replicate_subsample_short`,
-  `stub_not_confirmatory`, `recording_not_live`); 3 invalid items, unresolved pointers,
-  a freeze record or a payload-log violation, and a confirmatory run refused for `items_not_frozen`,
-  `items_split_missing` or `freeze_record_*` with no IRB or OSF reason; 5 interrupted (resume with `--resume`, on a
-  later day too); 6 a pin mismatch; 7 arm parity; 8 a confirmatory run refused with an IRB or OSF reason (the other
-  reasons listed with it); 9 a live run or hold H12 refused. A confirmatory or live run that starts now must have
-  today's UTC date as its `created_at`, a confirmatory recorded replay included; a resume is judged against the
-  output's checkpoint (with no run events a fresh start dated today; with events never a future date and the date its
-  start event records, `started_on`, with this run's digest), with the IRB also valid on the resume day. The checkpoint
-  and a recording's `started_on` are the operator's files: consistency checks, not tamper evidence (DI-143). A
-  confirmatory run covers every live item of both splits and replicates the full subsample (a short subsample stratum
-  is refused, `replicate_subsample_short`).
+  `pre_run_scan_*`), or a confirmatory run refused with no IRB, OSF, items or freeze-record reason; 3 invalid items,
+  unresolved pointers or a payload-log violation, or a confirmatory run refused with an items (`items_not_frozen`,
+  `items_split_missing`) or freeze-record (`freeze_record_*`) reason and no IRB or OSF reason; 5 interrupted (resume
+  with `--resume`, on a later day too); 6 a pin mismatch; 7 arm parity; 8 a confirmatory run refused with an IRB or OSF
+  reason; 9 a live run or hold H12 refused. A refused confirmatory run lists every reason and exits with the first
+  class present (`governance.confirmatory_exit_code`). Its dates are judged in the run window (spec 3.13; the
+  script's docstring names each date reason).
 - `validate_ulqs.py`: 0; 2 usage (`--freeze` without `--previous` or `--corpus-text`; `--access-log` without
   `--actor-role`), path refused, or an input unreadable or invalid (the items or previous set, the ratings, the rubric,
   the freeze rules, or an agent-check record that does not parse or is not shaped as `ulqs-agent-check-v1`); 3 schema

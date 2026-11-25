@@ -9,7 +9,9 @@ Every run is exploratory unless its spec says confirmatory, and E1-E4 runs must 
 omits `replicates` or `retries` takes the provisional paper values in `evaluation/config/harness_parameters_v1.json`
 (PD-68), and a live or confirmatory spec must keep a replicate subsample so that the record reports replicate variance.
 A resumed run continues only its own checkpoint: the start event pins a run digest (and, for a confirmatory or live run,
-the UTC date it was written), and every reused response line must match its planned request. A confirmatory run covers
+the UTC day it was planned, `started_on`), and every reused response line must match its planned request. A confirmatory
+or live run is judged in its run window (governance module docstring): `today`, and `start`, the earliest of today, its
+checkpoint's `started_on` and a live recording's `started_on`; an earlier `start` only tightens the record checks. A confirmatory run covers
 every live item, the calibration and the confirmation split alike (paper Sec. VIII E1: "All ULQS items run through all
 seven arms"; the registered data "all ULQS items x seven arms"); the split exists for threshold calibration, which uses
 the calibration split only (plan L470), and no Phase 10 code fits a threshold.
@@ -100,11 +102,12 @@ class Plan:
     resolver: PointerResolver | None = None
     synthetic: bool = True
     recording_source: str | None = None
-    # A confirmatory or live run (`dated`): its start event records the UTC date it was written (`started_on`). Resumed
-    # (`start_check`, the exit code of a date refusal), its date was not compared with today when it was planned, so
-    # `execute_run` judges it against its checkpoint: none (a fresh start, which must be dated today) or this run's own.
-    start_check: int | None = None
+    # A confirmatory or live run (`dated`) was judged in its run window when planned: `planned_on` (today then; a fresh
+    # start's event records it as `started_on`) and `checkpoint_start` (the `started_on` of the output's start event that
+    # a resume was planned from, or None). `execute_run` requires the output to be the checkpoint the plan was judged on.
     dated: bool = False
+    planned_on: _dt.date | None = None
+    checkpoint_start: _dt.date | None = None
     extra: dict = field(default_factory=dict)
 
 
@@ -354,8 +357,8 @@ def plan_run(spec: Mapping[str, Any], *, repo_root: Path = REPO_ROOT, environ: M
              resume: bool = False) -> Plan:
     """The run's plan, or RunRefused. `on_read(kind, sha256)` is told of each research-plane input as soon as it is read
     (the items, the catalog, the recording and every governance record), before any later check can refuse the run, so
-    that the access log holds every read of a refused run too. With `resume` a confirmatory or live run's date is not
-    compared with today here: the plan carries `start_check`, and `execute_run` requires this run's checkpoint."""
+    that the access log holds every read of a refused run too. With `resume` and `out_dir`, a confirmatory or live run's
+    window starts on the day its checkpoint's start event records (`checkpoint_start_refusals`)."""
     def note(kind: str, sha256: str | None) -> None:
         if on_read is not None and sha256 is not None:
             on_read(kind, sha256)
@@ -475,6 +478,7 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
             raise RunRefused(2, missing)
     # The recorded responder and its pins.
     recording_source = recording_started_on = None
+    dated = spec["mode"] == "live" or spec["purpose"] == "confirmatory"
     if spec["mode"] == "recorded":
         recorded = (spec.get("responder") or {}).get("recorded") or {}
         recording_path = _path(recorded["path"], repo_root) if "path" in recorded else None
@@ -492,12 +496,26 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
             raise RunRefused(6, ["recording_pins_mismatch"])
         recording_source = responder.source
         recording_started_on = responder.header.get("started_on")
+    # The run window (governance module docstring): `today`, and `start`, the earliest of today, the checkpoint's start
+    # day (a resume) and the live recording's start day (a confirmatory replay). Each earlier day only tightens.
+    today = governance.utc_today()
+    window: list[str] = []
+    checkpoint_start = None
+    if dated and resume and out_dir is not None:
+        window, checkpoint_start = checkpoint_start_refusals(Path(out_dir), today)
+    starts = [today] + ([checkpoint_start] if checkpoint_start else [])
+    if dated and spec["mode"] == "recorded" and recording_source == "live":
+        recording_reasons = governance.recording_start_refusals(recording_started_on, today)
+        window += recording_reasons
+        if not recording_reasons:
+            starts.append(governance.iso_day(recording_started_on))
+    start = min(starts)
     # 8. The confirmatory gate (AC-10-5).
     if spec["purpose"] == "confirmatory":
-        reasons = governance.confirmatory_refusals(spec, analysis_plan_sha256=plans_sha, dataset_sha256=items_sha,
-                                                   dataset_content_sha256=items_content_sha, items_states=states,
-                                                   package_raw=package_raw, repo_root=repo_root, recording_source=recording_source,
-                                                   recording_started_on=recording_started_on, resuming=resume)
+        reasons = window + governance.confirmatory_refusals(
+            spec, analysis_plan_sha256=plans_sha, dataset_sha256=items_sha, dataset_content_sha256=items_content_sha,
+            items_states=states, package_raw=package_raw, repo_root=repo_root, recording_source=recording_source, start=start,
+            today=today)
         # Plan 10.5(2) "calibration and confirmation items split [Risk R-25]": every live item of a confirmatory run
         # carries its split, so that a threshold fitted on ULQS uses the calibration split only (plan L470). The run itself
         # covers every live item (`_requests`).
@@ -509,18 +527,15 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
         if len(subsample(items, replicates)) < int((replicates.get("subsample") or {}).get("size", 0)):
             reasons.append("replicate_subsample_short")
         if reasons:
-            if any(reason.startswith(("irb_", "osf_")) for reason in reasons):
-                code = 8
-            elif any(reason in ("items_not_frozen", "items_split_missing") or reason.startswith("freeze_record_") for reason in reasons):
-                code = 3
-            else:
-                code = 2
-            raise RunRefused(code, reasons)
+            raise RunRefused(governance.confirmatory_exit_code(reasons), reasons)
     # 9. Live runs.
     if spec["mode"] == "live":
         from .providers import live_refusal_reasons
 
-        reasons = live_refusal_reasons(spec, package_raw, environ, table, out_dir=out_dir, repo_root=repo_root, resuming=resume)
+        reasons = live_refusal_reasons(spec, package_raw, environ, table, out_dir=out_dir, repo_root=repo_root, start=start,
+                                       today=today)
+        if spec["purpose"] != "confirmatory":
+            reasons = window + reasons
         if reasons:
             raise RunRefused(9, reasons)
     # 10. The output directory.
@@ -554,11 +569,9 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
             key for key in ("replicates", "retries") if key not in spec)},
         "code": code_pins(repo_root),
     }
-    dated = spec["mode"] == "live" or spec["purpose"] == "confirmatory"
-    start_check = (2 if spec["purpose"] == "confirmatory" else 9) if resume and dated else None
     return Plan(spec=dict(spec), package_raw=package_raw, items=items, arms=table, requests=tuple(requests), pins=pins,
-                resolver=resolver, synthetic=synthetic, recording_source=recording_source, start_check=start_check,
-                dated=dated)
+                resolver=resolver, synthetic=synthetic, recording_source=recording_source, dated=dated,
+                planned_on=today if dated else None, checkpoint_start=checkpoint_start)
 
 
 def _manifest_hook(manifests: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -613,7 +626,7 @@ def requests_digest(plan: Plan) -> str:
 
 def run_digest(plan: Plan, responder_rule: str) -> str:
     """What a checkpoint belongs to: the run id, mode, purpose, `created_at`, responder rule, every pin and the planned
-    keys and seeds (a resume therefore needs the run date of the run's start)."""
+    keys and seeds (a resume therefore needs the spec the run started with)."""
     return canonical_sha256({"run_id": plan.spec["run_id"], "mode": plan.spec["mode"], "purpose": plan.spec["purpose"],
                              "created_at": plan.spec.get("created_at"), "responder_rule": responder_rule, "pins": plan.pins,
                              "requests": requests_digest(plan)})
@@ -677,31 +690,33 @@ def _prompt_envelope(plan: Plan, request: Request) -> bytes:
                            "arm": request.arm, "evidence": list(request.evidence)})
 
 
-def start_date_refusals(plan: Plan, events: Sequence[Mapping[str, Any]]) -> list[str]:
-    """The date of a resumed confirmatory or live run (`plan.start_check`), which `plan_run` did not compare with today.
-    With no run events in the output, the resume is a fresh start, which must be dated today (`run_date_refusals`). With
-    events, `created_at` may not be a future date (`created_at_in_future`) and must be the UTC date the run's start event
-    was written (`started_on`; `created_at_not_start_date`); `execute_run` then checks the event's run digest. This is a
-    consistency check of the operator's own output directory, not tamper evidence: whoever can write that directory can
-    write a start event too, so a backdated run is caught only when its checkpoint is the one the runner wrote. An
-    externally timestamped start is DI-143."""
-    if not events:
-        return governance.run_date_refusals(plan.spec)
+def checkpoint_start_refusals(out_dir: Path, today: _dt.date) -> tuple[list[str], _dt.date | None]:
+    """The start day a resumed confirmatory or live run's window takes from its checkpoint: none when the output holds no
+    run events (the resume is a fresh start, judged on today); else the first event must be a `start` whose `started_on`
+    is an ISO date not after today (`run_start_invalid`). Whoever can write the output can write a start event, but an
+    earlier day only tightens the record checks, so a forged one gains nothing (DI-143 is an externally timestamped
+    start). `execute_run` then checks the event's run digest (`checkpoint_mismatch`)."""
     try:
-        on = governance.run_date(plan.spec)
-    except governance.GovernanceError:
-        return ["created_at"]
-    if on > governance.utc_today():
-        return ["created_at_in_future"]
-    return [] if events[0].get("started_on") == on.isoformat() else ["created_at_not_start_date"]
+        events = _read_events(Path(out_dir) / RUN_EVENTS)
+    except RunRefused:
+        return ["run_start_invalid"], None
+    if not events:
+        return [], None
+    start = governance.iso_day(events[0].get("started_on")) if events[0].get("event") == "start" else None
+    if start is None or start > today:
+        return ["run_start_invalid"], None
+    return [], start
 
 
 def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = False, commit: str | None = None) -> dict:
     out_dir = Path(out_dir)
-    if plan.start_check is not None:
-        reasons = start_date_refusals(plan, _read_events(out_dir / RUN_EVENTS) if resume else [])
-        if reasons:
-            raise RunRefused(plan.start_check, reasons)
+    if plan.dated:
+        # The output must be the checkpoint the plan's run window was judged on: a resume planned from a start event
+        # continues that event's run, and a plan judged as a fresh start writes into an output without run events.
+        events = _read_events(out_dir / RUN_EVENTS) if resume else []
+        recorded = governance.iso_day(events[0].get("started_on")) if events else None
+        if recorded != plan.checkpoint_start or (events and recorded is None):
+            raise RunRefused(2, ["checkpoint_mismatch"])
     out_dir.mkdir(parents=True, exist_ok=True)
     responses_path = out_dir / RESPONSES
     responder_rule = getattr(responder, "rule", "unknown")
@@ -722,7 +737,7 @@ def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = Fal
     base = {"run_id": spec["run_id"], "purpose": spec["purpose"], "planned_requests": len(plan.requests)}
     start = {"event": "resumed" if events else "start", **base, "completed_requests": len(completed), "run_digest": digest}
     if plan.dated and not events:
-        start["started_on"] = governance.utc_today().isoformat()
+        start["started_on"] = plan.planned_on.isoformat()
     if commit:
         start["commit"] = commit
     _append_event(out_dir, start)

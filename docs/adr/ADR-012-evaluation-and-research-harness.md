@@ -30,12 +30,13 @@ ratified under DI-140). The Phase 10 exit is not passed (DI-129).
 6. The runner pins the package by path and sha256, the items, the catalog, the arms and the analysis plan; seeds are
    hashed. Stub and recorded runs repeat byte for byte. Live runs are refused here; hold H12 refuses every run over
    non-synthetic data while D-14 is open; a confirmatory run needs a valid IRB record and OSF record (AC-10-5); E1-E4 runs
-   are confirmatory only. A confirmatory or live run that starts now must have the current UTC date as its
-   `created_at`, a confirmatory recorded replay included, so every record date is judged against the day the run
-   really starts; a resume after an outage is judged against the start date the run's checkpoint records (its start
-   event's `started_on`, never a future date, with the run digest), with the IRB also valid on the resume day. The
-   checkpoint and a recording's `started_on` are the operator's files, so these are consistency checks, not tamper
-   evidence (DI-143). Every live item carries its calibration or confirmation split (plan 10.5(2), Risk R-25), for
+   are confirmatory only. A confirmatory or live run is judged in its run window, never against its spec's
+   `created_at` (which may only not be a future date): `today`, the UTC day it is planned, and `start`, the earliest of
+   today, the day its checkpoint's start event records (a resume after an outage, on any later day) and the day a live
+   recording's header states (a confirmatory replay). The IRB must be approved by `start` and unexpired on `today`, and
+   the OSF and plan H records dated by `start`. An earlier `start` only tightens these checks, so a hand-written start
+   event or recording header gains nothing over a fresh start today; the checkpoint and the header are the operator's
+   files, so the checks are consistency checks, not tamper evidence (DI-143). Every live item carries its calibration or confirmation split (plan 10.5(2), Risk R-25), for
    threshold calibration on the calibration split only (plan L470); a confirmatory run covers both splits, as E1 runs
    all ULQS items, and replicates its full subsample.
 7. Payload logs hold pointers, hashes and sizes only (AC-10-6). Contamination is scanned with salted fingerprints of the

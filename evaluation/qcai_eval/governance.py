@@ -4,15 +4,18 @@ Plan task 6: "No confirmatory run without IRB letter and OSF DOI [Evidence E-108
 record and a valid OSF record (both in the research plane), the research data plane (D-14), frozen items with a passing
 freeze record and a passing pre-run contamination scan bound to the run's items. A live run needs a valid, unexpired IRB
 record and the plan H records (provider terms, licence ruling, research-use confirmation), each resolved by path and
-sha256 and kept off public paths. Every record date is judged against the run date, the date of the spec's
-`created_at`. A confirmatory or live run, the replay of a recording included, that is planned as a new run is refused
-unless that date is the current UTC date (`created_at_not_today`; `run_date_refusals`). A resume (`--resume`) is not
-compared with today when it is planned: the runner judges it against the output's checkpoint (`runner.start_date_refusals`:
-with no run events it is a fresh start and must be dated today; with events `created_at` may not be in the future and
-must be the date the run's start event was written, and the event must carry this run's digest), and its IRB must also
-be valid today. The checkpoint is the operator's own file and the records' dates are self-declared: these checks are
-consistency checks, not proof or tamper evidence (an externally timestamped start is DI-143). A run that is not
-confirmatory skips the confirmatory gate and is labelled exploratory everywhere.
+sha256 and kept off public paths.
+
+Dates (the run window, spec 3.13): every record date is judged against two days the runner supplies, never against the
+spec's own `created_at`. `today` is the current UTC date when the run is planned; `start` is the day the run's data
+began to flow: today for a fresh run, else the earliest of today, the `started_on` its checkpoint's start event records
+(a resume) and the `started_on` a live recording's header states (a confirmatory recorded replay). The IRB must be
+approved on or before `start` and not expired on `today`; the OSF registration and every plan H record must be dated on
+or before `start`. A `start` earlier than today can only make these checks stricter, so a hand-written start event or
+recording header cannot let a run through that a fresh start today would refuse; `created_at` is an input that may not
+be a future date (`created_at_in_future`). The checkpoint, the recording header and the records' own dates are the
+operator's: these are consistency checks, not proof or tamper evidence (an externally timestamped start is DI-143). A run
+that is not confirmatory skips the confirmatory gate and is labelled exploratory everywhere.
 """
 
 from __future__ import annotations
@@ -188,6 +191,7 @@ def resolve_record(reference: Any, repo_root: Path, *, kind: str = "governance_r
 
 
 def run_date(spec: Mapping[str, Any]) -> _dt.date:
+    """The UTC date of the spec's `created_at` (an input: part of the run digest and the record, never a record's run date)."""
     created = str(spec.get("created_at", ""))
     try:
         return _dt.date.fromisoformat(created[:10])
@@ -196,40 +200,38 @@ def run_date(spec: Mapping[str, Any]) -> _dt.date:
 
 
 def utc_today() -> _dt.date:
-    """The current UTC date, read when a run is planned (the tests replace it with a fixed date)."""
+    """The current UTC date, read once when a run is planned (the tests replace it with a fixed date)."""
     return _dt.datetime.now(_dt.timezone.utc).date()
 
 
-def run_date_refusals(spec: Mapping[str, Any]) -> list[str]:
-    """A confirmatory or live run that starts now, a recorded replay included, is run on the day its spec declares: the
-    date of `created_at` must be the current UTC date, so the IRB and every record date are judged against the day the run
-    really starts. A resume is judged by the runner against the output's checkpoint instead (`runner.start_date_refusals`,
-    which applies this rule when the output holds no run events)."""
+def created_at_refusals(spec: Mapping[str, Any], today: _dt.date) -> list[str]:
+    """`created_at` must be a date (`created_at`) that is not after today (`created_at_in_future`)."""
     try:
         on = run_date(spec)
     except GovernanceError:
         return ["created_at"]
-    return [] if on == utc_today() else ["created_at_not_today"]
+    return [] if on <= today else ["created_at_in_future"]
 
 
-def recording_start_refusals(spec: Mapping[str, Any], started_on: Any) -> list[str]:
-    """A confirmatory recorded run replays a live recording whose header states the day its live run started
-    (`started_on`, an ISO date; the recording is pinned by its sha256): that date must be stated
-    (`recording_started_on_missing`) and may not be after the replay's run date (`recording_after_run`). The header is
-    written by whoever made the recording and no tool in this repository writes a live one (DI-143), so the replay is
-    dated by its own `created_at`, which must be today like every confirmatory run (`run_date_refusals`): the IRB and
-    the records are judged against the day of the replay, never against the self-declared `started_on`."""
+def iso_day(value: Any) -> _dt.date | None:
+    """A `YYYY-MM-DD` string as a date, or None for anything else (a timestamp, a number, an impossible date)."""
+    if not isinstance(value, str) or not DATE.match(value):
+        return None
     try:
-        start = _dt.date.fromisoformat(started_on) if isinstance(started_on, str) and len(started_on) == 10 else None
+        return _dt.date.fromisoformat(value)
     except ValueError:
-        start = None
+        return None
+
+
+def recording_start_refusals(started_on: Any, today: _dt.date) -> list[str]:
+    """A confirmatory recorded run replays a live recording whose header states the day its live run started
+    (`started_on`): it must be an ISO date (`recording_started_on_missing`) and not after today (`recording_after_run`).
+    The header is written by whoever made the recording and no tool in this repository writes a live one (DI-143); the
+    stated day only moves the run window's `start` earlier, which tightens every record check."""
+    start = iso_day(started_on)
     if start is None:
         return ["recording_started_on_missing"]
-    try:
-        on = run_date(spec)
-    except GovernanceError:
-        return ["created_at"]
-    return [] if start <= on else ["recording_after_run"]
+    return [] if start <= today else ["recording_after_run"]
 
 
 def is_public(reference: Any, repo_root: Path) -> bool:
@@ -246,9 +248,9 @@ def is_public(reference: Any, repo_root: Path) -> bool:
     return False
 
 
-def irb_refusals(reference: Any, on: _dt.date, repo_root: Path, *, missing: str) -> list[str]:
+def irb_refusals(reference: Any, start: _dt.date, repo_root: Path, *, missing: str, today: _dt.date | None = None) -> list[str]:
     """The IRB condition, shared by the confirmatory gate and live runs: present, valid, approved on or before the run
-    date and not expired on it."""
+    window's `start` and not expired on `today` (default `start`), so it covers every day the run's data flow."""
     if not reference:
         return [missing]
     try:
@@ -256,9 +258,9 @@ def irb_refusals(reference: Any, on: _dt.date, repo_root: Path, *, missing: str)
     except GovernanceError as error:
         return [f"irb_invalid:{error.field}"]
     reasons = []
-    if _dt.date.fromisoformat(irb["approval_date"]) > on:
+    if _dt.date.fromisoformat(irb["approval_date"]) > start:
         reasons.append("irb_not_yet_approved")
-    if irb["expiry_date"] is not None and _dt.date.fromisoformat(irb["expiry_date"]) < on:
+    if irb["expiry_date"] is not None and _dt.date.fromisoformat(irb["expiry_date"]) < (today or start):
         reasons.append("irb_expired")
     return reasons
 
@@ -330,21 +332,17 @@ def _list(value: Any) -> list[Any]:
 
 def confirmatory_refusals(spec: Mapping[str, Any], *, analysis_plan_sha256: str, dataset_sha256: str, dataset_content_sha256: str,
                           items_states: Mapping[str, int], package_raw: Mapping[str, Any], repo_root: Path,
-                          recording_source: str | None = None, recording_started_on: Any = None,
-                          resuming: bool = False) -> list[str]:
-    """The confirmatory gate's reasons, in order (spec 4.10). The run date: every run, a recorded replay included, must be
-    dated today (`run_date_refusals`), except a resume (`resuming`), which the runner judges against the output's
-    checkpoint (`runner.start_date_refusals`) and whose IRB must also be valid today, since the resumed run continues
-    today. A recorded run's live recording must state its start, on or before the run date (`recording_start_refusals`)."""
-    on = run_date(spec)
-    reasons: list[str] = [] if resuming else run_date_refusals(spec)
-    if spec.get("mode") == "recorded" and recording_source == "live":
-        reasons += recording_start_refusals(spec, recording_started_on)
+                          recording_source: str | None = None, start: _dt.date | None = None,
+                          today: _dt.date | None = None) -> list[str]:
+    """The confirmatory gate's reasons, in order (spec 4.10), judged in the run window (`start`, `today`; both default to
+    `utc_today()`): `created_at_refusals`, then the IRB (approved by `start`, unexpired on `today`) and the OSF record
+    (registered by `start`). The runner adds the window's own reasons (a checkpoint or recording start) before these."""
+    today = today or utc_today()
+    on = min(start, today) if start else today
+    reasons: list[str] = created_at_refusals(spec, today)
     governance = spec.get("governance") or {}
     irb_ref, osf_ref = governance.get("irb_record"), governance.get("osf_record")
-    reasons += irb_refusals(irb_ref, on, repo_root, missing="irb_missing")
-    if resuming:
-        reasons += [reason for reason in irb_refusals(irb_ref, utc_today(), repo_root, missing="irb_missing") if reason not in reasons]
+    reasons += irb_refusals(irb_ref, on, repo_root, missing="irb_missing", today=today)
     if not osf_ref:
         reasons.append("osf_missing")
     else:
@@ -379,6 +377,18 @@ def confirmatory_refusals(spec: Mapping[str, Any], *, analysis_plan_sha256: str,
     if spec.get("mode") == "recorded" and recording_source != "live":
         reasons.append("recording_not_live")
     return reasons
+
+
+# The exit code of a refused confirmatory run (spec 5): the first class with a reason present wins.
+CONFIRMATORY_EXIT_CLASSES = ((8, ("irb_", "osf_")), (3, ("items_not_frozen", "items_split_missing", "freeze_record_")))
+
+
+def confirmatory_exit_code(reasons: list[str]) -> int:
+    """8 with any IRB or OSF reason; else 3 with any items or freeze-record reason; else 2 (every other reason)."""
+    for code, prefixes in CONFIRMATORY_EXIT_CLASSES:
+        if any(reason.startswith(prefixes) for reason in reasons):
+            return code
+    return 2
 
 
 def record_digest(raw: Mapping[str, Any]) -> str:
