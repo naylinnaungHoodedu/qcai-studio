@@ -341,6 +341,62 @@ def test_phase8_arena_result_cannot_restore_an_erased_players_rows(privacy_engin
         assert profile.matches_played == 0
 
 
+def test_phase8_an_erased_queued_arena_player_does_not_reject_the_next_player(privacy_engine, monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from app.core.config import get_settings
+    from app.db_models import UserAccount
+    from app.services import arena_engine
+    from app.services.learner_record_lock import learner_writer
+
+    class Socket:
+        def __init__(self, writer):
+            self.state = SimpleNamespace(learner_writer=writer)
+            self.messages = []
+            self.closed = []
+
+        async def send_json(self, payload):
+            self.messages.append(payload)
+
+        async def close(self, code, reason):
+            self.closed.append(code)
+
+    monkeypatch.setattr(get_settings(), "learner_sync", "on")
+    monkeypatch.setattr(arena_engine, "SessionLocal", lambda: Session(privacy_engine))
+    erased, next_player, challenger = (f"acct-{uuid4().hex}" for _ in range(3))
+    with Session(privacy_engine) as db:
+        sockets = {}
+        for owner in (erased, next_player, challenger):
+            db.add(UserAccount(user_id=owner, email=f"{uuid4().hex}@example.invalid", password_hash="synthetic"))
+            sockets[owner] = Socket(learner_writer(db, "local", owner))
+        db.commit()
+
+    async def queue_and_replace():
+        service = arena_engine.ArenaService()
+        monkeypatch.setattr(service, "_schedule_next_round", AsyncMock())
+        await service.connect(sockets[erased], erased, "Former challenger", "ranked")
+        assert service._queued_player_ids() == [erased]
+        with Session(privacy_engine) as db:
+            erase_subject(db, "local", erased, get_settings())
+            db.commit()
+        await service.connect(sockets[next_player], next_player, "Waiting challenger", "ranked")
+        assert sockets[erased].closed == [4403] and not sockets[next_player].closed
+        assert service._queued_player_ids() == [next_player]
+        assert service.status()["connected_players"] == 1
+        assert any(message["type"] == "queue_status" for message in sockets[next_player].messages)
+        await service.connect(sockets[challenger], challenger, "Next challenger", "ranked")
+        assert service._queued_player_ids() == []
+        assert service.status()["connected_players"] == 2
+        assert all(any(message["type"] == "match_found" for message in sockets[owner].messages)
+                   for owner in (next_player, challenger))
+        with Session(privacy_engine) as db:
+            assert not independently_remaining(db, (erased,))
+
+    asyncio.run(queue_and_replace())
+
+
 @pytest.mark.parametrize("legacy_delete", [False, True], ids=["self-service", "account-delete"])
 @pytest.mark.parametrize("writer_kind", ["note", "tutor-turn", "existing-tutor-thread"])
 def test_phase8_erasure_serializes_with_unguarded_and_first_writers_http(

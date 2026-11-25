@@ -907,7 +907,7 @@ The fakes are in `ranking_fakes.py`: `ranking_settings()`, `Log` (a hand-built i
 The full list, with each reason, is in the BEP phase record and the test strategy's Phase 9 table. In short:
 - The tests that pinned the shipped package as v6 read v6 through `V6_PACKAGE_PATH`, or the shipped one through `LATEST_SCHEMA_VERSION` and the package; the Phase 4 doc tests read the shipped number from the package, not a literal.
 - `test_v6_stays_readable_for_one_release` also checks the v5 and v6 gold-label pins, the pinned file and both packages' sha256 (conflict 28).
-- The Alembic head and downgrade walks take the Phase 9 step; the Phase 7 docs tests that named v6 as the shipped package accept v7 since Phase 9.
+- The Alembic tests follow the head `20261123_phase8_learner`. The downgrade walks start with Phase 8, Phase 9, and Phase 7 and retain both guarded downgrades. The Phase 7 docs tests describe the current package and an explicit v6 load.
 - The Phase 7 golden-runner tests and the EHMF golden-runner test pass a temporary `--history`, and `test_ac_7_6_no_test_runs_a_golden_set_write_against_the_committed_history` keeps it so; the Phase 7 history test checks that the history ends with exactly one entry for the shipped package, the sidecar's sha256 (5.4).
 - `test_boundary_scan.py`'s list of the API image's COPY sources gains the recommission set (4.8).
 - `test_erasure_retention.py` is unchanged and passes.

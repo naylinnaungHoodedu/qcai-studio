@@ -18,8 +18,10 @@ from app.services.learner_record_planner import ADVANCED_THRESHOLD, FOUNDATION_T
 from app.services.learner_record_privacy import CONSENT_CLASSES, CONSENT_VERSION
 from app.services.learner_record_shadow import COMPLETION_THRESHOLD, PLANNER_BUDGET_MS
 from app.services.learner_record_sync import ASSESSMENT_LIMIT, ASSESSMENT_WINDOW, MAX_ISSUED_REPLICAS
+from app.services.ledger import SCHEMA_REVISION
 from app.services.retention import retention_classes
 from scripts.run_invariance_harness import LEVELS
+from scripts.run_v1_fixtures import text_sha256
 from test_phase3_docs import NARRATIVE
 
 
@@ -33,6 +35,7 @@ PHASE8_MODELS = (
     "LearnerConsent", "LearnerConsentChange", "LearnerErasureAudit", "LearnerAdaptationStop", "LearnerAssessmentFact",
 )
 BASELINE = TESTS / "data" / "phase8_shared_baseline_v1.json"
+CI_WORKFLOW = ROOT / ".github/workflows/ci.yml"
 INPUT_RECORDS = (
     "docs/evaluation/phase3/three_plan_replay_v1.json",
     "docs/evaluation/phase4/v1_fixture_report_v1.json",
@@ -84,6 +87,16 @@ def _section(number):
 
 def _row(identifier):
     return next(line for line in _section(16).splitlines() if line.startswith(f"| {identifier} |"))
+
+
+def _api_ci_runs():
+    import yaml
+
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    steps = yaml.safe_load(workflow)["jobs"]["api-and-evaluation"]["steps"]
+    runs = [step["run"] for step in steps if "run" in step]
+    marked = re.findall(r"(?m)^      # Phase 8\b[^\n]*\n(?:      #[^\n]*\n)*      - run: ([^\n]+)$", workflow)
+    return runs, marked
 
 
 def _names():
@@ -232,6 +245,7 @@ def test_phase8_docs_spec_headings_shapes_and_plan_quotes():
     assert _section(18).count("| Review 2 |") == 1
     assert _section(18).count("| Review 3 |") == 1
     assert _section(18).count("| Review 4 |") == 1
+    assert _section(18).count("| Review 5 |") == 1
     for model in PHASE8_MODELS:
         line = next(line for line in _section(3).splitlines() if line.startswith(f"| `{model}` |"))
         listed = set(re.findall(r"`([a-z][a-z_]+)`", line.split("|")[2]))
@@ -245,7 +259,8 @@ def test_phase8_docs_spec_headings_shapes_and_plan_quotes():
     assert all(name in retention for name in (
         "learner_claim_audits", "learner_erasure_audits", "learner_write_guards", "last_used_at", "updated_at", "tombstone",
     ))
-    rollout = (ROOT / "infra/cloudrun/deployment.md").read_text(encoding="utf-8").split("\n## Phase 8: ", 1)[1]
+    deployment = (ROOT / "infra/cloudrun/deployment.md").read_text(encoding="utf-8")
+    rollout = deployment.split("\n## Phase 8: ", 1)[1]
     assert "**Before the release.**" in rollout and "**After the deploy.**" in rollout
     assert "Settings refuse non-off values before the verified Phase 8 exit" in rollout
     assert "`phase8_exit_passed: false`" in rollout and "`learner_slis: {}`" in rollout
@@ -255,6 +270,17 @@ def test_phase8_docs_spec_headings_shapes_and_plan_quotes():
         "python scripts/prove_erasure.py --check docs/evaluation/phase8/erasure_proof_v1.json",
     ):
         assert command in rollout and command in _section(17)
+    stamps = deployment.split("3. **Check the stamp:** `alembic current`.", 1)[1].split("\n4. ", 1)[0]
+    revision_lines = re.findall(r"(?m)^   - `(20\d{6}_phase\w+)( \(head\))?`:", stamps)
+    create_all = next(line for line in stamps.splitlines() if "the tables came from `create_all`" in line)
+    older_revisions = {revision for revision, head in revision_lines if not head}
+    assert {revision for revision, head in revision_lines if head} == {SCHEMA_REVISION}
+    assert set(re.findall(r"`alembic stamp (20\d{6}_phase\w+)`", create_all)) == older_revisions | {"20261119_phase2_corpus_spans"}
+    assert "`alembic stamp head`" in create_all and "Phase 8 image" in create_all and "Phase 8 tables" in create_all
+    release_checks = rollout.split("**Before the release.**", 1)[1].split("**After the deploy.**", 1)[0]
+    _, phase8_steps = _api_ci_runs()
+    predecessor_checks = [command for command in phase8_steps if "config_package.py --check --path" in command]
+    assert predecessor_checks and all(f"`{command}`" in release_checks for command in predecessor_checks)
     proof_readme = (ROOT / "docs/evaluation/phase8/README.md").read_text(encoding="utf-8").split("`prove_erasure.py`", 1)[1]
     for document in (proof_readme, _section(12)):
         for code, reason in ((1, "drift"), (3, "failed proof"), (4, "dirty-tree write")):
@@ -270,9 +296,9 @@ def test_phase8_docs_the_test_strategy_maps_every_test_module_the_phase_added():
     def rows(text):
         return dict(re.findall(r"^\| `([^\x60]+)\x60 \| (.+) \|$", text, re.M))
     declared = rows(added)
-    assert set(declared) == {path.name for path in TESTS.glob("test_phase8_*.py")} | {
-        "apps/frontend/tests/phase8-learner-sync.integration.test.ts",
-    }
+    authored = {module for module in _current_test_modules() if _phase8_test_module(module)}
+    coverage = _section(13).split("### 13.2 Module coverage", 1)[1].split("### 13.3", 1)[0]
+    assert set(declared) == set(rows(coverage)) == authored
     assert all(len(description) > 100 for description in declared.values())
     baseline = json.loads(BASELINE.read_text(encoding="utf-8"))
     changed_symbols, _ = _test_changes(_main_test_symbols(baseline))
@@ -291,6 +317,41 @@ def test_phase8_docs_the_test_strategy_maps_every_test_module_the_phase_added():
     assert "test_learner_record_merges_divergent_replicas_without_losing_completion" in coverage["AC-8-1"]
     current = _without_renamed_test_references(SPEC.read_text(encoding="utf-8"))
     assert not any(name in current for name in RETIRED_PHASE8_TEST_NAMES)
+
+
+def test_phase8_docs_section_14_names_the_ci_steps_phase8_adds():
+    runs, marked = _api_ci_runs()
+    section = _section(14)
+    assert re.findall(r"(?m)^- `([^`]+)`", section) == marked
+    v7, invariance = marked
+    assert v7.endswith("--check --path apps/api/app/config_package/v7.json")
+    assert v7.replace("/v7.json", "/v6.json") == runs[runs.index(v7) - 1]
+    assert "run_invariance_harness.py --check" in invariance
+    assert "capture_public_payloads.py --check" in runs[runs.index(invariance) - 1]
+    assert "DI-317" in section
+    golden = json.loads((ROOT / "docs/evaluation/phase7/golden_run_v1.json").read_text(encoding="utf-8"))
+    assert f"`{golden['pins']['config_package']['version']}` record" in section
+    assert not re.search(r"checks v6 readability|v7 golden-set record", section, re.I)
+    assert "--base-ref FETCH_HEAD" in section
+    assert any("run_golden_set.py --check" in run and "--base-ref FETCH_HEAD" in run for run in runs)
+    proof_test = "test_plan_f_the_committed_erasure_proof_matches_a_fresh_run"
+    assert proof_test in _names() and f"`{proof_test}`" in section
+    assert any("-m pytest" in run and "apps/api/tests" in run for run in runs)
+
+
+def test_phase8_docs_the_bump_docstrings_name_v8_as_shipped():
+    shipped = f"v{LATEST_SCHEMA_VERSION} since Phase 8"
+    budget_versions = f"{shipped}, v7 since Phase 9, v6 since Phase 7, v5 since Phase 6 and v4 since Phase 5"
+    for file in ("tutor_followups.py", "tutor_pipeline/package_check.py", "tutor_pipeline/__init__.py"):
+        source = (APP / "services" / file).read_text(encoding="utf-8")
+        doc = ast.get_docstring(ast.parse(source))
+        assert shipped in doc and "v7 since Phase 9" in doc, file
+        assert "v7 since Phase 9, the shipped package" not in doc, file
+    phase5 = (ROOT / "docs/architecture/phase5-implementation-spec.md").read_text(encoding="utf-8")
+    row = next(line for line in phase5.splitlines() if line.startswith("| `services/tutor_followups.py` |"))
+    assert budget_versions in row and "v7 since Phase 8" not in row
+    followups = (APP / "services/tutor_followups.py").read_text(encoding="utf-8")
+    assert budget_versions in ast.get_docstring(ast.parse(followups))
 
 
 def test_phase8_docs_the_strategy_has_one_exit_gate_per_phase_section():
@@ -415,6 +476,34 @@ def test_phase8_docs_names_the_shared_files_and_changes_to_existing_tests():
     assert "test_a_non_finite_preference_is_refused_on_postgres_and_never_a_500" in STRATEGY.read_text(encoding="utf-8")
 
 
+def test_phase8_docs_the_integration_base_is_the_latest_merged_main():
+    intro = SPEC.read_text(encoding="utf-8").split("\n## 0. ", 1)[0]
+    merges = re.findall(
+        r"reached main as `([0-9a-f]{40})`[^.]*entered this branch in merge `([0-9a-f]{7,40})`", _section(0),
+    )
+    latest_base, merge = merges[-1]
+    assert "The branch was cut at `98f7cc4`" in intro
+    assert f"current integration base is Phase 9 main at `{latest_base[:7]}`, integrated in merge `{merge}`" in intro
+    assert json.loads(BASELINE.read_text(encoding="utf-8"))["main_commit"] == latest_base
+
+
+def _erasure_proof_digest_from_spec():
+    match = re.search(
+        rf"`{re.escape(ERASURE_PROOF)}` has record file SHA-256 after LF normalization `([0-9a-f]{{64}})`",
+        _section(17),
+    )
+    assert match is not None
+    return match[1]
+
+
+def test_phase8_docs_the_erasure_proof_digest_ignores_crlf_checkouts(tmp_path):
+    proof = ROOT / ERASURE_PROOF
+    crlf = tmp_path / proof.name
+    crlf.write_bytes(proof.read_text(encoding="utf-8").replace("\n", "\r\n").encode("utf-8"))
+    assert b"\r\n" in crlf.read_bytes()
+    assert text_sha256(crlf) == _erasure_proof_digest_from_spec()
+
+
 def test_phase8_docs_section_17_states_only_the_current_verification():
     section = _section(17)
     assert not re.search(r"^#+ .*Round \d", section, re.M)
@@ -432,9 +521,9 @@ def test_phase8_docs_section_17_states_only_the_current_verification():
     evidence_commit = source_commits.pop()
     assert re.fullmatch(r"[0-9a-f]{40}", evidence_commit)
     assert set(re.findall(r"\b[0-9a-f]{7,40}\b", section)) == {evidence_commit}
-    proof = (ROOT / ERASURE_PROOF).read_bytes()
-    assert "inputs" not in json.loads(proof)
-    assert f"`{ERASURE_PROOF}` has record file SHA-256 `{hashlib.sha256(proof).hexdigest()}`" in section
+    proof = ROOT / ERASURE_PROOF
+    assert "inputs" not in json.loads(proof.read_text(encoding="utf-8"))
+    assert _erasure_proof_digest_from_spec() == text_sha256(proof)
     assert "the proof has no inputs block" in section.lower()
 
 
@@ -517,6 +606,28 @@ def test_phase8_docs_describe_the_shipped_package_and_inherited_version_guards()
         for version in (4, 5):
             assert f"v{version} through v{LATEST_SCHEMA_VERSION}" in text
         assert "`V6_PACKAGE_PATH`" in text and "DI-317" in text
+    revision = r"(20\d{6}_phase\w+)"
+    head_claim = re.compile(
+        rf"\bhead(?: of `?\w+(?:\.py)?`?)?\s+(?:(?:is|at)\s+)?`{revision}`|"
+        rf"`{revision}`\s+as (?:the )?head\b|`{revision} \(head\)`", re.I,
+    )
+    phase7_units = acceptance.split("\n### 13.2 ", 1)[1]
+    strategy_rows = [line for line in strategy.splitlines() if line.startswith("|")]
+    for line in [*phase7_units.splitlines(), *inherited_tests.splitlines(), *strategy_rows]:
+        for clause in re.split(r"(?<=[.!?])\s+|;", line):
+            if re.search(r"\b(?:until Phase 8|before Phase 8|at the Phase [5679] release)\b", clause, re.I):
+                continue
+            for claim in head_claim.finditer(clause):
+                assert next(value for value in claim.groups() if value) == SCHEMA_REVISION, line
+    phase9_strategy = strategy.split("\n## Phase 9 ", 1)[1].split("\n## ", 1)[0]
+    migration_rows = [
+        row for text in (inherited_tests, phase7_strategy, phase9_strategy) for row in text.splitlines()
+        if row.startswith(("- `test_response_ledger_migrations.py`", "| `test_phase3_acceptance.py`,",
+                           "- `test_phase6_acceptance.py`", "| `test_phase6_acceptance.py` |"))
+        and "head" in row
+    ]
+    assert len(migration_rows) == 6
+    assert all(f"`{SCHEMA_REVISION}`" in row and "Phase 8, Phase 9, and Phase 7" in row for row in migration_rows)
     for text in (provenance, readme):
         assert "clean Phase 8 integration source commit without a `-dirty` suffix" in text
 

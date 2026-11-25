@@ -443,6 +443,69 @@ def test_phase8_a_demo_header_cannot_read_or_change_another_principals_consent(m
     assert consent_snapshot() == before
 
 
+@pytest.mark.parametrize("identity", ["off", "on"])
+@pytest.mark.parametrize("claims", [{}, {"sub": ""}, {"sub": "  "}], ids=["missing", "blank", "whitespace"])
+def test_phase8_privacy_routes_refuse_a_bearer_token_without_sub(monkeypatch, fresh_database_url, identity, claims):
+    from types import SimpleNamespace
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app.core import auth
+    from app.core.db import get_db
+    from app.db_models import Base, LearnerConsent
+    from app.services.learner_record_privacy import CONSENT_VERSION
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "learner_identity", identity)
+    monkeypatch.setattr(settings, "learner_privacy", "on")
+    monkeypatch.setattr(settings, "auth0_domain", "issuer.invalid")
+    monkeypatch.setattr(settings, "auth0_audience", "synthetic-audience")
+    monkeypatch.setattr(auth, "PyJWKClient", lambda _: SimpleNamespace(
+        get_signing_key_from_jwt=lambda _: SimpleNamespace(key=object())
+    ))
+    monkeypatch.setattr(auth.jwt, "decode", lambda *args, **kwargs: claims)
+    legacy = ("unknown", "", "  ")
+
+    def snapshot(db):
+        return [
+            list(db.execute(select(table).where(table.c.user_id.in_(legacy)).order_by(*table.primary_key)).mappings())
+            for table in (Note.__table__, LearnerConsent.__table__)
+        ]
+
+    engine = create_engine(fresh_database_url)
+
+    def test_db():
+        with Session(engine, autoflush=False) as db:
+            yield db
+
+    monkeypatch.setitem(app.dependency_overrides, get_db, test_db)
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as db:
+            db.add_all(Note(user_id=owner, lesson_slug=LESSON, body="Synthetic legacy record") for owner in legacy)
+            db.add_all(
+                LearnerConsent(user_id=owner, consent_class="adaptation", consent_version=CONSENT_VERSION,
+                               granted=True, source="self-service") for owner in legacy
+            )
+            db.commit()
+            seeded = snapshot(db)
+        browser = TestClient(app)
+        headers = {"authorization": "Bearer offline-fixture", "origin": ORIGIN}
+        calls = [
+            ("GET", "/auth/learner-consent", None),
+            ("PUT", "/auth/learner-consent", {"consent_class": "adaptation", "granted": False}),
+            ("GET", "/auth/learner-export", None),
+            ("POST", "/auth/learner-erasure", {}),
+        ]
+        statuses = [browser.request(method, path, headers=headers, json=body).status_code for method, path, body in calls]
+        assert statuses == [401] * 4
+        with Session(engine) as db:
+            assert snapshot(db) == seeded
+    finally:
+        engine.dispose()
+
+
 def test_phase8_a_demo_header_cannot_consume_another_learners_assessment_quota(monkeypatch):
     from app.core.phase8_settings import ASSESSMENT_LIMIT
     from app.services.learner_record_identity import find_subject

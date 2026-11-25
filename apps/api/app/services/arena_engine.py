@@ -301,6 +301,12 @@ def _rank_label_from_xp(xp: int) -> str:
     return "Launch Pad"
 
 
+class _UnavailableArenaPlayer(Exception):
+    def __init__(self, player_id: str):
+        super().__init__("Arena principal is unavailable.")
+        self.player_id = player_id
+
+
 class ArenaService:
     def __init__(self):
         self._lock = asyncio.Lock()
@@ -391,6 +397,7 @@ class ArenaService:
         payload: dict[str, Any] | None = None
         queue_updates: list[tuple[str, dict[str, Any]]] = []
         direct_messages: list[tuple[str, dict[str, Any]]] = []
+        stale_sockets: list[WebSocket] = []
         async with self._lock:
             replaced = self._connections.get(player_id)
             self._connections[player_id] = websocket
@@ -407,10 +414,16 @@ class ArenaService:
             else:
                 self._waiting_player_ids.append(player_id)
                 self._prune_wait_queue()
-                if len(self._waiting_player_ids) >= 2:
-                    opponent_id = self._waiting_player_ids.popleft()
-                    current_id = self._waiting_player_ids.popleft()
-                    match = self._build_ranked_match(opponent_id, current_id)
+                while len(self._waiting_player_ids) >= 2:
+                    opponent_id, current_id = self._waiting_player_ids[0], self._waiting_player_ids[1]
+                    try:
+                        match = self._build_ranked_match(opponent_id, current_id)
+                    except _UnavailableArenaPlayer as stale:
+                        self._remove_from_wait_queue(stale.player_id)
+                        stale_sockets.append(self._connections.pop(stale.player_id))
+                        continue
+                    self._waiting_player_ids.popleft()
+                    self._waiting_player_ids.popleft()
                     self._matches[match.match_id] = match
                     self._player_match[opponent_id] = match.match_id
                     self._player_match[current_id] = match.match_id
@@ -421,11 +434,14 @@ class ArenaService:
                         direct_messages.append((current_id, self._match_found_payload(match, current_id)))
                         payload = self._queue_status_payload(player_id)
                     match_start_id = match.match_id
+                    break
                 else:
                     payload = self._queue_status_payload(player_id)
                 queue_updates = self._waiting_queue_updates()
         if replaced is not None and replaced is not websocket:
             await self._close_quietly(replaced, REPLACED_CLOSE_CODE, "Replaced by a newer Arena connection.")
+        for stale_socket in stale_sockets:
+            await self._close_quietly(stale_socket, 4403, "Arena principal is unavailable.")
         await self._send(player_id, {"type": "connected", "public_handle": handle, "display_name": display_name})
         for target_player_id, queued_payload in queue_updates:
             await self._send(target_player_id, queued_payload)
@@ -487,34 +503,27 @@ class ArenaService:
 
     def _build_ranked_match(self, opponent_id: str, player_id: str) -> ArenaMatch:
         legacy = not phase8_writes_enabled(get_settings())
-        opponent_profile = self.profile(opponent_id, create_missing=legacy)
-        current_profile = self.profile(player_id, create_missing=legacy)
-        if opponent_profile is None or current_profile is None:
-            raise HTTPException(409, "Arena principal is unavailable.")
-        handles = _public_handles([opponent_id, player_id])
+        players = {identifier: self._ranked_player(identifier, create_missing=legacy)
+                   for identifier in (opponent_id, player_id)}
         return ArenaMatch(
             match_id=f"match-{uuid4().hex[:10]}",
             mode="ranked",
-            players={
-                opponent_id: MatchPlayer(
-                    player_id=opponent_id,
-                    public_handle=handles[opponent_id],
-                    display_name=opponent_profile.display_name,
-                    adaptive_level=opponent_profile.adaptive_level,
-                    websocket=self._connections[opponent_id],
-                    writer=_socket_writer(self._connections[opponent_id]),
-                ),
-                player_id: MatchPlayer(
-                    player_id=player_id,
-                    public_handle=handles[player_id],
-                    display_name=current_profile.display_name,
-                    adaptive_level=current_profile.adaptive_level,
-                    websocket=self._connections[player_id],
-                    writer=_socket_writer(self._connections[player_id]),
-                ),
-            },
-            difficulty_band=max(1, min(5, round((opponent_profile.adaptive_level + current_profile.adaptive_level) / 2))),
+            players=players,
+            difficulty_band=max(1, min(5, round(sum(player.adaptive_level for player in players.values()) / 2))),
         )
+
+    def _ranked_player(self, player_id: str, *, create_missing: bool) -> MatchPlayer:
+        try:
+            profile = self.profile(player_id, create_missing=create_missing)
+        except HTTPException as exc:
+            if exc.status_code != 409:
+                raise
+            raise _UnavailableArenaPlayer(player_id) from exc
+        if profile is None:
+            raise _UnavailableArenaPlayer(player_id)
+        websocket = self._connections[player_id]
+        return MatchPlayer(player_id, profile.public_handle, profile.display_name, profile.adaptive_level,
+                           websocket=websocket, writer=_socket_writer(websocket))
 
     def _build_bot_match(self, player_id: str, handle: str, display_name: str, websocket: WebSocket) -> ArenaMatch:
         profile = self.profile(player_id, create_missing=not phase8_writes_enabled(get_settings()))

@@ -2,7 +2,23 @@
 
 import pytest
 
-from app.services.learner_record_planner import PLANNER_VERSION, plan_presentation
+from app.services.learner_record_planner import LearnerPresentation, PLANNER_VERSION, plan_presentation
+
+
+CONSENT_TEST_COURSE = ("first", "second", "third")
+
+
+def _seed_adaptable_assessments(db, owner):
+    from app.db_models import LearnerAssessmentFact, QuizAttempt
+
+    attempts = [QuizAttempt(user_id=owner, lesson_slug=slug, score=0, responses={}) for slug in CONSENT_TEST_COURSE]
+    db.add_all(attempts)
+    db.flush()
+    db.add_all(
+        LearnerAssessmentFact(attempt_id=attempt.id, user_id=owner, lesson_slug=attempt.lesson_slug, mastery=mastery)
+        for attempt, mastery in zip(attempts, (0.7, 0.1, 0.1), strict=True)
+    )
+    db.flush()
 
 
 @pytest.mark.parametrize(
@@ -53,6 +69,36 @@ def test_phase8_planner_uses_static_order_without_consent_or_valid_mastery(allow
     assert (result.plan_id, result.lesson_order) == ("concise", ("intro", "next"))
 
 
+@pytest.mark.parametrize("consent", ["missing", "withdrawn", "older-version", "current"])
+def test_plan_j_planner_without_adaptation_consent_serves_the_static_order(consent):
+    from uuid import uuid4
+
+    from app.core.config import Settings
+    from app.core.db import SessionLocal
+    from app.db_models import LearnerConsent
+    from app.services.learner_record_privacy import set_consent
+    from app.services.learner_record_shadow import shadow_presentation
+
+    settings = Settings(_env_file=None, environment="development")
+    principal = f"demo-{uuid4().hex}"
+    order = CONSENT_TEST_COURSE
+    expected = LearnerPresentation("stepwise", (*order[1:], order[0])) if consent == "current" else (
+        LearnerPresentation("concise", order)
+    )
+    with SessionLocal() as db:
+        _seed_adaptable_assessments(db, principal)
+        if consent != "missing":
+            assert set_consent(db, "demo", principal, "adaptation", True, settings)["adaptation"]
+        if consent == "withdrawn":
+            assert not set_consent(db, "demo", principal, "adaptation", False, settings)["adaptation"]
+        elif consent == "older-version":
+            db.get(LearnerConsent, (principal, "adaptation")).consent_version = "older-fixture-version"
+            db.flush()
+        else:
+            assert (db.get(LearnerConsent, (principal, "adaptation")) is None) == (consent == "missing")
+        assert shadow_presentation(db, "demo", principal, order, "concise") == expected
+
+
 @pytest.mark.parametrize("condition", ["fault", "slow", "sql", "off", "no-consent", "wall-clock-delay"])
 def test_plan_j_planner_down_timeout_or_flag_off_serves_the_static_order_and_logs_degraded(monkeypatch, caplog, condition):
     from time import sleep
@@ -71,8 +117,9 @@ def test_plan_j_planner_down_timeout_or_flag_off_serves_the_static_order_and_log
     settings = Settings(_env_file=None, learner_planner="off" if condition == "off" else "shadow")
     package = get_config_package(settings)
     model = tutor_orchestrator.TutorOrchestrator(None, settings)
-    monkeypatch.setattr(model, "_store", lambda: SimpleNamespace(lessons={"first": object()}))
+    monkeypatch.setattr(model, "_store", lambda: SimpleNamespace(lessons=dict.fromkeys(CONSENT_TEST_COURSE)))
     seen = []
+    presentations = []
     original = learner_record_shadow.shadow_presentation
 
     def planner(db, *args):
@@ -83,7 +130,9 @@ def test_plan_j_planner_down_timeout_or_flag_off_serves_the_static_order_and_log
             db.execute(text("SELECT 1 FROM phase8_missing_fixture_table"))
         if condition == "wall-clock-delay":
             sleep(0.2)
-        return original(db, *args)
+        presentation = original(db, *args)
+        presentations.append(presentation)
+        return presentation
 
     monkeypatch.setattr(learner_record_shadow, "shadow_presentation", planner)
     if condition == "slow":
@@ -91,22 +140,22 @@ def test_plan_j_planner_down_timeout_or_flag_off_serves_the_static_order_and_log
         monkeypatch.setattr(learner_record_shadow, "planner_clock", lambda: next(clock, 1))
     else:
         monkeypatch.setattr(learner_record_shadow, "planner_clock", lambda: 0.0)
-    _assert_shadow(model, package, uuid4, SessionLocal, AuthUser)
+    principal = f"demo-{uuid4().hex}"
+    default_plan = package.tutor_pipeline.default_plan
+    with SessionLocal() as db:
+        if condition == "no-consent":
+            _seed_adaptable_assessments(db, principal)
+        result = model._shadow_followup("turn-fixture", "thread-fixture", "message-fixture", None, None,
+                                       db=db, learner=AuthUser(principal, None, "learner", "demo"))
+        assert result is not None and result.presentation.plan_id == default_plan
+        assert db.scalar(text("SELECT 1")) == 1
+    if condition == "no-consent":
+        assert presentations == [LearnerPresentation(default_plan, CONSENT_TEST_COURSE)]
     assert seen == ([] if condition == "off" else [condition])
     degraded = [getattr(row, FIELDS) for row in caplog.records if
                 getattr(row, FIELDS, {}).get("event") == "learner.planner.degraded"]
     assert len(degraded) == int(condition in {"fault", "slow", "sql"})
     assert all(set(row) == {"event", "error"} for row in degraded)
-
-
-def _assert_shadow(model, package, uuid4, session_factory, auth_user):
-    from sqlalchemy import text
-
-    with session_factory() as db:
-        result = model._shadow_followup("turn-fixture", "thread-fixture", "message-fixture", None, None,
-                                       db=db, learner=auth_user(f"demo-{uuid4().hex}", None, "learner", "demo"))
-        assert result is not None and result.presentation.plan_id == package.tutor_pipeline.default_plan
-        assert db.scalar(text("SELECT 1")) == 1
 
 
 def test_phase8_shadow_planner_failure_leaves_the_http_answer_and_job_intact(monkeypatch):

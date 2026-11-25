@@ -1,6 +1,6 @@
 # QC+AI Studio: Phase 8 implementation spec
 
-Learner adaptation and privacy-preserving record, upgrade plan lines 1557-1614. The branch was cut at `98f7cc4` and its current integration base is `512b8a6`.
+Learner adaptation and privacy-preserving record, upgrade plan lines 1557-1614. The branch was cut at `98f7cc4`. The current integration base is Phase 9 main at `d366e20`, integrated in merge `832a431`.
 
 Sections 0-17 describe the behaviour the code has and identify deferred integration work. Section 18 holds one history-table row per review round. This file is LF in every checkout (`.gitattributes`).
 
@@ -86,7 +86,7 @@ The client operations service accepts a subject, expected version, and existing 
 
 In `learner_record_sync.py`, a conflict-tolerant insert creates the record when needed. A version-preserving row update acquires the transaction's write lock, then the service checks the expected version and reads the subject's issued replicas. All new operations have strictly increasing clocks and known causal counters. Identical operations in the same batch generate one applied receipt followed by duplicate receipts. A replay containing only known operations can recover its receipts after the record advances. The read-only entry point returns a version-zero record for a missing subject without issuing an insert.
 
-The planner maps the mean finite course-local server mastery below 0.4 to stepwise, from 0.4 through values below 0.75 to concise, and from 0.75 to socratic. It keeps unfinished lessons in course order and applies PD-204 to the review order. With adaptation disabled or no valid course mastery, it returns the configured default plan and static order. Any eventual caller must source mastery from trusted assessment evidence.
+The planner maps the mean finite course-local server mastery below 0.4 to stepwise, from 0.4 through values below 0.75 to concise, and from 0.75 to socratic. It keeps unfinished lessons in course order and applies PD-204 to the review order. The shadow service uses the default plan and course order when no current adaptation grant exists, including after a withdrawal or when the grant uses an older consent version. The planner also uses that fallback when no valid course mastery is available. Any eventual caller must source mastery from trusted assessment evidence.
 
 With synchronization enabled, a durable quiz writer acquires the record lock before inserting its attempt. The quota counts the authenticated principal's attempts on the lesson over the preceding 15 minutes and refuses the thirteenth. The writer allocates assessment clocks from the locked server replica and commits the attempt, learner record and assessment fact together. Guest and demo previews record the attempt without entering that quota or record lock. The synchronization-off path preserves the baseline protocol. The planner uses only the dedicated assessment facts for mastery.
 
@@ -124,8 +124,8 @@ All default to off outside development. Settings reject every non-off value outs
 | `apps/api/app/core/auth.py`, `apps/api/app/core/authorization.py` | Preserve core authentication interfaces, add signed-credential privacy admission, and keep the contiguous Phase 8 route-policy block. |
 | `apps/api/app/db_models.py`, `apps/api/app/schemas.py` | Define the additive ORM tables and the synchronization and privacy response contracts. |
 | `apps/api/app/api/routes/learner_record.py`, `apps/api/app/api/routes/content.py` | Implement issued replicas, guarded synchronization, and trusted assessment facts. |
-| `apps/api/app/api/routes/auth.py`, `apps/api/app/api/routes/analytics.py` | Apply the lifecycle and verified-principal consent checks in the existing routers. |
-| `apps/api/app/api/routes/arena.py`, `apps/api/app/services/arena_engine.py`, `apps/api/app/services/public_handles.py` | Guard socket profile and result writes for their actual participants and serialize public-handle allocation with erasure. |
+| `apps/api/app/api/routes/auth.py`, `apps/api/app/api/routes/analytics.py` | Apply the lifecycle and verified-principal consent checks in the existing routers. Auth0 requires a nonblank subject for the privacy routes regardless of the identity setting. |
+| `apps/api/app/api/routes/arena.py`, `apps/api/app/services/arena_engine.py`, `apps/api/app/services/public_handles.py` | Guard socket profile and result writes for their actual participants and serialize public-handle allocation with erasure. Remove unavailable ranked opponents while keeping the available player queued. |
 | `apps/api/app/services/learner_record.py`, `apps/api/app/services/learner_record_sync.py` | Retain convergent operations and add serialized version checks. |
 | `apps/api/app/services/learner_record_identity.py`, `apps/api/app/services/learner_record_lock.py` | Bind identities, claim guest records, and serialize writes with erasure. |
 | `apps/api/app/services/learner_record_privacy.py`, `apps/api/app/services/learner_record_metrics.py` | Verify erasure, persist receipt digests, stream caller exports, and emit operational signals. |
@@ -135,6 +135,7 @@ All default to off outside development. Settings reject every non-off value outs
 | `apps/api/app/main.py` | Append the Phase 8 readiness fields in §10 and configuration-override keys. |
 | `apps/api/app/core/config_package.py`, `apps/api/app/config_package/v8.json`, `apps/api/app/config_package/v8.json.sha256`, `scripts/config_package.py` | The package bump exception in §0.1 adds schema 8, the learner policy and the v7 predecessor hash. |
 | `apps/api/app/services/ledger.py`, `apps/api/app/core/schema_upgrades.py`, `apps/api/alembic/versions/20261123_phase8_learner.py` | The migration-head exception in §0.1 adds one revision, the head constant, and the guard-column reconciliation. |
+| `apps/api/app/services/tutor_followups.py`, `apps/api/app/services/tutor_pipeline/package_check.py`, `apps/api/app/services/tutor_pipeline/__init__.py` | Correct the shipped v8 wording under the docstring-only bump exception. DI-320 tracks the reserved contracts docstring. |
 | `.github/workflows/ci.yml` | Append the predecessor readability and invariance checks listed in §14. |
 | `docs/evaluation/phase7/package_versions.json`, `docs/evaluation/phase7/golden_run_v1.json` | The golden-set runner writes the v8 record and appends its history entry. |
 | `scripts/prove_erasure.py`, `scripts/run_invariance_harness.py`, `docs/evaluation/phase8/README.md`, `docs/evaluation/phase8/erasure_proof_v1.json`, `docs/evaluation/phase8/invariance_harness_report_v1.json` | Provide the synthetic erasure proof, public invariance fixtures, their offline tools and operating notes. |
@@ -142,8 +143,8 @@ All default to off outside development. Settings reject every non-off value outs
 | `docs/architecture/phase3-implementation-spec.md`, `docs/architecture/phase4-implementation-spec.md`, `docs/architecture/phase5-implementation-spec.md`, `docs/architecture/phase6-implementation-spec.md` | Correct shipped-version, migration and retention descriptions under the shared-file rules in §0.1. |
 | `docs/architecture/ehmf-change-control.md` | The package bump exception documents the golden-set procedure for v8, the committed v6 and v7 prefix, and rollback to the prior release. |
 | `docs/architecture/phase9-implementation-spec.md`, `docs/evaluation/phase9/ranking_replay_v1.json` | Align the inherited ranking version checks and regenerate the replay with the v8 package pin. |
-| `docs/architecture/phase7-implementation-spec.md`, `docs/evaluation/phase7/README.md` | The bump-docstring exception aligns Phase 7's loader, golden-run provenance, test version descriptions, and rollback sequence with the integrated release. |
-| `docs/architecture/phase8-implementation-spec.md`, `docs/testing/test-strategy.md` | Record the Phase 8 design and its evidence, and map acceptance criteria to existing tests. |
+| `docs/architecture/phase7-implementation-spec.md`, `docs/evaluation/phase7/README.md` | Align Phase 7's loader, golden-run provenance, test version descriptions, and rollback sequence with the integrated release. Section 13.3 names the current head and the three newest downgrade steps. |
+| `docs/architecture/phase8-implementation-spec.md`, `docs/testing/test-strategy.md` | Record the Phase 8 design and evidence. Correct the current Alembic head and downgrade order in the inherited Phase 6, Phase 7, and Phase 9 test descriptions. |
 | `docs/adr/ADR-001-grounding-separation.md`, `docs/adr/ADR-003-learner-record-synchronization.md` | Describe the isolated presentation boundary and add the dated synchronization revision. |
 | `docs/security/authorization-matrix.md`, `docs/security/threat-model.md`, `docs/security/consent-schema.md`, `docs/security/consent-record.v1.schema.json`, `docs/security/identity-linking.md` | Regenerate the matrix and document the authorization, consent, retention, and linking contracts. |
 | `infra/cloudrun/deployment.md`, `infra/cloudrun/observability.md`, `infra/cloudrun/retention-job.md` | Document the migration-head rollback order and append Phase 8 sections for operations, logging, and retention. |
@@ -154,11 +155,11 @@ Revision `20261123_phase8_learner` follows `20261123_phase9_ranking` and adds th
 
 ## 9. Routes and request-path behaviour
 
-The existing routers serve replica issuance and synchronization under `/learner-record`, and claim, consent, export, and erasure under `/auth`. Claim requires a durable credential, a verified guest token, matching guest CSRF proof, and a trusted origin. Consent, export, and self-service erasure require a verified local session, signed guest credential, or Auth0 token. These routes refuse demo identities with 403. The shared authentication check also refuses demo aliases for account, guest, subject, or recognized federated IDs on ordinary learner routes and at Arena ticket redemption while any Phase 8 flag is active. Local erasure confirms the password and clears cookies after commit. Guest erasure revokes the credential. Federated erasure covers local application data. Each new endpoint refuses requests when its feature flag is off.
+The existing routers serve replica issuance and synchronization under `/learner-record`, and claim, consent, export, and erasure under `/auth`. Claim requires a durable credential, a verified guest token, matching guest CSRF proof, and a trusted origin. Consent, export, and self-service erasure require a verified local session, signed guest credential, or Auth0 token. These routes refuse demo identities with 403. An Auth0 token without a nonblank string `sub` returns 401 even when `LEARNER_IDENTITY` is off. Inherited routes retain the identity-off fallback. The shared authentication check also refuses demo aliases for account, guest, subject, or recognized federated IDs on ordinary learner routes and at Arena ticket redemption while any Phase 8 flag is active. Local erasure confirms the password and clears cookies after commit. Guest erasure revokes the credential. Federated erasure covers local application data. Each new endpoint refuses requests when its feature flag is off.
 
 Replica issuance returns 201. Record reads and applied or duplicate writes return 200. A version conflict returns 409 with `reason: cas_conflict` and the current `record_version`. Invalid inputs, untrusted mastery, reserved operations and nonfinite JSON return 422. Invalid replica ownership, retirement, clocks and changed replays return 409. New routes return 404 with their flags off. Claim proof failures return 403, unavailable guests return 409, and success returns 200. Consent returns 200 or 409 for an unavailable grant. Export returns 200 with no-store NDJSON. With privacy on, `POST /auth/learner-erasure` returns the verified receipt directly and `DELETE /auth/account` includes it under `receipt` alongside `status`. Both responses use `Cache-Control: no-store`, and refused password confirmation returns 401. With privacy off, account deletion returns the original `{"status":"deleted"}` body. Assessment quota refusal returns 429 with Retry-After 900.
 
-Claim uses `guest_legacy_upgrade_rate_limit` (default 5/hour). Self-service erasure uses `auth_login_rate_limit` (default 10/minute) and requires a trusted origin for every provider. Both routes return 429 when their corresponding limit is exceeded. A stale write observation is refused with 409.
+Claim uses `guest_legacy_upgrade_rate_limit` (default 5/hour). Self-service erasure uses `auth_login_rate_limit` (default 10/minute) and requires a trusted origin for every provider. Both routes return 429 when their corresponding limit is exceeded. A stale write observation is refused with 409. If a waiting Arena player's profile has been erased or removed, matchmaking closes that player's socket and keeps the available player queued or pairs them with the next available player.
 
 ## 10. Start-up, /ready, logs and SLIs
 
@@ -213,16 +214,17 @@ The inherited reports regenerated for v8 are `docs/evaluation/phase3/three_plan_
 |---|---|
 | `test_phase8_settings.py` | Development and production defaults, pre-exit startup refusal, verified package requirement, D-27, and DI-312. |
 | `test_phase8_sync.py` | No INSERT on read, stale and duplicate operations, cross-subject ownership, server namespace, compare-and-set retry, bounded quota and replica issuance, and concurrent trusted mastery updates. |
-| `test_phase8_planner.py` | Provisional mastery bands, deterministic lesson ordering, and static fallback. |
+| `test_phase8_planner.py` | Provisional mastery bands, deterministic lesson ordering, and static fallback without a current adaptation grant. |
 | `test_phase8_identity.py` | Provider-scoped subject continuity, guest proof requirements, claim transfer, revocation, and the audit record. |
 | `test_phase8_privacy.py` | Consent denial and research refusal, mapped and legacy export, cross-subject isolation, transactional erasure, and receipt verification across principal types. |
 | `test_phase8_evidence.py` | Invariance, F-2 import isolation, report checks, consent schema, retention map, disclosure inventory, and adaptation stop persistence. |
 | `test_phase8_routes.py` | HTTP coverage of flag-off behavior, version-preserving cutover, and the principal privacy lifecycle. |
 | `test_phase8_docs.py` | Spec, decision and test-map guards. |
+| `apps/frontend/tests/phase8-learner-sync.integration.test.ts` | Confirms the server-issued replica, advances the client clock from the server response, and retries once after a version advance while keeping the same operation IDs. |
 
 ### 13.3 Changes to existing tests
 
-The baseline pins 135 Python and TypeScript modules from Phase 7 commit `512b8a6` and applies the Phase 9 changes from `d366e20` to yield 138 inherited modules. The table lists declarations changed by Phase 8 against that merged base. It also records the renamed checks. The protected Phase 3 and Phase 5 acceptance source remains covered by its separate digest guard.
+The baseline pins 135 Python and TypeScript modules from Phase 7 commit `512b8a6` and applies the Phase 9 changes from `d366e20` to yield 138 inherited modules. The table lists declarations changed by Phase 8 against that merged base. The Phase 6, Phase 7, and Phase 9 test records and test strategy name `20261123_phase8_learner` and the Phase 8, Phase 9, and Phase 7 downgrade steps in order. It also records the renamed checks. The protected Phase 3 and Phase 5 acceptance source remains covered by its separate digest guard.
 
 | Module | Test or fixture | Exception | Change and preserved intent |
 |---|---|---|---|
@@ -254,7 +256,7 @@ The baseline pins 135 Python and TypeScript modules from Phase 7 commit `512b8a6
 | `test_malformed_input.py` | `test_a_learner_record_value_that_cannot_be_stored_is_refused_and_the_record_still_reads` | Synchronization compatibility | Exercises both modes while preserving rejection and the subsequent read. |
 | `test_malformed_input.py` | `test_non_finite_preference_follows_the_flagged_backend_contract` | Synchronization compatibility | Renamed and replaced `test_a_non_finite_preference_is_refused_on_postgres_and_never_a_500`. Preserves PostgreSQL refusal and checks that neither mode returns 500. |
 | `test_phase3_acceptance.py` | `test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_empty_ledger` | Migration-head exception in §0.1 | Steps through the Phase 8 head before testing the older downgrade and data-loss refusal. |
-| `test_phase4_acceptance.py` | `test_phase4_docs_the_code_texts_name_the_shipped_package` | Package bump exception in §0.1 | Checks shipped v8 package and deployment text. Keeps the protected Phase 9 contracts at their inherited wording and verifies the v6, v7 and v8 tutor schema sets agree. |
+| `test_phase4_acceptance.py` | `test_phase4_docs_the_code_texts_name_the_shipped_package` | Package bump exception in §0.1 | Checks shipped v8 wording in the three bump docstrings covered by the current authorization and verifies that the v6, v7 and v8 tutor schema sets agree. DI-320 records the contracts exception question. |
 | `test_phase4_acceptance.py` | `test_phase4_docs_the_phase3_spec_states_what_phase4_changed` | Package bump exception in §0.1 | Repoints the shipped path, loader ceiling and replay versions to v8 while retaining the inherited package sequence checks. |
 | `test_phase6_acceptance.py` | `test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_head` | Migration-head exception in §0.1 | Checks the Phase 8 stamp, the absolute downgrade to Phase 9 and both earlier guarded downgrades. |
 | `test_phase6_acceptance.py` | `test_plan_g_the_phase_6_revision_is_additive_reversible_and_keeps_its_rows` | Migration-head exception in §0.1 | Traverses the Phase 8, 9 and 7 successors before exercising the original Phase 6 data protection. |
@@ -275,7 +277,12 @@ The quota helper test names the case where principal and subject match. The one-
 
 ## 14. CI changes
 
-The API and evaluation job checks v6 readability, the v7 golden-set record against the base branch, and the committed invariance report. Its existing pytest step verifies the erasure proof. PostgreSQL jobs verify the API suite with both drivers. The existing public-payload golden record remains the freeze boundary.
+Phase 8 adds two commands to the `api-and-evaluation` job.
+
+- `python scripts/config_package.py --check --path apps/api/app/config_package/v7.json` follows Phase 9's v6 readability check and keeps the immediate predecessor readable under DI-317.
+- `python scripts/run_invariance_harness.py --check docs/evaluation/phase8/invariance_harness_report_v1.json` follows `capture_public_payloads.py`, which verifies the public-response freeze.
+
+The existing golden-set step checks the `8.0.0` record and verifies that the package history starts with the committed base-branch prefix (`--base-ref FETCH_HEAD`). The existing pytest step verifies the committed erasure proof through `test_plan_f_the_committed_erasure_proof_matches_a_fresh_run`. Both PostgreSQL drivers run the API suite.
 
 ## 15. Docs and evidence
 
@@ -321,6 +328,8 @@ The defaults are provisional. Each row names the code or artifact that enforces 
 | DI-318 | Dedicated counters at runtime evidential contract refusals and `ToolNotVisible` in `tutor_pipeline/contracts.py` and `gateway/tools.py`. Round 1 stopped these changes under rule 12 and the shared-file rule in §0.1. The owner answered the round-2 question by assigning both reserved changes to the main track. The Phase 8 harness and sync signals operate independently. | Engineering (main track) | Handed over |
 | DI-319 | Wire the runtime stop-the-line trigger for learner state in an evidential prompt (plan 13.6). Blocked on the shared-file boundary in §0.1 for `tutor_pipeline/contracts.py` and `gateway/tools.py` until the Phase 8 merge. The owner accepted the main-track assignment. CI still fails on harness violations and an explicit operator run sets the shared planner stop. | Engineering (main track) | Handed over |
 
+| DI-320 | R5-02 contracts docstring. The section-8.1 docstring bump exception and the owner's direct restriction on `tutor_pipeline/contracts.py` point to different scopes. The other bump docstrings and their guards are in this branch. Owner question (open): may Phase 8 correct only the shipped-package wording in that docstring? | Product Owner | Stopped |
+
 Plan M: "[Risk R-01][Risk R-08][Risk R-41][Risk R-42][Risk R-51]; residual: backups keep erased rows for a window."
 
 ## 17. Verification, work order and exit
@@ -332,6 +341,7 @@ Run Python checks from the repository root, using isolated scratch databases for
 ```text
 python scripts/config_package.py --check
 python scripts/config_package.py --check --path apps/api/app/config_package/v8.json
+python scripts/config_package.py --check --path apps/api/app/config_package/v7.json
 python scripts/replay_tutor_plans.py --check docs/evaluation/phase3/three_plan_replay_v1.json
 python scripts/run_v1_fixtures.py --check docs/evaluation/phase4/v1_fixture_report_v1.json
 python scripts/run_v2_fixtures.py --check docs/evaluation/phase5/v2_fixture_report_v1.json
@@ -356,7 +366,7 @@ The reports were generated under package v8 from clean source commit `53abc42d85
 | `docs/evaluation/phase8/invariance_harness_report_v1.json` | `32c649edd7de52e954f67eb8699dcae287a8ce2d5de172e03ea23ecceda73a72` |
 | `docs/evaluation/phase9/ranking_replay_v1.json` | `f73f7e836c278d5a3d717186cab6b922d0b95cc55ee0fb14f9cd69a58621bc5a` |
 
-`docs/evaluation/phase8/erasure_proof_v1.json` has record file SHA-256 `551caa3b40c7944b73ac355400947a54886f7d06d718a4b689c3ac4e5cf24204`. The proof has no inputs block.
+`docs/evaluation/phase8/erasure_proof_v1.json` has record file SHA-256 after LF normalization `551caa3b40c7944b73ac355400947a54886f7d06d718a4b689c3ac4e5cf24204`. The proof has no inputs block.
 
 | Local leg | Test paths | Main run passed | Split tests passed | Combined passed | Main baseline | Change | Skipped | Deselected after combining | xfailed |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -403,3 +413,4 @@ The rows record the build and each review round in order. Sections 0–17 descri
 | Review 2 | `cb2a33e`, merge `bf4fe3a`, integration `ef99f9d` | Restored the retention and readiness contracts and verified erasure serialization, retained-principal recovery, expiry, F-3 and trusted mastery. The owner assigned DI-318 to the main track. Phase 7 main `512b8a6` entered through `bf4fe3a`. Package v7 SHA-256 is `adf3aed271aaf2c84c852f2e0169825b9889577d4aa64573ea7066f12c97d1e5`. Alembic `down_revision` is `20261123_phase7_ehmf`. The full rerun on `598ad9d` passed 2,105 on SQLite (+158 from the 1,947 main baseline) and 2,103 on each PostgreSQL driver, including 11 separately run template tests per backend. The SQLite leg included API and evaluation tests. The PostgreSQL legs ran the API tests. Regression guards include `test_phase8_erase_stale_guest_rows_keeps_its_two_argument_signature`, `test_phase8_keeps_protected_acceptance_tests_at_the_phase7_baseline`, `test_phase8_erasure_serializes_with_unguarded_and_first_writers`, `test_phase8_a_principal_erased_and_signing_in_again_gets_a_fresh_empty_record`, `test_phase8_loader_refuses_schema_versions_outside_the_latest_bound`, and `test_phase8_migration_retains_existing_tables_and_refuses_data_loss`. |
 | Review 3 | `c466957` | Verified receipts for both erasure routes, checked the privacy freeze and authenticated export and erasure, enforced D-27 and retention policy, and reconciled the shared-file and test records. DI-319 records the hand-over for the runtime stop trigger. See `test_ac_8_5_every_erasure_route_writes_a_verified_receipt`, `test_phase8_a_demo_header_cannot_export_or_erase_another_principal`, `test_freeze_phase8_privacy_requires_d27_even_after_exit`, and `test_phase8_docs_names_the_shared_files_and_changes_to_existing_tests`. |
 | Review 4 | `53abc42`, merge `832a431` | Integrated Phase 9 main `d366e20`. Package v8 SHA-256 is `c14d28f110f0ddcf89aab4717ccd5e6555cba15ad6a266468b67b662229d1904`. Alembic `20261123_phase8_learner` follows `20261123_phase9_ranking`. Covered the all-off freeze, derived evidence scan, authenticated write and erasure ordering, early-table upgrade, verified consent, guest/demo scoring, inherited test traceability, verification provenance, D-27 settings, and release instructions. See `test_freeze_phase8_flags_off_learner_record_and_quiz_routes_are_unchanged`, `test_ac_8_4_the_scan_covers_every_phase8_learner_state_field`, `test_phase8_erasure_serializes_with_unguarded_and_first_writers_http`, and `test_phase8_docs_section_17_states_only_the_current_verification`. The full local run combined 2,283 SQLite passes and 2,281 passes on each PostgreSQL driver (+210 and +211 from Phase 9 main). Each leg includes 11 separately run template tests and excludes one release-only case. |
+| Review 5 | <!-- Round 5 source --> | Added planner consent coverage, corrected the CI and migration records, required an issuer subject for privacy routes, kept Arena pairing available after erasure, and aligned the digest and module inventory guards. See `test_plan_j_planner_without_adaptation_consent_serves_the_static_order`, `test_phase8_privacy_routes_refuse_a_bearer_token_without_sub`, and `test_phase8_an_erased_queued_arena_player_does_not_reject_the_next_player`. DI-320 records the stopped portion of R5-02. <!-- Round 5 totals --> |

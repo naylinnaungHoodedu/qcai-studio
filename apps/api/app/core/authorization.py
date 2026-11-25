@@ -32,7 +32,7 @@ ACCESS_LEVELS = {
     PUBLIC: "Anyone; no credential is read.",
     SERVICE: "No principal; called by the frontend server and guarded by its own checks (see the note).",
     PRINCIPAL: "Any verified principal: a signed guest token, a local-account session, an Auth0 token, or a demo identity.",
-    VERIFIED_PRINCIPAL: "A signed guest token, local-account session, or Auth0 token.",
+    VERIFIED_PRINCIPAL: "A signed guest token, local-account session, or Auth0 token with a nonblank subject.",
     ASSET_READER: "A verified principal whose role is learner or admin.",
     DURABLE_LEARNER: "A signed-in account (local or Auth0, not guest or demo) whose role is learner or admin.",
     STAFF: "A verified principal whose role is instructor or admin.",

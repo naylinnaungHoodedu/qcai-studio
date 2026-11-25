@@ -1786,7 +1786,7 @@ Every row below has been performed: a run reverts the rule, runs the tests named
 | The loader accepting a non-empty staging registry, a rate other than 1/20, unplanned weights, an unmarked `v3` sub-block, or a non-empty v2 critical registry | `test_v5_structural_errors_always_stop_the_load` |
 | The frontend page without `notFound` | the frontend test |
 | The console pre-filling SUPPORTED, or the page rendering a second `<main>` | the frontend tests (13.4) |
-| The Phase 3 rollback's stamp list without the Phase 6 head | `test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_head` |
+| The Phase 3 rollback's stamp list without the current Alembic head | `test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_head` |
 | 10.3 or the observability runbook without a worker event | `test_phase6_docs_name_the_logger_each_phase6_event_logs_on` |
 | The learner flag without the scan's advisory lock (PostgreSQL, psycopg and pg8000) | `test_a_flag_that_races_the_scan_gets_the_record_s_exposure` |
 | The queue's forward rule removed: the SQLite trigger, the PostgreSQL UPDATE event, the held clause (each dialect), the write-once, state and set clauses | `test_the_queue_moves_an_item_forward_only` |
@@ -1846,7 +1846,7 @@ The v1, v2 and v3 checks stay. The PostgreSQL matrix, the frontend job, `api-ima
    - the stop and what it does, and its development behaviour (4.10: it trips 120 h after the first item nobody closes; adjudicate or use a fresh database), and the warning that under the shadow override outside development nothing can clear it while D-18 is open (DI-103);
    - rollback: `V3_QUEUE=off` releases nothing;
    - `export-gold --all` before a downgrade past the revision, with `-x allow_v3_drop=true`; what the downgrade loses that no export keeps (the queue with F_i, the flags, the draws and the once-only record, the X5 windows); that no path restores the gold rows; and the export's handling and retention rule;
-   - the Phase 3 rollback's stamp check names the Phase 6 head (`20261122_phase6_v3_audit (head)`: the Phase 6 downgrade step, then the Phase 5 step);
+   - the Phase 3 rollback's stamp check names the head `20261123_phase8_learner`. The walk takes the Phase 8, Phase 9, and Phase 7 steps before Phase 6 and Phase 5;
    - the queue's forward rule, and the downgrade's refusal of a CUSUM alarm;
    - that the seed is public by design (4.2);
    - a digest rollback needs no downgrade;

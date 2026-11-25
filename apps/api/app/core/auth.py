@@ -25,6 +25,10 @@ class AuthUser:
     provider: str = "guest"
 
 
+class _Auth0WithoutSubject(AuthUser):
+    """A legacy fallback principal without a subject claim from the issuer."""
+
+
 _EXPLICIT_PRIVACY_LOCKS = {
     ("POST", "/auth/learner-erasure"), ("DELETE", "/auth/account"), ("POST", "/auth/guest-claim"),
 }
@@ -70,11 +74,12 @@ def _decode_auth0_token(token: str, settings: Settings) -> AuthUser:
         # A malformed, expired or wrongly signed token: a refusal, not a 500.
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid bearer token.") from exc
     roles = payload.get("https://qcai.dev/roles") or payload.get("roles") or ["learner"]
-    if settings.learner_identity == "on" and (
-        not isinstance(payload.get("sub"), str) or not payload["sub"].strip()
-    ):
+    subject = payload.get("sub")
+    has_subject = isinstance(subject, str) and bool(subject.strip())
+    if settings.learner_identity == "on" and not has_subject:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid bearer token.")
-    return AuthUser(
+    principal_type = AuthUser if has_subject else _Auth0WithoutSubject
+    return principal_type(
         user_id=payload.get("sub", "unknown"),
         email=payload.get("email"),
         role=roles[0] if roles else "learner",
@@ -214,6 +219,8 @@ def require_durable_learner(request: Request, user: AuthUser = Depends(get_curre
 
 def require_verified_principal(user: AuthUser = Depends(get_current_user)) -> AuthUser:
     """Require an authenticated account or signed guest credential for privacy operations."""
+    if isinstance(user, _Auth0WithoutSubject):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="A bearer subject is required.")
     if user.provider not in {"local", "auth0", "guest"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="A verified session is required.")
     return user
