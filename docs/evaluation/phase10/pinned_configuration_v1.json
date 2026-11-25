@@ -9,7 +9,7 @@
   "evaluation/fixtures/contamination_synthetic_v1.json": "e2534b3ed135c142b3fe44636310739d91b2b1d303ca4004eb080f6a036d2d05",
   "evaluation/fixtures/seeded_faults_v1.json": "1b7e3ecfb6dc5578bc819af8b3183c4d9472fc65932fb11f511127a5497e7df1",
   "lqs/ulqs-rc1-to-v1.0-mapping.json": "2aba4405b2f0493976a00f355d00644598004329a73b2bf53c1d760482c287af",
-  "lqs/ulqs-v1.0-freeze-rules.json": "33ec0216c5207aedd6a737e4d6862ebdc1db8d2b86d49e685fe2bd62aaf842f1",
+  "lqs/ulqs-v1.0-freeze-rules.json": "fcebf1c6e9b2a67689ad51e7040a9da4bbd760fb7e40dcddec2d4c2c13a592f4",
   "lqs/ulqs-v1.0.schema.json": "249e6f5361164d167ba3c4002a4cd236edeef824ae1a6f8086d47b1b3c1bd544"
  },
  "models": null,

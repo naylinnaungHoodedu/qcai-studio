@@ -2,7 +2,7 @@
 
 The harness is in `evaluation/qcai_eval` and `scripts/` (Phase 10 spec: `docs/architecture/phase10-implementation-spec.md`).
 No E1-E4 run has been executed: every procedure below waits on the research data plane (D-14), the IRB letter and the OSF
-DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-142). Not executed: nothing here is a result or an asserted outcome.
+DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-143). Not executed: nothing here is a result or an asserted outcome.
 
 1. **Freeze.** ULQS v1.0 passes `scripts/validate_ulqs.py --freeze --previous <review set> --corpus-text <dir>
    --agent-check <agent re-check record> --freeze-out <freeze record>` (with the catalog, ratings and rubric; the full
@@ -11,10 +11,12 @@ DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-142). Not execu
    text character for character, Krippendorff's alpha at least 0.667 and at least a quarter of items second-rated, and
    the AI-agent re-check of every item by a V2 verifier model chosen before the check, with each disagreement adjudicated
    by a claim rater who did not review that item; an item changed after one of the agent's flags is listed in the
-   record; an item retired after a flag is listed too), and every live item in the calibration or the confirmation
-   split, balanced to within one per stratum (`ulqs-split-v1`; plan 10.5(2), Risk R-25). The freeze record pins the dataset sha256, the canonical sha256 of the agent re-check record, the agent's
-   full-report sha256 copied from that record, the model id, the agent's counts and the items changed after a flag (so
-   the agent verifier's E2 accuracy is reported with and without them). No verifier model is pinned until D-07, so no freeze passes yet (DI-142).
+   record with its reason, after a flag or for another reason, and an item retired since the check is listed the same
+   way), and every live item in the calibration or the confirmation split, the split balanced to within one per stratum
+   counting retired items (a frozen item's split never changes) and every stratum keeping a live item in each split
+   (`ulqs-split-v1`; plan 10.5(2), Risk R-25). The freeze record pins the dataset sha256, the canonical sha256 of the agent re-check record, the agent's
+   full-report sha256 copied from that record, the model id, the agent's counts, the items changed after a flag (so
+   the agent verifier's E2 accuracy is reported with and without them) and the items changed for another reason. No verifier model is pinned until D-07, so no freeze passes yet (DI-142).
 2. **Pin.** The run spec pins the configuration package by path and sha256, the items, the evidence catalog, the arms
    (`evaluation/config/arms_v1.json`) and the analysis plan (`evaluation/config/analysis_plans_v1.json`). Seeds are
    sha256(run_id, arm, item_id, replicate).
@@ -27,9 +29,12 @@ DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-142). Not execu
 4. **Execute.** Three replicates on a 40-item S1 subsample; failed provider calls are retried three times, then logged and
    counted as outcomes (the provisional defaults of `evaluation/config/harness_parameters_v1.json`; a live or confirmatory
    spec must keep the subsample, so its record reports replicate variance); abstentions are outcomes, not missing data. Payload logs hold pointers, hashes and sizes only.
-   A confirmatory run uses only the items of the confirmation split; the calibration items, which tune thresholds, never
-   enter it. A run interrupted by a provider outage resumes from its checkpoint with the same spec (`--resume`), on a
-   later day too: it is judged against its own start, and its IRB must still be valid on the resume day.
+   A confirmatory run covers every live item, the calibration and the confirmation split alike (E1: all ULQS items
+   through all seven arms), and its three replicates fall on all 40 items of the S1 subsample (a subsample stratum with
+   fewer live items is refused); the calibration split is for threshold calibration only (plan L470), which this harness
+   does not do. A run interrupted by a provider outage resumes from its checkpoint with the same spec (`--resume`), on a
+   later day too: it is judged against the start date its checkpoint records, and its IRB must still be valid on the
+   resume day.
 5. **Label.** Atomic claims are labelled supported, attribution error, unsupported but true, or fabricated, with the EHMF
    type; abstaining units are labelled supported or unsupported abstention (`lqs/rubric.md`).
 6. **Analyse.** Exact McNemar, the one-sided, paired, cluster, BCa, paired-AUC and two-level bootstraps, the Friedman test

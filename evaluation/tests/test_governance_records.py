@@ -211,7 +211,7 @@ def test_a_confirmatory_run_is_refused_unless_created_at_is_today(tmp_path, monk
     assert refusals(tmp_path, **{**ok, "created_at": "2026-12-01T00:00:00Z"}) == ["created_at_not_today"]
     assert governance.run_date_refusals({"created_at": "garbage"}) == ["created_at"]
     assert governance.utc_today() == date(2026, 11, 24)
-    # A resume is judged against the run's own start (the runner checks the checkpoint), and its IRB also against today.
+    # A resume is not dated here (the runner judges it against the checkpoint), and its IRB is also judged against today.
     monkeypatch.setattr(governance, "utc_today", lambda: date(2026, 11, 25))
     assert refusals(tmp_path, **ok) == ["created_at_not_today"]
     assert governance.confirmatory_refusals(
@@ -242,9 +242,10 @@ def test_utc_today_is_the_utc_date_of_the_clock(monkeypatch):
     assert governance.utc_today() == datetime_module.date(2026, 11, 25)
 
 
-def test_a_confirmatory_recorded_run_is_judged_against_its_live_recording_s_start_on_any_day(tmp_path, monkeypatch):
-    # A recorded run replays a live run: its created_at must be the recording's started_on, whatever the day of the
-    # replay, so the replay repeats byte for byte; a live recording without a start date is refused.
+def test_a_confirmatory_recorded_run_is_dated_today_and_its_live_recording_must_state_an_earlier_start(tmp_path, monkeypatch):
+    # The recording's started_on is a header field its maker writes and no tool here writes a live one (DI-143), so a
+    # confirmatory replay is dated by its own created_at, which must be today: a backdated created_at paired with a
+    # matching started_on is refused, and an IRB that has expired refuses the replay with or without --resume.
     from datetime import date
 
     irb = synthetic.irb_record(tmp_path / "irb.private.json", approval_date="2026-11-01", expiry_date="2027-06-30")
@@ -254,21 +255,28 @@ def test_a_confirmatory_recorded_run_is_judged_against_its_live_recording_s_star
     spec = {"created_at": "2026-11-24T00:00:00Z", "mode": "recorded", "governance": {"irb_record": irb, "osf_record": osf},
             "freeze_record": freeze, "pre_run_scan": scan}
 
-    def recorded(started_on, source="live", created_at="2026-11-24T00:00:00Z"):
+    def recorded(started_on, source="live", created_at="2026-11-24T00:00:00Z", resuming=False):
         return governance.confirmatory_refusals(
             {**spec, "created_at": created_at}, analysis_plan_sha256=PLAN_SHA, dataset_sha256="d" * 64,
             dataset_content_sha256=CONTENT_SHA, items_states={"frozen": 3},
             package_raw={"owner_decisions": {"D-14": {"state": "decided"}}}, repo_root=REPO_ROOT, recording_source=source,
-            recording_started_on=started_on)
+            recording_started_on=started_on, resuming=resuming)
 
-    for today in (date(2026, 11, 24), date(2026, 12, 30), date(2028, 1, 10)):
-        monkeypatch.setattr(governance, "utc_today", lambda today=today: today)
-        assert recorded("2026-11-24") == [], today
-    assert recorded("2026-11-23") == ["created_at_not_start_date"]
+    monkeypatch.setattr(governance, "utc_today", lambda: date(2026, 11, 24))
+    assert recorded("2026-11-24") == [] and recorded("2026-11-20") == []      # a replay on or after the live run's day
+    assert recorded("2026-11-25") == ["recording_after_run"]
     for missing in (None, "", "2026-11-24T00:00:00Z", "2026-13-01", 20261124):
         assert recorded(missing) == ["recording_started_on_missing"], missing
     assert recorded(None, source="synthetic") == ["recording_not_live"]
-    assert governance.recording_date_refusals({"created_at": "garbage"}, "2026-11-24") == ["created_at"]
+    assert governance.recording_start_refusals({"created_at": "garbage"}, "2026-11-24") == ["created_at"]
+    # In 2028 the spec dated 2026-11-24 is refused, though its started_on matches; re-dated, the expired IRB refuses it.
+    monkeypatch.setattr(governance, "utc_today", lambda: date(2028, 1, 10))
+    assert recorded("2026-11-24") == ["created_at_not_today"]
+    assert recorded("2026-11-24", created_at="2028-01-10T00:00:00Z") == ["irb_expired"]
+    # The same replay with --resume (the runner judges its date against the checkpoint) is refused for the IRB too.
+    assert recorded("2026-11-24", resuming=True) == ["irb_expired"]
+    monkeypatch.setattr(governance, "utc_today", lambda: date(2026, 12, 30))
+    assert recorded("2026-11-24", created_at="2026-12-30T00:00:00Z") == recorded("2026-11-24", resuming=True) == []
 
 
 def test_a_record_path_open_refuses_is_an_invalid_file_never_a_traceback(tmp_path):

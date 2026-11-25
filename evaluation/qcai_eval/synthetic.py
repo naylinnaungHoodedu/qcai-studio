@@ -205,8 +205,8 @@ def osf_record(path: Path, *, analysis_plan_sha256: str, **overrides: Any) -> di
 def agent_check(items: Sequence[Mapping[str, Any]], **overrides: Any) -> dict[str, Any]:
     """An `ulqs-agent-check-v1` record for `items` (VBT RevB p. 15): the synthetic agent checked every live item, and its
     one disagreement was adjudicated by a rater who did not review that item. `checked_items` binds each live item's
-    content as checked; no item changed after a flag unless `items_changed_after_flag` is overridden. The counts are
-    invented."""
+    content as checked; no item changed unless `items_changed_after_flag` or `items_changed_without_flag` is
+    overridden. The counts are invented."""
     from .ulqs import item_content_sha256
 
     value = {"record": "ulqs-agent-check-v1",
@@ -214,7 +214,8 @@ def agent_check(items: Sequence[Mapping[str, Any]], **overrides: Any) -> dict[st
              "agent_model_id": SYNTHETIC_AGENT_MODEL, "model_chosen_before_check": True, "verdict_schema": "v2",
              "report_sha256": "a" * 64, "items_checked": sum(1 for item in items if item.get("status") != "retired"),
              "disagreements": 1, "disagreements_adjudicated": 1, "adjudicated_by_non_reviewer": True,
-             "agent_detected_defects": 1, "agent_false_alarms": 0, "agent_missed_defects": 0, "items_changed_after_flag": []}
+             "agent_detected_defects": 1, "agent_false_alarms": 0, "agent_missed_defects": 0, "items_changed_after_flag": [],
+             "items_changed_without_flag": []}
     value.update(overrides)
     return value
 
@@ -223,7 +224,7 @@ def freeze_record(path: Path, *, dataset_sha256: str, passed: bool = True, **ove
     value = {"record": "ulqs-freeze-record-v1", "dataset_sha256": dataset_sha256, "dataset_content_sha256": "0" * 64,
              "rules_sha256": "0" * 64, "agreement_sha256": "0" * 64, "agent_check_sha256": "0" * 64,
              "agent_report_sha256": "a" * 64, "agent_model_id": SYNTHETIC_AGENT_MODEL, "agent_detected_defects": 0, "agent_false_alarms": 0, "agent_missed_defects": 0,
-             "disagreements_adjudicated": 0, "items_changed_after_flag": [], "passed": passed,
+             "disagreements_adjudicated": 0, "items_changed_after_flag": [], "items_changed_without_flag": [], "passed": passed,
              "failures": [] if passed else ["alpha_below_floor"]}
     value.update(overrides)
     return _write_record(path, value)

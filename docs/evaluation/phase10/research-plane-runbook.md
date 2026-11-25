@@ -21,18 +21,22 @@ log is `<plane>/access.jsonl` (digests only).
    checked it (`checked_items`; `ulqs.item_content_sha256`), the sha256 of the agent's full report (`report_sha256`), the
    counts, and the ids of the items changed after one of its flags (`items_changed_after_flag`). An item edited after
    the check must be listed there, and only such an item: the freeze fails with `agent_check_stale` on an unlisted change
-   and `agent_check_invalid` on a listed item that did not change. An item retired after one of the agent's flags stays
-   in `checked_items` and is listed the same way. Every live item carries its split (`calibration` or `confirmation`;
+   and `agent_check_invalid` on a listed item that did not change. An item retired since the check stays in
+   `checked_items` and is listed the same way. Each listed item carries its reason: `items_changed_after_flag` for a
+   change after one of the agent's flags (at most as many as it flagged), `items_changed_without_flag` for any other
+   (such as trimming a stratum to its target). `checked_items` must name every item live in the review set the agent
+   checked and every item live now (`agent_check_incomplete` otherwise). Every live item carries its split (`calibration` or `confirmation`;
    the migrator assigns `ulqs-split-v1`, and an added item is given the split that keeps its stratum balanced).
 4. **Validate and freeze.** `python scripts/validate_ulqs.py --items <plane>/data/ulqs-v1.0.jsonl --catalog
    <plane>/data/catalog.jsonl --corpus-text <plane>/data/text --ratings <plane>/data/ratings.private.jsonl --rubric
    lqs/rubric.md --agreement-out <plane>/records/agreement.json --freeze --previous <plane>/data/ulqs-v1.0-review.jsonl
    --agent-check <plane>/records/agent-check.json --freeze-out <plane>/records/freeze.json --access-log
    <plane>/access.jsonl --actor-role RL`. The freeze fails on a move outside the state machine, changed frozen content,
-   an EV pointer not checked against the corpus text, a live item without a split or a stratum whose split is
-   unbalanced (`split_missing`, `split_unbalanced:<S>`), or a missing, malformed, stale, incomplete or unadjudicated
+   an EV pointer not checked against the corpus text, a live item without a split, a stratum whose split is
+   unbalanced counting retired items, or a stratum left without a live item in one split (`split_missing`,
+   `split_unbalanced:<S>`, `split_live_missing:<S>`), or a missing, malformed, stale, incomplete or unadjudicated
    AI-agent re-check. A rules file that is unreadable or malformed is refused with exit 2. The freeze record carries the canonical sha256 of the agent-check record (`agent_check_sha256`), the agent's
-   report sha256 (`agent_report_sha256`), its model id, its counts and `items_changed_after_flag`, so the agent verifier's
+   report sha256 (`agent_report_sha256`), its model id, its counts, `items_changed_after_flag` and `items_changed_without_flag`, so the agent verifier's
    E2 accuracy can be reported with and without those items (the registered secondary analysis
    `agent_verifier_accuracy_with_and_without_changed_items`). Until D-07 pins a verifier model in the freeze rules, every
    freeze fails with `agent_model_not_pinned` (DI-142).
@@ -55,12 +59,17 @@ log is `<plane>/access.jsonl` (digests only).
    built from the run's items, step 5) and covered the repository and at least one logs or path target.
 7. **Run (after H12 is released).** `python scripts/run_evaluation.py --spec <plane>/records/spec.json --output-dir <plane>/runs/<id>
    --access-log <plane>/access.jsonl --actor-role MLE`; after an outage (exit 5), rerun with `--resume` and the same
-   spec and responder, the same day or later: a resumed confirmatory or live run is judged against its own start,
-   which its checkpoint proves (the run digest covers `created_at`, so do not edit it; another run's directory, or a
-   changed spec, is refused, `checkpoint_mismatch`), and its IRB must still be valid on the resume day. `--resume`
-   without the run's checkpoint is a fresh start and must be dated today (`created_at_not_today`). A confirmatory run
-   uses only the confirmation-split items. A confirmatory recorded run replays a live recording whose header states
-   the live run's start (`started_on`); its `created_at` must be that date, and it repeats on any later day.
+   spec and responder, the same day or later: a resumed confirmatory or live run is judged against its checkpoint,
+   whose start event records the UTC date it was written (`created_at` must be that date and never a future one,
+   `created_at_not_start_date`, `created_at_in_future`; the run digest covers `created_at`, so do not edit it; another
+   run's directory, or a changed spec, is refused, `checkpoint_mismatch`), and its IRB must still be valid on the
+   resume day. `--resume` without the run's checkpoint is a fresh start: it runs when dated today and is refused
+   otherwise (`created_at_not_today`). The checkpoint is the operator's own file, so this is a consistency check, not
+   tamper evidence (DI-143): keep run outputs in the research plane and review each run's start in the access log
+   (step 9). A confirmatory run covers every live item of both splits and gives the subsample's 40 S1 items their
+   replicates (fewer live items in the stratum: `replicate_subsample_short`). A confirmatory recorded run replays a
+   live recording whose header states the live run's start (`started_on`, on or before the replay: `recording_after_run`);
+   the replay is dated the day it runs (`created_at` today), so the IRB must be valid on that day.
 8. **Scan.** `python scripts/scan_research_logs.py --fingerprints ... --research-logs <plane>/runs/<id> --require-zero
    --report <plane>/records/post-run-scan.json --access-log <plane>/access.jsonl --actor-role MLE`, and fill the contamination
    report.

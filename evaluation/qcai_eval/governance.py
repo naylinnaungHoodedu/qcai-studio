@@ -5,10 +5,14 @@ record and a valid OSF record (both in the research plane), the research data pl
 freeze record and a passing pre-run contamination scan bound to the run's items. A live run needs a valid, unexpired IRB
 record and the plan H records (provider terms, licence ruling, research-use confirmation), each resolved by path and
 sha256 and kept off public paths. Every record date is judged against the run date, the date of the spec's
-`created_at`, and a confirmatory or live run is refused unless that date is the current UTC date when the run is planned
-(`created_at_not_today`; `run_date_refusals`), so an old or future-dated spec cannot carry an expired IRB or a record
-dated after the real run. The records' own dates are still self-declared: these checks are consistency checks, not
-proof. A run that is not confirmatory skips the confirmatory gate and is labelled exploratory everywhere.
+`created_at`. A confirmatory or live run, the replay of a recording included, that is planned as a new run is refused
+unless that date is the current UTC date (`created_at_not_today`; `run_date_refusals`). A resume (`--resume`) is not
+compared with today when it is planned: the runner judges it against the output's checkpoint (`runner.start_date_refusals`:
+with no run events it is a fresh start and must be dated today; with events `created_at` may not be in the future and
+must be the date the run's start event was written, and the event must carry this run's digest), and its IRB must also
+be valid today. The checkpoint is the operator's own file and the records' dates are self-declared: these checks are
+consistency checks, not proof or tamper evidence (an externally timestamped start is DI-143). A run that is not
+confirmatory skips the confirmatory gate and is labelled exploratory everywhere.
 """
 
 from __future__ import annotations
@@ -116,13 +120,14 @@ def load_osf(path: Path) -> dict[str, Any]:
 
 FREEZE_RECORD_KEYS = ("dataset_sha256", "dataset_content_sha256", "rules_sha256", "agreement_sha256", "agent_check_sha256",
                       "agent_report_sha256", "agent_model_id", "agent_detected_defects", "agent_false_alarms", "agent_missed_defects",
-                      "disagreements_adjudicated", "items_changed_after_flag", "passed", "failures")
+                      "disagreements_adjudicated", "items_changed_after_flag", "items_changed_without_flag", "passed",
+                      "failures")
 
 
 def load_freeze_record(path: Path) -> dict[str, Any]:
     """`ulqs-freeze-record-v1`: the freeze check's outcome, with the canonical sha256 of the agent re-check record
-    (`agent_check_sha256`), the agent's full-report sha256 copied from it (`agent_report_sha256`), its model, its counts
-    and the items changed after one of its flags."""
+    (`agent_check_sha256`), the agent's full-report sha256 copied from it (`agent_report_sha256`), its model, its counts,
+    the items changed after one of its flags and the items changed for another reason."""
     raw = _load(path, "ulqs-freeze-record-v1", FREEZE_RECORD_KEYS)
     if not isinstance(raw["passed"], bool) or not isinstance(raw["failures"], list):
         raise GovernanceError("passed")
@@ -196,11 +201,10 @@ def utc_today() -> _dt.date:
 
 
 def run_date_refusals(spec: Mapping[str, Any]) -> list[str]:
-    """A confirmatory or live run that starts now is run on the day its spec declares: the date of `created_at` must be
-    the current UTC date, so the IRB and every record date are judged against the day the run really starts. A run whose
-    start is already fixed is judged against that start instead: a resume of the run's own checkpoint (the runner then
-    requires the checkpoint's first event, whose run digest covers `created_at`: `runner.execute_run`) and the replay
-    of a live recording (`recording_date_refusals`)."""
+    """A confirmatory or live run that starts now, a recorded replay included, is run on the day its spec declares: the
+    date of `created_at` must be the current UTC date, so the IRB and every record date are judged against the day the run
+    really starts. A resume is judged by the runner against the output's checkpoint instead (`runner.start_date_refusals`,
+    which applies this rule when the output holds no run events)."""
     try:
         on = run_date(spec)
     except GovernanceError:
@@ -208,10 +212,13 @@ def run_date_refusals(spec: Mapping[str, Any]) -> list[str]:
     return [] if on == utc_today() else ["created_at_not_today"]
 
 
-def recording_date_refusals(spec: Mapping[str, Any], started_on: Any) -> list[str]:
-    """A recorded run replays a live run that started on the day the recording's header states (`started_on`, an ISO
-    date; the recording is pinned by its sha256): the date of `created_at` must be that day, on whatever day the replay
-    runs, so a confirmatory replay repeats byte for byte and is never judged against a later or earlier date."""
+def recording_start_refusals(spec: Mapping[str, Any], started_on: Any) -> list[str]:
+    """A confirmatory recorded run replays a live recording whose header states the day its live run started
+    (`started_on`, an ISO date; the recording is pinned by its sha256): that date must be stated
+    (`recording_started_on_missing`) and may not be after the replay's run date (`recording_after_run`). The header is
+    written by whoever made the recording and no tool in this repository writes a live one (DI-143), so the replay is
+    dated by its own `created_at`, which must be today like every confirmatory run (`run_date_refusals`): the IRB and
+    the records are judged against the day of the replay, never against the self-declared `started_on`."""
     try:
         start = _dt.date.fromisoformat(started_on) if isinstance(started_on, str) and len(started_on) == 10 else None
     except ValueError:
@@ -222,7 +229,7 @@ def recording_date_refusals(spec: Mapping[str, Any], started_on: Any) -> list[st
         on = run_date(spec)
     except GovernanceError:
         return ["created_at"]
-    return [] if on == start else ["created_at_not_start_date"]
+    return [] if start <= on else ["recording_after_run"]
 
 
 def is_public(reference: Any, repo_root: Path) -> bool:
@@ -325,17 +332,14 @@ def confirmatory_refusals(spec: Mapping[str, Any], *, analysis_plan_sha256: str,
                           items_states: Mapping[str, int], package_raw: Mapping[str, Any], repo_root: Path,
                           recording_source: str | None = None, recording_started_on: Any = None,
                           resuming: bool = False) -> list[str]:
-    """The confirmatory gate's reasons, in order (spec 4.10). The run date: a recorded run is judged against its live
-    recording's start (`recording_date_refusals`); a resume (`resuming`) against the run's own start, which the runner
-    checks in the checkpoint, and its IRB must also be valid today, since the resumed run continues today; any other run
-    must be dated today (`run_date_refusals`)."""
+    """The confirmatory gate's reasons, in order (spec 4.10). The run date: every run, a recorded replay included, must be
+    dated today (`run_date_refusals`), except a resume (`resuming`), which the runner judges against the output's
+    checkpoint (`runner.start_date_refusals`) and whose IRB must also be valid today, since the resumed run continues
+    today. A recorded run's live recording must state its start, on or before the run date (`recording_start_refusals`)."""
     on = run_date(spec)
-    if spec.get("mode") == "recorded":
-        reasons: list[str] = recording_date_refusals(spec, recording_started_on) if recording_source == "live" else []
-    elif resuming:
-        reasons = []
-    else:
-        reasons = run_date_refusals(spec)
+    reasons: list[str] = [] if resuming else run_date_refusals(spec)
+    if spec.get("mode") == "recorded" and recording_source == "live":
+        reasons += recording_start_refusals(spec, recording_started_on)
     governance = spec.get("governance") or {}
     irb_ref, osf_ref = governance.get("irb_record"), governance.get("osf_record")
     reasons += irb_refusals(irb_ref, on, repo_root, missing="irb_missing")

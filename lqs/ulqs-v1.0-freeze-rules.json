@@ -78,7 +78,8 @@
    "agent_detected_defects",
    "agent_false_alarms",
    "agent_missed_defects",
-   "items_changed_after_flag"
+   "items_changed_after_flag",
+   "items_changed_without_flag"
   ],
   "e2": "the counts are descriptive and do not enter the E2 analysis"
  },

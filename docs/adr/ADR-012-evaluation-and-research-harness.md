@@ -31,10 +31,13 @@ ratified under DI-140). The Phase 10 exit is not passed (DI-129).
    hashed. Stub and recorded runs repeat byte for byte. Live runs are refused here; hold H12 refuses every run over
    non-synthetic data while D-14 is open; a confirmatory run needs a valid IRB record and OSF record (AC-10-5); E1-E4 runs
    are confirmatory only. A confirmatory or live run that starts now must have the current UTC date as its
-   `created_at`, so every record date is judged against the day the run really starts; a resume after an outage is
-   judged against that start, which the run's checkpoint proves (its run digest covers `created_at`), with the IRB also
-   valid on the resume day, and a confirmatory recorded run against its live recording's start, so it repeats byte for
-   byte on any day. A confirmatory run uses only the confirmation-split items (plan 10.5(2), Risk R-25).
+   `created_at`, a confirmatory recorded replay included, so every record date is judged against the day the run
+   really starts; a resume after an outage is judged against the start date the run's checkpoint records (its start
+   event's `started_on`, never a future date, with the run digest), with the IRB also valid on the resume day. The
+   checkpoint and a recording's `started_on` are the operator's files, so these are consistency checks, not tamper
+   evidence (DI-143). Every live item carries its calibration or confirmation split (plan 10.5(2), Risk R-25), for
+   threshold calibration on the calibration split only (plan L470); a confirmatory run covers both splits, as E1 runs
+   all ULQS items, and replicates its full subsample.
 7. Payload logs hold pointers, hashes and sizes only (AC-10-6). Contamination is scanned with salted fingerprints of the
    licensed corpus and of the ULQS; public CI uses synthetic fingerprints with a published salt (AC-10-4).
 8. The E1-E4 analysis plans are data with no outcome fields and a draft status (nothing is filed with OSF, DI-131); the
@@ -46,7 +49,7 @@ ratified under DI-140). The Phase 10 exit is not passed (DI-129).
 ## Consequences
 
 - Every AC is provable in code on synthetic data, and no ULQS item, gold label or licensed text enters the repository or CI.
-- The real-data halves wait on the owner decisions and PI items (DI-129..DI-142); nothing here decides them.
+- The real-data halves wait on the owner decisions and PI items (DI-129..DI-143); nothing here decides them.
 - A code change to `evaluation/qcai_eval/*.py` or `scripts/run_evaluation.py` changes the committed synthetic run
   record's code pins, so CI's `run_evaluation.py --check` fails until the record is rewritten with `--write`: the record
   always names the code it ran. The pins read CRLF as LF and cover no other file, so a CRLF checkout or a change

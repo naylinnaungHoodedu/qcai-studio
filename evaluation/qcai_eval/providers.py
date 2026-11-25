@@ -169,9 +169,10 @@ def live_refusal_reasons(spec: Mapping[str, Any], package_raw: Mapping[str, Any]
     own format: (a) `licence-ruling-v1`, (b) `provider-terms-v1`, (c) `irb-approval-v1`, approved on or before the run date
     and not expired on it, and (d) `research-use-confirmation-v1`. None may sit on a public path, and none may be dated
     after the run date, which must be the current UTC date when the run starts (`created_at_not_today`: an old or
-    future-dated spec is refused). On a resume (`resuming`) the run date is the run's own start, which the runner checks
-    in the checkpoint (its `start` event's run digest covers `created_at`), and the IRB must also be valid today, since the
-    resumed run queries providers today. Condition (b) is bound to the run: `responder.live.providers` names every provider the run
+    future-dated spec is refused). On a resume (`resuming`) the date is not compared with today here: the runner judges
+    it against the output's checkpoint (`runner.start_date_refusals`: no run events, a fresh start dated today; events,
+    the UTC date the start event was written, never a future date, and this run's digest; a consistency check, not tamper
+    evidence, DI-143), and the IRB must also be valid today, since the resumed run queries providers today. Condition (b) is bound to the run: `responder.live.providers` names every provider the run
     queries (it must include each provider the adapter declares in its `providers` attribute), and `provider_terms` (one
     reference or a list) must hold a record whose `provider_id` is each of them."""
     from . import governance

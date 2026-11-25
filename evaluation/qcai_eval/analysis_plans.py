@@ -216,5 +216,5 @@ def preregistration_markdown(raw: Mapping[str, Any]) -> str:
     lines += [f"| `{name}` | {', '.join(entry['for'])} | {entry['analysis']} | {entry['status']} |"
               for name, entry in raw["secondary_analyses"].items()]
     lines += ["", "Not executed: every hypothesis above awaits the frozen ULQS, the IRB letter, the OSF DOI and the research data",
-              "plane (DI-129..DI-142).", ""]
+              "plane (DI-129..DI-143).", ""]
     return "\n".join(lines)

@@ -8,8 +8,11 @@ plan and the responses. Hold H12 refuses every run over non-synthetic data while
 Every run is exploratory unless its spec says confirmatory, and E1-E4 runs must be confirmatory (plan 12.7). A spec that
 omits `replicates` or `retries` takes the provisional paper values in `evaluation/config/harness_parameters_v1.json`
 (PD-68), and a live or confirmatory spec must keep a replicate subsample so that the record reports replicate variance.
-A resumed run continues only its own checkpoint: the start event pins a run digest, and every reused response line must
-match its planned request.
+A resumed run continues only its own checkpoint: the start event pins a run digest (and, for a confirmatory or live run,
+the UTC date it was written), and every reused response line must match its planned request. A confirmatory run covers
+every live item, the calibration and the confirmation split alike (paper Sec. VIII E1: "All ULQS items run through all
+seven arms"; the registered data "all ULQS items x seven arms"); the split exists for threshold calibration, which uses
+the calibration split only (plan L470), and no Phase 10 code fits a threshold.
 """
 
 from __future__ import annotations
@@ -97,9 +100,11 @@ class Plan:
     resolver: PointerResolver | None = None
     synthetic: bool = True
     recording_source: str | None = None
-    # A resumed confirmatory or live run: its date is judged against its own start, so execute_run refuses it with this
-    # exit code (`created_at_not_today`) unless the output holds this run's checkpoint (whose run digest covers created_at).
+    # A confirmatory or live run (`dated`): its start event records the UTC date it was written (`started_on`). Resumed
+    # (`start_check`, the exit code of a date refusal), its date was not compared with today when it was planned, so
+    # `execute_run` judges it against its checkpoint: none (a fresh start, which must be dated today) or this run's own.
     start_check: int | None = None
+    dated: bool = False
     extra: dict = field(default_factory=dict)
 
 
@@ -493,9 +498,16 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
                                                    dataset_content_sha256=items_content_sha, items_states=states,
                                                    package_raw=package_raw, repo_root=repo_root, recording_source=recording_source,
                                                    recording_started_on=recording_started_on, resuming=resume)
-        # Plan 10.5(2): a confirmatory run uses the confirmation split only (`_requests`), so every live item carries one.
+        # Plan 10.5(2) "calibration and confirmation items split [Risk R-25]": every live item of a confirmatory run
+        # carries its split, so that a threshold fitted on ULQS uses the calibration split only (plan L470). The run itself
+        # covers every live item (`_requests`).
         if any(item.get("split") not in ulqs.SPLITS for item in items if item.get("status") != "retired"):
             reasons.append("items_split_missing")
+        # The replicate subsample (PD-68, the paper's "three replicates on a 40-item S1 subsample") must be met in full:
+        # a confirmatory run whose subsample stratum holds fewer live items than its size is refused, never replicated
+        # over fewer items than its record pins.
+        if len(subsample(items, replicates)) < int((replicates.get("subsample") or {}).get("size", 0)):
+            reasons.append("replicate_subsample_short")
         if reasons:
             if any(reason.startswith(("irb_", "osf_")) for reason in reasons):
                 code = 8
@@ -542,10 +554,11 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
             key for key in ("replicates", "retries") if key not in spec)},
         "code": code_pins(repo_root),
     }
-    dated = spec["mode"] == "live" or (spec["purpose"] == "confirmatory" and spec["mode"] != "recorded")
+    dated = spec["mode"] == "live" or spec["purpose"] == "confirmatory"
     start_check = (2 if spec["purpose"] == "confirmatory" else 9) if resume and dated else None
     return Plan(spec=dict(spec), package_raw=package_raw, items=items, arms=table, requests=tuple(requests), pins=pins,
-                resolver=resolver, synthetic=synthetic, recording_source=recording_source, start_check=start_check)
+                resolver=resolver, synthetic=synthetic, recording_source=recording_source, start_check=start_check,
+                dated=dated)
 
 
 def _manifest_hook(manifests: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -567,11 +580,8 @@ def _requests(spec, items, table, selected, package_sha, prompt_version, replica
     sampled = set(subsample(items, replicates))
     extra = int((replicates.get("subsample") or {}).get("replicates", default))
     requests = []
-    # Plan 10.5(2) "calibration and confirmation items split [Risk R-25]": a confirmatory run never sees the calibration
-    # items that tune its thresholds.
-    confirmatory = spec.get("purpose") == "confirmatory"
-    ordered_items = sorted((item for item in items if item.get("status") != "retired"
-                            and (not confirmatory or item.get("split") == "confirmation")), key=lambda item: item["item_id"])
+    # Every live item, whatever its split: E1-E4 run all ULQS items (paper Sec. VIII; analysis_plans_v1.json "data").
+    ordered_items = sorted((item for item in items if item.get("status") != "retired"), key=lambda item: item["item_id"])
     for arm in [arm for arm in ablation.ARM_IDS if arm in selected]:
         configuration = ablation.arm_configuration(table, arm)
         config_sha = canonical_sha256(configuration)
@@ -667,21 +677,40 @@ def _prompt_envelope(plan: Plan, request: Request) -> bytes:
                            "arm": request.arm, "evidence": list(request.evidence)})
 
 
+def start_date_refusals(plan: Plan, events: Sequence[Mapping[str, Any]]) -> list[str]:
+    """The date of a resumed confirmatory or live run (`plan.start_check`), which `plan_run` did not compare with today.
+    With no run events in the output, the resume is a fresh start, which must be dated today (`run_date_refusals`). With
+    events, `created_at` may not be a future date (`created_at_in_future`) and must be the UTC date the run's start event
+    was written (`started_on`; `created_at_not_start_date`); `execute_run` then checks the event's run digest. This is a
+    consistency check of the operator's own output directory, not tamper evidence: whoever can write that directory can
+    write a start event too, so a backdated run is caught only when its checkpoint is the one the runner wrote. An
+    externally timestamped start is DI-143."""
+    if not events:
+        return governance.run_date_refusals(plan.spec)
+    try:
+        on = governance.run_date(plan.spec)
+    except governance.GovernanceError:
+        return ["created_at"]
+    if on > governance.utc_today():
+        return ["created_at_in_future"]
+    return [] if events[0].get("started_on") == on.isoformat() else ["created_at_not_start_date"]
+
+
 def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = False, commit: str | None = None) -> dict:
     out_dir = Path(out_dir)
-    if plan.start_check is not None and (not resume or not _read_events(out_dir / RUN_EVENTS)):
-        # A resumed confirmatory or live run was not dated against today: only this run's own checkpoint (checked
-        # against the run digest, which covers created_at, below) proves it started on its created_at date.
-        raise RunRefused(plan.start_check, ["created_at_not_today"])
+    if plan.start_check is not None:
+        reasons = start_date_refusals(plan, _read_events(out_dir / RUN_EVENTS) if resume else [])
+        if reasons:
+            raise RunRefused(plan.start_check, reasons)
     out_dir.mkdir(parents=True, exist_ok=True)
     responses_path = out_dir / RESPONSES
     responder_rule = getattr(responder, "rule", "unknown")
     digest = run_digest(plan, responder_rule)
     events = _read_events(out_dir / RUN_EVENTS)
     if resume:
-        # The checkpoint must be this run's: the first event pins the run digest (run id, mode, responder rule, pins and
-        # the planned keys and seeds). Nothing in another run's directory is touched before this check.
-        if events and (events[0].get("event") not in ("start", "resumed") or events[0].get("run_digest") != digest):
+        # The checkpoint must be this run's: the first event is its start, which pins the run digest (run id, mode,
+        # responder rule, pins and the planned keys and seeds). Nothing in another run's directory is touched before this.
+        if events and (events[0].get("event") != "start" or events[0].get("run_digest") != digest):
             raise RunRefused(2, ["checkpoint_mismatch"])
         if not events and responses_path.exists() and responses_path.stat().st_size:
             raise RunRefused(2, ["checkpoint_mismatch"])
@@ -692,6 +721,8 @@ def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = Fal
     spec = plan.spec
     base = {"run_id": spec["run_id"], "purpose": spec["purpose"], "planned_requests": len(plan.requests)}
     start = {"event": "resumed" if events else "start", **base, "completed_requests": len(completed), "run_digest": digest}
+    if plan.dated and not events:
+        start["started_on"] = governance.utc_today().isoformat()
     if commit:
         start["commit"] = commit
     _append_event(out_dir, start)

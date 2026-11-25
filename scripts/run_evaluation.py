@@ -8,12 +8,15 @@ Record: python scripts/run_evaluation.py --record-stub OUT --spec SPEC  (a synth
 A run pins the configuration package by path and sha256, the items, the evidence catalog, the arms and the analysis plan;
 its seeds are hashed. Stub and recorded runs repeat byte for byte. Hold H12 refuses every run over non-synthetic data while
 D-14 is open, live runs are refused in this repository, and a confirmatory run needs a valid IRB record and OSF record.
-A confirmatory or live run that starts now is refused unless its created_at is today's UTC date (`created_at_not_today`);
-with --resume it is judged against its own start instead: the output must hold this run's checkpoint, whose run digest
-covers created_at (none: `created_at_not_today`), and its IRB must also be valid today. A confirmatory recorded run is
-judged against its live recording's `started_on` (`created_at_not_start_date`, `recording_started_on_missing`), so it
-repeats on any later day. A confirmatory run plans only the items of the confirmation split (`items_split_missing`
-when a live item has no split).
+A confirmatory or live run that starts now, a confirmatory recorded replay included, is refused unless its created_at
+is today's UTC date (`created_at_not_today`); with --resume it is judged against the output's checkpoint instead: with
+no run events it is a fresh start and must be dated today, with events created_at may not be in the future
+(`created_at_in_future`) and must be the date the start event records (`created_at_not_start_date`), the start event
+must carry this run's digest (`checkpoint_mismatch`), and the IRB must also be valid today. The checkpoint is the
+operator's file: a consistency check, not tamper evidence. A confirmatory recorded run's live recording must state its
+start (`recording_started_on_missing`), not after the run (`recording_after_run`). A confirmatory run covers every live
+item of both splits (`items_split_missing` when a live item has no split) and its full replicate subsample
+(`replicate_subsample_short`).
 --write and --check run in a temporary directory outside the checkout; nothing else is written there. With --access-log
 (required for non-synthetic inputs, with --actor-role) the run logs the spec read, every input as the planner reads it
 (also when it then refuses the run), its start and its outcome (completed, interrupted or refused). --resume continues only this run's own checkpoint.
@@ -21,8 +24,9 @@ when a live item has no split).
 Exit codes: 0 ok; 1 drift; 2 usage, a malformed spec, a path, an experiment or a foreign checkpoint refused, a
 non-synthetic run without the access log (`access_log_required`) or a passing pre-run scan (`pre_run_scan_*`), or a
 confirmatory run refused for any reason that is not an IRB, OSF or freeze reason (its pre-run scan, D-14 open, a
-governance record on a public path, `created_at_not_today`, `created_at_not_start_date`, `recording_started_on_missing`,
-`stub_not_confirmatory`, `recording_not_live`); 3 invalid items, unresolved pointers, a freeze record or a payload-log
+governance record on a public path, `created_at_not_today`, `created_at_in_future`, `created_at_not_start_date`,
+`recording_started_on_missing`, `recording_after_run`, `replicate_subsample_short`, `stub_not_confirmatory`,
+`recording_not_live`); 3 invalid items, unresolved pointers, a freeze record or a payload-log
 violation, and a confirmatory run refused for its items (`items_not_frozen`, `items_split_missing`) or its freeze record
 (`freeze_record_*`) with no IRB or OSF reason; 5 interrupted (provider outage; --resume continues it, on a later day
 too); 6 a pin mismatch; 7 arm parity; 8 a confirmatory run refused with any IRB or OSF reason (`irb_*`,

@@ -46,7 +46,7 @@ The rc1 card's allocation (A44 B28 C20 D14 E14 F12 G28) is recorded in the freez
 
 120-200 non-retired items, each stratum exactly at its target, every item frozen and human-reviewed with its validation
 flags true and `item_kind` marked, every live item in the calibration or the confirmation split with each stratum's
-split balanced to within one (`ulqs-split-v1`; a confirmatory run uses only the confirmation items), at least 4/5 at Bloom "understand" or above, at most 1/10 bibliographic, one corpus
+split balanced to within one counting retired items and a live item in each split (`ulqs-split-v1`; the calibration split is for threshold calibration, and a confirmatory run covers both splits), at least 4/5 at Bloom "understand" or above, at most 1/10 bibliographic, one corpus
 version, every pointer resolved and checked against the corpus text character for character, every item's move from the
 previous set (the review set or the last frozen set) allowed by the state machine with no frozen content changed, and a
 current agreement record with

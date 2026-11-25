@@ -82,4 +82,4 @@ Criteria reported without a family test: MR-2; MR-3; LQ-2.
 | `agent_verifier_accuracy_with_and_without_changed_items` | E2 | the AI-agent verifier's E2 accuracy reported with and without the ULQS items changed after one of its flags (the freeze record's items_changed_after_flag; VBT RevB Sec. VIII-B, Benchmark verification) | not implemented (DI-138) |
 
 Not executed: every hypothesis above awaits the frozen ULQS, the IRB letter, the OSF DOI and the research data
-plane (DI-129..DI-142).
+plane (DI-129..DI-143).

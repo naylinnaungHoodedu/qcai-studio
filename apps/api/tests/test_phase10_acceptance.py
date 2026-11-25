@@ -8,6 +8,7 @@ their real-data halves are deferred (DI-129..DI-141). No test reads a private fi
 from __future__ import annotations
 
 import ast
+from collections import Counter
 import dataclasses
 import datetime as datetime_module
 from fractions import Fraction
@@ -193,6 +194,20 @@ def _retire_first(items):
     items[0]["status"] = "retired"
 
 
+def _previous_live_first(previous):
+    """The set the freeze starts from, with the item retired since (`_retire_first`) still in review when the agent checked."""
+    previous[0]["status"] = "review"
+    return previous
+
+
+def _retire_confirmation(letter):
+    def mutate(items):
+        for item in items:
+            if item["stratum"] == letter and item["split"] == "confirmation":
+                item["status"] = "retired"
+    return mutate
+
+
 def _as_checked_before_retirement(items):
     """`items` as the agent checked them: the item retired since was still live (status is not part of its content)."""
     return [{**item, "status": "frozen"} if item["status"] == "retired" else item for item in items]
@@ -296,14 +311,39 @@ FREEZE_CASES = {
                                                  {"agent_check_invalid"}),
     "an unknown item changed after a flag": (dict(agent_edit=lambda agent, items: {**agent, "items_changed_after_flag": ["SYN-A-999"]}),
                                              {"agent_check_invalid"}),
-    # Reviewers retire an item the agent flagged: listed, it passes; unlisted, the record is stale (41 A items, one retired).
-    "an item retired after a flag, listed": (dict(counts=_with(T, A=41), mutate=_retire_first, agent_edit=lambda agent, items: _agent_of(
-        {**agent, "items_checked": len(items)}, _as_checked_before_retirement(items), [items[0]["item_id"]])), set()),
-    "an item retired after a flag, unlisted": (dict(counts=_with(T, A=41), mutate=_retire_first, agent_edit=lambda agent, items: _agent_of(
-        {**agent, "items_checked": len(items)}, _as_checked_before_retirement(items))), {"agent_check_stale"}),
+    # Reviewers retire an item the agent checked in the review set (41 A items, one retired since): listed with its reason
+    # it passes; unlisted the record is stale; left out of checked_items the record is incomplete, since the agent checked
+    # every item live in the set the freeze starts from. An item retired before the check is not in checked_items.
+    "an item retired after a flag, listed": (dict(counts=_with(T, A=41), mutate=_retire_first, previous_edit=_previous_live_first,
+                                                  agent_edit=lambda agent, items: _agent_of({**agent, "items_checked": len(items)},
+                                                                                            _as_checked_before_retirement(items),
+                                                                                            [items[0]["item_id"]])), set()),
+    "an item retired after a flag, unlisted": (dict(counts=_with(T, A=41), mutate=_retire_first, previous_edit=_previous_live_first,
+                                                    agent_edit=lambda agent, items: _agent_of({**agent, "items_checked": len(items)},
+                                                                                              _as_checked_before_retirement(items))),
+                                               {"agent_check_stale"}),
+    "an item retired after the check, dropped from checked_items": (dict(counts=_with(T, A=41), mutate=_retire_first,
+                                                                         previous_edit=_previous_live_first), {"agent_check_incomplete"}),
+    "an item retired without a flag, listed as such": (dict(counts=_with(T, A=41), mutate=_retire_first, previous_edit=_previous_live_first,
+                                                            agent_edit=lambda agent, items: {**_agent_of(
+                                                                {**agent, "items_checked": len(items)}, _as_checked_before_retirement(items)),
+                                                                "items_changed_without_flag": [items[0]["item_id"]],
+                                                                "agent_detected_defects": 0, "agent_false_alarms": 0}), set()),
+    "an item listed with both reasons": (dict(counts=_with(T, A=41), mutate=_retire_first, previous_edit=_previous_live_first,
+                                              agent_edit=lambda agent, items: {**_agent_of(
+                                                  {**agent, "items_checked": len(items)}, _as_checked_before_retirement(items),
+                                                  [items[0]["item_id"]]), "items_changed_without_flag": [items[0]["item_id"]]}),
+                                         {"agent_check_invalid"}),
+    "an item retired before the check": (dict(counts=_with(T, A=41), mutate=_retire_first), set()),
+    "an item retired before the check, in checked_items": (dict(counts=_with(T, A=41), mutate=_retire_first, agent_edit=lambda agent, items: _agent_of(
+        {**agent, "items_checked": len(items)}, _as_checked_before_retirement(items), [items[0]["item_id"]])), {"agent_check_incomplete"}),
     # Plan 10.5(2) "calibration and confirmation items split [Risk R-25]": every live item carries a split, balanced per stratum.
     "an item without a split": (dict(mutate=_set_one(("split",), None)), {"split_missing"}),
     "a stratum's split unbalanced": (dict(mutate=_flip_split), {"split_unbalanced:A"}),
+    # The balance counts retired items (a frozen item's split never changes), so retirements could leave a stratum with
+    # one split only: 30 D items, the 15 confirmation items retired, balanced 15/15 but no live confirmation item.
+    "a stratum left with no live confirmation item": (dict(counts=_with(T, D=30), mutate=_retire_confirmation("D")),
+                                                      {"split_live_missing:D"}),
 }
 
 
@@ -434,19 +474,25 @@ def test_ac_10_1_the_validator_refuses_an_unreadable_rubric_rules_file_or_agent_
              "rules that are not there (freeze only)": [*no_ratings[:no_ratings.index("--rules") + 1], str(tmp_path / "absent.json"),
                                                         *no_ratings[no_ratings.index("--rules") + 2:]]}
     # Rules that parse but are shaped wrongly (a list, a section missing, a stratum or section that is not an object, a
-    # bound that is not a number) are invalid too, on the --ratings path and on the --freeze path.
+    # bound that is not an integer, Infinity and 1.5 included, a file nested too deeply to parse) are invalid too, on the
+    # --ratings path and on the --freeze path.
     malformed = {"a list": [], "no items": {k: v for k, v in old_rules.items() if k != "items"},
                  "no agreement": {k: v for k, v in old_rules.items() if k != "agreement"},
                  "no coverage": {k: v for k, v in old_rules.items() if k != "coverage"},
                  "a stratum that is a number": {**old_rules, "strata": {**old_rules["strata"], "A": 40}},
                  "items that are a list": {**old_rules, "items": [120, 200]},
                  "a null bound": {**old_rules, "items": {"min": None, "max": 200}},
-                 "a zero denominator": {**old_rules, "agreement": {**old_rules["agreement"], "alpha_min": "1/0"}}}
+                 "a zero denominator": {**old_rules, "agreement": {**old_rules["agreement"], "alpha_min": "1/0"}},
+                 "an infinite bound": {**old_rules, "items": {"min": float("inf"), "max": 200}},
+                 "a fractional bound": {**old_rules, "items": {"min": 1.5, "max": 200}},
+                 "a boolean bound": {**old_rules, "items": {"min": 120, "max": True}},
+                 "a bound past any float": {**old_rules, "items": {"min": 120, "max": "1e999"}},
+                 "nesting too deep": "[" * 200000 + "]" * 200000}
     for name, value in malformed.items():
         if isinstance(value, dict):  # old_rules lacks agent_check: give each the valid one, so only its own defect remains
             value = {**value, "agent_check": {"record": "ulqs-agent-check-v1", "pinned_models": [synthetic.SYNTHETIC_AGENT_MODEL]}}
         path = tmp_path / f"rules-{name.replace(' ', '-')}.json"
-        write_lf(path, json.dumps(value) + "\n")
+        write_lf(path, (value if isinstance(value, str) else json.dumps(value)).replace('"1e999"', "1e999") + "\n")
         with pytest.raises(ValueError, match="freeze rules"):
             ulqs.load_freeze_rules(path)
         cases[f"rules: {name} (ratings)"] = swap("--rules", path)
@@ -1481,8 +1527,8 @@ def test_plan_j_a_provider_outage_resumes_to_the_same_bytes(tmp_path):
 
 def test_plan_j_a_live_run_interrupted_by_an_outage_resumes_on_a_later_utc_day_with_the_same_spec(tmp_path, monkeypatch, capsys):
     # Plan J "provider outage resumes": a live run interrupted (exit 5) and resumed after 00:00 UTC with the same spec
-    # is judged against its own start, proved by its checkpoint (the run digest covers created_at), not refused as
-    # created_at_not_today; a fresh start on that day still is, and the IRB must be valid on the resume day too.
+    # is judged against the start date its checkpoint records (and the run digest, which covers created_at), not refused
+    # as created_at_not_today; a fresh start on that day still is, and the IRB must be valid on the resume day too.
     live_spec, _package, out = _live_ready(tmp_path, monkeypatch)
     stub = stub_spec(tmp_path, package=synthetic.decided_package(tmp_path))
     live = {**stub, **{key: live_spec[key] for key in ("governance", "provider_terms", "licence_ruling", "research_use_confirmation")},
@@ -1512,12 +1558,12 @@ def test_plan_j_a_live_run_interrupted_by_an_outage_resumes_on_a_later_utc_day_w
     with pytest.raises(runner.RunRefused) as refused:
         runner.execute_run(resumed, providers.ScriptedProvider(), fresh, resume=True)
     assert refused.value.code == 9 and refused.value.reasons == ["created_at_not_today"] and not fresh.exists()
-    # created_at moved to the resume day: the checkpoint belongs to another run digest, so the record cannot say the run
-    # started on the day it was resumed.
+    # created_at moved to the resume day: the checkpoint's start event was written on another day, so the record cannot
+    # say the run started on the day it was resumed.
     moved = runner.plan_run({**live, "created_at": f"{next_day.isoformat()}T00:00:00Z"}, out_dir=out, resume=True)
     with pytest.raises(runner.RunRefused) as refused:
         runner.execute_run(moved, providers.ScriptedProvider(), out, resume=True)
-    assert refused.value.reasons == ["checkpoint_mismatch"]
+    assert refused.value.code == 9 and refused.value.reasons == ["created_at_not_start_date"]
     # The IRB (expiring 2027-11-01) must still be valid on the day the resumed run queries providers.
     monkeypatch.setattr(governance, "utc_today", lambda: datetime_module.date(2027, 12, 1))
     with pytest.raises(runner.RunRefused) as refused:
@@ -1525,9 +1571,62 @@ def test_plan_j_a_live_run_interrupted_by_an_outage_resumes_on_a_later_utc_day_w
     assert refused.value.code == 9 and refused.value.reasons == ["irb_expired"]
 
 
-def test_ac_10_5_a_confirmatory_recorded_run_is_judged_against_its_recording_s_start(tmp_path, monkeypatch):
-    # The runner hands the gate the recording's source and its started_on (the day its live run started), which the gate
-    # judges created_at against on whatever day the replay runs (test_governance_records covers the gate's rule).
+def test_plan_j_a_resume_is_judged_against_the_start_date_its_checkpoint_records(tmp_path, monkeypatch):
+    # A dated run's start event records the UTC day it was written. --resume into an output with no run events is a fresh
+    # start, which runs when dated today; with events, created_at may not be in the future and must be the day the start
+    # event records, so a hand-written start event carrying only the run digest (computable from the spec) does not let
+    # an old or future-dated spec through. The checkpoint is the operator's own file, not tamper evidence (DI-143): a
+    # start event forged with the backdated day as well is accepted, which is why the runbook keeps run outputs in the
+    # research plane and the access log records each run's start.
+    live_spec, _package, out = _live_ready(tmp_path, monkeypatch)
+    stub = stub_spec(tmp_path, package=synthetic.decided_package(tmp_path))
+    live = {**stub, **{key: live_spec[key] for key in ("governance", "provider_terms", "licence_ruling", "research_use_confirmation")},
+            "mode": "live", "responder": {"live": {"adapter": "fake-adapter", "providers": ["SYN-PROVIDER-1"]}}}
+    today = datetime_module.date.fromisoformat(synthetic.CREATED[:10])
+    assert governance.utc_today() == today
+    same_day = out.parent / "same-day"
+    record = runner.execute_run(runner.plan_run(live, out_dir=same_day, resume=True), providers.ScriptedProvider(), same_day, resume=True)
+    events = read_jsonl(same_day / "run_events.jsonl")
+    assert record["slis"]["completed_requests"] == record["slis"]["planned_requests"]
+    assert [event["event"] for event in events] == ["start", "completed"] and events[0]["started_on"] == today.isoformat()
+    exploratory = runner.plan_run(stub_spec(tmp_path))
+    runner.execute_run(exploratory, providers.ScriptedProvider(), out.parent / "exploratory")
+    assert "started_on" not in read_jsonl(out.parent / "exploratory" / "run_events.jsonl")[0]  # stub outputs stay date-free
+
+    def forged(created_at, **start):
+        spec = {**live, "created_at": created_at}
+        directory = out.parent / ("forged-" + created_at[:10] + "-" + str(len(start)))
+        plan = runner.plan_run(spec, out_dir=directory, resume=True)
+        directory.mkdir(parents=True)
+        event = {"event": "start", "run_digest": runner.run_digest(plan, providers.ScriptedProvider.rule), **start}
+        (directory / "run_events.jsonl").write_text(json.dumps(event) + "\n", encoding="utf-8")
+        return plan, directory
+
+    future = (today + datetime_module.timedelta(days=30)).isoformat()
+    for start in ({}, {"started_on": future}):
+        plan, directory = forged(f"{future}T00:00:00Z", **start)
+        with pytest.raises(runner.RunRefused) as refused:
+            runner.execute_run(plan, providers.ScriptedProvider(), directory, resume=True)
+        assert refused.value.code == 9 and refused.value.reasons == ["created_at_in_future"], start
+    past = (today - datetime_module.timedelta(days=10)).isoformat()
+    plan, directory = forged(f"{past}T00:00:00Z")
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.execute_run(plan, providers.ScriptedProvider(), directory, resume=True)
+    assert refused.value.code == 9 and refused.value.reasons == ["created_at_not_start_date"]
+    # The checkpoint's first event must be its start: a first `resumed` event with the right digest and day is refused.
+    (directory / "run_events.jsonl").write_text(json.dumps({"event": "resumed", "run_digest": runner.run_digest(
+        plan, providers.ScriptedProvider.rule), "started_on": past}) + "\n", encoding="utf-8")
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.execute_run(plan, providers.ScriptedProvider(), directory, resume=True)
+    assert refused.value.reasons == ["checkpoint_mismatch"]
+    plan, directory = forged(f"{past}T00:00:00Z", started_on=past)
+    runner.execute_run(plan, providers.ScriptedProvider(), directory, resume=True)  # the documented limit (DI-143)
+
+
+def test_ac_10_5_a_confirmatory_recorded_run_hands_the_gate_its_recording_s_start_and_is_dated(tmp_path, monkeypatch):
+    # The runner hands the gate the recording's source and its started_on (the day its live run started), which must be
+    # on or before the replay's created_at, itself today (test_governance_records covers the gate's rule); a resumed
+    # confirmatory replay is judged against its checkpoint like any dated run.
     lines = read_jsonl(synthetic.RECORDED_FIXTURE)
     lines[0] = {**lines[0], "source": "live", "started_on": "2026-11-24"}
     recording = tmp_path / "recording.jsonl"
@@ -1541,22 +1640,45 @@ def test_ac_10_5_a_confirmatory_recorded_run_is_judged_against_its_recording_s_s
         runner.plan_run(spec, resume=True)
     assert refused.value.reasons[0] == "stop"
     assert seen["recording_source"] == "live" and seen["recording_started_on"] == "2026-11-24" and seen["resuming"] is True
+    # Planned past the gate (and the fixture items' missing split), a confirmatory replay is dated: resumed, it carries
+    # the start check that judges it against its checkpoint.
+    monkeypatch.setattr(governance, "confirmatory_refusals", lambda spec, **kwargs: [])
+    monkeypatch.setattr(ulqs, "SPLITS", (*ulqs.SPLITS, None))
+    assert runner.plan_run(spec).dated and runner.plan_run(spec).start_check is None
+    assert runner.plan_run(spec, resume=True).start_check == 2
 
 
-def test_ac_10_5_a_confirmatory_run_plans_only_confirmation_split_items_and_resumes_against_its_own_start(tmp_path, monkeypatch):
-    # Plan 10.5(2) "calibration and confirmation items split [Risk R-25]": the calibration items, which tune thresholds,
-    # never enter a confirmatory run, and a confirmatory run over items without a split is refused for its items (exit 3).
+def test_ac_10_5_a_confirmatory_run_covers_every_item_and_replicates_the_full_subsample(tmp_path, monkeypatch):
+    # Paper Sec. VIII E1 "All ULQS items run through all seven arms" and the registered data "all ULQS items x seven
+    # arms": a confirmatory run covers both splits (the calibration split is for thresholds, plan L470), every stratum
+    # at its count, and gives the paper's three replicates to all 40 items of the S1 subsample its record pins; a
+    # subsample stratum with fewer live items than the size is refused, and items without a split are refused (exit 3).
     # The gate's own records are covered by the AC-10-5 tests; here it is passed so that the runner's part is seen.
     monkeypatch.setattr(governance, "confirmatory_refusals", lambda spec, **kwargs: [])
     items_path, catalog_path, items = synthetic.write_fixture_set(tmp_path, synthetic.PAPER_TARGETS, splits=True)
     spec = synthetic.spec_dict(items_path=items_path, catalog_path=catalog_path, purpose="confirmatory", experiment="E1",
                                run_id="synthetic-confirmatory-split-v1")
+    del spec["replicates"]  # the paper's default (harness_parameters_v1.json): three replicates on a 40-item S1 subsample
     plan = runner.plan_run(spec)
-    confirmation = {item["item_id"] for item in items if item["split"] == "confirmation"}
-    assert {request.item_id for request in plan.requests} == confirmation and 0 < len(confirmation) < len(items)
+    assert {request.item_id for request in plan.requests} == {item["item_id"] for item in items}
+    by_stratum = Counter(item["stratum"] for item in items if item["item_id"] in {request.item_id for request in plan.requests})
+    assert dict(by_stratum) == synthetic.PAPER_TARGETS
+    assert plan.pins["replicates"]["subsample"] == {"stratum": "A", "size": 40, "replicates": 3, "rule": "sha256-order-v1"}
+    replicated = {request.item_id for request in plan.requests if request.replicate == 3}
+    assert replicated == set(runner.subsample(items, plan.pins["replicates"])) and len(replicated) == 40
+    assert {item["split"] for item in items if item["item_id"] in replicated} == {"calibration", "confirmation"}
     exploratory = runner.plan_run({**spec, "purpose": "exploratory", "experiment": "harness-check"})
-    assert {request.item_id for request in exploratory.requests} == {item["item_id"] for item in items}
+    assert {request.request_key for request in exploratory.requests} == {request.request_key for request in plan.requests}
     assert plan.start_check is None and runner.plan_run(spec, resume=True).start_check == 2
+    (tmp_path / "short").mkdir()
+    short_path, short_catalog, _short = synthetic.write_fixture_set(tmp_path / "short", _with(synthetic.PAPER_TARGETS, A=39), splits=True)
+    short = synthetic.spec_dict(items_path=short_path, catalog_path=short_catalog, purpose="confirmatory", experiment="E1",
+                                run_id="synthetic-confirmatory-split-v1")
+    del short["replicates"]
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(short)
+    assert refused.value.code == 2 and refused.value.reasons == ["replicate_subsample_short"]
+    assert len(runner.plan_run({**short, "purpose": "exploratory", "experiment": "harness-check"}).requests) > 0
     (tmp_path / "unsplit").mkdir()
     unsplit_path, unsplit_catalog, _unsplit = synthetic.write_fixture_set(tmp_path / "unsplit", synthetic.PAPER_TARGETS)
     unsplit = synthetic.spec_dict(items_path=unsplit_path, catalog_path=unsplit_catalog, purpose="confirmatory", experiment="E1",

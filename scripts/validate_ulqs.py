@@ -231,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
                 "agent_check_sha256": None if agent_record is None else canonical_sha256(agent_record),
                 "agent_report_sha256": agent.get("report_sha256"), "agent_model_id": agent.get("agent_model_id"), **{key: agent.get(key) for key in AGENT_COUNTS},
                 "items_changed_after_flag": agent.get("items_changed_after_flag"),
+                "items_changed_without_flag": agent.get("items_changed_without_flag"),
                 "passed": result.passed, "failures": list(result.failures)}
             write_lf(args.freeze_out, dumps_record(freeze_record))
             log("write", "freeze_record", lf_sha256(args.freeze_out))

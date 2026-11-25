@@ -644,8 +644,10 @@ def assign_splits(items: Sequence[Mapping[str, Any]]) -> dict[str, str]:
 
 def split_failures(items: Sequence[Mapping[str, Any]]) -> list[str]:
     """The freeze codes of the calibration/confirmation split (plan 10.5(2), Risk R-25; PD-61): every live item carries a
-    split (`split_missing`), and within each stratum the items that carry one (retired items included, since a frozen
-    item's split never changes) are balanced to within one (`split_unbalanced:<letter>`), as `ulqs-split-v1` assigns them."""
+    split (`split_missing`); within each stratum the items that carry one (retired items included, since a frozen item's
+    split never changes) are balanced to within one (`split_unbalanced:<letter>`), as `ulqs-split-v1` assigns them; and
+    a stratum with two or more live items keeps a live item in each split (`split_live_missing:<letter>`), so that
+    retirements cannot leave a stratum with no live calibration or no live confirmation item."""
     failures = []
     if any(item.get("split") not in SPLITS for item in items if item.get("status") != "retired"):
         failures.append("split_missing")
@@ -653,6 +655,9 @@ def split_failures(items: Sequence[Mapping[str, Any]]) -> list[str]:
         splits = [item.get("split") for item in items if item.get("stratum") == letter and item.get("split") in SPLITS]
         if abs(splits.count(SPLITS[0]) - splits.count(SPLITS[1])) > 1:
             failures.append(f"split_unbalanced:{letter}")
+        live = [item.get("split") for item in items if item.get("stratum") == letter and item.get("status") != "retired"]
+        if len(live) >= 2 and not all(split in live for split in SPLITS):
+            failures.append(f"split_live_missing:{letter}")
     return failures
 
 def _fraction(value: Any) -> Fraction:
@@ -663,13 +668,18 @@ def _fraction(value: Any) -> Fraction:
 
 def load_freeze_rules(path: Path = DEFAULT_FREEZE_RULES) -> FreezeRules:
     """The freeze rules at `path`. Every way the file can be wrong (unreadable aside: OSError) raises ValueError: bytes
-    that are not UTF-8 JSON, a value that is not an object, a section or key missing, a value of the wrong type."""
-    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    that are not UTF-8 JSON or nest too deeply to parse, a value that is not an object, a section or key missing, a value
+    of the wrong type (an item bound that is not an integer, `Infinity` and `1.5` included) or out of range."""
+    text = Path(path).read_text(encoding="utf-8")
+    try:
+        raw = json.loads(text)
+    except RecursionError:
+        raise ValueError("freeze rules: nested too deeply to parse") from None
     if not isinstance(raw, Mapping):
         raise ValueError("freeze rules: not a JSON object")
     try:
         return _freeze_rules(raw)
-    except (KeyError, TypeError, AttributeError, ZeroDivisionError) as error:
+    except (KeyError, TypeError, AttributeError, ZeroDivisionError, OverflowError, RecursionError) as error:
         raise ValueError(f"freeze rules: malformed ({type(error).__name__}: {error})") from None
 
 
@@ -685,7 +695,9 @@ def _freeze_rules(raw: Mapping[str, Any]) -> FreezeRules:
         if isinstance(target, bool) or not isinstance(target, int) or target < 1:
             raise ValueError(f"freeze rules: strata.{letter}.target must be a positive integer")
         targets[letter] = target
-    items_min, items_max = int(raw["items"]["min"]), int(raw["items"]["max"])
+    items_min, items_max = raw["items"]["min"], raw["items"]["max"]
+    if any(isinstance(bound, bool) or not isinstance(bound, int) or bound < 0 for bound in (items_min, items_max)):
+        raise ValueError("freeze rules: items.min and items.max must be non-negative integers")
     total = sum(targets.values())
     if not items_min <= total <= items_max:
         raise ValueError(f"freeze rules: the strata targets total {total}, outside [{items_min}, {items_max}]")
@@ -706,12 +718,14 @@ def _freeze_rules(raw: Mapping[str, Any]) -> FreezeRules:
 # who did not review that item; the counts of agent-detected defects, agent false alarms and missed defects are reported.
 # Items changed after one of the agent's flags are listed, so that its E2 accuracy can be reported with and without them:
 # the record binds each item's content as the agent checked it (`checked_items`), and the freeze accepts a later change
-# to exactly the listed items.
+# to exactly the listed items, each listed with its reason: after one of the agent's flags (`items_changed_after_flag`)
+# or for another reason (`items_changed_without_flag`).
 AGENT_CHECK_RECORD = "ulqs-agent-check-v1"
 AGENT_CHECK_KEYS = ("record", "checked_items", "agent_model_id", "model_chosen_before_check", "verdict_schema",
                     "report_sha256", "items_checked", "disagreements", "disagreements_adjudicated",
                     "adjudicated_by_non_reviewer", "agent_detected_defects", "agent_false_alarms", "agent_missed_defects",
-                    "items_changed_after_flag")
+                    "items_changed_after_flag", "items_changed_without_flag")
+AGENT_CHANGE_LISTS = ("items_changed_after_flag", "items_changed_without_flag")
 AGENT_CHECK_COUNTS = ("items_checked", "disagreements", "disagreements_adjudicated", "agent_detected_defects",
                       "agent_false_alarms", "agent_missed_defects")
 AGENT_VERDICT_SCHEMA = "v2"
@@ -729,26 +743,31 @@ def item_content_sha256(item: Mapping[str, Any]) -> str:
 
 def agent_check_shape_ok(record: Any) -> bool:
     """An `ulqs-agent-check-v1` record's shape: exactly its keys, counts that are non-negative integers, a model id, the
-    report's sha256, the V2 verdict schema, `checked_items` mapping item ids to content sha256s and a list of item ids
-    changed after a flag."""
+    report's sha256, the V2 verdict schema, `checked_items` mapping item ids to content sha256s and two lists of item
+    ids, those changed after a flag and those changed for another reason."""
     return isinstance(record, Mapping) and record.get("record") == AGENT_CHECK_RECORD and set(record) == set(AGENT_CHECK_KEYS) \
         and all(_count(record[key]) for key in AGENT_CHECK_COUNTS) \
         and isinstance(record["agent_model_id"], str) and bool(record["agent_model_id"]) \
         and isinstance(record["report_sha256"], str) and bool(_HEX64.match(record["report_sha256"])) \
         and record["verdict_schema"] == AGENT_VERDICT_SCHEMA and isinstance(record["checked_items"], Mapping) \
         and all(isinstance(key, str) and isinstance(value, str) and _HEX64.match(value) for key, value in record["checked_items"].items()) \
-        and isinstance(record["items_changed_after_flag"], list) and all(isinstance(entry, str) for entry in record["items_changed_after_flag"])
+        and all(isinstance(record[key], list) and all(isinstance(entry, str) for entry in record[key]) for key in AGENT_CHANGE_LISTS)
 
 
-def agent_check_failures(record: Mapping[str, Any] | None, items: Sequence[Mapping[str, Any]], *, rules: FreezeRules) -> list[str]:
-    """The freeze codes of the agent re-check (spec 4.2): missing, malformed, not covering every live item, an item changed
-    since the agent checked it that `items_changed_after_flag` does not list (stale), by a model the rules do not pin (none
-    is pinned while D-07 is open: DI-142), or with an unadjudicated disagreement. `checked_items` holds each item's content
-    sha256 as the agent checked it; an item whose content differs now must be listed, and a listed item must be one the
-    agent checked whose content did change, and at most as many items as the agent flagged (detected defects plus false
-    alarms) may be listed. An item the agent checked that is retired now counts as changed after a flag (a listed
-    retirement passes, an unlisted one is stale), so `checked_items` holds every item live when the agent checked: every
-    live item, plus items retired since; `items_checked` is its size."""
+def agent_check_failures(record: Mapping[str, Any] | None, items: Sequence[Mapping[str, Any]], *, rules: FreezeRules,
+                         previous: Sequence[Mapping[str, Any]] | None = None) -> list[str]:
+    """The freeze codes of the agent re-check (spec 4.2): missing, malformed, not covering every item the agent had to
+    check (incomplete), an item changed since the agent checked it that neither list names (stale), by a model the rules
+    do not pin (none is pinned while D-07 is open: DI-142), or with an unadjudicated disagreement.
+
+    The agent checks the set the freeze starts from (`previous`, the review set; runbook step 3), so `checked_items` must
+    name exactly every item live now plus every item live in `previous` (an item retired since the check stays in it);
+    with no previous set (the freeze then fails with `no_previous_set`) the items it holds that are retired now are
+    accepted in place of the previous set's live items. `items_checked` is its size. An item whose content differs from
+    `checked_items` now, or that the agent checked and is retired now, is changed and must be listed with its reason:
+    `items_changed_after_flag` (after one of the agent's flags; at most as many as it flagged, detected defects plus false
+    alarms) or `items_changed_without_flag` (for another reason, such as trimming a stratum to its target). A listed
+    item must be one that changed, in one list only and once."""
     if record is None:
         return ["agent_check_missing"]
     if not agent_check_shape_ok(record):
@@ -757,13 +776,20 @@ def agent_check_failures(record: Mapping[str, Any] | None, items: Sequence[Mappi
     live = [item for item in items if item.get("status") != "retired"]
     checked = record["checked_items"]
     live_ids = {item.get("item_id") for item in live}
+    current_ids = {item.get("item_id") for item in items}
+    if previous is None:
+        required = live_ids | {item_id for item_id in checked if item_id in current_ids}
+    else:
+        required = live_ids | {item.get("item_id") for item in previous if isinstance(item, Mapping)
+                               and item.get("status") != "retired" and item.get("item_id") in current_ids}
     retired_checked = {item.get("item_id") for item in items if item.get("status") == "retired" and item.get("item_id") in checked}
     changed = {item.get("item_id") for item in live if item.get("item_id") in checked and checked[item["item_id"]] != item_content_sha256(item)}
     changed |= retired_checked
-    listed = set(record["items_changed_after_flag"])
+    after_flag, without_flag = (record[key] for key in AGENT_CHANGE_LISTS)
+    listed = set(after_flag) | set(without_flag)
     if changed - listed:
         failures.append("agent_check_stale")
-    if record["items_checked"] != len(checked) or set(checked) != live_ids | retired_checked:
+    if record["items_checked"] != len(checked) or set(checked) != required:
         failures.append("agent_check_incomplete")
     if record["model_chosen_before_check"] is not True:
         failures.append("agent_model_not_chosen_before_check")
@@ -771,8 +797,8 @@ def agent_check_failures(record: Mapping[str, Any] | None, items: Sequence[Mappi
         failures.append("agent_model_not_pinned")
     if record["disagreements_adjudicated"] != record["disagreements"] or record["adjudicated_by_non_reviewer"] is not True:
         failures.append("agent_disagreements_unadjudicated")
-    if listed - changed or len(listed) != len(record["items_changed_after_flag"]) \
-            or len(listed) > record["agent_detected_defects"] + record["agent_false_alarms"]:
+    if listed - changed or len(listed) != len(after_flag) + len(without_flag) \
+            or len(after_flag) > record["agent_detected_defects"] + record["agent_false_alarms"]:
         failures.append("agent_check_invalid")
     return failures
 
@@ -862,6 +888,6 @@ def freeze_check(items: Sequence[Mapping[str, Any]], *, rules: FreezeRules, poin
             rated, total = (per_stratum.get(letter) or [0, counts[letter]])
             if rated < ceil(total * rules.share_min):
                 failures.append(f"stratum_second_rated_below_share:{letter}")
-    failures += agent_check_failures(agent_check, items, rules=rules)
+    failures += agent_check_failures(agent_check, items, rules=rules, previous=previous)
     return FreezeReport(passed=not failures, failures=tuple(failures), counts=counts, dataset_sha256=dataset_sha256(items),
                         rules_sha256=rules.sha256)
