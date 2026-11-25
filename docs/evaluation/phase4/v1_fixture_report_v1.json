@@ -1,8 +1,8 @@
 {
  "report": "qcai-v1-fixture-report",
  "format_version": 1,
- "created_at": "2026-11-25T01:35:28+00:00",
- "commit": "e23e5f53837244c146e9f7229673e385d29f7d85",
+ "created_at": "2026-11-25T04:02:37+00:00",
+ "commit": "875d2478dadb01d0ff76d98a45c2b4184d024c2c",
  "evidence_class": "fixture measurements, not research results (plan Phase 4 H)",
  "public_corpus_only": true,
  "fixtures": {
@@ -1258,7 +1258,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 7.457,
+    "p95_ms": 11.336,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2485,7 +2485,7 @@
    ],
    "expected_missing": [],
    "latency": {
-    "p95_ms": 7.899,
+    "p95_ms": 10.441,
     "budget_ms": 250,
     "within_budget": true
    }
@@ -2539,7 +2539,7 @@
   "contained": true
  },
  "latency": {
-  "p95_ms": 5.61,
+  "p95_ms": 11.669,
   "budget_ms": 250,
   "within_budget": true
  },
@@ -2583,7 +2583,7 @@
    "apps/api/app/services/provenance.py": "cbea0a9970dac7fe17b653e1308d26b99846e92d0c9e04b5b15be4c3a96e5857",
    "apps/api/app/services/quiz_keys.py": "c839f3da7fce2abada021d5a454cada57ed209474db93abf479fc6a6ad538131",
    "apps/api/app/services/ranking/__init__.py": "d91c6a8760f99946722444c894077782a0f7eeba22052b0db347fa8cafa879c3",
-   "apps/api/app/services/ranking/vocabulary.py": "76f8127a69de1b5049dedcf0016fa95e6b3591b3adf66107af3449ca62f72a58",
+   "apps/api/app/services/ranking/vocabulary.py": "615635165483f0bf555c825158eea333ae477a25ec7d91e8aeaeb03fa3a58656",
    "apps/api/app/services/retrieval_engine.py": "052ec247b23a534be350623d0d85fce6351b8db03e8a6e012a5ebe67f912de1b",
    "apps/api/app/services/retrieval_metrics.py": "58428daac4565b8df6b77bf424442a21ee647a64f19701649cb6751042be603d",
    "apps/api/app/services/retrieval_p1.py": "a15a1431407ba90d04ba7a2c089fee9f3f4d66d6c1a9030a7680cb6194c7cb37",
@@ -2593,7 +2593,7 @@
    "apps/api/app/services/transcripts.py": "1a55f3f5b7e0ce0b9f74999691b50fa3ebb9aeb63bc1051f2bc16b334bd8f053",
    "apps/api/app/services/tutor_pipeline/__init__.py": "79097033ed81fe3e318bd941cb51c5cf531666e2372930a44445424523984a13",
    "apps/api/app/services/tutor_pipeline/bind.py": "dd2903f4bfba727863030bb62b647c4b3594fd4037dfe3b740ac41beef283597",
-   "apps/api/app/services/tutor_pipeline/contracts.py": "1c61cc35284843e65d98fd34e241918fe662d3678e6655e6b3d484fff47d24b7",
+   "apps/api/app/services/tutor_pipeline/contracts.py": "fe7b03ac482f375f2c5a0eeca144ef7c26e6ce57d15b240abfda8e3aaa903061",
    "apps/api/app/services/tutor_pipeline/evidential.py": "3a1bdcdae820dded1b18ec6de20774f0ecf649c123fa166c62168460ffceb85b",
    "apps/api/app/services/tutor_pipeline/lock.py": "f7c1709eefc4923f5fc27c19622e36f72a5d3d1c7b263f784f1a60db2edf66e5",
    "apps/api/app/services/tutor_pipeline/metrics.py": "525b2c52c517d84b6dd642b4a3ac9a92e19c4cdce3415b4d7ca3b1a01a6e3f18",
@@ -2629,6 +2629,6 @@
    "apps/api/app/services/v3/rules.py": "0ae84335d5f83a8f76cd17b4f50357146b6a3ed06795acf0de0f9b87456a521a",
    "scripts/run_v1_fixtures.py": "eef14c4c906aa9abb209c97b83bf78c077ca7a6642febbc0d09b0665b86405bd"
   },
-  "sha256": "3cc9ba92fe5401940b2d5f85b4587b43e244f1e51d91d71c40aa291d2f2e943e"
+  "sha256": "697d623903b4af77c3bc67fbe4a92c4753fb2d6c29d9c415a43af3b7d43ffd66"
  }
 }

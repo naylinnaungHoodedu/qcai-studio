@@ -55,7 +55,7 @@
       "apps/api/app/services/provenance.py": "cbea0a9970dac7fe17b653e1308d26b99846e92d0c9e04b5b15be4c3a96e5857",
       "apps/api/app/services/quiz_keys.py": "c839f3da7fce2abada021d5a454cada57ed209474db93abf479fc6a6ad538131",
       "apps/api/app/services/ranking/__init__.py": "d91c6a8760f99946722444c894077782a0f7eeba22052b0db347fa8cafa879c3",
-      "apps/api/app/services/ranking/vocabulary.py": "76f8127a69de1b5049dedcf0016fa95e6b3591b3adf66107af3449ca62f72a58",
+      "apps/api/app/services/ranking/vocabulary.py": "615635165483f0bf555c825158eea333ae477a25ec7d91e8aeaeb03fa3a58656",
       "apps/api/app/services/retention.py": "d40e98f1c1074ac3b9cad12f67b7a078bd60fd76ccc62da1bb5e654b809e0815",
       "apps/api/app/services/retrieval_engine.py": "052ec247b23a534be350623d0d85fce6351b8db03e8a6e012a5ebe67f912de1b",
       "apps/api/app/services/retrieval_metrics.py": "58428daac4565b8df6b77bf424442a21ee647a64f19701649cb6751042be603d",
@@ -66,7 +66,7 @@
       "apps/api/app/services/transcripts.py": "1a55f3f5b7e0ce0b9f74999691b50fa3ebb9aeb63bc1051f2bc16b334bd8f053",
       "apps/api/app/services/tutor_pipeline/__init__.py": "79097033ed81fe3e318bd941cb51c5cf531666e2372930a44445424523984a13",
       "apps/api/app/services/tutor_pipeline/bind.py": "dd2903f4bfba727863030bb62b647c4b3594fd4037dfe3b740ac41beef283597",
-      "apps/api/app/services/tutor_pipeline/contracts.py": "1c61cc35284843e65d98fd34e241918fe662d3678e6655e6b3d484fff47d24b7",
+      "apps/api/app/services/tutor_pipeline/contracts.py": "fe7b03ac482f375f2c5a0eeca144ef7c26e6ce57d15b240abfda8e3aaa903061",
       "apps/api/app/services/tutor_pipeline/evidential.py": "3a1bdcdae820dded1b18ec6de20774f0ecf649c123fa166c62168460ffceb85b",
       "apps/api/app/services/tutor_pipeline/lock.py": "f7c1709eefc4923f5fc27c19622e36f72a5d3d1c7b263f784f1a60db2edf66e5",
       "apps/api/app/services/tutor_pipeline/metrics.py": "525b2c52c517d84b6dd642b4a3ac9a92e19c4cdce3415b4d7ca3b1a01a6e3f18",
@@ -106,11 +106,11 @@
       "apps/api/app/services/v3/rules.py": "0ae84335d5f83a8f76cd17b4f50357146b6a3ed06795acf0de0f9b87456a521a",
       "apps/api/app/services/v3/stop.py": "a846ccc64ff5122a5327374b6220976cd0bef9e8aacf7ae8d81ec6131535ca6c",
       "scripts/replay_tutor_plans.py": "287a264cea97c41d4e59c958c817c00d6a84e5b8f4d47dd76a867584cc11191a",
-      "scripts/run_invariance_harness.py": "714808b7b83a5bb66b2cc5cfb00ba35580c66179c9512b68bbd8550ea95c2131",
+      "scripts/run_invariance_harness.py": "d4744d2d646f183d6c259746817905e3c37213d6dcf5e6c70cafd0b332897fd9",
       "scripts/run_v2_fixtures.py": "73d36d76bebc93a4e09227fcd2978e4dce518580af900eecb233cc4887c0590b"
     },
     "rule": "imported-repository-modules-sha256-lf-v1",
-    "sha256": "0d431e5f53308527c7dfda7a1c0c85e73b85783f3bc09801b3eab39f0d1d8a57"
+    "sha256": "f609e8c5414afaee31b3d3d5425d6cac98de101c2bc62ef29d405636c5183416"
   },
   "item_set": "public-fixtures",
   "item_set_sha256": "069e9385a571dfd8810eef92d4dc906778fcdcbcbc8d2bafccd9f4cb73e3e405",

@@ -1,8 +1,8 @@
 {
  "report": "qcai-v3-residual-report",
  "format_version": 1,
- "created_at": "2026-11-25T01:35:47+00:00",
- "commit": "e23e5f53837244c146e9f7229673e385d29f7d85",
+ "created_at": "2026-11-25T04:03:04+00:00",
+ "commit": "875d2478dadb01d0ff76d98a45c2b4184d024c2c",
  "evidence_class": "synthetic telemetry, not research results (plan Phase 6 H: audit counts are telemetry, not research results)",
  "public_corpus_only": true,
  "config_package": {
@@ -131,7 +131,7 @@
    "apps/api/app/services/qa_engine.py": "678ab941468f21da8376ec305a82cc904ee16bc0da2551165146eebd0d4a41ca",
    "apps/api/app/services/quiz_keys.py": "c839f3da7fce2abada021d5a454cada57ed209474db93abf479fc6a6ad538131",
    "apps/api/app/services/ranking/__init__.py": "d91c6a8760f99946722444c894077782a0f7eeba22052b0db347fa8cafa879c3",
-   "apps/api/app/services/ranking/vocabulary.py": "76f8127a69de1b5049dedcf0016fa95e6b3591b3adf66107af3449ca62f72a58",
+   "apps/api/app/services/ranking/vocabulary.py": "615635165483f0bf555c825158eea333ae477a25ec7d91e8aeaeb03fa3a58656",
    "apps/api/app/services/retention.py": "d40e98f1c1074ac3b9cad12f67b7a078bd60fd76ccc62da1bb5e654b809e0815",
    "apps/api/app/services/retrieval_engine.py": "052ec247b23a534be350623d0d85fce6351b8db03e8a6e012a5ebe67f912de1b",
    "apps/api/app/services/retrieval_metrics.py": "58428daac4565b8df6b77bf424442a21ee647a64f19701649cb6751042be603d",
@@ -143,7 +143,7 @@
    "apps/api/app/services/transcripts.py": "1a55f3f5b7e0ce0b9f74999691b50fa3ebb9aeb63bc1051f2bc16b334bd8f053",
    "apps/api/app/services/tutor_pipeline/__init__.py": "79097033ed81fe3e318bd941cb51c5cf531666e2372930a44445424523984a13",
    "apps/api/app/services/tutor_pipeline/bind.py": "dd2903f4bfba727863030bb62b647c4b3594fd4037dfe3b740ac41beef283597",
-   "apps/api/app/services/tutor_pipeline/contracts.py": "1c61cc35284843e65d98fd34e241918fe662d3678e6655e6b3d484fff47d24b7",
+   "apps/api/app/services/tutor_pipeline/contracts.py": "fe7b03ac482f375f2c5a0eeca144ef7c26e6ce57d15b240abfda8e3aaa903061",
    "apps/api/app/services/tutor_pipeline/metrics.py": "525b2c52c517d84b6dd642b4a3ac9a92e19c4cdce3415b4d7ca3b1a01a6e3f18",
    "apps/api/app/services/tutor_pipeline/render.py": "7eb1cc2d2e05fed9f180af24feaa159f268abe8055275dcb87e902bc4fdcc42d",
    "apps/api/app/services/tutor_pipeline/retrieve.py": "ba49590036813559da98f6b9a083ba37701f83797fb00fcfc8c0ce26ed8462a8",
@@ -172,6 +172,6 @@
    "apps/api/app/services/v3/triggers.py": "7634c7eb14f7c98aab3516648e2c7a597b51e8a8fa1232cdf430e43ea32b89e0",
    "scripts/run_v3_residual_report.py": "d48830044991aae212323bebf542267ac3d7464cdf5fb98852aef2a577d8b905"
   },
-  "sha256": "5f975bfe35ab90e45b220ce4cc6c1b735d45aa4eb24232582c601e1936a4aed9"
+  "sha256": "7a86084e7312efb4edb564b689456a1b387d2ee4acd57e2923819b2fa6af8d47"
  }
 }

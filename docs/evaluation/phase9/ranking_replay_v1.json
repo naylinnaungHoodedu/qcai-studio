@@ -1,8 +1,8 @@
 {
  "report": "qcai-ranking-replay",
  "format_version": 1,
- "created_at": "2026-11-25T01:35:33Z",
- "commit": "e23e5f53837244c146e9f7229673e385d29f7d85",
+ "created_at": "2026-11-25T04:02:45Z",
+ "commit": "875d2478dadb01d0ff76d98a45c2b4184d024c2c",
  "evidence_class": "engineering measurement on synthetic streams, not E4 results (invariant 9; Table XVII MR-1..MR-3 not asserted)",
  "pins": {
   "config_package": {
@@ -230,9 +230,9 @@
    "apps/api/app/services/ranking/synthetic.py": "29736e7b34ba0d5f2d0eef84dc50a2509f36a7cf5effc411d1e5e39714170177",
    "apps/api/app/services/ranking/trust.py": "400c9c4d1b59c5771e760b5154ce597f5fcca4773a0ea4e399c146e9f22389d6",
    "apps/api/app/services/ranking/types.py": "c6b5924d928108b6754e60389df31d39e527b9eb3447f4aac23ad2e737dcbd21",
-   "apps/api/app/services/ranking/vocabulary.py": "76f8127a69de1b5049dedcf0016fa95e6b3591b3adf66107af3449ca62f72a58",
+   "apps/api/app/services/ranking/vocabulary.py": "615635165483f0bf555c825158eea333ae477a25ec7d91e8aeaeb03fa3a58656",
    "scripts/run_ranking_replay.py": "6830e5d2bd68ee395c406fde7f9d02a9829b65b8893fdbe8c3ae167fb1e7ed94"
   },
-  "sha256": "f73f7e836c278d5a3d717186cab6b922d0b95cc55ee0fb14f9cd69a58621bc5a"
+  "sha256": "fc8451abb76fbcce90a120bb7e86ee6152436e32204dd1b8ebc1d9302ca6f224"
  }
 }
