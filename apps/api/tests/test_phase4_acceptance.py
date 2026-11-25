@@ -1582,15 +1582,13 @@ def test_phase4_docs_the_runbook_says_what_a_legacy_record_s_sufficiency_score_h
 
 
 def test_phase4_docs_the_code_texts_name_the_shipped_package():
-    # P2-12-D-03 covers docstrings and comments: the texts that say where the budgets come from, or which package pins
-    # the schemas or is checked against the pipeline code, name the shipped package (v4 since Phase 5), as the Phase 3
-    # runbook's lines do; contracts.py names the v2 ledger schema that only package v3 pins (spec 7.14).
+    # The shipped package pins the pipeline budgets and schemas. Older packages retain their own version history.
     import inspect
 
     from app.services import tutor_followups, tutor_pipeline
     from app.services.tutor_pipeline import package_check
 
-    from app.core.config_package import RANKING_SCHEMA_VERSION, V4_PACKAGE_PATH, V5_PACKAGE_PATH, V6_PACKAGE_PATH, V7_PACKAGE_PATH
+    from app.core.config_package import LATEST_SCHEMA_VERSION, V4_PACKAGE_PATH, V5_PACKAGE_PATH, V6_PACKAGE_PATH, V7_PACKAGE_PATH
 
     raw = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
     v2 = json.loads(V2_PACKAGE_PATH.read_text(encoding="utf-8"))
@@ -1609,13 +1607,16 @@ def test_phase4_docs_the_code_texts_name_the_shipped_package():
              "ledger": inspect.getdoc(ledger), "tutor_followups": inspect.getdoc(tutor_followups),
              "tutor_pipeline": inspect.getdoc(tutor_pipeline)}
     flat = {name: _flat(text) for name, text in texts.items()}
+    shipped = f"v{LATEST_SCHEMA_VERSION} since Phase 8"
+    for name in ("package_check", "tutor_followups", "tutor_pipeline"):
+        assert shipped in flat[name] and "v7 since Phase 9, the shipped package" not in flat[name], name
     assert "pinned by sha256 in configuration package v2." not in flat["contracts"]
-    assert "ledger-entry.v2.schema.json" in flat["contracts"] and f"the shipped configuration package (v{RANKING_SCHEMA_VERSION} since Phase 9" in flat["contracts"]
+    assert "ledger-entry.v2.schema.json" in flat["contracts"]
     assert not flat["package_check"].startswith("Consistency of configuration package v2 with")
-    assert "schema 2 or later" in flat["package_check"] and f"v{RANKING_SCHEMA_VERSION} since Phase 9, the shipped package" in flat["package_check"]
+    assert "schema 2 or later" in flat["package_check"]
     assert "come from configuration package v2" not in flat["ledger"] and "come from the shipped configuration package" in flat["ledger"]
     assert "(configuration package v2 tutor_pipeline.budgets" not in flat["tutor_followups"]
-    assert f"the shipped configuration package's tutor_pipeline.budgets, v{RANKING_SCHEMA_VERSION} since Phase 9" in flat["tutor_followups"]
+    assert f"the shipped configuration package's tutor_pipeline.budgets, {shipped}" in flat["tutor_followups"]
     assert "package_check (configuration package v2)" not in flat["tutor_pipeline"]
     example = _comments((REPO_ROOT / "infra" / "cloudrun" / "api-production.env.example.yaml").read_text(encoding="utf-8"))
     assert "configuration package v2 tutor_pipeline.budgets" not in example
