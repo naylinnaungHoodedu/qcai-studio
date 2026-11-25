@@ -4,12 +4,14 @@ Until owner decision D-14 is decided there is no research data plane. A research
 outside the repository checkout, or a repository path that matches the pinned package's `private_plane_globs` and that
 git ignores. Research-plane scripts refuse any input or output path outside that rule. A checkout path is recognised
 in any spelling: through a link or junction, with an extended-length prefix, or as another alias of the same directory
-(`checkout_relative`). The rule governs preparation only; runs over non-synthetic data stay refused by hold H12
-(runner).
+(`checkout_relative`). A path holding a NUL character is refused everywhere: as a script argument (`cli_path`, exit 2
+usage) and as an input or output (`PathRefused`), on every platform, because POSIX path calls raise ValueError for it.
+The rule governs preparation only; runs over non-synthetic data stay refused by hold H12 (runner).
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 from pathlib import Path
 import subprocess
@@ -25,6 +27,18 @@ SYNTHETIC_LICENSE = "synthetic"
 
 class PathRefused(ValueError):
     """A research-plane script was given a path outside the research plane."""
+
+
+def has_nul(path: Path | str) -> bool:
+    """True for a path holding a NUL character, which no file system path can hold (POSIX path calls raise ValueError)."""
+    return "\x00" in os.fspath(path)
+
+
+def cli_path(value: str) -> Path:
+    """The argparse type of every path argument of a research-plane script: a NUL is a usage error (exit 2)."""
+    if has_nul(value):
+        raise argparse.ArgumentTypeError("a path holding a NUL character")
+    return Path(value)
 
 
 def _app_on_path() -> None:
@@ -89,6 +103,8 @@ def _git_ignored(rel_posix: str, root: Path) -> bool:
 
 
 def _require_private(path: Path | str, *, root: Path, boundary: Any, what: str) -> Path:
+    if has_nul(path):
+        raise PathRefused(f"{what}: a path holding a NUL character")
     candidate = Path(os.path.abspath(Path(path)))
     rel = checkout_relative(candidate, root)
     if rel is None:
@@ -98,7 +114,11 @@ def _require_private(path: Path | str, *, root: Path, boundary: Any, what: str) 
 
     policy = boundary if boundary is not None else boundary_policy()
     root_abs = Path(os.path.abspath(root))
-    if rel == "." or not is_private_plane_path(root_abs / rel, root_abs, policy):
+    try:
+        private = rel != "." and is_private_plane_path(root_abs / rel, root_abs, policy)
+    except (OSError, ValueError):  # a path the path calls refuse is never a private-plane path
+        private = False
+    if not private:
         raise PathRefused(f"{what} {rel}: inside the checkout and not a private-plane path (PD-74)")
     if not _git_ignored(rel, root_abs):
         raise PathRefused(f"{what} {rel}: a private-plane path that git does not ignore (PD-74)")

@@ -56,11 +56,11 @@ def migrate_item(item: dict, *, mapping: dict, author_role: str, split: str) -> 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
-    parser.add_argument("--input", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--input", type=planes.cli_path, required=True)
+    parser.add_argument("--output", type=planes.cli_path, required=True)
     parser.add_argument("--author-role", required=True, choices=ROLES)
-    parser.add_argument("--access-log", type=Path)
-    parser.add_argument("--mapping", type=Path, default=MAPPING_PATH)
+    parser.add_argument("--access-log", type=planes.cli_path)
+    parser.add_argument("--mapping", type=planes.cli_path, default=MAPPING_PATH)
     try:
         args = parser.parse_args(argv)
     except SystemExit as exit_:

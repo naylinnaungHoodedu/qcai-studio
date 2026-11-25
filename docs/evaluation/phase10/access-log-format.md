@@ -24,9 +24,12 @@ migration, build or scan still leaves its reads:
 
 - `run_evaluation.py`: the spec read (`run_spec`), then each input as soon as the planner reads it (the items, the
   catalog, the recording, and each governance record and the pre-run scan with the sha256 of the bytes read, whether or
-  not it matches its pin), the run's start, and its outcome: `completed` (with the payload log's sha256), `interrupted`
-  (with the checkpoint's sha256) or `refused`. A run that stops early, including one the planner refuses after reading
-  its items (hold H12, the confirmatory gate, a live or pin refusal), still leaves its reads.
+  not it matches its pin), each checkpoint file it reads (`run_output`, the sha256 of the bytes read:
+  `run_events.jsonl` when a confirmatory or live `--resume` is planned, before the gate's reads, and `run_events.jsonl`
+  and `responses.jsonl` when the run starts, before any checkpoint check), the run's start, and its outcome: `completed`
+  (with the payload log's sha256), `interrupted` (with the checkpoint's sha256) or `refused`. A run that stops early,
+  including one the planner refuses after reading its items (hold H12, the confirmatory gate, a live or pin refusal) or
+  one refused on its checkpoint, still leaves its reads.
 - `validate_ulqs.py`: the items and the previous set, the agent-check record (`agent_check_record`), the catalog, the
   corpus text it read, the ratings, and the agreement and freeze records it writes.
 - `build_licensed_fingerprints.py`: each licensed text and the ULQS items it reads, and each fingerprint file it writes.

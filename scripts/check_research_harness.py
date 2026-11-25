@@ -7,8 +7,8 @@ seeded_faults_report_v1.json (the reference detector over the synthetic seeded-f
 (generated from the analysis plans; a DRAFT, not filed). --check (the default; CI) proves each is current, LF-normalised;
 --write rewrites them. --dir points at another copy of the three records (tests).
 
-Exit codes: 0 ok; 1 drift; 3 a known answer not met or an invalid analysis plan; 6 a pin (the package differs from its
-sidecar); 7 arm parity.
+Exit codes: 0 ok; 1 drift; 2 usage (an unknown option, or `--check` with `--write`); 3 a known answer not met or an
+invalid analysis plan; 6 a pin (the package differs from its sidecar); 7 arm parity.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ for path in (REPO_ROOT, API_ROOT):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from evaluation.qcai_eval import ablation, analysis_plans, seeded_faults, ulqs  # noqa: E402
+from evaluation.qcai_eval import ablation, analysis_plans, planes, seeded_faults, ulqs  # noqa: E402
 from evaluation.qcai_eval.canonical import canonical_sha256, dumps_record, lf_sha256, read_jsonl, write_lf  # noqa: E402
 from evaluation.qcai_eval.pointers import EvidenceCatalog  # noqa: E402
 
@@ -94,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--write", action="store_true")
-    parser.add_argument("--dir", type=Path, default=RECORD_DIR)
+    parser.add_argument("--dir", type=planes.cli_path, default=RECORD_DIR)
     try:
         args = parser.parse_args(argv)
     except SystemExit as exit_:

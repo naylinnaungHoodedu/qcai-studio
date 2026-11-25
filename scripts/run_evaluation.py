@@ -19,7 +19,10 @@ covers every live item of both splits (`items_split_missing` when a live item ha
 subsample (`replicate_subsample_short`).
 --write and --check run in a temporary directory outside the checkout; nothing else is written there. With --access-log
 (required for non-synthetic inputs, with --actor-role) the run logs the spec read, every input as the planner reads it
-(also when it then refuses the run), its start and its outcome (completed, interrupted or refused). --resume continues only this run's own checkpoint.
+(also when it then refuses the run), each checkpoint file it reads (`run_output`: run_events.jsonl when a dated resume
+is planned, then run_events.jsonl and responses.jsonl when the run starts), its start and its outcome (completed,
+interrupted or refused). --resume continues only this run's own checkpoint: a trailing partial line of responses.jsonl
+is truncated, and a checkpoint with any other line that is not a response record is refused, never truncated.
 
 Exit codes: 0 ok; 1 drift; 2 usage, a malformed spec, a path, an experiment or a foreign checkpoint refused, a
 non-synthetic run without the access log (`access_log_required`) or a passing pre-run scan (`pre_run_scan_*`), or a
@@ -92,8 +95,8 @@ def _run_id(spec: dict) -> str | None:
 
 def run(spec_path: Path, out_dir: Path, *, resume: bool = False, access: Path | None = None, actor_role: str | None = None) -> int:
     """A run. With --access-log every access is logged before the outcome is known: the spec read, each input as soon as
-    the planner reads it (so a run the planner refuses after reading its items still logs them), the run start, and its
-    outcome (completed, interrupted or refused)."""
+    the planner reads it (so a run the planner refuses after reading its items still logs them), the run start, each
+    checkpoint file the run reads, and its outcome (completed, interrupted or refused)."""
     if access is not None:
         if actor_role is None:
             print("usage (exit 2): --access-log needs --actor-role", file=sys.stderr)
@@ -123,7 +126,8 @@ def run(spec_path: Path, out_dir: Path, *, resume: bool = False, access: Path | 
         return _refused(error)
     log("run", "run_spec", spec_sha, spec, "started")
     try:
-        record = runner.execute_run(plan, _responder(plan), out_dir, resume=resume, commit=_commit())
+        record = runner.execute_run(plan, _responder(plan), out_dir, resume=resume, commit=_commit(),
+                                    on_read=lambda kind, sha256: log("read", kind, sha256, spec))
     except runner.RunInterrupted as error:
         log("run", "run_output", lf_sha256(Path(out_dir) / runner.RESPONSES), spec, "interrupted")
         print(f"interrupted (exit 5): {error}", file=sys.stderr)
@@ -216,15 +220,15 @@ def record_stub(out_path: Path, spec_path: Path) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
-    parser.add_argument("--spec", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--spec", type=planes.cli_path, required=True)
+    parser.add_argument("--output-dir", type=planes.cli_path)
     parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--access-log", type=Path)
+    parser.add_argument("--access-log", type=planes.cli_path)
     parser.add_argument("--actor-role", choices=access_log.ROLES)
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--write", type=Path, metavar="RECORD")
-    group.add_argument("--check", type=Path, metavar="RECORD")
-    group.add_argument("--record-stub", type=Path, metavar="OUT")
+    group.add_argument("--write", type=planes.cli_path, metavar="RECORD")
+    group.add_argument("--check", type=planes.cli_path, metavar="RECORD")
+    group.add_argument("--record-stub", type=planes.cli_path, metavar="OUT")
     try:
         args = parser.parse_args(argv)
     except SystemExit as exit_:

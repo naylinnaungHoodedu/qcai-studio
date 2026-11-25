@@ -271,17 +271,36 @@ def test_a_live_recording_must_state_its_start_which_is_not_after_today():
         assert governance.iso_day(missing) is None
 
 
-def test_a_record_path_open_refuses_is_an_invalid_file_never_a_traceback(tmp_path):
-    # An embedded NUL makes open() raise ValueError: a governance record, a pre-run scan and the public-path check refuse it
-    # as `file` (or not public) instead of raising.
-    nul = {"path": "a\x00b.json", "sha256": "0" * 64}
-    with pytest.raises(governance.GovernanceError) as error:
-        governance.resolve_record(nul, REPO_ROOT)
-    assert error.value.field == "file"
-    assert governance.scan_refusals(nul, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, missing="m") == ["pre_run_scan_invalid:file"]
-    assert governance.irb_refusals(nul, governance.run_date({"created_at": synthetic.CREATED}), REPO_ROOT, missing="m") == ["irb_invalid:file"]
-    assert governance.is_public(nul, REPO_ROOT) in (True, False)
-    assert governance.is_public({"path": "lqs/private/a\x00b.json", "sha256": "0" * 64}, REPO_ROOT) in (True, False)
+def posix_path_calls(monkeypatch):
+    """Path calls as on POSIX, on every platform: `os.path.realpath` (and so `Path.resolve`) raises ValueError for a path
+    holding a NUL, where Windows maps it silently (the review 7 CI failure on ubuntu-latest)."""
+    import os
+
+    realpath = os.path.realpath
+
+    def posix_realpath(path, *args, **kwargs):
+        if "\x00" in os.fspath(path):
+            raise ValueError("lstat: embedded null character in path")
+        return realpath(path, *args, **kwargs)
+
+    monkeypatch.setattr(os.path, "realpath", posix_realpath)
+
+
+@pytest.mark.parametrize("posix", [False, True], ids=["native", "posix"])
+def test_a_record_path_open_refuses_is_an_invalid_file_never_a_traceback(tmp_path, monkeypatch, posix):
+    # An embedded NUL makes open() raise ValueError (and, on POSIX, realpath too): a governance record and a pre-run scan
+    # refuse it as `file`, and the public-path check counts it as public (fail closed: the gate refuses the run), on
+    # every platform, instead of raising.
+    if posix:
+        posix_path_calls(monkeypatch)
+    for path in ("a\x00b.json", "lqs/private/a\x00b.json", str(tmp_path / "a\x00b.json")):
+        nul = {"path": path, "sha256": "0" * 64}
+        with pytest.raises(governance.GovernanceError) as error:
+            governance.resolve_record(nul, REPO_ROOT)
+        assert error.value.field == "file"
+        assert governance.scan_refusals(nul, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, missing="m") == ["pre_run_scan_invalid:file"]
+        assert governance.irb_refusals(nul, governance.run_date({"created_at": synthetic.CREATED}), REPO_ROOT, missing="m") == ["irb_invalid:file"]
+        assert governance.is_public(nul, REPO_ROOT) is True, path
 
 
 def test_ci_s_synthetic_scan_report_and_dangling_references_do_not_pass_the_pre_run_scan(tmp_path):

@@ -963,6 +963,56 @@ def test_ac_10_4_file_identity_alone_maps_an_alias_of_the_checkout_on_every_plat
     assert not (REPO_ROOT / "docs" / "x.json").exists()
 
 
+def _posix_path_calls(monkeypatch):
+    """Path calls as on POSIX, on every platform: `os.path.realpath` (and so `Path.resolve`) raises ValueError for a path
+    holding a NUL, where Windows maps it silently (the review 7 CI failure on ubuntu-latest)."""
+    realpath = os.path.realpath
+
+    def posix_realpath(path, *args, **kwargs):
+        if "\x00" in os.fspath(path):
+            raise ValueError("lstat: embedded null character in path")
+        return realpath(path, *args, **kwargs)
+
+    monkeypatch.setattr(os.path, "realpath", posix_realpath)
+
+
+NUL_ARGUMENTS = {  # one path option of each research-plane script, given a NUL
+    "validate_ulqs": ["--items", "a\x00b.jsonl"],
+    "migrate_ulqs_rc1": ["--input", "a\x00b.jsonl", "--output", "out.jsonl", "--author-role", "PI", "--access-log", "a.jsonl"],
+    "build_licensed_fingerprints": ["--licensed-text", "a\x00b.txt"],
+    "scan_research_logs": ["--self-test", "--synthetic-fixture", "a\x00b.json"],
+    "check_research_harness": ["--check", "--dir", "a\x00b"],
+    "run_evaluation": ["--spec", "spec.json", "--output-dir", "a\x00b"],
+}
+
+
+@pytest.mark.parametrize("posix", [False, True], ids=["native", "posix"])
+def test_ac_10_4_a_path_holding_a_nul_is_refused_on_every_platform(tmp_path, monkeypatch, capsys, posix):
+    # A NUL is in no file system path; POSIX path calls raise ValueError for it, Windows maps it silently. Either way the
+    # path rule refuses it as an input or an output (PathRefused), a governance record at such a path counts as public
+    # (the gate refuses the run, exit 8), and each research-plane script refuses it as an argument (exit 2), never a
+    # traceback.
+    if posix:
+        _posix_path_calls(monkeypatch)
+    for path in ("a\x00b.json", REPO_ROOT / "lqs" / "private" / "a\x00b.json", tmp_path / "a\x00b.json"):
+        for check in (planes.require_private_input, planes.require_private_output):
+            with pytest.raises(planes.PathRefused, match="NUL"):
+                check(path)
+    spec = _confirmatory(tmp_path, "both valid")
+    for path in ("lqs/private/a\x00b.json", str(tmp_path / "a\x00b.json")):
+        spec["governance"]["irb_record"] = {"path": path, "sha256": "0" * 64}
+        with pytest.raises(runner.RunRefused) as refused:
+            runner.plan_run(spec)
+        assert refused.value.code == 8 and "governance_record_public" in refused.value.reasons, path
+    for name, argv in NUL_ARGUMENTS.items():
+        capsys.readouterr()
+        assert script(name).main(argv) == 2, name
+        err = capsys.readouterr().err
+        assert "NUL character" in err and "Traceback" not in err, (name, err)
+        source = (REPO_ROOT / "scripts" / f"{name}.py").read_text(encoding="utf-8")
+        assert "type=Path" not in source and "type=planes.cli_path" in source, name  # every path option is checked
+
+
 def _globs_with(pattern):
     boundary = planes.boundary_policy()
     return dataclasses.replace(boundary, private_plane_globs=boundary.private_plane_globs + (pattern,))
@@ -1247,7 +1297,7 @@ def _access(path):
     return [(line["action"], line["artifact_kind"], line.get("outcome")) for line in read_jsonl(path)]
 
 
-def test_plan_f_the_access_log_records_every_read_and_each_run_s_outcome(tmp_path, monkeypatch):
+def test_plan_f_the_access_log_records_every_read_and_each_run_s_outcome(tmp_path, monkeypatch, capsys):
     spec_path = write_spec(tmp_path, stub_spec(tmp_path))
     access = tmp_path / "access.jsonl"
     assert run_main(["--spec", spec_path, "--output-dir", tmp_path / "x", "--access-log", access]) == 2 and not access.exists()
@@ -1259,12 +1309,28 @@ def test_plan_f_the_access_log_records_every_read_and_each_run_s_outcome(tmp_pat
     assert run_main(["--spec", spec_path, "--output-dir", out, "--access-log", access, "--actor-role", "MLE"]) == 5
     assert _access(access) == reads + [("run", "run_spec", "started"), ("run", "run_output", "interrupted")]
     assert read_jsonl(access)[-1]["artifact_sha256"] == lf_sha256(out / "responses.jsonl")
-    # Resumed by the same responder (the stub would not match the checkpoint: checkpoint_mismatch).
+    # Resumed by the same responder (the stub would not match the checkpoint: checkpoint_mismatch). The run logs each
+    # checkpoint file it reads (run_events.jsonl, responses.jsonl: the sha256 of the bytes read) before any check.
+    checkpoint = [runner.checkpoint_sha256(out / name) for name in ("run_events.jsonl", "responses.jsonl")]
     monkeypatch.setattr(run_evaluation, "_responder", lambda plan: providers.ScriptedProvider())
     assert run_main(["--spec", spec_path, "--output-dir", out, "--resume", "--access-log", access, "--actor-role", "MLE"]) == 0
-    assert _access(access)[5:] == reads + [("run", "run_spec", "started"), ("run", "run_output", "completed")]
+    assert _access(access)[5:] == reads + [("run", "run_spec", "started"), ("read", "run_output", None), ("read", "run_output", None),
+                                           ("run", "run_output", "completed")]
+    assert [line["artifact_sha256"] for line in read_jsonl(access)[9:11]] == checkpoint
     record = json.loads((out / "run_record.json").read_text(encoding="utf-8"))
     assert read_jsonl(access)[-1]["artifact_sha256"] == record["outputs"]["payload_log_sha256"]
+    # A resume refused on its checkpoint (run events that are not UTF-8) logs the checkpoint read before the refusal,
+    # and exits 2 (checkpoint_mismatch), never a traceback.
+    access.unlink()
+    broken = tmp_path / "broken"
+    broken.mkdir()
+    (broken / "run_events.jsonl").write_bytes(b"\xff\xfe{}\n")
+    capsys.readouterr()
+    assert run_main(["--spec", spec_path, "--output-dir", broken, "--resume", "--access-log", access, "--actor-role", "MLE"]) == 2
+    err = capsys.readouterr().err
+    assert "Traceback" not in err and err.strip() == "refused (exit 2): checkpoint_mismatch"
+    assert _access(access) == reads + [("run", "run_spec", "started"), ("read", "run_output", None), ("run", "run_spec", "refused")]
+    assert read_jsonl(access)[4]["artifact_sha256"] == runner.checkpoint_sha256(broken / "run_events.jsonl")
     # A refused run (here an E1 run that is not confirmatory) logs the spec read and the refusal.
     access.unlink()
     refused = write_spec(tmp_path, stub_spec(tmp_path, experiment="E1"), "e1.json")
@@ -1293,6 +1359,17 @@ def test_plan_f_the_access_log_records_every_read_and_each_run_s_outcome(tmp_pat
     assert run_main(["--spec", confirmatory, "--output-dir", tmp_path / "conf-out", "--access-log", access, "--actor-role", "PI"]) == 8
     assert _access(access) == reads + [("read", "irb_record", None), ("read", "scan_report", None), ("run", "run_spec", "refused")]
     assert [line["artifact_sha256"] for line in read_jsonl(access)[3:5]] == [lf_sha256(irb), lf_sha256(scan)]
+    # A confirmatory --resume reads its checkpoint's run events when it is planned (the run window's start): that read is
+    # logged before the gate's reads, and run events that are not UTF-8 are refused (run_start_invalid), never a traceback.
+    access.unlink()
+    (broken / "run_events.jsonl").write_bytes(b'{"event": "start", "started_on": "2026-11-20"}\n\xff\xfe\n')
+    capsys.readouterr()
+    assert run_main(["--spec", confirmatory, "--output-dir", broken, "--resume", "--access-log", access, "--actor-role", "PI"]) == 8
+    err = capsys.readouterr().err
+    assert "Traceback" not in err and err.startswith("refused (exit 8): run_start_invalid; ")
+    assert _access(access) == reads + [("read", "run_output", None), ("read", "irb_record", None), ("read", "scan_report", None),
+                                       ("run", "run_spec", "refused")]
+    assert read_jsonl(access)[3]["artifact_sha256"] == runner.checkpoint_sha256(broken / "run_events.jsonl")
 
 
 def test_plan_f_the_validator_logs_each_input_it_reads_and_each_record_it_writes(tmp_path):
@@ -1659,6 +1736,25 @@ def test_ac_10_5_a_confirmatory_recorded_run_starts_its_window_on_the_recording_
     assert refused.value.reasons == ["stop"]
     assert seen["recording_source"] == "live" and seen["start"] == datetime_module.date(2026, 11, 20)
     assert seen["today"] == datetime_module.date(2028, 1, 10)
+    # A resumed replay (--resume with its output directory) starts at the earliest of today, its checkpoint's start
+    # event's started_on and the recording's started_on; a checkpoint whose first event is not a start with a valid day,
+    # or whose run events are not UTF-8, adds run_start_invalid (exit 2 here, the gate's other reason being "stop").
+    for checkpoint_day, start in (("2026-11-15", datetime_module.date(2026, 11, 15)), ("2027-03-01", datetime_module.date(2026, 11, 20))):
+        out = tmp_path / f"resume-{checkpoint_day}"
+        out.mkdir()
+        write_lf(out / "run_events.jsonl", dumps_line({"event": "start", "started_on": checkpoint_day}))
+        with pytest.raises(runner.RunRefused) as refused:
+            runner.plan_run(spec, resume=True, out_dir=out)
+        assert refused.value.reasons == ["stop"] and seen["start"] == start, checkpoint_day
+    for name, content in (("no-day", b'{"event": "start"}\n'), ("resumed-first", b'{"event": "resumed", "started_on": "2026-11-15"}\n'),
+                          ("not-utf8", b"\xff\xfe\n")):
+        out = tmp_path / f"resume-{name}"
+        out.mkdir()
+        (out / "run_events.jsonl").write_bytes(content)
+        with pytest.raises(runner.RunRefused) as refused:
+            runner.plan_run(spec, resume=True, out_dir=out)
+        assert refused.value.code == 2 and refused.value.reasons == ["run_start_invalid", "stop"], name
+        assert seen["start"] == datetime_module.date(2026, 11, 20), name
     for started_on, reason in ((None, "recording_started_on_missing"), ("2028-01-11", "recording_after_run")):
         lines[0] = {**lines[0], "started_on": started_on}
         write_lf(recording, "".join(dumps_line(line) for line in lines))
@@ -1796,7 +1892,8 @@ def test_phase10_docs_quote_the_plan_and_state_the_current_rules():
     readme = " ".join((RECORDS / "README.md").read_text(encoding="utf-8").split())
     harness_doc = " ".join(script("check_research_harness").__doc__.split())
     assert "3 a known answer not met or an invalid analysis plan" in harness_doc
-    assert "`check_research_harness.py`: 0; 1 drift; 3 a known answer not met or an invalid analysis plan; 6 a pin; 7 parity." in readme
+    assert ("`check_research_harness.py`: 0; 1 drift; 2 usage (an unknown option, or `--check` with `--write`); 3 a known answer "
+            "not met or an invalid analysis plan; 6 a pin; 7 parity.") in readme
     protocol = (REPO_ROOT / "docs" / "evaluation" / "protocol.md").read_text(encoding="utf-8")
     for arm in ablation.ARM_IDS:
         assert f"`{arm}`" in protocol, arm
@@ -1918,9 +2015,54 @@ def test_phase10_no_new_source_literal_starts_with_qcai_():
 
 
 # ===================================================================================================== exit-code contract
-# One table for the six research-plane scripts (spec 5): each documented exit code is reached by a scenario, and the
-# script's docstring, the README, spec 5 and the CI comments name the same codes. A code a script can return but no
-# document names, or a documented code no scenario reaches, fails here.
+# One table for the six research-plane scripts (spec 5). The codes each script can return are derived from its source
+# (`_returnable_codes`) and must equal the table's; the script's docstring, the README and spec 5 must name exactly the
+# table's codes, and each of the four Phase 10 CI comments only those; a scenario reaches each code. A code a script can
+# return but no document names, or a documented code no scenario reaches, fails here.
+
+
+def _literal_codes(tree, refusals):
+    """The exit codes a module states literally: an int returned (alone, in an `and`/`or`, either arm of a conditional,
+    or first in a returned tuple), an int assigned to `code`, and the first argument of a call to one of `refusals`."""
+    def ints(node):
+        if isinstance(node, ast.Constant) and type(node.value) is int:
+            return {node.value}
+        if isinstance(node, ast.BoolOp):
+            return set().union(*(ints(value) for value in node.values))
+        if isinstance(node, ast.IfExp):
+            return ints(node.body) | ints(node.orelse)
+        if isinstance(node, ast.Tuple) and node.elts:
+            return ints(node.elts[0])
+        return set()
+
+    codes = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Return) and node.value is not None:
+            codes |= ints(node.value)
+        if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "code" for target in node.targets):
+            codes |= ints(node.value)
+        if isinstance(node, ast.Call) and node.args:
+            name = node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", None)
+            if name in refusals:
+                codes |= ints(node.args[0])
+    return codes
+
+
+def _returnable_codes(name):
+    """The codes a script can exit with: those its source states, and for run_evaluation.py also every literal
+    `RunRefused` code of the harness modules and each class `governance.confirmatory_exit_code` returns."""
+    codes = _literal_codes(ast.parse((REPO_ROOT / "scripts" / name).read_text(encoding="utf-8")), {"Refused", "RunRefused"})
+    if name == "run_evaluation.py":
+        for module in sorted(Path(runner.__file__).parent.glob("*.py")):
+            codes |= _literal_codes(ast.parse(module.read_text(encoding="utf-8")), {"RunRefused"})
+        codes |= {governance.confirmatory_exit_code([prefix]) for _code, prefixes in governance.CONFIRMATORY_EXIT_CLASSES
+                  for prefix in prefixes} | {governance.confirmatory_exit_code(["other"])}
+    return codes
+
+
+def _ci_exit_codes(comment):
+    """The codes a CI comment lists: each `N` after "exit ", ", ", "; " or "(" and before a space or a comma."""
+    return {int(code) for code in re.findall(r"(?:exit |, |; |\()(\d)(?=[ ,])", " ".join(comment.split()))}
 
 
 def _exit_codes(text):
@@ -2033,6 +2175,8 @@ def _scenario_check_research_harness(tmp_path, monkeypatch, code):
         def broken():
             raise ablation.ParityError("GATE: declared_mismatch")
         monkeypatch.setattr(ablation, "load_arms", broken)
+    if code == 2:
+        return ["--check", "--write", "--dir", copy]
     return ["--check", "--dir", copy]
 
 
@@ -2042,7 +2186,7 @@ EXIT_CONTRACT = {
     "migrate_ulqs_rc1.py": (_scenario_migrate_ulqs_rc1, (0, 2, 3)),
     "build_licensed_fingerprints.py": (_scenario_build_licensed_fingerprints, (0, 2, 3, 4)),
     "scan_research_logs.py": (_scenario_scan_research_logs, (0, 1, 2)),
-    "check_research_harness.py": (_scenario_check_research_harness, (0, 1, 3, 6, 7)),
+    "check_research_harness.py": (_scenario_check_research_harness, (0, 1, 2, 3, 6, 7)),
 }
 
 
@@ -2050,13 +2194,19 @@ def test_phase10_exit_codes_every_document_names_the_codes_the_contract_reaches(
     documented = _documented_exit_codes()
     assert set(documented) == set(EXIT_CONTRACT) == set(NEW_SCRIPTS)
     for name, (_scenario, codes) in EXIT_CONTRACT.items():
+        assert _returnable_codes(name) == set(codes), (name, sorted(_returnable_codes(name)))
         for document, listed in documented[name].items():
             assert listed == set(codes), (name, document, sorted(listed))
-    # Each CI comment names only codes its script documents.
+    # Each of the four Phase 10 CI comments names only codes its script documents (a subset: a comment names the codes
+    # its step can meet), and at least one.
+    assert _ci_exit_codes("needs (4, a failed freeze, 2 usage); exit 1 drift, 6 a pin") == {1, 2, 4, 6}
     ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    for name, prefix in (("validate_ulqs.py", "validate_ulqs: exit "), ("check_research_harness.py", "check_research_harness: exit ")):
+    comments = {"validate_ulqs.py": "validate_ulqs: exit ", "check_research_harness.py": "check_research_harness: exit ",
+                "run_evaluation.py": "# AC-10-3: ", "scan_research_logs.py": "# AC-10-4 (synthetic half): "}
+    for name, prefix in comments.items():
         comment = ci.split(prefix, 1)[1].split("- run:", 1)[0].replace("#", " ")
-        assert set(int(code) for code in re.findall(r"(?:^|, |\()(\d) ", " ".join(comment.split()))) <= set(EXIT_CONTRACT[name][1]), name
+        listed = _ci_exit_codes(prefix + comment if prefix.endswith("exit ") else comment)
+        assert listed and listed <= set(EXIT_CONTRACT[name][1]), (name, sorted(listed))
 
 
 @pytest.mark.parametrize(("name", "code"), [(name, code) for name, (_s, codes) in EXIT_CONTRACT.items() for code in codes])
@@ -2069,9 +2219,10 @@ def test_phase10_exit_codes_each_documented_code_is_reached(tmp_path, monkeypatc
 
 
 # Terms of a superseded design that no authoritative document or source may state as current (P2-12-D-03): the run
-# window replaced the rule that a run's created_at be today and the start check of a resume (spec 3.13).
+# window replaced the rule that a run's created_at be today and the start check of a resume (spec 3.13); a dated run's
+# start event carries started_on, so only the byte-compared outputs are free of the wall clock (spec 3.9).
 RETIRED_TERMS = ("created_at_not_today", "created_at_not_start_date", "start_check", "start_date_refusals", "run_date_refusals",
-                 "resuming=")
+                 "resuming=", "no output carries the wall clock")
 
 
 def test_phase10_docs_no_authoritative_text_states_a_retired_rule():

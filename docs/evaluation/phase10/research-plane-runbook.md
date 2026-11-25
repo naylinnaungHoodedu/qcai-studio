@@ -65,6 +65,9 @@ log is `<plane>/access.jsonl` (digests only).
    the OSF and plan H records dated by the start, so a record dated after the run started refuses the resume. The run
    digest covers the spec, `created_at` included, so do not edit it: another run's directory, or a changed spec, is
    refused (`checkpoint_mismatch`). `--resume` into a directory without run events is a fresh start, judged on today.
+   `--resume` truncates only a trailing partial line of `responses.jsonl`; a checkpoint with a corrupt complete line, or
+   run events that are not UTF-8 JSON, is refused (exit 2) and left as it is, for the operator to inspect. Each
+   checkpoint file the run reads is in the access log (`run_output`).
    `created_at` may be any past day (never a future one, `created_at_in_future`). The checkpoint is the operator's
    own file, so this is a consistency check, not tamper evidence (DI-143); an earlier start day only tightens the
    checks. Keep run outputs in the research plane and review each run's start in the access log (step 9). A

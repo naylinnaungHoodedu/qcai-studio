@@ -51,15 +51,15 @@ def _salt(args: argparse.Namespace) -> bytes | None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
-    parser.add_argument("--licensed-text", type=Path, action="append", default=[])
-    parser.add_argument("--ulqs", type=Path, required=True)
+    parser.add_argument("--licensed-text", type=planes.cli_path, action="append", default=[])
+    parser.add_argument("--ulqs", type=planes.cli_path, required=True)
     parser.add_argument("--set-id", required=True)
-    parser.add_argument("--output-licensed", type=Path, required=True)
-    parser.add_argument("--output-ulqs", type=Path, required=True)
+    parser.add_argument("--output-licensed", type=planes.cli_path, required=True)
+    parser.add_argument("--output-ulqs", type=planes.cli_path, required=True)
     salt_group = parser.add_mutually_exclusive_group(required=True)
     salt_group.add_argument("--salt-env")
-    salt_group.add_argument("--salt-file", type=Path)
-    parser.add_argument("--access-log", type=Path)
+    salt_group.add_argument("--salt-file", type=planes.cli_path)
+    parser.add_argument("--access-log", type=planes.cli_path)
     parser.add_argument("--actor-role", choices=access_log.ROLES)
     try:
         args = parser.parse_args(argv)

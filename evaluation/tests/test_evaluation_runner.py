@@ -105,6 +105,36 @@ def test_a_partial_checkpoint_is_truncated_on_resume_and_refused_without_it(tmp_
         runner.execute_run(plan, StubResponder(), reference)
 
 
+def test_a_corrupt_complete_checkpoint_line_is_refused_and_never_truncated(tmp_path):
+    # Spec 4.12: only a trailing partial line (the bytes after the last newline) is truncated with --resume. A complete
+    # line that is not a response record, anywhere in responses.jsonl, refuses the run (`checkpoint_invalid`) and leaves
+    # the file as it was, so the valid responses after it are never deleted and never requested again.
+    spec, _ = small_spec(tmp_path)
+    plan = runner.plan_run(spec)
+    out = tmp_path / "out"
+    with pytest.raises(runner.RunInterrupted):
+        runner.execute_run(plan, ScriptedProvider(outage_at=7), out)
+    lines = (out / "responses.jsonl").read_bytes().splitlines(keepends=True)
+    assert len(lines) >= 3
+    for corrupt in (b"{broken\n", b"\xff\xfe\n", b"\n"):
+        for position in (1, len(lines)):  # in the middle, and as the last complete line
+            checkpoint = b"".join(lines[:position]) + corrupt + b"".join(lines[position:])
+            for tail in (b"", b'{"request_key": "trunc'):
+                (out / "responses.jsonl").write_bytes(checkpoint + tail)
+                with pytest.raises(runner.RunRefused) as refused:
+                    runner.execute_run(plan, ScriptedProvider(), out, resume=True)
+                assert refused.value.code == 2 and refused.value.reasons == ["checkpoint_invalid"], (corrupt, position)
+                assert (out / "responses.jsonl").read_bytes() == checkpoint + tail
+    # A checkpoint whose run events are not UTF-8 is refused (checkpoint_mismatch), never a traceback.
+    (out / "responses.jsonl").write_bytes(b"".join(lines))
+    events = (out / "run_events.jsonl").read_bytes()
+    (out / "run_events.jsonl").write_bytes(events + b"\xff\xfe\n")
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.execute_run(plan, ScriptedProvider(), out, resume=True)
+    assert refused.value.code == 2 and refused.value.reasons == ["checkpoint_mismatch"]
+    assert (out / "responses.jsonl").read_bytes() == b"".join(lines)
+
+
 def test_unlabelled_claims_put_an_arm_in_awaiting_labels(tmp_path):
     plan = runner.plan_run(small_spec(tmp_path)[0])
 

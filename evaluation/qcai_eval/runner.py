@@ -3,8 +3,9 @@
 Plan task 5: "Pinned configuration package [Evidence E-97]; E1-E4 per Section 15 [Evidence E-99]; statistics with hashed
 seeds [Evidence E-103]." A run pins the package (path and sha256, read-only), the items, the evidence catalog, the arms and
 the analysis plan by sha256; its seeds are hashed from (run_id, arm, item_id, replicate). Stub and recorded runs repeat
-byte for byte: no output carries the wall clock or an absolute path, and the record and payload log depend only on the
-plan and the responses. Hold H12 refuses every run over non-synthetic data while D-14 is open; live runs are refused here.
+byte for byte: no byte-compared output (the run record and the payload log) carries the wall clock or an absolute path,
+and both depend only on the plan and the responses; only a confirmatory or live run's start event in `run_events.jsonl`,
+which is not byte-compared, carries the UTC day the run was planned (`started_on`). Hold H12 refuses every run over non-synthetic data while D-14 is open; live runs are refused here.
 Every run is exploratory unless its spec says confirmatory, and E1-E4 runs must be confirmatory (plan 12.7). A spec that
 omits `replicates` or `retries` takes the provisional paper values in `evaluation/config/harness_parameters_v1.json`
 (PD-68), and a live or confirmatory spec must keep a replicate subsample so that the record reports replicate variance.
@@ -358,7 +359,8 @@ def plan_run(spec: Mapping[str, Any], *, repo_root: Path = REPO_ROOT, environ: M
     """The run's plan, or RunRefused. `on_read(kind, sha256)` is told of each research-plane input as soon as it is read
     (the items, the catalog, the recording and every governance record), before any later check can refuse the run, so
     that the access log holds every read of a refused run too. With `resume` and `out_dir`, a confirmatory or live run's
-    window starts on the day its checkpoint's start event records (`checkpoint_start_refusals`)."""
+    window starts on the day its checkpoint's start event records (`checkpoint_start_refusals`); that read of
+    `run_events.jsonl` is reported as `run_output` (the sha256 of its bytes) before it can refuse the run."""
     def note(kind: str, sha256: str | None) -> None:
         if on_read is not None and sha256 is not None:
             on_read(kind, sha256)
@@ -502,6 +504,7 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
     window: list[str] = []
     checkpoint_start = None
     if dated and resume and out_dir is not None:
+        note("run_output", checkpoint_sha256(Path(out_dir) / RUN_EVENTS))
         window, checkpoint_start = checkpoint_start_refusals(Path(out_dir), today)
     starts = [today] + ([checkpoint_start] if checkpoint_start else [])
     if dated and spec["mode"] == "recorded" and recording_source == "live":
@@ -633,39 +636,48 @@ def run_digest(plan: Plan, responder_rule: str) -> str:
 
 
 def _read_checkpoint(path: Path, *, resume: bool) -> dict[str, dict]:
+    """The completed responses of a checkpoint. Only the bytes after the last newline (a line an interrupted append left
+    without its newline) are a partial line: `resume` truncates them and a run without it is refused
+    (`partial_checkpoint`). Every newline-terminated line must be a response record, else the checkpoint is refused
+    (`checkpoint_invalid`, exit 2) and nothing is deleted: a corrupt line never costs the lines after it."""
     if not path.exists():
         return {}
-    data = path.read_bytes()
+    try:
+        data = path.read_bytes()
+    except OSError:
+        raise RunRefused(2, ["checkpoint_invalid"]) from None
     lines = data.split(b"\n")
     tail = lines.pop()  # the bytes after the last newline: empty when the file ends with one
     completed: dict[str, dict] = {}
-    good = 0
     for line in lines:
         try:
             record = json.loads(line.decode("utf-8"))
-        except ValueError:
-            break
+        except ValueError:  # UnicodeDecodeError included
+            raise RunRefused(2, ["checkpoint_invalid"]) from None
         if not isinstance(record, dict) or not isinstance(record.get("request_key"), str) or not HEX64.match(record["request_key"]):
             raise RunRefused(2, ["checkpoint_invalid"])
         completed[record["request_key"]] = record
-        good += len(line) + 1
-    partial = bool(tail) or good != len(data) - len(tail)
-    if partial:
+    if tail:
         if not resume:
             raise RunRefused(2, ["partial_checkpoint"])
         with path.open("r+b") as handle:
-            handle.truncate(good)
-        completed = {key: value for key, value in completed.items()}
+            handle.truncate(len(data) - len(tail))
     elif completed and not resume:
         raise RunRefused(2, ["output_exists"])
     return completed
 
 
 def _read_events(path: Path) -> list[dict]:
+    """The run events of a checkpoint. A file that cannot be read, is not UTF-8 or holds a line that is not a JSON object
+    is refused (`checkpoint_mismatch`, exit 2), never a traceback."""
     if not path.exists():
         return []
+    try:
+        text = path.read_bytes().decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        raise RunRefused(2, ["checkpoint_mismatch"]) from None
     events = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in text.splitlines():
         try:
             event = json.loads(line)
         except ValueError:
@@ -690,10 +702,19 @@ def _prompt_envelope(plan: Plan, request: Request) -> bytes:
                            "arm": request.arm, "evidence": list(request.evidence)})
 
 
+def checkpoint_sha256(path: Path) -> str | None:
+    """The sha256 of the bytes of a checkpoint file (`run_events.jsonl`, `responses.jsonl`) as the runner reads it, for the
+    access log (`run_output`); None when it is not a file or cannot be read."""
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest() if Path(path).is_file() else None
+    except OSError:
+        return None
+
+
 def checkpoint_start_refusals(out_dir: Path, today: _dt.date) -> tuple[list[str], _dt.date | None]:
     """The start day a resumed confirmatory or live run's window takes from its checkpoint: none when the output holds no
-    run events (the resume is a fresh start, judged on today); else the first event must be a `start` whose `started_on`
-    is an ISO date not after today (`run_start_invalid`). Whoever can write the output can write a start event, but an
+    run events (the resume is a fresh start, judged on today); else the events must read as UTF-8 JSON objects and the
+    first must be a `start` whose `started_on` is an ISO date not after today (`run_start_invalid`). Whoever can write the output can write a start event, but an
     earlier day only tightens the record checks, so a forged one gains nothing (DI-143 is an externally timestamped
     start). `execute_run` then checks the event's run digest (`checkpoint_mismatch`)."""
     try:
@@ -708,8 +729,16 @@ def checkpoint_start_refusals(out_dir: Path, today: _dt.date) -> tuple[list[str]
     return [], start
 
 
-def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = False, commit: str | None = None) -> dict:
+def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = False, commit: str | None = None,
+                on_read: Callable[[str, str], None] | None = None) -> dict:
+    """Run the plan into `out_dir` (spec 4.12). `on_read("run_output", sha256)` is told of each checkpoint file the run
+    reads (`run_events.jsonl`, `responses.jsonl`; the sha256 of their bytes) before any check that can refuse it."""
     out_dir = Path(out_dir)
+    if on_read is not None:
+        for name in (RUN_EVENTS, RESPONSES):
+            digest = checkpoint_sha256(out_dir / name)
+            if digest is not None:
+                on_read("run_output", digest)
     if plan.dated:
         # The output must be the checkpoint the plan's run window was judged on: a resume planned from a start event
         # continues that event's run, and a plan judged as a fresh start writes into an output without run events.
