@@ -1,8 +1,8 @@
 {
  "report": "qcai-v2-fixture-report",
  "format_version": 1,
- "created_at": "2026-11-24T20:40:19+00:00",
- "commit": "53abc42d8500263ff0d22ee6a1b0b5df360788ce",
+ "created_at": "2026-11-25T01:35:30+00:00",
+ "commit": "e23e5f53837244c146e9f7229673e385d29f7d85",
  "evidence_class": "fixture measurements, not research results (plan Phase 5 H: V-2, V-4 are E2 results, never claimed from fixtures)",
  "public_corpus_only": true,
  "config_package": {
@@ -226,8 +226,8 @@
  },
  "latency": {
   "p95_ms": {
-   "gateway_call": 0.034,
-   "panel": 6.396
+   "gateway_call": 0.031,
+   "panel": 4.509
   }
  },
  "result": "pass",
@@ -292,7 +292,7 @@
    "apps/api/app/services/spans.py": "c470878066ef33a5a92c907476f5f7e303b5bc00df4b65adea6a85ace261647e",
    "apps/api/app/services/text_utils.py": "dd37e0c66bb965d3183b46b727ae523f059737eee577614f83da58eae55153af",
    "apps/api/app/services/transcripts.py": "1a55f3f5b7e0ce0b9f74999691b50fa3ebb9aeb63bc1051f2bc16b334bd8f053",
-   "apps/api/app/services/tutor_pipeline/__init__.py": "1641b21e805d94941c40c041895907741ae9d1896507031994624a31ffd0c321",
+   "apps/api/app/services/tutor_pipeline/__init__.py": "79097033ed81fe3e318bd941cb51c5cf531666e2372930a44445424523984a13",
    "apps/api/app/services/tutor_pipeline/bind.py": "dd2903f4bfba727863030bb62b647c4b3594fd4037dfe3b740ac41beef283597",
    "apps/api/app/services/tutor_pipeline/contracts.py": "1c61cc35284843e65d98fd34e241918fe662d3678e6655e6b3d484fff47d24b7",
    "apps/api/app/services/tutor_pipeline/evidential.py": "3a1bdcdae820dded1b18ec6de20774f0ecf649c123fa166c62168460ffceb85b",
@@ -335,6 +335,6 @@
    "apps/api/app/services/v3/stop.py": "a846ccc64ff5122a5327374b6220976cd0bef9e8aacf7ae8d81ec6131535ca6c",
    "scripts/run_v2_fixtures.py": "73d36d76bebc93a4e09227fcd2978e4dce518580af900eecb233cc4887c0590b"
   },
-  "sha256": "0d4a93dfb96f802a2f9533ef5de327d68ca5c71e3e28af7e6fbcd135a2388acd"
+  "sha256": "b9cf6e87b2e3ef0ecdb9137ba9456ffc713ea9030f8a030aa59d1aa356ff9628"
  }
 }

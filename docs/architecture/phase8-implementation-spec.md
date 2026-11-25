@@ -354,41 +354,21 @@ python scripts/run_ranking_replay.py --check docs/evaluation/phase9/ranking_repl
 
 Repeat the package check for each version from v1 through v7. Run the corpus and question validators, authorization matrix, manifest, abstention calibration, frozen public payload check, source-fidelity check, and repository and Docker-context path scan. Run `npm run lint`, `npm run typecheck`, and `npm run test:integration` in `apps/frontend`.
 
-The reports were generated under package v8 from clean source commit `53abc42d8500263ff0d22ee6a1b0b5df360788ce`. The invariance harness covered 299 public items at three mastery levels, with 148 items showing distinct presentation, zero invariance violations, and zero learner-state fields in the evidential-path scan. The EHMF run resolved all 47 delivered citations across 40 golden-set items. The ranking replay produced byte-identical results on two runs of all seven synthetic scenarios. The erasure proof independently checked six principal and binding cases. These fixtures satisfy the engineering prerequisite in plan 15.2.
+The reports were generated under package v8 from clean source commit `e23e5f53837244c146e9f7229673e385d29f7d85`. The invariance harness covered 299 public items at three mastery levels, with 148 items showing distinct presentation, zero invariance violations, and zero learner-state fields in the evidential-path scan. The EHMF run resolved all 47 delivered citations across 40 golden-set items. The ranking replay produced byte-identical results on two runs of all seven synthetic scenarios. The erasure proof independently checked six principal and binding cases. These fixtures satisfy the engineering prerequisite in plan 15.2.
 
 | Record | Inputs SHA-256 (record `inputs.sha256`) |
 |---|---|
-| `docs/evaluation/phase3/three_plan_replay_v1.json` | `c4d5ca207424071354f99d3d997d82d5b0a703f6d50c00fb4c41e2883f1776a0` |
-| `docs/evaluation/phase4/v1_fixture_report_v1.json` | `58d0648172ee65243cb23187f8637023fb9eb3a8c7916cd39b8cb01f3d1e9b69` |
-| `docs/evaluation/phase5/v2_fixture_report_v1.json` | `0d4a93dfb96f802a2f9533ef5de327d68ca5c71e3e28af7e6fbcd135a2388acd` |
-| `docs/evaluation/phase6/v3_residual_report_v1.json` | `717a8563c87abdafa29038fa83a6a3b6684cce7f4f0cc722db86b28c13253427` |
-| `docs/evaluation/phase7/golden_run_v1.json` | `c167dd8f33913ae7a43c133dd3992421a6543e7ed53adc3813ae5863e2c3c15d` |
-| `docs/evaluation/phase8/invariance_harness_report_v1.json` | `32c649edd7de52e954f67eb8699dcae287a8ce2d5de172e03ea23ecceda73a72` |
+| `docs/evaluation/phase3/three_plan_replay_v1.json` | `8e2328f2d1a374f258e8e538785c26d98cb8107e2d8145ce6f03c2db8dc5eafc` |
+| `docs/evaluation/phase4/v1_fixture_report_v1.json` | `3cc9ba92fe5401940b2d5f85b4587b43e244f1e51d91d71c40aa291d2f2e943e` |
+| `docs/evaluation/phase5/v2_fixture_report_v1.json` | `b9cf6e87b2e3ef0ecdb9137ba9456ffc713ea9030f8a030aa59d1aa356ff9628` |
+| `docs/evaluation/phase6/v3_residual_report_v1.json` | `5f975bfe35ab90e45b220ce4cc6c1b735d45aa4eb24232582c601e1936a4aed9` |
+| `docs/evaluation/phase7/golden_run_v1.json` | `89bb48613b3a7f9af448182515e82c50bb0d7ed4129404183d21e727ccb67fa3` |
+| `docs/evaluation/phase8/invariance_harness_report_v1.json` | `0d431e5f53308527c7dfda7a1c0c85e73b85783f3bc09801b3eab39f0d1d8a57` |
 | `docs/evaluation/phase9/ranking_replay_v1.json` | `f73f7e836c278d5a3d717186cab6b922d0b95cc55ee0fb14f9cd69a58621bc5a` |
 
 `docs/evaluation/phase8/erasure_proof_v1.json` has record file SHA-256 after LF normalization `551caa3b40c7944b73ac355400947a54886f7d06d718a4b689c3ac4e5cf24204`. The proof has no inputs block.
 
-| Local leg | Test paths | Main run passed | Split tests passed | Combined passed | Main baseline | Change | Skipped | Deselected after combining | xfailed |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| SQLite | `apps/api/tests evaluation/tests` | 2,272 | 11 | 2,283 | 2,073 | +210 | 2 | 1 | 3 |
-| PostgreSQL 17 / psycopg | `apps/api/tests` | 2,270 | 11 | 2,281 | 2,070 | +211 | 0 | 1 | 3 |
-| PostgreSQL 17 / pg8000 | `apps/api/tests` | 2,270 | 11 | 2,281 | 2,070 | +211 | 0 | 1 | 3 |
-
-Each main run deselected 12 cases. The 11 protected-template cases passed separately on every backend with `--tb=no -rN -q`. The only remaining deselection is the CI release-only test `apps/api/tests/test_deployment_artifacts.py::test_release_artifacts_exist_and_describe_seeded_demo_transparency`. The PostgreSQL legs run the same API paths as CI. SQLite adds four evaluation tests and skips two PostgreSQL-specific API cases. CI uses PostgreSQL 16. Both local drivers used PostgreSQL 17.
-
-- `apps/api/tests/test_deployment_artifacts.py::test_k8s_database_url_moves_to_secret_example`
-- `apps/api/tests/test_deployment_artifacts.py::test_api_cloud_run_example_disables_demo_auth_and_documents_secret_injection`
-- `apps/api/tests/test_phase3_docs.py::test_i5_the_registers_and_spec_sections_6_and_16_say_what_the_code_does`
-- `apps/api/tests/test_phase3_docs.py::test_k3_the_authoritative_text_states_the_current_code_only`
-- `apps/api/tests/test_phase4_acceptance.py::test_phase4_docs_state_the_learner_path_v1_7_rule_wherever_they_name_it`
-- `apps/api/tests/test_phase4_acceptance.py::test_phase4_docs_the_code_texts_name_the_shipped_package`
-- `apps/api/tests/test_phase5_acceptance.py::test_plan_e_the_legacy_provider_code_is_retired_and_no_production_path_reached_it`
-- `apps/api/tests/test_phase5_acceptance.py::test_phase5_docs_the_runbooks_and_registers_state_the_gateway_s_operations_exactly`
-- `apps/api/tests/test_phase6_acceptance.py::test_phase6_docs_quote_the_plan_and_state_the_current_rules`
-- `apps/api/tests/test_phase6_acceptance.py::test_phase6_docs_state_what_each_caller_of_a_v3_route_gets`
-- `apps/api/tests/test_phase7_acceptance.py::test_phase7_docs_quote_the_plan_and_state_the_current_rules`
-
-All 26 local validator invocations passed, including package schemas v1 through v8, the append-only golden-set check, ranking replay, and all 1,192 frozen public responses. Frontend lint, type checking and 167 integration tests passed. The regression tests detected 40 process-local mutations on SQLite. Both PostgreSQL drivers detected the same 6 erasure and migration mutations. The repository and Docker-context path scan passed. The licensed-passage scan needs its fingerprint input. Dependency audits and built-image boundary checks run in CI. The source-fidelity check reproduced three recorded mismatches (DI-105).
+<!-- Round 5 verified test totals -->
 
 ### 17.2 Review response checks and exit
 
@@ -413,4 +393,4 @@ The rows record the build and each review round in order. Sections 0–17 descri
 | Review 2 | `cb2a33e`, merge `bf4fe3a`, integration `ef99f9d` | Restored the retention and readiness contracts and verified erasure serialization, retained-principal recovery, expiry, F-3 and trusted mastery. The owner assigned DI-318 to the main track. Phase 7 main `512b8a6` entered through `bf4fe3a`. Package v7 SHA-256 is `adf3aed271aaf2c84c852f2e0169825b9889577d4aa64573ea7066f12c97d1e5`. Alembic `down_revision` is `20261123_phase7_ehmf`. The full rerun on `598ad9d` passed 2,105 on SQLite (+158 from the 1,947 main baseline) and 2,103 on each PostgreSQL driver, including 11 separately run template tests per backend. The SQLite leg included API and evaluation tests. The PostgreSQL legs ran the API tests. Regression guards include `test_phase8_erase_stale_guest_rows_keeps_its_two_argument_signature`, `test_phase8_keeps_protected_acceptance_tests_at_the_phase7_baseline`, `test_phase8_erasure_serializes_with_unguarded_and_first_writers`, `test_phase8_a_principal_erased_and_signing_in_again_gets_a_fresh_empty_record`, `test_phase8_loader_refuses_schema_versions_outside_the_latest_bound`, and `test_phase8_migration_retains_existing_tables_and_refuses_data_loss`. |
 | Review 3 | `c466957` | Verified receipts for both erasure routes, checked the privacy freeze and authenticated export and erasure, enforced D-27 and retention policy, and reconciled the shared-file and test records. DI-319 records the hand-over for the runtime stop trigger. See `test_ac_8_5_every_erasure_route_writes_a_verified_receipt`, `test_phase8_a_demo_header_cannot_export_or_erase_another_principal`, `test_freeze_phase8_privacy_requires_d27_even_after_exit`, and `test_phase8_docs_names_the_shared_files_and_changes_to_existing_tests`. |
 | Review 4 | `53abc42`, merge `832a431` | Integrated Phase 9 main `d366e20`. Package v8 SHA-256 is `c14d28f110f0ddcf89aab4717ccd5e6555cba15ad6a266468b67b662229d1904`. Alembic `20261123_phase8_learner` follows `20261123_phase9_ranking`. Covered the all-off freeze, derived evidence scan, authenticated write and erasure ordering, early-table upgrade, verified consent, guest/demo scoring, inherited test traceability, verification provenance, D-27 settings, and release instructions. See `test_freeze_phase8_flags_off_learner_record_and_quiz_routes_are_unchanged`, `test_ac_8_4_the_scan_covers_every_phase8_learner_state_field`, `test_phase8_erasure_serializes_with_unguarded_and_first_writers_http`, and `test_phase8_docs_section_17_states_only_the_current_verification`. The full local run combined 2,283 SQLite passes and 2,281 passes on each PostgreSQL driver (+210 and +211 from Phase 9 main). Each leg includes 11 separately run template tests and excludes one release-only case. |
-| Review 5 | <!-- Round 5 source --> | Added planner consent coverage, corrected the CI and migration records, required an issuer subject for privacy routes, kept Arena pairing available after erasure, and aligned the digest and module inventory guards. See `test_plan_j_planner_without_adaptation_consent_serves_the_static_order`, `test_phase8_privacy_routes_refuse_a_bearer_token_without_sub`, and `test_phase8_an_erased_queued_arena_player_does_not_reject_the_next_player`. DI-320 records the stopped portion of R5-02. <!-- Round 5 totals --> |
+| Review 5 | `e23e5f5` | Added planner consent coverage, corrected the CI and migration records, required an issuer subject for privacy routes, kept Arena pairing available after erasure, and aligned the digest and module inventory guards. See `test_plan_j_planner_without_adaptation_consent_serves_the_static_order`, `test_phase8_privacy_routes_refuse_a_bearer_token_without_sub`, and `test_phase8_an_erased_queued_arena_player_does_not_reject_the_next_player`. DI-320 records the stopped portion of R5-02. <!-- Round 5 totals --> |

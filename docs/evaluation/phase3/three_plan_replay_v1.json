@@ -1,8 +1,8 @@
 {
  "report": "qcai-three-plan-replay",
  "format_version": 1,
- "created_at": "2026-11-24T20:40:27+00:00",
- "commit": "53abc42d8500263ff0d22ee6a1b0b5df360788ce",
+ "created_at": "2026-11-25T01:35:34+00:00",
+ "commit": "e23e5f53837244c146e9f7229673e385d29f7d85",
  "evidence_class": "engineering replay on public-corpus fixtures; NOT E3 or LQ-1 evidence (plan Phase 3 H)",
  "public_corpus_only": true,
  "excluded_sources": [
@@ -211,7 +211,7 @@
    "apps/api/app/services/spans.py": "c470878066ef33a5a92c907476f5f7e303b5bc00df4b65adea6a85ace261647e",
    "apps/api/app/services/text_utils.py": "dd37e0c66bb965d3183b46b727ae523f059737eee577614f83da58eae55153af",
    "apps/api/app/services/transcripts.py": "1a55f3f5b7e0ce0b9f74999691b50fa3ebb9aeb63bc1051f2bc16b334bd8f053",
-   "apps/api/app/services/tutor_pipeline/__init__.py": "1641b21e805d94941c40c041895907741ae9d1896507031994624a31ffd0c321",
+   "apps/api/app/services/tutor_pipeline/__init__.py": "79097033ed81fe3e318bd941cb51c5cf531666e2372930a44445424523984a13",
    "apps/api/app/services/tutor_pipeline/bind.py": "dd2903f4bfba727863030bb62b647c4b3594fd4037dfe3b740ac41beef283597",
    "apps/api/app/services/tutor_pipeline/contracts.py": "1c61cc35284843e65d98fd34e241918fe662d3678e6655e6b3d484fff47d24b7",
    "apps/api/app/services/tutor_pipeline/evidential.py": "3a1bdcdae820dded1b18ec6de20774f0ecf649c123fa166c62168460ffceb85b",
@@ -248,6 +248,6 @@
    "apps/api/app/services/v3/rules.py": "0ae84335d5f83a8f76cd17b4f50357146b6a3ed06795acf0de0f9b87456a521a",
    "scripts/replay_tutor_plans.py": "287a264cea97c41d4e59c958c817c00d6a84e5b8f4d47dd76a867584cc11191a"
   },
-  "sha256": "c4d5ca207424071354f99d3d997d82d5b0a703f6d50c00fb4c41e2883f1776a0"
+  "sha256": "8e2328f2d1a374f258e8e538785c26d98cb8107e2d8145ce6f03c2db8dc5eafc"
  }
 }

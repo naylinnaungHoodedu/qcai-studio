@@ -1,8 +1,8 @@
 {
  "report": "qcai-v3-residual-report",
  "format_version": 1,
- "created_at": "2026-11-24T20:40:42+00:00",
- "commit": "53abc42d8500263ff0d22ee6a1b0b5df360788ce",
+ "created_at": "2026-11-25T01:35:47+00:00",
+ "commit": "e23e5f53837244c146e9f7229673e385d29f7d85",
  "evidence_class": "synthetic telemetry, not research results (plan Phase 6 H: audit counts are telemetry, not research results)",
  "public_corpus_only": true,
  "config_package": {
@@ -141,7 +141,7 @@
    "apps/api/app/services/spans.py": "c470878066ef33a5a92c907476f5f7e303b5bc00df4b65adea6a85ace261647e",
    "apps/api/app/services/text_utils.py": "dd37e0c66bb965d3183b46b727ae523f059737eee577614f83da58eae55153af",
    "apps/api/app/services/transcripts.py": "1a55f3f5b7e0ce0b9f74999691b50fa3ebb9aeb63bc1051f2bc16b334bd8f053",
-   "apps/api/app/services/tutor_pipeline/__init__.py": "1641b21e805d94941c40c041895907741ae9d1896507031994624a31ffd0c321",
+   "apps/api/app/services/tutor_pipeline/__init__.py": "79097033ed81fe3e318bd941cb51c5cf531666e2372930a44445424523984a13",
    "apps/api/app/services/tutor_pipeline/bind.py": "dd2903f4bfba727863030bb62b647c4b3594fd4037dfe3b740ac41beef283597",
    "apps/api/app/services/tutor_pipeline/contracts.py": "1c61cc35284843e65d98fd34e241918fe662d3678e6655e6b3d484fff47d24b7",
    "apps/api/app/services/tutor_pipeline/metrics.py": "525b2c52c517d84b6dd642b4a3ac9a92e19c4cdce3415b4d7ca3b1a01a6e3f18",
@@ -172,6 +172,6 @@
    "apps/api/app/services/v3/triggers.py": "7634c7eb14f7c98aab3516648e2c7a597b51e8a8fa1232cdf430e43ea32b89e0",
    "scripts/run_v3_residual_report.py": "d48830044991aae212323bebf542267ac3d7464cdf5fb98852aef2a577d8b905"
   },
-  "sha256": "717a8563c87abdafa29038fa83a6a3b6684cce7f4f0cc722db86b28c13253427"
+  "sha256": "5f975bfe35ab90e45b220ce4cc6c1b735d45aa4eb24232582c601e1936a4aed9"
  }
 }

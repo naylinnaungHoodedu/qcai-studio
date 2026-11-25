@@ -1,8 +1,8 @@
 {
  "report": "qcai-ehmf-golden-run",
  "format_version": 1,
- "created_at": "2026-11-24T20:40:57+00:00",
- "commit": "53abc42d8500263ff0d22ee6a1b0b5df360788ce",
+ "created_at": "2026-11-25T01:36:25+00:00",
+ "commit": "e23e5f53837244c146e9f7229673e385d29f7d85",
  "evidence_class": "change-control gate, not research results (plan Phase 7 H; 12.5)",
  "pins": {
   "config_package": {
@@ -499,8 +499,8 @@
    "apps/api/app/api/routes/v3.py": "f6d554abb6b135933ee043347ddd5e4a93f335870577696d8b8578b6ca4071b6",
    "apps/api/app/core/after_commit.py": "e7039c1e793f2c72db1afd9277fec5bf81ac3af8faf317b0d9eab0ec892a4f9e",
    "apps/api/app/core/arena_tickets.py": "1bd8efdb738ff4e77570c7525d2271bffc2a14b23672cfeda708e87a89a53584",
-   "apps/api/app/core/auth.py": "84e2f92987aea1179568dc86031241f3cb9ac23d793bf5a545dbfa3d6c689045",
-   "apps/api/app/core/authorization.py": "8128119c666241630f3d4a0d77accbcb32c1df4874cc256f745176bd1436166e",
+   "apps/api/app/core/auth.py": "678b232db9b4494e24e06c92263d0170af76673b8f05b220f51bb5c8c6610137",
+   "apps/api/app/core/authorization.py": "3fec06f3405dfb37abeead57539f345f8bf30a63b4e1211597abd2bd52acd5ab",
    "apps/api/app/core/client_identity.py": "ebba54c74b9b28abe10deddfc3b1f300738de3be3ac49a437cf08de16f338f8a",
    "apps/api/app/core/config.py": "27f9c302f61f1ed872189cb42d078c194aef3558af1786be2fb65e373e662b43",
    "apps/api/app/core/config_package.py": "eef3fa0ded082dcb266847e876b136d5da58f15833bdde5fb12c1538f5100874",
@@ -540,7 +540,7 @@
    "apps/api/app/main.py": "401b8e5f00412a5af8be0ac9be23875b546bb0a7aebadbf8ab6e0b4b96d932b8",
    "apps/api/app/schemas.py": "f5beb3b27b019f6035a4b945ee4374b5be9e35b38903b156d43f6ceecedd1855",
    "apps/api/app/services/answer_history.py": "10b8e776d6149f453dfbe7ec8fe4d4219b6a45e5afc636327d9de29875a4a49f",
-   "apps/api/app/services/arena_engine.py": "b5c6cb260ca312fc7b38a76f63a0699c65cea7bc9b966e921186579cfb704dc9",
+   "apps/api/app/services/arena_engine.py": "bff66eab13ad967d8a90f629ea713ddbfc6e00af434acca6e029235edf4f1cf7",
    "apps/api/app/services/citation_migration.py": "15968f9b4d25c3d5fe16dd93d4bb2c58c5a6ce8be78e221262bb2fa29a6d357e",
    "apps/api/app/services/claim_gate.py": "dd3fa79d6a39f3cf30141471622e0f487059eaa80669332c1eab7d5adbe6ca28",
    "apps/api/app/services/contained_answers.py": "b32a28b65f294fb7de09229679ca2503666de9c45e8179f1f4f52c0302c96e99",
@@ -619,15 +619,15 @@
    "apps/api/app/services/text_utils.py": "dd37e0c66bb965d3183b46b727ae523f059737eee577614f83da58eae55153af",
    "apps/api/app/services/transcripts.py": "1a55f3f5b7e0ce0b9f74999691b50fa3ebb9aeb63bc1051f2bc16b334bd8f053",
    "apps/api/app/services/turn_idempotency.py": "8c5111dd231cf47ad47c725546fcfff034a84878b5fb8bc33a4b0290334b4264",
-   "apps/api/app/services/tutor_followups.py": "9d1214ecd6198c247fdbc4d7b14d2e707f379c59be5c718b1ff1b0db1e1d96a3",
+   "apps/api/app/services/tutor_followups.py": "921ffb84127b441c3a75d0a3efce4b060c2d19253526e450f8f4cb1db356d0e9",
    "apps/api/app/services/tutor_orchestrator.py": "9f151ca2a4a268a1fece8e8e2710154d8c581c0ad44d22579ee795711355f6e9",
-   "apps/api/app/services/tutor_pipeline/__init__.py": "1641b21e805d94941c40c041895907741ae9d1896507031994624a31ffd0c321",
+   "apps/api/app/services/tutor_pipeline/__init__.py": "79097033ed81fe3e318bd941cb51c5cf531666e2372930a44445424523984a13",
    "apps/api/app/services/tutor_pipeline/bind.py": "dd2903f4bfba727863030bb62b647c4b3594fd4037dfe3b740ac41beef283597",
    "apps/api/app/services/tutor_pipeline/contracts.py": "1c61cc35284843e65d98fd34e241918fe662d3678e6655e6b3d484fff47d24b7",
    "apps/api/app/services/tutor_pipeline/evidential.py": "3a1bdcdae820dded1b18ec6de20774f0ecf649c123fa166c62168460ffceb85b",
    "apps/api/app/services/tutor_pipeline/lock.py": "f7c1709eefc4923f5fc27c19622e36f72a5d3d1c7b263f784f1a60db2edf66e5",
    "apps/api/app/services/tutor_pipeline/metrics.py": "525b2c52c517d84b6dd642b4a3ac9a92e19c4cdce3415b4d7ca3b1a01a6e3f18",
-   "apps/api/app/services/tutor_pipeline/package_check.py": "03bb93858e773c242f921562feaac0fdbaec27143ecea6259ea42d7535feb216",
+   "apps/api/app/services/tutor_pipeline/package_check.py": "e34361dfbb0483b358cd8dd6961bebbca60c88c63b1024b9dea6c305d8b23baa",
    "apps/api/app/services/tutor_pipeline/pipeline.py": "8a697d7321c4fe0134efe31f484299b95352507d05c5809b1aba7a87f8b8937e",
    "apps/api/app/services/tutor_pipeline/render.py": "7eb1cc2d2e05fed9f180af24feaa159f268abe8055275dcb87e902bc4fdcc42d",
    "apps/api/app/services/tutor_pipeline/resolve.py": "60cad8ad9ad51c5eddf20e93f24aa2ebac6555f349f2a7c38aed17a3d2e5cc39",
@@ -696,6 +696,6 @@
    "scripts/run_golden_set.py": "931d70dcfdc66f32a91ad9145eb85894c86c8ccd00ded6edc6ae533b4e506b08",
    "scripts/run_v1_fixtures.py": "eef14c4c906aa9abb209c97b83bf78c077ca7a6642febbc0d09b0665b86405bd"
   },
-  "sha256": "c167dd8f33913ae7a43c133dd3992421a6543e7ed53adc3813ae5863e2c3c15d"
+  "sha256": "89bb48613b3a7f9af448182515e82c50bb0d7ed4129404183d21e727ccb67fa3"
  }
 }
