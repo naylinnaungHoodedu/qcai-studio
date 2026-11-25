@@ -7,15 +7,22 @@ every normalized whole text field of at least 3 words plus 6-word shingles (`qca
 question is still found. A fingerprint file holds its salt, so a real one is research-plane material. Reports hold paths
 and counts only, never a text.
 
-A file is text when its suffix is a known text suffix, or, for any other suffix that is not a known binary one (no suffix,
-a dotfile, `.puml`, `.sh`, `.mako`, `Dockerfile`, ...), when its bytes decode as UTF-8 without a NUL. Environment files
-(a basename starting `.env`, such as the tracked `.env.example` templates) are read only when the caller asks
-(`include_env`; CI passes `--include-env-files`), and are otherwise listed as excluded.
+A file is text when it starts with a UTF-8, UTF-16 or UTF-32 byte-order mark and decodes in that encoding (a PowerShell
+5.1 `>` redirect writes UTF-16LE with a mark), or when its bytes hold no NUL and either its suffix is a known text suffix
+or, for any other suffix that is not a known binary one (no suffix, a dotfile, `.puml`, `.sh`, `.mako`, `Dockerfile`,
+...), they decode as UTF-8. Every file a target lists but does not scan is listed as excluded with its reason: a known
+binary suffix (`binary`, never read), bytes that are not text (`not_text`, including a `.docx` that does not parse), over
+20 MiB (`too_large`, never read), unreadable (`unreadable`), or an environment file (a basename starting `.env`, such as
+the tracked `.env.example` templates), which is read only when the caller asks (`include_env`; CI passes
+`--include-env-files`). A target's coverage is incomplete when it scanned no file or excluded a file as `too_large` or
+`unreadable`; for a research-logs or path target (run outputs, logs, prompts) a `binary` or `not_text` exclusion makes it
+incomplete too (`incomplete_reasons`), since such a target holds only text the scan must read.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+import codecs
 import hashlib
 import hmac
 import io
@@ -42,7 +49,15 @@ BINARY_EXTENSIONS = frozenset({
     ".otf", ".eot", ".mp3", ".mp4", ".wav", ".mov", ".webm", ".pyc", ".pptx", ".xlsx", ".doc", ".xls", ".ppt", ".db", ".sqlite",
 })
 ENV_EXCLUSION = "environment file (not read; --include-env-files)"
+BINARY_EXCLUSION = "binary"
+NOT_TEXT_EXCLUSION = "not_text"
+# The exclusions that leave any target's coverage incomplete, and those that do for a research-logs or path target.
 INCOMPLETE_REASONS = frozenset({"too_large", "unreadable"})
+STRICT_TARGETS = frozenset({"research-logs", "path"})
+STRICT_INCOMPLETE_REASONS = INCOMPLETE_REASONS | {BINARY_EXCLUSION, NOT_TEXT_EXCLUSION}
+# Byte-order marks, the UTF-32 ones first (the UTF-32LE mark starts with the UTF-16LE one).
+BOMS = ((codecs.BOM_UTF32_LE, "utf-32-le"), (codecs.BOM_UTF32_BE, "utf-32-be"), (codecs.BOM_UTF8, "utf-8"),
+        (codecs.BOM_UTF16_LE, "utf-16-le"), (codecs.BOM_UTF16_BE, "utf-16-be"))
 MAX_SCAN_BYTES = 20 * 1024 * 1024
 MIN_WORDS_EXACT = 3
 LICENSED_N = 12
@@ -223,9 +238,17 @@ def _text_of(name: str, data: bytes) -> str | None:
             return "\n".join(paragraph.text for paragraph in Document(io.BytesIO(data)).paragraphs)
         except Exception:
             return None
+    for mark, encoding in BOMS:
+        if data.startswith(mark):
+            try:
+                return data[len(mark):].decode(encoding)
+            except UnicodeDecodeError:
+                return None
+    if b"\x00" in data:
+        return None
     if suffix in TEXT_EXTENSIONS:
         return data.decode("utf-8", errors="replace")
-    if suffix in BINARY_EXTENSIONS or b"\x00" in data:
+    if suffix in BINARY_EXTENSIONS:
         return None
     try:
         return data.decode("utf-8")
@@ -250,10 +273,11 @@ def _reader(path: Path) -> Callable[[], bytes]:
 
 
 def scan_files(entries: Iterable[Entry], sets: Sequence[FingerprintSet], *, excluded: Sequence[Mapping[str, str]] = (),
-               include_env: bool = False) -> dict[str, Any]:
-    """Scan (name, read) entries. Known binary suffixes are skipped unread; a file of another suffix is read and scanned
-    when it is text (see the module docstring). Files over 20 MiB are excluded as `too_large`, files that cannot be read as
-    `unreadable`, and environment files (unless `include_env`) as not read."""
+               include_env: bool = False, on_read: Callable[[str, bytes], None] | None = None) -> dict[str, Any]:
+    """Scan (name, read) entries. Known binary suffixes are excluded unread (`binary`); a file of another suffix is read
+    and scanned when it is text (see the module docstring), and excluded as `not_text` otherwise. Files over 20 MiB are
+    excluded unread as `too_large`, files that cannot be read as `unreadable`, and environment files (unless
+    `include_env`) as not read. `on_read(name, bytes)` is told of every file actually read, and of no other."""
     files = scanned = 0
     out_excluded = [dict(entry) for entry in excluded]
     hit_files = []
@@ -261,6 +285,7 @@ def scan_files(entries: Iterable[Entry], sets: Sequence[FingerprintSet], *, excl
         files += 1
         suffix = PurePosixPath(name).suffix.lower()
         if suffix in BINARY_EXTENSIONS:
+            out_excluded.append({"path": name, "reason": BINARY_EXCLUSION})
             continue
         if is_env_file(name) and not include_env:
             out_excluded.append({"path": name, "reason": ENV_EXCLUSION})
@@ -273,8 +298,11 @@ def scan_files(entries: Iterable[Entry], sets: Sequence[FingerprintSet], *, excl
         except OSError:
             out_excluded.append({"path": name, "reason": "unreadable"})
             continue
+        if on_read is not None:
+            on_read(name, data)
         text = _text_of(name, data)
         if text is None:
+            out_excluded.append({"path": name, "reason": NOT_TEXT_EXCLUSION})
             continue
         scanned += 1
         hits = scan_text(text, sets)
@@ -299,24 +327,26 @@ def repository_target(root: Path, sets: Sequence[FingerprintSet], *, exclude: Se
 
 
 def path_target(path: Path, sets: Sequence[FingerprintSet], *, label: str, exclude_paths: Sequence[Path] = (),
-                include_env: bool = False) -> dict[str, Any]:
+                include_env: bool = False, on_read: Callable[[str, bytes], None] | None = None) -> dict[str, Any]:
     path = Path(path)
     excluded_set = {Path(item).resolve() for item in exclude_paths}
     files = sorted(p for p in ([path] if path.is_file() else path.rglob("*")) if p.is_file())
     skipped = [{"path": _rel(p, path), "reason": "synthetic contamination fixture"} for p in files if p.resolve() in excluded_set]
     entries = [(_rel(p, path), _reader(p)) for p in files if p.resolve() not in excluded_set]
-    return {"target": "path", "root": label, **scan_files(entries, sets, excluded=skipped, include_env=include_env),
+    return {"target": "path", "root": label, **scan_files(entries, sets, excluded=skipped, include_env=include_env, on_read=on_read),
             "files": len(files)}
 
 
-def research_logs_target(directory: Path, sets: Sequence[FingerprintSet], *, label: str, include_env: bool = False) -> dict[str, Any]:
+def research_logs_target(directory: Path, sets: Sequence[FingerprintSet], *, label: str, include_env: bool = False,
+                         on_read: Callable[[str, bytes], None] | None = None) -> dict[str, Any]:
     """Every file of a run directory except the fixed research-data file (responses.jsonl). The exclusion is a constant:
     nothing a run writes can widen it."""
     directory = Path(directory)
     files = sorted(p for p in directory.rglob("*") if p.is_file())
     skipped = [{"path": _rel(p, directory), "reason": "research data (model outputs)"} for p in files if p.name in RESEARCH_DATA_FILES]
     entries = [(_rel(p, directory), _reader(p)) for p in files if p.name not in RESEARCH_DATA_FILES]
-    return {"target": "research-logs", "root": label, **scan_files(entries, sets, excluded=skipped, include_env=include_env),
+    return {"target": "research-logs", "root": label, **scan_files(entries, sets, excluded=skipped, include_env=include_env,
+                                                                    on_read=on_read),
             "files": len(files)}
 
 
@@ -327,10 +357,17 @@ def _rel(path: Path, root: Path) -> str:
         return path.name
 
 
+def incomplete_reasons(target_kind: Any) -> frozenset[str]:
+    """The exclusion reasons that leave a target of this kind unable to prove zero matches."""
+    return STRICT_INCOMPLETE_REASONS if target_kind in STRICT_TARGETS else INCOMPLETE_REASONS
+
+
 def incomplete_targets(targets: Sequence[Mapping[str, Any]]) -> list[str]:
-    """The roots of targets whose coverage cannot prove zero matches: no file scanned, or a file too large or unreadable."""
+    """The roots of targets whose coverage cannot prove zero matches: no file scanned, a file too large or unreadable,
+    or, in a research-logs or path target, a file not scanned as text (`binary`, `not_text`)."""
     return [str(target["root"]) for target in targets
-            if target["scanned"] == 0 or any(entry.get("reason") in INCOMPLETE_REASONS for entry in target["excluded"])]
+            if target["scanned"] == 0 or any(entry.get("reason") in incomplete_reasons(target.get("target"))
+                                             for entry in target["excluded"])]
 
 
 def report(targets: Sequence[Mapping[str, Any]], sets: Sequence[FingerprintSet]) -> dict[str, Any]:

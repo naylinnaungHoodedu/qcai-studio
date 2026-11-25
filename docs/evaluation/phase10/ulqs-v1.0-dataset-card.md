@@ -7,11 +7,12 @@ the bracketed values in the research plane at freeze; the filled card stays ther
 
 - Dataset: ULQS v1.0 (`dataset_version` `ULQS-v1.0`, records `schema_version` 1.1, schema `lqs/ulqs-v1.0.schema.json`).
 - Corpus version: [one `QCAI-CORPUS-YYYY-MM-DD` value]; it is a field of each item, never part of an id (R-19).
-- Freeze record: [dataset sha256; rules sha256; agreement-record sha256; agent-check sha256 and verifier model id]
-  (`scripts/validate_ulqs.py --freeze --agent-check --freeze-out`).
+- Freeze record: [dataset sha256; rules sha256; agreement-record sha256; the agent-check record's canonical sha256; the
+  agent's report sha256; verifier model id] (`scripts/validate_ulqs.py --freeze --agent-check --freeze-out`).
 - Benchmark verification: [agent-detected defects; agent false alarms; defects the agent missed; disagreements
-  adjudicated; items changed after an agent flag], reported descriptively with the sample description; these counts do
-  not enter the E2 analysis.
+  adjudicated; items changed after an agent flag], reported descriptively with the sample description. The counts do
+  not enter the E2 hypothesis tests; the items changed after an agent flag are the ones the registered secondary analysis
+  `agent_verifier_accuracy_with_and_without_changed_items` leaves out of that verifier's "without" E2 accuracy.
 - Source: ULQS v1.0-rc1 (88 items, one author), migrated with `scripts/migrate_ulqs_rc1.py` and the table
   `lqs/ulqs-rc1-to-v1.0-mapping.json`.
 

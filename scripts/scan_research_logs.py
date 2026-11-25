@@ -10,20 +10,26 @@ research-plane files (they hold their salt); public CI passes --synthetic-fixtur
 from invented passages with a published salt, and the fixture file itself is not a scan target. --self-test plants a
 sentinel in a temporary run directory and requires the scanner to find it, and to skip it in responses.jsonl. The report
 holds paths and counts only. Any file that is text is scanned, whatever its suffix (Dockerfiles, dotfiles, .puml, .sh,
-...); environment files (`.env*`, such as the tracked `.env.example` templates) are read only with --include-env-files
-(CI passes it) and are otherwise listed as excluded. A match always exits 1; --require-zero also fails (exit 1) when the
-coverage cannot prove zero: a target that scanned no file, or a file excluded as too large or unreadable. The report's
-`result` is `fail` on a match, `incomplete` with zero matches and incomplete coverage (`incomplete_targets` names the
-targets), and `pass` only with zero matches and full coverage.
+...), and a file with a UTF-16 or UTF-32 byte-order mark is decoded in that encoding; every file a target does not scan
+is listed as excluded with its reason (`binary`, `not_text`, `too_large`, `unreadable`, or an environment file:
+`.env*`, such as the tracked `.env.example` templates, is read only with --include-env-files, which CI passes). A match
+always exits 1; --require-zero also fails (exit 1) when the coverage cannot prove zero: a target that scanned no file, a
+file excluded as too large or unreadable, or, in a --research-logs or --path target, a file excluded as binary or not
+text. Without --require-zero an incomplete scan exits 0 and says so on stderr. The report's `result` is `fail` on a
+match, `incomplete` with zero matches and incomplete coverage (`incomplete_targets` names the targets), and `pass` only
+with zero matches and full coverage. --ulqs-fingerprints goes with --fingerprints only (with --synthetic-fixture it is
+refused, exit 2).
 
 Research fingerprints (--fingerprints) are research-plane material, so with them --access-log PATH (a research-plane
 path) and --actor-role are required: the log records the read of each fingerprint file (`fingerprints`, before it is
 parsed), of each --research-logs directory (`run_output`) and each --path target (`scan_target`), each with a digest of
-the files read, and the write of the report (`scan_report`). With --synthetic-fixture the log is optional.
+the files that target actually read (never of an environment file it excluded, a binary-suffix file or a file over
+20 MiB, which are not read), and the write of the report (`scan_report`). With --synthetic-fixture the log is optional.
 
-Exit codes: 0 zero matches with full coverage (or the self-test detected the sentinel); 1 matches, incomplete coverage
-under --require-zero (or the self-test missed); 2 usage (including research fingerprints without --access-log and
---actor-role, or an access log on a public path).
+Exit codes: 0 zero matches (with full coverage only under --require-zero: without it an incomplete scan also exits 0, the
+report's `result` says `incomplete` and stderr names the targets), or the self-test detected the sentinel; 1 matches,
+incomplete coverage under --require-zero (or the self-test missed); 2 usage (including research fingerprints without
+--access-log and --actor-role, --ulqs-fingerprints with --synthetic-fixture, or an access log on a public path).
 """
 
 from __future__ import annotations
@@ -85,18 +91,18 @@ def _fingerprints_digest(path: Path) -> str | None:
             return None
 
 
-def _files_digest(root: Path, *, skip: frozenset[str] = frozenset()) -> str:
-    """A digest of the files a target read: the canonical sha256 of [relative path, sha256 of the bytes or null]."""
-    root = Path(root)
-    files = sorted(p for p in ([root] if root.is_file() else root.rglob("*")) if p.is_file() and p.name not in skip)
-    listing = []
-    for p in files:
-        try:
-            digest = hashlib.sha256(p.read_bytes()).hexdigest()
-        except OSError:
-            digest = None
-        listing.append([p.relative_to(root).as_posix() if root.is_dir() else p.name, digest])
-    return canonical_sha256(listing)
+class ReadDigests:
+    """The scanner's `on_read` callback for one target: the sha256 of each file the target actually read."""
+
+    def __init__(self) -> None:
+        self.files: dict[str, str] = {}
+
+    def __call__(self, name: str, data: bytes) -> None:
+        self.files[name] = hashlib.sha256(data).hexdigest()
+
+    def digest(self) -> str:
+        """The canonical sha256 of [[relative path, sha256 of the bytes read], ...] in path order."""
+        return canonical_sha256([[name, self.files[name]] for name in sorted(self.files)])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -118,6 +124,10 @@ def main(argv: list[str] | None = None) -> int:
         args = parser.parse_args(argv)
     except SystemExit as exit_:
         return int(exit_.code or 0) and 2
+    if args.synthetic_fixture and args.ulqs_fingerprints is not None:
+        print("usage (exit 2): --ulqs-fingerprints goes with --fingerprints (the synthetic fixture builds its own sets)",
+              file=sys.stderr)
+        return 2
     if args.fingerprints and (args.access_log is None or args.actor_role is None):
         print("usage (exit 2): research fingerprints (--fingerprints) need --access-log and --actor-role", file=sys.stderr)
         return 2
@@ -169,14 +179,15 @@ def main(argv: list[str] | None = None) -> int:
     for path in args.path:
         absolute = path if path.is_absolute() else REPO_ROOT / path
         label = path.as_posix() if not path.is_absolute() else path.name
+        reads = ReadDigests()
         targets.append(contamination.path_target(absolute, sets, label=label, exclude_paths=[fixture] if fixture else [],
-                                                 include_env=args.include_env_files))
-        if args.access_log is not None:
-            log("read", "scan_target", _files_digest(absolute))
+                                                 include_env=args.include_env_files, on_read=reads))
+        log("read", "scan_target", reads.digest())
     for directory in args.research_logs:
-        targets.append(contamination.research_logs_target(directory, sets, label=directory.name, include_env=args.include_env_files))
-        if args.access_log is not None:
-            log("read", "run_output", _files_digest(directory, skip=contamination.RESEARCH_DATA_FILES))
+        reads = ReadDigests()
+        targets.append(contamination.research_logs_target(directory, sets, label=directory.name, include_env=args.include_env_files,
+                                                          on_read=reads))
+        log("read", "run_output", reads.digest())
     result = contamination.report(targets, sets)
     if args.report:
         write_lf(args.report, dumps_record(result))
@@ -190,10 +201,11 @@ def main(argv: list[str] | None = None) -> int:
     if result["matches_total"]:
         return 1
     incomplete = contamination.incomplete_targets(targets)
-    if args.require_zero and incomplete:
-        print(f"coverage incomplete (exit 1): {', '.join(incomplete)} (no file scanned, or a file too large or unreadable)",
-              file=sys.stderr)
-        return 1
+    if incomplete:
+        code = 1 if args.require_zero else 0
+        print(f"coverage incomplete (exit {code}{'' if args.require_zero else '; --require-zero fails it'}): {', '.join(incomplete)} "
+              "(no file scanned, a file too large or unreadable, or a log or path file binary or not text)", file=sys.stderr)
+        return code
     return 0
 
 

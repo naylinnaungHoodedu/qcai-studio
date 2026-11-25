@@ -1,6 +1,6 @@
 """The evaluation tests' set-up (Phase 10 spec 8.2): the repository, apps/api and its tests on the path, an in-memory
-development database for any lazy application import, and the network guard and the whole-tree scan guard installed
-before anything else runs."""
+development database for any lazy application import, the network guard and the whole-tree scan guard installed before
+anything else runs, and the UTC day the run-date check reads fixed at the synthetic specs' created_at."""
 
 from __future__ import annotations
 
@@ -34,3 +34,14 @@ def _no_network_attempt_in_evaluation_tests():
     blocked = network_guard.take_blocked()
     if blocked:
         pytest.fail(f"a test tried to touch the network: {blocked[:3]}")
+
+
+@pytest.fixture(autouse=True)
+def _the_run_day_is_the_synthetic_specs_day(monkeypatch):
+    """A confirmatory or live run must be planned on its created_at's UTC day (governance.run_date_refusals); the tests
+    plan theirs on synthetic.CREATED's day, whatever the clock says (a test that checks the rule sets another day)."""
+    import datetime
+
+    from evaluation.qcai_eval import governance, synthetic
+
+    monkeypatch.setattr(governance, "utc_today", lambda: datetime.date.fromisoformat(synthetic.CREATED[:10]))

@@ -20,7 +20,9 @@ no gold label and no restricted evidence text: those stay in the private researc
 evaluation/fixtures/synthetic_evidence_catalog_v1.jsonl` validates the synthetic fixture in CI. The strict freeze check
 (`--freeze`, with `--previous` and `--corpus-text`) refuses synthetic items: it runs only in the research plane, on the
 real items, checks every state transition from the previous set and every EV pointer against the corpus text, requires
-the AI-agent re-check record (`--agent-check`), and records the dataset sha256 (`docs/evaluation/phase10/research-plane-runbook.md`).
+the AI-agent re-check record (`--agent-check`), and writes the freeze record (`--freeze-out`: the dataset sha256, the
+agent-check record's sha256, the agent's report sha256, model id and counts, and the items changed after an agent flag;
+`docs/evaluation/phase10/research-plane-runbook.md`).
 
 ## Legacy LQS
 

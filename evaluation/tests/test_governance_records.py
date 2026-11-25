@@ -138,6 +138,20 @@ _TARGET_LOGS = {"target": "research-logs", "root": "prior-run", "files": 4, "sca
     ({"targets": [_TARGET_REPO, {**_TARGET_LOGS, "excluded": "none"}]}, "pre_run_scan_invalid:coverage"),
     ({"targets": [_TARGET_REPO, _TARGET_LOGS, "not a target"]}, "pre_run_scan_invalid:coverage"),
     ({"incomplete_targets": ["prior-run"]}, "pre_run_scan_invalid:coverage"),
+    # A log or path target that excluded a file as binary or not text (a UTF-16 console log without a mark, a PDF)
+    # cannot prove zero either.
+    ({"targets": [_TARGET_REPO, {**_TARGET_LOGS, "excluded": [{"path": "console.log", "reason": "not_text"}]}]},
+     "pre_run_scan_invalid:coverage"),
+    ({"targets": [_TARGET_REPO, {**_TARGET_LOGS, "excluded": [{"path": "notes.pdf", "reason": "binary"}]}]},
+     "pre_run_scan_invalid:coverage"),
+    ({"targets": [_TARGET_REPO, {"target": "path", "root": "p", "files": 2, "scanned": 1, "excluded": [{"path": "x", "reason": "not_text"}],
+                                 "files_with_hits": []}]}, "pre_run_scan_invalid:coverage"),
+    # A report whose lists are not lists is invalid, never a traceback.
+    ({"targets": 5}, "pre_run_scan_invalid:report"),
+    ({"targets": "repository"}, "pre_run_scan_invalid:report"),
+    ({"targets": None}, "pre_run_scan_invalid:report"),
+    ({"fingerprint_sets": 7}, "pre_run_scan_invalid:report"),
+    ({"fingerprint_sets": {"id": "research-ulqs-t1"}}, "pre_run_scan_invalid:report"),
 ])
 def test_a_pre_run_scan_must_be_a_passing_research_scan_bound_to_the_items(tmp_path, overrides, reason):
     ok = synthetic.pass_scan(tmp_path / "ok.json", dataset_content_sha256=CONTENT_SHA)
@@ -164,6 +178,43 @@ def test_a_scan_the_scanner_wrote_with_incomplete_coverage_says_incomplete_and_i
     reasons = governance.scan_refusals(synthetic.record_ref(path), REPO_ROOT, dataset_content_sha256=CONTENT_SHA, missing="m")
     assert "pre_run_scan_invalid:result" in reasons and "pre_run_scan_invalid:coverage" in reasons
     assert governance.INCOMPLETE_REASONS == contamination.INCOMPLETE_REASONS
+
+
+def test_a_repository_target_s_binary_assets_leave_the_pre_run_scan_complete(tmp_path):
+    # The tracked tree holds images and fonts: listed as excluded (`binary`), they do not make the scan incomplete; the
+    # gate's reasons equal the scanner's, for each target kind.
+    repo = {**_TARGET_REPO, "excluded": [{"path": "logo.png", "reason": "binary"}, {"path": "font.woff2", "reason": "binary"}]}
+    ok = synthetic.pass_scan(tmp_path / "ok.json", dataset_content_sha256=CONTENT_SHA, targets=[repo, _TARGET_LOGS])
+    assert governance.scan_refusals(ok, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, missing="m") == []
+    assert governance.INCOMPLETE_REASONS == contamination.INCOMPLETE_REASONS
+    assert governance.STRICT_TARGETS == contamination.STRICT_TARGETS
+    assert governance.STRICT_INCOMPLETE_REASONS == contamination.STRICT_INCOMPLETE_REASONS
+    for kind in ("repository", "research-logs", "path"):
+        assert governance._incomplete_reasons(kind) == contamination.incomplete_reasons(kind)
+
+
+def test_a_confirmatory_run_is_refused_unless_created_at_is_today(tmp_path, monkeypatch):
+    # The run date is the spec's created_at, so it must be the day the run is planned: a spec dated 2026-11-24 run in
+    # 2028 would otherwise pass an IRB that expired in 2027, and a future-dated spec an OSF record filed after the run.
+    from datetime import date
+
+    irb = synthetic.irb_record(tmp_path / "irb.private.json", approval_date="2026-11-01", expiry_date="2027-06-30")
+    osf = synthetic.osf_record(tmp_path / "osf.private.json", analysis_plan_sha256=PLAN_SHA)
+    scan = synthetic.pass_scan(tmp_path / "scan.json", dataset_content_sha256=CONTENT_SHA)
+    freeze = synthetic.freeze_record(tmp_path / "freeze.private.json", dataset_sha256="d" * 64)
+    ok = {"governance": {"irb_record": irb, "osf_record": osf}, "freeze_record": freeze, "pre_run_scan": scan}
+    assert refusals(tmp_path, **ok) == []
+    monkeypatch.setattr(governance, "utc_today", lambda: date(2028, 1, 10))
+    assert refusals(tmp_path, **ok) == ["created_at_not_today"]
+    assert refusals(tmp_path, **{**ok, "created_at": "2028-01-10T08:00:00Z"}) == ["irb_expired"]
+    monkeypatch.setattr(governance, "utc_today", lambda: date(2026, 11, 24))
+    assert refusals(tmp_path, **{**ok, "created_at": "2026-12-01T00:00:00Z"}) == ["created_at_not_today"]
+    assert governance.run_date_refusals({"created_at": "garbage"}) == ["created_at"]
+    assert governance.utc_today() == date(2026, 11, 24)
+    monkeypatch.undo()
+    import datetime as datetime_module
+
+    assert governance.utc_today() == datetime_module.datetime.now(datetime_module.timezone.utc).date()
 
 
 def test_a_record_path_open_refuses_is_an_invalid_file_never_a_traceback(tmp_path):

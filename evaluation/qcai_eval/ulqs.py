@@ -680,8 +680,11 @@ def load_freeze_rules(path: Path = DEFAULT_FREEZE_RULES) -> FreezeRules:
 # an LLM verifier agent, one of the V2 verifier models chosen before the check, re-checks every item against its evidence
 # with the V2 verdict schema; its disagreements with the deterministic and human checks are adjudicated by a claim rater
 # who did not review that item; the counts of agent-detected defects, agent false alarms and missed defects are reported.
+# Items changed after one of the agent's flags are listed, so that its E2 accuracy can be reported with and without them:
+# the record binds each item's content as the agent checked it (`checked_items`), and the freeze accepts a later change
+# to exactly the listed items.
 AGENT_CHECK_RECORD = "ulqs-agent-check-v1"
-AGENT_CHECK_KEYS = ("record", "dataset_content_sha256", "agent_model_id", "model_chosen_before_check", "verdict_schema",
+AGENT_CHECK_KEYS = ("record", "checked_items", "agent_model_id", "model_chosen_before_check", "verdict_schema",
                     "report_sha256", "items_checked", "disagreements", "disagreements_adjudicated",
                     "adjudicated_by_non_reviewer", "agent_detected_defects", "agent_false_alarms", "agent_missed_defects",
                     "items_changed_after_flag")
@@ -695,22 +698,43 @@ def _count(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
+def item_content_sha256(item: Mapping[str, Any]) -> str:
+    """One item's content hash with its `status` removed (the per-item form of `dataset_content_sha256`)."""
+    return canonical_sha256({key: value for key, value in item.items() if key != "status"})
+
+
+def agent_check_shape_ok(record: Any) -> bool:
+    """An `ulqs-agent-check-v1` record's shape: exactly its keys, counts that are non-negative integers, a model id, the
+    report's sha256, the V2 verdict schema, `checked_items` mapping item ids to content sha256s and a list of item ids
+    changed after a flag."""
+    return isinstance(record, Mapping) and record.get("record") == AGENT_CHECK_RECORD and set(record) == set(AGENT_CHECK_KEYS) \
+        and all(_count(record[key]) for key in AGENT_CHECK_COUNTS) \
+        and isinstance(record["agent_model_id"], str) and bool(record["agent_model_id"]) \
+        and isinstance(record["report_sha256"], str) and bool(_HEX64.match(record["report_sha256"])) \
+        and record["verdict_schema"] == AGENT_VERDICT_SCHEMA and isinstance(record["checked_items"], Mapping) \
+        and all(isinstance(key, str) and isinstance(value, str) and _HEX64.match(value) for key, value in record["checked_items"].items()) \
+        and isinstance(record["items_changed_after_flag"], list) and all(isinstance(entry, str) for entry in record["items_changed_after_flag"])
+
+
 def agent_check_failures(record: Mapping[str, Any] | None, items: Sequence[Mapping[str, Any]], *, rules: FreezeRules) -> list[str]:
-    """The freeze codes of the agent re-check (spec 4.2): missing, malformed, for another item set, incomplete, by a model
-    the rules do not pin (none is pinned while D-07 is open: DI-142), or with an unadjudicated disagreement."""
+    """The freeze codes of the agent re-check (spec 4.2): missing, malformed, not covering every live item, an item changed
+    since the agent checked it that `items_changed_after_flag` does not list (stale), by a model the rules do not pin (none
+    is pinned while D-07 is open: DI-142), or with an unadjudicated disagreement. `checked_items` holds each item's content
+    sha256 as the agent checked it; an item whose content differs now must be listed, and a listed item must be one the
+    agent checked whose content did change, and at most as many items as the agent flagged (detected defects plus false
+    alarms) may be listed."""
     if record is None:
         return ["agent_check_missing"]
-    if not isinstance(record, Mapping) or record.get("record") != AGENT_CHECK_RECORD or set(record) != set(AGENT_CHECK_KEYS) \
-            or not all(_count(record[key]) for key in AGENT_CHECK_COUNTS) \
-            or not isinstance(record["agent_model_id"], str) or not record["agent_model_id"] \
-            or not isinstance(record["report_sha256"], str) or not _HEX64.match(record["report_sha256"]) \
-            or record["verdict_schema"] != AGENT_VERDICT_SCHEMA or not isinstance(record["items_changed_after_flag"], list):
+    if not agent_check_shape_ok(record):
         return ["agent_check_invalid"]
     failures = []
     live = [item for item in items if item.get("status") != "retired"]
-    if record["dataset_content_sha256"] != dataset_content_sha256(items):
+    checked = record["checked_items"]
+    changed = {item.get("item_id") for item in live if item.get("item_id") in checked and checked[item["item_id"]] != item_content_sha256(item)}
+    listed = set(record["items_changed_after_flag"])
+    if changed - listed:
         failures.append("agent_check_stale")
-    if record["items_checked"] != len(live):
+    if record["items_checked"] != len(live) or set(checked) != {item.get("item_id") for item in live}:
         failures.append("agent_check_incomplete")
     if record["model_chosen_before_check"] is not True:
         failures.append("agent_model_not_chosen_before_check")
@@ -718,8 +742,8 @@ def agent_check_failures(record: Mapping[str, Any] | None, items: Sequence[Mappi
         failures.append("agent_model_not_pinned")
     if record["disagreements_adjudicated"] != record["disagreements"] or record["adjudicated_by_non_reviewer"] is not True:
         failures.append("agent_disagreements_unadjudicated")
-    known = {item.get("item_id") for item in items}
-    if any(not isinstance(item_id, str) or item_id not in known for item_id in record["items_changed_after_flag"]):
+    if listed - changed or len(listed) != len(record["items_changed_after_flag"]) \
+            or len(listed) > record["agent_detected_defects"] + record["agent_false_alarms"]:
         failures.append("agent_check_invalid")
     return failures
 

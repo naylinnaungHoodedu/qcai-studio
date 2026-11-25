@@ -28,7 +28,8 @@ jobs:
       # AC-10-3: the stub run reproduces the committed synthetic run record byte for byte (exit 1 drift, 6 a pin, 7 parity).
       - run: python scripts/run_evaluation.py --check docs/evaluation/phase10/synthetic_run_record_v1.json --spec docs/evaluation/phase10/synthetic_run_spec_v1.json
       # AC-10-4 (synthetic half): zero synthetic-fingerprint matches in the tracked tree, every text file scanned whatever
-      # its suffix, the .env.example templates included (--include-env-files), and full coverage (--require-zero); the
+      # its suffix (UTF-16/32 with a byte-order mark decoded; a file that is not text listed as excluded with its reason),
+      # the .env.example templates included (--include-env-files), and full coverage (--require-zero); the
       # self-test proves a planted sentinel is found. Real fingerprints run only in the research plane (DI-141).
       - run: python scripts/scan_research_logs.py --synthetic-fixture evaluation/fixtures/contamination_synthetic_v1.json --repo --include-env-files --require-zero --report "$RUNNER_TEMP/research-log-scan.json"
       - run: python scripts/scan_research_logs.py --synthetic-fixture evaluation/fixtures/contamination_synthetic_v1.json --self-test

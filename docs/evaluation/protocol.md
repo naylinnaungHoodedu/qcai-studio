@@ -4,13 +4,16 @@ The harness is in `evaluation/qcai_eval` and `scripts/` (Phase 10 spec: `docs/ar
 No E1-E4 run has been executed: every procedure below waits on the research data plane (D-14), the IRB letter and the OSF
 DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-142). Not executed: nothing here is a result or an asserted outcome.
 
-1. **Freeze.** ULQS v1.0 passes `scripts/validate_ulqs.py --freeze --previous <review set> --corpus-text <dir>` in the
-   research plane (120-200 items at the strata targets of `lqs/ulqs-v1.0-freeze-rules.json`, every move from the previous
+1. **Freeze.** ULQS v1.0 passes `scripts/validate_ulqs.py --freeze --previous <review set> --corpus-text <dir>
+   --agent-check <agent re-check record> --freeze-out <freeze record>` (with the catalog, ratings and rubric; the full
+   command is the research-plane runbook's step 4) in the research plane (120-200 items at the strata targets of `lqs/ulqs-v1.0-freeze-rules.json`, every move from the previous
    set allowed by the state machine and no frozen content changed, every pointer resolved and checked against the corpus
    text character for character, Krippendorff's alpha at least 0.667 and at least a quarter of items second-rated, and
    the AI-agent re-check of every item by a V2 verifier model chosen before the check, with each disagreement adjudicated
-   by a claim rater who did not review that item). The freeze record pins the dataset sha256, the agent report's sha256,
-   the model id and the agent's counts. No verifier model is pinned until D-07, so no freeze passes yet (DI-142).
+   by a claim rater who did not review that item; an item changed after one of the agent's flags is listed in the
+   record). The freeze record pins the dataset sha256, the canonical sha256 of the agent re-check record, the agent's
+   full-report sha256 copied from that record, the model id, the agent's counts and the items changed after a flag (so
+   the agent verifier's E2 accuracy is reported with and without them). No verifier model is pinned until D-07, so no freeze passes yet (DI-142).
 2. **Pin.** The run spec pins the configuration package by path and sha256, the items, the evidence catalog, the arms
    (`evaluation/config/arms_v1.json`) and the analysis plan (`evaluation/config/analysis_plans_v1.json`). Seeds are
    sha256(run_id, arm, item_id, replicate).

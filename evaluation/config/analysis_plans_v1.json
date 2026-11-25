@@ -244,6 +244,20 @@
     "E1"
    ],
    "status": "not implemented (DI-138)"
+  },
+  "error_rate_among_answers": {
+   "analysis": "the error rate among answers (abstentions excluded), H1a's secondary endpoint (VBT RevB Table I)",
+   "for": [
+    "H1a"
+   ],
+   "status": "not implemented (DI-138)"
+  },
+  "agent_verifier_accuracy_with_and_without_changed_items": {
+   "analysis": "the AI-agent verifier's E2 accuracy reported with and without the ULQS items changed after one of its flags (the freeze record's items_changed_after_flag; VBT RevB Sec. VIII-B, Benchmark verification)",
+   "for": [
+    "E2"
+   ],
+   "status": "not implemented (DI-138)"
   }
  }
 }

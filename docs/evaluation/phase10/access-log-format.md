@@ -33,4 +33,5 @@ migration, build or scan still leaves its reads:
 - `migrate_ulqs_rc1.py`: the rc1 items it reads (also when it then refuses them) and the v1.0 items it writes.
 - `scan_research_logs.py`: each research fingerprint file it reads (`fingerprints`, with the digest the builder logged
   when it wrote the file), each `--path` target (`scan_target`) and `--research-logs` directory (`run_output`), each with a
-  digest of the files it read, and the scan report it writes (`scan_report`).
+  digest of the files it actually read (an environment file it excluded, a binary-suffix file or a file over 20 MiB is
+  never opened, so never in the digest), and the scan report it writes (`scan_report`).

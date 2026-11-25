@@ -48,6 +48,13 @@ def script(name):
     return importlib.import_module(name)
 
 
+@pytest.fixture(autouse=True)
+def _the_run_day_is_the_synthetic_specs_day(monkeypatch):
+    """A confirmatory or live run must be planned on its created_at's UTC day (governance.run_date_refusals): these tests
+    plan theirs on synthetic.CREATED's day, whatever the clock says; a test of the rule sets another day."""
+    monkeypatch.setattr(governance, "utc_today", lambda: datetime_module.date.fromisoformat(synthetic.CREATED[:10]))
+
+
 def fixture_texts():
     return json.loads(synthetic.CONTAMINATION_FIXTURE.read_text(encoding="utf-8"))
 
@@ -173,8 +180,13 @@ def _stale_items(items):
     return other
 
 
-def _agent_of(agent, items):
-    return {**agent, "dataset_content_sha256": ulqs.dataset_content_sha256(items)}
+def _agent_of(agent, items, changed=()):
+    """The agent's record as if it had checked `items` (an earlier content), listing `changed` as changed after a flag."""
+    return {**agent, "checked_items": synthetic.agent_check(items)["checked_items"], "items_changed_after_flag": list(changed)}
+
+
+def _first_live_id(items):
+    return next(item["item_id"] for item in items if item["status"] != "retired")
 
 
 def _unknown_pointer(items):
@@ -242,6 +254,20 @@ FREEZE_CASES = {
     "no agent check": (dict(agent_edit=lambda agent, items: None), {"agent_check_missing"}),
     "no verifier model pinned (D-07)": (dict(pin_agent=False), {"agent_model_not_pinned"}),
     "agent check of other content": (dict(agent_edit=lambda agent, items: _agent_of(agent, _stale_items(items))), {"agent_check_stale"}),
+    # VBT RevB p. 15: "items changed after one of its flags are listed": a listed change passes; the list must be exact.
+    "an item changed after a flag, listed": (dict(agent_edit=lambda agent, items: _agent_of(agent, _stale_items(items),
+                                                                                           [_first_live_id(items)])), set()),
+    "a listed item that did not change": (dict(agent_edit=lambda agent, items: {**agent, "items_changed_after_flag": [_first_live_id(items)]}),
+                                          {"agent_check_invalid"}),
+    "more listed changes than flags": (dict(agent_edit=lambda agent, items: {**_agent_of(agent, _stale_items(items), [_first_live_id(items)]),
+                                                                              "agent_detected_defects": 0, "agent_false_alarms": 0}),
+                                       {"agent_check_invalid"}),
+    "a listed item twice": (dict(agent_edit=lambda agent, items: _agent_of(agent, _stale_items(items), [_first_live_id(items)] * 2)),
+                            {"agent_check_invalid"}),
+    "an item the agent did not check": (dict(agent_edit=lambda agent, items: {**agent, "checked_items": dict(list(
+        agent["checked_items"].items())[1:])}), {"agent_check_incomplete"}),
+    "checked content that is not a sha256": (dict(agent_edit=lambda agent, items: {**agent, "checked_items": {
+        key: "x" for key in agent["checked_items"]}}), {"agent_check_invalid"}),
     "agent checked fewer items": (dict(agent_edit=lambda agent, items: {**agent, "items_checked": agent["items_checked"] - 1}),
                                   {"agent_check_incomplete"}),
     "agent disagreement unadjudicated": (dict(agent_edit=lambda agent, items: {**agent, "disagreements": 2}),
@@ -297,6 +323,109 @@ def test_ac_10_1_freeze_rules_without_the_agent_check_or_its_pinned_models_are_r
     path = tmp_path / "rules-agent-pinned.json"
     path.write_text(json.dumps(changed), encoding="utf-8")
     assert ulqs.load_freeze_rules(path).agent_models == (synthetic.SYNTHETIC_AGENT_MODEL,)
+
+
+def _research_plane_freeze(tmp_path):
+    """The validator's strict freeze over a set shaped like research items (not synthetic, so --freeze runs), built from
+    the invented synthetic texts in the test's own tmp_path (outside the checkout, so every path is private): the review
+    set, the frozen set, its catalog and corpus text, ratings, a rubric, rules that pin the synthetic verifier model and
+    an agent-check record whose first live item changed after a flag. Returns (argv, frozen items, the agent record)."""
+    def research(records):
+        text = json.dumps(records).replace("EV-SYN-", "EV-" + "2026-").replace("SYN-", "ULQS-")
+        return json.loads(text.replace("SYNTHETIC-CORPUS-v1", "QCAI-CORPUS-" + "2026-01-01"))
+
+    items = research(synthetic.synthetic_dataset(synthetic.PAPER_TARGETS, human_reviewed=True))
+    for item in items:
+        item["license_class"] = "private_eval_full_span"
+    previous = [{**item, "status": "review"} if item["status"] == "candidate" else item for item in items]
+    frozen = [{**item, "status": "frozen"} if item["status"] == "candidate" else item for item in items]
+    text = tmp_path / "text"
+    text.mkdir()
+    for document, body in synthetic.corpus_text(frozen).items():
+        write_lf(text / f"{document}.txt", body)
+    rubric = tmp_path / "rubric.md"
+    write_lf(rubric, "# an invented rubric\n")
+    ratings = synthetic.write_jsonl(tmp_path / "ratings.jsonl", synthetic.synthetic_ratings(
+        frozen, rubric_sha256=lf_sha256(rubric), share="1/4", disagree=1))
+    raw = json.loads(ulqs.DEFAULT_FREEZE_RULES.read_text(encoding="utf-8"))
+    raw["agent_check"]["pinned_models"] = [synthetic.SYNTHETIC_AGENT_MODEL]
+    rules = tmp_path / "rules.json"
+    write_lf(rules, json.dumps(raw) + "\n")
+    first = _first_live_id(frozen)
+    agent_record = {**synthetic.agent_check(frozen), "report_sha256": "b" * 64, "agent_false_alarms": 2, "agent_missed_defects": 3,
+                    "items_changed_after_flag": [first]}
+    agent_record["checked_items"] = {**agent_record["checked_items"], first: "c" * 64}  # its content before the change
+    agent = tmp_path / "agent-check.json"
+    write_lf(agent, json.dumps(agent_record) + "\n")
+    argv = ["--items", synthetic.write_jsonl(tmp_path / "frozen.jsonl", frozen), "--previous", synthetic.write_jsonl(tmp_path / "review.jsonl", previous),
+            "--catalog", synthetic.write_jsonl(tmp_path / "catalog.jsonl", research(synthetic.synthetic_catalog(frozen))),
+            "--corpus-text", text, "--rules", rules, "--ratings", ratings, "--rubric", rubric, "--agreement-out", tmp_path / "agreement.json",
+            "--freeze", "--agent-check", agent, "--freeze-out", tmp_path / "freeze-record.json", "--access-log", tmp_path / "access.jsonl",
+            "--actor-role", "RL"]
+    return [str(value) for value in argv], frozen, agent_record
+
+
+def test_ac_10_1_the_freeze_record_the_validator_writes_is_the_one_the_confirmatory_gate_loads(tmp_path):
+    # validate_ulqs.py --freeze --freeze-out writes `ulqs-freeze-record-v1`; governance.load_freeze_record (the gate's
+    # reader) accepts exactly FREEZE_RECORD_KEYS, so a writer that dropped, renamed or mis-filled a key fails here.
+    argv, frozen, agent_record = _research_plane_freeze(tmp_path)
+    assert script("validate_ulqs").main(argv) == 0
+    path = tmp_path / "freeze-record.json"
+    record = governance.load_freeze_record(path)
+    assert set(record) == {"record", *governance.FREEZE_RECORD_KEYS} and record["record"] == "ulqs-freeze-record-v1"
+    assert record["passed"] is True and record["failures"] == []
+    assert record["dataset_sha256"] == ulqs.dataset_sha256(frozen) and record["dataset_content_sha256"] == ulqs.dataset_content_sha256(frozen)
+    assert record["rules_sha256"] == ulqs.load_freeze_rules(Path(argv[argv.index("--rules") + 1])).sha256
+    assert record["agreement_sha256"] == canonical_sha256(json.loads((tmp_path / "agreement.json").read_text(encoding="utf-8")))
+    # agent_check_sha256 is the canonical sha256 of the agent-check record; the agent's full report is pinned by the
+    # record's report_sha256, which the freeze record copies as agent_report_sha256.
+    assert record["agent_check_sha256"] == canonical_sha256(agent_record)
+    assert record["agent_report_sha256"] == agent_record["report_sha256"] == "b" * 64
+    assert record["agent_model_id"] == agent_record["agent_model_id"] == synthetic.SYNTHETIC_AGENT_MODEL
+    for key in ("agent_detected_defects", "agent_false_alarms", "agent_missed_defects", "disagreements_adjudicated"):
+        assert record[key] == agent_record[key], key
+    assert record["items_changed_after_flag"] == agent_record["items_changed_after_flag"] == [_first_live_id(frozen)]
+    assert ("write", "freeze_record", lf_sha256(path)) in [
+        (line["action"], line["artifact_kind"], line["artifact_sha256"]) for line in read_jsonl(tmp_path / "access.jsonl")]
+
+
+def test_ac_10_1_the_validator_refuses_an_unreadable_rubric_rules_file_or_agent_record_with_exit_2(tmp_path, capsys):
+    # The documented exit 2 inputs: a rubric that is not there, freeze rules that do not load (here an older rules file
+    # without agent_check), and an agent-check record that is not shaped as ulqs-agent-check-v1. None is a traceback.
+    argv, frozen, agent_record = _research_plane_freeze(tmp_path)
+    validate = script("validate_ulqs")
+
+    def swap(flag, value):
+        changed = list(argv)
+        changed[changed.index(flag) + 1] = str(value)
+        return changed
+
+    old_rules = json.loads(ulqs.DEFAULT_FREEZE_RULES.read_text(encoding="utf-8"))
+    old_rules.pop("agent_check")
+    write_lf(tmp_path / "old-rules.json", json.dumps(old_rules) + "\n")
+    no_ratings = [value for index, value in enumerate(argv) if not (
+        value in ("--ratings", "--rubric", "--agreement-out") or (index and argv[index - 1] in ("--ratings", "--rubric", "--agreement-out")))]
+    cases = {"a missing rubric": swap("--rubric", tmp_path / "absent.md"),
+             "rules without agent_check (ratings)": swap("--rules", tmp_path / "old-rules.json"),
+             "rules without agent_check (freeze only)": [*no_ratings[:no_ratings.index("--rules") + 1], str(tmp_path / "old-rules.json"),
+                                                         *no_ratings[no_ratings.index("--rules") + 2:]],
+             "rules that are not there (freeze only)": [*no_ratings[:no_ratings.index("--rules") + 1], str(tmp_path / "absent.json"),
+                                                        *no_ratings[no_ratings.index("--rules") + 2:]]}
+    for name, value in (("list", []), ("missing key", {k: v for k, v in agent_record.items() if k != "checked_items"}),
+                        ("bad count", {**agent_record, "agent_false_alarms": -1})):
+        write_lf(tmp_path / f"agent-{name}.json", json.dumps(value) + "\n")
+        cases[f"an agent record: {name}"] = swap("--agent-check", tmp_path / f"agent-{name}.json")
+    for name, case in cases.items():
+        (tmp_path / "freeze-record.json").unlink(missing_ok=True)
+        capsys.readouterr()
+        assert validate.main(case) == 2, name
+        err = capsys.readouterr().err
+        assert "refused (exit 2)" in err and "Traceback" not in err, name
+        assert not (tmp_path / "freeze-record.json").exists(), name
+    # Without --freeze a malformed agent record is refused the same way (it is checked when read).
+    write_lf(tmp_path / "agent-plain.json", "[]\n")
+    assert validate.main(["--items", argv[argv.index("--items") + 1], "--agent-check", str(tmp_path / "agent-plain.json"),
+                          "--access-log", str(tmp_path / "access.jsonl"), "--actor-role", "RL"]) == 2
 
 
 def test_ac_10_1_the_strata_targets_are_the_paper_s_in_one_provisional_data_file():
@@ -1236,6 +1365,16 @@ def test_plan_h_spans_reach_no_model_until_the_four_conditions_hold(tmp_path, mo
     assert reasons({**spec, "provider_terms": unrecorded}) == ["provider_terms_invalid:publication_recorded"]
     expired = synthetic.irb_record(plane / "old.json", approval_date="2025-01-01", expiry_date="2026-06-30")
     assert reasons({**spec, "governance": {"irb_record": expired}}) == ["irb_expired"]
+    # The run date is the day the live run starts: a spec dated synthetic.CREATED planned in 2028 is refused, though its
+    # IRB (expiring in 2027) would pass against the declared date; a future-dated spec is refused too.
+    lasting = synthetic.irb_record(plane / "lasting.json", approval_date="2026-11-01", expiry_date="2027-06-30")
+    dated = {**spec, "governance": {"irb_record": lasting}}
+    assert reasons(dated) == []
+    monkeypatch.setattr(governance, "utc_today", lambda: datetime_module.date(2028, 1, 10))
+    assert reasons(dated) == ["created_at_not_today"]
+    assert reasons({**dated, "created_at": "2028-01-10T09:00:00Z"}) == ["irb_expired"]
+    monkeypatch.setattr(governance, "utc_today", lambda: datetime_module.date.fromisoformat(synthetic.CREATED[:10]))
+    assert reasons({**dated, "created_at": "2026-12-01T00:00:00Z"}) == ["created_at_not_today"]
     # Each record is bound to the run: (b) per provider the run queries, and no record dated after the run date.
     live = lambda **changes: {**spec, "responder": {"live": {"adapter": "fake-adapter", **changes}}}  # noqa: E731
     assert reasons(live(providers=["SYN-PROVIDER-2"])) == ["provider_terms_missing:SYN-PROVIDER-2"]

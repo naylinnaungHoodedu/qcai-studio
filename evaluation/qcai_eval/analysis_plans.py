@@ -43,9 +43,12 @@ PAPER_NULLS = {"H1c": "-0.05", "H2a": "0", "H2b": "1", "H2c": "0", "H4a": "0", "
 # otherwise the equivalence part of H4b is reported as inconclusive."
 H4B_CONFIRMATORY_IF = {"icc_2k_min": "0.50", "cronbach_alpha_min": "0.70", "scales": 6, "applies_to": "paired_tost",
                        "otherwise": "inconclusive", "computed_by": ["icc_2k", "cronbach_alpha"]}
-# The secondary and ancillary analyses VBT RevB Sec. X-A (and E1's labelling) names.
+# The secondary and ancillary analyses VBT RevB names: Sec. X-A (and E1's labelling); Table I's H1a secondary endpoint ("the
+# error rate among answers is a secondary endpoint"); and Sec. VIII-B's agent-verifier report ("that verifier's E2
+# accuracy is reported with and without them", the items changed after one of its flags).
 SECONDARY_ANALYSES = ("mixed_effects_logistic", "cumulative_link_mixed_model", "cliffs_delta", "ordinal_sensitivity_eqc",
-                      "icc_2k", "cronbach_alpha", "prediction_powered_inference")
+                      "icc_2k", "cronbach_alpha", "prediction_powered_inference", "error_rate_among_answers",
+                      "agent_verifier_accuracy_with_and_without_changed_items")
 
 
 class PlanError(ValueError):

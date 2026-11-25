@@ -30,7 +30,8 @@ ratified under DI-140). The Phase 10 exit is not passed (DI-129).
 6. The runner pins the package by path and sha256, the items, the catalog, the arms and the analysis plan; seeds are
    hashed. Stub and recorded runs repeat byte for byte. Live runs are refused here; hold H12 refuses every run over
    non-synthetic data while D-14 is open; a confirmatory run needs a valid IRB record and OSF record (AC-10-5); E1-E4 runs
-   are confirmatory only.
+   are confirmatory only. A confirmatory or live run's `created_at` must be the current UTC date, so every record date is
+   judged against the day the run really starts.
 7. Payload logs hold pointers, hashes and sizes only (AC-10-6). Contamination is scanned with salted fingerprints of the
    licensed corpus and of the ULQS; public CI uses synthetic fingerprints with a published salt (AC-10-4).
 8. The E1-E4 analysis plans are data with no outcome fields and a draft status (nothing is filed with OSF, DI-131); the

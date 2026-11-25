@@ -123,14 +123,24 @@ def test_h4b_carries_the_eqc_reliability_condition_and_the_secondary_analyses_ar
                                                           "applies_to": "paired_tost", "otherwise": "inconclusive",
                                                           "computed_by": ["icc_2k", "cronbach_alpha"]}
     assert set(raw["secondary_analyses"]) == {"mixed_effects_logistic", "cumulative_link_mixed_model", "cliffs_delta",
-                                              "ordinal_sensitivity_eqc", "icc_2k", "cronbach_alpha", "prediction_powered_inference"}
+                                              "ordinal_sensitivity_eqc", "icc_2k", "cronbach_alpha", "prediction_powered_inference",
+                                              "error_rate_among_answers", "agent_verifier_accuracy_with_and_without_changed_items"}
+    assert set(analysis_plans.SECONDARY_ANALYSES) == set(raw["secondary_analyses"])
     assert raw["secondary_analyses"]["mixed_effects_logistic"]["for"] == ["H1a", "H1b"]
+    # VBT RevB Table I (H1a): "the error rate among answers is a secondary endpoint"; Sec. VIII-B: the agent verifier's
+    # "E2 accuracy is reported with and without" the items changed after one of its flags.
+    assert raw["secondary_analyses"]["error_rate_among_answers"]["for"] == ["H1a"]
+    assert raw["secondary_analyses"]["agent_verifier_accuracy_with_and_without_changed_items"]["for"] == ["E2"]
+    assert "items_changed_after_flag" in raw["secondary_analyses"]["agent_verifier_accuracy_with_and_without_changed_items"]["analysis"]
     assert all(entry["status"] == "not implemented (DI-138)" for entry in raw["secondary_analyses"].values())
     for edit, match in ((lambda r: _hypothesis(r, "H4b").pop("confirmatory_if"), "EQC reliability condition"),
                         (lambda r: _hypothesis(r, "H4b")["confirmatory_if"].update(icc_2k_min="0.40"), "EQC reliability condition"),
                         (lambda r: _hypothesis(r, "H4b")["confirmatory_if"].update(otherwise="supported"), "EQC reliability condition"),
                         (lambda r: _hypothesis(r, "H4a").update(confirmatory_if={}), "only H4b"),
                         (lambda r: r["secondary_analyses"].pop("cliffs_delta"), "secondary_analyses"),
+                        (lambda r: r["secondary_analyses"].pop("error_rate_among_answers"), "secondary_analyses"),
+                        (lambda r: r["secondary_analyses"].pop("agent_verifier_accuracy_with_and_without_changed_items"),
+                         "secondary_analyses"),
                         (lambda r: r["secondary_analyses"]["icc_2k"].update(status="implemented"), "not a registered test"),
                         (lambda r: r["secondary_analyses"]["cronbach_alpha"].update(status="planned"), "status must be")):
         broken = copy.deepcopy(raw)

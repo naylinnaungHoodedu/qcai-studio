@@ -15,19 +15,27 @@ executed and no Table XVII row or HR-1..MR-3 outcome is asserted (plan Phase 10 
 ## Exit codes
 
 - `run_evaluation.py`: 0 ok; 1 drift; 2 usage, a malformed spec, a path, an experiment or another run's checkpoint
-  refused; 3 invalid items, unresolved pointers, a freeze
-  record or a payload-log violation; 5 interrupted (resume with `--resume`); 6 a pin mismatch; 7 arm parity; 8 a
-  confirmatory run refused (IRB or OSF); 9 a live run or hold H12 refused.
+  refused, a non-synthetic run without the access log or a passing pre-run scan (`access_log_required`,
+  `pre_run_scan_*`), or a confirmatory run refused for a reason that is not an IRB, OSF or freeze reason (its pre-run
+  scan, D-14 open, a public governance record, `created_at_not_today`, `stub_not_confirmatory`, `recording_not_live`);
+  3 invalid items, unresolved pointers, a freeze record or a payload-log violation, and a confirmatory run refused for
+  `items_not_frozen` or `freeze_record_*` with no IRB or OSF reason; 5 interrupted (resume with `--resume`); 6 a pin
+  mismatch; 7 arm parity; 8 a confirmatory run refused with an IRB or OSF reason (the other reasons listed with it); 9 a
+  live run or hold H12 refused. A confirmatory or live run's `created_at` must be today's UTC date.
 - `validate_ulqs.py`: 0; 2 usage (`--freeze` without `--previous` or `--corpus-text`; `--access-log` without
-  `--actor-role`), path refused, or an input (items, previous set, ratings, agent check) unreadable or invalid; 3 schema
-  problems; 4 freeze failed; 5 evidence catalog invalid or unresolved pointers.
+  `--actor-role`), path refused, or an input unreadable or invalid (the items or previous set, the ratings, the rubric,
+  the freeze rules, or an agent-check record that does not parse or is not shaped as `ulqs-agent-check-v1`); 3 schema
+  problems; 4 freeze failed (an agent-check record that does not match the items is a freeze code); 5 evidence catalog
+  invalid or unresolved pointers.
 - `migrate_ulqs_rc1.py`: 0; 2 refused path; 3 the input unreadable, an input item fails rc1 validation, or a migrated
   record fails v1.0 validation.
 - `build_licensed_fingerprints.py`: 0; 2 refused (a path, no `--access-log` or `--actor-role`, an unreadable input, or a
   licensed text that is not text or .docx); 3 bad salt; 4 ULQS items that are not JSON lines or fail validation.
-- `scan_research_logs.py`: 0 zero matches with full coverage (or the self-test found its sentinel); 1 matches, or
-  incomplete coverage under `--require-zero` (or the self-test missed); 2 usage (including research fingerprints without
-  `--access-log` and `--actor-role`, or an access log on a public path).
+- `scan_research_logs.py`: 0 zero matches (with full coverage only under `--require-zero`: without it an incomplete
+  scan also exits 0, its report's `result` says `incomplete` and stderr names the targets), or the self-test found its
+  sentinel; 1 matches, or incomplete coverage under `--require-zero` (or the self-test missed); 2 usage (including
+  research fingerprints without `--access-log` and `--actor-role`, `--ulqs-fingerprints` with `--synthetic-fixture`, or
+  an access log on a public path).
 - `check_research_harness.py`: 0; 1 drift; 3 a known answer not met or an invalid analysis plan; 6 a pin; 7 parity.
 
 ## Holds and SLIs

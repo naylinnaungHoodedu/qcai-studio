@@ -168,7 +168,8 @@ def live_refusal_reasons(spec: Mapping[str, Any], package_raw: Mapping[str, Any]
     Plan H's four conditions are records, each resolved by path and sha256 (`governance.resolve_record`) and read under its
     own format: (a) `licence-ruling-v1`, (b) `provider-terms-v1`, (c) `irb-approval-v1`, approved on or before the run date
     and not expired on it, and (d) `research-use-confirmation-v1`. None may sit on a public path, and none may be dated
-    after the run date. Condition (b) is bound to the run: `responder.live.providers` names every provider the run
+    after the run date, which must be the current UTC date (`created_at_not_today`: an old or future-dated spec is
+    refused). Condition (b) is bound to the run: `responder.live.providers` names every provider the run
     queries (it must include each provider the adapter declares in its `providers` attribute), and `provider_terms` (one
     reference or a list) must hold a record whose `provider_id` is each of them."""
     from . import governance
@@ -195,6 +196,7 @@ def live_refusal_reasons(spec: Mapping[str, Any], package_raw: Mapping[str, Any]
         on = governance.run_date(spec)
     except governance.GovernanceError:
         return reasons + ["created_at"]
+    reasons += governance.run_date_refusals(spec)  # the run date is the day the live run really starts
     irb_ref = (spec.get("governance") or {}).get("irb_record")
     reasons += governance.irb_refusals(irb_ref, on, root, missing="irb_not_filed")
     terms_refs = spec.get("provider_terms")

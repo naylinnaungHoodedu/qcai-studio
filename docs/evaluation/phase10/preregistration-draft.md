@@ -4,7 +4,7 @@
 `evaluation/config/analysis_plans_v1.json`; `--check` in CI proves this file is current. Nothing here is executed:
 no hypothesis has been tested and no HR-1 to MR-3 outcome is asserted (plan Phase 10 P; invariant 9).
 
-- Analysis plans: `analysis-plans-v1`, canonical sha256 `1d102f14d8f342f71e460807494280ee78fe8118e6d737c8471600d9ff2a6885`.
+- Analysis plans: `analysis-plans-v1`, canonical sha256 `70ae5b4d8b8f745b63d150eed3a8e082b3cd777d5740d8a6734b97ce99d11d07`.
 - Status: draft, not filed with OSF (DI-131).
 - Significance: alpha = 0.05, Holm correction within each family (plan 12.7: "E1-E4 are pre-registered
   hypothesis tests (alpha = 0.05, Holm per family), not software gates").
@@ -78,6 +78,8 @@ Criteria reported without a family test: MR-2; MR-3; LQ-2.
 | `icc_2k` | H4b | ICC(2,k) of the EQC (the H4b confirmatory condition) | not implemented (DI-138) |
 | `cronbach_alpha` | H4b | Cronbach's alpha across the EQC's six scales (the H4b confirmatory condition) | not implemented (DI-138) |
 | `prediction_powered_inference` | E1 | prediction-powered inference for the arms labelled on a random 25% of items | not implemented (DI-138) |
+| `error_rate_among_answers` | H1a | the error rate among answers (abstentions excluded), H1a's secondary endpoint (VBT RevB Table I) | not implemented (DI-138) |
+| `agent_verifier_accuracy_with_and_without_changed_items` | E2 | the AI-agent verifier's E2 accuracy reported with and without the ULQS items changed after one of its flags (the freeze record's items_changed_after_flag; VBT RevB Sec. VIII-B, Benchmark verification) | not implemented (DI-138) |
 
 Not executed: every hypothesis above awaits the frozen ULQS, the IRB letter, the OSF DOI and the research data
 plane (DI-129..DI-142).

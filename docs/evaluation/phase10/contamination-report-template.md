@@ -12,7 +12,8 @@ report it summarises is `scripts/scan_research_logs.py --report` output (`qcai-r
 | Targets | [repository (git ls-files); each run directory (every file except responses.jsonl); other paths] |
 | Files scanned / excluded | [counts, with each exclusion's reason] |
 | Matches | [matches_total; must be 0] |
-| Result | [pass / fail] |
+| Result | [pass / incomplete / fail: the report's `result`; only `pass` may back a run] |
+| Incomplete targets | [the report's `incomplete_targets`: targets that scanned no file, or excluded a file as too large or unreadable (or, in a run directory or path target, as binary or not text); must be empty] |
 | Scan report sha256 | [sha256 of the report the run spec pins as `pre_run_scan`] |
 | Signed off by (role) | [PI / MLE] |
 

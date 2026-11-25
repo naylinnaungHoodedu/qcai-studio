@@ -4,8 +4,11 @@ Plan task 6: "No confirmatory run without IRB letter and OSF DOI [Evidence E-108
 record and a valid OSF record (both in the research plane), the research data plane (D-14), frozen items with a passing
 freeze record and a passing pre-run contamination scan bound to the run's items. A live run needs a valid, unexpired IRB
 record and the plan H records (provider terms, licence ruling, research-use confirmation), each resolved by path and
-sha256 and kept off public paths. These checks are consistency checks, not proof: the dates and `created_at` are
-self-declared. A run that is not confirmatory skips the confirmatory gate and is labelled exploratory everywhere.
+sha256 and kept off public paths. Every record date is judged against the run date, the date of the spec's
+`created_at`, and a confirmatory or live run is refused unless that date is the current UTC date when the run is planned
+(`created_at_not_today`; `run_date_refusals`), so an old or future-dated spec cannot carry an expired IRB or a record
+dated after the real run. The records' own dates are still self-declared: these checks are consistency checks, not
+proof. A run that is not confirmatory skips the confirmatory gate and is labelled exploratory everywhere.
 """
 
 from __future__ import annotations
@@ -28,8 +31,11 @@ DATE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 FROZEN_STATES = ("frozen", "release")
 SCAN_REPORT = "qcai-research-log-scan"
-# The exclusions that leave a scan's coverage incomplete (contamination.INCOMPLETE_REASONS; kept equal by a test).
+# The exclusions that leave a scan's coverage incomplete: for any target, and for a research-logs or path target
+# (contamination.INCOMPLETE_REASONS, STRICT_TARGETS and STRICT_INCOMPLETE_REASONS; kept equal by a test).
 INCOMPLETE_REASONS = frozenset({"too_large", "unreadable"})
+STRICT_TARGETS = frozenset({"research-logs", "path"})
+STRICT_INCOMPLETE_REASONS = INCOMPLETE_REASONS | {"binary", "not_text"}
 # Fingerprint sets whose ids carry these prefixes are the public synthetic fixture's or the scanner's self-test's: they
 # prove nothing about the research data, so a pre-run scan made only of them does not pass the gate.
 NON_RESEARCH_SET_PREFIXES = ("synthetic-", "self-test-")
@@ -109,12 +115,14 @@ def load_osf(path: Path) -> dict[str, Any]:
 
 
 FREEZE_RECORD_KEYS = ("dataset_sha256", "dataset_content_sha256", "rules_sha256", "agreement_sha256", "agent_check_sha256",
-                      "agent_model_id", "agent_detected_defects", "agent_false_alarms", "agent_missed_defects",
+                      "agent_report_sha256", "agent_model_id", "agent_detected_defects", "agent_false_alarms", "agent_missed_defects",
                       "disagreements_adjudicated", "items_changed_after_flag", "passed", "failures")
 
 
 def load_freeze_record(path: Path) -> dict[str, Any]:
-    """`ulqs-freeze-record-v1`: the freeze check's outcome, with the agent re-check's report digest, model and counts."""
+    """`ulqs-freeze-record-v1`: the freeze check's outcome, with the canonical sha256 of the agent re-check record
+    (`agent_check_sha256`), the agent's full-report sha256 copied from it (`agent_report_sha256`), its model, its counts
+    and the items changed after one of its flags."""
     raw = _load(path, "ulqs-freeze-record-v1", FREEZE_RECORD_KEYS)
     if not isinstance(raw["passed"], bool) or not isinstance(raw["failures"], list):
         raise GovernanceError("passed")
@@ -182,6 +190,21 @@ def run_date(spec: Mapping[str, Any]) -> _dt.date:
         raise GovernanceError("created_at") from None
 
 
+def utc_today() -> _dt.date:
+    """The current UTC date, read when a run is planned (the tests replace it with a fixed date)."""
+    return _dt.datetime.now(_dt.timezone.utc).date()
+
+
+def run_date_refusals(spec: Mapping[str, Any]) -> list[str]:
+    """A confirmatory or live run is run on the day its spec declares: the date of `created_at` must be the current UTC
+    date, so the IRB and every record date are judged against the day the run really starts."""
+    try:
+        on = run_date(spec)
+    except GovernanceError:
+        return ["created_at"]
+    return [] if on == utc_today() else ["created_at_not_today"]
+
+
 def is_public(reference: Any, repo_root: Path) -> bool:
     from .planes import PathRefused, require_private_input
 
@@ -229,8 +252,10 @@ def scan_refusals(reference: Any, repo_root: Path, *, dataset_content_sha256: st
     that passed with zero matches, made with a licensed and a ULQS research fingerprint set (never only the synthetic
     fixture's or the self-test's), whose ULQS set was built from this run's items (the status-free content sha256), over
     the tracked repository (tests and public artifacts) and at least one research-logs or path target (logs, prompts),
-    with full coverage: every target scanned a file and none excluded a file as too large or unreadable (plan 10.5(3):
-    "pre-run scan proving no ULQS text in prompts, tests, logs or public artifacts")."""
+    with full coverage: every target scanned a file, none excluded a file as too large or unreadable, and no research-logs
+    or path target excluded a file as binary or not text (plan 10.5(3): "pre-run scan proving no ULQS text in prompts,
+    tests, logs or public artifacts"). A report whose `fingerprint_sets` or `targets` is not a list is invalid
+    (`pre_run_scan_invalid:report`), never a traceback."""
     if not reference:
         return [missing]
     try:
@@ -239,28 +264,33 @@ def scan_refusals(reference: Any, repo_root: Path, *, dataset_content_sha256: st
         return [f"pre_run_scan_invalid:{error.field}"]
     except (OSError, ValueError):
         return ["pre_run_scan_invalid:file"]
-    if not isinstance(scan, dict) or scan.get("report") != SCAN_REPORT or scan.get("format_version") != 1:
+    if not isinstance(scan, dict) or scan.get("report") != SCAN_REPORT or scan.get("format_version") != 1 \
+            or not isinstance(scan.get("fingerprint_sets"), list) or not isinstance(scan.get("targets"), list):
         return ["pre_run_scan_invalid:report"]
     reasons = []
     if scan.get("result") != "pass" or scan.get("matches_total") != 0:
         reasons.append("pre_run_scan_invalid:result")
-    sets = [entry for entry in scan.get("fingerprint_sets") or [] if isinstance(entry, Mapping) and isinstance(entry.get("id"), str)
+    sets = [entry for entry in scan["fingerprint_sets"] if isinstance(entry, Mapping) and isinstance(entry.get("id"), str)
             and not entry["id"].startswith(NON_RESEARCH_SET_PREFIXES)]
     if not {"licensed", "ulqs"} <= {entry.get("kind") for entry in sets}:
         reasons.append("pre_run_scan_invalid:fingerprint_sets")
     if not any(entry.get("kind") == "ulqs" and entry.get("dataset_content_sha256") == dataset_content_sha256 for entry in sets):
         reasons.append("pre_run_scan_invalid:dataset")
-    targets = [target for target in scan.get("targets") or [] if isinstance(target, Mapping)]
+    targets = [target for target in scan["targets"] if isinstance(target, Mapping)]
     scanned = {target.get("target") for target in targets if _count(target.get("scanned")) > 0}
     if "repository" not in scanned or not scanned & {"research-logs", "path"}:
         reasons.append("pre_run_scan_invalid:targets")
-    # Coverage: every target scanned a file and none excluded a file as too large or unreadable (the scanner's
-    # --require-zero rule), whatever the report's own `result` or `incomplete_targets` say.
+    # Coverage: every target scanned a file and excluded none for a reason that leaves its coverage incomplete (the
+    # scanner's --require-zero rule), whatever the report's own `result` or `incomplete_targets` say.
     if scan.get("incomplete_targets") or any(_count(target.get("scanned")) == 0 or any(
-            not isinstance(entry, Mapping) or entry.get("reason") in INCOMPLETE_REASONS for entry in _list(target.get("excluded")))
-            for target in targets) or len(targets) != len(scan.get("targets") or []):
+            not isinstance(entry, Mapping) or entry.get("reason") in _incomplete_reasons(target.get("target"))
+            for entry in _list(target.get("excluded"))) for target in targets) or len(targets) != len(scan["targets"]):
         reasons.append("pre_run_scan_invalid:coverage")
     return reasons
+
+
+def _incomplete_reasons(target_kind: Any) -> frozenset[str]:
+    return STRICT_INCOMPLETE_REASONS if target_kind in STRICT_TARGETS else INCOMPLETE_REASONS
 
 
 def _count(value: Any) -> int:
@@ -274,8 +304,8 @@ def _list(value: Any) -> list[Any]:
 def confirmatory_refusals(spec: Mapping[str, Any], *, analysis_plan_sha256: str, dataset_sha256: str, dataset_content_sha256: str,
                           items_states: Mapping[str, int], package_raw: Mapping[str, Any], repo_root: Path,
                           recording_source: str | None = None) -> list[str]:
-    reasons: list[str] = []
     on = run_date(spec)
+    reasons: list[str] = run_date_refusals(spec)
     governance = spec.get("governance") or {}
     irb_ref, osf_ref = governance.get("irb_record"), governance.get("osf_record")
     reasons += irb_refusals(irb_ref, on, repo_root, missing="irb_missing")

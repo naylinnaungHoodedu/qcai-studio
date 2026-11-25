@@ -98,16 +98,67 @@ def _raise(error):
     return read
 
 
-def test_binary_files_are_not_text_and_large_or_unreadable_files_are_excluded(tmp_path):
+def test_every_file_not_scanned_is_excluded_with_its_reason_and_binary_suffixes_are_never_read(tmp_path):
+    # A binary suffix is excluded unread; bytes with a NUL (UTF-16 without a byte-order mark among them) are read but not
+    # text; a file over 20 MiB or unreadable is excluded too. Nothing a target lists is skipped without an entry.
     sets = contamination.synthetic_sets(synthetic.CONTAMINATION_FIXTURE)
     passage = fixture()["licensed_passages"][2]
     read_png = []
     entries = [("image.png", lambda: read_png.append(1) or passage.encode()), ("data.bin", lambda: b"\x00" + passage.encode()),
-               ("latin.dat", lambda: passage.encode("utf-16")), ("big.txt", _raise(contamination.TooLarge("big.txt"))),
-               ("gone.md", _raise(OSError("gone")))]
+               ("nomark.dat", lambda: passage.encode("utf-16-le")), ("nomark.txt", lambda: passage.encode("utf-16-be")),
+               ("big.txt", _raise(contamination.TooLarge("big.txt"))), ("gone.md", _raise(OSError("gone")))]
     result = contamination.scan_files(entries, sets)
-    assert result["scanned"] == 0 and read_png == []
-    assert result["excluded"] == [{"path": "big.txt", "reason": "too_large"}, {"path": "gone.md", "reason": "unreadable"}]
+    assert result["scanned"] == 0 and read_png == [] and result["files"] == 6
+    assert result["excluded"] == [{"path": "image.png", "reason": "binary"}, {"path": "data.bin", "reason": "not_text"},
+                                  {"path": "nomark.dat", "reason": "not_text"}, {"path": "nomark.txt", "reason": "not_text"},
+                                  {"path": "big.txt", "reason": "too_large"}, {"path": "gone.md", "reason": "unreadable"}]
+
+
+@pytest.mark.parametrize("encoding", ["utf-16", "utf-16-be-bom", "utf-32", "utf-8-sig"])
+@pytest.mark.parametrize("name", ["console.log", "notes.txt", "events.json"])
+def test_a_text_with_a_byte_order_mark_is_decoded_and_scanned(name, encoding):
+    # A PowerShell 5.1 `>` redirect writes UTF-16LE with a mark: the passage in it is found, whatever the suffix.
+    sets = contamination.synthetic_sets(synthetic.CONTAMINATION_FIXTURE)
+    passage = fixture()["licensed_passages"][2]
+    data = ("\ufeff" + passage).encode("utf-16-be") if encoding == "utf-16-be-bom" else passage.encode(encoding)
+    result = contamination.scan_files([(name, lambda: data)], sets)
+    assert result["scanned"] == 1 and result["excluded"] == [] and [hit["path"] for hit in result["files_with_hits"]] == [name]
+
+
+def test_a_log_the_scan_cannot_read_as_text_leaves_a_run_directory_incomplete_but_not_the_repository(tmp_path, monkeypatch):
+    # A run directory holds only text the harness wrote: a log file in another encoding without a mark, or a binary file,
+    # cannot be proved free of matches, so the target is incomplete and --require-zero fails. The tracked tree's binary
+    # assets (images, fonts) are listed as excluded but do not make the repository target incomplete.
+    module = scanner()
+    passage = fixture()["licensed_passages"][2]
+    base = ["--synthetic-fixture", str(synthetic.CONTAMINATION_FIXTURE)]
+    for name, data in (("console.log", passage.encode("utf-16-le")), ("console.log", b"\xff\xfe\x00\xd8"),
+                       ("notes.pdf", b"%PDF-1.4"), ("broken.docx", b"not a docx")):
+        run = tmp_path / f"run-{name}-{len(data)}"
+        run.mkdir()
+        (run / "payload_log.jsonl").write_text("{}\n", encoding="utf-8")
+        (run / name).write_bytes(data)
+        report = tmp_path / f"{run.name}.json"
+        for flag in ("--research-logs", "--path"):
+            assert module.main(base + [flag, str(run), "--report", str(report)]) == 0, name
+            result = json.loads(report.read_text(encoding="utf-8"))
+            assert result["result"] == "incomplete" and result["incomplete_targets"] == [run.name]
+            assert {entry["reason"] for entry in result["targets"][0]["excluded"]} <= {"binary", "not_text"}
+            assert module.main(base + [flag, str(run), "--require-zero"]) == 1
+    # The same passage with a byte-order mark is a match (exit 1, result fail).
+    run = tmp_path / "run-marked"
+    run.mkdir()
+    (run / "payload_log.jsonl").write_text("{}\n", encoding="utf-8")
+    (run / "console.log").write_bytes(passage.encode("utf-16"))
+    report = tmp_path / "marked.json"
+    assert module.main(base + ["--research-logs", str(run), "--report", str(report)]) == 1
+    assert json.loads(report.read_text(encoding="utf-8"))["result"] == "fail"
+    # The repository target: a binary asset is excluded by path and reason and the coverage stays complete.
+    (tmp_path / "README.md").write_text("an invented readme\n", encoding="utf-8")
+    (tmp_path / "logo.png").write_bytes(b"\x89PNG")
+    monkeypatch.setattr(contamination, "git_files", lambda root: ["README.md", "logo.png"])
+    target = contamination.repository_target(tmp_path, contamination.synthetic_sets(synthetic.CONTAMINATION_FIXTURE))
+    assert target["excluded"] == [{"path": "logo.png", "reason": "binary"}] and contamination.incomplete_targets([target]) == []
 
 
 TEXT_NAMES = ("docs/uml/flow.puml", "apps/api/Dockerfile", ".gitignore", ".dockerignore", "infra/hydrate.sh", "alembic/script.py.mako",
@@ -154,6 +205,67 @@ def test_require_zero_fails_on_incomplete_coverage(tmp_path, monkeypatch):
     monkeypatch.setattr(contamination, "MAX_SCAN_BYTES", 32)
     assert module.main(base + ["--path", str(full)]) == 0
     assert module.main(base + ["--path", str(full), "--require-zero"]) == 1
+
+
+def test_an_incomplete_scan_without_require_zero_exits_0_and_says_so(tmp_path, capsys):
+    # Exit 0 proves full coverage only under --require-zero: without it an incomplete scan still exits 0, its report says
+    # `incomplete`, and stderr names the target and that --require-zero fails it.
+    module = scanner()
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    report = tmp_path / "r.json"
+    capsys.readouterr()
+    assert module.main(["--synthetic-fixture", str(synthetic.CONTAMINATION_FIXTURE), "--path", str(empty), "--report", str(report)]) == 0
+    err = capsys.readouterr().err
+    assert "coverage incomplete (exit 0; --require-zero fails it): empty" in err
+    assert json.loads(report.read_text(encoding="utf-8"))["result"] == "incomplete"
+    full = tmp_path / "full"
+    full.mkdir()
+    (full / "a.txt").write_text("nothing licensed here", encoding="utf-8")
+    assert module.main(["--synthetic-fixture", str(synthetic.CONTAMINATION_FIXTURE), "--path", str(full)]) == 0
+    assert "coverage incomplete" not in capsys.readouterr().err
+
+
+def test_ulqs_fingerprints_with_the_synthetic_fixture_are_refused(tmp_path, capsys):
+    # The synthetic fixture builds its own sets: a ULQS fingerprint file beside it would be ignored, so it is refused
+    # (exit 2), whether or not the file exists.
+    module = scanner()
+    (tmp_path / "a.txt").write_text("nothing licensed here", encoding="utf-8")
+    (tmp_path / "u.private.json").write_text("{}", encoding="utf-8")
+    for ulqs_file in (tmp_path / "absent.json", tmp_path / "u.private.json"):
+        assert module.main(["--synthetic-fixture", str(synthetic.CONTAMINATION_FIXTURE), "--ulqs-fingerprints", str(ulqs_file),
+                            "--path", str(tmp_path / "a.txt"), "--require-zero"]) == 2
+        assert "--ulqs-fingerprints goes with --fingerprints" in capsys.readouterr().err
+
+
+def test_the_access_log_digest_covers_only_the_files_the_scan_read(tmp_path, monkeypatch):
+    # An environment file excluded unread (no --include-env-files), a binary-suffix file and a file over the size limit
+    # are never opened, also by the access-log digest, which lists only the files the target actually read.
+    from evaluation.qcai_eval.canonical import canonical_sha256
+
+    module = scanner()
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    (tree / "a.txt").write_text("nothing licensed here", encoding="utf-8")
+    (tree / ".env").write_text("NOT_A_SECRET=invented\n", encoding="utf-8")
+    (tree / "image.png").write_bytes(b"\x89PNG")
+    (tree / "big.txt").write_text("x" * 64, encoding="utf-8")
+    monkeypatch.setattr(contamination, "MAX_SCAN_BYTES", 32)
+    opened = []
+    real = Path.read_bytes
+    monkeypatch.setattr(Path, "read_bytes", lambda self: opened.append(self.name) or real(self))
+    access = tmp_path / "access.jsonl"
+    argv = ["--synthetic-fixture", str(synthetic.CONTAMINATION_FIXTURE), "--path", str(tree), "--access-log", str(access),
+            "--actor-role", "MLE"]
+    for flag in ("--path", "--research-logs"):
+        opened.clear()
+        if access.exists():
+            access.unlink()
+        assert module.main([*argv[:2], flag, *argv[3:]]) == 0
+        assert opened == ["a.txt"], flag
+        logged = _access(access)
+        a_sha = __import__("hashlib").sha256((tree / "a.txt").read_bytes()).hexdigest()
+        assert logged == [("read", "scan_target" if flag == "--path" else "run_output", canonical_sha256([["a.txt", a_sha]]))]
 
 
 def test_the_report_names_each_set_s_kind_and_the_ulqs_set_s_dataset():

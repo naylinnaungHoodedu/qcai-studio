@@ -11,14 +11,19 @@ one <document_id>.txt per catalog document, for the character-for-character chec
 --previous PATH, the item set the freeze starts from (the review set or the last frozen set), against which every state
 transition and the immutability of frozen content are checked. --agent-check PATH is the AI-agent re-check record
 (`ulqs-agent-check-v1`, VBT RevB p. 15): a freeze without it fails with `agent_check_missing`, and no agent check passes
-while the freeze rules pin no verifier model (D-07; DI-142). The freeze record carries the agent report's sha256, the
-agent's model id and its counts. With --access-log (and --actor-role) every input is logged as soon as it is read, before
+while the freeze rules pin no verifier model (D-07; DI-142). --freeze-out PATH writes the freeze record
+(`ulqs-freeze-record-v1`, the keys `governance.FREEZE_RECORD_KEYS`): the dataset and content sha256s, the rules and
+agreement sha256s, the canonical sha256 of the agent-check record (`agent_check_sha256`), the agent's full-report sha256
+copied from that record (`agent_report_sha256`), the agent's model id, its counts, the items changed after one of its
+flags, and the outcome. With --access-log (and --actor-role) every input is logged as soon as it is read, before
 any check that can refuse (an input that does not parse is logged by its file's LF sha256), and every record written is
 logged. Output names item ids, field paths and codes only, never a value.
 
 Exit codes: 0 ok; 2 usage (--freeze without --previous or --corpus-text; --access-log without --actor-role), path
-refused, or an input (items, previous set, ratings, agent check) unreadable or invalid; 3 schema problems; 4 freeze
-failed (codes printed); 5 evidence catalog invalid or unresolved pointers.
+refused, or an input unreadable or invalid: the items or previous set, the ratings, the rubric, the freeze rules, or an
+agent-check record that does not parse or is not shaped as `ulqs-agent-check-v1` (one whose content does not match the
+items is a freeze failure, exit 4); 3 schema problems; 4 freeze failed (codes printed); 5 evidence catalog invalid or
+unresolved pointers.
 """
 
 from __future__ import annotations
@@ -155,6 +160,9 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError) as error:
             print(f"refused (exit 2): agent check unreadable ({error})", file=sys.stderr)
             return 2
+        if not ulqs.agent_check_shape_ok(agent_record):
+            print("refused (exit 2): agent check invalid (not an ulqs-agent-check-v1 record)", file=sys.stderr)
+            return 2
     if args.ratings and (args.rubric is None or args.agreement_out is None):
         print("usage (exit 2): --ratings needs --rubric and --agreement-out", file=sys.stderr)
         return 2
@@ -191,10 +199,11 @@ def main(argv: list[str] | None = None) -> int:
         try:
             ratings = agreement.load_ratings(args.ratings)
             rules = ulqs.load_freeze_rules(args.rules)
+            rubric_sha = lf_sha256(args.rubric)
         except (OSError, ValueError) as error:
-            print(f"refused (exit 2): {error}", file=sys.stderr)
+            print(f"refused (exit 2): ratings, rules or rubric unreadable or invalid ({error})", file=sys.stderr)
             return 2
-        agreement_value = agreement.agreement_record(ratings, items, rules=rules, rubric_sha256=lf_sha256(args.rubric),
+        agreement_value = agreement.agreement_record(ratings, items, rules=rules, rubric_sha256=rubric_sha,
                                                      ratings_sha256=ratings_sha)
         write_lf(args.agreement_out, dumps_record(agreement_value))
         log("write", "agreement_record", canonical_sha256(agreement_value))
@@ -206,7 +215,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{len(report.problems)} unresolved pointers (exit 5)", file=sys.stderr)
         return 5
     if args.freeze:
-        rules = ulqs.load_freeze_rules(args.rules)
+        try:
+            rules = ulqs.load_freeze_rules(args.rules)
+        except (OSError, ValueError) as error:
+            print(f"refused (exit 2): freeze rules unreadable or invalid ({error})", file=sys.stderr)
+            return 2
         result = ulqs.freeze_check(items, rules=rules, pointer_report=report, agreement=agreement_value, previous=previous,
                                    require_licensed=True, agent_check=agent_record)
         if args.freeze_out is not None:
@@ -216,7 +229,7 @@ def main(argv: list[str] | None = None) -> int:
                 "dataset_content_sha256": ulqs.dataset_content_sha256(items), "rules_sha256": result.rules_sha256,
                 "agreement_sha256": None if agreement_value is None else canonical_sha256(agreement_value),
                 "agent_check_sha256": None if agent_record is None else canonical_sha256(agent_record),
-                "agent_model_id": agent.get("agent_model_id"), **{key: agent.get(key) for key in AGENT_COUNTS},
+                "agent_report_sha256": agent.get("report_sha256"), "agent_model_id": agent.get("agent_model_id"), **{key: agent.get(key) for key in AGENT_COUNTS},
                 "items_changed_after_flag": agent.get("items_changed_after_flag"),
                 "passed": result.passed, "failures": list(result.failures)}
             write_lf(args.freeze_out, dumps_record(freeze_record))
