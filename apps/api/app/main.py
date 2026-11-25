@@ -460,6 +460,11 @@ def _record_configuration_overrides() -> None:
             ("ranking_shadow", settings.ranking == "shadow"),
             ("ranking_on", settings.ranking == "on"),
             ("ranking_shadow_generation", bool(settings.ranking_shadow_generation)),
+            ("learner_sync_on", settings.learner_sync == "on"),
+            ("learner_identity_on", settings.learner_identity == "on"),
+            ("learner_privacy_on", settings.learner_privacy == "on"),
+            ("learner_planner_shadow", settings.learner_planner == "shadow"),
+            ("learner_planner_on", settings.learner_planner == "on"),
         )
         if active
     }
@@ -703,6 +708,7 @@ def _build_fields() -> dict:
         "ranking_setting": settings.ranking,
         "phase9_exit_passed": bool(package.flag_policy.phase9_exit_passed),
         "ranking": _ranking_fields(package),
+        **_phase8_fields(package),
     }
 
 
@@ -710,6 +716,20 @@ def _ranking_mode(package) -> str:
     from app.services import ranking as ranking_service
 
     return ranking_service.mode(settings, package)
+
+
+def _phase8_fields(package) -> dict:
+    from app.core.phase8_settings import PHASE8_FLAGS
+    from app.services.learner_record_metrics import planner_stop_observed, snapshot
+
+    phase8 = {"phase8_exit_passed": package.raw.get("flag_policy", {}).get("phase8_exit_passed") is True}
+    for key in PHASE8_FLAGS:
+        phase8[f"{key}_setting"] = phase8[key] = getattr(settings, key)
+    development = settings.environment.lower() == "development"
+    phase8["learner_slis"] = snapshot() if development else {}
+    if development:
+        phase8["learner_slis"]["planner_stop_observed"] = planner_stop_observed()
+    return phase8
 
 
 def _ranking_fields(package) -> dict | None:

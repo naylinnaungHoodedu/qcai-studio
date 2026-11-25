@@ -1449,7 +1449,8 @@ def test_local_account_rejects_bad_password_on_login():
         assert failed_login.json()["detail"] == "Invalid email or password."
 
 
-def test_progress_endpoint_aggregates_activity():
+def test_progress_endpoint_aggregates_activity(monkeypatch):
+    monkeypatch.setattr(get_settings(), "learner_privacy", "off")
     user_headers = {"x-demo-user": f"progress-{uuid4()}", "x-demo-role": "learner"}
 
     note_response = client.post(

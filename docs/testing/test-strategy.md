@@ -229,7 +229,7 @@ Tests are in `apps/api/tests/test_phase6_acceptance.py` unless named otherwise; 
 | `test_phase3_acceptance.py` | The Alembic test excludes the eight Phase 6 tables from its initial `create_all` and steps down through the Phase 6 revision (empty V3 tables), then the Phase 5 one. |
 | `test_phase4_acceptance.py` | The doc tests that name the shipped package read v5 since Phase 6 (the Phase 3 spec's 5.2 lines and test lines, the five-version loader regex, the report shape and the code texts), and the budgets and schema paths equal across v4 and v5. |
 | `test_phase5_acceptance.py` | The `/ready` test reads the shipped package's version (the gateway fields are v4's, which v5 keeps); the Phase 4 spec's loader line names schema 5; and the Phase 5 records name the merge and the cited main run (Phase 6 design E15). |
-| `test_response_ledger_migrations.py` | `PHASE6_REVISION` and `PHASE6_TABLES`: e10 stamps the Phase 6 head and goes down through the Phase 6 revision, then the Phase 5 one; f14 applies the Phase 3, Phase 5 and Phase 6 revisions in turn. |
+| `test_response_ledger_migrations.py` | e10 stamps the head `20261123_phase8_learner` and takes the Phase 8, Phase 9, and Phase 7 steps before the Phase 6 and Phase 5 steps. f14 applies the forward revisions from the Phase 2 stamp through the Phase 8 head. |
 | `test_v2_correction.py` | A critical tier-1 claim is never revised and ends with X2, and stays held when its objector leaves the panel (the sticky hold); the existing revise tests lock no registry claim. |
 | `test_v2_panel.py` | The V3 stop runs tier 1 through the pre-verified-only path and is read through the pipeline's own database, and `critical_for` reads the environment's registry. |
 
@@ -262,15 +262,15 @@ Tests are in `apps/api/tests/test_phase7_acceptance.py` unless named otherwise; 
 
 | File | Change (intent kept) |
 |---|---|
-| `test_config_package.py` | The shipped package is v6 (its schema and major read from `EHMF_SCHEMA_VERSION`); the v5 assertions read `V5_PACKAGE_PATH` (readable for one release, DI-112). The v4 structural refusals run on v4, v5 and v6, the v5 ones on v5 and v6 (but for the three edits v6 makes, counted by a test), each after a control load; the provenance-fields refusal is also checked on v6 (ledger-entry-v4). |
-| `test_v1_8_misconceptions.py` | The inline library v0 tests read package v5; the shipped v6 library is v1 and empty, and an entry in v6's library file is refused while Q-14 is unavailable. |
-| `test_phase4_acceptance.py` | The development-default shadow records are `ledger-entry-v4`; the `/ready` library version is the package's; the doc tests name Phase 7's v6, schema version 6 and the v6 `LedgerEntryV4` pin, and compare the loader bound `EHMF_SCHEMA_VERSION` with the shipped package's `schema_version` (no literal). |
+| `test_config_package.py` | The shipped package is v8. Phase 9's v7 remains readable under DI-317. The v6 and v5 assertions read `V6_PACKAGE_PATH` and `V5_PACKAGE_PATH` explicitly. The v4 structural refusals run on v4 through v8 and the v5 ones on v5 through v8 (but for the three edits v6 makes, counted by a test), each after a control load; the provenance-fields refusal is also checked on v6 (ledger-entry-v4). |
+| `test_v1_8_misconceptions.py` | The inline library v0 tests read package v5. The test loads the library pinned by the shipped v8 package, which retains v6's empty v1 library. A well-formed entry in a scratch copy is refused while Q-14 is unavailable. |
+| `test_phase4_acceptance.py` | The development-default shadow records are `ledger-entry-v4`; the `/ready` library version is the package's; the doc tests name the shipped v8 package, verify the original v6 `LedgerEntryV4` pin, and compare the independent `LATEST_SCHEMA_VERSION` bound with the shipped schema. |
 | `test_phase5_acceptance.py` | AC-5-6 sets `EHMF=off` to judge its ledger-entry-v3 record; AC-5-8's bump is the shipped package's next patch (`ehmf_fakes.NEXT_PATCH`); plan G's shadow is a v4 that extends v3. |
 | `test_v2_ledger_records.py` | `test_a_mixed_v1_to_v4_chain_verifies_exports_restores_and_reads_its_config_versions`: a v1-v4 chain verifies, passes the provenance audit, exports each line's `config_version` and restores byte for byte (E2: ledger-entry-v4 is additive). |
 | `test_configuration_overrides.py` | `ehmf_shadow` and `ehmf_on` are recorded overrides. |
 | `test_phase2_acceptance.py` | `LexicalIndex(penalties=...)` is not learner state (span ids and the environment only). |
-| `test_phase3_acceptance.py`, `test_response_ledger_migrations.py` | The Phase 7 revision and its table: the downgrade path goes through it first. |
-| `test_phase6_acceptance.py` | The Phase 3 rollback's head is `20261123_phase7_ehmf`; the default package's `/ready` and trigger registry; the E15 merge-facts test. |
+| `test_phase3_acceptance.py`, `test_response_ledger_migrations.py` | These modules use the head `20261123_phase8_learner`. The downgrade walk takes the Phase 8, Phase 9, and Phase 7 steps first, including the EHMF table. |
+| `test_phase6_acceptance.py` | The Phase 3 rollback's head is `20261123_phase8_learner`. The downgrade walk takes the Phase 8, Phase 9, and Phase 7 steps first. The suite retains the default package's `/ready` fields, trigger registry, and E15 merge-facts test. |
 | `test_response_ledger_provenance.py` | The provenance audit reports `config_versions`. |
 | `v1_fakes.py`, `v2_fakes.py` | `temp_package` copies the library folder and leaves the v6 pin; `v2_pipeline` defaults to `EHMF=off`, so the Phase 5 and 6 tests keep judging the ledger-entry-v3 record they test. |
 | `conftest.py` | Each test reads the EHMF stop afresh with EHMF available (the stop cache and the availability reason are reset). |
@@ -306,14 +306,71 @@ Tests are in `apps/api/tests/test_phase9_acceptance.py` unless named otherwise; 
 
 | File | Change (intent kept) |
 |---|---|
-| `test_config_package.py` | The shipped package is v7 (its schema and major read from `RANKING_SCHEMA_VERSION` and `LATEST_SCHEMA_VERSION`); the v6 assertions read `V6_PACKAGE_PATH` (readable for one release, DI-126), and `test_v6_stays_readable_for_one_release` also proves the v5 and v6 gold-label pins, the pinned file and both packages' sha256 unchanged (spec conflict 28); the v5 structural refusals run on v5, v6 and v7; `test_the_v6_edits_v7_changes_are_exactly_the_ones_it_makes`. |
+| `test_config_package.py` | The shipped package is v8 and uses `LATEST_SCHEMA_VERSION`. Phase 9 comparisons read explicit v7 using `V7_PACKAGE_PATH`. The v6 assertions use `V6_PACKAGE_PATH` (DI-126) and verify the inherited v5 and v6 gold-label pins and hashes. The v5 structural refusals run on v5 through v8. `test_the_v6_edits_v7_changes_are_exactly_the_ones_it_makes` compares the two explicit packages. |
 | `test_ehmf_units.py` | The Phase 7 number test reads v6 explicitly; the shipped package's number is the Phase 9 unit test's; the golden-runner exit test passes a temporary `--history`, so it never writes the committed history. |
-| `test_phase7_acceptance.py` | v5 and v6 read explicitly; the Phase 7 revision is followed by the Phase 9 one (the downgrade passes through it); the E15 merge-facts test; every golden-runner `--write` names a temporary `--history` (`test_ac_7_6_no_test_runs_a_golden_set_write_against_the_committed_history` keeps it so), and the history ends with exactly one entry for the shipped package, the sidecar's sha256. |
-| `test_phase6_acceptance.py` | The head is `20261123_phase9_ranking` (the Phase 3 rollback's bullet takes the Phase 9 step first); the Phase 6 walk drops the Phase 9 tables too; F_i is read by the V3 feedback service and, for the quality term, the ranking scan. |
-| `test_phase4_acceptance.py` | The doc tests check Phase 9's lines in the Phase 3 spec and the code texts, reading the shipped number from the package (no literal 7), and the loader bound `LATEST_SCHEMA_VERSION`. |
-| `test_phase3_acceptance.py`, `test_response_ledger_migrations.py` | The Phase 9 revision and its tables: the downgrade path goes through it first. |
+| `test_phase7_acceptance.py` | v5 and v6 read explicitly; the migration cases follow the head `20261123_phase8_learner`, downgrading through the Phase 8 and Phase 9 steps before testing the Phase 7 guard; the E15 merge-facts test; every golden-runner `--write` names a temporary `--history` (`test_ac_7_6_no_test_runs_a_golden_set_write_against_the_committed_history` keeps it so), and the history ends with exactly one entry for the shipped package, the sidecar's sha256. |
+| `test_phase6_acceptance.py` | The head is `20261123_phase8_learner`. The Phase 3 rollback and Phase 6 walk take the Phase 8, Phase 9, and Phase 7 steps first. The V3 feedback service and the ranking scan still read F_i. |
+| `test_phase4_acceptance.py` | The doc tests compare the shipped v8 package, the Phase 3 version history and all four tutor docstrings against `LATEST_SCHEMA_VERSION`. The `contracts.py` assertion was restored under P2-12-D-06 of 2026-11-24, which closed DI-320. The Phase 9 schema pins use an explicit v7 load. |
+| `test_phase3_acceptance.py`, `test_response_ledger_migrations.py` | These modules use the head `20261123_phase8_learner`. The downgrade walk takes the Phase 8, Phase 9, and Phase 7 steps first and checks the Phase 9 tables. |
 | `test_configuration_overrides.py` | `ranking_shadow` is a recorded override, and `ranking_on` and `ranking_shadow_generation` are refused and still recorded when present. |
 | `test_boundary_scan.py` | The API image's COPY sources include the recommission set (`docs/evaluation/phase7/golden_set_v1.json`, public-corpus and synthetic queries), so the boundary scan reads it with the rest of the image's sources. |
 | `conftest.py` | Each test reads the ranking stop afresh with the ranking available. |
 
 **Exit gate.** The Phase 9 exit needs AC-9-1 to AC-9-8 green, a staging shadow run and live routing off pending E4 (plan Phase 9 P: "AC-9-1 to AC-9-8 green; staging shadow run; live routing OFF pending E4 [Decision D-28]."). The AC tests are green locally at the branch head. Branch CI run 45360174794 (at `40bdc57`, every job) ran them against the code, the v7 package and the tests as they were then; the ranking code, the v7 package and the AC tests changed after it, so no AC is CI-green at the head, and every AC is green locally only until a CI run at the head. The cited run must be on `main` after the merge (DI-115). No staging shadow run exists (no non-fake generate member, D-07, D-12; DI-120), and live routing is refused while D-28 is open. `phase9_exit_passed` stays false in the package. The exit is not passed.
+
+## Phase 8 acceptance map (plan Phase 8 J and K)
+
+Phase 8 uses synthetic principals, local databases, and public engineering fixtures.
+
+| AC | Tests |
+|---|---|
+| AC-8-1 | `test_learner_record_merges_divergent_replicas_without_losing_completion`, `test_phase8_sync_parallel_replicas_conflict_and_retry_without_losing_updates`, `test_ac_8_1_concurrent_trusted_updates_preserve_each_mastery_value` |
+| AC-8-2 | `test_phase8_sync_duplicate_receipts_and_monotonic_clock`, `test_phase8_sync_rejects_other_subjects_and_server_operations` |
+| AC-8-3 | `test_ac_8_3_three_mastery_levels_yield_identical_claim_set_cited_spans_and_decision` |
+| AC-8-4 | `test_ac_8_4_no_evidential_or_verifier_module_imports_a_phase8_module`, `test_ac_8_4_evidential_prompts_and_the_abstention_configuration_hold_zero_learner_state_fields`, `test_ac_8_4_a_learner_value_in_an_evidential_payload_is_detected`, `test_ac_8_4_the_scan_covers_every_phase8_learner_state_field` |
+| AC-8-5 | `test_ac_8_5_every_erasure_route_writes_a_verified_receipt`, `test_ac_8_5_erasure_rolls_back_when_a_surviving_row_fails_verification`, `test_plan_f_the_committed_erasure_proof_matches_a_fresh_run`, `test_phase8_export_and_erasure_cover_bound_subject_and_legacy_rows`, `test_phase8_claimed_guest_and_account_erasure_leave_no_keyed_rows`, `test_phase8_erasure_refuses_an_in_flight_subject_rebind`, `test_phase8_erasure_serializes_with_unguarded_and_first_writers`, `test_phase8_a_principal_erased_and_signing_in_again_gets_a_fresh_empty_record`, `test_phase8_erasure_serializes_with_unguarded_and_first_writers_http`, `test_phase8_a_stale_public_projection_cannot_recreate_an_erased_rows_handle`, `test_phase8_a_demo_header_cannot_read_or_change_another_principals_consent` |
+| AC-8-6 | `test_a_client_sent_score_is_ignored`, `test_durable_mastery_follows_the_server_score`, `test_phase8_sync_rejects_other_subjects_and_server_operations`, `test_phase8_privacy_http_consent_export_erasure_and_assessment`, `test_phase8_a_demo_header_cannot_consume_another_learners_assessment_quota`, `test_phase8_quiz_previews_do_not_acquire_an_assessment_quota_or_record_lock` |
+| AC-8-7 | `test_ac_8_7_the_privacy_inventory_equals_the_cookies_and_storage_keys_in_code` |
+| Plan J parallel-batch merge | `test_phase8_sync_parallel_replicas_conflict_and_retry_without_losing_updates`, `test_learner_record_merges_divergent_replicas_without_losing_completion` |
+| Plan J ID-enumeration | `test_plan_j_subject_replica_receipt_and_export_ids_are_random_and_another_learner_s_read_as_missing`, `test_no_caller_scoped_read_returns_another_learners_data` |
+| Plan J erasure over every user-keyed table | `test_plan_f_the_committed_erasure_proof_matches_a_fresh_run`, `test_ac_8_5_every_erasure_route_writes_a_verified_receipt` |
+| Plan J planner down gives static order | `test_plan_j_planner_down_timeout_or_flag_off_serves_the_static_order_and_logs_degraded`, `test_plan_j_planner_without_adaptation_consent_serves_the_static_order` |
+
+### Phase 8 test files
+
+| File | What it proves |
+|---|---|
+| `test_phase8_settings.py` | Environment defaults and hash-verified package requirements reject learner-facing feature activation before the Phase 8 exit. |
+| `test_phase8_sync.py` | Separate clients serialize their updates, recover duplicate receipts, reject stale versions, and retain both records after a conflict retry. |
+| `test_phase8_planner.py` | The planner uses deterministic bands and a stable review order. The shadow service returns the default plan and course order without a current adaptation grant, even on assessment data that would adapt both. |
+| `test_phase8_identity.py` | Provider-scoped principal bindings persist and a claimed guest record leaves an atomic revocation and identifier-free audit. |
+| `test_phase8_privacy.py` | Scoped export and verified erasure cover both the authenticated principal and learner subject while preserving the control subject. |
+| `test_phase8_evidence.py` | The public-fixture replay checks invariance and import isolation. The erasure proof verifies record coverage, and a fresh database session observes the operator's audited planner stop and clearance. |
+| `test_phase8_docs.py` | The implementation spec, decision register, shared-file rules, and acceptance strategy stay synchronized with the code. |
+| `test_phase8_routes.py` | Both erasure routes return verified receipts and roll back on verification failures. The freeze retains byte-identical responses. The routes distinguish current consent policy, verify issuer subjects, and give foreign and never-issued replicas the same refusal. |
+| `apps/frontend/tests/phase8-learner-sync.integration.test.ts` | The browser confirms the stored unused replica, advances against the server clock, and retries the same operations once if the version advanced. |
+
+### Phase 8 changes to existing test modules
+
+| File | Reason and preserved intent |
+|---|---|
+| `apps/frontend/tests/privacy-inventory.integration.test.ts` | The two inventory assertions explicitly identify AC-8-7 and continue to compare exactly the discovered keys and cookie names. |
+| `test_api.py` | The progress-aggregation test temporarily switches off the synthetic consent gate to preserve its existing analytics aggregation assertion. |
+| `test_authorization.py` | The matrix recognizes verified privacy principals. Denied demo roles and the existing owner-marker assertions exercise the export scope. |
+| `test_config_package.py` | Checks all v4-through-v8 and v5-through-v8 refusal cases with schema-specific exclusions. The v6 and v7 comparisons read their package files explicitly. |
+| `test_configuration_overrides.py` | Adds one case for each Phase 8 override key and preserves the production-default check. |
+| `test_cs595_increment.py` | The durable-session regression uses the issued-replica and expected-version contract while keeping the existing completion and access assertions. |
+| `test_erasure_retention.py` | Metadata fixtures seed assessment references and distinguish stable bindings and credential retention from guest study age. The inherited local deletion fixture exercises the same legacy exemptions with privacy off. |
+| `test_malformed_input.py` | Both flag modes exercise invalid values. `test_non_finite_preference_follows_the_flagged_backend_contract` renamed and replaced `test_a_non_finite_preference_is_refused_on_postgres_and_never_a_500`, retaining PostgreSQL refusal and a non-500 result. |
+| `test_phase3_acceptance.py` | Traverses the Phase 8 migration before earlier downgrades. Readiness retains the original Phase 3 SQL assertion. |
+| `test_phase4_acceptance.py` | Repoints the shipped-version and loader-tuple pins. The `contracts.py` shipped-version assertion was restored at v8 under P2-12-D-06 of 2026-11-24, which closed DI-320. The checks also cover the three other bump docstrings, the fixture, and the schema pins. |
+| `test_phase6_acceptance.py` | Preserves the V3 read and downgrade behavior while testing the shipped package and the successor revision. |
+| `test_phase7_acceptance.py` | Exercises the Phase 7 additive migration and its downgrade and truncate protection beneath the Phase 8 head and its Phase 9 predecessor. |
+| `test_phase9_acceptance.py` | Verifies ranking-schema compatibility and downgrade protection below the Phase 8 head. |
+| `test_ranking_units.py` | Pins the first ranking schema to v7 and checks the independent shipped-schema ceiling against v8. |
+| `test_response_ledger_migrations.py` | Verifies absolute upgrade and downgrade targets across the Phase 8 head while retaining the existing ledger refusal checks. |
+| `test_structured_logging.py` | Pins the legacy privacy-off branch for the existing fake-clock case, which measures erasure and commit outside password confirmation. |
+
+The protected Phase 5 tests match the Phase 9 main baseline. The test inventory includes every inherited test module.
+
+**Exit gate.** `phase8_exit_passed` stays false. See DI-300 for the main CI, owner decisions, and production evidence.

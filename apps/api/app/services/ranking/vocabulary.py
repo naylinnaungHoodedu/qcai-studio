@@ -12,7 +12,7 @@ PARAMETERS_VERSION = "ranking-params-v1"
 EVENT_SCHEMA = "ranking-event-v1"
 STATE_SCHEMA = "ranking-state-v1"
 # The first package schema and major with a ranking block (Phase 9). The one constant: config_package.RANKING_SCHEMA_VERSION
-# is this value, and LATEST_SCHEMA_VERSION follows it. Renumbering the Phase 9 package (spec 15) edits this line.
+# is this value. Since Phase 8, LATEST_SCHEMA_VERSION follows LEARNER_SCHEMA_VERSION.
 RANKING_FIRST_MAJOR = 7
 
 CLUSTER_RULE = "cluster-module-v1"

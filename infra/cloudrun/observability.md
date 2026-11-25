@@ -279,3 +279,17 @@ Log events (logger `qcai.ranking`): `ranking.scan` (INFO), `ranking.batch` (INFO
 | SLI or event | Log-based metric or alert |
 |---|---|
 | Security event `config.override` | the details name `ranking_shadow` (the ranking in shadow outside development: it changes no learner path and adds X5 audits and V3 items), `ranking_on` (live routing; refused while D-28 is open or before the Phase 9 exit) or `ranking_shadow_generation` (refused outside development; a line for either refused one means a build that bypassed the settings): an alert on any line |
+
+## Phase 8 SLIs: learner record and privacy
+
+`/ready` reports the four configured learner switches and `phase8_exit_passed`. In development `learner_slis.planner_stop_observed` shows the last local observation of the shared stop, along with process counters. The planner checks the authoritative stop during its own work. The Phase 7 EHMF fields retain their own stop read.
+
+- F-3 uses `learner.record.updated` with interaction start and commit time. Keep the production measure on the DI-305 evidence path until authorized.
+- `learner.sync.conflict` records the reason from version, counter, ownership, replay, and untrusted-write checks. `learner.harness.violation` records failed engineering invariants and the CLI exits with the stop status.
+- A stop insert or deletion appends `learner.harness.stop` or `learner.harness.clear` with the transition, stored or removed reason, actor role, and keyed digest of the database login or local OS account. Use `python -m app.workers.learner_planner status` for the current database value.
+- `learner.erasure` uses the security log for password refusal, committed deletion counts and `duration_ms`. Claim and export events carry digests and counts only. `analytics.consent_withheld` measures withheld events without recording their contents.
+- Outside development, `learner_sync_on`, `learner_identity_on`, `learner_privacy_on`, `learner_planner_shadow`, and `learner_planner_on` are recognized `config.override` details.
+
+| SLI or event | Log-based metric or alert |
+|---|---|
+| Erasure time | Extend the Phase 1 distribution with `(jsonPayload.event_type="account.delete" OR jsonPayload.event_type="learner.erasure") AND jsonPayload.outcome="success"` and value `jsonPayload.details.duration_ms`. Both routes time from erasure start through commit, after password confirmation where applicable. |

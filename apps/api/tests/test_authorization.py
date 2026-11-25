@@ -30,6 +30,7 @@ ALLOWED_KINDS = {
     authz.PUBLIC: set(KINDS),
     authz.SERVICE: set(KINDS),
     authz.PRINCIPAL: set(KINDS) - {"anonymous"},
+    authz.VERIFIED_PRINCIPAL: {"guest", "local_learner"},
     authz.ASSET_READER: {"guest", "local_learner", "demo_learner", "demo_admin"},
     authz.DURABLE_LEARNER: {"local_learner"},
     authz.STAFF: {"demo_instructor", "demo_admin"},
@@ -77,6 +78,8 @@ def _actual_access(route) -> str:
     assert not role_sets, f"{route.path}: unrecognised role set {role_sets}"
     if "require_durable_learner" in names:
         return authz.DURABLE_LEARNER
+    if "require_verified_principal" in names:
+        return authz.VERIFIED_PRINCIPAL
     if "_require_asset_access" in names:
         return authz.ASSET_READER
     if "get_current_user" in names:
@@ -178,7 +181,9 @@ DENIED = [
 
 
 @pytest.mark.parametrize(("method", "path", "kind"), DENIED, ids=[f"{m} {p} as {k}" for m, p, k in DENIED])
-def test_a_refused_caller_is_refused(method, path, kind, local_learner):
+def test_a_refused_caller_is_refused(method, path, kind, local_learner, monkeypatch):
+    if path == "/auth/guest-claim":
+        monkeypatch.setattr(get_settings(), "learner_identity", "on")
     body = {"json": {}} if method in {"POST", "PUT", "DELETE"} else {}
     if kind == "anonymous":
         app.dependency_overrides[get_settings] = lambda: Settings(
@@ -202,7 +207,10 @@ def test_a_refused_caller_is_refused(method, path, kind, local_learner):
 
 def test_there_are_negatives_for_every_restricted_access_level():
     levels = {authz.ROUTE_POLICIES[(method, path)].access for method, path, _ in DENIED}
-    assert levels == {authz.PRINCIPAL, authz.ASSET_READER, authz.DURABLE_LEARNER, authz.STAFF, authz.ADMIN, authz.REVIEWER}
+    assert levels == {
+        authz.PRINCIPAL, authz.VERIFIED_PRINCIPAL, authz.ASSET_READER, authz.DURABLE_LEARNER,
+        authz.STAFF, authz.ADMIN, authz.REVIEWER,
+    }
 
 
 def test_a_role_denial_is_a_security_event(monkeypatch):
@@ -378,10 +386,12 @@ def test_peer_review_refuses_the_owner_and_answers_missing_and_retracted_alike()
 CALLER_READS = [
     path
     for (method, path), policy in POLICED
-    if method == "GET" and policy.ownership == authz.CALLER and policy.access in {authz.PRINCIPAL, authz.DURABLE_LEARNER}
+    if method == "GET" and policy.ownership == authz.CALLER
+    and policy.access in {authz.PRINCIPAL, authz.DURABLE_LEARNER, authz.VERIFIED_PRINCIPAL}
 ]
 # Reads where the owner's own response must show the marker, so the check above is not vacuous.
 MARKER_EXPECTED = {
+    "/auth/learner-export",
     "/content/lessons/{lesson_slug}/notes",
     "/content/progress",
     "/assistant/threads",
@@ -401,6 +411,12 @@ def _local_account() -> tuple[TestClient, dict[str, str]]:
 
 
 def _write_everything(browser: TestClient, headers: dict[str, str], marker: str) -> None:
+    consent = browser.put("/auth/learner-consent", json={"consent_class": "analytics", "granted": True},
+                          headers={**headers, **_source()})
+    assert consent.status_code == 200
+    issued = browser.post("/learner-record/replicas", headers={**headers, **_source()})
+    assert issued.status_code == 201
+    replica_id = issued.json()["replica_id"]
     writes = [
         ("POST", f"/content/lessons/{LESSON_SLUG}/notes", {"body": f"Note {marker}"}),
         ("POST", "/assistant/threads", {"title": f"Thread {marker}"}),
@@ -413,10 +429,11 @@ def _write_everything(browser: TestClient, headers: dict[str, str], marker: str)
             "POST",
             "/learner-record/operations",
             {
+                "expected_record_version": 0,
                 "operations": [
                     {
                         "operation_id": f"op-{uuid4().hex[:12]}",
-                        "replica_id": f"replica-{uuid4().hex[:8]}",
+                        "replica_id": replica_id,
                         "logical_counter": 1,
                         "operation_type": "set_cursor",
                         "payload": {"value": f"cursor {marker}"},
@@ -428,6 +445,8 @@ def _write_everything(browser: TestClient, headers: dict[str, str], marker: str)
     for method, path, body in writes:
         response = browser.request(method, path, json=body, headers={**headers, **_source()})
         assert response.status_code in {200, 201}, (path, response.status_code, response.text)
+    export = browser.get("/auth/learner-export")
+    assert any(marker in line and '"analytics_events"' in line for line in export.text.splitlines())
     response = browser.post(
         "/projects/submissions",
         json={

@@ -250,17 +250,3 @@ def apply_learner_record_operations(
         record.record_version += applied_count
         db.flush()
     return receipts, materialize_record(record)
-
-
-def build_pedagogical_context(db: Session, user_id: str) -> str:
-    """Return style guidance only; this string must never be sent to retrieval."""
-    record = read_learner_record(db, user_id)
-    scores = list(record.mastery.values())
-    if not scores:
-        return "Treat the learner as new to this topic: introduce prerequisites before advancing."
-    average = sum(scores) / len(scores)
-    if average < 0.4:
-        return "Use a concise prerequisite recap and one concrete worked explanation."
-    if average < 0.75:
-        return "Use a direct explanation, then invite the learner to connect it to a prior lesson."
-    return "Use concise Socratic prompting and emphasize validation assumptions rather than repeating basics."

@@ -1,7 +1,11 @@
 import { LearnerRecordOperation } from "@/lib/types";
+import { fetchLearnerRecord, postLearnerRecordOperations } from "@/lib/api";
+import { issueLearnerRecordReplica } from "@/lib/learner-record-api";
 
 const REPLICA_STORAGE_KEY = "qcai-learner-record-replica";
 const CLOCK_STORAGE_KEY = "qcai-learner-record-clock";
+const CLIENT_CAS_RETRIES = 1;
+const pendingReplicas = new Map<string, Promise<string>>();
 
 function safeRead(key: string): string | null {
   try {
@@ -21,35 +25,50 @@ function safeWrite(key: string, value: string): void {
   }
 }
 
-export function getLearnerRecordReplicaId(): string {
-  const existing = safeRead(REPLICA_STORAGE_KEY);
-  if (existing && /^[A-Za-z0-9_.:-]{8,128}$/.test(existing)) {
-    return existing;
-  }
-  const replicaId = `browser-${crypto.randomUUID()}`;
-  safeWrite(REPLICA_STORAGE_KEY, replicaId);
-  return replicaId;
-}
-
-export function nextLearnerRecordClock(): number {
-  const current = Number.parseInt(safeRead(CLOCK_STORAGE_KEY) ?? "0", 10);
-  const next = Number.isFinite(current) ? Math.max(0, current) + 1 : 1;
-  safeWrite(CLOCK_STORAGE_KEY, String(next));
-  return next;
-}
-
-export function createLearnerRecordOperation(
+export async function createLearnerRecordOperation(
   operationType: LearnerRecordOperation["operation_type"],
   payload: Record<string, unknown>,
-): LearnerRecordOperation {
-  const replicaId = getLearnerRecordReplicaId();
-  const logicalCounter = nextLearnerRecordClock();
+): Promise<LearnerRecordOperation> {
+  const record = await fetchLearnerRecord();
+  let pending = pendingReplicas.get(record.user_id);
+  if (!pending) {
+    const storedReplica = safeRead(REPLICA_STORAGE_KEY);
+    const preferred = storedReplica && /^replica-[a-f0-9]{32}$/.test(storedReplica) ? storedReplica : undefined;
+    pending = issueLearnerRecordReplica(preferred).then(({ replica_id }) => {
+      if (storedReplica !== replica_id) safeWrite(CLOCK_STORAGE_KEY, "0");
+      safeWrite(REPLICA_STORAGE_KEY, replica_id);
+      return replica_id;
+    }).catch((error) => {
+      pendingReplicas.delete(record.user_id);
+      throw error;
+    });
+    pendingReplicas.set(record.user_id, pending);
+  }
+  const replicaId = await pending;
+  const observed = record.version_vector[replicaId] ?? 0;
+  const stored = safeRead(REPLICA_STORAGE_KEY) === replicaId ? Number(safeRead(CLOCK_STORAGE_KEY) ?? "0") : 0;
+  const logicalCounter = Math.max(observed, Number.isSafeInteger(stored) ? stored : 0) + 1;
+  safeWrite(CLOCK_STORAGE_KEY, String(logicalCounter));
   return {
     operation_id: `op-${crypto.randomUUID()}`,
     replica_id: replicaId,
     logical_counter: logicalCounter,
-    causal_vector: { [replicaId]: logicalCounter - 1 },
+    causal_vector: observed ? { [replicaId]: observed } : {},
     operation_type: operationType,
     payload,
   };
+}
+
+export async function synchronizeLearnerRecord(operations: LearnerRecordOperation[]) {
+  let before = await fetchLearnerRecord();
+  for (let retries = 0; ; retries++) {
+    try {
+      return await postLearnerRecordOperations(operations, before.record_version);
+    } catch (error) {
+      if (retries >= CLIENT_CAS_RETRIES) throw error;
+      const current = await fetchLearnerRecord();
+      if (current.user_id !== before.user_id || current.record_version <= before.record_version) throw error;
+      before = current;
+    }
+  }
 }

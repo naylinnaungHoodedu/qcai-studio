@@ -18,10 +18,12 @@ schemas (LedgerEntryV3 and the four gateway request and verdict contracts) and a
 adapter registry per environment, the pinning rule, the D-23 egress opt-in, budgets, the evidential cache, the payload
 policy, the stop guards and the retired settings), the V2 panel (`v2`: families, tiers, the voting matrix, correction,
 degraded modes, the alignment item), the tool contracts (`tools`) and the model_gateway flag policy. Version 5 (Phase 6,
-apps/api/app/config_package/v5.json, the shipped package) copies every v4 block and adds the V3 audit (`v3`: the trigger
+apps/api/app/config_package/v5.json) copies every v4 block and adds the V3 audit (`v3`: the trigger
 registry x-triggers-v1, the queue priority and its EHMF weights, the seeded audit draw, the adjudication workflow, the
 gold store, the critical-claim registry per environment, the queue-age SLO and the stop, the residual statistic, the
 reviewer gate and the two pinned V3 schemas), the v3_queue flag policy and the D-08, D-14 and D-18 owner decisions.
+Version 6 adds EHMF. Version 7 adds verified-trust ranking. The shipped package v8 adds the Phase 8 learner
+policy and carries forward both contracts. Package v7 remains readable under DI-317.
 Next to each file, <name>.json.sha256 holds the sha256 of its canonical JSON, so a CRLF checkout hashes the same.
 v4.json, v3.json, v2.json and v1.json stay readable for one release (DI-100, DI-84, DI-63, DI-42).
 
@@ -61,7 +63,7 @@ from app.services.ranking.vocabulary import RANKING_FIRST_MAJOR
 
 LOGGER = logging.getLogger("qcai.config_package")
 PACKAGE_DIRECTORY = Path(__file__).resolve().parents[1] / "config_package"
-DEFAULT_PACKAGE_PATH = PACKAGE_DIRECTORY / "v7.json"
+DEFAULT_PACKAGE_PATH = PACKAGE_DIRECTORY / "v8.json"
 # The first package schema with an ehmf block (Phase 7), equal to ehmf.vocabulary.EHMF_FIRST_MAJOR (the first package major
 # whose records read as their own config_version). Every schema-dependent rule of the loader, the package checks and
 # scripts/config_package.py reads this constant, so renumbering the Phase 7 package (E16) edits these two constants, the
@@ -73,7 +75,9 @@ EHMF_SCHEMA_VERSION = 6
 # Renumbering the Phase 9 package (E16) edits RANKING_FIRST_MAJOR, the file names and the Alembic parent
 # (docs/architecture/ehmf-change-control.md "Renumbering the Phase 9 package").
 RANKING_SCHEMA_VERSION = RANKING_FIRST_MAJOR
-LATEST_SCHEMA_VERSION = RANKING_SCHEMA_VERSION
+LEARNER_SCHEMA_VERSION = 8
+LATEST_SCHEMA_VERSION = LEARNER_SCHEMA_VERSION
+V7_PACKAGE_PATH = PACKAGE_DIRECTORY / "v7.json"  # Phase 9 predecessor, retained under DI-317.
 # Package v6 stays readable for one release after the Phase 9 merge (DI-126; its own CI step).
 V6_PACKAGE_PATH = PACKAGE_DIRECTORY / "v6.json"
 # Package v5 stays readable for one release after the Phase 7 merge (DI-112; its own CI step).
@@ -2134,6 +2138,10 @@ def parse_config_package(raw: Any, *, path: Path, sha256: str, hash_verified: bo
                                   ehmf_weights=ehmf_params.weights if ehmf_params is not None else None)
         if schema_version >= RANKING_SCHEMA_VERSION:
             ranking_params = _parse_ranking(raw, decisions=decisions, v2=v2_params, ehmf=ehmf_params, tutor=tutor_pipeline)
+        if schema_version >= LEARNER_SCHEMA_VERSION:
+            from app.core.phase8_settings import check_phase8_package
+
+            check_phase8_package(raw)
         d12 = decisions.get("D-12")
         _require(isinstance(d12, dict), "owner_decisions.D-12 must be an object in package v2")
         if d12.get("state") == "open":

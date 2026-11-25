@@ -113,7 +113,7 @@ Sections 0-17 describe the behaviour the code has. They are authoritative and ar
 - `erasure.user_keyed_tables()` finds tables with a `USER_KEY_COLUMNS` column (`user_id`, `reviewer_user_id`, `player_id`, `opponent_id`, `guest_id`).
 - `test_every_identity_like_column_is_a_registered_user_key` refuses any column matching `(user|player|guest|author|opponent|reviewer|learner|account)[a-z_]*_id$` that is not registered. A `reviewer_digest` column passes it.
 - `_seed_everything` seeds one row per covered table, skipping integer primary keys. It needs every foreign key to point at another covered table, so `v3_claims` has no foreign key and a single integer primary key.
-- `erase_stale_guest_rows` applies only to tables with `created_at`.
+- With `LEARNER_PRIVACY=off`, `erase_stale_guest_rows` applies the Phase 6 guest-prefix rule to tables with `created_at`. With `LEARNER_PRIVACY=on`, Phase 8 recognizes bound guests and uses the class age column under PD-205. `learner_consents` ages guest rows by `updated_at`.
 
 **M8. Wilson.**
 - `evaluation/qcai_eval/statistics.wilson_interval` (z = 1.959963984540054) is not in the API image, which copies `apps/api/app` only.
@@ -1094,7 +1094,7 @@ def item_view(db: Session, row: Any, *, store: Any, corpus_registry: Any, now: d
 
 ### 5.3 Scripts (`scripts/config_package.py`)
 
-- The default path is v5, and the module docstring names "the shipped package v5; v4, v3, v2 and v1 stay readable".
+- The default path is v8 with Phase 8. Phase 9's v7, Phase 7's v6, Phase 6's v5, and the earlier package versions remain readable.
 - `--check` for schema 5 also runs `check_v3_package(package, structural=True)` and prints a V3 summary: the trigger registry, the draw rate, the double review, the registry sizes per environment and `phase6_exit_passed`.
 - `--rehash` for schema 5 also recomputes the two v3 schema pins.
 - `--write-schemas` for v5 writes the two v3 schemas. The v4 schema files come out byte-identical in content.
@@ -1656,9 +1656,9 @@ Security events are read ordered by `seq`. A test that counts denials uses `monk
 ### 13.3 Existing tests that change (intent kept; each commit message says why)
 
 1. **`test_config_package.py`.**
-   - The shipped package is "5.0.0", schema 5, with `package.v3` set.
+   - The shipped package is "8.0.0", schema 8, with `package.v3` set. Phase 6 checks its version-specific contract by loading v5.
    - `V4_RAW` reads `V4_PACKAGE_PATH` for `test_v4_keeps_every_v3_value_but_the_listed_changes` and for every `test_v4_*` assertion on v4-only values.
-   - `test_v4_structural_errors_always_stop_the_load` applies its refusals to `v4.json` and to the shipped v5. For v5 the `schema_version=5` edit becomes `schema_version=6`, the one edit that is a no-op on v5.
+   - `test_v4_structural_errors_always_stop_the_load` applies its refusals to `v4.json`, `v5.json`, `v6.json`, `v7.json`, and the shipped v8. On v5 it replaces the no-op `schema_version=5` with `LATEST_SCHEMA_VERSION + 1` (`schema_version=9`).
    - `test_v3_structural_errors_always_stop_the_load` applies its refusals to v3.json, v4.json and v5.
    - `test_v3_stays_readable_for_one_release` compares `canonical_sha256(V3_RAW)` with `V4_RAW["supersedes"]["sha256"]`.
    - `test_gateway_package_check_problems` also checks v4.json; it reads the default package, which keeps the gateway block.
@@ -1786,7 +1786,7 @@ Every row below has been performed: a run reverts the rule, runs the tests named
 | The loader accepting a non-empty staging registry, a rate other than 1/20, unplanned weights, an unmarked `v3` sub-block, or a non-empty v2 critical registry | `test_v5_structural_errors_always_stop_the_load` |
 | The frontend page without `notFound` | the frontend test |
 | The console pre-filling SUPPORTED, or the page rendering a second `<main>` | the frontend tests (13.4) |
-| The Phase 3 rollback's stamp list without the Phase 6 head | `test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_head` |
+| The Phase 3 rollback's stamp list without the current Alembic head | `test_phase6_docs_the_phase_3_rollback_checks_the_stamp_against_the_current_head` |
 | 10.3 or the observability runbook without a worker event | `test_phase6_docs_name_the_logger_each_phase6_event_logs_on` |
 | The learner flag without the scan's advisory lock (PostgreSQL, psycopg and pg8000) | `test_a_flag_that_races_the_scan_gets_the_record_s_exposure` |
 | The queue's forward rule removed: the SQLite trigger, the PostgreSQL UPDATE event, the held clause (each dialect), the write-once, state and set clauses | `test_the_queue_moves_an_item_forward_only` |
@@ -1846,7 +1846,7 @@ The v1, v2 and v3 checks stay. The PostgreSQL matrix, the frontend job, `api-ima
    - the stop and what it does, and its development behaviour (4.10: it trips 120 h after the first item nobody closes; adjudicate or use a fresh database), and the warning that under the shadow override outside development nothing can clear it while D-18 is open (DI-103);
    - rollback: `V3_QUEUE=off` releases nothing;
    - `export-gold --all` before a downgrade past the revision, with `-x allow_v3_drop=true`; what the downgrade loses that no export keeps (the queue with F_i, the flags, the draws and the once-only record, the X5 windows); that no path restores the gold rows; and the export's handling and retention rule;
-   - the Phase 3 rollback's stamp check names the Phase 6 head (`20261122_phase6_v3_audit (head)`: the Phase 6 downgrade step, then the Phase 5 step);
+   - the Phase 3 rollback's stamp check names the head `20261123_phase8_learner`. The walk takes the Phase 8, Phase 9, and Phase 7 steps before Phase 6 and Phase 5;
    - the queue's forward rule, and the downgrade's refusal of a CUSUM alarm;
    - that the seed is public by design (4.2);
    - a digest rollback needs no downgrade;

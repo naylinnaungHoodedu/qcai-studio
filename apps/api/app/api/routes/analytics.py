@@ -3,12 +3,15 @@ from statistics import mean
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
-from app.core.auth import AuthUser, get_current_user
+from app.core.auth import AuthUser, get_current_user, has_bearer_subject, learner_write_observation, require_bearer_subject
 from app.core.config import Settings, get_settings
 from app.core.db import get_db
 from app.core.rate_limit import limiter
 from app.core.request_protection import validate_request_origin
 from app.db_models import AnalyticsEvent, PublicWebVital
+from app.services.learner_record_privacy import read_consent
+from app.services.learner_record_identity import write_subject
+from app.services.learner_record_metrics import record_signal
 from app.schemas import (
     AnalyticsEventCreate,
     PublicWebVitalCreate,
@@ -30,10 +33,22 @@ def _p75(values: list[float]) -> float:
 
 @router.post("/events")
 def record_event(
+    request: Request,
     payload: AnalyticsEventCreate,
     db: Session = Depends(get_db),
     user: AuthUser = Depends(get_current_user),
 ):
+    privacy_on = get_settings().learner_privacy == "on"
+    if privacy_on:
+        require_bearer_subject(user)
+    if user.provider != "demo" and has_bearer_subject(user):
+        write_subject(
+            db, user.provider, user.user_id, bind=False, guarded=privacy_on, observation=learner_write_observation(request),
+        )
+    if privacy_on:
+        if user.provider == "demo" or not read_consent(db, user.provider, user.user_id)["analytics"]:
+            record_signal("analytics.consent_withheld")
+            return {"status": "ok"}
     event = AnalyticsEvent(
         user_id=user.user_id,
         event_type=payload.event_type,

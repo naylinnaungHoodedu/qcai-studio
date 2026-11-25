@@ -8,7 +8,7 @@ drift blocks promotion"). PD-47.
 
 `docs/evaluation/phase7/golden_run_v1.json` (written by `scripts/run_golden_set.py`) names the sha256 of:
 
-- the configuration package in use (v6, `apps/api/app/config_package/v6.json`);
+- the configuration package in use (v8, `apps/api/app/config_package/v8.json`, for Phase 8);
 - the misconception library it pins (`apps/api/app/config_package/misconceptions/v1.json`);
 - the routing table (`ehmf-routing-v1`, `app.services.ehmf.routing.routing_sha256()`);
 - the golden set (`docs/evaluation/phase7/golden_set_v1.json`, `golden-set-v1`, 40 public-corpus or synthetic items,
@@ -16,7 +16,7 @@ drift blocks promotion"). PD-47.
 
 Beside it, `docs/evaluation/phase7/package_versions.json` is the package version history: one `{version, sha256}` entry
 per `package_version` of a package with an ehmf block, oldest first, append-only (a recorded sha256 never changes).
-CI enforces append-only: it fetches the pull request's base branch (else `main`) and passes `--base-ref FETCH_HEAD`, and
+The history on `main` ends with Phase 7's `6.0.0` and Phase 9's `7.0.0` entries. The runner appends Phase 8's `8.0.0`. The v8 package retains Phase 7's EHMF values, including `ehmf.config_version.first_package`, and Phase 9's ranking block. CI enforces append-only: it fetches the pull request's base branch (else `main`) and passes `--base-ref FETCH_HEAD`, and
 the history must start with the base branch's committed history, every entry unchanged and in order.
 
 CI runs `git fetch --no-tags --depth=1 origin "$BASE_REF"` and then
@@ -43,7 +43,7 @@ to the history, then writes the record. A record's `config_version` is its packa
 (plan Phase 7 L) finds a change only where `config_version` differs between records, so an edit that kept the version
 could never be compared before and after.
 
-`--write` has two modes. It refuses (exit 4) a working tree that differs from HEAD unless `--allow-dirty` is passed. With `--allow-dirty` on the finished change, the record is written before its own commit exists and committed in the same commit as the code it covers; its `commit` names the parent commit with the suffix `-dirty` (the tree it ran on differed from that commit). On a tree equal to HEAD (the record written after its code was committed, and committed in a later commit) `commit` is that commit, with no suffix. Either way the code it ran is identified by `inputs.sha256` (every application module and the two runner scripts, LF-normalised), which `--check` compares with a fresh run. The committed record was written the `--allow-dirty` way, on the finished review-4 change, and names `51f4ba0` with `-dirty`.
+`--write` has two modes. It refuses (exit 4) a working tree that differs from HEAD unless `--allow-dirty` is passed. With `--allow-dirty` on the finished change, the record is written before its own commit exists and committed in the same commit as the code it covers; its `commit` names the parent commit with the suffix `-dirty` (the tree it ran on differed from that commit). On a tree equal to HEAD (the record written after its code was committed, and committed in a later commit) `commit` is that commit, with no suffix. Either way the code it ran is identified by `inputs.sha256` (every application module and the two runner scripts, LF-normalised), which `--check` compares with a fresh run. The v8 record is generated from the clean Phase 8 integration source commit.
 
 The run uses its own in-memory database, the all-public-approved store, development settings (V1 enforce,
 MODEL_GATEWAY=on, EHMF=on) and the development fake adapters. It is a change-control gate, not research results.
@@ -69,10 +69,7 @@ MODEL_GATEWAY=on, EHMF=on) and the development fake adapters. It is a change-con
 
 ## Rollback
 
-"Reload the prior package" (plan Phase 7 L): a stop only follows a change between two packages with an ehmf block
-(6.x to 6.y), so the prior package is the earlier 6.x package the stop names in `from_config_version`. The procedure
-edits the package in place (the tree and the image hold only the current 6.x file), so the prior package is the one in
-the prior image: deploy the prior image digest. `/ready` then reports its `config_package_version` and
+"Reload the prior package" (plan Phase 7 L): a stop only follows a change between two packages with an ehmf block, from v6 onward. The prior package is the version named in `from_config_version`. To restore the prior release, deploy the prior image digest. `/ready` then reports its `config_package_version` and
 `config_package_sha256`, which the version history records for that version. With it in force the stop state reads `reverted` and
 `/ready` reports `ehmf.stop.revert_required` false. Reloading v5 (readable for one release, DI-112; no ehmf block) is
 not a revert of the stop: it turns EHMF off (`/ready` `ehmf` null, no stop read). Record the stops first
@@ -98,6 +95,8 @@ writes the paraphrase and applies it as a library edit above (DI-113). B2/D span
 same way (`ehmf.retrieval_penalty`, empty as shipped; D-06 owns the factor).
 
 ## Renumbering the Phase 7 package
+
+Phase 7 landed with v6. The conditional procedure below applied before Phase 7 reached `main`. The committed v6 history now serves as the prefix for later packages.
 
 Phase 8 is built in parallel (branch `phase8/learner-record-privacy`) and also wants the next package number and
 Alembic head. If it reaches `main` first and takes v6 or adds an Alembic revision after `20261122_phase6_v3_audit`, the Phase 7 branch
@@ -161,6 +160,8 @@ committed `v7.json`'s (`test_ac_7_6_a_same_version_edit_fails_the_ci_check_whate
 temporary `--history` (`test_ac_7_6_no_test_runs_a_golden_set_write_against_the_committed_history`).
 
 ## Renumbering the Phase 9 package
+
+Phase 9 reached `main` first at `d366e20`. This release order keeps the ranking floor at 7 and the EHMF floor at 6. Phase 8 reads the committed v7 as its predecessor, uses its own schema floor of 8 as the latest loader bound, and appends `8.0.0` through the golden-set runner. Its Alembic revision follows `20261123_phase9_ranking`. The procedure below records the contingency that applied before that merge.
 
 If Phase 8 reaches `main` first with v7 and a revision after `20261123_phase7_ehmf`, the Phase 9 branch merges `main` and
 renumbers (Phase 9 spec 15, E16). The number is one constant, `app.services.ranking.vocabulary.RANKING_FIRST_MAJOR`:

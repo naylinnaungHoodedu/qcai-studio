@@ -26,6 +26,8 @@ ADDED_COLUMNS = (
     ("tutor_turns", "ledger_record_expected", "BOOLEAN"),
     # The claim token of an Idempotency-Key claim (spec 18.8 F13); tables made by an unreleased Phase 3 build lack it.
     ("tutor_turn_idempotency", "claim_token", "VARCHAR(32)"),
+    ("learner_write_guards", "erasure_epoch", "VARCHAR(32)"),
+    ("learner_write_guards", "last_used_at", "TIMESTAMP WITH TIME ZONE"),
 )
 
 
@@ -41,6 +43,8 @@ def _add_missing_columns(engine: Engine) -> None:
                 connection.exec_driver_sql(f"SET LOCAL lock_timeout = '{int(COLUMN_LOCK_TIMEOUT_MS)}ms'")
                 connection.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {column_type}")
             else:
+                if column_type == "TIMESTAMP WITH TIME ZONE":
+                    column_type = "DATETIME"
                 connection.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
 
 
@@ -77,6 +81,13 @@ def run_schema_upgrades(engine: Engine) -> None:
                 _guard_ehmf_tables(connection)
             if set(RANKING_APPEND_ONLY_TABLES) <= tables:
                 _guard_ranking_tables(connection)
+        if "learner_write_guards" in tables:
+            connection.exec_driver_sql(
+                "UPDATE learner_write_guards SET last_used_at = CURRENT_TIMESTAMP WHERE last_used_at IS NULL"
+            )
+            connection.exec_driver_sql(
+                "UPDATE learner_write_guards SET erasure_epoch = 'legacy' WHERE erased = TRUE AND erasure_epoch IS NULL"
+            )
 
 
 def _guard_security_events(connection: Connection) -> None:

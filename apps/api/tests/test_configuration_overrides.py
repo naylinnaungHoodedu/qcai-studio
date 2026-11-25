@@ -42,7 +42,7 @@ client = TestClient(app)
 
 
 def write_package(tmp_path: Path, edit) -> Path:
-    """A copy of the shipped package (DEFAULT_PACKAGE_PATH, package v5 since Phase 6) under its own name, with `edit`
+    """A copy of the shipped package (DEFAULT_PACKAGE_PATH, package v8 since Phase 8) under its own name, with `edit`
     applied, its sidecar rewritten and its schema files alongside."""
     payload = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
     edit(payload)
@@ -100,7 +100,10 @@ PACKAGE_RELAXATIONS = {"config_package_path_overridden": {"is_default_path": Fal
 # refused outside development (development-only shadow generation).
 REFUSED_RELAXATIONS = {"v1_pipeline_enforce": {"v1_pipeline": "enforce"}, "model_gateway_on": {"model_gateway": "on"}, "v3_queue_on": {"v3_queue": "on"},
                        "ehmf_on": {"ehmf": "on"}, "ranking_on": {"ranking": "on"},
-                       "ranking_shadow_generation": {"ranking_shadow_generation": True}}
+                       "ranking_shadow_generation": {"ranking_shadow_generation": True},
+                       "learner_sync_on": {"learner_sync": "on"}, "learner_identity_on": {"learner_identity": "on"},
+                       "learner_privacy_on": {"learner_privacy": "on"}, "learner_planner_shadow": {"learner_planner": "shadow"},
+                       "learner_planner_on": {"learner_planner": "on"}}
 
 
 def _override_details(monkeypatch, settings: Settings, package=None) -> dict | None:

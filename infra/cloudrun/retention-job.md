@@ -40,3 +40,18 @@ These commands are a runbook, not something CI runs. Each is a cloud write that 
 4. Alert on failure: create a Cloud Monitoring alert on Cloud Run job executions with a failed status for `qcai-retention`. A failed run must page someone; it must not just leave a log line.
 
 Evidence for the plan's "job log" requirement: the JSON line of the first scheduled execution, filed in BEP-1 together with the execution id.
+
+## Phase 8
+
+The scheduled retention worker uses the same cleanup service as API startup. With `LEARNER_PRIVACY=off`, the two-argument guest eraser uses the legacy `guest-` prefix and `created_at` rule. When privacy is on, the worker applies the class register to guest-prefixed rows and bound guest subjects. `LEARNER_SYNC`, `LEARNER_PLANNER`, and `LEARNER_IDENTITY` do not select retention rules.
+
+| Table or class | Rule |
+|---|---|
+| Guest study rows and foreign-key dependents | With privacy on, expire after 365 days using each class's age column. With privacy off the legacy guest rule applies. Durable study records stay until erasure. |
+| `learner_consents` | With privacy on, guest consent ages from `updated_at`. Durable consent stays until erasure. |
+| `guest_legacy_upgrades` and `learner_guest_revocations` | With privacy on, delete legacy upgrade records older than 365 days and retain a credential-protection tombstone. |
+| `learner_claim_audits` and `learner_erasure_audits` | In every privacy mode, expire after 365 days from creation. The cutoff uses the package's audit retention constant. |
+| `learner_write_guards` | In every privacy mode, both active guards and erasure markers expire after 365 days of inactivity, measured by `last_used_at`. Stale observations expire across the same horizon. |
+| `learner_subjects`, `user_accounts`, and `user_sessions` | Keep bindings and durable credentials until erasure. Sessions follow their separate expiry. |
+
+Plan L: "Flags for planner and sync. Stop: any harness violation blocks adaptation (never evidence)." The lifecycle worker leaves the shared adaptation-stop row alone.

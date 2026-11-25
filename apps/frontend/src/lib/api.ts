@@ -310,10 +310,11 @@ export async function fetchLearnerRecord(): Promise<LearnerRecord> {
 
 export async function postLearnerRecordOperations(
   operations: LearnerRecordOperation[],
+  expectedRecordVersion: number,
 ): Promise<{ receipts: Array<{ operation_id: string; status: "applied" | "duplicate" }>; record: LearnerRecord }> {
   return apiFetch("/learner-record/operations", {
     method: "POST",
-    body: JSON.stringify({ operations }),
+    body: JSON.stringify({ operations, expected_record_version: expectedRecordVersion }),
   });
 }
 

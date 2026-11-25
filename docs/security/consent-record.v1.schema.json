@@ -1,0 +1,46 @@
+{
+  "properties": {
+    "consent_class": {
+      "enum": [
+        "adaptation",
+        "analytics",
+        "research"
+      ],
+      "title": "Consent Class",
+      "type": "string"
+    },
+    "consent_version": {
+      "const": "d27-unresolved-v1",
+      "title": "Consent Version",
+      "type": "string"
+    },
+    "granted": {
+      "title": "Granted",
+      "type": "boolean"
+    },
+    "source": {
+      "const": "self-service",
+      "title": "Source",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "user_id": {
+      "title": "User Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "consent_class",
+    "granted",
+    "user_id",
+    "consent_version",
+    "updated_at",
+    "source"
+  ],
+  "title": "LearnerConsentRecord",
+  "type": "object"
+}
