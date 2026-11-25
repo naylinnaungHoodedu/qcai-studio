@@ -1608,10 +1608,11 @@ def test_phase4_docs_the_code_texts_name_the_shipped_package():
              "tutor_pipeline": inspect.getdoc(tutor_pipeline)}
     flat = {name: _flat(text) for name, text in texts.items()}
     shipped = f"v{LATEST_SCHEMA_VERSION} since Phase 8"
-    for name in ("package_check", "tutor_followups", "tutor_pipeline"):
+    for name in ("contracts", "package_check", "tutor_followups", "tutor_pipeline"):
         assert shipped in flat[name] and "v7 since Phase 9, the shipped package" not in flat[name], name
     assert "pinned by sha256 in configuration package v2." not in flat["contracts"]
     assert "ledger-entry.v2.schema.json" in flat["contracts"]
+    assert f"the shipped configuration package ({shipped}" in flat["contracts"]
     assert not flat["package_check"].startswith("Consistency of configuration package v2 with")
     assert "schema 2 or later" in flat["package_check"]
     assert "come from configuration package v2" not in flat["ledger"] and "come from the shipped configuration package" in flat["ledger"]
