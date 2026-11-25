@@ -99,12 +99,19 @@ def synthetic_item(stratum: str, number: int, *, page: int, status: str = "candi
     return item
 
 
-def synthetic_dataset(counts: Mapping[str, int] = SMALL, **kwargs: Any) -> list[dict[str, Any]]:
+def synthetic_dataset(counts: Mapping[str, int] = SMALL, *, splits: bool = False, **kwargs: Any) -> list[dict[str, Any]]:
+    """The synthetic items at `counts`; with `splits`, each carries its `ulqs-split-v1` split (a set meant to freeze)."""
+    from .ulqs import assign_splits
+
     items, page = [], 1
     for stratum in ("A", "B", "C", "D", "E", "F", "G"):
         for number in range(1, counts.get(stratum, 0) + 1):
             items.append(synthetic_item(stratum, number, page=page, **kwargs))
             page += 1
+    if splits:
+        assigned = assign_splits(items)
+        for item in items:
+            item["split"] = assigned[item["item_id"]]
     return items
 
 

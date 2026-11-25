@@ -162,14 +162,16 @@ def _provider_binding(spec: Mapping[str, Any], adapter: Any, recorded: set[str])
 
 
 def live_refusal_reasons(spec: Mapping[str, Any], package_raw: Mapping[str, Any], environ: Mapping[str, str], arms: Any, *,
-                         out_dir: Path | None = None, repo_root: Path | None = None) -> list[str]:
+                         out_dir: Path | None = None, repo_root: Path | None = None, resuming: bool = False) -> list[str]:
     """Every condition a live run lacks, in order (spec 4.9). An empty list is never reached in this repository.
 
     Plan H's four conditions are records, each resolved by path and sha256 (`governance.resolve_record`) and read under its
     own format: (a) `licence-ruling-v1`, (b) `provider-terms-v1`, (c) `irb-approval-v1`, approved on or before the run date
     and not expired on it, and (d) `research-use-confirmation-v1`. None may sit on a public path, and none may be dated
-    after the run date, which must be the current UTC date (`created_at_not_today`: an old or future-dated spec is
-    refused). Condition (b) is bound to the run: `responder.live.providers` names every provider the run
+    after the run date, which must be the current UTC date when the run starts (`created_at_not_today`: an old or
+    future-dated spec is refused). On a resume (`resuming`) the run date is the run's own start, which the runner checks
+    in the checkpoint (its `start` event's run digest covers `created_at`), and the IRB must also be valid today, since the
+    resumed run queries providers today. Condition (b) is bound to the run: `responder.live.providers` names every provider the run
     queries (it must include each provider the adapter declares in its `providers` attribute), and `provider_terms` (one
     reference or a list) must hold a record whose `provider_id` is each of them."""
     from . import governance
@@ -196,9 +198,14 @@ def live_refusal_reasons(spec: Mapping[str, Any], package_raw: Mapping[str, Any]
         on = governance.run_date(spec)
     except governance.GovernanceError:
         return reasons + ["created_at"]
-    reasons += governance.run_date_refusals(spec)  # the run date is the day the live run really starts
+    if not resuming:
+        reasons += governance.run_date_refusals(spec)  # the run date is the day the live run really starts
     irb_ref = (spec.get("governance") or {}).get("irb_record")
-    reasons += governance.irb_refusals(irb_ref, on, root, missing="irb_not_filed")
+    irb = governance.irb_refusals(irb_ref, on, root, missing="irb_not_filed")
+    if resuming:
+        irb += [reason for reason in governance.irb_refusals(irb_ref, governance.utc_today(), root, missing="irb_not_filed")
+                if reason not in irb]
+    reasons += irb
     terms_refs = spec.get("provider_terms")
     terms_refs = list(terms_refs) if isinstance(terms_refs, list) else [terms_refs] if terms_refs else []
     terms = []

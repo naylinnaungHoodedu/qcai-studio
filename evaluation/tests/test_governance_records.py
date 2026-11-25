@@ -211,10 +211,64 @@ def test_a_confirmatory_run_is_refused_unless_created_at_is_today(tmp_path, monk
     assert refusals(tmp_path, **{**ok, "created_at": "2026-12-01T00:00:00Z"}) == ["created_at_not_today"]
     assert governance.run_date_refusals({"created_at": "garbage"}) == ["created_at"]
     assert governance.utc_today() == date(2026, 11, 24)
-    monkeypatch.undo()
+    # A resume is judged against the run's own start (the runner checks the checkpoint), and its IRB also against today.
+    monkeypatch.setattr(governance, "utc_today", lambda: date(2026, 11, 25))
+    assert refusals(tmp_path, **ok) == ["created_at_not_today"]
+    assert governance.confirmatory_refusals(
+        {"created_at": "2026-11-24T00:00:00Z", "mode": "live", **ok}, analysis_plan_sha256=PLAN_SHA, dataset_sha256="d" * 64,
+        dataset_content_sha256=CONTENT_SHA, items_states={"frozen": 3}, package_raw={"owner_decisions": {"D-14": {"state": "decided"}}},
+        repo_root=REPO_ROOT, resuming=True) == []
+    monkeypatch.setattr(governance, "utc_today", lambda: date(2027, 7, 1))
+    assert governance.confirmatory_refusals(
+        {"created_at": "2026-11-24T00:00:00Z", "mode": "live", **ok}, analysis_plan_sha256=PLAN_SHA, dataset_sha256="d" * 64,
+        dataset_content_sha256=CONTENT_SHA, items_states={"frozen": 3}, package_raw={"owner_decisions": {"D-14": {"state": "decided"}}},
+        repo_root=REPO_ROOT, resuming=True) == ["irb_expired"]
+
+
+def test_utc_today_is_the_utc_date_of_the_clock(monkeypatch):
+    # The clock is pinned, so the check cannot straddle 00:00 UTC: 23:30 at UTC-05:00 is the next UTC day.
     import datetime as datetime_module
 
-    assert governance.utc_today() == datetime_module.datetime.now(datetime_module.timezone.utc).date()
+    monkeypatch.undo()  # the real utc_today, which conftest replaces with the synthetic spec's day
+
+    instant = datetime_module.datetime(2026, 11, 24, 23, 30, tzinfo=datetime_module.timezone(datetime_module.timedelta(hours=-5)))
+
+    class Clock(datetime_module.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return instant.astimezone(tz)
+
+    monkeypatch.setattr(governance._dt, "datetime", Clock)
+    assert governance.utc_today() == datetime_module.date(2026, 11, 25)
+
+
+def test_a_confirmatory_recorded_run_is_judged_against_its_live_recording_s_start_on_any_day(tmp_path, monkeypatch):
+    # A recorded run replays a live run: its created_at must be the recording's started_on, whatever the day of the
+    # replay, so the replay repeats byte for byte; a live recording without a start date is refused.
+    from datetime import date
+
+    irb = synthetic.irb_record(tmp_path / "irb.private.json", approval_date="2026-11-01", expiry_date="2027-06-30")
+    osf = synthetic.osf_record(tmp_path / "osf.private.json", analysis_plan_sha256=PLAN_SHA)
+    scan = synthetic.pass_scan(tmp_path / "scan.json", dataset_content_sha256=CONTENT_SHA)
+    freeze = synthetic.freeze_record(tmp_path / "freeze.private.json", dataset_sha256="d" * 64)
+    spec = {"created_at": "2026-11-24T00:00:00Z", "mode": "recorded", "governance": {"irb_record": irb, "osf_record": osf},
+            "freeze_record": freeze, "pre_run_scan": scan}
+
+    def recorded(started_on, source="live", created_at="2026-11-24T00:00:00Z"):
+        return governance.confirmatory_refusals(
+            {**spec, "created_at": created_at}, analysis_plan_sha256=PLAN_SHA, dataset_sha256="d" * 64,
+            dataset_content_sha256=CONTENT_SHA, items_states={"frozen": 3},
+            package_raw={"owner_decisions": {"D-14": {"state": "decided"}}}, repo_root=REPO_ROOT, recording_source=source,
+            recording_started_on=started_on)
+
+    for today in (date(2026, 11, 24), date(2026, 12, 30), date(2028, 1, 10)):
+        monkeypatch.setattr(governance, "utc_today", lambda today=today: today)
+        assert recorded("2026-11-24") == [], today
+    assert recorded("2026-11-23") == ["created_at_not_start_date"]
+    for missing in (None, "", "2026-11-24T00:00:00Z", "2026-13-01", 20261124):
+        assert recorded(missing) == ["recording_started_on_missing"], missing
+    assert recorded(None, source="synthetic") == ["recording_not_live"]
+    assert governance.recording_date_refusals({"created_at": "garbage"}, "2026-11-24") == ["created_at"]
 
 
 def test_a_record_path_open_refuses_is_an_invalid_file_never_a_traceback(tmp_path):

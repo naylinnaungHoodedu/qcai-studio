@@ -10,7 +10,8 @@ research-plane files (they hold their salt); public CI passes --synthetic-fixtur
 from invented passages with a published salt, and the fixture file itself is not a scan target. --self-test plants a
 sentinel in a temporary run directory and requires the scanner to find it, and to skip it in responses.jsonl. The report
 holds paths and counts only. Any file that is text is scanned, whatever its suffix (Dockerfiles, dotfiles, .puml, .sh,
-...), and a file with a UTF-16 or UTF-32 byte-order mark is decoded in that encoding; every file a target does not scan
+...), and a file with a UTF-16 or UTF-32 byte-order mark is decoded in that encoding; a file with a known text suffix
+(.md, .json, .py, ...) is always scanned, a NUL or an undecodable byte included; every file a target does not scan
 is listed as excluded with its reason (`binary`, `not_text`, `too_large`, `unreadable`, or an environment file:
 `.env*`, such as the tracked `.env.example` templates, is read only with --include-env-files, which CI passes). A match
 always exits 1; --require-zero also fails (exit 1) when the coverage cannot prove zero: a target that scanned no file, a

@@ -7,10 +7,12 @@ every normalized whole text field of at least 3 words plus 6-word shingles (`qca
 question is still found. A fingerprint file holds its salt, so a real one is research-plane material. Reports hold paths
 and counts only, never a text.
 
-A file is text when it starts with a UTF-8, UTF-16 or UTF-32 byte-order mark and decodes in that encoding (a PowerShell
-5.1 `>` redirect writes UTF-16LE with a mark), or when its bytes hold no NUL and either its suffix is a known text suffix
-or, for any other suffix that is not a known binary one (no suffix, a dotfile, `.puml`, `.sh`, `.mako`, `Dockerfile`,
-...), they decode as UTF-8. Every file a target lists but does not scan is listed as excluded with its reason: a known
+A file with a known text suffix (`.md`, `.json`, `.py`, ...) is always text: it is decoded in the encoding its UTF-8,
+UTF-16 or UTF-32 byte-order mark names (a PowerShell 5.1 `>` redirect writes UTF-16LE with a mark), or as UTF-8 without
+one, with undecodable bytes replaced; a NUL in it never hides it (the text is scanned as decoded and again with every
+NUL removed, which also reads UTF-16 without a mark). A file of any other suffix that is not a known binary one (no
+suffix, a dotfile, `.log`, `Dockerfile`, ...) is text when it starts with a byte-order mark and decodes in that
+encoding, or when its bytes hold no NUL and decode as UTF-8. Every file a target lists but does not scan is listed as excluded with its reason: a known
 binary suffix (`binary`, never read), bytes that are not text (`not_text`, including a `.docx` that does not parse), over
 20 MiB (`too_large`, never read), unreadable (`unreadable`), or an environment file (a basename starting `.env`, such as
 the tracked `.env.example` templates), which is read only when the caller asks (`include_env`; CI passes
@@ -243,11 +245,18 @@ def _text_of(name: str, data: bytes) -> str | None:
             try:
                 return data[len(mark):].decode(encoding)
             except UnicodeDecodeError:
+                if suffix in TEXT_EXTENSIONS:  # a known text file is always scanned
+                    return data[len(mark):].decode(encoding, errors="replace")
                 return None
+    if suffix in TEXT_EXTENSIONS:
+        text = data.decode("utf-8", errors="replace")
+        if b"\x00" in data:
+            # A NUL in a known text file never hides it: the text is scanned as decoded (a NUL separates words) and
+            # with every NUL removed (so UTF-16 without a mark, ASCII text interleaved with NULs, is read too).
+            text += "\n" + data.replace(b"\x00", b"").decode("utf-8", errors="replace")
+        return text
     if b"\x00" in data:
         return None
-    if suffix in TEXT_EXTENSIONS:
-        return data.decode("utf-8", errors="replace")
     if suffix in BINARY_EXTENSIONS:
         return None
     try:

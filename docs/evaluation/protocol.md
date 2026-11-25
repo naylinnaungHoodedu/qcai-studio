@@ -11,7 +11,8 @@ DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-142). Not execu
    text character for character, Krippendorff's alpha at least 0.667 and at least a quarter of items second-rated, and
    the AI-agent re-check of every item by a V2 verifier model chosen before the check, with each disagreement adjudicated
    by a claim rater who did not review that item; an item changed after one of the agent's flags is listed in the
-   record). The freeze record pins the dataset sha256, the canonical sha256 of the agent re-check record, the agent's
+   record; an item retired after a flag is listed too), and every live item in the calibration or the confirmation
+   split, balanced to within one per stratum (`ulqs-split-v1`; plan 10.5(2), Risk R-25). The freeze record pins the dataset sha256, the canonical sha256 of the agent re-check record, the agent's
    full-report sha256 copied from that record, the model id, the agent's counts and the items changed after a flag (so
    the agent verifier's E2 accuracy is reported with and without them). No verifier model is pinned until D-07, so no freeze passes yet (DI-142).
 2. **Pin.** The run spec pins the configuration package by path and sha256, the items, the evidence catalog, the arms
@@ -26,6 +27,9 @@ DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-142). Not execu
 4. **Execute.** Three replicates on a 40-item S1 subsample; failed provider calls are retried three times, then logged and
    counted as outcomes (the provisional defaults of `evaluation/config/harness_parameters_v1.json`; a live or confirmatory
    spec must keep the subsample, so its record reports replicate variance); abstentions are outcomes, not missing data. Payload logs hold pointers, hashes and sizes only.
+   A confirmatory run uses only the items of the confirmation split; the calibration items, which tune thresholds, never
+   enter it. A run interrupted by a provider outage resumes from its checkpoint with the same spec (`--resume`), on a
+   later day too: it is judged against its own start, and its IRB must still be valid on the resume day.
 5. **Label.** Atomic claims are labelled supported, attribution error, unsupported but true, or fabricated, with the EHMF
    type; abstaining units are labelled supported or unsupported abstention (`lqs/rubric.md`).
 6. **Analyse.** Exact McNemar, the one-sided, paired, cluster, BCa, paired-AUC and two-level bootstraps, the Friedman test
@@ -33,11 +37,16 @@ DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-142). Not execu
    p-value, with its null as the plans state it (H2b: DR <= 1). The equivalence part of H4b is confirmatory only if
    ICC(2,k) >= 0.50 and Cronbach's alpha >= 0.70 across the EQC's six scales, and is otherwise reported as inconclusive.
    Every hypothesis test the analysis plans register is implemented in `evaluation/qcai_eval/statistics.py` with
-   known-answer tests and has run on no research data; the secondary analyses (the claim-level mixed-effects logistic
-   regression, cumulative-link mixed models, Cliff's delta, the ordinal sensitivity model for EQC, ICC(2,k), Cronbach's
-   alpha and prediction-powered inference) are registered and not implemented (DI-138).
+   known-answer tests and has run on no research data; the nine secondary analyses (the claim-level mixed-effects
+   logistic regression, cumulative-link mixed models, Cliff's delta, the ordinal sensitivity model for EQC, ICC(2,k),
+   Cronbach's alpha, prediction-powered inference, H1a's error rate among answers, and the agent verifier's E2 accuracy
+   with and without the items changed after its flags; `secondary_analyses` in the analysis plans) are registered and
+   not implemented (DI-138).
 7. **Scan.** Before and after a run, `scripts/scan_research_logs.py` scans every research-plane log with the salted
    fingerprints and must report zero matches. The pre-run scan the run spec pins must use the research fingerprint sets,
-   the ULQS set built from the run's items, and cover the repository and the prompts or logs.
+   the ULQS set built from the run's items, cover the repository and at least one logs or records target (the harness
+   writes no prompt file: the payload log keeps prompt hashes only), and pass with full coverage (every target scanned a
+   file, none excluded one as too large or unreadable, and no logs or records target excluded one as binary or not
+   text; the report says `pass`, never `incomplete`).
 
 The protocol never permits publication of restricted evidence text. A released benchmark carries pointers only.

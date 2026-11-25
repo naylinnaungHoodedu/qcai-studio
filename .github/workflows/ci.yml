@@ -22,15 +22,20 @@ jobs:
       - run: python scripts/validate_corpus.py --check-public-assets --check-recall-stop
       - run: python scripts/validate_lqs.py --allow-draft
       # Phase 10 (evaluation and research harness): synthetic inputs only; no ULQS item, gold label or licensed text
-      # enters CI (plan 12.7, R-25, R-26). Exit 3 invalid items or a known answer missed; 6 a pin; 7 arm parity.
+      # enters CI (plan 12.7, R-25, R-26). validate_ulqs: exit 2 usage or an input unreadable or invalid, 3 schema
+      # problems, 5 the evidence catalog invalid or unresolved pointers (4, a failed freeze, needs --freeze).
       - run: python scripts/validate_ulqs.py --items evaluation/fixtures/synthetic_ulqs_v1.jsonl --catalog evaluation/fixtures/synthetic_evidence_catalog_v1.jsonl
+      # check_research_harness: exit 1 drift of a generated record, 3 a known answer not met or an invalid analysis
+      # plan, 6 a pin (the package differs from its sidecar), 7 arm parity.
       - run: python scripts/check_research_harness.py --check
       # AC-10-3: the stub run reproduces the committed synthetic run record byte for byte (exit 1 drift, 6 a pin, 7 parity).
       - run: python scripts/run_evaluation.py --check docs/evaluation/phase10/synthetic_run_record_v1.json --spec docs/evaluation/phase10/synthetic_run_spec_v1.json
       # AC-10-4 (synthetic half): zero synthetic-fingerprint matches in the tracked tree, every text file scanned whatever
-      # its suffix (UTF-16/32 with a byte-order mark decoded; a file that is not text listed as excluded with its reason),
-      # the .env.example templates included (--include-env-files), and full coverage (--require-zero); the
-      # self-test proves a planted sentinel is found. Real fingerprints run only in the research plane (DI-141).
+      # its suffix (UTF-16/32 with a byte-order mark decoded; a known text suffix always scanned, a NUL or an invalid
+      # byte included; any other file that is not text listed as excluded with its reason), the .env.example
+      # templates included (--include-env-files), and full coverage (--require-zero; exit 1 on a match or incomplete
+      # coverage, 2 usage); the self-test proves a planted sentinel is found. Real fingerprints run only in the
+      # research plane (DI-141).
       - run: python scripts/scan_research_logs.py --synthetic-fixture evaluation/fixtures/contamination_synthetic_v1.json --repo --include-env-files --require-zero --report "$RUNNER_TEMP/research-log-scan.json"
       - run: python scripts/scan_research_logs.py --synthetic-fixture evaluation/fixtures/contamination_synthetic_v1.json --self-test
       # Phase 2 (corpus, span identity, retrieval integrity). The checkout has no LFS content, so video hashes are

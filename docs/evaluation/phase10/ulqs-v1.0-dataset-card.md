@@ -45,14 +45,15 @@ The rc1 card's allocation (A44 B28 C20 D14 E14 F12 G28) is recorded in the freez
 ## Freeze conditions
 
 120-200 non-retired items, each stratum exactly at its target, every item frozen and human-reviewed with its validation
-flags true and `item_kind` marked, at least 4/5 at Bloom "understand" or above, at most 1/10 bibliographic, one corpus
+flags true and `item_kind` marked, every live item in the calibration or the confirmation split with each stratum's
+split balanced to within one (`ulqs-split-v1`; a confirmatory run uses only the confirmation items), at least 4/5 at Bloom "understand" or above, at most 1/10 bibliographic, one corpus
 version, every pointer resolved and checked against the corpus text character for character, every item's move from the
 previous set (the review set or the last frozen set) allowed by the state machine with no frozen content changed, and a
 current agreement record with
 Krippendorff's alpha (nominal) of at least 0.667 and at least a quarter of items second-rated (and ceil(n/4) per stratum),
 and then the AI-agent re-check (VBT RevB p. 15, "Benchmark verification before use"): a V2 verifier model chosen before
 the check and pinned in the freeze rules re-checked every item against its evidence, and a claim rater who did not review
-the item adjudicated each disagreement. No verifier model is pinned until D-07 decides, so no freeze passes yet (DI-142).
+the item adjudicated each disagreement (an item changed or retired after one of its flags is listed). No verifier model is pinned until D-07 decides, so no freeze passes yet (DI-142).
 
 ## Rated units
 

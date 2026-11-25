@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import codecs
 import json
 from pathlib import Path
 import sys
@@ -99,19 +100,46 @@ def _raise(error):
 
 
 def test_every_file_not_scanned_is_excluded_with_its_reason_and_binary_suffixes_are_never_read(tmp_path):
-    # A binary suffix is excluded unread; bytes with a NUL (UTF-16 without a byte-order mark among them) are read but not
-    # text; a file over 20 MiB or unreadable is excluded too. Nothing a target lists is skipped without an entry.
+    # A binary suffix is excluded unread; bytes of a suffix that is not a known text one, holding a NUL (UTF-16 without
+    # a byte-order mark among them), are read but not text; a file over 20 MiB or unreadable is excluded too. Nothing a
+    # target lists is skipped without an entry. (A known text suffix is always scanned: the next test.)
     sets = contamination.synthetic_sets(synthetic.CONTAMINATION_FIXTURE)
     passage = fixture()["licensed_passages"][2]
     read_png = []
     entries = [("image.png", lambda: read_png.append(1) or passage.encode()), ("data.bin", lambda: b"\x00" + passage.encode()),
-               ("nomark.dat", lambda: passage.encode("utf-16-le")), ("nomark.txt", lambda: passage.encode("utf-16-be")),
+               ("nomark.dat", lambda: passage.encode("utf-16-le")), ("console.log", lambda: passage.encode("utf-16-be")),
                ("big.txt", _raise(contamination.TooLarge("big.txt"))), ("gone.md", _raise(OSError("gone")))]
     result = contamination.scan_files(entries, sets)
     assert result["scanned"] == 0 and read_png == [] and result["files"] == 6
     assert result["excluded"] == [{"path": "image.png", "reason": "binary"}, {"path": "data.bin", "reason": "not_text"},
-                                  {"path": "nomark.dat", "reason": "not_text"}, {"path": "nomark.txt", "reason": "not_text"},
+                                  {"path": "nomark.dat", "reason": "not_text"}, {"path": "console.log", "reason": "not_text"},
                                   {"path": "big.txt", "reason": "too_large"}, {"path": "gone.md", "reason": "unreadable"}]
+
+
+@pytest.mark.parametrize("kind", ["a NUL after", "a NUL before", "UTF-16LE without a mark", "UTF-16BE without a mark",
+                                  "a UTF-8 mark and an invalid byte", "a UTF-16 mark and an odd byte"])
+@pytest.mark.parametrize("name", ["docs/notes.md", "data/events.json", "src/module.py", "notes.txt"])
+def test_a_known_text_file_holding_a_nul_or_an_invalid_byte_is_still_scanned_and_its_passage_found(tmp_path, monkeypatch, kind, name):
+    # A tracked .md, .json or .py holding a licensed passage and one NUL byte (or a mark followed by bytes that do not
+    # decode) is scanned like any text file: the repository target finds the passage and fails, never passing with the
+    # file excluded as not text.
+    sets = contamination.synthetic_sets(synthetic.CONTAMINATION_FIXTURE)
+    passage = fixture()["licensed_passages"][2]
+    data = {"a NUL after": passage.encode() + b"\n\x00\n", "a NUL before": b"\x00" + passage.encode(),
+            "UTF-16LE without a mark": passage.encode("utf-16-le"), "UTF-16BE without a mark": passage.encode("utf-16-be"),
+            "a UTF-8 mark and an invalid byte": codecs.BOM_UTF8 + passage.encode() + b"\xff",
+            "a UTF-16 mark and an odd byte": passage.encode("utf-16") + b"\x00"}[kind]
+    result = contamination.scan_files([("README.md", lambda: b"an invented readme"), (name, lambda: data)], sets)
+    assert result["scanned"] == 2 and result["excluded"] == [], kind
+    assert [hit["path"] for hit in result["files_with_hits"]] == [name] and result["files_with_hits"][0]["licensed_hits"] >= 1
+    (tmp_path / "README.md").write_text("an invented readme\n", encoding="utf-8")
+    (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / name).write_bytes(data)
+    monkeypatch.setattr(contamination, "git_files", lambda root: ["README.md", name])
+    target = contamination.repository_target(tmp_path, sets)
+    assert target["excluded"] == [] and [hit["path"] for hit in target["files_with_hits"]] == [name]
+    report = contamination.report([target], sets)
+    assert report["result"] == "fail" and report["matches_total"] >= 1
 
 
 @pytest.mark.parametrize("encoding", ["utf-16", "utf-16-be-bom", "utf-32", "utf-8-sig"])

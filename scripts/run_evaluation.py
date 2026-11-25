@@ -8,7 +8,12 @@ Record: python scripts/run_evaluation.py --record-stub OUT --spec SPEC  (a synth
 A run pins the configuration package by path and sha256, the items, the evidence catalog, the arms and the analysis plan;
 its seeds are hashed. Stub and recorded runs repeat byte for byte. Hold H12 refuses every run over non-synthetic data while
 D-14 is open, live runs are refused in this repository, and a confirmatory run needs a valid IRB record and OSF record.
-A confirmatory or live run is refused unless its created_at is today's UTC date (`created_at_not_today`).
+A confirmatory or live run that starts now is refused unless its created_at is today's UTC date (`created_at_not_today`);
+with --resume it is judged against its own start instead: the output must hold this run's checkpoint, whose run digest
+covers created_at (none: `created_at_not_today`), and its IRB must also be valid today. A confirmatory recorded run is
+judged against its live recording's `started_on` (`created_at_not_start_date`, `recording_started_on_missing`), so it
+repeats on any later day. A confirmatory run plans only the items of the confirmation split (`items_split_missing`
+when a live item has no split).
 --write and --check run in a temporary directory outside the checkout; nothing else is written there. With --access-log
 (required for non-synthetic inputs, with --actor-role) the run logs the spec read, every input as the planner reads it
 (also when it then refuses the run), its start and its outcome (completed, interrupted or refused). --resume continues only this run's own checkpoint.
@@ -16,10 +21,11 @@ A confirmatory or live run is refused unless its created_at is today's UTC date 
 Exit codes: 0 ok; 1 drift; 2 usage, a malformed spec, a path, an experiment or a foreign checkpoint refused, a
 non-synthetic run without the access log (`access_log_required`) or a passing pre-run scan (`pre_run_scan_*`), or a
 confirmatory run refused for any reason that is not an IRB, OSF or freeze reason (its pre-run scan, D-14 open, a
-governance record on a public path, `created_at_not_today`, `stub_not_confirmatory`, `recording_not_live`); 3 invalid
-items, unresolved pointers, a freeze record or a payload-log violation, and a confirmatory run refused for its items
-(`items_not_frozen`) or its freeze record (`freeze_record_*`) with no IRB or OSF reason; 5 interrupted (provider outage;
---resume continues); 6 a pin mismatch; 7 arm parity; 8 a confirmatory run refused with any IRB or OSF reason (`irb_*`,
+governance record on a public path, `created_at_not_today`, `created_at_not_start_date`, `recording_started_on_missing`,
+`stub_not_confirmatory`, `recording_not_live`); 3 invalid items, unresolved pointers, a freeze record or a payload-log
+violation, and a confirmatory run refused for its items (`items_not_frozen`, `items_split_missing`) or its freeze record
+(`freeze_record_*`) with no IRB or OSF reason; 5 interrupted (provider outage; --resume continues it, on a later day
+too); 6 a pin mismatch; 7 arm parity; 8 a confirmatory run refused with any IRB or OSF reason (`irb_*`,
 `osf_*`; the other reasons are listed with it); 9 a live run or hold H12 refused.
 """
 
@@ -108,7 +114,8 @@ def run(spec_path: Path, out_dir: Path, *, resume: bool = False, access: Path | 
     spec_sha = lf_sha256(spec_path)
     log("read", "run_spec", spec_sha, spec)
     try:
-        plan = runner.plan_run(spec, out_dir=out_dir, access_log=access, on_read=lambda kind, sha256: log("read", kind, sha256, spec))
+        plan = runner.plan_run(spec, out_dir=out_dir, access_log=access, on_read=lambda kind, sha256: log("read", kind, sha256, spec),
+                               resume=resume)
     except runner.RunRefused as error:
         log("run", "run_spec", spec_sha, spec, "refused")
         return _refused(error)

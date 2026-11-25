@@ -22,7 +22,7 @@ from typing import Any, Mapping, Sequence
 
 from .canonical import canonical_sha256, hashed_hex, read_jsonl
 
-PROVISIONAL_DEFAULTS = ("PD-60", "PD-64")
+PROVISIONAL_DEFAULTS = ("PD-60", "PD-61", "PD-64")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "lqs" / "ulqs-v1.0.schema.json"
 DEFAULT_FREEZE_RULES = REPO_ROOT / "lqs" / "ulqs-v1.0-freeze-rules.json"
@@ -641,6 +641,20 @@ def assign_splits(items: Sequence[Mapping[str, Any]]) -> dict[str, str]:
     return splits
 
 
+
+def split_failures(items: Sequence[Mapping[str, Any]]) -> list[str]:
+    """The freeze codes of the calibration/confirmation split (plan 10.5(2), Risk R-25; PD-61): every live item carries a
+    split (`split_missing`), and within each stratum the items that carry one (retired items included, since a frozen
+    item's split never changes) are balanced to within one (`split_unbalanced:<letter>`), as `ulqs-split-v1` assigns them."""
+    failures = []
+    if any(item.get("split") not in SPLITS for item in items if item.get("status") != "retired"):
+        failures.append("split_missing")
+    for letter in STRATA:
+        splits = [item.get("split") for item in items if item.get("stratum") == letter and item.get("split") in SPLITS]
+        if abs(splits.count(SPLITS[0]) - splits.count(SPLITS[1])) > 1:
+            failures.append(f"split_unbalanced:{letter}")
+    return failures
+
 def _fraction(value: Any) -> Fraction:
     if isinstance(value, bool) or not isinstance(value, str):
         raise ValueError("freeze rules: a rational must be a decimal or p/q string")
@@ -648,15 +662,26 @@ def _fraction(value: Any) -> Fraction:
 
 
 def load_freeze_rules(path: Path = DEFAULT_FREEZE_RULES) -> FreezeRules:
+    """The freeze rules at `path`. Every way the file can be wrong (unreadable aside: OSError) raises ValueError: bytes
+    that are not UTF-8 JSON, a value that is not an object, a section or key missing, a value of the wrong type."""
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(raw, Mapping):
+        raise ValueError("freeze rules: not a JSON object")
+    try:
+        return _freeze_rules(raw)
+    except (KeyError, TypeError, AttributeError, ZeroDivisionError) as error:
+        raise ValueError(f"freeze rules: malformed ({type(error).__name__}: {error})") from None
+
+
+def _freeze_rules(raw: Mapping[str, Any]) -> FreezeRules:
     if raw.get("rules") != "ulqs-v1.0-freeze-rules-v1":
         raise ValueError("freeze rules: not a ulqs-v1.0-freeze-rules-v1 file")
     strata = raw.get("strata") or {}
-    if sorted(strata) != list(STRATA):
+    if not isinstance(strata, Mapping) or sorted(strata) != list(STRATA):
         raise ValueError("freeze rules: the strata must be exactly A-G")
     targets = {}
     for letter in STRATA:
-        target = strata[letter].get("target")
+        target = strata[letter].get("target") if isinstance(strata[letter], Mapping) else None
         if isinstance(target, bool) or not isinstance(target, int) or target < 1:
             raise ValueError(f"freeze rules: strata.{letter}.target must be a positive integer")
         targets[letter] = target
@@ -666,8 +691,7 @@ def load_freeze_rules(path: Path = DEFAULT_FREEZE_RULES) -> FreezeRules:
         raise ValueError(f"freeze rules: the strata targets total {total}, outside [{items_min}, {items_max}]")
     agreement, coverage = raw["agreement"], raw["coverage"]
     agent = raw.get("agent_check")
-    if not isinstance(agent, Mapping) or agent.get("record") != AGENT_CHECK_RECORD or not isinstance(agent.get("pinned_models"), list) \
-            or not all(isinstance(model, str) and model for model in agent["pinned_models"]):
+    if not isinstance(agent, Mapping) or agent.get("record") != AGENT_CHECK_RECORD or not isinstance(agent.get("pinned_models"), list)             or not all(isinstance(model, str) and model for model in agent["pinned_models"]):
         raise ValueError("freeze rules: agent_check must name the ulqs-agent-check-v1 record and a list of pinned models")
     return FreezeRules(raw=raw, sha256=canonical_sha256(raw), targets=targets, items_min=items_min, items_max=items_max,
                        alpha_min=_fraction(agreement["alpha_min"]), share_min=_fraction(agreement["second_rated_share_min"]),
@@ -722,7 +746,9 @@ def agent_check_failures(record: Mapping[str, Any] | None, items: Sequence[Mappi
     is pinned while D-07 is open: DI-142), or with an unadjudicated disagreement. `checked_items` holds each item's content
     sha256 as the agent checked it; an item whose content differs now must be listed, and a listed item must be one the
     agent checked whose content did change, and at most as many items as the agent flagged (detected defects plus false
-    alarms) may be listed."""
+    alarms) may be listed. An item the agent checked that is retired now counts as changed after a flag (a listed
+    retirement passes, an unlisted one is stale), so `checked_items` holds every item live when the agent checked: every
+    live item, plus items retired since; `items_checked` is its size."""
     if record is None:
         return ["agent_check_missing"]
     if not agent_check_shape_ok(record):
@@ -730,11 +756,14 @@ def agent_check_failures(record: Mapping[str, Any] | None, items: Sequence[Mappi
     failures = []
     live = [item for item in items if item.get("status") != "retired"]
     checked = record["checked_items"]
+    live_ids = {item.get("item_id") for item in live}
+    retired_checked = {item.get("item_id") for item in items if item.get("status") == "retired" and item.get("item_id") in checked}
     changed = {item.get("item_id") for item in live if item.get("item_id") in checked and checked[item["item_id"]] != item_content_sha256(item)}
+    changed |= retired_checked
     listed = set(record["items_changed_after_flag"])
     if changed - listed:
         failures.append("agent_check_stale")
-    if record["items_checked"] != len(live) or set(checked) != {item.get("item_id") for item in live}:
+    if record["items_checked"] != len(checked) or set(checked) != live_ids | retired_checked:
         failures.append("agent_check_incomplete")
     if record["model_chosen_before_check"] is not True:
         failures.append("agent_model_not_chosen_before_check")
@@ -796,6 +825,7 @@ def freeze_check(items: Sequence[Mapping[str, Any]], *, rules: FreezeRules, poin
         failures.append("validation_flags_false")
     if any(item.get("item_kind") not in ITEM_KINDS for item in live):
         failures.append("item_kind_unmarked")
+    failures += split_failures(items)
     if live:
         bloom = Fraction(sum(item.get("bloom") in BLOOM_UNDERSTAND_OR_ABOVE for item in live), len(live))
         if bloom < rules.bloom_min:

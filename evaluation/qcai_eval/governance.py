@@ -196,13 +196,33 @@ def utc_today() -> _dt.date:
 
 
 def run_date_refusals(spec: Mapping[str, Any]) -> list[str]:
-    """A confirmatory or live run is run on the day its spec declares: the date of `created_at` must be the current UTC
-    date, so the IRB and every record date are judged against the day the run really starts."""
+    """A confirmatory or live run that starts now is run on the day its spec declares: the date of `created_at` must be
+    the current UTC date, so the IRB and every record date are judged against the day the run really starts. A run whose
+    start is already fixed is judged against that start instead: a resume of the run's own checkpoint (the runner then
+    requires the checkpoint's first event, whose run digest covers `created_at`: `runner.execute_run`) and the replay
+    of a live recording (`recording_date_refusals`)."""
     try:
         on = run_date(spec)
     except GovernanceError:
         return ["created_at"]
     return [] if on == utc_today() else ["created_at_not_today"]
+
+
+def recording_date_refusals(spec: Mapping[str, Any], started_on: Any) -> list[str]:
+    """A recorded run replays a live run that started on the day the recording's header states (`started_on`, an ISO
+    date; the recording is pinned by its sha256): the date of `created_at` must be that day, on whatever day the replay
+    runs, so a confirmatory replay repeats byte for byte and is never judged against a later or earlier date."""
+    try:
+        start = _dt.date.fromisoformat(started_on) if isinstance(started_on, str) and len(started_on) == 10 else None
+    except ValueError:
+        start = None
+    if start is None:
+        return ["recording_started_on_missing"]
+    try:
+        on = run_date(spec)
+    except GovernanceError:
+        return ["created_at"]
+    return [] if on == start else ["created_at_not_start_date"]
 
 
 def is_public(reference: Any, repo_root: Path) -> bool:
@@ -303,12 +323,24 @@ def _list(value: Any) -> list[Any]:
 
 def confirmatory_refusals(spec: Mapping[str, Any], *, analysis_plan_sha256: str, dataset_sha256: str, dataset_content_sha256: str,
                           items_states: Mapping[str, int], package_raw: Mapping[str, Any], repo_root: Path,
-                          recording_source: str | None = None) -> list[str]:
+                          recording_source: str | None = None, recording_started_on: Any = None,
+                          resuming: bool = False) -> list[str]:
+    """The confirmatory gate's reasons, in order (spec 4.10). The run date: a recorded run is judged against its live
+    recording's start (`recording_date_refusals`); a resume (`resuming`) against the run's own start, which the runner
+    checks in the checkpoint, and its IRB must also be valid today, since the resumed run continues today; any other run
+    must be dated today (`run_date_refusals`)."""
     on = run_date(spec)
-    reasons: list[str] = run_date_refusals(spec)
+    if spec.get("mode") == "recorded":
+        reasons: list[str] = recording_date_refusals(spec, recording_started_on) if recording_source == "live" else []
+    elif resuming:
+        reasons = []
+    else:
+        reasons = run_date_refusals(spec)
     governance = spec.get("governance") or {}
     irb_ref, osf_ref = governance.get("irb_record"), governance.get("osf_record")
     reasons += irb_refusals(irb_ref, on, repo_root, missing="irb_missing")
+    if resuming:
+        reasons += [reason for reason in irb_refusals(irb_ref, utc_today(), repo_root, missing="irb_missing") if reason not in reasons]
     if not osf_ref:
         reasons.append("osf_missing")
     else:

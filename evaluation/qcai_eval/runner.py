@@ -36,7 +36,7 @@ from .payload_log import PayloadLogViolation, log_record, validate_log_record
 from .pointers import EvidenceCatalog, PointerResolver, public_span_lookup, resolve_items
 from .providers import RecordedResponder
 
-PROVISIONAL_DEFAULTS = ("PD-68", "PD-73")
+PROVISIONAL_DEFAULTS = ("PD-61", "PD-68", "PD-73")
 REPO_ROOT = planes.REPO_ROOT
 HARNESS_PARAMETERS = REPO_ROOT / "evaluation" / "config" / "harness_parameters_v1.json"
 RUN_ID = re.compile(r"^[a-z0-9][a-z0-9.+:-]{0,63}$")
@@ -97,6 +97,9 @@ class Plan:
     resolver: PointerResolver | None = None
     synthetic: bool = True
     recording_source: str | None = None
+    # A resumed confirmatory or live run: its date is judged against its own start, so execute_run refuses it with this
+    # exit code (`created_at_not_today`) unless the output holds this run's checkpoint (whose run digest covers created_at).
+    start_check: int | None = None
     extra: dict = field(default_factory=dict)
 
 
@@ -342,20 +345,23 @@ def _file_sha256(path: Path) -> str | None:
 
 
 def plan_run(spec: Mapping[str, Any], *, repo_root: Path = REPO_ROOT, environ: Mapping[str, str] = os.environ,
-             out_dir: Path | None = None, access_log: Path | None = None, on_read: Callable[[str, str], None] | None = None) -> Plan:
+             out_dir: Path | None = None, access_log: Path | None = None, on_read: Callable[[str, str], None] | None = None,
+             resume: bool = False) -> Plan:
     """The run's plan, or RunRefused. `on_read(kind, sha256)` is told of each research-plane input as soon as it is read
     (the items, the catalog, the recording and every governance record), before any later check can refuse the run, so
-    that the access log holds every read of a refused run too."""
+    that the access log holds every read of a refused run too. With `resume` a confirmatory or live run's date is not
+    compared with today here: the plan carries `start_check`, and `execute_run` requires this run's checkpoint."""
     def note(kind: str, sha256: str | None) -> None:
         if on_read is not None and sha256 is not None:
             on_read(kind, sha256)
 
     with governance.observe_reads(note if on_read is not None else None):
-        return _plan_run(spec, repo_root=Path(repo_root), environ=environ, out_dir=out_dir, access_log=access_log, note=note)
+        return _plan_run(spec, repo_root=Path(repo_root), environ=environ, out_dir=out_dir, access_log=access_log, note=note,
+                         resume=resume)
 
 
 def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str, str], out_dir: Path | None,
-              access_log: Path | None, note: Callable[[str, str | None], None]) -> Plan:
+              access_log: Path | None, note: Callable[[str, str | None], None], resume: bool = False) -> Plan:
     try:
         parameters_raw = load_harness_parameters()
     except (OSError, ValueError):
@@ -463,7 +469,7 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
         if missing:
             raise RunRefused(2, missing)
     # The recorded responder and its pins.
-    recording_source = None
+    recording_source = recording_started_on = None
     if spec["mode"] == "recorded":
         recorded = (spec.get("responder") or {}).get("recorded") or {}
         recording_path = _path(recorded["path"], repo_root) if "path" in recorded else None
@@ -480,15 +486,20 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
         if responder.header.get("run_pins_sha256") != recording_pins(package_sha, items_sha, catalog_sha, arms_sha, prompt_version):
             raise RunRefused(6, ["recording_pins_mismatch"])
         recording_source = responder.source
+        recording_started_on = responder.header.get("started_on")
     # 8. The confirmatory gate (AC-10-5).
     if spec["purpose"] == "confirmatory":
         reasons = governance.confirmatory_refusals(spec, analysis_plan_sha256=plans_sha, dataset_sha256=items_sha,
                                                    dataset_content_sha256=items_content_sha, items_states=states,
-                                                   package_raw=package_raw, repo_root=repo_root, recording_source=recording_source)
+                                                   package_raw=package_raw, repo_root=repo_root, recording_source=recording_source,
+                                                   recording_started_on=recording_started_on, resuming=resume)
+        # Plan 10.5(2): a confirmatory run uses the confirmation split only (`_requests`), so every live item carries one.
+        if any(item.get("split") not in ulqs.SPLITS for item in items if item.get("status") != "retired"):
+            reasons.append("items_split_missing")
         if reasons:
             if any(reason.startswith(("irb_", "osf_")) for reason in reasons):
                 code = 8
-            elif any(reason == "items_not_frozen" or reason.startswith("freeze_record_") for reason in reasons):
+            elif any(reason in ("items_not_frozen", "items_split_missing") or reason.startswith("freeze_record_") for reason in reasons):
                 code = 3
             else:
                 code = 2
@@ -497,7 +508,7 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
     if spec["mode"] == "live":
         from .providers import live_refusal_reasons
 
-        reasons = live_refusal_reasons(spec, package_raw, environ, table, out_dir=out_dir, repo_root=repo_root)
+        reasons = live_refusal_reasons(spec, package_raw, environ, table, out_dir=out_dir, repo_root=repo_root, resuming=resume)
         if reasons:
             raise RunRefused(9, reasons)
     # 10. The output directory.
@@ -531,8 +542,10 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
             key for key in ("replicates", "retries") if key not in spec)},
         "code": code_pins(repo_root),
     }
+    dated = spec["mode"] == "live" or (spec["purpose"] == "confirmatory" and spec["mode"] != "recorded")
+    start_check = (2 if spec["purpose"] == "confirmatory" else 9) if resume and dated else None
     return Plan(spec=dict(spec), package_raw=package_raw, items=items, arms=table, requests=tuple(requests), pins=pins,
-                resolver=resolver, synthetic=synthetic, recording_source=recording_source)
+                resolver=resolver, synthetic=synthetic, recording_source=recording_source, start_check=start_check)
 
 
 def _manifest_hook(manifests: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -554,7 +567,11 @@ def _requests(spec, items, table, selected, package_sha, prompt_version, replica
     sampled = set(subsample(items, replicates))
     extra = int((replicates.get("subsample") or {}).get("replicates", default))
     requests = []
-    ordered_items = sorted((item for item in items if item.get("status") != "retired"), key=lambda item: item["item_id"])
+    # Plan 10.5(2) "calibration and confirmation items split [Risk R-25]": a confirmatory run never sees the calibration
+    # items that tune its thresholds.
+    confirmatory = spec.get("purpose") == "confirmatory"
+    ordered_items = sorted((item for item in items if item.get("status") != "retired"
+                            and (not confirmatory or item.get("split") == "confirmation")), key=lambda item: item["item_id"])
     for arm in [arm for arm in ablation.ARM_IDS if arm in selected]:
         configuration = ablation.arm_configuration(table, arm)
         config_sha = canonical_sha256(configuration)
@@ -585,9 +602,11 @@ def requests_digest(plan: Plan) -> str:
 
 
 def run_digest(plan: Plan, responder_rule: str) -> str:
-    """What a checkpoint belongs to: the run id, mode, purpose, responder rule, every pin and the planned keys and seeds."""
+    """What a checkpoint belongs to: the run id, mode, purpose, `created_at`, responder rule, every pin and the planned
+    keys and seeds (a resume therefore needs the run date of the run's start)."""
     return canonical_sha256({"run_id": plan.spec["run_id"], "mode": plan.spec["mode"], "purpose": plan.spec["purpose"],
-                             "responder_rule": responder_rule, "pins": plan.pins, "requests": requests_digest(plan)})
+                             "created_at": plan.spec.get("created_at"), "responder_rule": responder_rule, "pins": plan.pins,
+                             "requests": requests_digest(plan)})
 
 
 def _read_checkpoint(path: Path, *, resume: bool) -> dict[str, dict]:
@@ -650,6 +669,10 @@ def _prompt_envelope(plan: Plan, request: Request) -> bytes:
 
 def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = False, commit: str | None = None) -> dict:
     out_dir = Path(out_dir)
+    if plan.start_check is not None and (not resume or not _read_events(out_dir / RUN_EVENTS)):
+        # A resumed confirmatory or live run was not dated against today: only this run's own checkpoint (checked
+        # against the run digest, which covers created_at, below) proves it started on its created_at date.
+        raise RunRefused(plan.start_check, ["created_at_not_today"])
     out_dir.mkdir(parents=True, exist_ok=True)
     responses_path = out_dir / RESPONSES
     responder_rule = getattr(responder, "rule", "unknown")
