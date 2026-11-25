@@ -51,17 +51,34 @@ executed and no Table XVII row or HR-1..MR-3 outcome is asserted (plan Phase 10 
 
 - H8 (pinned models, D-07): the run record's `models` pin is null and live runs are refused.
 - H10 (IRB and OSF, D-08): confirmatory runs are refused without valid records; the pre-registration is a draft.
-- H12 (the research data plane, D-14): every run over non-synthetic items or catalog is refused (`hold_h12_data_plane`).
+- H12 (the research data plane, D-14): every run over non-synthetic items or catalog is refused (`hold_h12_data_plane`)
+  while the package the spec pins is not a committed package that decides D-14. Owner decisions are read only from a
+  committed package (an entry of `docs/evaluation/phase7/package_versions.json` that is a `vN.json` of
+  `apps/api/app/config_package`); any other package, a hand-made copy with a matching sidecar included, reads every
+  decision `uncommitted` and releases no hold, and the run record pins `committed`.
 - Harness SLIs (plan I): completion rate, provider failures by reason, retries and cost units per arm, in provider usage
   units, not USD. There is no production SLO.
 
-## Re-pinning v7
+## Re-pinning the pinned package
 
-The synthetic spec pins `apps/api/app/config_package/v7.json` by path and sha256. The shipped package is v8 (Phase 8);
-v7 stays readable for one release (DI-317), and every later package keeps v7's boundary block and the states of D-07,
-D-08, D-12 and D-14 (`test_plan_e_every_later_package_keeps_the_pinned_package_s_boundary_and_open_decisions`). When v7
-is retired, the change that
-removes it re-pins the synthetic spec to the current package and rewrites the synthetic run record and the pinned
-configuration record with `--write`.
+The harness pins `apps/api/app/config_package/v7.json` by path and sha256 and names it in one place:
+`planes.PINNED_PACKAGE` and `planes.PINNED_PACKAGE_VERSION` (`evaluation/qcai_eval/planes.py`). The synthetic spec
+generator (`synthetic.PACKAGE_PATH`), the pinned configuration record (`check_research_harness.PACKAGE`) and the
+research-plane path rule's default boundary (`planes.boundary_policy`) read them; no other harness module or script names
+a package file. Hold H12, the confirmatory gate's D-14 and the live checks read the package a spec pins (when committed),
+and a non-synthetic run's output is checked against that package's boundary. The shipped package is v8 (Phase 8); v7
+stays readable for one release (DI-317), and every later package keeps v7's boundary block
+(`test_plan_e_every_later_package_keeps_the_pinned_package_s_boundary_and_open_decisions`). When v7 is retired (DI-146),
+the change that removes it:
+
+1. sets `planes.PINNED_PACKAGE` and `planes.PINNED_PACKAGE_VERSION` to the current package;
+2. re-pins the `package` block of `synthetic_run_spec_v1.json` (path, sha256 and package_version of that package);
+3. rewrites the synthetic run record (`run_evaluation.py --write`) and the pinned configuration record
+   (`check_research_harness.py --write`).
+
+The tests read the two constants, so they follow the change.
+
+Implemented designs: E1 only (every live item through the seven arms, and the registered E1 family in the record's
+`registered_tests`). A spec naming E2, E3 or E4 is refused (`experiment_not_implemented`, exit 2; DI-144).
 
 Not executed: E1, E2, E3 and E4 (DI-138).

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from .canonical import canonical_sha256, dumps_line, dumps_record, lf_sha256, write_lf
+from .planes import PINNED_PACKAGE, PINNED_PACKAGE_VERSION
 from .pointers import content_sha256
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -25,7 +26,7 @@ ITEMS_FIXTURE = FIXTURES / "synthetic_ulqs_v1.jsonl"
 CATALOG_FIXTURE = FIXTURES / "synthetic_evidence_catalog_v1.jsonl"
 RECORDED_FIXTURE = FIXTURES / "recorded_responses_synthetic_v1.jsonl"
 CONTAMINATION_FIXTURE = FIXTURES / "contamination_synthetic_v1.json"
-PACKAGE_PATH = "apps/api/app/config_package/v7.json"
+PACKAGE_PATH = PINNED_PACKAGE  # planes.PINNED_PACKAGE, the one place the pinned package is named
 ARMS_PATH = "evaluation/config/arms_v1.json"
 PLANS_PATH = "evaluation/config/analysis_plans_v1.json"
 # An invented verifier-model id for the agent re-check in tests; the committed freeze rules pin no model (DI-142).
@@ -251,9 +252,11 @@ def research_use_record(path: Path, **overrides: Any) -> dict[str, str]:
 
 
 def decided_package(directory: Path, **changes: Any) -> dict[str, str]:
-    """A copy of the v7 package (with its sha256 sidecar) in `directory` whose owner decisions D-07, D-08, D-12 and D-14 read
-    `decided` and whose semantic backend is on: the state a live or non-synthetic run needs, which no committed package
-    has. For tests only; returns the spec's `package` block."""
+    """A copy of the pinned package (with its sha256 sidecar) in `directory` whose owner decisions D-07, D-08, D-12 and D-14
+    read `decided` and whose semantic backend is on: the state a live or non-synthetic run needs, which no committed
+    package has. The runner judges decisions only from a committed package (`governance.committed_package_sha256s`), so a
+    test that needs this copy judged as decided also replaces that function (`commit_for_test`). For tests only; returns
+    the spec's `package` block."""
     import json
 
     raw = json.loads((REPO_ROOT / PACKAGE_PATH).read_text(encoding="utf-8"))
@@ -266,6 +269,15 @@ def decided_package(directory: Path, **changes: Any) -> dict[str, str]:
     sha = canonical_sha256(raw)
     write_lf(path.with_name(path.name + ".sha256"), sha + "\n")
     return {"path": str(path), "sha256": sha, "package_version": raw.get("package_version")}
+
+
+def commit_for_test(monkeypatch: Any, package: Mapping[str, Any]) -> None:
+    """Make the runner judge `package` (a `decided_package` block) as a committed package, through pytest's `monkeypatch`.
+    The only way to do so: no script or CLI path reaches it."""
+    from . import governance
+
+    committed = governance.committed_package_sha256s
+    monkeypatch.setattr(governance, "committed_package_sha256s", lambda: committed() | {package["sha256"]})
 
 
 def pass_scan(path: Path, *, dataset_content_sha256: str, **overrides: Any) -> dict[str, str]:
@@ -306,7 +318,7 @@ def spec_dict(*, items_path: Path | str, catalog_path: Path | str | None, run_id
     spec: dict[str, Any] = {
         "run_spec": "ulqs-run-spec-v1", "run_id": run_id, "mode": mode, "purpose": purpose, "experiment": experiment,
         "created_at": CREATED,
-        "package": {"path": PACKAGE_PATH, "sha256": _json_sha(absolute(PACKAGE_PATH)), "package_version": "7.0.0"},
+        "package": {"path": PACKAGE_PATH, "sha256": _json_sha(absolute(PACKAGE_PATH)), "package_version": PINNED_PACKAGE_VERSION},
         "items": {"path": Path(items_path).as_posix(), "sha256": dataset_sha256(items), "count": len(items), "required_state": "any"},
         "evidence_catalog": None if catalog_path is None else {
             "path": Path(catalog_path).as_posix(), "sha256": EvidenceCatalog.load(absolute(catalog_path)).sha256},

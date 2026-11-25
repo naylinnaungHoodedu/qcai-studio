@@ -166,6 +166,9 @@ def live_refusal_reasons(spec: Mapping[str, Any], package_raw: Mapping[str, Any]
                          today: Any = None) -> list[str]:
     """Every condition a live run lacks, in order (spec 4.9). An empty list is never reached in this repository.
 
+    `package_raw` is the package as the runner judges it (`governance.judged_package`): a package outside the committed
+    history reads every owner decision `uncommitted`, so D-07, D-08, D-12 and D-14 are open for it.
+
     Plan H's four conditions are records, each resolved by path and sha256 (`governance.resolve_record`) and read under its
     own format: (a) `licence-ruling-v1`, (b) `provider-terms-v1`, (c) `irb-approval-v1` and (d)
     `research-use-confirmation-v1`. None may sit on a public path. They are judged in the run window the runner supplies

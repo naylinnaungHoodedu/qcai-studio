@@ -124,7 +124,8 @@ def test_h4b_carries_the_eqc_reliability_condition_and_the_secondary_analyses_ar
                                                           "computed_by": ["icc_2k", "cronbach_alpha"]}
     assert set(raw["secondary_analyses"]) == {"mixed_effects_logistic", "cumulative_link_mixed_model", "cliffs_delta",
                                               "ordinal_sensitivity_eqc", "icc_2k", "cronbach_alpha", "prediction_powered_inference",
-                                              "error_rate_among_answers", "agent_verifier_accuracy_with_and_without_changed_items"}
+                                              "error_rate_among_answers", "agent_verifier_accuracy_with_and_without_changed_items",
+                                              "cumulative_link_trust_by_arm", "effective_sample_size"}
     assert set(analysis_plans.SECONDARY_ANALYSES) == set(raw["secondary_analyses"])
     assert raw["secondary_analyses"]["mixed_effects_logistic"]["for"] == ["H1a", "H1b"]
     # VBT RevB Table I (H1a): "the error rate among answers is a secondary endpoint"; Sec. VIII-B: the agent verifier's
@@ -163,3 +164,34 @@ def test_the_preregistration_is_generated_as_a_draft_with_every_test_status():
     assert "| H2b | DR > 1 | - | `cluster_bootstrap_lower_bound (resamples 10000)` | one | 1 | V-4 |" in text
     assert "H4b is confirmatory only if ICC(2,k) >= 0.50 and Cronbach's alpha >= 0.70" in text
     assert "| `cliffs_delta` | Likert summaries | medians and Cliff's delta | not implemented (DI-138) |" in text
+
+
+def test_every_table_xvii_row_phase_10_tests_is_registered_and_each_family_states_its_data():
+    # Plan 9.2: "Phase 10 tests research criteria V-2, V-4, HR-1..MR-3"; plan 15.1 gives V-3 the Phase "6,10". Each of these
+    # rows is a hypothesis criterion or a criteria_only entry, and no other row is.
+    raw = plans()
+    covered = {criterion for family in raw["families"].values() for hypothesis in family["hypotheses"]
+               for criterion in hypothesis["criteria"]}
+    covered |= {entry.split(" ", 1)[0] for family in raw["families"].values() for entry in family.get("criteria_only", [])}
+    assert covered == analysis_plans.PHASE10_CRITERIA == {"V-2", "V-3", "V-4", "HR-1", "HR-2", "HR-3", "LQ-1", "LQ-2", "LQ-3",
+                                                           "UE-1", "UE-2", "UE-3", "MR-1", "MR-2", "MR-3"}
+    # V-4 is "DR and neff reported with 95% CIs"; UE-2's test is "a cumulative-link model of trust by arm adjusted for
+    # correctness": both registered, as not implemented.
+    assert raw["secondary_analyses"]["effective_sample_size"]["for"] == ["H2b", "V-4"]
+    assert raw["secondary_analyses"]["cumulative_link_trust_by_arm"]["for"] == ["H2c", "UE-2"]
+    # E2's verification set (paper Sec. VIII-B) and the seeded replay streams of E4, the S7 designs of E3.
+    assert "seeded-fault set" in raw["families"]["E2"]["data"] and "count per type" in raw["families"]["E2"]["data"]
+    assert "1,000 seeded replay streams" in raw["families"]["E4"]["data"]
+    assert "25 S7" in raw["families"]["E3"]["data"] and "2 designs" in raw["families"]["E3"]["data"]
+    for family in ("E2", "E3", "E4"):
+        assert "DI-144" in raw["families"][family]["data"], family
+    for edit, match in ((lambda r: r["families"]["E2"]["criteria_only"].pop(2), r"missing \['UE-1'\]"),
+                        (lambda r: r["families"]["E2"]["criteria_only"].remove(
+                            next(e for e in r["families"]["E2"]["criteria_only"] if e.startswith("V-3"))), r"missing \['V-3'\]"),
+                        (lambda r: r["families"]["E1"]["criteria_only"].append("F-1 (ledger audit)"), r"extra \['F-1'\]"),
+                        (lambda r: r["families"]["E2"]["criteria_only"].append("XX-1 (none)"), "does not start with a Table XVII row"),
+                        (lambda r: r["families"]["E4"].pop("data"), "E4: states its data")):
+        broken = copy.deepcopy(raw)
+        edit(broken)
+        with pytest.raises(analysis_plans.PlanError, match=match):
+            analysis_plans.validate_plans(broken)

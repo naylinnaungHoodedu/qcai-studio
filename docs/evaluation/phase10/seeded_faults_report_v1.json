@@ -7,6 +7,31 @@
  "fixture": "seeded-faults-v1",
  "fixture_sha256": "1b7e3ecfb6dc5578bc819af8b3183c4d9472fc65932fb11f511127a5497e7df1",
  "format_version": 1,
+ "harness_metrics": {
+  "detects": [
+   "B1"
+  ],
+  "expected": [
+   "sf-B1-01",
+   "sf-B1-02",
+   "sf-B1-03"
+  ],
+  "flagged": [
+   "sf-B1-01",
+   "sf-B1-02",
+   "sf-B1-03"
+  ],
+  "known_answers_met": true,
+  "label_based": [
+   "A",
+   "B2",
+   "C",
+   "D",
+   "E"
+  ],
+  "label_based_note": "judged from claim labels (a rater's or a verifier's); no verifier runs over this fixture in the harness (spec conflict 38; DI-145)",
+  "metric": "citation_existence"
+ },
  "per_type": {
   "A": {
    "detected": 3,

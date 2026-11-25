@@ -424,3 +424,42 @@ def test_the_record_s_code_pins_cover_only_the_harness_and_ignore_crlf_checkouts
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes((REPO_ROOT / name).read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
     assert runner.code_pins(tmp_path) == pins
+
+
+def test_an_e1_record_computes_the_registered_e1_family_and_other_records_do_not(tmp_path):
+    # The analysis plan's E1 family: H1a exact McNemar VLOOP vs GATE, H1b VLOOP vs GATE+SV (item-level error, eq. 12), H1c
+    # the one-sided paired bootstrap of the item answer rate VLOOP - GATE against the margin -0.05 (eq. 17), then Holm over
+    # the three. A confirmatory E1 spec cannot run here (its gate), so the planned harness-check is relabelled E1.
+    from evaluation.qcai_eval import statistics
+
+    spec, _ = small_spec(tmp_path)
+    plan = runner.plan_run(spec)
+    record = runner.execute_run(plan, StubResponder(), tmp_path / "check")
+    assert record["registered_tests"] is None
+    e1 = dataclasses.replace(plan, spec={**plan.spec, "experiment": "E1"})
+    record = runner.execute_run(e1, StubResponder(), tmp_path / "e1")
+    registered = record["registered_tests"]
+    responses = read_jsonl(tmp_path / "e1" / "responses.jsonl")
+    assert registered["family"] == "E1" and set(registered["hypotheses"]) == {"H1a", "H1b", "H1c"}
+
+    def errors(arm):
+        return runner._paired_errors(e1, responses, arm)
+
+    for name, (left, right) in (("H1a", ("VLOOP", "GATE")), ("H1b", ("VLOOP", "GATE+SV"))):
+        a, b = errors(left), errors(right)
+        keys = sorted(set(a) & set(b), key=lambda key: (key[0], key[1] or ""))
+        expected = statistics.mcnemar_exact([bool(a[key]) for key in keys], [bool(b[key]) for key in keys])
+        assert registered["hypotheses"][name] == {"endpoint": "item-level error (eq. 12)", "comparison": [left, right],
+                                                  "test": "mcnemar_exact", **expected}, name
+    answered = {arm: {} for arm in ("VLOOP", "GATE")}
+    for request, response in zip(e1.requests, responses):
+        if request.arm in answered and request.replicate == 1 and request.gold == "answer" and response["outcome"] != "provider_failure":
+            answered[request.arm].setdefault(request.item_id, []).append(int(response["outcome"] == "answered"))
+    items = sorted(set(answered["VLOOP"]) & set(answered["GATE"]))
+    rate = lambda arm, item: sum(answered[arm][item]) / len(answered[arm][item])  # noqa: E731
+    h1c = statistics.paired_bootstrap_one_sided([rate("VLOOP", item) for item in items], [rate("GATE", item) for item in items],
+                                                resamples=1000, seed=hashed_hex(spec["run_id"], "registered", "H1c"), margin="-0.05")
+    assert registered["hypotheses"]["H1c"] == {"endpoint": "answer rate (eq. 17)", "comparison": ["VLOOP", "GATE"],
+                                              "test": "paired_bootstrap_one_sided", **h1c}
+    assert registered["holm"] == statistics.holm({name: value["p_value"] for name, value in registered["hypotheses"].items()})
+    assert "GATE-vs-NR" in record["comparisons"]["pairs"]  # the exploratory comparisons stay what they were

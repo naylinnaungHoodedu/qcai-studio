@@ -58,6 +58,7 @@
   },
   "E2": {
    "rq": "RQ2",
+   "data": "the verification set: every human-labelled claim from E1 plus the seeded-fault set (controlled Type A-E insertions into correct E1 responses, the count per type reported with the results and the seeded faults reported separately; the insertion tool is not implemented, DI-145); a blind 2oo3 three-family verifier panel without the generator (not implemented in the harness, DI-144); Group B novice sessions for UE-1 to UE-3",
    "hypotheses": [
     {
      "id": "H2a",
@@ -99,10 +100,17 @@
       "UE-2"
      ]
     }
+   ],
+   "criteria_only": [
+    "V-3 (<=10% of responses escalated to V3; the X1-X6 queue counter of the deployed pipeline, not computed by the harness; DI-138)",
+    "V-4 n_eff (reported with DR and their 95% CIs; effective_sample_size, not implemented; DI-138)",
+    "UE-1 (SUS >= 70 over Group B sessions after IRB; not computed by the harness; DI-138)",
+    "UE-3 (>= 90% of Group B sessions pass attention checks; not computed by the harness; DI-138)"
    ]
   },
   "E3": {
    "rq": "RQ3",
+   "data": "25 S7 (stratum G) items x 3 levels x 2 designs (two-pass and single-pass generation); neither design is implemented in the harness (DI-144)",
    "hypotheses": [
     {
      "id": "H3a",
@@ -133,6 +141,7 @@
   },
   "E4": {
    "rq": "RQ4",
+   "data": "1,000 seeded replay streams (plan 6.5 Table XVII; 15.2 MR-1) and the E4 logs; the replay streams are not implemented in the harness (DI-144)",
    "hypotheses": [
     {
      "id": "H4a",
@@ -256,6 +265,22 @@
    "analysis": "the AI-agent verifier's E2 accuracy reported with and without the ULQS items changed after one of its flags (the freeze record's items_changed_after_flag; VBT RevB Sec. VIII-B, Benchmark verification)",
    "for": [
     "E2"
+   ],
+   "status": "not implemented (DI-138)"
+  },
+  "cumulative_link_trust_by_arm": {
+   "analysis": "a cumulative-link model of novice trust by arm adjusted for correctness (Table XVII UE-2; File S1)",
+   "for": [
+    "H2c",
+    "UE-2"
+   ],
+   "status": "not implemented (DI-138)"
+  },
+  "effective_sample_size": {
+   "analysis": "n_eff reported with DR, each with its 95% CI (Table XVII V-4)",
+   "for": [
+    "H2b",
+    "V-4"
    ],
    "status": "not implemented (DI-138)"
   }

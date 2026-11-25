@@ -42,11 +42,14 @@ DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-143). Not execu
    p-value, with its null as the plans state it (H2b: DR <= 1). The equivalence part of H4b is confirmatory only if
    ICC(2,k) >= 0.50 and Cronbach's alpha >= 0.70 across the EQC's six scales, and is otherwise reported as inconclusive.
    Every hypothesis test the analysis plans register is implemented in `evaluation/qcai_eval/statistics.py` with
-   known-answer tests and has run on no research data; the nine secondary analyses (the claim-level mixed-effects
+   known-answer tests and has run on no research data; the eleven secondary analyses (the claim-level mixed-effects
    logistic regression, cumulative-link mixed models, Cliff's delta, the ordinal sensitivity model for EQC, ICC(2,k),
-   Cronbach's alpha, prediction-powered inference, H1a's error rate among answers, and the agent verifier's E2 accuracy
-   with and without the items changed after its flags; `secondary_analyses` in the analysis plans) are registered and
-   not implemented (DI-138).
+   Cronbach's alpha, prediction-powered inference, H1a's error rate among answers, the agent verifier's E2 accuracy
+   with and without the items changed after its flags, UE-2's cumulative-link model of trust by arm and V-4's n_eff;
+   `secondary_analyses` in the analysis plans) are registered and not implemented (DI-138). Every Table XVII row Phase 10
+   tests is registered as a hypothesis criterion or a `criteria_only` entry. The runner computes the registered E1
+   family (H1a, H1b, H1c with Holm) in an E1 run's record; E2, E3 and E4 have no design in the harness and are refused
+   (DI-144).
 7. **Scan.** Before and after a run, `scripts/scan_research_logs.py` scans every research-plane log with the salted
    fingerprints and must report zero matches. The pre-run scan the run spec pins must use the research fingerprint sets,
    the ULQS set built from the run's items, cover the repository and at least one logs or records target (the harness

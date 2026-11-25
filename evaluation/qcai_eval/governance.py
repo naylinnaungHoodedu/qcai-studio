@@ -16,6 +16,12 @@ recording header cannot let a run through that a fresh start today would refuse;
 be a future date (`created_at_in_future`). The checkpoint, the recording header and the records' own dates are the
 operator's: these are consistency checks, not proof or tamper evidence (an externally timestamped start is DI-143). A run
 that is not confirmatory skips the confirmatory gate and is labelled exploratory everywhere.
+
+Owner decisions (hold H12, the confirmatory gate's D-14, the live checks of D-07, D-08, D-12 and D-14) are judged only
+from a committed package: one whose canonical sha256 is an entry of the append-only package history
+(`docs/evaluation/phase7/package_versions.json`) and equals the canonical sha256 of a `vN.json` file in the checkout's
+package directory (`committed_package_sha256s`). Any other package a spec pins, such as a hand-made copy with a matching
+sidecar, is judged with every decision `uncommitted`, never `decided` (`judged_package`).
 """
 
 from __future__ import annotations
@@ -30,6 +36,12 @@ import re
 from typing import Any, Callable, Iterator, Mapping
 
 from .canonical import canonical_sha256, lf_sha256
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PACKAGE_DIRECTORY = REPO_ROOT / "apps" / "api" / "app" / "config_package"
+PACKAGE_HISTORY = REPO_ROOT / "docs" / "evaluation" / "phase7" / "package_versions.json"
+PACKAGE_FILE = re.compile(r"^v[0-9]+\.json$")
+UNCOMMITTED = "uncommitted"
 
 PROVISIONAL_DEFAULTS = ("PD-69",)
 PROTOCOL = re.compile(r"^[A-Za-z0-9-]{3,40}$")
@@ -49,6 +61,39 @@ NON_RESEARCH_SET_PREFIXES = ("synthetic-", "self-test-")
 # The access log's observer: while a run is planned (`observe_reads`), every record `resolve_record` reads is reported as
 # (access-log artifact kind, sha256 of the bytes read), so a refused run still logs the governance records it read.
 _READ_OBSERVER: contextvars.ContextVar[Callable[[str, str], None] | None] = contextvars.ContextVar("governance_reads", default=None)
+
+
+def committed_package_sha256s() -> frozenset[str]:
+    """The canonical sha256 of every committed package: an entry of the package history that is also the canonical sha256
+    of a `vN.json` file in the package directory. Empty when either cannot be read (every decision then reads open)."""
+    try:
+        history = json.loads(PACKAGE_HISTORY.read_text(encoding="utf-8"))
+        recorded = {entry["sha256"] for entry in history["entries"] if isinstance(entry.get("sha256"), str)}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return frozenset()
+    found = set()
+    for path in sorted(PACKAGE_DIRECTORY.glob("v*.json")):
+        if not PACKAGE_FILE.match(path.name):
+            continue
+        try:
+            sha = canonical_sha256(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            continue
+        if sha in recorded:
+            found.add(sha)
+    return frozenset(found)
+
+
+def judged_package(package_raw: Mapping[str, Any], committed: bool) -> Mapping[str, Any]:
+    """The package as its owner decisions are judged: itself when committed, else a copy whose every decision's state is
+    `uncommitted` (so `decided` is never read from a package outside the committed history)."""
+    if committed:
+        return package_raw
+    decisions = {name: {**(entry if isinstance(entry, Mapping) else {}), "state": UNCOMMITTED}
+                 for name, entry in (package_raw.get("owner_decisions") or {}).items()}
+    for name in ("D-07", "D-08", "D-12", "D-14"):
+        decisions.setdefault(name, {"state": UNCOMMITTED})
+    return {**package_raw, "owner_decisions": decisions}
 
 
 @contextmanager

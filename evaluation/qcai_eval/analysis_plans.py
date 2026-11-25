@@ -7,7 +7,9 @@ registry is honest: an `implemented` entry names a function of `statistics.py` l
 (when its test compares arms, raters or conditions), its test, its sidedness (the test's: `SIDEDNESS`) and, for a
 one-sided or equivalence test, its margin, the null value; where VBT RevB Sec. X-A states the null, the margin must be
 that value (`PAPER_NULLS`). H4b carries the paper's EQC reliability condition (`H4B_CONFIRMATORY_IF`), and the secondary
-analyses the paper names are registered (`SECONDARY_ANALYSES`), implemented or not. Nothing is filed with OSF while D-08
+analyses the paper and Table XVII name are registered (`SECONDARY_ANALYSES`), implemented or not. Every Table XVII row
+Phase 10 tests (`PHASE10_CRITERIA`) is registered once a family's hypothesis criterion or `criteria_only` entry, and each
+family states its data (`data`). Nothing is filed with OSF while D-08
 is open (DI-131), so the plans' status must start with `draft` and may not use the word `registered`.
 """
 
@@ -27,6 +29,11 @@ FORBIDDEN_KEYS = frozenset({"result", "results", "p_value", "estimate", "met", "
 FAMILIES = ("E1", "E2", "E3", "E4")
 TABLE_XVII = frozenset({"F-1", "F-2", "F-3", "V-1", "V-2", "V-3", "V-4", "HR-1", "HR-2", "HR-3", "LQ-1", "LQ-2", "LQ-3",
                         "UE-1", "UE-2", "UE-3", "MR-1", "MR-2", "MR-3"})
+# The Table XVII rows Phase 10 tests: plan 9.2 "Phase 10 tests research criteria V-2, V-4, HR-1..MR-3" (HR-1 to MR-3 in
+# Table XVII's order), and V-3, whose Phase column in plan 15.1 reads "6,10". Every one is a hypothesis criterion or a
+# `criteria_only` entry of some family (a criteria_only entry starts with its row id).
+PHASE10_CRITERIA = frozenset({"V-2", "V-3", "V-4", "HR-1", "HR-2", "HR-3", "LQ-1", "LQ-2", "LQ-3", "UE-1", "UE-2", "UE-3",
+                              "MR-1", "MR-2", "MR-3"})
 
 
 # The sidedness of each registered test's p-value (VBT RevB Sec. X-A: "Each hypothesis enters Holm through one p-value").
@@ -45,10 +52,12 @@ H4B_CONFIRMATORY_IF = {"icc_2k_min": "0.50", "cronbach_alpha_min": "0.70", "scal
                        "otherwise": "inconclusive", "computed_by": ["icc_2k", "cronbach_alpha"]}
 # The secondary and ancillary analyses VBT RevB names: Sec. X-A (and E1's labelling); Table I's H1a secondary endpoint ("the
 # error rate among answers is a secondary endpoint"); and Sec. VIII-B's agent-verifier report ("that verifier's E2
-# accuracy is reported with and without them", the items changed after one of its flags).
+# accuracy is reported with and without them", the items changed after one of its flags); and Table XVII's UE-2 ("a
+# cumulative-link model of trust by arm adjusted for correctness") and V-4 ("DR and neff reported with 95% CIs").
 SECONDARY_ANALYSES = ("mixed_effects_logistic", "cumulative_link_mixed_model", "cliffs_delta", "ordinal_sensitivity_eqc",
                       "icc_2k", "cronbach_alpha", "prediction_powered_inference", "error_rate_among_answers",
-                      "agent_verifier_accuracy_with_and_without_changed_items")
+                      "agent_verifier_accuracy_with_and_without_changed_items", "cumulative_link_trust_by_arm",
+                      "effective_sample_size")
 
 
 class PlanError(ValueError):
@@ -92,7 +101,15 @@ def validate_plans(raw: Mapping[str, Any]) -> None:
             raise PlanError(f"secondary_analyses.{name}: needs an analysis and the hypotheses or criteria it serves")
         _check_status(f"secondary_analyses.{name}", name, entry.get("status"))
     seen: set[str] = set()
+    covered: set[str] = set()
     for family, body in families.items():
+        if not isinstance(body.get("data"), str) or not body["data"]:
+            raise PlanError(f"{family}: states its data")
+        for entry in body.get("criteria_only", []):
+            criterion = entry.split(" ", 1)[0] if isinstance(entry, str) else None
+            if criterion not in TABLE_XVII:
+                raise PlanError(f"{family}: criteria_only entry {entry!r} does not start with a Table XVII row")
+            covered.add(criterion)
         for hypothesis in body.get("hypotheses", []):
             identifier = hypothesis.get("id")
             if identifier in seen:
@@ -108,6 +125,10 @@ def validate_plans(raw: Mapping[str, Any]) -> None:
             for criterion in hypothesis.get("criteria", []):
                 if criterion not in TABLE_XVII:
                     raise PlanError(f"{family}.{identifier}: criterion {criterion} is not a Table XVII row")
+                covered.add(criterion)
+    if covered != PHASE10_CRITERIA:
+        missing, extra = sorted(PHASE10_CRITERIA - covered), sorted(covered - PHASE10_CRITERIA)
+        raise PlanError(f"criteria: every Table XVII row Phase 10 tests is registered and no other (missing {missing}, extra {extra})")
 
 
 def _check_status(where: str, name: str, status: Any) -> None:
@@ -216,5 +237,5 @@ def preregistration_markdown(raw: Mapping[str, Any]) -> str:
     lines += [f"| `{name}` | {', '.join(entry['for'])} | {entry['analysis']} | {entry['status']} |"
               for name, entry in raw["secondary_analyses"].items()]
     lines += ["", "Not executed: every hypothesis above awaits the frozen ULQS, the IRB letter, the OSF DOI and the research data",
-              "plane (DI-129..DI-143).", ""]
+              "plane (DI-129..DI-146).", ""]
     return "\n".join(lines)

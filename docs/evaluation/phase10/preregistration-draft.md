@@ -4,7 +4,7 @@
 `evaluation/config/analysis_plans_v1.json`; `--check` in CI proves this file is current. Nothing here is executed:
 no hypothesis has been tested and no HR-1 to MR-3 outcome is asserted (plan Phase 10 P; invariant 9).
 
-- Analysis plans: `analysis-plans-v1`, canonical sha256 `70ae5b4d8b8f745b63d150eed3a8e082b3cd777d5740d8a6734b97ce99d11d07`.
+- Analysis plans: `analysis-plans-v1`, canonical sha256 `4731b84ef26992a1de99db7e3977d39ed4641e459e7bcdd48682a48bfa1b6aed`.
 - Status: draft, not filed with OSF (DI-131).
 - Significance: alpha = 0.05, Holm correction within each family (plan 12.7: "E1-E4 are pre-registered
   hypothesis tests (alpha = 0.05, Holm per family), not software gates").
@@ -27,13 +27,19 @@ Labelling: GATE, GATE+SV and VLOOP fully labelled; other arms on a random 25% of
 
 ## E2 (RQ2)
 
+Data: the verification set: every human-labelled claim from E1 plus the seeded-fault set (controlled Type A-E insertions into correct E1 responses, the count per type reported with the results and the seeded faults reported separately; the insertion tool is not implemented, DI-145); a blind 2oo3 three-family verifier panel without the generator (not implemented in the harness, DI-144); Group B novice sessions for UE-1 to UE-3.
+
 | Hypothesis | Endpoint | Comparison | Test | Sided | Margin (null) | Table XVII criteria |
 |---|---|---|---|---|---|---|
 | H2a | panel vs best single verifier, F1 | 2oo3 heterogeneous panel vs best single verifier | `cluster_bootstrap_bca_one_sided (resamples 10000)` | one | 0 | V-2 |
 | H2b | DR > 1 | - | `cluster_bootstrap_lower_bound (resamples 10000)` | one | 1 | V-4 |
 | H2c | AUC separating erroneous from correct responses, panel minus novices (Table I) | panel vs novices | `paired_bootstrap_auc_one_sided` | one | 0 | UE-2 |
 
+Criteria reported without a family test: V-3 (<=10% of responses escalated to V3; the X1-X6 queue counter of the deployed pipeline, not computed by the harness; DI-138); V-4 n_eff (reported with DR and their 95% CIs; effective_sample_size, not implemented; DI-138); UE-1 (SUS >= 70 over Group B sessions after IRB; not computed by the harness; DI-138); UE-3 (>= 90% of Group B sessions pass attention checks; not computed by the harness; DI-138).
+
 ## E3 (RQ3)
+
+Data: 25 S7 (stratum G) items x 3 levels x 2 designs (two-pass and single-pass generation); neither design is implemented in the harness (DI-144).
 
 | Hypothesis | Endpoint | Comparison | Test | Sided | Margin (null) | Table XVII criteria |
 |---|---|---|---|---|---|---|
@@ -41,6 +47,8 @@ Labelling: GATE, GATE+SV and VLOOP fully labelled; other arms on a random 25% of
 | H3b | presentation features across levels (manipulation check) | beginner vs intermediate vs advanced | `friedman` | omnibus | - | - |
 
 ## E4 (RQ4)
+
+Data: 1,000 seeded replay streams (plan 6.5 Table XVII; 15.2 MR-1) and the E4 logs; the replay streams are not implemented in the harness (DI-144).
 
 | Hypothesis | Endpoint | Comparison | Test | Sided | Margin (null) | Table XVII criteria |
 |---|---|---|---|---|---|---|
@@ -80,6 +88,8 @@ Criteria reported without a family test: MR-2; MR-3; LQ-2.
 | `prediction_powered_inference` | E1 | prediction-powered inference for the arms labelled on a random 25% of items | not implemented (DI-138) |
 | `error_rate_among_answers` | H1a | the error rate among answers (abstentions excluded), H1a's secondary endpoint (VBT RevB Table I) | not implemented (DI-138) |
 | `agent_verifier_accuracy_with_and_without_changed_items` | E2 | the AI-agent verifier's E2 accuracy reported with and without the ULQS items changed after one of its flags (the freeze record's items_changed_after_flag; VBT RevB Sec. VIII-B, Benchmark verification) | not implemented (DI-138) |
+| `cumulative_link_trust_by_arm` | H2c, UE-2 | a cumulative-link model of novice trust by arm adjusted for correctness (Table XVII UE-2; File S1) | not implemented (DI-138) |
+| `effective_sample_size` | H2b, V-4 | n_eff reported with DR, each with its 95% CI (Table XVII V-4) | not implemented (DI-138) |
 
 Not executed: every hypothesis above awaits the frozen ULQS, the IRB letter, the OSF DOI and the research data
-plane (DI-129..DI-143).
+plane (DI-129..DI-146).

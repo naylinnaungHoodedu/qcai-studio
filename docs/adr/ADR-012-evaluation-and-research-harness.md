@@ -28,11 +28,14 @@ ratified under DI-140). The Phase 10 exit is not passed (DI-129).
    quarter of the live items second-rated (rounded up in each stratum), in exact arithmetic. A main-round rating of a unit
    its item does not own, or made under another rubric than the one the record names, is refused.
 5. The seven arms are data: GATE plus a declared ablation, with a parity check (AC-10-2).
-6. The runner pins the package by path and sha256 (the synthetic spec pins v7, which stays readable under DI-317 while v8
-   ships; v8 keeps v7's boundary block and open decisions), the items, the catalog, the arms and the analysis plan; seeds are
-   hashed. Stub and recorded runs repeat byte for byte. Live runs are refused here; hold H12 refuses every run over
-   non-synthetic data while D-14 is open; a confirmatory run needs a valid IRB record and OSF record (AC-10-5); E1-E4 runs
-   are confirmatory only. A confirmatory or live run is judged in its run window, never against its spec's
+6. The runner pins the package by path and sha256 (the synthetic spec pins v7, named once as `planes.PINNED_PACKAGE`,
+   which stays readable under DI-317 while v8 ships; v8 keeps v7's boundary block), the items, the catalog, the arms and
+   the analysis plan; seeds are hashed. Stub and recorded runs repeat byte for byte. Live runs are refused here; owner
+   decisions are read only from a committed package (an entry of the package history that is a `vN.json` of the package
+   directory), so hold H12 refuses every run over non-synthetic data while no committed package the spec pins decides
+   D-14, and a hand-made decided copy releases nothing; a confirmatory run needs a valid IRB record and OSF record
+   (AC-10-5); E1-E4 runs are confirmatory only, and the runner implements E1's design and its registered family alone
+   (E2-E4 refused, `experiment_not_implemented`; DI-144). A confirmatory or live run is judged in its run window, never against its spec's
    `created_at` (which may only not be a future date): `today`, the UTC day it is planned, and `start`, the earliest of
    today, the day its checkpoint's start event records (a resume after an outage, on any later day) and the day a live
    recording's header states (a confirmatory replay). The IRB must be approved by `start` and unexpired on `today`, and
@@ -52,7 +55,7 @@ ratified under DI-140). The Phase 10 exit is not passed (DI-129).
 ## Consequences
 
 - Every AC is provable in code on synthetic data, and no ULQS item, gold label or licensed text enters the repository or CI.
-- The real-data halves wait on the owner decisions and PI items (DI-129..DI-143); nothing here decides them.
+- The real-data halves wait on the owner decisions and PI items (DI-129..DI-146); nothing here decides them.
 - A code change to `evaluation/qcai_eval/*.py` or `scripts/run_evaluation.py` changes the committed synthetic run
   record's code pins, so CI's `run_evaluation.py --check` fails until the record is rewritten with `--write`: the record
   always names the code it ran. The pins read CRLF as LF and cover no other file, so a CRLF checkout or a change

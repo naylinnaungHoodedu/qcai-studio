@@ -3,6 +3,12 @@
 The fixture (`evaluation/fixtures/seeded_faults_v1.json`) is synthetic: invented sentences, no ULQS item and no licensed
 or course text. It holds clean controls and insertions of each EHMF finding type. `reference_detect` applies the
 `reference-detector-v1` rules, and `detection_report` compares any detector's output with each case's expected answer.
+
+The harness's own metrics meet the fixture where they can without labels (`harness_report`): the runner's citation
+existence metric (`citation.citation_existence` over the fixture's resolvable spans, as `runner.compute_metrics` computes
+it over a run's resolvable pointers) must flag exactly the B1 cases. Types A, B2, C, D and E are judged from claim labels
+(a rater's or a verifier's), which the harness only counts: no V1 or V2 verifier runs over this fixture here, and no tool
+inserts Type A-E errors into correct E1 responses (spec conflict 38; DI-145).
 """
 
 from __future__ import annotations
@@ -13,6 +19,7 @@ import re
 from typing import Any, Mapping
 
 from .canonical import canonical_sha256
+from .citation import citation_existence
 from .statistics import wilson_interval
 
 PROVISIONAL_DEFAULTS = ("PD-66",)  # Phase 10 spec 12.1; ratified under DI-140
@@ -22,6 +29,8 @@ DEFAULT_FIXTURE = REPO_ROOT / "evaluation" / "fixtures" / "seeded_faults_v1.json
 FINDING_TYPES = ("A", "B1", "B2", "C", "D", "E")
 DETECTOR = "reference-detector-v1"
 PRESENTATION = "presentation"
+# The finding types the harness's label-free metrics detect, and the metric for each (harness_report).
+HARNESS_METRIC_TYPES = {"B1": "citation_existence"}
 WORD = re.compile(r"[a-z0-9]+")
 NUMBER = re.compile(r"^[0-9]+$")
 NEGATIONS = frozenset({"no", "not", "never", "none", "nothing", "nor", "cannot", "without", "neither"})
@@ -133,8 +142,28 @@ def detection_report(fixture: Mapping[str, Any], detections: Mapping[str, Mappin
             "all_known_answers_met": all(exact) and not false_alarms}
 
 
+def harness_report(fixture: Mapping[str, Any]) -> dict[str, Any]:
+    """The harness's citation existence metric over each case: a case is flagged when its rate is below 1. Its known
+    answer: exactly the cases whose expected types include B1 are flagged."""
+    resolvable = set(fixture["spans"])
+    flagged = []
+    for case in fixture["cases"]:
+        claims = [{"cited_span_ids": list(claim.get("cited", []))} for claim in case.get("claims", [])]
+        existence = citation_existence(claims, resolvable)
+        if existence["total"] and existence["successes"] < existence["total"]:
+            flagged.append(case["case_id"])
+    expected = sorted(case["case_id"] for case in fixture["cases"] if "B1" in case["expect"]["types"])
+    return {"metric": HARNESS_METRIC_TYPES["B1"], "detects": sorted(HARNESS_METRIC_TYPES), "flagged": sorted(flagged),
+            "expected": expected, "known_answers_met": sorted(flagged) == expected,
+            "label_based": [finding for finding in FINDING_TYPES if finding not in HARNESS_METRIC_TYPES],
+            "label_based_note": "judged from claim labels (a rater's or a verifier's); no verifier runs over this fixture "
+                                "in the harness (spec conflict 38; DI-145)"}
+
+
 def reference_report(fixture: Mapping[str, Any] | None = None) -> dict[str, Any]:
     fixture = fixture if fixture is not None else load_fixture()
     detections = {case["case_id"]: reference_detect(case, spans=fixture["spans"], misconceptions=fixture["misconceptions"],
                                                     parameters=fixture["parameters"]) for case in fixture["cases"]}
-    return detection_report(fixture, detections)
+    report = detection_report(fixture, detections)
+    harness = harness_report(fixture)
+    return {**report, "harness_metrics": harness, "all_known_answers_met": report["all_known_answers_met"] and harness["known_answers_met"]}

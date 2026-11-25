@@ -2,7 +2,7 @@
  "analysis_plan": {
   "family": "E1",
   "path": "evaluation/config/analysis_plans_v1.json",
-  "sha256": "70ae5b4d8b8f745b63d150eed3a8e082b3cd777d5740d8a6734b97ce99d11d07"
+  "sha256": "4731b84ef26992a1de99db7e3977d39ed4641e459e7bcdd48682a48bfa1b6aed"
  },
  "arms": {
   "path": "evaluation/config/arms_v1.json",

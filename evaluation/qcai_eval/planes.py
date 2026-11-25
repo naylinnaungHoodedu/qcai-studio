@@ -25,7 +25,12 @@ from .canonical import OutputUnwritable
 PROVISIONAL_DEFAULTS = ("PD-74",)
 REPO_ROOT = Path(__file__).resolve().parents[2]
 API_ROOT = REPO_ROOT / "apps" / "api"
-V7_PATH = API_ROOT / "app" / "config_package" / "v7.json"
+# The one place the harness names the package it pins (spec conflict 17): the synthetic spec (`synthetic.PACKAGE_PATH`),
+# the pinned configuration record (`check_research_harness.PACKAGE`) and the path rule's default boundary all read it.
+# Re-pinning (when v7 is retired, DI-317 and DI-146) changes these two constants and rewrites the records with --write.
+PINNED_PACKAGE = "apps/api/app/config_package/v7.json"
+PINNED_PACKAGE_VERSION = "7.0.0"
+PINNED_PACKAGE_PATH = REPO_ROOT / PINNED_PACKAGE
 SYNTHETIC_LICENSE = "synthetic"
 
 
@@ -56,8 +61,9 @@ def _app_on_path() -> None:
             sys.path.insert(0, str(path))
 
 
-def boundary_policy(package_path: Path = V7_PATH):
-    """The boundary block of the package at an explicit path (never the application's default package path)."""
+def boundary_policy(package_path: Path = PINNED_PACKAGE_PATH):
+    """The boundary block of the package at an explicit path (never the application's default package path): the pinned
+    package by default, or the package a run spec pins (the runner passes it for a non-synthetic run's output)."""
     _app_on_path()
     from app.core.config_package import load_config_package
 

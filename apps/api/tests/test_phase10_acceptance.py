@@ -2,7 +2,7 @@
 
 Every input is synthetic and built in the test's own tmp_path; scripts run in-process through main(argv). AC-10-1, AC-10-4,
 AC-10-5 and AC-10-6 are proven on synthetic data and the live half of AC-10-3 with a scripted fake provider (spec R-e);
-their real-data halves are deferred (DI-129..DI-143). No test reads a private file, and none writes into the checkout.
+their real-data halves are deferred (DI-129..DI-146). No test reads a private file, and none writes into the checkout.
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ from evaluation.qcai_eval import (  # noqa: E402
     ablation, agreement, analysis_plans, contamination, governance, planes, providers, runner, seeded_faults, synthetic, ulqs,
 )
 from evaluation.qcai_eval.canonical import canonical_sha256, dumps_line, lf_sha256, read_jsonl, write_lf  # noqa: E402
+from evaluation.qcai_eval.citation import citation_existence  # noqa: E402
 from evaluation.qcai_eval.payload_log import EVIDENCE_KEYS, LOG_KEYS  # noqa: E402
 from evaluation.qcai_eval.pointers import EvidenceCatalog, PointerResolver, content_sha256, public_span_lookup, resolve_items  # noqa: E402
 
@@ -778,6 +779,7 @@ def test_ac_10_3_a_live_run_with_a_scripted_provider_matches_the_stub_run_s_keys
     # keys and seeds of the two plans, of their payload logs and of their records are then compared.
     live_spec, _package, out = _live_ready(tmp_path, monkeypatch)
     package = synthetic.decided_package(tmp_path)
+    synthetic.commit_for_test(monkeypatch, package)
     stub = stub_spec(tmp_path, package=package)
     live = {**stub, **{key: live_spec[key] for key in ("governance", "provider_terms", "licence_ruling", "research_use_confirmation")},
             "mode": "live", "responder": {"live": {"adapter": "fake-adapter", "providers": ["SYN-PROVIDER-1"]}}}
@@ -1169,6 +1171,28 @@ def test_ac_10_5_an_e1_to_e4_experiment_cannot_run_exploratory(tmp_path):
         assert run_main(["--spec", write_spec(tmp_path, spec), "--output-dir", tmp_path / experiment]) == 2
 
 
+def test_ac_10_5_e2_to_e4_have_no_design_in_the_harness_and_are_refused(tmp_path, capsys):
+    # Plan task 5 "E1-E4 per Section 15": the runner implements E1's design only (every live item through the seven arms
+    # and the registered E1 family). E2's 2oo3 panel with DR and n_eff, E3's 25 S7 items x 3 levels x 2 designs and E4's
+    # 1,000 seeded replay streams have none, so a spec naming one is refused before anything is read (DI-144).
+    assert runner.IMPLEMENTED_EXPERIMENTS == ("harness-check", "E1")
+    for experiment in ("E2", "E3", "E4"):
+        spec = stub_spec(tmp_path / experiment, purpose="confirmatory", experiment=experiment, family=experiment,
+                         run_id=f"synthetic-{experiment.lower()}-v1")
+        with pytest.raises(runner.RunRefused) as refused:
+            runner.plan_run(spec)
+        assert refused.value.code == 2 and refused.value.reasons == ["experiment_not_implemented"]
+        assert run_main(["--spec", write_spec(tmp_path, spec, f"{experiment}.json"), "--output-dir", tmp_path / f"out-{experiment}"]) == 2
+        assert "experiment_not_implemented" in capsys.readouterr().err and not (tmp_path / f"out-{experiment}").exists()
+    # E1 runs under its own family and over all seven arms.
+    e1 = stub_spec(tmp_path / "e1", purpose="confirmatory", experiment="E1", run_id="synthetic-e1-v1")
+    for change, reason in (({"analysis_plan": {**e1["analysis_plan"], "family": "E2"}}, "analysis_plan_family_mismatch"),
+                           ({"arms": {**e1["arms"], "selected": ["GATE", "GATE+SV", "VLOOP"]}}, "experiment_requires_seven_arms")):
+        with pytest.raises(runner.RunRefused) as refused:
+            runner.plan_run({**e1, **change})
+        assert refused.value.code == 2 and refused.value.reasons == [reason]
+
+
 # ===================================================================================================== AC-10-6
 
 
@@ -1285,11 +1309,86 @@ def _non_synthetic_set(tmp_path):
     return items, synthetic.write_jsonl(tmp_path / "items.jsonl", items)
 
 
-def test_plan_b_after_d14_a_non_synthetic_run_needs_the_access_log_and_a_research_pre_run_scan(tmp_path):
-    # D-14 decided only in a package copy (no committed package decides it): hold H12 then gives way to the pre-run scan,
-    # which must be a passing research scan bound to these items, never CI's synthetic report or an empty one.
+def test_plan_b_a_hand_made_decided_package_never_releases_hold_h12_or_the_d14_gate(tmp_path, monkeypatch, capsys):
+    # Owner decisions are judged only from a committed package (an entry of the package history that is a vN.json of the
+    # package directory). A copy of the pinned package whose D-14 reads decided, with a matching sidecar, is judged with
+    # every decision `uncommitted`: the non-synthetic run is refused by hold H12, through the CLI too, and a confirmatory
+    # run keeps the gate's `D-14 open`; a synthetic run over it records the package as not committed.
     items, items_path = _non_synthetic_set(tmp_path)
-    spec = synthetic.spec_dict(items_path=items_path, catalog_path=None, package=synthetic.decided_package(tmp_path))
+    package = synthetic.decided_package(tmp_path)
+    assert package["sha256"] not in governance.committed_package_sha256s()
+    pinned = json.loads(planes.PINNED_PACKAGE_PATH.read_text(encoding="utf-8"))
+    assert canonical_sha256(pinned) in governance.committed_package_sha256s()
+    spec = synthetic.spec_dict(items_path=items_path, catalog_path=None, package=package)
+    good = synthetic.pass_scan(tmp_path / "good.json", dataset_content_sha256=ulqs.dataset_content_sha256(items))
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**spec, "pre_run_scan": good}, out_dir=tmp_path / "private-run", access_log=tmp_path / "access.jsonl")
+    assert refused.value.code == 9 and refused.value.reasons == ["hold_h12_data_plane"]
+    assert run_main(["--spec", write_spec(tmp_path, {**spec, "pre_run_scan": good}), "--output-dir", tmp_path / "private-run",
+                     "--access-log", tmp_path / "access.jsonl", "--actor-role", "MLE"]) == 9
+    assert "hold_h12_data_plane" in capsys.readouterr().err and not (tmp_path / "private-run").exists()
+    confirmatory = stub_spec(tmp_path / "conf", purpose="confirmatory", experiment="E1", run_id="synthetic-forged-v1", package=package)
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(confirmatory)
+    assert "D-14 open" in refused.value.reasons
+    plan = runner.plan_run(stub_spec(tmp_path / "syn", package=package))
+    assert plan.pins["package"]["committed"] is False
+    assert plan.pins["package"]["owner_decisions"] == {name: "uncommitted" for name in ("D-07", "D-08", "D-12", "D-14")}
+    committed = runner.plan_run(stub_spec(tmp_path / "pinned"))
+    assert committed.pins["package"]["committed"] is True and committed.pins["package"]["owner_decisions"]["D-14"] == "open"
+    assert governance.judged_package(pinned, True) is pinned
+    judged = governance.judged_package({"owner_decisions": {"D-14": {"state": "decided"}}}, False)
+    assert {name: entry["state"] for name, entry in judged["owner_decisions"].items()} == {
+        name: "uncommitted" for name in ("D-07", "D-08", "D-12", "D-14")}
+    # A live run over the copy, every other live condition met, is refused on each decision the copy claims.
+    (tmp_path / "live").mkdir()
+    live_spec, _package, live_out = _live_ready(tmp_path / "live", monkeypatch)
+    live = {**stub_spec(tmp_path / "live", package=package),
+            **{key: live_spec[key] for key in ("governance", "provider_terms", "licence_ruling", "research_use_confirmation")},
+            "mode": "live", "responder": {"live": {"adapter": "fake-adapter", "providers": ["SYN-PROVIDER-1"]}}}
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(live, out_dir=live_out)
+    assert refused.value.code == 9 and refused.value.reasons == ["D-14 open", "D-07 open", "D-08 open", "D-12 open"]
+    synthetic.commit_for_test(monkeypatch, package)
+    assert runner.plan_run(live, out_dir=live_out).pins["package"]["owner_decisions"]["D-14"] == "decided"
+
+
+def test_plan_b_only_a_package_in_the_history_and_the_package_directory_is_committed(tmp_path, monkeypatch):
+    # The committed set is the package history's entries that are also the canonical sha256 of a vN.json in the package
+    # directory: an entry without its file, a file without its entry, or an unreadable history commits nothing.
+    real = governance.committed_package_sha256s()
+    assert real and all(len(sha) == 64 for sha in real)
+    directory = tmp_path / "config_package"
+    directory.mkdir()
+    history = json.loads(governance.PACKAGE_HISTORY.read_text(encoding="utf-8"))
+    pinned = json.loads(planes.PINNED_PACKAGE_PATH.read_text(encoding="utf-8"))
+    write_lf(directory / planes.PINNED_PACKAGE_PATH.name, json.dumps(pinned))
+    decided = json.loads(json.dumps(pinned))
+    decided["owner_decisions"]["D-14"]["state"] = "decided"
+    write_lf(directory / "v99.json", json.dumps(decided))
+    write_lf(directory / "v99-copy.json", json.dumps(decided))
+    history_path = tmp_path / "package_versions.json"
+    write_lf(history_path, json.dumps(history))
+    monkeypatch.setattr(governance, "PACKAGE_DIRECTORY", directory)
+    monkeypatch.setattr(governance, "PACKAGE_HISTORY", history_path)
+    assert governance.committed_package_sha256s() == {canonical_sha256(pinned)}  # v99 has no history entry
+    history["entries"].append({"version": "99.0.0", "sha256": canonical_sha256(decided)})
+    write_lf(history_path, json.dumps(history))
+    assert governance.committed_package_sha256s() == {canonical_sha256(pinned), canonical_sha256(decided)}
+    (directory / "v99.json").unlink()  # the entry without its vN.json file (v99-copy.json is not a package file name)
+    assert governance.committed_package_sha256s() == {canonical_sha256(pinned)}
+    write_lf(history_path, "not json")
+    assert governance.committed_package_sha256s() == frozenset()
+
+
+def test_plan_b_after_d14_a_non_synthetic_run_needs_the_access_log_and_a_research_pre_run_scan(tmp_path, monkeypatch):
+    # D-14 decided only in a package copy, which is not a committed package: the test judges it as committed through the
+    # test seam (`synthetic.commit_for_test`, which no script reaches). Hold H12 then gives way to the pre-run scan, which
+    # must be a passing research scan bound to these items, never CI's synthetic report or an empty one.
+    items, items_path = _non_synthetic_set(tmp_path)
+    package = synthetic.decided_package(tmp_path)
+    synthetic.commit_for_test(monkeypatch, package)
+    spec = synthetic.spec_dict(items_path=items_path, catalog_path=None, package=package)
     access, out = tmp_path / "access.jsonl", tmp_path / "private-run"
     with pytest.raises(runner.RunRefused) as refused:
         runner.plan_run(spec, out_dir=out)
@@ -1306,8 +1405,13 @@ def test_plan_b_after_d14_a_non_synthetic_run_needs_the_access_log_and_a_researc
             runner.plan_run({**spec, "pre_run_scan": scan}, out_dir=out, access_log=access)
         assert refused.value.code == 2 and reason in refused.value.reasons
     good = synthetic.pass_scan(tmp_path / "good.json", dataset_content_sha256=content)
+    seen = []
+    boundary_policy = planes.boundary_policy
+    monkeypatch.setattr(planes, "boundary_policy", lambda path=planes.PINNED_PACKAGE_PATH: seen.append(Path(path)) or boundary_policy(path))
     plan = runner.plan_run({**spec, "pre_run_scan": good}, out_dir=out, access_log=access)
     assert plan.synthetic is False and not out.exists()
+    # The output is checked against the boundary of the package the spec pins, not the pinned package's default.
+    assert seen == [Path(package["path"])]
 
 
 def _access(path):
@@ -1490,23 +1594,38 @@ def test_plan_e_phase_10_adds_no_production_component():
 
 
 def test_plan_e_every_later_package_keeps_the_pinned_package_s_boundary_and_open_decisions():
-    # The harness reads package v7 by explicit path and sha256 (spec conflict 17); since the merge of main 89f0563 at
-    # a27ba5b the shipped package is v8, and v7 stays readable under DI-317. The research-plane path rule
-    # (planes.boundary_policy) and hold H12 read v7's boundary block and decision states, so every later package must
-    # keep them: one that changed its boundary or decided D-07, D-08, D-12 or D-14 would leave the harness on a stale rule.
+    # The harness names the package it pins in one place, planes.PINNED_PACKAGE (spec conflict 17): v7, read by explicit
+    # path and sha256; since the merge of main 89f0563 at a27ba5b the shipped package is v8, and v7 stays readable under
+    # DI-317. The research-plane path rule's default boundary (planes.boundary_policy) is the pinned package's, so every
+    # later package keeps that boundary block. Hold H12, the confirmatory gate's D-14 and the live checks read the
+    # decisions of the package a spec pins, and only of a committed one (governance.committed_package_sha256s): while no
+    # committed package decides D-07, D-08, D-12 or D-14, every hold the README states is in force.
     directory = API_ROOT / "app" / "config_package"
-    pinned = json.loads(planes.V7_PATH.read_text(encoding="utf-8"))
-    later = [path for path in sorted(directory.glob("v*.json")) if re.fullmatch(r"v\d+\.json", path.name) and int(path.stem[1:]) > 7]
-    assert later, "no package after v7"
+    pinned = json.loads(planes.PINNED_PACKAGE_PATH.read_text(encoding="utf-8"))
+    number = int(planes.PINNED_PACKAGE_PATH.stem[1:])
+    packages = {path: json.loads(path.read_text(encoding="utf-8")) for path in sorted(directory.glob("v*.json"))
+                if re.fullmatch(r"v\d+\.json", path.name)}
+    later = [path for path in packages if int(path.stem[1:]) > number]
+    assert later, "no package after the pinned one"
     for path in later:
-        package = json.loads(path.read_text(encoding="utf-8"))
-        assert package["boundary"] == pinned["boundary"], path.name
+        assert packages[path]["boundary"] == pinned["boundary"], path.name
+    committed = governance.committed_package_sha256s()
+    judged = [package for package in packages.values() if canonical_sha256(package) in committed]
+    assert pinned in judged and len(judged) == len(committed) >= 2
+    for package in judged:
         for key in ("D-07", "D-08", "D-12", "D-14"):
-            assert package["owner_decisions"][key]["state"] == pinned["owner_decisions"][key]["state"], (path.name, key)
-    sidecar = (directory / "v7.json.sha256").read_text(encoding="utf-8").split()[0]
-    assert synthetic.PACKAGE_PATH == planes.V7_PATH.relative_to(REPO_ROOT).as_posix()
+            assert package["owner_decisions"][key]["state"] != "decided", (package["package_version"], key)
+    sidecar = planes.PINNED_PACKAGE_PATH.with_name(planes.PINNED_PACKAGE_PATH.name + ".sha256").read_text(encoding="utf-8").split()[0]
+    assert pinned["package_version"] == planes.PINNED_PACKAGE_VERSION
+    assert synthetic.PACKAGE_PATH == script("check_research_harness").PACKAGE == planes.PINNED_PACKAGE
+    assert planes.PINNED_PACKAGE_PATH == REPO_ROOT / planes.PINNED_PACKAGE
     assert json.loads(SYNTHETIC_SPEC.read_text(encoding="utf-8"))["package"] == {
-        "package_version": "7.0.0", "path": synthetic.PACKAGE_PATH, "sha256": sidecar}
+        "package_version": planes.PINNED_PACKAGE_VERSION, "path": planes.PINNED_PACKAGE, "sha256": sidecar}
+    # No other harness module or script names a package file: re-pinning changes planes' two constants, then the records.
+    sources = sorted(Path(planes.__file__).parent.glob("*.py")) + [REPO_ROOT / "scripts" / name for name in NEW_SCRIPTS]
+    named = [path.relative_to(REPO_ROOT).as_posix() for path in sources
+             if re.search(r"config_package/v\d+\.json", path.read_text(encoding="utf-8"))]
+    assert named == ["evaluation/qcai_eval/planes.py"], named
 
 
 def test_plan_g_the_mapping_table_keeps_corpus_version_separate(tmp_path):
@@ -1625,6 +1744,25 @@ def test_plan_j_each_seeded_fault_type_is_detected_and_no_clean_control_is_flagg
     for finding in seeded_faults.FINDING_TYPES:
         row = report["per_type"][finding]
         assert row["seeded"] == row["detected"] == 3 and row["misattributed"] == [], finding
+    # The harness's own label-free metric meets the fixture (E6): the runner's citation existence over the fixture's spans
+    # flags exactly the B1 cases; A, B2, C, D and E are label-based (spec conflict 38; DI-145).
+    fixture = seeded_faults.load_fixture()
+    harness = report["harness_metrics"]
+    b1 = sorted(case["case_id"] for case in fixture["cases"] if case["seeded_type"] == "B1")
+    assert harness["metric"] == "citation_existence" and harness["flagged"] == harness["expected"] == b1 and harness["known_answers_met"]
+    assert harness["label_based"] == ["A", "B2", "C", "D", "E"]
+    clean = [case for case in fixture["cases"] if case["seeded_type"] is None]
+    for case in clean:
+        claims = [{"cited_span_ids": claim["cited"]} for claim in case["claims"]]
+        assert citation_existence(claims, set(fixture["spans"]))["rate"] == 1.0, case["case_id"]
+    # A fixture whose B1 pointer resolved would fail the harness's known answer, and the records check with it.
+    broken = json.loads(json.dumps(fixture))
+    case = next(case for case in broken["cases"] if case["seeded_type"] == "B1")
+    for claim in case["claims"]:
+        for pointer in claim["cited"]:
+            broken["spans"].setdefault(pointer, "an invented sentence")
+    assert seeded_faults.harness_report(broken)["known_answers_met"] is False
+    assert seeded_faults.reference_report(broken)["all_known_answers_met"] is False
 
 
 def test_plan_j_a_provider_outage_resumes_to_the_same_bytes(tmp_path):
@@ -1645,7 +1783,9 @@ def test_plan_j_a_provider_outage_resumes_to_the_same_bytes(tmp_path):
 
 def _live_stub(tmp_path, monkeypatch):
     live_spec, _package, out = _live_ready(tmp_path, monkeypatch)
-    stub = stub_spec(tmp_path, package=synthetic.decided_package(tmp_path))
+    package = synthetic.decided_package(tmp_path)
+    synthetic.commit_for_test(monkeypatch, package)
+    stub = stub_spec(tmp_path, package=package)
     live = {**stub, **{key: live_spec[key] for key in ("governance", "provider_terms", "licence_ruling", "research_use_confirmation")},
             "mode": "live", "responder": {"live": {"adapter": "fake-adapter", "providers": ["SYN-PROVIDER-1"]}}}
     return live, out
@@ -1998,7 +2138,7 @@ def test_phase10_docs_quote_the_plan_and_state_the_current_rules():
     head = spec_text().split("\n## 14. Review history\n", 1)[0]
     for number in range(60, 75):
         assert f"| PD-{number} |" in head
-    for number in range(129, 144):
+    for number in range(129, 147):
         assert f"| DI-{number} |" in head
     assert "The exit is not passed (DI-129)." in head
 
@@ -2032,6 +2172,28 @@ def test_phase10_docs_the_test_strategy_maps_every_test_module_the_phase_added()
     api = {path.name for path in (API_ROOT / "tests").glob("test_*.py")}
     evaluation = {path.name for path in (REPO_ROOT / "evaluation" / "tests").glob("test_*.py")}
     assert api & evaluation == set()  # pytest's prepend import mode needs unique test basenames across both roots
+
+
+def test_phase10_docs_phase_8_s_test_baseline_holds_the_current_declarations_of_every_phase_10_module():
+    # Phase 8's docs guards compare each module's declarations in apps/api/tests/data/phase8_shared_baseline_v1.json with
+    # the source. Each Phase 10 commit refreshes the entry of every Phase 10 module it changes (the modules the phase
+    # added, scan_guard.py, test_phase10_acceptance.py and evaluation/tests/*.py, and conftest.py, whose entry the merge
+    # a27ba5b took from Phase 10), and never the entry of another phase's module (spec 8.3; Phase 8 spec 13.3).
+    import importlib.util
+
+    loader = importlib.util.spec_from_file_location("phase8_docs_symbols", API_ROOT / "tests" / "test_phase8_docs.py")
+    phase8_docs = importlib.util.module_from_spec(loader)
+    loader.loader.exec_module(phase8_docs)
+    baseline = json.loads((API_ROOT / "tests" / "data" / "phase8_shared_baseline_v1.json").read_text(encoding="utf-8"))
+    owned = ["conftest.py", "scan_guard.py", "test_phase10_acceptance.py",
+             *sorted(path.relative_to(REPO_ROOT).as_posix() for path in (REPO_ROOT / "evaluation" / "tests").glob("*.py"))]
+    assert len(owned) == 16 and set(owned) <= set(baseline["main_test_symbols"]), sorted(set(owned) - set(baseline["main_test_symbols"]))
+    stale = []
+    for module in owned:
+        path = (REPO_ROOT if "/" in module else API_ROOT / "tests") / module
+        if baseline["main_test_symbols"][module] != phase8_docs._test_source_symbols(module, path.read_text(encoding="utf-8")):
+            stale.append(module)
+    assert stale == [], stale
 
 
 def test_phase10_docs_section_6_names_the_current_alembic_head_and_the_shipped_package():

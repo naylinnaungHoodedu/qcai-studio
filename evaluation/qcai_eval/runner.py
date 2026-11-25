@@ -1,11 +1,16 @@
 """The E1-E4 runner: pins, holds, units, requests, checkpointed execution and the run record (spec 3.9-3.12, 4.12-4.13).
 
 Plan task 5: "Pinned configuration package [Evidence E-97]; E1-E4 per Section 15 [Evidence E-99]; statistics with hashed
-seeds [Evidence E-103]." A run pins the package (path and sha256, read-only), the items, the evidence catalog, the arms and
+seeds [Evidence E-103]." The runner implements E1's design only: every live item through the seven arms, and the
+registered E1 family (H1a, H1b, H1c with Holm, `compute_registered_tests`). E2's verifier panel, E3's two designs and E4's
+seeded replay streams have no design here, so a spec naming E2, E3 or E4 is refused (`experiment_not_implemented`,
+exit 2; DI-144). A run pins the package (path and sha256, read-only), the items, the evidence catalog, the arms and
 the analysis plan by sha256; its seeds are hashed from (run_id, arm, item_id, replicate). Stub and recorded runs repeat
 byte for byte: no byte-compared output (the run record and the payload log) carries the wall clock or an absolute path,
 and both depend only on the plan and the responses; only a confirmatory or live run's start event in `run_events.jsonl`,
-which is not byte-compared, carries the UTC day the run was planned (`started_on`). Hold H12 refuses every run over non-synthetic data while D-14 is open; live runs are refused here.
+which is not byte-compared, carries the UTC day the run was planned (`started_on`). Owner decisions are read only from a
+committed package (`governance.committed_package_sha256s`), so hold H12 refuses every run over non-synthetic data while
+no committed package the spec pins decides D-14; live runs are refused here.
 Every run is exploratory unless its spec says confirmatory, and E1-E4 runs must be confirmatory (plan 12.7). A spec that
 omits `replicates` or `retries` takes the provisional paper values in `evaluation/config/harness_parameters_v1.json`
 (PD-68), and a live or confirmatory spec must keep a replicate subsample so that the record reports replicate variance.
@@ -55,6 +60,10 @@ RECORD_FORMAT = "ulqs-run-record"
 MODES = ("stub", "recorded", "live")
 PURPOSES = ("exploratory", "confirmatory")
 EXPERIMENTS = ("harness-check", "E1", "E2", "E3", "E4")
+# The experiments whose design the runner implements (E1: every live item through the seven arms, and the registered E1
+# family). E2 (the 2oo3 verifier panel, DR and n_eff), E3 (25 S7 items x 3 levels x 2 designs) and E4 (1,000 seeded replay
+# streams) are refused until they have one (DI-144).
+IMPLEMENTED_EXPERIMENTS = ("harness-check", "E1")
 SEEDS_RULE = "sha256-run-arm-item-replicate-v1"
 SUBSAMPLE_RULE = "sha256-order-v1"
 RESPONSES = "responses.jsonl"
@@ -337,6 +346,14 @@ def _check_shape(spec: Mapping[str, Any], parameters: Mapping[str, Any]) -> None
         raise RunRefused(2, ["experiment_requires_confirmatory"])
     if spec["experiment"] == "harness-check" and spec["purpose"] == "confirmatory":
         raise RunRefused(2, ["harness_check_not_confirmatory"])
+    if spec["experiment"] not in IMPLEMENTED_EXPERIMENTS:
+        raise RunRefused(2, ["experiment_not_implemented"])
+    if spec["experiment"] == "E1":
+        # E1 runs every live item through all seven arms (paper Sec. VIII E1) under its own analysis-plan family.
+        if spec["analysis_plan"].get("family") != "E1":
+            raise RunRefused(2, ["analysis_plan_family_mismatch"])
+        if spec["arms"].get("selected") is not None and sorted(spec["arms"]["selected"]) != sorted(ablation.ARM_IDS):
+            raise RunRefused(2, ["experiment_requires_seven_arms"])
     # AC-10-3: live runs report replicate variance; confirmatory runs too (PD-68). Both need a subsample with at least
     # `min_replicates` replicates.
     if spec["mode"] == "live" or spec["purpose"] == "confirmatory":
@@ -389,6 +406,10 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
     package_sha = canonical_sha256(package_raw)
     if package_sha != spec["package"].get("sha256") or _sidecar(package_path) != package_sha:
         raise RunRefused(6, ["package_sha256"])
+    # Owner decisions are judged only from a committed package (governance module docstring): a hand-made copy with a
+    # matching sidecar reads every decision `uncommitted`, so it releases no hold.
+    committed = package_sha in governance.committed_package_sha256s()
+    judged = governance.judged_package(package_raw, committed)
     # 3. The items.
     items_path = _path(spec["items"]["path"], repo_root)
     try:
@@ -467,10 +488,10 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
         raise RunRefused(2, [f"analysis_plan_invalid:{error}"]) from None
     if spec["analysis_plan"].get("family") not in analysis_plans.FAMILIES:
         raise RunRefused(2, ["analysis_plan.family"])
-    # 7. Hold H12: no run over non-synthetic data while the research data plane (D-14) is not decided.
+    # 7. Hold H12: no run over non-synthetic data while the research data plane (D-14) is not decided in a committed package.
     synthetic = planes.all_synthetic(items) and (catalog is None or all(r.volume == "synthetic" for r in catalog.records.values()))
     if not synthetic:
-        if not _decided(package_raw, "D-14"):
+        if not _decided(judged, "D-14"):
             raise RunRefused(9, ["hold_h12_data_plane"])
         missing = []
         if access_log is None:
@@ -518,7 +539,7 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
     if spec["purpose"] == "confirmatory":
         reasons = window + governance.confirmatory_refusals(
             spec, analysis_plan_sha256=plans_sha, dataset_sha256=items_sha, dataset_content_sha256=items_content_sha,
-            items_states=states, package_raw=package_raw, repo_root=repo_root, recording_source=recording_source, start=start,
+            items_states=states, package_raw=judged, repo_root=repo_root, recording_source=recording_source, start=start,
             today=today)
         # Plan 10.5(2) "calibration and confirmation items split [Risk R-25]": every live item of a confirmatory run
         # carries its split, so that a threshold fitted on ULQS uses the calibration split only (plan L470). The run itself
@@ -536,7 +557,7 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
     if spec["mode"] == "live":
         from .providers import live_refusal_reasons
 
-        reasons = live_refusal_reasons(spec, package_raw, environ, table, out_dir=out_dir, repo_root=repo_root, start=start,
+        reasons = live_refusal_reasons(spec, judged, environ, table, out_dir=out_dir, repo_root=repo_root, start=start,
                                        today=today)
         if spec["purpose"] != "confirmatory":
             reasons = window + reasons
@@ -549,14 +570,14 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
                 raise RunRefused(2, ["output_inside_checkout"])
         else:
             try:
-                planes.require_private_output(out_dir, root=repo_root)
+                planes.require_private_output(out_dir, root=repo_root, boundary=planes.boundary_policy(package_path))
             except planes.PathRefused:
                 raise RunRefused(2, ["output_not_private"]) from None
     requests = _requests(spec, items, table, selected, package_sha, prompt_version, replicates)
     pins = {
         "package": {"path": spec["package"]["path"] if not Path(spec["package"]["path"]).is_absolute() else package_path.name,
-                    "sha256": package_sha, "package_version": package_raw.get("package_version"),
-                    "owner_decisions": {name: ((package_raw.get("owner_decisions") or {}).get(name) or {}).get("state")
+                    "sha256": package_sha, "package_version": package_raw.get("package_version"), "committed": committed,
+                    "owner_decisions": {name: ((judged.get("owner_decisions") or {}).get(name) or {}).get("state")
                                         for name in ("D-07", "D-08", "D-12", "D-14")}},
         "models": None,
         "items": {"sha256": items_sha, "count": len(items), "states": dict(sorted(states.items())),
@@ -573,9 +594,9 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
             key for key in ("replicates", "retries") if key not in spec)},
         "code": code_pins(repo_root),
     }
-    return Plan(spec=dict(spec), package_raw=package_raw, items=items, arms=table, requests=tuple(requests), pins=pins,
+    return Plan(spec=dict(spec), package_raw=judged, items=items, arms=table, requests=tuple(requests), pins=pins,
                 resolver=resolver, synthetic=synthetic, recording_source=recording_source, dated=dated,
-                planned_on=today if dated else None, checkpoint_start=checkpoint_start)
+                planned_on=today if dated else None, checkpoint_start=checkpoint_start, extra={"analysis_plans": plans_raw})
 
 
 def _manifest_hook(manifests: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -950,6 +971,54 @@ def compute_comparisons(plan: Plan, responses, metrics) -> dict[str, Any]:
             "note": SYNTHETIC_COMPARISON_NOTE if plan.synthetic else "exploratory comparison; not a pre-registered test"}
 
 
+def _item_answer_rates(plan: Plan, responses, arm: str) -> dict[str, float]:
+    """Per item, the share of its answerable units (gold `answer`) the arm answered (eq. 17), replicate 1, provider failures
+    excluded."""
+    units: dict[str, list[int]] = {}
+    for request, response in _pairs(plan, responses):
+        if (request.arm == arm and request.replicate == 1 and request.gold == "answer"
+                and response["outcome"] != "provider_failure"):
+            units.setdefault(request.item_id, []).append(int(response["outcome"] == "answered"))
+    return {item: sum(values) / len(values) for item, values in units.items()}
+
+
+def compute_registered_tests(plan: Plan, responses, metrics) -> dict[str, Any] | None:
+    """The registered E1 family (analysis plan family E1; plan 12.7, Holm per family): H1a and H1b exact McNemar on paired
+    item-level errors (eq. 12) of their comparison arms, H1c the one-sided paired bootstrap of the item answer rate
+    (eq. 17) against its margin, then Holm over the family's p-values. None unless the experiment is E1. The record
+    carries the computation only; outcomes are reported by the PI, never asserted by the harness (invariant 9)."""
+    if plan.spec.get("experiment") != "E1":
+        return None
+    family = plan.extra["analysis_plans"]["families"]["E1"]
+    arms = {arm for hypothesis in family["hypotheses"] for arm in hypothesis.get("comparison", [])}
+    if any(isinstance(metrics.get(arm), dict) and metrics[arm].get("status") == "awaiting_labels" for arm in arms):
+        return {"status": "awaiting_labels"}
+    settings = plan.spec.get("bootstrap") or {}
+    results: dict[str, Any] = {}
+    for hypothesis in family["hypotheses"]:
+        left_arm, right_arm = hypothesis["comparison"]
+        if hypothesis["test"] == "mcnemar_exact":
+            left, right = _paired_errors(plan, responses, left_arm), _paired_errors(plan, responses, right_arm)
+            keys = sorted(set(left) & set(right), key=lambda key: (key[0], key[1] or ""))
+            result = statistics.mcnemar_exact([bool(left[key]) for key in keys], [bool(right[key]) for key in keys])
+        elif hypothesis["test"] == "paired_bootstrap_one_sided":
+            left, right = _item_answer_rates(plan, responses, left_arm), _item_answer_rates(plan, responses, right_arm)
+            items = sorted(set(left) & set(right))
+            if not items:
+                results[hypothesis["id"]] = {"status": "no_paired_items"}
+                continue
+            result = statistics.paired_bootstrap_one_sided(
+                [left[item] for item in items], [right[item] for item in items], resamples=int(settings.get("resamples", 1000)),
+                seed=hashed_hex(plan.spec["run_id"], "registered", hypothesis["id"]), margin=hypothesis["margin"])
+        else:  # pragma: no cover - the E1 family registers only the two tests above
+            raise ValueError(f"E1 test {hypothesis['test']} has no computation")
+        results[hypothesis["id"]] = {"endpoint": hypothesis["endpoint"], "comparison": [left_arm, right_arm],
+                                     "test": hypothesis["test"], **result}
+    tested = {name: value["p_value"] for name, value in results.items() if "p_value" in value}
+    return {"family": "E1", "correction": "holm", "hypotheses": results, "holm": statistics.holm(tested) if tested else {},
+            "note": "the registered E1 family; HR-3 is reported without a family test (criteria_only)"}
+
+
 def compute_bootstrap(plan: Plan, responses, metrics) -> dict[str, Any] | None:
     selected = plan.pins["arms"]["selected"]
     settings = plan.spec.get("bootstrap")
@@ -1029,6 +1098,7 @@ def build_record(plan: Plan, responses: Sequence[Mapping[str, Any]], *, responde
         "requests": {"planned": len(plan.requests), "completed": sum(r["outcome"] != "provider_failure" for r in responses), "digest": digest},
         "metrics": metrics,
         "comparisons": compute_comparisons(plan, responses, metrics),
+        "registered_tests": compute_registered_tests(plan, responses, metrics),
         "bootstrap": compute_bootstrap(plan, responses, metrics),
         "replicate_variance": compute_replicate_variance(plan, responses),
         "slis": compute_slis(plan, responses),

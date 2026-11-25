@@ -778,7 +778,7 @@
  "pins": {
   "analysis_plan": {
    "family": "E1",
-   "sha256": "70ae5b4d8b8f745b63d150eed3a8e082b3cd777d5740d8a6734b97ce99d11d07"
+   "sha256": "4731b84ef26992a1de99db7e3977d39ed4641e459e7bcdd48682a48bfa1b6aed"
   },
   "arms": {
    "parity": "pass",
@@ -804,26 +804,26 @@
    "evaluation/qcai_eval/abstention.py": "91d0c1c3e9ca741ffa15e5ac1af6b37279abacb271bcaec20c23672338edad91",
    "evaluation/qcai_eval/access_log.py": "f52b77db80641b7ac817ba007ae2d009b7c99679ac8eb0cfebecfabe8513d6af",
    "evaluation/qcai_eval/agreement.py": "0d459bc439eae94a092833a91150f0d48503404b7d8080af9980b7f1690661b3",
-   "evaluation/qcai_eval/analysis_plans.py": "ea0051791ae4a67925ae544ced273d5215e5b1f7af797e3450c9d6868fea897b",
+   "evaluation/qcai_eval/analysis_plans.py": "a05b40d031b570b907d3e72800850a7c41a54f8ef105e4b089d9c8d5a668abfb",
    "evaluation/qcai_eval/canonical.py": "cc36e1e9deaefbf1385fcafed8b87414bc921a601c8eb50829c38d94ff85bc5e",
    "evaluation/qcai_eval/citation.py": "b42439d6ed5826094e02573895c0b64153834a1b6cdac7450140b05adfd8cf42",
    "evaluation/qcai_eval/claims.py": "0b49dcb6ec658b8c72cb7bdc544e5ffb1af63c727b775d05a4c24766c791846b",
    "evaluation/qcai_eval/contamination.py": "d6bc5e8cb617d4ac8c1892c2d1bcb774182503bff9dc5813305a5734803f2bb9",
    "evaluation/qcai_eval/fabrication.py": "b1e6d10453720a9f8174ca3e54945231984dfa816ba19dca24112d9664d5459e",
    "evaluation/qcai_eval/faithfulness.py": "9020a01d7d9730ce678e5e04c1d14e89e2e725e8a5af88c9b8696f3dbbf981e5",
-   "evaluation/qcai_eval/governance.py": "e3d0be70ac98a2887d7bdeccc2551d3d63792b45de9c31abd4a7baf8da2332ed",
+   "evaluation/qcai_eval/governance.py": "fcc7a295d870154b9054533ea394b8df1d902eca7ccb1b2d600547f9d925d662",
    "evaluation/qcai_eval/invariance.py": "ce9ee7a549925283809de0e68fc400dfb81286f95b01ca25c99f0661fef1e576",
    "evaluation/qcai_eval/lqs_loader.py": "e5e492c0a43a537d74ca48516603340f89a1998d932577696c78a026c1664d4c",
    "evaluation/qcai_eval/payload_log.py": "4a349b7f0cf99802d15ab71e9a61817970eadf9a40a736d8d7d46c3141980f98",
-   "evaluation/qcai_eval/planes.py": "51300174c8ff3ce0c6f4edc6ae0be18d018235bda43fa4ee925f89dc58678e2f",
+   "evaluation/qcai_eval/planes.py": "a90e8a5842b4cb4d76821f2a3e1099d2668bcf14ee2570f19cbb10e9aba33f4f",
    "evaluation/qcai_eval/pointers.py": "49551f9cef3c7db9736f213f95816f6be9e36cddc43369aad19d72bd01f4c014",
-   "evaluation/qcai_eval/providers.py": "73820fb6ea4cbf7d4af282a75af30b58302a4984d0b3321ee26d926c51400629",
+   "evaluation/qcai_eval/providers.py": "86580f2191b2c1fd8ba44bf0245e0ec991fcf7c479fde8fc4e08ed3f949723b3",
    "evaluation/qcai_eval/reporting.py": "3cc299f92ad3b9086f1335afe3f1f8668df1369c13a44d114931f86ed77f0c6f",
    "evaluation/qcai_eval/retrieval.py": "fad7346aea2e3b850eb73c0b9410fcf67d9ab910ad058855bcee767100d42e16",
-   "evaluation/qcai_eval/runner.py": "92f1a3ddb3e6a117ec18356e9a332f9fb7eabe17d0fd061ff218d67c4cd25825",
-   "evaluation/qcai_eval/seeded_faults.py": "1d2b1880e7782eac05efe01208832cba6c95df66dd4e698be5d0fb72c6c30b71",
+   "evaluation/qcai_eval/runner.py": "a864d890d2c873f4faad213f271e72e2bcad852bb47089cf360e79db11780047",
+   "evaluation/qcai_eval/seeded_faults.py": "77fd4907d4a3dd3980fd087e6301852c96111cc3360ad34e829d637445a5fd8d",
    "evaluation/qcai_eval/statistics.py": "ff5ef2d221c900c57d58d7832acdd3820adc70053ae32f068bdef4d76401e794",
-   "evaluation/qcai_eval/synthetic.py": "ca0b9a5f147985a3efec3527873d0a767cee603b2528ac7a843003839956da29",
+   "evaluation/qcai_eval/synthetic.py": "b55469a9f565ae046c850f8c411b714aedf2c89724ade8510175d3505065835d",
    "evaluation/qcai_eval/ulqs.py": "c5e9ce87ab2020dd2fb96aedf5f652ad4a93a282caf72ad5866787c48fdd2f4b",
    "scripts/run_evaluation.py": "4912078deb4b8e21da113d1bedaa858d10b43d3a37cdf03e7f86e868757b23e3"
   },
@@ -845,6 +845,7 @@
   },
   "models": null,
   "package": {
+   "committed": true,
    "owner_decisions": {
     "D-07": "open",
     "D-08": "open",
@@ -874,6 +875,7 @@
   }
  },
  "purpose": "exploratory",
+ "registered_tests": null,
  "replicate_variance": {
   "GATE": {
    "er_by_replicate": [
