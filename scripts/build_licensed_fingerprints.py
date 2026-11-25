@@ -12,8 +12,8 @@ actor's role, the read of each licensed text and of the ULQS items (as soon as e
 refuse; ULQS items that do not parse are logged by the file's LF sha256), and the write of each fingerprint file. The
 ULQS items are validated (`ulqs.validate_dataset`) before any fingerprint is built from them.
 
-Exit codes: 0 ok; 2 refused path or usage, a licensed text or the ULQS file unreadable, or a licensed text that is not
-text or .docx; 3 bad salt; 4 the ULQS items are not valid JSON lines or fail validation.
+Exit codes: 0 ok; 2 refused path or usage, a licensed text or the ULQS file unreadable, a licensed text that is not
+text or .docx, or an output or the access log that cannot be written; 3 bad salt; 4 the ULQS items are not valid JSON lines or fail validation.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ def _salt(args: argparse.Namespace) -> bytes | None:
     return salt if len(salt) >= contamination.MIN_SALT_BYTES else None
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     parser.add_argument("--licensed-text", type=planes.cli_path, action="append", default=[])
     parser.add_argument("--ulqs", type=planes.cli_path, required=True)
@@ -128,6 +128,15 @@ def main(argv: list[str] | None = None) -> int:
     print(f"licensed: {licensed['sources']['documents']} documents, {licensed['sources']['shingles']} shingles; "
           f"ULQS: {ulqs_set['sources']['items']} items, {ulqs_set['sources']['texts']} texts, {len(ulqs_set['exact'])} exact")
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """An output or the access log that cannot be written is refused with exit 2, never a traceback (spec 5)."""
+    try:
+        return _main(argv)
+    except planes.UNWRITABLE as error:
+        print(f"refused (exit 2): {error}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

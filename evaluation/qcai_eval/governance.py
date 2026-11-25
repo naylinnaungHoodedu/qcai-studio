@@ -236,8 +236,8 @@ def recording_start_refusals(started_on: Any, today: _dt.date) -> list[str]:
 
 def is_public(reference: Any, repo_root: Path) -> bool:
     """True when a record's path breaks the research-plane path rule (planes): a checkout path that is not a git-ignored
-    private-plane path, or a path holding a NUL character (fail closed, on every platform: POSIX path calls raise
-    ValueError for it). A run whose record is public is refused."""
+    private-plane path, or a path holding a NUL character (fail closed, on every platform: `open()` raises
+    ValueError for it, and `os.path.realpath` too on POSIX). A run whose record is public is refused."""
     from .planes import require_private_input
 
     if not isinstance(reference, Mapping) or not isinstance(reference.get("path"), str):

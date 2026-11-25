@@ -21,8 +21,9 @@ match, `incomplete` with zero matches and incomplete coverage (`incomplete_targe
 with zero matches and full coverage. --ulqs-fingerprints goes with --fingerprints only (with --synthetic-fixture it is
 refused, exit 2).
 
-Research fingerprints (--fingerprints) are research-plane material, so with them --access-log PATH (a research-plane
-path) and --actor-role are required: the log records the read of each fingerprint file (`fingerprints`, before it is
+Research fingerprints (--fingerprints) are research-plane material, so with them every fingerprint file, the report and
+the access log must be research-plane paths (a public checkout path is refused, exit 2, before anything is read), and
+--access-log PATH and --actor-role are required: the log records the read of each fingerprint file (`fingerprints`, before it is
 parsed), of each --research-logs directory (`run_output`) and each --path target (`scan_target`), each with a digest of
 the files that target actually read (never of an environment file it excluded, a binary-suffix file or a file over
 20 MiB, which are not read), and the write of the report (`scan_report`). With --synthetic-fixture the log is optional.
@@ -30,7 +31,8 @@ the files that target actually read (never of an environment file it excluded, a
 Exit codes: 0 zero matches (with full coverage only under --require-zero: without it an incomplete scan also exits 0, the
 report's `result` says `incomplete` and stderr names the targets), or the self-test detected the sentinel; 1 matches,
 incomplete coverage under --require-zero (or the self-test missed); 2 usage (including research fingerprints without
---access-log and --actor-role, --ulqs-fingerprints with --synthetic-fixture, or an access log on a public path).
+--access-log and --actor-role, --ulqs-fingerprints with --synthetic-fixture, an access log on a public path, research
+fingerprints or their report on a public path, or a report or access log that cannot be written).
 """
 
 from __future__ import annotations
@@ -106,7 +108,7 @@ class ReadDigests:
         return canonical_sha256([[name, self.files[name]] for name in sorted(self.files)])
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--fingerprints", type=planes.cli_path)
@@ -140,6 +142,16 @@ def main(argv: list[str] | None = None) -> int:
             planes.require_private_output(args.access_log)
         except planes.PathRefused as error:
             print(f"usage (exit 2): {error}", file=sys.stderr)
+            return 2
+    if args.fingerprints:  # research fingerprints hold their salt: they and the report stay in the research plane (R-a)
+        try:
+            for path in (args.fingerprints, args.ulqs_fingerprints):
+                if path is not None:
+                    planes.require_private_input(path)
+            if args.report is not None:
+                planes.require_private_output(args.report)
+        except planes.PathRefused as error:
+            print(f"refused (exit 2): {error}", file=sys.stderr)
             return 2
 
     def log(action: str, kind: str, sha256: str | None) -> None:
@@ -208,6 +220,15 @@ def main(argv: list[str] | None = None) -> int:
               "(no file scanned, a file too large or unreadable, or a log or path file binary or not text)", file=sys.stderr)
         return code
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """An output or the access log that cannot be written is refused with exit 2, never a traceback (spec 5)."""
+    try:
+        return _main(argv)
+    except planes.UNWRITABLE as error:
+        print(f"refused (exit 2): {error}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

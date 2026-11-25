@@ -20,7 +20,9 @@ artifact's sha256; it holds no names, no identifiers of people and no text. `eva
 reads research fingerprints (`--fingerprints`), together with the actor's role, and the log path must itself be a
 research-plane path. Each script logs every research-plane input as soon as it is read, before any check that can refuse
 it (an input that does not parse is logged by its file's LF sha256), and every record it writes, so a refused validation,
-migration, build or scan still leaves its reads:
+migration, build or scan still leaves its reads. A log that cannot be appended to (a directory, a path under a file, a
+path that is not writable) stops the script at once with exit 2, before any further read or write, so the one line it
+could not write is the only one missing:
 
 - `run_evaluation.py`: the spec read (`run_spec`), then each input as soon as the planner reads it (the items, the
   catalog, the recording, and each governance record and the pre-run scan with the sha256 of the bytes read, whether or
@@ -29,7 +31,8 @@ migration, build or scan still leaves its reads:
   and `responses.jsonl` when the run starts, before any checkpoint check), the run's start, and its outcome: `completed`
   (with the payload log's sha256), `interrupted` (with the checkpoint's sha256) or `refused`. A run that stops early,
   including one the planner refuses after reading its items (hold H12, the confirmatory gate, a live or pin refusal) or
-  one refused on its checkpoint, still leaves its reads.
+  one refused on its checkpoint or on an output it cannot write (`output_unwritable`), still leaves its reads and its
+  `refused` outcome.
 - `validate_ulqs.py`: the items and the previous set, the agent-check record (`agent_check_record`), the catalog, the
   corpus text it read, the ratings, and the agreement and freeze records it writes.
 - `build_licensed_fingerprints.py`: each licensed text and the ULQS items it reads, and each fingerprint file it writes.

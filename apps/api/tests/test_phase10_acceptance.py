@@ -13,6 +13,7 @@ import dataclasses
 import datetime as datetime_module
 from fractions import Fraction
 import importlib
+import inspect
 import json
 import os
 from pathlib import Path
@@ -988,7 +989,8 @@ NUL_ARGUMENTS = {  # one path option of each research-plane script, given a NUL
 
 @pytest.mark.parametrize("posix", [False, True], ids=["native", "posix"])
 def test_ac_10_4_a_path_holding_a_nul_is_refused_on_every_platform(tmp_path, monkeypatch, capsys, posix):
-    # A NUL is in no file system path; POSIX path calls raise ValueError for it, Windows maps it silently. Either way the
+    # A NUL is in no file system path; `os.path.realpath` raises ValueError for it on POSIX and maps it on Windows (open()
+    # raises on both). Either way the
     # path rule refuses it as an input or an output (PathRefused), a governance record at such a path counts as public
     # (the gate refuses the run, exit 8), and each research-plane script refuses it as an argument (exit 2), never a
     # traceback.
@@ -1876,6 +1878,21 @@ def spec_text():
     return SPEC_PATH.read_text(encoding="utf-8")
 
 
+def test_phase10_docs_section_9_records_the_collected_test_counts():
+    # Spec 9 states the size of the two Phase 10 test sets (current-state text, P2-12-D-03): it must be what pytest collects.
+    def collected(target):
+        result = subprocess.run([sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider", target], cwd=REPO_ROOT,
+                                capture_output=True, text=True, timeout=300)
+        match = re.search(r"^(\d+) tests? collected", result.stdout, flags=re.MULTILINE)
+        assert match, result.stdout[-2000:] + result.stderr[-2000:]
+        return int(match.group(1))
+
+    evaluation, acceptance = collected("evaluation/tests"), collected("apps/api/tests/test_phase10_acceptance.py")
+    section = " ".join(spec_text().split("\n## 9. CI changes", 1)[1].split("\n## 10.", 1)[0].split())
+    assert re.search(rf"`evaluation/tests` about \d+ s \(one job; {evaluation} tests\)", section), evaluation
+    assert re.search(rf"`test_phase10_acceptance.py` about \d+ s \({acceptance} tests\)", section), acceptance
+
+
 def test_phase10_docs_quote_the_plan_and_state_the_current_rules():
     spec = " ".join(spec_text().split())
     for quote in ("AC-10-1 to AC-10-6 passed; OSF DOI and IRB letter filed; no HR-1 to MR-3 outcome asserted.",
@@ -1892,9 +1909,26 @@ def test_phase10_docs_quote_the_plan_and_state_the_current_rules():
     readme = " ".join((RECORDS / "README.md").read_text(encoding="utf-8").split())
     harness_doc = " ".join(script("check_research_harness").__doc__.split())
     assert "3 a known answer not met or an invalid analysis plan" in harness_doc
-    assert ("`check_research_harness.py`: 0; 1 drift; 2 usage (an unknown option, or `--check` with `--write`); 3 a known answer "
-            "not met or an invalid analysis plan; 6 a pin; 7 parity.") in readme
-    protocol = (REPO_ROOT / "docs" / "evaluation" / "protocol.md").read_text(encoding="utf-8")
+    assert ("`check_research_harness.py`: 0; 1 drift (a record that differs, or is missing or unreadable); 2 usage (an unknown "
+            "option, `--check` with `--write`, or a path argument holding a NUL) or a `--dir` the records cannot be written to "
+            "(`--write`); 3 a known answer not met or an invalid analysis plan; 6 a pin; 7 parity.") in readme
+    assert "a path argument holding a NUL" in harness_doc and "a --dir the records cannot be written to" in harness_doc
+    # run_evaluation.py's exit 2 names every checkpoint refusal and the unwritable output, in each exit-code statement.
+    run_doc = script("run_evaluation").__doc__.split("Exit codes:", 1)[1]
+    readme_run = readme.split("- `run_evaluation.py`:", 1)[1].split("- `validate_ulqs.py`:", 1)[0]
+    spec_run = next(line for line in spec_text().split("\n## 5. Scripts", 1)[1].splitlines() if line.startswith("| `scripts/run_evaluation.py`"))
+    for name, text in (("docstring", run_doc), ("README", readme_run), ("spec 5", spec_run)):
+        for reason in ("checkpoint_mismatch", "checkpoint_invalid", "partial_checkpoint", "output_exists", "output_unwritable"):
+            assert f"`{reason}`" in text, (name, reason)
+        assert "foreign checkpoint" not in text and "or another run's checkpoint refused" not in text, name
+    # Spec 4.12 states the current signatures of plan_run and execute_run.
+    for function in (runner.plan_run, runner.execute_run):
+        parameters = list(inspect.signature(function).parameters)
+        positional = [name for name in parameters if inspect.signature(function).parameters[name].kind is not inspect.Parameter.KEYWORD_ONLY]
+        keywords = [name for name in parameters if name not in positional]
+        assert f"`{function.__name__}({', '.join(positional + [name + '=' for name in keywords])})`" in spec, function.__name__
+    assert "when a dated resume is planned, the checkpoint's `run_events.jsonl` (`run_output`" in spec
+    protocol =(REPO_ROOT / "docs" / "evaluation" / "protocol.md").read_text(encoding="utf-8")
     for arm in ablation.ARM_IDS:
         assert f"`{arm}`" in protocol, arm
     # GATE is Table XV's "deployed configuration" of the paper's design, never a claim about current production.
@@ -2218,11 +2252,70 @@ def test_phase10_exit_codes_each_documented_code_is_reached(tmp_path, monkeypatc
     assert not (REPO_ROOT / "docs" / "evaluation" / "contract-rc1.jsonl").exists()
 
 
+# Every output option of each script (a file option given a directory, a directory option given an existing file or a
+# path under one) and every access log. An exception a script does not catch exits 1, which the literal-code reading
+# of `_returnable_codes` cannot see and which means drift or a match: each `main` refuses an unwritable output or
+# access log (`planes.UNWRITABLE`) with exit 2 instead, and a run logs its refused outcome.
+UNWRITABLE_OUTPUTS = {
+    "run_evaluation.py": ("--output-dir", "--access-log", "--write", "--record-stub"),
+    "validate_ulqs.py": ("--agreement-out", "--freeze-out", "--access-log"),
+    "migrate_ulqs_rc1.py": ("--output", "--access-log"),
+    "build_licensed_fingerprints.py": ("--output-licensed", "--output-ulqs", "--access-log"),
+    "scan_research_logs.py": ("--report", "--access-log"),
+    "check_research_harness.py": ("--dir",),
+}
+
+
+def _unwritable_argv(tmp_path, monkeypatch, name, option):
+    scenario, _codes = EXIT_CONTRACT[name]
+    if name == "run_evaluation.py" and option in ("--write", "--record-stub"):
+        argv = ["--spec", SYNTHETIC_SPEC, option, None]
+    elif name == "run_evaluation.py":
+        argv = scenario(tmp_path, monkeypatch, 0) + ["--access-log", tmp_path / "access.jsonl", "--actor-role", "MLE"]
+    elif name == "validate_ulqs.py":
+        argv = _research_plane_freeze(tmp_path)[0]
+    elif name == "scan_research_logs.py":
+        argv = scenario(tmp_path, monkeypatch, 0) + ["--report", tmp_path / "scan.json", "--access-log", tmp_path / "access.jsonl",
+                                                     "--actor-role", "MLE"]
+    elif name == "check_research_harness.py":
+        argv = ["--write", "--dir", None]
+    else:
+        argv = scenario(tmp_path, monkeypatch, 0)
+    argv = [str(value) if value is not None else None for value in argv]
+    afile = tmp_path / "afile"
+    afile.write_text("an existing file\n", encoding="utf-8")
+    blocked = tmp_path / "blocked"
+    blocked.mkdir()
+    bad = {"--output-dir": afile, "--dir": afile / "sub"}.get(option, blocked)
+    argv[argv.index(option) + 1] = str(bad)
+    return argv, blocked
+
+
+@pytest.mark.parametrize(("name", "option"), [(name, option) for name, options in UNWRITABLE_OUTPUTS.items() for option in options])
+def test_phase10_exit_codes_an_unwritable_output_or_access_log_is_refused_with_exit_2(tmp_path, monkeypatch, capsys, name, option):
+    argv, blocked = _unwritable_argv(tmp_path, monkeypatch, name, option)
+    capsys.readouterr()
+    assert script(name[:-3]).main(argv) == 2, capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "refused (exit 2)" in err and ("cannot be written" in err or "output_unwritable" in err), err
+    assert "Traceback" not in err and not any(blocked.iterdir())
+    if name == "run_evaluation.py" and option == "--output-dir":  # the run's outcome is logged
+        assert _access(tmp_path / "access.jsonl")[-2:] == [("run", "run_spec", "started"), ("run", "run_spec", "refused")]
+    if name == "run_evaluation.py" and option == "--access-log":
+        assert not (tmp_path / "out").exists()  # nothing ran: the spec read could not be logged
+    # Each script's `main` is the guard: it returns 2 for `planes.UNWRITABLE`.
+    tree = ast.parse((REPO_ROOT / "scripts" / name).read_text(encoding="utf-8"))
+    main = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "main")
+    handlers = [handler for node in ast.walk(main) if isinstance(node, ast.Try) for handler in node.handlers]
+    assert any(ast.unparse(handler.type) == "planes.UNWRITABLE" and _literal_codes(handler, set()) == {2} for handler in handlers)
+
+
 # Terms of a superseded design that no authoritative document or source may state as current (P2-12-D-03): the run
 # window replaced the rule that a run's created_at be today and the start check of a resume (spec 3.13); a dated run's
-# start event carries started_on, so only the byte-compared outputs are free of the wall clock (spec 3.9).
+# start event carries started_on, so only the byte-compared outputs are free of the wall clock (spec 3.9). Only
+# `os.path.realpath` maps a NUL path on Windows (open() and os.stat raise on every platform; spec R-a).
 RETIRED_TERMS = ("created_at_not_today", "created_at_not_start_date", "start_check", "start_date_refusals", "run_date_refusals",
-                 "resuming=", "no output carries the wall clock")
+                 "resuming=", "no output carries the wall clock", "Windows maps it silently", "POSIX path calls raise")
 
 
 def test_phase10_docs_no_authoritative_text_states_a_retired_rule():

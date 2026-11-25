@@ -5,7 +5,8 @@ Lines are appended, never rewritten. The runner, the migrator, the validator and
 fingerprints; with it, the actor's role (`--actor-role`, the migrator's `--author-role`). Each of these five scripts logs
 every research-plane input as soon as it is read, before any check that can refuse, and every artifact it writes; the
 runner also logs the run's start and its outcome (completed, interrupted or refused), so a run that ended early still
-leaves its reads in the log.
+leaves its reads in the log. A log that cannot be appended to raises `Unwritable`: each script then stops at once with
+exit 2 (no read or write goes unlogged), and that one line, the one that could not be written, is the only one missing.
 """
 
 from __future__ import annotations
@@ -24,6 +25,10 @@ KINDS = ("ulqs_items", "evidence_catalog", "corpus_text", "ratings", "licensed_t
 OUTCOMES = ("started", "completed", "interrupted", "refused")
 
 
+class Unwritable(Exception):
+    """The access log cannot be appended to (its path is a directory, lies under a file, or is not writable)."""
+
+
 def append(path: Path, *, actor_role: str, action: str, artifact_kind: str, artifact_sha256: str, purpose: str,
            run_id: str | None = None, outcome: str | None = None) -> None:
     if actor_role not in ROLES or action not in ACTIONS or artifact_kind not in KINDS:
@@ -36,6 +41,9 @@ def append(path: Path, *, actor_role: str, action: str, artifact_kind: str, arti
         line["run_id"] = run_id
     if outcome is not None:
         line["outcome"] = outcome
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with Path(path).open("a", encoding="utf-8", newline="\n") as handle:
-        handle.write(dumps_line(line))
+    try:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        with Path(path).open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(dumps_line(line))
+    except OSError as error:
+        raise Unwritable(f"the access log {Path(path).name} cannot be written ({type(error).__name__})") from None

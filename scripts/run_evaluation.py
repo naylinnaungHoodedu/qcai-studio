@@ -24,8 +24,14 @@ is planned, then run_events.jsonl and responses.jsonl when the run starts), its 
 interrupted or refused). --resume continues only this run's own checkpoint: a trailing partial line of responses.jsonl
 is truncated, and a checkpoint with any other line that is not a response record is refused, never truncated.
 
-Exit codes: 0 ok; 1 drift; 2 usage, a malformed spec, a path, an experiment or a foreign checkpoint refused, a
-non-synthetic run without the access log (`access_log_required`) or a passing pre-run scan (`pre_run_scan_*`), or a
+An output that cannot be written (the output directory is a file or lies under one, an output file is a directory, a
+full disk) refuses the run (`output_unwritable`, exit 2) and the refused outcome is logged; an access log that cannot be
+written stops the script at once (exit 2), before any further read, and that line is the one it lacks.
+
+Exit codes: 0 ok; 1 drift; 2 usage, a malformed spec, a path, an experiment or a checkpoint refused (another run's
+(`checkpoint_mismatch`), this run's own with a corrupt line (`checkpoint_invalid`) or a partial line without --resume
+(`partial_checkpoint`), or a complete one without --resume (`output_exists`)), an output or the access log that cannot
+be written (`output_unwritable`), a non-synthetic run without the access log (`access_log_required`) or a passing pre-run scan (`pre_run_scan_*`), or a
 confirmatory run refused with no IRB, OSF, items or freeze-record reason; 3 invalid items, unresolved pointers or a
 payload-log violation, or a confirmatory run refused with an items (`items_not_frozen`, `items_split_missing`) or
 freeze-record (`freeze_record_*`) reason and no IRB or OSF reason; 5 interrupted (provider outage; --resume continues
@@ -218,7 +224,7 @@ def record_stub(out_path: Path, spec_path: Path) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     parser.add_argument("--spec", type=planes.cli_path, required=True)
     parser.add_argument("--output-dir", type=planes.cli_path)
@@ -243,6 +249,15 @@ def main(argv: list[str] | None = None) -> int:
         print("usage: --output-dir is required for a run", file=sys.stderr)
         return 2
     return run(args.spec, args.output_dir, resume=args.resume, access=args.access_log, actor_role=args.actor_role)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """An output or the access log that cannot be written is refused with exit 2, never a traceback (spec 5)."""
+    try:
+        return _main(argv)
+    except planes.UNWRITABLE as error:
+        print(f"refused (exit 2): {error}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

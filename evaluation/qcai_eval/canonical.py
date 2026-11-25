@@ -49,11 +49,20 @@ def dumps_line(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
 
 
+class OutputUnwritable(OSError):
+    """An output path cannot be written: it is a directory, lies under a file, or is not writable. Each research-plane
+    script refuses it with exit 2 (spec 5), never a traceback."""
+
+
 def write_lf(path: Path, text: str) -> None:
+    """Write `text` with LF line ends, creating the parent directories; `OutputUnwritable` when the path cannot be written."""
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="\n") as handle:
-        handle.write(text)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+    except OSError as error:
+        raise OutputUnwritable(f"output {path.name} cannot be written ({type(error).__name__})") from None
 
 
 def hashed_hex(*parts: str) -> str:

@@ -11,7 +11,7 @@ path), and the access log is required. The script prints counts by stratum and s
 The rc1 read is logged as soon as the file is read, before any check that can refuse (by the file's LF sha256 when it
 does not parse), so a refused migration still leaves its read in the log.
 
-Exit codes: 0 ok; 2 refused path or usage; 3 the input is unreadable, an input item fails rc1 validation, or a migrated
+Exit codes: 0 ok; 2 refused path or usage, or an output or the access log that cannot be written; 3 the input is unreadable, an input item fails rc1 validation, or a migrated
 record fails v1.0 validation.
 """
 
@@ -54,7 +54,7 @@ def migrate_item(item: dict, *, mapping: dict, author_role: str, split: str) -> 
     return migrated
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     parser.add_argument("--input", type=planes.cli_path, required=True)
     parser.add_argument("--output", type=planes.cli_path, required=True)
@@ -127,6 +127,15 @@ def main(argv: list[str] | None = None) -> int:
     counts = Counter((item["stratum"], item["status"]) for item in migrated)
     print(f"migrated {len(migrated)} items: " + ", ".join(f"{s}/{st} {n}" for (s, st), n in sorted(counts.items())))
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """An output or the access log that cannot be written is refused with exit 2, never a traceback (spec 5)."""
+    try:
+        return _main(argv)
+    except planes.UNWRITABLE as error:
+        print(f"refused (exit 2): {error}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

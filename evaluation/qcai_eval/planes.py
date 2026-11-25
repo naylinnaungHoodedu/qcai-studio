@@ -5,7 +5,8 @@ outside the repository checkout, or a repository path that matches the pinned pa
 git ignores. Research-plane scripts refuse any input or output path outside that rule. A checkout path is recognised
 in any spelling: through a link or junction, with an extended-length prefix, or as another alias of the same directory
 (`checkout_relative`). A path holding a NUL character is refused everywhere: as a script argument (`cli_path`, exit 2
-usage) and as an input or output (`PathRefused`), on every platform, because POSIX path calls raise ValueError for it.
+usage) and as an input or output (`PathRefused`), on every platform: `os.path.realpath` raises ValueError for it on
+POSIX and maps it on Windows, and `open()` and `os.stat` raise ValueError for it on both.
 The rule governs preparation only; runs over non-synthetic data stay refused by hold H12 (runner).
 """
 
@@ -18,6 +19,9 @@ import subprocess
 import sys
 from typing import Any, Iterable, Mapping
 
+from .access_log import Unwritable as LogUnwritable
+from .canonical import OutputUnwritable
+
 PROVISIONAL_DEFAULTS = ("PD-74",)
 REPO_ROOT = Path(__file__).resolve().parents[2]
 API_ROOT = REPO_ROOT / "apps" / "api"
@@ -29,8 +33,13 @@ class PathRefused(ValueError):
     """A research-plane script was given a path outside the research plane."""
 
 
+# What each research-plane script's `main` refuses with exit 2 (spec 5): an output (`canonical.write_lf`) or the access
+# log (`access_log.append`) that cannot be written. Neither is an uncaught traceback with exit 1, a code with another meaning.
+UNWRITABLE = (OutputUnwritable, LogUnwritable)
+
+
 def has_nul(path: Path | str) -> bool:
-    """True for a path holding a NUL character, which no file system path can hold (POSIX path calls raise ValueError)."""
+    """True for a path holding a NUL character, which no file system path can hold (`open()` raises ValueError)."""
     return "\x00" in os.fspath(path)
 
 

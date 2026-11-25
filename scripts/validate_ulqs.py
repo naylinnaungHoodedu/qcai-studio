@@ -20,7 +20,7 @@ any check that can refuse (an input that does not parse is logged by its file's 
 logged. Output names item ids, field paths and codes only, never a value.
 
 Exit codes: 0 ok; 2 usage (--freeze without --previous or --corpus-text; --access-log without --actor-role), path
-refused, or an input unreadable or invalid: the items or previous set, the ratings, the rubric, the freeze rules, or an
+refused, an output or the access log that cannot be written, or an input unreadable or invalid: the items or previous set, the ratings, the rubric, the freeze rules, or an
 agent-check record that does not parse or is not shaped as `ulqs-agent-check-v1` (one whose content does not match the
 items is a freeze failure, exit 4); 3 schema problems; 4 freeze failed (codes printed); 5 evidence catalog invalid or
 unresolved pointers.
@@ -79,7 +79,7 @@ def _items_sha(items: list, path: Path) -> str | None:
         return _file_sha(path)
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     parser.add_argument("--items", type=planes.cli_path, required=True)
     parser.add_argument("--catalog", type=planes.cli_path)
@@ -242,6 +242,15 @@ def main(argv: list[str] | None = None) -> int:
             return 4
         print(f"freeze check passed; dataset sha256 {result.dataset_sha256}")
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """An output or the access log that cannot be written is refused with exit 2, never a traceback (spec 5)."""
+    try:
+        return _main(argv)
+    except planes.UNWRITABLE as error:
+        print(f"refused (exit 2): {error}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

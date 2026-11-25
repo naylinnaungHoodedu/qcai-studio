@@ -492,3 +492,13 @@ def test_the_scanner_logs_research_fingerprints_targets_and_its_report(tmp_path,
     assert module.main(["--fingerprints", str(broken), "--research-logs", str(run), "--access-log", str(access), "--actor-role", "MLE"]) == 2
     assert _access(access) == [("read", "fingerprints", lf_sha256(broken))]
     assert not (REPO_ROOT / "docs" / "access.jsonl").exists()
+    # With research fingerprints the fingerprint files and the report are research-plane paths too (spec R-a): a public
+    # checkout path is refused (exit 2) before anything is read, logged or written.
+    access.unlink()
+    public, public_report = REPO_ROOT / "evaluation" / "fixtures" / "contamination_synthetic_v1.json", REPO_ROOT / "docs" / "scan.json"
+    for argv in (["--fingerprints", str(public)], ["--fingerprints", str(licensed), "--ulqs-fingerprints", str(public)],
+                 ["--fingerprints", str(licensed), "--report", str(public_report)]):
+        capsys.readouterr()
+        assert module.main(argv + ["--research-logs", str(run), "--access-log", str(access), "--actor-role", "MLE"]) == 2, argv
+        assert "not a private-plane path" in capsys.readouterr().err, argv
+    assert not access.exists() and not public_report.exists()

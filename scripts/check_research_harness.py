@@ -7,7 +7,9 @@ seeded_faults_report_v1.json (the reference detector over the synthetic seeded-f
 (generated from the analysis plans; a DRAFT, not filed). --check (the default; CI) proves each is current, LF-normalised;
 --write rewrites them. --dir points at another copy of the three records (tests).
 
-Exit codes: 0 ok; 1 drift; 2 usage (an unknown option, or `--check` with `--write`); 3 a known answer not met or an
+Exit codes: 0 ok; 1 drift (a record that differs from the generated one, or is missing or unreadable); 2 usage (an
+unknown option, `--check` with `--write`, or a path argument holding a NUL) or a --dir the records cannot be written to
+(--write); 3 a known answer not met or an
 invalid analysis plan; 6 a pin (the package differs from its sidecar); 7 arm parity.
 """
 
@@ -89,7 +91,7 @@ def build_records() -> dict[str, str]:
             "preregistration-draft.md": analysis_plans.preregistration_markdown(plans)}
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true")
@@ -122,6 +124,15 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(f"research harness records are current: {', '.join(RECORDS)}")
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """An output or the access log that cannot be written is refused with exit 2, never a traceback (spec 5)."""
+    try:
+        return _main(argv)
+    except planes.UNWRITABLE as error:
+        print(f"refused (exit 2): {error}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

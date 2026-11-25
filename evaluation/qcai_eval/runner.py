@@ -21,6 +21,7 @@ the calibration split only (plan L470), and no Phase 10 code fits a threshold.
 from __future__ import annotations
 
 from collections import Counter
+import contextlib
 from dataclasses import dataclass, field
 import datetime as _dt
 from fractions import Fraction
@@ -617,8 +618,18 @@ def _requests(spec, items, table, selected, package_sha, prompt_version, replica
 # ------------------------------------------------------------------------------------------------------------ execution
 
 
+@contextlib.contextmanager
+def _writing():
+    """Every write into a run's output: one that fails (the output directory is a file or lies under one, an output file
+    is a directory, a full disk) refuses the run (`output_unwritable`, exit 2), never a traceback."""
+    try:
+        yield
+    except OSError:
+        raise RunRefused(2, ["output_unwritable"]) from None
+
+
 def _append_event(out_dir: Path, event: Mapping[str, Any]) -> None:
-    with (Path(out_dir) / RUN_EVENTS).open("a", encoding="utf-8", newline="\n") as handle:
+    with _writing(), (Path(out_dir) / RUN_EVENTS).open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(dumps_line(event))
 
 
@@ -746,7 +757,8 @@ def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = Fal
         recorded = governance.iso_day(events[0].get("started_on")) if events else None
         if recorded != plan.checkpoint_start or (events and recorded is None):
             raise RunRefused(2, ["checkpoint_mismatch"])
-    out_dir.mkdir(parents=True, exist_ok=True)
+    with _writing():
+        out_dir.mkdir(parents=True, exist_ok=True)
     responses_path = out_dir / RESPONSES
     responder_rule = getattr(responder, "rule", "unknown")
     digest = run_digest(plan, responder_rule)
@@ -773,7 +785,9 @@ def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = Fal
     retries = int(plan.pins["retries"])
     from .providers import ProviderOutage, TransientFailure
 
-    with responses_path.open("a", encoding="utf-8", newline="\n") as handle:
+    with _writing():
+        handle = responses_path.open("a", encoding="utf-8", newline="\n")
+    with handle:
         for request in plan.requests:
             if request.request_key in completed:
                 continue
@@ -792,9 +806,10 @@ def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = Fal
                 attempts.append({"status": "ok"})
                 break
             line = _response_line(request, response, attempts)
-            handle.write(dumps_line(line))
-            handle.flush()
-            os.fsync(handle.fileno())
+            with _writing():
+                handle.write(dumps_line(line))
+                handle.flush()
+                os.fsync(handle.fileno())
             completed[request.request_key] = line
     responses = [completed[request.request_key] for request in plan.requests]
     verify_responses(plan, {line["request_key"]: line for line in responses})
@@ -805,10 +820,12 @@ def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = Fal
         validate_log_record(record)
         log_lines.append(dumps_line(record))
     payload_text = "".join(log_lines)
-    write_lf(out_dir / PAYLOAD_LOG, payload_text)
+    with _writing():
+        write_lf(out_dir / PAYLOAD_LOG, payload_text)
     record = build_record(plan, responses, responder_rule=responder_rule,
                           payload_log_sha256=hashlib.sha256(payload_text.encode("utf-8")).hexdigest())
-    write_lf(out_dir / RUN_RECORD, dumps_record(record))
+    with _writing():
+        write_lf(out_dir / RUN_RECORD, dumps_record(record))
     _append_event(out_dir, {"event": "completed", **base, "completed_requests": len(responses)})
     return record
 
