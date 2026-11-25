@@ -16,8 +16,10 @@ executed and no Table XVII row or HR-1..MR-3 outcome is asserted (plan Phase 10 
 
 - `run_evaluation.py`: 0 ok; 1 drift; 2 usage, a malformed spec, a path, an experiment or a checkpoint refused
   (another run's, this run's own with a corrupt line or a partial line without `--resume`, or a complete one without
-  `--resume`: `checkpoint_mismatch`, `checkpoint_invalid`, `partial_checkpoint`, `output_exists`), an output or the
-  access log that cannot be written (`output_unwritable`), a non-synthetic run without the access log or a passing pre-run scan (`access_log_required`,
+  `--resume`: `checkpoint_mismatch`, `checkpoint_invalid`, `partial_checkpoint`, `output_exists`), a run output that
+  cannot be written (`output_unwritable`), a `--write` or `--record-stub` target or the access log that cannot be
+  written (refused without a reason code), a non-synthetic run without the access log or a passing pre-run scan
+  (`access_log_required`,
   `pre_run_scan_*`), or a confirmatory run refused with no IRB, OSF, items or freeze-record reason; 3 invalid items,
   unresolved pointers or a payload-log violation, or a confirmatory run refused with an items (`items_not_frozen`,
   `items_split_missing`) or freeze-record (`freeze_record_*`) reason and no IRB or OSF reason; 5 interrupted (resume

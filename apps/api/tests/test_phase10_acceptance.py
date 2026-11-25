@@ -1878,16 +1878,30 @@ def spec_text():
     return SPEC_PATH.read_text(encoding="utf-8")
 
 
-def test_phase10_docs_section_9_records_the_collected_test_counts():
-    # Spec 9 states the size of the two Phase 10 test sets (current-state text, P2-12-D-03): it must be what pytest collects.
-    def collected(target):
-        result = subprocess.run([sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider", target], cwd=REPO_ROOT,
-                                capture_output=True, text=True, timeout=300)
-        match = re.search(r"^(\d+) tests? collected", result.stdout, flags=re.MULTILINE)
-        assert match, result.stdout[-2000:] + result.stderr[-2000:]
-        return int(match.group(1))
+def _collection_env():
+    """The environment of a nested pytest collection: never the session's database (in-memory SQLite)."""
+    env = {name: value for name, value in os.environ.items() if name != "TEST_DATABASE_URL"}
+    env["DATABASE_URL"] = "sqlite:///:memory:"
+    return env
 
-    evaluation, acceptance = collected("evaluation/tests"), collected("apps/api/tests/test_phase10_acceptance.py")
+
+def test_phase10_docs_section_9_records_the_collected_test_counts(tmp_path, monkeypatch):
+    # Spec 9 states the size of the two Phase 10 test sets (current-state text, P2-12-D-03): it must be what pytest collects.
+    # One collection of both sets. Collecting imports the API conftest, which initialises the database TEST_DATABASE_URL
+    # names (schema, upgrades, retention cleanup): the collection runs on in-memory SQLite, never on the session's
+    # database. A TEST_DATABASE_URL naming a file proves it: the file must not be created.
+    shared = tmp_path / "session.sqlite3"
+    monkeypatch.setenv("TEST_DATABASE_URL", f"sqlite:///{shared.as_posix()}")
+    acceptance_file = "apps/api/tests/test_phase10_acceptance.py"
+    result = subprocess.run([sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider", "evaluation/tests",
+                             acceptance_file], cwd=REPO_ROOT, env=_collection_env(), capture_output=True, text=True, timeout=300)
+    match = re.search(r"^(\d+) tests? collected", result.stdout, flags=re.MULTILINE)
+    assert match, result.stdout[-2000:] + result.stderr[-2000:]
+    assert not shared.exists(), "the collection initialised the session's database"
+    ids = [line for line in result.stdout.splitlines() if "::" in line]
+    acceptance = sum(line.split("::", 1)[0].endswith("test_phase10_acceptance.py") for line in ids)  # ids are rootdir-relative
+    evaluation = len(ids) - acceptance
+    assert len(ids) == int(match.group(1)) and acceptance and evaluation, result.stdout[-2000:]
     section = " ".join(spec_text().split("\n## 9. CI changes", 1)[1].split("\n## 10.", 1)[0].split())
     assert re.search(rf"`evaluation/tests` about \d+ s \(one job; {evaluation} tests\)", section), evaluation
     assert re.search(rf"`test_phase10_acceptance.py` about \d+ s \({acceptance} tests\)", section), acceptance
@@ -1921,6 +1935,11 @@ def test_phase10_docs_quote_the_plan_and_state_the_current_rules():
         for reason in ("checkpoint_mismatch", "checkpoint_invalid", "partial_checkpoint", "output_exists", "output_unwritable"):
             assert f"`{reason}`" in text, (name, reason)
         assert "foreign checkpoint" not in text and "or another run's checkpoint refused" not in text, name
+        # `output_unwritable` is the reason of a run output only: a --write/--record-stub target or the access log that
+        # cannot be written is refused with a message (`planes.UNWRITABLE` in `main`) and no reason code.
+        flat = " ".join(text.replace("`", "").split())
+        assert "a run output that cannot be written (output_unwritable), a --write or --record-stub target or the access log" in flat, name
+        assert "an output or the access log that cannot be written (output_unwritable)" not in flat, name
     # Spec 4.12 states the current signatures of plan_run and execute_run.
     for function in (runner.plan_run, runner.execute_run):
         parameters = list(inspect.signature(function).parameters)
@@ -1980,6 +1999,9 @@ def test_phase10_docs_the_spec_ends_in_one_review_history_table():
     assert "\n## 15." not in history and history.count("| Round | Commit |") == 1
     assert re.findall(r"^## (\d+)\.", head, flags=re.MULTILINE) == [str(n) for n in range(0, 14)]
     assert SPEC_PATH.read_bytes().count(b"\r\n") == 0
+    # Section 13's current-state verification is stated at the head of the last review round of the history table.
+    rounds = re.findall(r"^\| Review (\d+)\b", history, flags=re.MULTILINE)
+    assert rounds and f"**Latest verification (local, at the review {rounds[-1]} head).**" in head, rounds[-1:]
     names = set()
     for root in (API_ROOT / "tests", REPO_ROOT / "evaluation" / "tests"):
         for path in root.glob("test_*.py"):
@@ -2308,6 +2330,59 @@ def test_phase10_exit_codes_an_unwritable_output_or_access_log_is_refused_with_e
     main = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "main")
     handlers = [handler for node in ast.walk(main) if isinstance(node, ast.Try) for handler in node.handlers]
     assert any(ast.unparse(handler.type) == "planes.UNWRITABLE" and _literal_codes(handler, set()) == {2} for handler in handlers)
+
+
+class _FailingClose:
+    """A responses file whose close (the final flush) fails as on a full disk."""
+
+    def __init__(self, handle):
+        self._handle = handle
+
+    def __getattr__(self, name):
+        return getattr(self._handle, name)
+
+    def close(self):
+        self._handle.close()
+        raise OSError(28, "No space left on device")
+
+
+@pytest.mark.parametrize("write", ["resume_truncation", "responses_close"])
+def test_phase10_exit_codes_a_checkpoint_write_that_fails_is_refused_with_exit_2(tmp_path, monkeypatch, capsys, write):
+    # The writes of a run that no output option reaches: a resume truncating the partial line of a responses.jsonl that
+    # cannot be opened for writing (read-only), and the close of the responses file. Each is `output_unwritable`, exit 2,
+    # with the run's refused outcome logged, never a traceback with exit 1 (drift); the checkpoint keeps its bytes.
+    out, access = tmp_path / "out", tmp_path / "access.jsonl"
+    argv = ["--spec", SYNTHETIC_SPEC, "--output-dir", out, "--access-log", access, "--actor-role", "MLE"]
+    real_open = Path.open
+    if write == "resume_truncation":
+        assert run_main(argv) == 0
+        responses = out / runner.RESPONSES
+        with real_open(responses, "ab") as handle:
+            handle.write(b'{"partial')
+        before = responses.read_bytes()
+
+        def read_only(path, mode="r", *args, **kwargs):
+            if Path(path).name == runner.RESPONSES and mode not in ("r", "rb"):
+                raise PermissionError(13, "Permission denied", str(path))
+            return real_open(path, mode, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "open", read_only)
+        argv = argv + ["--resume"]
+    else:
+        def failing_close(path, mode="r", *args, **kwargs):
+            handle = real_open(path, mode, *args, **kwargs)
+            return _FailingClose(handle) if Path(path).name == runner.RESPONSES and mode == "a" else handle
+
+        monkeypatch.setattr(Path, "open", failing_close)
+    capsys.readouterr()
+    assert run_main(argv) == 2
+    err = capsys.readouterr().err
+    assert "output_unwritable" in err and "Traceback" not in err, err
+    assert _access(access)[-1] == ("run", "run_spec", "refused") and ("run", "run_spec", "started") in _access(access)
+    if write == "resume_truncation":
+        assert responses.read_bytes() == before
+    else:
+        assert not (out / runner.RUN_RECORD).exists()
 
 
 # Terms of a superseded design that no authoritative document or source may state as current (P2-12-D-03): the run

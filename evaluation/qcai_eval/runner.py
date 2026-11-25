@@ -620,8 +620,10 @@ def _requests(spec, items, table, selected, package_sha, prompt_version, replica
 
 @contextlib.contextmanager
 def _writing():
-    """Every write into a run's output: one that fails (the output directory is a file or lies under one, an output file
-    is a directory, a full disk) refuses the run (`output_unwritable`, exit 2), never a traceback."""
+    """Every write into a run's output (the directory, each event, response line and record, the truncation of a partial
+    checkpoint line on resume, the close of the responses file): one that fails (the output directory is a file or lies
+    under one, an output file is a directory or cannot be opened for writing, a full disk) refuses the run
+    (`output_unwritable`, exit 2), never a traceback."""
     try:
         yield
     except OSError:
@@ -671,7 +673,7 @@ def _read_checkpoint(path: Path, *, resume: bool) -> dict[str, dict]:
     if tail:
         if not resume:
             raise RunRefused(2, ["partial_checkpoint"])
-        with path.open("r+b") as handle:
+        with _writing(), path.open("r+b") as handle:
             handle.truncate(len(data) - len(tail))
     elif completed and not resume:
         raise RunRefused(2, ["output_exists"])
@@ -787,7 +789,7 @@ def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = Fal
 
     with _writing():
         handle = responses_path.open("a", encoding="utf-8", newline="\n")
-    with handle:
+    try:
         for request in plan.requests:
             if request.request_key in completed:
                 continue
@@ -811,6 +813,9 @@ def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = Fal
                 handle.flush()
                 os.fsync(handle.fileno())
             completed[request.request_key] = line
+    finally:
+        with _writing():  # the close flushes: a flush that fails is an unwritable output too
+            handle.close()
     responses = [completed[request.request_key] for request in plan.requests]
     verify_responses(plan, {line["request_key"]: line for line in responses})
     log_lines = []
