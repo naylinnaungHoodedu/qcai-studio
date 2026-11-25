@@ -4,7 +4,7 @@
 `evaluation/config/analysis_plans_v1.json`; `--check` in CI proves this file is current. Nothing here is executed:
 no hypothesis has been tested and no HR-1 to MR-3 outcome is asserted (plan Phase 10 P; invariant 9).
 
-- Analysis plans: `analysis-plans-v1`, canonical sha256 `73d92c5e3c78b874b8788fe2b38bf8c75b0d1e0efbd7de99c758a70cea69fd7f`.
+- Analysis plans: `analysis-plans-v1`, canonical sha256 `1d102f14d8f342f71e460807494280ee78fe8118e6d737c8471600d9ff2a6885`.
 - Status: draft, not filed with OSF (DI-131).
 - Significance: alpha = 0.05, Holm correction within each family (plan 12.7: "E1-E4 are pre-registered
   hypothesis tests (alpha = 0.05, Holm per family), not software gates").
@@ -15,11 +15,11 @@ no hypothesis has been tested and no HR-1 to MR-3 outcome is asserted (plan Phas
 
 Data: all ULQS items x seven arms; production generator.
 
-| Hypothesis | Endpoint | Comparison | Test | Table XVII criteria |
-|---|---|---|---|---|
-| H1a | item-level error (eq. 12) | VLOOP vs GATE | `mcnemar_exact (sided two)` | HR-1, HR-2 |
-| H1b | item-level error (eq. 12) | VLOOP vs GATE+SV | `mcnemar_exact (sided two)` | - |
-| H1c | answer rate (eq. 17) | VLOOP vs GATE | `paired_bootstrap_one_sided (margin -0.05)` | LQ-3 |
+| Hypothesis | Endpoint | Comparison | Test | Sided | Margin (null) | Table XVII criteria |
+|---|---|---|---|---|---|---|
+| H1a | item-level error (eq. 12) | VLOOP vs GATE | `mcnemar_exact` | two | - | HR-1, HR-2 |
+| H1b | item-level error (eq. 12) | VLOOP vs GATE+SV | `mcnemar_exact` | two | - | - |
+| H1c | answer rate (eq. 17) | VLOOP vs GATE | `paired_bootstrap_one_sided` | one | -0.05 | LQ-3 |
 
 Criteria reported without a family test: HR-3 (wilson_upper_bound, >= 125 audited answers, zero delivered B1).
 
@@ -27,25 +27,27 @@ Labelling: GATE, GATE+SV and VLOOP fully labelled; other arms on a random 25% of
 
 ## E2 (RQ2)
 
-| Hypothesis | Endpoint | Comparison | Test | Table XVII criteria |
-|---|---|---|---|---|
-| H2a | panel vs best single verifier, F1 | - | `cluster_bootstrap_bca_one_sided (resamples 10000)` | V-2 |
-| H2b | DR > 1 | - | `cluster_bootstrap_lower_bound (resamples 10000)` | V-4 |
-| H2c | novice trust AUC | - | `bootstrap_one_sided` | UE-2 |
+| Hypothesis | Endpoint | Comparison | Test | Sided | Margin (null) | Table XVII criteria |
+|---|---|---|---|---|---|---|
+| H2a | panel vs best single verifier, F1 | 2oo3 heterogeneous panel vs best single verifier | `cluster_bootstrap_bca_one_sided (resamples 10000)` | one | 0 | V-2 |
+| H2b | DR > 1 | - | `cluster_bootstrap_lower_bound (resamples 10000)` | one | 1 | V-4 |
+| H2c | AUC separating erroneous from correct responses, panel minus novices (Table I) | panel vs novices | `paired_bootstrap_auc_one_sided` | one | 0 | UE-2 |
 
 ## E3 (RQ3)
 
-| Hypothesis | Endpoint | Comparison | Test | Table XVII criteria |
-|---|---|---|---|---|
-| H3a | invariance violation (eq. 18), two-pass vs single-pass, 25 S7 items | - | `mcnemar_exact` | LQ-1 |
-| H3b | presentation features across levels (manipulation check) | - | `friedman` | - |
+| Hypothesis | Endpoint | Comparison | Test | Sided | Margin (null) | Table XVII criteria |
+|---|---|---|---|---|---|---|
+| H3a | invariance violation (eq. 18), two-pass vs single-pass, 25 S7 items | two-pass vs single-pass | `mcnemar_exact` | two | - | LQ-1 |
+| H3b | presentation features across levels (manipulation check) | beginner vs intermediate vs advanced | `friedman` | omnibus | - | - |
 
 ## E4 (RQ4)
 
-| Hypothesis | Endpoint | Comparison | Test | Table XVII criteria |
-|---|---|---|---|---|
-| H4a | verified quality per USD vs static-best and round-robin | - | `two_level_bootstrap_share_le_zero` | MR-1 |
-| H4b | local vs commercial: error rate and EQC | - | `mcnemar_exact+paired_tost (margin 0.5)` | - |
+| Hypothesis | Endpoint | Comparison | Test | Sided | Margin (null) | Table XVII criteria |
+|---|---|---|---|---|---|---|
+| H4a | verified quality per USD vs static-best and round-robin | adaptive ranking vs static-best vs round-robin | `two_level_bootstrap_share_le_zero` | one | 0 | MR-1 |
+| H4b | local vs commercial: error rate and EQC | local vs commercial | `mcnemar_exact+paired_tost` | two+equivalence | 0.5 | - |
+
+H4b is confirmatory only if ICC(2,k) >= 0.50 and Cronbach's alpha >= 0.70 across the EQC's 6 scales (computed by `icc_2k` and `cronbach_alpha`); otherwise the equivalence part (`paired_tost`) is reported as inconclusive.
 
 Criteria reported without a family test: MR-2; MR-3; LQ-2.
 
@@ -60,9 +62,22 @@ Criteria reported without a family test: MR-2; MR-3; LQ-2.
 | `cluster_bootstrap_bca_one_sided` | implemented |
 | `cluster_bootstrap_lower_bound` | implemented |
 | `bootstrap_one_sided` | implemented |
+| `paired_bootstrap_auc_one_sided` | implemented |
 | `two_level_bootstrap_share_le_zero` | implemented |
 | `friedman` | implemented |
 | `paired_tost` | implemented |
 
+## Secondary and ancillary analyses
+
+| Analysis | For | Description | Status |
+|---|---|---|---|
+| `mixed_effects_logistic` | H1a, H1b | claim-level mixed-effects logistic regression with item random intercepts (secondary) | not implemented (DI-138) |
+| `cumulative_link_mixed_model` | UE-1, Likert ratings | Likert ratings as ordinal outcomes with cumulative-link mixed models | not implemented (DI-138) |
+| `cliffs_delta` | Likert summaries | medians and Cliff's delta | not implemented (DI-138) |
+| `ordinal_sensitivity_eqc` | H4b | an ordinal model on the single EQC scales (sensitivity analysis for the TOST) | not implemented (DI-138) |
+| `icc_2k` | H4b | ICC(2,k) of the EQC (the H4b confirmatory condition) | not implemented (DI-138) |
+| `cronbach_alpha` | H4b | Cronbach's alpha across the EQC's six scales (the H4b confirmatory condition) | not implemented (DI-138) |
+| `prediction_powered_inference` | E1 | prediction-powered inference for the arms labelled on a random 25% of items | not implemented (DI-138) |
+
 Not executed: every hypothesis above awaits the frozen ULQS, the IRB letter, the OSF DOI and the research data
-plane (DI-129..DI-141).
+plane (DI-129..DI-142).

@@ -2,13 +2,18 @@
 
 Plan 12.7: "E1-E4 are pre-registered hypothesis tests (alpha = 0.05, Holm per family), not software gates". The plans hold
 no outcome: the loader refuses any key that would carry one (`result`, `p_value`, `met`, ...), at any depth. The test
-registry is honest: an `implemented` entry names a callable of `statistics.py`; every other test is `not implemented`.
-Nothing is filed with OSF while D-08 is open (DI-131), so the plans' status must start with `draft` and may not use the
-word `registered`.
+registry is honest: an `implemented` entry names a function of `statistics.py` listed in `statistics.REGISTERED_TESTS`
+(never a name it imports); every other test is `not implemented`. Each hypothesis carries its endpoint, its comparison
+(when its test compares arms, raters or conditions), its test, its sidedness (the test's: `SIDEDNESS`) and, for a
+one-sided or equivalence test, its margin, the null value; where VBT RevB Sec. X-A states the null, the margin must be
+that value (`PAPER_NULLS`). H4b carries the paper's EQC reliability condition (`H4B_CONFIRMATORY_IF`), and the secondary
+analyses the paper names are registered (`SECONDARY_ANALYSES`), implemented or not. Nothing is filed with OSF while D-08
+is open (DI-131), so the plans' status must start with `draft` and may not use the word `registered`.
 """
 
 from __future__ import annotations
 
+from fractions import Fraction
 import json
 from pathlib import Path
 from typing import Any, Mapping
@@ -22,6 +27,25 @@ FORBIDDEN_KEYS = frozenset({"result", "results", "p_value", "estimate", "met", "
 FAMILIES = ("E1", "E2", "E3", "E4")
 TABLE_XVII = frozenset({"F-1", "F-2", "F-3", "V-1", "V-2", "V-3", "V-4", "HR-1", "HR-2", "HR-3", "LQ-1", "LQ-2", "LQ-3",
                         "UE-1", "UE-2", "UE-3", "MR-1", "MR-2", "MR-3"})
+
+
+# The sidedness of each registered test's p-value (VBT RevB Sec. X-A: "Each hypothesis enters Holm through one p-value").
+SIDEDNESS = {"mcnemar_exact": "two", "paired_tost": "equivalence", "friedman": "omnibus", "bootstrap_one_sided": "one",
+             "paired_bootstrap_one_sided": "one", "cluster_bootstrap_lower_bound": "one", "cluster_bootstrap_bca_one_sided": "one",
+             "paired_bootstrap_auc_one_sided": "one", "two_level_bootstrap_share_le_zero": "one", "wilson_upper_bound": "one"}
+# Tests that compare two or more arms, raters or conditions, so a hypothesis using one names its comparison.
+COMPARING = frozenset({"mcnemar_exact", "paired_tost", "friedman", "paired_bootstrap_one_sided", "cluster_bootstrap_bca_one_sided",
+                       "paired_bootstrap_auc_one_sided", "two_level_bootstrap_share_le_zero"})
+# The nulls VBT RevB Sec. X-A states: H1c "H0: difference <= -5 points"; H2b "(H0: DR <= 1)" ("concludes DR > 1 if the
+# lower bound of its cluster-bootstrap CI exceeds 1"); H4b's TOST "margin +/-0.5"; H2a, H2c and H4a against no difference.
+PAPER_NULLS = {"H1c": "-0.05", "H2a": "0", "H2b": "1", "H2c": "0", "H4a": "0", "H4b": "0.5"}
+# VBT RevB Sec. X-A: "EQC is confirmatory only if ICC(2,k) >= 0.50 and Cronbach's alpha >= 0.70 across its six scales;
+# otherwise the equivalence part of H4b is reported as inconclusive."
+H4B_CONFIRMATORY_IF = {"icc_2k_min": "0.50", "cronbach_alpha_min": "0.70", "scales": 6, "applies_to": "paired_tost",
+                       "otherwise": "inconclusive", "computed_by": ["icc_2k", "cronbach_alpha"]}
+# The secondary and ancillary analyses VBT RevB Sec. X-A (and E1's labelling) names.
+SECONDARY_ANALYSES = ("mixed_effects_logistic", "cumulative_link_mixed_model", "cliffs_delta", "ordinal_sensitivity_eqc",
+                      "icc_2k", "cronbach_alpha", "prediction_powered_inference")
 
 
 class PlanError(ValueError):
@@ -56,11 +80,14 @@ def validate_plans(raw: Mapping[str, Any]) -> None:
         raise PlanError("families: must be exactly E1, E2, E3 and E4")
     tests = raw.get("tests") or {}
     for name, status in tests.items():
-        if status == "implemented":
-            if not callable(getattr(statistics, name, None)):
-                raise PlanError(f"tests.{name}: implemented but statistics.py has no such callable")
-        elif not (isinstance(status, str) and status.startswith("not implemented")):
-            raise PlanError(f"tests.{name}: status must be implemented or not implemented")
+        _check_status(f"tests.{name}", name, status)
+    secondary = raw.get("secondary_analyses")
+    if not isinstance(secondary, Mapping) or set(secondary) != set(SECONDARY_ANALYSES):
+        raise PlanError(f"secondary_analyses: must register exactly {', '.join(SECONDARY_ANALYSES)}")
+    for name, entry in secondary.items():
+        if not isinstance(entry, Mapping) or not isinstance(entry.get("analysis"), str) or not isinstance(entry.get("for"), list):
+            raise PlanError(f"secondary_analyses.{name}: needs an analysis and the hypotheses or criteria it serves")
+        _check_status(f"secondary_analyses.{name}", name, entry.get("status"))
     seen: set[str] = set()
     for family, body in families.items():
         for hypothesis in body.get("hypotheses", []):
@@ -68,12 +95,64 @@ def validate_plans(raw: Mapping[str, Any]) -> None:
             if identifier in seen:
                 raise PlanError(f"{family}: hypothesis {identifier} appears twice")
             seen.add(identifier)
-            for part in str(hypothesis.get("test", "")).split("+"):
+            parts = str(hypothesis.get("test", "")).split("+")
+            for part in parts:
                 if part not in tests:
                     raise PlanError(f"{family}.{identifier}: test {part} is not in the registry")
+                if part not in SIDEDNESS:
+                    raise PlanError(f"{family}.{identifier}: {part} is not a hypothesis test")
+            _check_hypothesis(f"{family}.{identifier}", identifier, hypothesis, parts, secondary)
             for criterion in hypothesis.get("criteria", []):
                 if criterion not in TABLE_XVII:
                     raise PlanError(f"{family}.{identifier}: criterion {criterion} is not a Table XVII row")
+
+
+def _check_status(where: str, name: str, status: Any) -> None:
+    if status == "implemented":
+        function = getattr(statistics, name, None)
+        if name not in statistics.REGISTERED_TESTS or not callable(function) \
+                or getattr(function, "__module__", None) != statistics.__name__:
+            raise PlanError(f"{where}: implemented but not a registered test defined in statistics.py")
+    elif not (isinstance(status, str) and status.startswith("not implemented")):
+        raise PlanError(f"{where}: status must be implemented or not implemented")
+
+
+def _decimal(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        Fraction(value)
+    except (ValueError, ZeroDivisionError):
+        return False
+    return True
+
+
+def _check_hypothesis(where: str, identifier: Any, hypothesis: Mapping[str, Any], parts: list[str],
+                      secondary: Mapping[str, Any]) -> None:
+    """Sidedness, margin (the null) and comparison, as VBT RevB Sec. X-A and Table I state them."""
+    sided = "+".join(SIDEDNESS[part] for part in parts)
+    if hypothesis.get("sided") != sided:
+        raise PlanError(f"{where}: sided must be {sided} (the registered test's p-value)")
+    needs_margin = any(SIDEDNESS[part] in ("one", "equivalence") for part in parts)
+    if needs_margin and not _decimal(hypothesis.get("margin")):
+        raise PlanError(f"{where}: a one-sided or equivalence test needs its margin (the null value) as a decimal string")
+    if not needs_margin and "margin" in hypothesis:
+        raise PlanError(f"{where}: a margin belongs to a one-sided or equivalence test only")
+    if identifier in PAPER_NULLS and (not _decimal(hypothesis.get("margin"))
+                                      or Fraction(hypothesis["margin"]) != Fraction(PAPER_NULLS[identifier])):
+        raise PlanError(f"{where}: margin must be the paper's null, {PAPER_NULLS[identifier]}")
+    comparison = hypothesis.get("comparison")
+    if any(part in COMPARING for part in parts):
+        if not isinstance(comparison, list) or len(comparison) < 2 or not all(isinstance(entry, str) and entry for entry in comparison):
+            raise PlanError(f"{where}: a comparing test names its comparison (two or more arms, raters or conditions)")
+    elif comparison is not None:
+        raise PlanError(f"{where}: a single-quantity test has no comparison")
+    if identifier == "H4b":
+        if hypothesis.get("confirmatory_if") != H4B_CONFIRMATORY_IF:
+            raise PlanError(f"{where}: confirmatory_if must be the paper's EQC reliability condition (ICC(2,k) >= 0.50, "
+                            "Cronbach's alpha >= 0.70, otherwise inconclusive)")
+    elif "confirmatory_if" in hypothesis:
+        raise PlanError(f"{where}: only H4b carries a confirmatory condition")
 
 
 def load_plans(path: Path = PLANS_PATH) -> dict[str, Any]:
@@ -108,22 +187,31 @@ def preregistration_markdown(raw: Mapping[str, Any]) -> str:
         lines += [f"## {family} ({body['rq']})", ""]
         if body.get("data"):
             lines += [f"Data: {body['data']}.", ""]
-        lines += ["| Hypothesis | Endpoint | Comparison | Test | Table XVII criteria |", "|---|---|---|---|---|"]
+        lines += ["| Hypothesis | Endpoint | Comparison | Test | Sided | Margin (null) | Table XVII criteria |",
+                  "|---|---|---|---|---|---|---|"]
         for hypothesis in body["hypotheses"]:
             comparison = " vs ".join(hypothesis.get("comparison", [])) or "-"
-            test = hypothesis["test"]
-            extras = [f"{key} {hypothesis[key]}" for key in ("sided", "margin", "resamples") if key in hypothesis]
-            if extras:
-                test = f"{test} ({', '.join(extras)})"
+            test = hypothesis["test"] + (f" (resamples {hypothesis['resamples']})" if "resamples" in hypothesis else "")
             criteria = ", ".join(hypothesis.get("criteria", [])) or "-"
-            lines.append(f"| {hypothesis['id']} | {hypothesis['endpoint']} | {comparison} | `{test}` | {criteria} |")
+            lines.append(f"| {hypothesis['id']} | {hypothesis['endpoint']} | {comparison} | `{test}` | {hypothesis['sided']} | "
+                         f"{hypothesis.get('margin', '-')} | {criteria} |")
         lines.append("")
+        for hypothesis in body["hypotheses"]:
+            condition = hypothesis.get("confirmatory_if")
+            if condition:
+                lines += [f"{hypothesis['id']} is confirmatory only if ICC(2,k) >= {condition['icc_2k_min']} and Cronbach's alpha >= "
+                          f"{condition['cronbach_alpha_min']} across the EQC's {condition['scales']} scales (computed by "
+                          f"{' and '.join(f'`{name}`' for name in condition['computed_by'])}); otherwise the equivalence part "
+                          f"(`{condition['applies_to']}`) is reported as {condition['otherwise']}.", ""]
         if body.get("criteria_only"):
             lines += [f"Criteria reported without a family test: {'; '.join(body['criteria_only'])}.", ""]
         if body.get("labelling"):
             lines += [f"Labelling: {body['labelling']}.", ""]
     lines += ["## Test registry", "", "| Test | Status |", "|---|---|"]
     lines += [f"| `{name}` | {status} |" for name, status in raw["tests"].items()]
+    lines += ["", "## Secondary and ancillary analyses", "", "| Analysis | For | Description | Status |", "|---|---|---|---|"]
+    lines += [f"| `{name}` | {', '.join(entry['for'])} | {entry['analysis']} | {entry['status']} |"
+              for name, entry in raw["secondary_analyses"].items()]
     lines += ["", "Not executed: every hypothesis above awaits the frozen ULQS, the IRB letter, the OSF DOI and the research data",
-              "plane (DI-129..DI-141).", ""]
+              "plane (DI-129..DI-142).", ""]
     return "\n".join(lines)

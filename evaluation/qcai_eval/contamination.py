@@ -334,7 +334,11 @@ def incomplete_targets(targets: Sequence[Mapping[str, Any]]) -> list[str]:
 
 
 def report(targets: Sequence[Mapping[str, Any]], sets: Sequence[FingerprintSet]) -> dict[str, Any]:
+    """The scan report. `result` is `fail` on any match, `incomplete` when there is none but some target's coverage
+    cannot prove zero (`incomplete_targets`), and `pass` only with zero matches and full coverage."""
     total = sum(hit["licensed_hits"] + hit["ulqs_hits"] for target in targets for hit in target["files_with_hits"])
+    incomplete = incomplete_targets(targets)
+    result = "fail" if total else "incomplete" if incomplete else "pass"
     return {"report": "qcai-research-log-scan", "format_version": 1,
             "fingerprint_sets": [{"id": s.id, "kind": s.kind, "dataset_content_sha256": s.dataset_content_sha256} for s in sets],
-            "targets": list(targets), "matches_total": total, "result": "pass" if total == 0 else "fail"}
+            "targets": list(targets), "matches_total": total, "incomplete_targets": incomplete, "result": result}

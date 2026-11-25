@@ -113,6 +113,7 @@ class FreezeRules:
     share_min: Fraction
     bloom_min: Fraction
     bibliographic_max: Fraction
+    agent_models: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -664,10 +665,63 @@ def load_freeze_rules(path: Path = DEFAULT_FREEZE_RULES) -> FreezeRules:
     if not items_min <= total <= items_max:
         raise ValueError(f"freeze rules: the strata targets total {total}, outside [{items_min}, {items_max}]")
     agreement, coverage = raw["agreement"], raw["coverage"]
+    agent = raw.get("agent_check")
+    if not isinstance(agent, Mapping) or agent.get("record") != AGENT_CHECK_RECORD or not isinstance(agent.get("pinned_models"), list) \
+            or not all(isinstance(model, str) and model for model in agent["pinned_models"]):
+        raise ValueError("freeze rules: agent_check must name the ulqs-agent-check-v1 record and a list of pinned models")
     return FreezeRules(raw=raw, sha256=canonical_sha256(raw), targets=targets, items_min=items_min, items_max=items_max,
                        alpha_min=_fraction(agreement["alpha_min"]), share_min=_fraction(agreement["second_rated_share_min"]),
                        bloom_min=_fraction(coverage["bloom_understand_or_above_min"]),
-                       bibliographic_max=_fraction(coverage["bibliographic_max"]))
+                       bibliographic_max=_fraction(coverage["bibliographic_max"]),
+                       agent_models=tuple(agent["pinned_models"]))
+
+
+# The AI-agent re-check (VBT RevB p. 15, Sec. VIII-B, "Benchmark verification before use"): after the conventional check,
+# an LLM verifier agent, one of the V2 verifier models chosen before the check, re-checks every item against its evidence
+# with the V2 verdict schema; its disagreements with the deterministic and human checks are adjudicated by a claim rater
+# who did not review that item; the counts of agent-detected defects, agent false alarms and missed defects are reported.
+AGENT_CHECK_RECORD = "ulqs-agent-check-v1"
+AGENT_CHECK_KEYS = ("record", "dataset_content_sha256", "agent_model_id", "model_chosen_before_check", "verdict_schema",
+                    "report_sha256", "items_checked", "disagreements", "disagreements_adjudicated",
+                    "adjudicated_by_non_reviewer", "agent_detected_defects", "agent_false_alarms", "agent_missed_defects",
+                    "items_changed_after_flag")
+AGENT_CHECK_COUNTS = ("items_checked", "disagreements", "disagreements_adjudicated", "agent_detected_defects",
+                      "agent_false_alarms", "agent_missed_defects")
+AGENT_VERDICT_SCHEMA = "v2"
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _count(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def agent_check_failures(record: Mapping[str, Any] | None, items: Sequence[Mapping[str, Any]], *, rules: FreezeRules) -> list[str]:
+    """The freeze codes of the agent re-check (spec 4.2): missing, malformed, for another item set, incomplete, by a model
+    the rules do not pin (none is pinned while D-07 is open: DI-142), or with an unadjudicated disagreement."""
+    if record is None:
+        return ["agent_check_missing"]
+    if not isinstance(record, Mapping) or record.get("record") != AGENT_CHECK_RECORD or set(record) != set(AGENT_CHECK_KEYS) \
+            or not all(_count(record[key]) for key in AGENT_CHECK_COUNTS) \
+            or not isinstance(record["agent_model_id"], str) or not record["agent_model_id"] \
+            or not isinstance(record["report_sha256"], str) or not _HEX64.match(record["report_sha256"]) \
+            or record["verdict_schema"] != AGENT_VERDICT_SCHEMA or not isinstance(record["items_changed_after_flag"], list):
+        return ["agent_check_invalid"]
+    failures = []
+    live = [item for item in items if item.get("status") != "retired"]
+    if record["dataset_content_sha256"] != dataset_content_sha256(items):
+        failures.append("agent_check_stale")
+    if record["items_checked"] != len(live):
+        failures.append("agent_check_incomplete")
+    if record["model_chosen_before_check"] is not True:
+        failures.append("agent_model_not_chosen_before_check")
+    if record["agent_model_id"] not in rules.agent_models:
+        failures.append("agent_model_not_pinned")
+    if record["disagreements_adjudicated"] != record["disagreements"] or record["adjudicated_by_non_reviewer"] is not True:
+        failures.append("agent_disagreements_unadjudicated")
+    known = {item.get("item_id") for item in items}
+    if any(not isinstance(item_id, str) or item_id not in known for item_id in record["items_changed_after_flag"]):
+        failures.append("agent_check_invalid")
+    return failures
 
 
 def _alpha(value: Any) -> Fraction | None:
@@ -680,11 +734,14 @@ def _alpha(value: Any) -> Fraction | None:
 
 
 def freeze_check(items: Sequence[Mapping[str, Any]], *, rules: FreezeRules, pointer_report: Any, agreement: Mapping[str, Any] | None,
-                 previous: Sequence[Mapping[str, Any]] | None = None, require_licensed: bool = True) -> FreezeReport:
+                 previous: Sequence[Mapping[str, Any]] | None = None, require_licensed: bool = True,
+                 agent_check: Mapping[str, Any] | None = None) -> FreezeReport:
     """The freeze conditions (spec 4.2). `previous` is the item set the freeze starts from (the review set, or the last
     frozen set): every item's move from it must be in `TRANSITIONS` (`transition_invalid`) and frozen content may not change
     (`frozen_content_changed`); with no previous set the freeze fails (`no_previous_set`). Every resolved EV pointer must
-    have been checked against the corpus text (`pointers_not_text_verified`)."""
+    have been checked against the corpus text (`pointers_not_text_verified`). The conventional check is followed by the
+    AI-agent re-check (`agent_check`, an `ulqs-agent-check-v1` record; `agent_check_failures`), so no freeze passes
+    without it."""
     failures: list[str] = []
     live = [item for item in items if item.get("status") != "retired"]
     if validate_dataset(items):
@@ -751,5 +808,6 @@ def freeze_check(items: Sequence[Mapping[str, Any]], *, rules: FreezeRules, poin
             rated, total = (per_stratum.get(letter) or [0, counts[letter]])
             if rated < ceil(total * rules.share_min):
                 failures.append(f"stratum_second_rated_below_share:{letter}")
+    failures += agent_check_failures(agent_check, items, rules=rules)
     return FreezeReport(passed=not failures, failures=tuple(failures), counts=counts, dataset_sha256=dataset_sha256(items),
                         rules_sha256=rules.sha256)

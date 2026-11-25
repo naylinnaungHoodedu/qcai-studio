@@ -7,7 +7,11 @@ the bracketed values in the research plane at freeze; the filled card stays ther
 
 - Dataset: ULQS v1.0 (`dataset_version` `ULQS-v1.0`, records `schema_version` 1.1, schema `lqs/ulqs-v1.0.schema.json`).
 - Corpus version: [one `QCAI-CORPUS-YYYY-MM-DD` value]; it is a field of each item, never part of an id (R-19).
-- Freeze record: [dataset sha256; rules sha256; agreement-record sha256] (`scripts/validate_ulqs.py --freeze --freeze-out`).
+- Freeze record: [dataset sha256; rules sha256; agreement-record sha256; agent-check sha256 and verifier model id]
+  (`scripts/validate_ulqs.py --freeze --agent-check --freeze-out`).
+- Benchmark verification: [agent-detected defects; agent false alarms; defects the agent missed; disagreements
+  adjudicated; items changed after an agent flag], reported descriptively with the sample description; these counts do
+  not enter the E2 analysis.
 - Source: ULQS v1.0-rc1 (88 items, one author), migrated with `scripts/migrate_ulqs_rc1.py` and the table
   `lqs/ulqs-rc1-to-v1.0-mapping.json`.
 
@@ -44,7 +48,10 @@ flags true and `item_kind` marked, at least 4/5 at Bloom "understand" or above, 
 version, every pointer resolved and checked against the corpus text character for character, every item's move from the
 previous set (the review set or the last frozen set) allowed by the state machine with no frozen content changed, and a
 current agreement record with
-Krippendorff's alpha (nominal) of at least 0.667 and at least a quarter of items second-rated (and ceil(n/4) per stratum).
+Krippendorff's alpha (nominal) of at least 0.667 and at least a quarter of items second-rated (and ceil(n/4) per stratum),
+and then the AI-agent re-check (VBT RevB p. 15, "Benchmark verification before use"): a V2 verifier model chosen before
+the check and pinned in the freeze rules re-checked every item against its evidence, and a claim rater who did not review
+the item adjudicated each disagreement. No verifier model is pinned until D-07 decides, so no freeze passes yet (DI-142).
 
 ## Rated units
 

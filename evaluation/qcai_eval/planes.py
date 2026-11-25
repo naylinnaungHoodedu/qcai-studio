@@ -83,7 +83,7 @@ def inside_checkout(path: Path | str, root: Path = REPO_ROOT) -> bool:
 def _git_ignored(rel_posix: str, root: Path) -> bool:
     try:
         result = subprocess.run(["git", "check-ignore", "-q", "--no-index", rel_posix], cwd=root, capture_output=True)
-    except OSError:
+    except (OSError, ValueError):  # ValueError: an argument with an embedded NUL
         return False
     return result.returncode == 0
 

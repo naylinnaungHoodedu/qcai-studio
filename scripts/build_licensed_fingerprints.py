@@ -8,9 +8,12 @@ Writes a `qcai-licensed-fingerprints/1` file (12-word shingles, the format scrip
 fingerprint file holds its salt, so it is research-plane material: every input and output must be a research-plane path
 (outside the checkout, or a git-ignored private path). The salt is hex, at least 32 bytes, taken from the named environment
 variable or file, and never printed. --licensed-text reads text files and .docx. The access log records, under the
-actor's role, the read of each licensed text and of the ULQS items, and the write of each fingerprint file.
+actor's role, the read of each licensed text and of the ULQS items (as soon as each is read, before any check that can
+refuse; ULQS items that do not parse are logged by the file's LF sha256), and the write of each fingerprint file. The
+ULQS items are validated (`ulqs.validate_dataset`) before any fingerprint is built from them.
 
-Exit codes: 0 ok; 2 refused path or usage; 3 bad salt.
+Exit codes: 0 ok; 2 refused path or usage, a licensed text or the ULQS file unreadable, or a licensed text that is not
+text or .docx; 3 bad salt; 4 the ULQS items are not valid JSON lines or fail validation.
 """
 
 from __future__ import annotations
@@ -28,7 +31,7 @@ for path in (REPO_ROOT, API_ROOT):
         sys.path.insert(0, str(path))
 
 from evaluation.qcai_eval import access_log, contamination, planes, ulqs  # noqa: E402
-from evaluation.qcai_eval.canonical import canonical_sha256, dumps_record, read_jsonl, write_lf  # noqa: E402
+from evaluation.qcai_eval.canonical import canonical_sha256, dumps_record, lf_sha256, read_jsonl, write_lf  # noqa: E402
 
 
 def _salt(args: argparse.Namespace) -> bytes | None:
@@ -83,15 +86,39 @@ def main(argv: list[str] | None = None) -> int:
 
     texts = []
     for path in args.licensed_text:
-        data = path.read_bytes()
+        try:
+            data = path.read_bytes()
+        except (OSError, ValueError) as error:
+            print(f"refused (exit 2): licensed text {path.name} unreadable ({type(error).__name__})", file=sys.stderr)
+            return 2
         log("read", "licensed_text", hashlib.sha256(data).hexdigest())
         text = contamination._text_of(path.name, data)
         if text is None:
             print(f"refused (exit 2): {path.name} is not a text or .docx file", file=sys.stderr)
             return 2
         texts.append(text)
-    items = read_jsonl(args.ulqs)
-    log("read", "ulqs_items", ulqs.dataset_sha256(items))
+    try:
+        ulqs_sha = lf_sha256(args.ulqs)
+    except (OSError, ValueError) as error:
+        print(f"refused (exit 2): ULQS items {args.ulqs.name} unreadable ({type(error).__name__})", file=sys.stderr)
+        return 2
+    try:
+        items = read_jsonl(args.ulqs)
+    except (OSError, ValueError) as error:
+        log("read", "ulqs_items", ulqs_sha)
+        print(f"refused (exit 4): ULQS items are not valid JSON lines ({error})", file=sys.stderr)
+        return 4
+    try:
+        items_sha = ulqs.dataset_sha256(items)
+    except (AttributeError, TypeError, ValueError):
+        items_sha = ulqs_sha
+    log("read", "ulqs_items", items_sha)
+    problems = ulqs.validate_dataset(items)
+    if problems:
+        for problem in problems[:50]:
+            print(f"problem: {problem}")
+        print(f"refused (exit 4): {len(problems)} ULQS schema problems", file=sys.stderr)
+        return 4
     licensed = contamination.build_licensed(texts, salt, set_id=args.set_id)
     ulqs_set = contamination.build_ulqs(items, salt, set_id=args.set_id)
     write_lf(args.output_licensed, dumps_record(licensed))

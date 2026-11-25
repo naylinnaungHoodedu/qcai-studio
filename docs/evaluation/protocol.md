@@ -2,13 +2,15 @@
 
 The harness is in `evaluation/qcai_eval` and `scripts/` (Phase 10 spec: `docs/architecture/phase10-implementation-spec.md`).
 No E1-E4 run has been executed: every procedure below waits on the research data plane (D-14), the IRB letter and the OSF
-DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-141). Not executed: nothing here is a result or an asserted outcome.
+DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-142). Not executed: nothing here is a result or an asserted outcome.
 
 1. **Freeze.** ULQS v1.0 passes `scripts/validate_ulqs.py --freeze --previous <review set> --corpus-text <dir>` in the
    research plane (120-200 items at the strata targets of `lqs/ulqs-v1.0-freeze-rules.json`, every move from the previous
    set allowed by the state machine and no frozen content changed, every pointer resolved and checked against the corpus
-   text character for character, Krippendorff's alpha at least 0.667 and at least a quarter of items second-rated). The
-   freeze record pins the dataset sha256.
+   text character for character, Krippendorff's alpha at least 0.667 and at least a quarter of items second-rated, and
+   the AI-agent re-check of every item by a V2 verifier model chosen before the check, with each disagreement adjudicated
+   by a claim rater who did not review that item). The freeze record pins the dataset sha256, the agent report's sha256,
+   the model id and the agent's counts. No verifier model is pinned until D-07, so no freeze passes yet (DI-142).
 2. **Pin.** The run spec pins the configuration package by path and sha256, the items, the evidence catalog, the arms
    (`evaluation/config/arms_v1.json`) and the analysis plan (`evaluation/config/analysis_plans_v1.json`). Seeds are
    sha256(run_id, arm, item_id, replicate).
@@ -23,10 +25,14 @@ DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-141). Not execu
    spec must keep the subsample, so its record reports replicate variance); abstentions are outcomes, not missing data. Payload logs hold pointers, hashes and sizes only.
 5. **Label.** Atomic claims are labelled supported, attribution error, unsupported but true, or fabricated, with the EHMF
    type; abstaining units are labelled supported or unsupported abstention (`lqs/rubric.md`).
-6. **Analyse.** Exact McNemar, the one-sided, paired, cluster, BCa and two-level bootstraps, the Friedman test and the
-   paired TOST of the pre-registration, with Holm within each family at alpha 0.05. Every test the analysis plans register
-   is implemented in `evaluation/qcai_eval/statistics.py` with known-answer tests and has run on no research data; the
-   cumulative-link models, ICC and prediction-powered inference are not implemented (DI-138).
+6. **Analyse.** Exact McNemar, the one-sided, paired, cluster, BCa, paired-AUC and two-level bootstraps, the Friedman test
+   and the paired TOST of the pre-registration, each hypothesis entering Holm within its family at alpha 0.05 through one
+   p-value, with its null as the plans state it (H2b: DR <= 1). The equivalence part of H4b is confirmatory only if
+   ICC(2,k) >= 0.50 and Cronbach's alpha >= 0.70 across the EQC's six scales, and is otherwise reported as inconclusive.
+   Every hypothesis test the analysis plans register is implemented in `evaluation/qcai_eval/statistics.py` with
+   known-answer tests and has run on no research data; the secondary analyses (the claim-level mixed-effects logistic
+   regression, cumulative-link mixed models, Cliff's delta, the ordinal sensitivity model for EQC, ICC(2,k), Cronbach's
+   alpha and prediction-powered inference) are registered and not implemented (DI-138).
 7. **Scan.** Before and after a run, `scripts/scan_research_logs.py` scans every research-plane log with the salted
    fingerprints and must report zero matches. The pre-run scan the run spec pins must use the research fingerprint sets,
    the ULQS set built from the run's items, and cover the repository and the prompts or logs.

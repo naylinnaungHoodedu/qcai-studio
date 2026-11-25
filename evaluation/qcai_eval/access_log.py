@@ -1,8 +1,9 @@
 """The research-plane access log (`access-log-v1`; spec 3.11; PD-72): roles, actions and artifact hashes, no names, no text.
 
 Lines are appended, never rewritten. The runner, the migrator, the validator and the fingerprint builder require
-`--access-log PATH` whenever their inputs are not all synthetic, and with it the actor's role (`--actor-role`, the
-migrator's `--author-role`). Each script logs every research-plane input it reads and every artifact it writes; the
+`--access-log PATH` whenever their inputs are not all synthetic, and the research-log scanner whenever it reads research
+fingerprints; with it, the actor's role (`--actor-role`, the migrator's `--author-role`). Each of these five scripts logs
+every research-plane input as soon as it is read, before any check that can refuse, and every artifact it writes; the
 runner also logs the run's start and its outcome (completed, interrupted or refused), so a run that ended early still
 leaves its reads in the log.
 """
@@ -18,7 +19,8 @@ PROVISIONAL_DEFAULTS = ("PD-72",)
 ROLES = ("PI", "MLE", "DS", "RL", "RV")
 ACTIONS = ("read", "write", "run", "export")
 KINDS = ("ulqs_items", "evidence_catalog", "corpus_text", "ratings", "licensed_text", "fingerprints", "agreement_record",
-         "freeze_record", "scan_report", "run_spec", "recording", "run_output", "irb_record", "osf_record", "governance_record")
+         "freeze_record", "scan_report", "scan_target", "run_spec", "recording", "run_output", "irb_record", "osf_record",
+         "governance_record", "agent_check_record")
 OUTCOMES = ("started", "completed", "interrupted", "refused")
 
 

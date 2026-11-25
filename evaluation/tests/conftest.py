@@ -1,5 +1,6 @@
 """The evaluation tests' set-up (Phase 10 spec 8.2): the repository, apps/api and its tests on the path, an in-memory
-development database for any lazy application import, and the network guard installed before anything else runs."""
+development database for any lazy application import, and the network guard and the whole-tree scan guard installed
+before anything else runs."""
 
 from __future__ import annotations
 
@@ -18,9 +19,12 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("ENVIRONMENT", "development")
 
 import network_guard  # noqa: E402
+import scan_guard  # noqa: E402
 
 # No test touches the network (Phase 5 spec 13.2); install() is idempotent when apps/api/tests' conftest ran first.
 network_guard.install()
+# No test repeats CI's whole-tree research-log scan (spec 8.3); idempotent too.
+scan_guard.install(REPO_ROOT)
 
 
 @pytest.fixture(autouse=True)

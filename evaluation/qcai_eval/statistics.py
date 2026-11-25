@@ -8,6 +8,11 @@ from math import ceil, comb, erf, exp, floor, lgamma, log, sqrt
 from typing import Any, Callable, Mapping, Sequence
 
 PROVISIONAL_DEFAULTS = ("PD-70",)  # Phase 10 spec 12.1; ratified under DI-140
+# The tests an analysis plan may mark `implemented` (analysis_plans.validate_plans): each is a function defined in this
+# module. A name this module merely imports (log, sqrt, Fraction, ...) or a helper is never a registered test.
+REGISTERED_TESTS = ("mcnemar_exact", "wilson_upper_bound", "holm", "paired_bootstrap_one_sided", "cluster_bootstrap_bca_one_sided",
+                    "cluster_bootstrap_lower_bound", "bootstrap_one_sided", "paired_bootstrap_auc_one_sided",
+                    "two_level_bootstrap_share_le_zero", "friedman", "paired_tost")
 
 
 def wilson_interval(successes: int, total: int, z: float = 1.959963984540054) -> dict[str, float | int]:
@@ -215,12 +220,16 @@ def _replicates(values: list, statistic: Callable[[list], float], resamples: int
 
 
 def _one_sided(replicates: list[float], estimate: float, index: int, *, margin: str, alpha: str, method: str, seed: str) -> dict:
+    """The one-sided result. `p_value` is the percentile p-value of H0 (statistic <= margin), the share of replicates at or
+    below the margin; with the bound at the sorted replicate floor(alpha * B), `reject` holds exactly when p_value <=
+    alpha. The BCa form replaces `p_value` with its own (cluster_bootstrap_bca_one_sided)."""
     resamples = len(replicates)
     bound = float(Fraction(margin))
     lower = replicates[min(max(index, 0), resamples - 1)]
+    share = sum(1 for value in replicates if value <= bound) / resamples
     return {"estimate": estimate, "lower_bound": lower, "margin": margin, "alpha": alpha, "reject": lower > bound,
-            "share_at_or_below_margin": sum(1 for value in replicates if value <= bound) / resamples, "resamples": resamples,
-            "seed": seed, "method": method, "rule": "hash-resample-v1"}
+            "p_value": share, "share_at_or_below_margin": share, "resamples": resamples, "seed": seed, "method": method,
+            "rule": "hash-resample-v1"}
 
 
 def bootstrap_one_sided(clusters: Sequence[Any], statistic: Callable[[list], float], *, resamples: int, seed: str,
@@ -256,11 +265,50 @@ def _mean_difference(pairs: list) -> float:
     return sum(a - b for a, b in pairs) / len(pairs)
 
 
+def auc(labels: Sequence[bool], scores: Sequence[float]) -> float:
+    """The area under the ROC curve (Mann-Whitney): P(score of a positive > score of a negative) + 0.5 P(tie), positives
+    being the items labelled True. Undefined (ValueError) without both a positive and a negative."""
+    if len(labels) != len(scores):
+        raise ValueError("an AUC needs one score per label")
+    positives = [float(score) for label, score in zip(labels, scores) if label]
+    negatives = [float(score) for label, score in zip(labels, scores) if not label]
+    if not positives or not negatives:
+        raise ValueError("an AUC needs at least one positive and one negative item")
+    wins = sum(1.0 if p > n else 0.5 if p == n else 0.0 for p in positives for n in negatives)
+    return wins / (len(positives) * len(negatives))
+
+
+def paired_bootstrap_auc_one_sided(labels: Sequence[bool], left_scores: Sequence[float], right_scores: Sequence[float], *,
+                                   resamples: int, seed: str, margin: str = "0", alpha: str = "0.05") -> dict:
+    """The paired bootstrap comparison of two AUCs on the same items (H2c: the panel's against the novices'): each item is
+    resampled whole with both of its scores, the statistic is AUC(left) - AUC(right), one-sided against `margin`. A
+    replicate that draws only one class has no AUC and counts as at or below the margin (conservative)."""
+    if not len(labels) == len(left_scores) == len(right_scores):
+        raise ValueError("a paired AUC comparison needs one label and two scores per item")
+    rows = [(bool(label), float(a), float(b)) for label, a, b in zip(labels, left_scores, right_scores)]
+
+    def difference(chosen: list) -> float:
+        try:
+            return auc([row[0] for row in chosen], [row[1] for row in chosen]) - auc([row[0] for row in chosen], [row[2] for row in chosen])
+        except ValueError:
+            return float("-inf")
+
+    estimate = auc([row[0] for row in rows], [row[1] for row in rows]) - auc([row[0] for row in rows], [row[2] for row in rows])
+    replicates = _replicates(rows, difference, resamples, seed)
+    return _one_sided(replicates, estimate, floor(Fraction(alpha) * resamples), margin=margin, alpha=alpha,
+                      method="paired-auc-percentile-one-sided", seed=seed)
+
+
 def cluster_bootstrap_bca_one_sided(clusters: Sequence[Any], statistic: Callable[[list], float], *, resamples: int, seed: str,
                                     margin: str = "0", alpha: str = "0.05") -> dict:
     """The one-sided BCa lower bound (Efron 1987) over clusters: z0 = Phi^-1(share of replicates below the estimate), the
     acceleration from the leave-one-cluster-out jackknife, a = sum(d^3) / (6 sum(d^2)^1.5) with d = mean - theta_(i), and
-    the bound at the sorted replicate floor(Phi(z0 + (z0 + z_alpha) / (1 - a (z0 + z_alpha))) * B)."""
+    the bound at the sorted replicate floor(Phi(z0 + (z0 + z_alpha) / (1 - a (z0 + z_alpha))) * B).
+
+    `p_value` is the BCa one: the alpha at which the BCa bound reaches the margin. With q the share of replicates at or
+    below the margin and w = Phi^-1(q) - z0, it is Phi(w / (1 + a w) - z0), the inverse of the adjusted percentile (0
+    when q = 0 or when no alpha's bound reaches down to q; 1 when q = 1 or when none reaches up to it), so that `reject`
+    holds exactly when p_value <= alpha. `share_at_or_below_margin` stays the plain percentile share."""
     values = list(clusters)
     if len(values) < 2:
         raise ValueError("BCa needs at least two clusters for the jackknife")
@@ -278,7 +326,20 @@ def cluster_bootstrap_bca_one_sided(clusters: Sequence[Any], statistic: Callable
     adjusted = normal_cdf(z0 + (z0 + z_alpha) / (1.0 - acceleration * (z0 + z_alpha)))
     result = _one_sided(replicates, estimate, floor(adjusted * resamples), margin=margin, alpha=alpha,
                         method="cluster-bca-one-sided", seed=seed)
-    return {**result, "z0": z0, "acceleration": acceleration, "adjusted_alpha": adjusted}
+    return {**result, "p_value": _bca_p_value(result["share_at_or_below_margin"], z0, acceleration), "z0": z0,
+            "acceleration": acceleration, "adjusted_alpha": adjusted}
+
+
+def _bca_p_value(share: float, z0: float, acceleration: float) -> float:
+    if share <= 0.0:
+        return 0.0
+    if share >= 1.0:
+        return 1.0
+    w = normal_quantile(share) - z0
+    denominator = 1.0 + acceleration * w
+    if denominator <= 0.0:  # beyond the adjusted percentile's range: every alpha rejects (a > 0) or none does (a < 0)
+        return 0.0 if acceleration > 0 else 1.0
+    return normal_cdf(w / denominator - z0)
 
 
 def two_level_bootstrap_share_le_zero(groups: Sequence[Sequence[Any]], statistic: Callable[[list], float], *, resamples: int,
@@ -296,7 +357,8 @@ def two_level_bootstrap_share_le_zero(groups: Sequence[Sequence[Any]], statistic
             group = outer[index]
             chosen.append([group[i] for i in hash_resample_indices(len(group), f"{seed}\x1f{b}\x1f{k}", 0)])
         replicates.append(statistic(chosen))
-    return {"estimate": statistic(outer), "share_le_zero": sum(1 for value in replicates if value <= 0) / resamples,
+    share = sum(1 for value in replicates if value <= 0) / resamples
+    return {"estimate": statistic(outer), "share_le_zero": share, "p_value": share,  # H4a's Holm input (VBT RevB Sec. X-A)
             "resamples": resamples, "seed": seed, "method": "two-level", "rule": "hash-resample-two-level-v1"}
 
 

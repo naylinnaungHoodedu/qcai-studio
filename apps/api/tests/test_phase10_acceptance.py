@@ -71,9 +71,11 @@ def run_main(argv):
 
 
 def _freeze_case(tmp_path, *, counts=synthetic.PAPER_TARGETS, mutate=None, rules=None, corpus_edit=None, agreement_edit=None,
-                 share="1/4", require_licensed=False, frozen=True, previous_edit=None, corpus_check=True):
-    """One freeze case built from its own dataset: items, catalog, corpus text, ratings, the agreement record and the review
-    set the freeze starts from (every candidate moved to review, then to frozen)."""
+                 share="1/4", require_licensed=False, frozen=True, previous_edit=None, corpus_check=True, agent_edit=None,
+                 pin_agent=True):
+    """One freeze case built from its own dataset: items, catalog, corpus text, ratings, the agreement record, the review
+    set the freeze starts from (every candidate moved to review, then to frozen) and the AI-agent re-check record. The
+    committed rules pin no verifier model (D-07; DI-142), so a case pins the synthetic one unless `pin_agent` is false."""
     items = synthetic.synthetic_dataset(counts, human_reviewed=True)
     catalog = EvidenceCatalog.from_lines(synthetic.synthetic_catalog(items))
     corpus = synthetic.corpus_text(items)
@@ -82,6 +84,8 @@ def _freeze_case(tmp_path, *, counts=synthetic.PAPER_TARGETS, mutate=None, rules
     if corpus_edit:
         corpus_edit(corpus)
     rules = rules or ulqs.load_freeze_rules()
+    if pin_agent:
+        rules = dataclasses.replace(rules, agent_models=(synthetic.SYNTHETIC_AGENT_MODEL,))
     ratings = synthetic.synthetic_ratings(items, rubric_sha256=RUBRIC_SHA, share=share, disagree=1)
     record = agreement.agreement_record(ratings, items, rules=rules, rubric_sha256=RUBRIC_SHA, ratings_sha256="b" * 64)
     if agreement_edit:
@@ -92,8 +96,11 @@ def _freeze_case(tmp_path, *, counts=synthetic.PAPER_TARGETS, mutate=None, rules
     if frozen:  # the agreement record is computed before freezing and stays current after it
         items = [{**item, "status": "frozen"} if item["status"] == "candidate" else item for item in items]
     report = resolve_items(items, PointerResolver(catalog=catalog, corpus_text=corpus.get if corpus_check else None))
+    agent = synthetic.agent_check(items)
+    if agent_edit:
+        agent = agent_edit(agent, items)
     result = ulqs.freeze_check(items, rules=rules, pointer_report=report, agreement=record, previous=previous,
-                               require_licensed=require_licensed)
+                               require_licensed=require_licensed, agent_check=agent)
     return result, items, record
 
 
@@ -160,6 +167,16 @@ def _stale(record, items):
     return {**record, "dataset_content_sha256": ulqs.dataset_content_sha256(other)}
 
 
+def _stale_items(items):
+    other = json.loads(json.dumps(items))
+    other[0]["question"] = "A different invented question?"
+    return other
+
+
+def _agent_of(agent, items):
+    return {**agent, "dataset_content_sha256": ulqs.dataset_content_sha256(items)}
+
+
 def _unknown_pointer(items):
     target = next(item for item in items if item["stratum"] == "A")
     target["evidence_ids"] = ["EV-SYN-p990-01"]
@@ -221,6 +238,24 @@ FREEZE_CASES = {
     "frozen content changed": (dict(previous_edit=_first_previous({"status": "frozen", "topic": "an older invented topic"})),
                                {"frozen_content_changed"}),
     "an item dropped instead of retired": (dict(previous_edit=_extra_previous), {"transition_invalid"}),
+    # VBT RevB p. 15, "Benchmark verification before use": the conventional check, then the AI-agent re-check.
+    "no agent check": (dict(agent_edit=lambda agent, items: None), {"agent_check_missing"}),
+    "no verifier model pinned (D-07)": (dict(pin_agent=False), {"agent_model_not_pinned"}),
+    "agent check of other content": (dict(agent_edit=lambda agent, items: _agent_of(agent, _stale_items(items))), {"agent_check_stale"}),
+    "agent checked fewer items": (dict(agent_edit=lambda agent, items: {**agent, "items_checked": agent["items_checked"] - 1}),
+                                  {"agent_check_incomplete"}),
+    "agent disagreement unadjudicated": (dict(agent_edit=lambda agent, items: {**agent, "disagreements": 2}),
+                                         {"agent_disagreements_unadjudicated"}),
+    "adjudicated by the item's reviewer": (dict(agent_edit=lambda agent, items: {**agent, "adjudicated_by_non_reviewer": False}),
+                                           {"agent_disagreements_unadjudicated"}),
+    "agent model chosen after the check": (dict(agent_edit=lambda agent, items: {**agent, "model_chosen_before_check": False}),
+                                           {"agent_model_not_chosen_before_check"}),
+    "agent record without its counts": (dict(agent_edit=lambda agent, items: {k: v for k, v in agent.items() if k != "agent_false_alarms"}),
+                                        {"agent_check_invalid"}),
+    "agent record with another verdict schema": (dict(agent_edit=lambda agent, items: {**agent, "verdict_schema": "v1"}),
+                                                 {"agent_check_invalid"}),
+    "an unknown item changed after a flag": (dict(agent_edit=lambda agent, items: {**agent, "items_changed_after_flag": ["SYN-A-999"]}),
+                                             {"agent_check_invalid"}),
 }
 
 
@@ -245,6 +280,25 @@ def test_ac_10_1_freeze_rules_outside_the_item_range_are_refused(tmp_path):
     assert sum(ulqs.load_freeze_rules().targets.values()) == 160
 
 
+def test_ac_10_1_freeze_rules_without_the_agent_check_or_its_pinned_models_are_refused(tmp_path):
+    # VBT RevB p. 15: no freeze without the AI-agent re-check, so the rules must name its record and a model list.
+    raw = json.loads(ulqs.DEFAULT_FREEZE_RULES.read_text(encoding="utf-8"))
+    for index, edit in enumerate((lambda r: r.pop("agent_check"), lambda r: r["agent_check"].update(record="other-v1"),
+                                  lambda r: r["agent_check"].update(pinned_models="SYN-VERIFIER-1"),
+                                  lambda r: r["agent_check"].update(pinned_models=[""]))):
+        changed = json.loads(json.dumps(raw))
+        edit(changed)
+        path = tmp_path / f"rules-agent-{index}.json"
+        path.write_text(json.dumps(changed), encoding="utf-8")
+        with pytest.raises(ValueError, match="agent_check must name"):
+            ulqs.load_freeze_rules(path)
+    changed = json.loads(json.dumps(raw))
+    changed["agent_check"]["pinned_models"] = [synthetic.SYNTHETIC_AGENT_MODEL]
+    path = tmp_path / "rules-agent-pinned.json"
+    path.write_text(json.dumps(changed), encoding="utf-8")
+    assert ulqs.load_freeze_rules(path).agent_models == (synthetic.SYNTHETIC_AGENT_MODEL,)
+
+
 def test_ac_10_1_the_strata_targets_are_the_paper_s_in_one_provisional_data_file():
     rules = ulqs.load_freeze_rules()
     raw = rules.raw
@@ -257,6 +311,9 @@ def test_ac_10_1_the_strata_targets_are_the_paper_s_in_one_provisional_data_file
     assert "not a ULQS freeze condition" in raw["e1_label_agreement"]["applies_to"]
     assert rules.alpha_min == Fraction("0.667") and rules.share_min == Fraction(1, 4)
     assert (rules.items_min, rules.items_max) == (120, 200)
+    # The AI-agent re-check is a freeze condition; no verifier model is pinned until D-07 decides (DI-142).
+    assert raw["agent_check"]["record"] == "ulqs-agent-check-v1" and rules.agent_models == ()
+    assert "Benchmark verification before use" in raw["agent_check"]["source"] and "DI-142" in raw["agent_check"]["pinned_models_rule"]
 
 
 def _rc1(items):
@@ -491,7 +548,7 @@ def test_ac_10_3_a_live_run_with_a_scripted_provider_matches_the_stub_run_s_keys
     package = synthetic.decided_package(tmp_path)
     stub = stub_spec(tmp_path, package=package)
     live = {**stub, **{key: live_spec[key] for key in ("governance", "provider_terms", "licence_ruling", "research_use_confirmation")},
-            "mode": "live", "responder": {"live": {"adapter": "fake-adapter"}}}
+            "mode": "live", "responder": {"live": {"adapter": "fake-adapter", "providers": ["SYN-PROVIDER-1"]}}}
     stub_plan = runner.plan_run(stub)
     live_plan = runner.plan_run(live, out_dir=out)
     assert live_plan.requests is not stub_plan.requests and live_plan.pins["package"]["owner_decisions"]["D-07"] == "decided"
@@ -671,6 +728,23 @@ def test_ac_10_4_a_checkout_path_in_another_spelling_is_still_refused(tmp_path):
     finally:
         os.unlink(link) if link.is_symlink() else os.rmdir(link)
     assert not (REPO_ROOT / "docs" / "evaluation" / "x.json").exists() and not (REPO_ROOT / "docs" / "x.json").exists()
+
+
+def test_ac_10_4_file_identity_alone_maps_an_alias_of_the_checkout_on_every_platform(tmp_path, monkeypatch):
+    # The third reading (os.path.samefile on the ancestors) on its own: with the realpath reading disabled, a link into the
+    # checkout (a symlink, or a junction on Windows) is mapped only by file identity, which CI's Linux runner exercises too.
+    link = tmp_path / "alias"
+    _link_into(link, REPO_ROOT)
+    monkeypatch.setattr(planes, "_realpath", lambda path: path)
+    try:
+        assert planes.checkout_relative(link / "docs" / "x.json") == "docs/x.json"
+        assert planes.checkout_relative(link) == "." and planes.inside_checkout(link / "lqs" / "absent" / "y.json")
+        with pytest.raises(planes.PathRefused, match="not a private-plane path"):
+            planes.require_private_output(link / "docs" / "x.json")
+        assert planes.checkout_relative(tmp_path / "elsewhere" / "x.json") is None
+    finally:
+        os.unlink(link) if link.is_symlink() else os.rmdir(link)
+    assert not (REPO_ROOT / "docs" / "x.json").exists()
 
 
 def _globs_with(pattern):
@@ -1021,6 +1095,48 @@ def test_plan_f_the_validator_logs_each_input_it_reads_and_each_record_it_writes
                                ("read", "ratings", None), ("write", "agreement_record", None)]
     assert read_jsonl(access)[0]["artifact_sha256"] == ulqs.dataset_sha256(items)
     assert read_jsonl(access)[3]["artifact_sha256"] == lf_sha256(ratings)
+    # A refusal after a read still leaves the read: an invalid catalog (exit 5), invalid ratings (exit 2) and items that do
+    # not parse (exit 2) are each logged, by the file's LF sha256, before the refusal; the agent-check record is logged.
+    base = ["--items", str(items_path), "--access-log", str(access), "--actor-role", "RL"]
+    bad_catalog = tmp_path / "bad-catalog.jsonl"
+    bad_catalog.write_text("{not json\n", encoding="utf-8")
+    access.unlink()
+    assert validate.main(base + ["--catalog", str(bad_catalog)]) == 5
+    assert _access(access) == [("read", "ulqs_items", None), ("read", "evidence_catalog", None)]
+    assert read_jsonl(access)[1]["artifact_sha256"] == lf_sha256(bad_catalog)
+    bad_ratings = tmp_path / "bad-ratings.jsonl"
+    bad_ratings.write_text("{not json\n", encoding="utf-8")
+    access.unlink()
+    assert validate.main(base + ["--ratings", str(bad_ratings), "--rubric", str(REPO_ROOT / "lqs" / "rubric.md"), "--agreement-out",
+                                 str(tmp_path / "a2.json")]) == 2
+    assert _access(access) == [("read", "ulqs_items", None), ("read", "ratings", None)]
+    assert read_jsonl(access)[1]["artifact_sha256"] == lf_sha256(bad_ratings)
+    access.unlink()
+    assert validate.main(["--items", str(bad_ratings), "--access-log", str(access), "--actor-role", "RL"]) == 2
+    assert _access(access) == [("read", "ulqs_items", None)] and read_jsonl(access)[0]["artifact_sha256"] == lf_sha256(bad_ratings)
+    agent = tmp_path / "agent.private.json"
+    write_lf(agent, json.dumps(synthetic.agent_check(items)) + "\n")
+    access.unlink()
+    assert validate.main(base + ["--agent-check", str(agent), "--catalog", str(catalog_path)]) == 0
+    assert _access(access) == [("read", "ulqs_items", None), ("read", "agent_check_record", None), ("read", "evidence_catalog", None)]
+    assert read_jsonl(access)[1]["artifact_sha256"] == lf_sha256(agent)
+
+
+def test_plan_f_a_refused_migration_still_logs_the_rc1_read(tmp_path):
+    migrate = script("migrate_ulqs_rc1")
+    rc1 = _rc1(synthetic.synthetic_dataset(synthetic.SMALL))
+    rc1[0]["status"] = "frozen"  # not an rc1 state: rc1 validation fails (exit 3) after the read
+    source = synthetic.write_jsonl(tmp_path / "rc1.jsonl", rc1)
+    output, access = tmp_path / "v1.jsonl", tmp_path / "access.jsonl"
+    argv = ["--input", str(source), "--output", str(output), "--author-role", "PI", "--access-log", str(access)]
+    assert migrate.main(argv) == 3 and not output.exists()
+    assert _access(access) == [("read", "ulqs_items", None)]
+    assert read_jsonl(access)[0]["artifact_sha256"] == ulqs.dataset_sha256(rc1)
+    source.write_text("{not json\n", encoding="utf-8")
+    access.unlink()
+    assert migrate.main(argv) == 3
+    assert _access(access) == [("read", "ulqs_items", None)] and read_jsonl(access)[0]["artifact_sha256"] == lf_sha256(source)
+    assert {line["actor_role"] for line in read_jsonl(access)} == {"PI"}
 
 
 def _imports(path):
@@ -1087,7 +1203,7 @@ def _live_ready(tmp_path, monkeypatch):
     plane.mkdir()
     monkeypatch.setenv("RESEARCH_PLANE_ROOT", str(plane))
     monkeypatch.setattr(providers, "LIVE_ADAPTERS", {"fake-adapter": providers.ScriptedProvider})
-    spec = {"created_at": synthetic.CREATED, "responder": {"live": {"adapter": "fake-adapter"}},
+    spec = {"created_at": synthetic.CREATED, "responder": {"live": {"adapter": "fake-adapter", "providers": ["SYN-PROVIDER-1"]}},
             "governance": {"irb_record": synthetic.irb_record(plane / "irb.json"), "osf_record": None},
             "provider_terms": synthetic.provider_terms_record(plane / "terms.json"),
             "licence_ruling": synthetic.licence_ruling_record(plane / "ruling.json"),
@@ -1120,6 +1236,23 @@ def test_plan_h_spans_reach_no_model_until_the_four_conditions_hold(tmp_path, mo
     assert reasons({**spec, "provider_terms": unrecorded}) == ["provider_terms_invalid:publication_recorded"]
     expired = synthetic.irb_record(plane / "old.json", approval_date="2025-01-01", expiry_date="2026-06-30")
     assert reasons({**spec, "governance": {"irb_record": expired}}) == ["irb_expired"]
+    # Each record is bound to the run: (b) per provider the run queries, and no record dated after the run date.
+    live = lambda **changes: {**spec, "responder": {"live": {"adapter": "fake-adapter", **changes}}}  # noqa: E731
+    assert reasons(live(providers=["SYN-PROVIDER-2"])) == ["provider_terms_missing:SYN-PROVIDER-2"]
+    assert reasons(live(providers=["SYN-PROVIDER-1", "SYN-PROVIDER-2"])) == ["provider_terms_missing:SYN-PROVIDER-2"]
+    assert reasons(live()) == ["live_providers_unnamed"]
+    second = synthetic.provider_terms_record(plane / "terms-2.json", provider_id="SYN-PROVIDER-2")
+    both = {**live(providers=["SYN-PROVIDER-1", "SYN-PROVIDER-2"]), "provider_terms": [spec["provider_terms"], second]}
+    assert reasons(both) == []
+    monkeypatch.setattr(providers.ScriptedProvider, "providers", ("SYN-PROVIDER-1", "SYN-PROVIDER-3"), raising=False)
+    assert reasons(spec) == ["live_providers_mismatch", "provider_terms_missing:SYN-PROVIDER-3"]
+    monkeypatch.delattr(providers.ScriptedProvider, "providers")
+    late = {"recorded_date": "2026-12-01"}
+    assert reasons({**spec, "provider_terms": synthetic.provider_terms_record(plane / "late-terms.json", **late)}) == ["provider_terms_after_run"]
+    assert reasons({**spec, "licence_ruling": synthetic.licence_ruling_record(plane / "late-ruling.json", ruling_date="2026-12-01")}) == [
+        "licence_ruling_after_run"]
+    assert reasons({**spec, "research_use_confirmation": synthetic.research_use_record(plane / "late-use.json",
+                                                                                     confirmed_date="2026-12-01")}) == ["research_use_after_run"]
     public = REPO_ROOT / "docs" / "evaluation" / "phase10" / "README.md"
     assert "governance_record_public" in reasons({**spec, "provider_terms": {"path": "docs/evaluation/phase10/README.md",
                                                                              "sha256": lf_sha256(public)}})
@@ -1258,7 +1391,7 @@ def test_phase10_docs_quote_the_plan_and_state_the_current_rules():
     head = spec_text().split("\n## 14. Review history\n", 1)[0]
     for number in range(60, 75):
         assert f"| PD-{number} |" in head
-    for number in range(129, 142):
+    for number in range(129, 143):
         assert f"| DI-{number} |" in head
     assert "The exit is not passed (DI-129)." in head
 
@@ -1266,7 +1399,7 @@ def test_phase10_docs_quote_the_plan_and_state_the_current_rules():
 PHASE10_MODULES = ("test_phase10_acceptance.py", "conftest.py", "test_ulqs_schema.py", "test_ulqs_pointers.py", "test_rater_agreement.py",
                    "test_ablation_arms.py", "test_evaluation_runner.py", "test_research_statistics.py", "test_analysis_plans.py",
                    "test_seeded_fault_fixtures.py", "test_contamination_scan.py", "test_payload_log.py", "test_governance_records.py",
-                   "test_evaluators.py", "test_phase9_acceptance.py", "test_python_sources.py")
+                   "test_evaluators.py", "test_phase9_acceptance.py", "test_python_sources.py", "scan_guard.py")
 
 
 def test_phase10_docs_the_test_strategy_maps_every_test_module_the_phase_added():

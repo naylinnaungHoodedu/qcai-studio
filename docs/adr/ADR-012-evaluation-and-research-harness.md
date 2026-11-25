@@ -20,7 +20,8 @@ ratified under DI-140). The Phase 10 exit is not passed (DI-129).
    only; no production component."). Nothing changes in the application, the configuration package, Alembic, the settings,
    `/ready` or the frontend; the image ships no evaluation code.
 2. ULQS v1.0 is a versioned schema over the rc1 record shape, with the paper's states plus `retired`, a hand-written
-   validator, a freeze check and an rc1 -> v1.0 mapping table (`lqs/`). The strata targets are the paper's Table XIII
+   validator, a freeze check (the conventional check, then the paper's AI-agent re-check, whose verifier model D-07 must
+   pin first: DI-142) and an rc1 -> v1.0 mapping table (`lqs/`). The strata targets are the paper's Table XIII
    allocation in one provisional data file (PD-63), with the rc1 card's allocation recorded as the conflicting source.
 3. EV pointers resolve through a research-plane evidence catalog; public span ids through the Phase 2 resolver.
 4. Agreement is Krippendorff's alpha (nominal) at the 0.667 floor with at least a quarter of items second-rated, in exact
@@ -33,13 +34,15 @@ ratified under DI-140). The Phase 10 exit is not passed (DI-129).
 7. Payload logs hold pointers, hashes and sizes only (AC-10-6). Contamination is scanned with salted fingerprints of the
    licensed corpus and of the ULQS; public CI uses synthetic fingerprints with a published salt (AC-10-4).
 8. The E1-E4 analysis plans are data with no outcome fields and a draft status (nothing is filed with OSF, DI-131); the
-   pre-registration draft is generated from them. Every test they register is implemented in `statistics.py` with
-   known-answer tests and has run on no research data (DI-138).
+   pre-registration draft is generated from them. Each hypothesis carries its sidedness, its comparison and, as its
+   margin, the paper's null (H2b: DR <= 1); H4b carries the paper's EQC reliability condition; the paper's secondary
+   analyses are registered as not implemented. Every hypothesis test they register is a function of `statistics.py` with
+   known-answer tests that returns its Holm p-value, and has run on no research data (DI-138).
 
 ## Consequences
 
 - Every AC is provable in code on synthetic data, and no ULQS item, gold label or licensed text enters the repository or CI.
-- The real-data halves wait on the owner decisions and PI items (DI-129..DI-141); nothing here decides them.
+- The real-data halves wait on the owner decisions and PI items (DI-129..DI-142); nothing here decides them.
 - A code change to `evaluation/qcai_eval/*.py` or `scripts/run_evaluation.py` changes the committed synthetic run
   record's code pins, so CI's `run_evaluation.py --check` fails until the record is rewritten with `--write`: the record
   always names the code it ran. The pins read CRLF as LF and cover no other file, so a CRLF checkout or a change
@@ -52,7 +55,7 @@ The scanner finds verbatim and near-verbatim reuse only; pre-training contaminat
 limitation in the dataset card.
 
 Plan L: "Stop: contamination, negative licence determination, low agreement, no IRB." Each stop is a refusal: the scanner
-exits 1 on a match and a non-synthetic or confirmatory run needs a passing pre-run scan made with the research
-fingerprint sets and bound to its items; a negative licence ruling (a hash-checked record) refuses a
+exits 1 on a match and a non-synthetic or confirmatory run needs a passing pre-run scan with full coverage, made with
+the research fingerprint sets and bound to its items; a negative licence ruling (a hash-checked record) refuses a
 live run (`licence_negative`); low agreement fails the freeze record a confirmatory run needs; a missing IRB refuses a
 confirmatory run (`irb_missing`) and a live run (`irb_not_filed`).

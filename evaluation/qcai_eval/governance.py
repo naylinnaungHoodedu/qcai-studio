@@ -28,6 +28,8 @@ DATE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 FROZEN_STATES = ("frozen", "release")
 SCAN_REPORT = "qcai-research-log-scan"
+# The exclusions that leave a scan's coverage incomplete (contamination.INCOMPLETE_REASONS; kept equal by a test).
+INCOMPLETE_REASONS = frozenset({"too_large", "unreadable"})
 # Fingerprint sets whose ids carry these prefixes are the public synthetic fixture's or the scanner's self-test's: they
 # prove nothing about the research data, so a pre-run scan made only of them does not pass the gate.
 NON_RESEARCH_SET_PREFIXES = ("synthetic-", "self-test-")
@@ -106,9 +108,14 @@ def load_osf(path: Path) -> dict[str, Any]:
     return raw
 
 
+FREEZE_RECORD_KEYS = ("dataset_sha256", "dataset_content_sha256", "rules_sha256", "agreement_sha256", "agent_check_sha256",
+                      "agent_model_id", "agent_detected_defects", "agent_false_alarms", "agent_missed_defects",
+                      "disagreements_adjudicated", "items_changed_after_flag", "passed", "failures")
+
+
 def load_freeze_record(path: Path) -> dict[str, Any]:
-    raw = _load(path, "ulqs-freeze-record-v1", ("dataset_sha256", "dataset_content_sha256", "rules_sha256", "agreement_sha256",
-                                                 "passed", "failures"))
+    """`ulqs-freeze-record-v1`: the freeze check's outcome, with the agent re-check's report digest, model and counts."""
+    raw = _load(path, "ulqs-freeze-record-v1", FREEZE_RECORD_KEYS)
     if not isinstance(raw["passed"], bool) or not isinstance(raw["failures"], list):
         raise GovernanceError("passed")
     return raw
@@ -157,7 +164,7 @@ def resolve_record(reference: Any, repo_root: Path, *, kind: str = "governance_r
     path = path if path.is_absolute() else Path(repo_root) / path
     try:
         digest = lf_sha256(path)
-    except OSError:
+    except (OSError, ValueError):  # ValueError: a path open() refuses (an embedded NUL)
         raise GovernanceError("file") from None
     observer = _READ_OBSERVER.get()
     if observer is not None:
@@ -222,8 +229,8 @@ def scan_refusals(reference: Any, repo_root: Path, *, dataset_content_sha256: st
     that passed with zero matches, made with a licensed and a ULQS research fingerprint set (never only the synthetic
     fixture's or the self-test's), whose ULQS set was built from this run's items (the status-free content sha256), over
     the tracked repository (tests and public artifacts) and at least one research-logs or path target (logs, prompts),
-    each of which scanned a file (plan 10.5(3): "pre-run scan proving no ULQS text in prompts, tests, logs or public
-    artifacts")."""
+    with full coverage: every target scanned a file and none excluded a file as too large or unreadable (plan 10.5(3):
+    "pre-run scan proving no ULQS text in prompts, tests, logs or public artifacts")."""
     if not reference:
         return [missing]
     try:
@@ -243,11 +250,25 @@ def scan_refusals(reference: Any, repo_root: Path, *, dataset_content_sha256: st
         reasons.append("pre_run_scan_invalid:fingerprint_sets")
     if not any(entry.get("kind") == "ulqs" and entry.get("dataset_content_sha256") == dataset_content_sha256 for entry in sets):
         reasons.append("pre_run_scan_invalid:dataset")
-    scanned = {target.get("target") for target in scan.get("targets") or [] if isinstance(target, Mapping)
-               and isinstance(target.get("scanned"), int) and not isinstance(target.get("scanned"), bool) and target["scanned"] > 0}
+    targets = [target for target in scan.get("targets") or [] if isinstance(target, Mapping)]
+    scanned = {target.get("target") for target in targets if _count(target.get("scanned")) > 0}
     if "repository" not in scanned or not scanned & {"research-logs", "path"}:
         reasons.append("pre_run_scan_invalid:targets")
+    # Coverage: every target scanned a file and none excluded a file as too large or unreadable (the scanner's
+    # --require-zero rule), whatever the report's own `result` or `incomplete_targets` say.
+    if scan.get("incomplete_targets") or any(_count(target.get("scanned")) == 0 or any(
+            not isinstance(entry, Mapping) or entry.get("reason") in INCOMPLETE_REASONS for entry in _list(target.get("excluded")))
+            for target in targets) or len(targets) != len(scan.get("targets") or []):
+        reasons.append("pre_run_scan_invalid:coverage")
     return reasons
+
+
+def _count(value: Any) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+
+def _list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else [None]
 
 
 def confirmatory_refusals(spec: Mapping[str, Any], *, analysis_plan_sha256: str, dataset_sha256: str, dataset_content_sha256: str,

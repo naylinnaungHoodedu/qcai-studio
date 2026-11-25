@@ -266,8 +266,20 @@ MALFORMED = [
     (lambda s: s.update(mode="live", responder={"live": "x"}), "responder.live"),
     (lambda s: s.update(mode="live", responder={"live": [1]}), "responder.live"),
     (lambda s: s.update(mode="live", responder={"live": {"adapter": [1]}}), "responder.live"),
+    (lambda s: s.update(mode="live", responder={"live": {"adapter": "a", "providers": "SYN-PROVIDER-1"}}), "responder.live"),
+    (lambda s: s.update(mode="live", responder={"live": {"adapter": "a", "providers": [1]}}), "responder.live"),
     (lambda s: s.update(responder={"rule": 5}), "responder.rule"),
+    (lambda s: s.update(provider_terms="terms.json"), "provider_terms"),
+    (lambda s: s.update(provider_terms=[]), "provider_terms"),
+    (lambda s: s.update(provider_terms=[{"path": "t.json", "sha256": "0" * 64}, "t2.json"]), "provider_terms"),
 ]
+
+
+def test_provider_terms_may_be_one_reference_or_one_per_provider(tmp_path):
+    # Plan H (b) per provider: the shape check accepts one reference or a non-empty list of references.
+    spec, _ = small_spec(tmp_path)
+    for terms in ({"path": "t.json", "sha256": "0" * 64}, [{"path": "t.json", "sha256": "0" * 64}, {"path": "u.json", "sha256": "1" * 64}]):
+        assert "provider_terms" not in runner._type_problems({**spec, "provider_terms": terms})
 
 
 def _nodes(value, path=()):
@@ -279,12 +291,13 @@ def _nodes(value, path=()):
 
 @pytest.mark.parametrize("mode", ["stub", "recorded", "live"])
 def test_no_malformed_value_anywhere_in_a_spec_ends_in_a_traceback(tmp_path, mode):
-    # Every node of a stub, recorded and live spec replaced in turn by a value of the wrong type: the planner refuses
-    # (RunRefused) or plans; any other exception would reach the CLI as a traceback with exit 1, the drift code.
+    # Every node of a stub, recorded and live spec replaced in turn by a value of the wrong type, or by a string open()
+    # refuses (an embedded NUL): the planner refuses (RunRefused) or plans; any other exception would reach the CLI as a
+    # traceback with exit 1, the drift code.
     responder = {"stub": None, "recorded": {"recorded": {"path": "r.jsonl", "sha256": "0" * 64}}, "live": {"live": {"adapter": "none"}}}[mode]
     base, _ = small_spec(tmp_path, mode=mode, responder=responder)
     for path in list(_nodes(base))[1:]:
-        for bad in ("x", [1], {"path": 1}, None):
+        for bad in ("x", [1], {"path": 1}, None, "a\x00b.jsonl"):
             spec = json.loads(json.dumps(base))
             target = spec
             for key in path[:-1]:
@@ -294,6 +307,28 @@ def test_no_malformed_value_anywhere_in_a_spec_ends_in_a_traceback(tmp_path, mod
                 runner.plan_run(spec)
             except runner.RunRefused:
                 pass
+
+
+@pytest.mark.parametrize(("block", "code", "reason"), [("items", 3, "items_unreadable"), ("evidence_catalog", 3, "catalog_invalid"),
+                                                     ("recorded", 6, "recording_unreadable")])
+def test_an_input_path_open_refuses_is_refused_with_its_own_code_and_never_a_traceback(tmp_path, block, code, reason, capsys):
+    # A path with an embedded NUL makes open() raise ValueError. The items, the catalog and the recording are each refused
+    # with their own code, with and without an access-log observer, and the CLI exits with that code, not with 1.
+    responder = {"recorded": {"path": "r.jsonl", "sha256": "0" * 64}} if block == "recorded" else None
+    spec, _ = small_spec(tmp_path, mode="recorded" if block == "recorded" else "stub", responder=responder)
+    (spec["responder"]["recorded"] if block == "recorded" else spec[block])["path"] = "a\x00b.jsonl"
+    for on_read in (None, lambda kind, sha256: None):
+        with pytest.raises(runner.RunRefused) as refused:
+            runner.plan_run(spec, on_read=on_read)
+        assert refused.value.code == code and refused.value.reasons == [reason]
+    if str(REPO_ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import run_evaluation
+
+    path = tmp_path / "spec.json"
+    path.write_text(json.dumps(spec), encoding="utf-8")
+    assert run_evaluation.main(["--spec", str(path), "--output-dir", str(tmp_path / "out")]) == code
+    assert "Traceback" not in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(("edit", "reason"), MALFORMED)

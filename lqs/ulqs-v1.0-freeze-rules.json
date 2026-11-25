@@ -67,6 +67,21 @@
   "bloom_understand_or_above_min": "4/5",
   "bibliographic_max": "1/10"
  },
+ "agent_check": {
+  "record": "ulqs-agent-check-v1",
+  "source": "VBT RevB p. 15, Sec. VIII-B, Benchmark verification before use",
+  "agent": "an LLM verifier agent, one of the V2 verifier models, chosen before the check; verdict schema v2",
+  "pinned_models": [],
+  "pinned_models_rule": "empty until D-07 pins the model set; no agent check passes until then (DI-142)",
+  "adjudication": "every disagreement with the deterministic and human checks, by a claim rater who did not review that item",
+  "reported": [
+   "agent_detected_defects",
+   "agent_false_alarms",
+   "agent_missed_defects",
+   "items_changed_after_flag"
+  ],
+  "e2": "the counts are descriptive and do not enter the E2 analysis"
+ },
  "conflicting_allocation": {
   "source": "ULQS v1.0-rc1 dataset card (private), freeze allocation",
   "strata": {

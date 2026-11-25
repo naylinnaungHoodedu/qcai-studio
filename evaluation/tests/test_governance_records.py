@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sys
 
 import pytest
 
-from evaluation.qcai_eval import governance, synthetic
+from evaluation.qcai_eval import contamination, governance, synthetic
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PLAN_SHA = "c" * 64
@@ -100,8 +101,14 @@ def _ci_scan_report(tmp_path):
     return synthetic.record_ref(path)
 
 
+_TARGET_REPO = {"target": "repository", "root": ".", "files": 3, "scanned": 2, "excluded": [], "files_with_hits": []}
+_TARGET_LOGS = {"target": "research-logs", "root": "prior-run", "files": 4, "scanned": 3,
+                "excluded": [{"path": "responses.jsonl", "reason": "research data (model outputs)"}], "files_with_hits": []}
+
+
 @pytest.mark.parametrize(("overrides", "reason"), [
     ({"result": "fail", "matches_total": 2}, "pre_run_scan_invalid:result"),
+    ({"result": "incomplete"}, "pre_run_scan_invalid:result"),
     ({"matches_total": 1}, "pre_run_scan_invalid:result"),
     ({"fingerprint_sets": []}, "pre_run_scan_invalid:fingerprint_sets"),
     ({"fingerprint_sets": [{"id": "synthetic-licensed-v1", "kind": "licensed", "dataset_content_sha256": None},
@@ -120,12 +127,56 @@ def _ci_scan_report(tmp_path):
                   {"target": "path", "root": "p", "files": 1, "scanned": 1, "excluded": [], "files_with_hits": []}]},
      "pre_run_scan_invalid:targets"),
     ({"report": "something-else"}, "pre_run_scan_invalid:report"),
+    # Coverage: a target that scanned no file (a mistyped prompts directory), or a file excluded as too large or
+    # unreadable, leaves the scan unable to prove zero, whatever the report's result says.
+    ({"targets": [_TARGET_REPO, _TARGET_LOGS, {"target": "path", "root": "prompts", "files": 0, "scanned": 0, "excluded": [],
+                                               "files_with_hits": []}]}, "pre_run_scan_invalid:coverage"),
+    ({"targets": [_TARGET_REPO, {**_TARGET_LOGS, "excluded": [{"path": "big.jsonl", "reason": "too_large"}]}]},
+     "pre_run_scan_invalid:coverage"),
+    ({"targets": [_TARGET_REPO, {**_TARGET_LOGS, "excluded": [{"path": "locked.jsonl", "reason": "unreadable"}]}]},
+     "pre_run_scan_invalid:coverage"),
+    ({"targets": [_TARGET_REPO, {**_TARGET_LOGS, "excluded": "none"}]}, "pre_run_scan_invalid:coverage"),
+    ({"targets": [_TARGET_REPO, _TARGET_LOGS, "not a target"]}, "pre_run_scan_invalid:coverage"),
+    ({"incomplete_targets": ["prior-run"]}, "pre_run_scan_invalid:coverage"),
 ])
 def test_a_pre_run_scan_must_be_a_passing_research_scan_bound_to_the_items(tmp_path, overrides, reason):
     ok = synthetic.pass_scan(tmp_path / "ok.json", dataset_content_sha256=CONTENT_SHA)
     assert governance.scan_refusals(ok, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, missing="m") == []
     broken = synthetic.pass_scan(tmp_path / "broken.json", dataset_content_sha256=CONTENT_SHA, **overrides)
     assert reason in governance.scan_refusals(broken, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, missing="m")
+
+
+def test_a_scan_the_scanner_wrote_with_incomplete_coverage_says_incomplete_and_is_refused(tmp_path):
+    # The scanner writes its report before its --require-zero exit: a scan with zero matches over a target that scanned
+    # nothing says `incomplete` (never `pass`), names the target, and the gate refuses it for coverage.
+    if str(REPO_ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import scan_research_logs
+
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "logs" / "payload_log.jsonl").write_text("{}\n", encoding="utf-8")
+    (tmp_path / "prompts").mkdir()
+    path = tmp_path / "scan.json"
+    assert scan_research_logs.main(["--synthetic-fixture", str(synthetic.CONTAMINATION_FIXTURE), "--path", str(tmp_path / "logs"),
+                                    "--path", str(tmp_path / "prompts"), "--require-zero", "--report", str(path)]) == 1
+    report = json.loads(path.read_text(encoding="utf-8"))
+    assert report["matches_total"] == 0 and report["result"] == "incomplete" and report["incomplete_targets"] == ["prompts"]
+    reasons = governance.scan_refusals(synthetic.record_ref(path), REPO_ROOT, dataset_content_sha256=CONTENT_SHA, missing="m")
+    assert "pre_run_scan_invalid:result" in reasons and "pre_run_scan_invalid:coverage" in reasons
+    assert governance.INCOMPLETE_REASONS == contamination.INCOMPLETE_REASONS
+
+
+def test_a_record_path_open_refuses_is_an_invalid_file_never_a_traceback(tmp_path):
+    # An embedded NUL makes open() raise ValueError: a governance record, a pre-run scan and the public-path check refuse it
+    # as `file` (or not public) instead of raising.
+    nul = {"path": "a\x00b.json", "sha256": "0" * 64}
+    with pytest.raises(governance.GovernanceError) as error:
+        governance.resolve_record(nul, REPO_ROOT)
+    assert error.value.field == "file"
+    assert governance.scan_refusals(nul, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, missing="m") == ["pre_run_scan_invalid:file"]
+    assert governance.irb_refusals(nul, governance.run_date({"created_at": synthetic.CREATED}), REPO_ROOT, missing="m") == ["irb_invalid:file"]
+    assert governance.is_public(nul, REPO_ROOT) in (True, False)
+    assert governance.is_public({"path": "lqs/private/a\x00b.json", "sha256": "0" * 64}, REPO_ROOT) in (True, False)
 
 
 def test_ci_s_synthetic_scan_report_and_dangling_references_do_not_pass_the_pre_run_scan(tmp_path):

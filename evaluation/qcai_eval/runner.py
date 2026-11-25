@@ -274,7 +274,9 @@ def _type_problems(spec: Mapping[str, Any]) -> list[str]:
         if recorded is not None and not (isinstance(recorded, Mapping) and isinstance(recorded.get("path"), str) and recorded["path"]
                                          and isinstance(recorded.get("sha256"), str)):
             reasons.append("responder.recorded")
-        if live is not None and not (isinstance(live, Mapping) and isinstance(live.get("adapter"), (str, type(None)))):
+        if live is not None and not (isinstance(live, Mapping) and isinstance(live.get("adapter"), (str, type(None)))
+                                     and isinstance(live.get("providers", []), list)
+                                     and all(isinstance(provider, str) for provider in live.get("providers", []))):
             reasons.append("responder.live")
         if not isinstance(responder.get("rule", ""), str):
             reasons.append("responder.rule")
@@ -289,9 +291,13 @@ def _type_problems(spec: Mapping[str, Any]) -> list[str]:
                 ok = False
         if not ok:
             reasons.append("bootstrap")
-    for key in ("freeze_record", "pre_run_scan", "provider_terms", "licence_ruling", "research_use_confirmation"):
+    for key in ("freeze_record", "pre_run_scan", "licence_ruling", "research_use_confirmation"):
         if spec.get(key) is not None and not isinstance(spec[key], Mapping):
             reasons.append(key)
+    terms = spec.get("provider_terms")  # one reference, or one per provider the live run queries
+    if terms is not None and not (isinstance(terms, Mapping) or (isinstance(terms, list) and terms
+                                                                 and all(isinstance(entry, Mapping) for entry in terms))):
+        reasons.append("provider_terms")
     return reasons
 
 
@@ -327,9 +333,11 @@ def _check_shape(spec: Mapping[str, Any], parameters: Mapping[str, Any]) -> None
 
 
 def _file_sha256(path: Path) -> str | None:
+    """The LF sha256 of a file, or None when it cannot be opened: an OSError, or a ValueError for a path open() refuses
+    (an embedded NUL), so that the refusal the caller raises next is never replaced by a traceback."""
     try:
         return lf_sha256(path)
-    except OSError:
+    except (OSError, ValueError):
         return None
 
 

@@ -44,6 +44,7 @@
       "GATE"
      ],
      "test": "paired_bootstrap_one_sided",
+     "sided": "one",
      "margin": "-0.05",
      "criteria": [
       "LQ-3"
@@ -61,7 +62,13 @@
     {
      "id": "H2a",
      "endpoint": "panel vs best single verifier, F1",
+     "comparison": [
+      "2oo3 heterogeneous panel",
+      "best single verifier"
+     ],
      "test": "cluster_bootstrap_bca_one_sided",
+     "sided": "one",
+     "margin": "0",
      "resamples": 10000,
      "criteria": [
       "V-2"
@@ -71,6 +78,8 @@
      "id": "H2b",
      "endpoint": "DR > 1",
      "test": "cluster_bootstrap_lower_bound",
+     "sided": "one",
+     "margin": "1",
      "resamples": 10000,
      "criteria": [
       "V-4"
@@ -78,8 +87,14 @@
     },
     {
      "id": "H2c",
-     "endpoint": "novice trust AUC",
-     "test": "bootstrap_one_sided",
+     "endpoint": "AUC separating erroneous from correct responses, panel minus novices (Table I)",
+     "comparison": [
+      "panel",
+      "novices"
+     ],
+     "test": "paired_bootstrap_auc_one_sided",
+     "sided": "one",
+     "margin": "0",
      "criteria": [
       "UE-2"
      ]
@@ -92,7 +107,12 @@
     {
      "id": "H3a",
      "endpoint": "invariance violation (eq. 18), two-pass vs single-pass, 25 S7 items",
+     "comparison": [
+      "two-pass",
+      "single-pass"
+     ],
      "test": "mcnemar_exact",
+     "sided": "two",
      "criteria": [
       "LQ-1"
      ]
@@ -100,7 +120,13 @@
     {
      "id": "H3b",
      "endpoint": "presentation features across levels (manipulation check)",
+     "comparison": [
+      "beginner",
+      "intermediate",
+      "advanced"
+     ],
      "test": "friedman",
+     "sided": "omnibus",
      "criteria": []
     }
    ]
@@ -111,7 +137,14 @@
     {
      "id": "H4a",
      "endpoint": "verified quality per USD vs static-best and round-robin",
+     "comparison": [
+      "adaptive ranking",
+      "static-best",
+      "round-robin"
+     ],
      "test": "two_level_bootstrap_share_le_zero",
+     "sided": "one",
+     "margin": "0",
      "criteria": [
       "MR-1"
      ]
@@ -119,8 +152,24 @@
     {
      "id": "H4b",
      "endpoint": "local vs commercial: error rate and EQC",
+     "comparison": [
+      "local",
+      "commercial"
+     ],
      "test": "mcnemar_exact+paired_tost",
+     "sided": "two+equivalence",
      "margin": "0.5",
+     "confirmatory_if": {
+      "icc_2k_min": "0.50",
+      "cronbach_alpha_min": "0.70",
+      "scales": 6,
+      "applies_to": "paired_tost",
+      "otherwise": "inconclusive",
+      "computed_by": [
+       "icc_2k",
+       "cronbach_alpha"
+      ]
+     },
      "criteria": []
     }
    ],
@@ -139,8 +188,62 @@
   "cluster_bootstrap_bca_one_sided": "implemented",
   "cluster_bootstrap_lower_bound": "implemented",
   "bootstrap_one_sided": "implemented",
+  "paired_bootstrap_auc_one_sided": "implemented",
   "two_level_bootstrap_share_le_zero": "implemented",
   "friedman": "implemented",
   "paired_tost": "implemented"
+ },
+ "secondary_analyses": {
+  "mixed_effects_logistic": {
+   "analysis": "claim-level mixed-effects logistic regression with item random intercepts (secondary)",
+   "for": [
+    "H1a",
+    "H1b"
+   ],
+   "status": "not implemented (DI-138)"
+  },
+  "cumulative_link_mixed_model": {
+   "analysis": "Likert ratings as ordinal outcomes with cumulative-link mixed models",
+   "for": [
+    "UE-1",
+    "Likert ratings"
+   ],
+   "status": "not implemented (DI-138)"
+  },
+  "cliffs_delta": {
+   "analysis": "medians and Cliff's delta",
+   "for": [
+    "Likert summaries"
+   ],
+   "status": "not implemented (DI-138)"
+  },
+  "ordinal_sensitivity_eqc": {
+   "analysis": "an ordinal model on the single EQC scales (sensitivity analysis for the TOST)",
+   "for": [
+    "H4b"
+   ],
+   "status": "not implemented (DI-138)"
+  },
+  "icc_2k": {
+   "analysis": "ICC(2,k) of the EQC (the H4b confirmatory condition)",
+   "for": [
+    "H4b"
+   ],
+   "status": "not implemented (DI-138)"
+  },
+  "cronbach_alpha": {
+   "analysis": "Cronbach's alpha across the EQC's six scales (the H4b confirmatory condition)",
+   "for": [
+    "H4b"
+   ],
+   "status": "not implemented (DI-138)"
+  },
+  "prediction_powered_inference": {
+   "analysis": "prediction-powered inference for the arms labelled on a random 25% of items",
+   "for": [
+    "E1"
+   ],
+   "status": "not implemented (DI-138)"
+  }
  }
 }

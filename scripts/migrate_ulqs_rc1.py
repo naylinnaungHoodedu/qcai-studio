@@ -8,7 +8,11 @@ author name is replaced by a role code; human_reviewed starts false and item_kin
 moves past its rc1 state. Input and output must be research-plane paths (outside the checkout, or a git-ignored private
 path), and the access log is required. The script prints counts by stratum and state only, never a value.
 
-Exit codes: 0 ok; 2 refused path or usage; 3 an input item fails rc1 validation.
+The rc1 read is logged as soon as the file is read, before any check that can refuse (by the file's LF sha256 when it
+does not parse), so a refused migration still leaves its read in the log.
+
+Exit codes: 0 ok; 2 refused path or usage; 3 the input is unreadable, an input item fails rc1 validation, or a migrated
+record fails v1.0 validation.
 """
 
 from __future__ import annotations
@@ -26,7 +30,7 @@ for path in (REPO_ROOT, API_ROOT):
         sys.path.insert(0, str(path))
 
 from evaluation.qcai_eval import access_log, planes, ulqs  # noqa: E402
-from evaluation.qcai_eval.canonical import dumps_line, read_jsonl, write_lf  # noqa: E402
+from evaluation.qcai_eval.canonical import dumps_line, lf_sha256, read_jsonl, write_lf  # noqa: E402
 
 PROVISIONAL_DEFAULTS = ("PD-61",)  # Phase 10 spec 12.1; ratified under DI-140
 
@@ -72,11 +76,25 @@ def main(argv: list[str] | None = None) -> int:
         print(f"refused (exit 2): {error}", file=sys.stderr)
         return 2
     mapping = json.loads(args.mapping.read_text(encoding="utf-8"))
+
+    def log(action: str, sha256: str | None) -> None:
+        if sha256 is not None:
+            access_log.append(args.access_log, actor_role=args.author_role, action=action, artifact_kind="ulqs_items",
+                              artifact_sha256=sha256, purpose="migrate rc1 to v1.0")
+
     try:
         items = read_jsonl(args.input)
     except (OSError, ValueError) as error:
+        try:
+            log("read", lf_sha256(args.input))  # read but not parsed: logged by the file's LF sha256
+        except (OSError, ValueError):
+            pass
         print(f"refused (exit 3): input unreadable ({error})", file=sys.stderr)
         return 3
+    try:
+        log("read", ulqs.dataset_sha256(items))
+    except (AttributeError, TypeError, ValueError):
+        log("read", lf_sha256(args.input))
     failing = []
     for index, item in enumerate(items, start=1):
         problems = ulqs.validate_item(item)
@@ -105,10 +123,7 @@ def main(argv: list[str] | None = None) -> int:
         return 3
     migrated.sort(key=lambda item: item["item_id"])
     write_lf(args.output, "".join(dumps_line(item) for item in migrated))
-    access_log.append(args.access_log, actor_role=args.author_role, action="read", artifact_kind="ulqs_items",
-                      artifact_sha256=ulqs.dataset_sha256(items), purpose="migrate rc1 to v1.0")
-    access_log.append(args.access_log, actor_role=args.author_role, action="write", artifact_kind="ulqs_items",
-                      artifact_sha256=ulqs.dataset_sha256(migrated), purpose="migrate rc1 to v1.0")
+    log("write", ulqs.dataset_sha256(migrated))
     counts = Counter((item["stratum"], item["status"]) for item in migrated)
     print(f"migrated {len(migrated)} items: " + ", ".join(f"{s}/{st} {n}" for (s, st), n in sorted(counts.items())))
     return 0

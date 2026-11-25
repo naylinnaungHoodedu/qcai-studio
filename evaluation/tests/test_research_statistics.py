@@ -150,6 +150,73 @@ def test_the_one_sided_paired_and_cluster_bootstraps_use_the_lower_percentile_in
         statistics.paired_bootstrap_one_sided([1], [1, 0], resamples=10, seed="x")
 
 
+@pytest.mark.parametrize("alpha", ["0.05", "0.1", "0.025"])
+def test_each_one_sided_bootstrap_returns_a_holm_p_value_that_agrees_with_its_reject(alpha):
+    # VBT RevB Sec. X-A: "Each hypothesis enters Holm through one p-value: ... one-sided bootstrap p-values for H1c, H2a,
+    # H2b ... and H2c". Over margins on both sides of the bound, p_value <= alpha exactly when the test rejects.
+    data = [0.2, 1.5, 0.3, 2.8, 0.9, 0.1, 4.0, 0.6, 1.1, 0.4]
+    clusters = [[1.2], [0.9], [1.5], [1.1], [0.7, 1.3], [2.0]]
+    labels = [True, False, True, False, True, False, True, False]
+    seen: dict[str, set] = {}
+    for margin in [f"{value / 100:.2f}" for value in range(20, 160, 6)]:
+        results = [statistics.bootstrap_one_sided(data, _mean, resamples=1000, seed="p", margin=margin, alpha=alpha),
+                   statistics.cluster_bootstrap_lower_bound(clusters, lambda c: _mean([v for x in c for v in x]), resamples=800,
+                                                            seed="c", margin=margin, alpha=alpha),
+                   statistics.cluster_bootstrap_bca_one_sided(data, _mean, resamples=1000, seed="bca", margin=margin, alpha=alpha),
+                   statistics.paired_bootstrap_one_sided(data, [x / 2 for x in data], resamples=700, seed="q",
+                                                         margin=f"{float(margin) - 0.8:.2f}", alpha=alpha),
+                   statistics.paired_bootstrap_auc_one_sided(labels, [0.9, 0.2, 0.8, 0.3, 0.7, 0.1, 0.6, 0.4],
+                                                             [0.6, 0.5, 0.4, 0.3, 0.7, 0.2, 0.5, 0.6], resamples=600, seed="a",
+                                                             margin=f"{float(margin) - 0.9:.2f}", alpha=alpha)]
+        for result in results:
+            assert 0.0 <= result["p_value"] <= 1.0
+            assert (result["p_value"] <= float(alpha)) is result["reject"], (result["method"], margin, result["p_value"])
+            seen.setdefault(result["method"], set()).add(result["reject"])
+    assert len(seen) == 5 and all(outcomes == {True, False} for outcomes in seen.values())  # every form both rejects and not
+
+
+def test_the_bca_p_value_inverts_the_adjusted_percentile_and_differs_from_the_plain_share():
+    data = [0.2, 1.5, 0.3, 2.8, 0.9, 0.1, 4.0, 0.6, 1.1, 0.4]
+    result = statistics.cluster_bootstrap_bca_one_sided(data, _mean, resamples=2000, seed="bca", margin="0.65")
+    # The BCa bound (0.68) exceeds 0.65, so H0 is rejected at 0.05; the plain percentile share (0.0605) would not be.
+    assert result["reject"] is True and result["share_at_or_below_margin"] == pytest.approx(0.0605, abs=1e-12)
+    w = statistics.normal_quantile(0.0605) - result["z0"]
+    expected = statistics.normal_cdf(w / (1 + result["acceleration"] * w) - result["z0"])
+    assert result["p_value"] == pytest.approx(expected, abs=1e-15) and result["p_value"] < 0.05 < result["share_at_or_below_margin"]
+    assert statistics.cluster_bootstrap_bca_one_sided(data, _mean, resamples=2000, seed="bca", margin="-1")["p_value"] == 0.0
+    assert statistics.cluster_bootstrap_bca_one_sided(data, _mean, resamples=2000, seed="bca", margin="9")["p_value"] == 1.0
+    plain = statistics.bootstrap_one_sided(data, _mean, resamples=2000, seed="bca", margin="0.65")
+    assert plain["p_value"] == plain["share_at_or_below_margin"] == pytest.approx(0.0605, abs=1e-12) and plain["reject"] is False
+    two_level = statistics.two_level_bootstrap_share_le_zero([[0.5, -0.2], [0.1], [-0.4, 0.3]], lambda g: _mean([v for x in g for v in x]),
+                                                            resamples=100, seed="t")
+    assert two_level["p_value"] == two_level["share_le_zero"]
+
+
+def test_the_auc_and_the_paired_auc_bootstrap_known_answers():
+    labels = [True, True, False, False]
+    assert statistics.auc(labels, [0.9, 0.8, 0.2, 0.1]) == 1.0
+    assert statistics.auc(labels, [0.1, 0.2, 0.8, 0.9]) == 0.0
+    assert statistics.auc(labels, [0.5, 0.5, 0.5, 0.5]) == 0.5
+    assert statistics.auc(labels, [0.9, 0.3, 0.5, 0.1]) == 0.75  # 3 of 4 positive-negative pairs ordered
+    with pytest.raises(ValueError):
+        statistics.auc([True, True], [0.1, 0.2])
+    left, right = [0.9, 0.8, 0.2, 0.1], [0.9, 0.3, 0.5, 0.1]
+    result = statistics.paired_bootstrap_auc_one_sided(labels, left, right, resamples=400, seed="h2c")
+    rows = list(zip(labels, left, right))
+
+    def difference(chosen):
+        try:
+            return statistics.auc([r[0] for r in chosen], [r[1] for r in chosen]) - statistics.auc([r[0] for r in chosen], [r[2] for r in chosen])
+        except ValueError:
+            return float("-inf")
+
+    replicates = sorted(difference([rows[i] for i in statistics.hash_resample_indices(4, "h2c", b)]) for b in range(400))
+    assert result["estimate"] == 0.25 and result["lower_bound"] == replicates[20] and result["method"] == "paired-auc-percentile-one-sided"
+    assert result["p_value"] == sum(1 for value in replicates if value <= 0) / 400
+    with pytest.raises(ValueError):
+        statistics.paired_bootstrap_auc_one_sided(labels, left, right[:3], resamples=10, seed="x")
+
+
 def test_the_bca_lower_bound_known_answer_and_its_undefined_case():
     data = [0.2, 1.5, 0.3, 2.8, 0.9, 0.1, 4.0, 0.6, 1.1, 0.4]
     result = statistics.cluster_bootstrap_bca_one_sided(data, _mean, resamples=2000, seed="bca")

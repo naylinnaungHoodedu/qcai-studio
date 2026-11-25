@@ -5,5 +5,5 @@ Table XV arms with their parity check, the E1-E4 runner (stub, recorded and refu
 records, contamination fingerprints, the seeded-fault fixtures and the statistics (Phase 10;
 `docs/architecture/phase10-implementation-spec.md`). A passing check is not a completed experiment: RevB requires a frozen
 120-200 item instrument, independent ratings, seven comparable arms and pre-registered tests, and no E1-E4 run has been
-executed (DI-129..DI-141). The per-phase records are in `docs/evaluation/phaseN/`; Phase 10's are in
+executed (DI-129..DI-142). The per-phase records are in `docs/evaluation/phaseN/`; Phase 10's are in
 `docs/evaluation/phase10/` (synthetic records only).

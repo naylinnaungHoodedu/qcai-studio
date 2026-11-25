@@ -5,12 +5,12 @@ from __future__ import annotations
 import ast
 import json
 from pathlib import Path
-import re
 import sys
 
 import pytest
 
 from evaluation.qcai_eval import contamination, synthetic
+import scan_guard
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SALT = bytes(range(32))
@@ -177,16 +177,25 @@ def test_ci_scans_the_whole_tracked_tree_once_with_the_env_templates_and_require
                      "--repo --include-env-files --require-zero --report \"$RUNNER_TEMP/research-log-scan.json\""]
     job = ci.split("\n  api-and-evaluation:\n", 1)[1].split("\n  api-image-boundary-scan:\n", 1)[0]
     assert steps[0] in job
+    # In process, the guard both conftests install (apps/api/tests/scan_guard.py) fails any test whose repository target
+    # would list the real checkout through the real git_files, however the call is made: a literal argv, an argv built
+    # elsewhere, a direct repository_target call.
+    module = scanner()
+    assert getattr(contamination.repository_target, scan_guard.GUARD_MARKER, False)
+    base = ["--synthetic-fixture", str(synthetic.CONTAMINATION_FIXTURE)]
+    for call in (lambda: module.main(base + ["--repo"]), lambda: contamination.repository_target(REPO_ROOT, [])):
+        with pytest.raises(pytest.fail.Exception, match="whole tracked tree"):
+            call()
+    # A subprocess is outside the process: no test may run the script with --repo in one.
     sources = [*(REPO_ROOT / "evaluation" / "tests").glob("test_*.py"), *(REPO_ROOT / "apps" / "api" / "tests").glob("test_*.py")]
     for path in sources:
         text = path.read_text(encoding="utf-8")
         for node in ast.walk(ast.parse(text)):
-            if not isinstance(node, ast.FunctionDef):
-                continue
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.name == sys._getframe().f_code.co_name:
+                continue  # (this guard's own text names what it refuses)
             body = ast.get_source_segment(text, node)
-            calls = [call for call in re.findall(r"main\(\[[^\]]*\"--repo\"[^\]]*\]", body) if "--synthetic-fixture" in call]
-            # A test may use the repository target only over a list it supplies (git_files replaced), never the whole tree.
-            assert not calls or 'setattr(contamination, "git_files"' in body, (path.name, node.name)
+            spawns = any(name in body for name in ("subprocess", "Popen", "os.system", "check_call", "check_output"))
+            assert not (spawns and "scan_research_logs" in body and '"--repo"' in body), (path.name, node.name)
 
 
 def test_an_env_template_s_content_never_reaches_the_output_the_report_or_an_error(tmp_path, capsys, monkeypatch):
@@ -251,3 +260,95 @@ def test_a_salt_shorter_than_32_bytes_is_refused_by_the_builder(tmp_path, monkey
     assert builder.main(args) == 3
     monkeypatch.setenv("SALT_FOR_TEST", "ab" * 32)
     assert builder.main(args) == 0 and (tmp_path / "l.json").exists()
+
+
+def _builder():
+    if str(REPO_ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import build_licensed_fingerprints as builder
+
+    return builder
+
+
+def _access(path):
+    return [(line["action"], line["artifact_kind"], line["artifact_sha256"]) for line in
+            (json.loads(text) for text in path.read_text(encoding="utf-8").splitlines())]
+
+
+def test_the_builder_refuses_a_missing_or_invalid_input_with_a_documented_code_and_logs_what_it_read(tmp_path, monkeypatch, capsys):
+    from evaluation.qcai_eval import ulqs
+    from evaluation.qcai_eval.canonical import lf_sha256
+
+    builder = _builder()
+    text = tmp_path / "licensed.txt"
+    text.write_text(fixture()["licensed_passages"][0], encoding="utf-8")
+    items = synthetic.write_jsonl(tmp_path / "items.jsonl", synthetic.synthetic_dataset({"A": 1}))
+    access = tmp_path / "access.jsonl"
+    monkeypatch.setenv("SALT_FOR_TEST", "ab" * 32)
+
+    def run(licensed, ulqs_path):
+        if access.exists():
+            access.unlink()
+        return builder.main(["--licensed-text", str(licensed), "--ulqs", str(ulqs_path), "--set-id", "t", "--output-licensed",
+                             str(tmp_path / "l.json"), "--output-ulqs", str(tmp_path / "u.json"), "--salt-env", "SALT_FOR_TEST",
+                             "--access-log", str(access), "--actor-role", "MLE"])
+
+    assert run(tmp_path / "absent.txt", items) == 2 and not access.exists()          # a licensed text that is not there
+    assert run(text, tmp_path / "absent.jsonl") == 2                                   # a ULQS file that is not there
+    assert [entry[:2] for entry in _access(access)] == [("read", "licensed_text")]
+    broken = tmp_path / "broken.jsonl"
+    broken.write_text("{not json\n", encoding="utf-8")
+    assert run(text, broken) == 4                                                       # not JSON lines
+    assert _access(access)[1] == ("read", "ulqs_items", lf_sha256(broken))
+    invalid_items = synthetic.synthetic_dataset({"A": 1})
+    invalid_items[0]["stratum"] = "Q"
+    invalid = synthetic.write_jsonl(tmp_path / "invalid.jsonl", invalid_items)
+    assert run(text, invalid) == 4 and not (tmp_path / "u.json").exists()             # fails ulqs.validate_dataset
+    assert _access(access)[1] == ("read", "ulqs_items", ulqs.dataset_sha256(invalid_items))
+    err = capsys.readouterr().err
+    assert "Traceback" not in err and "exit 4" in err
+    assert run(text, items) == 0 and [entry[:2] for entry in _access(access)] == [
+        ("read", "licensed_text"), ("read", "ulqs_items"), ("write", "fingerprints"), ("write", "fingerprints")]
+
+
+def test_the_scanner_logs_research_fingerprints_targets_and_its_report(tmp_path, monkeypatch, capsys):
+    from evaluation.qcai_eval.canonical import canonical_sha256, lf_sha256
+
+    builder, module = _builder(), scanner()
+    text = tmp_path / "licensed.txt"
+    text.write_text(fixture()["licensed_passages"][0], encoding="utf-8")
+    items = synthetic.write_jsonl(tmp_path / "items.jsonl", synthetic.synthetic_dataset({"A": 1}))
+    monkeypatch.setenv("SALT_FOR_TEST", "ab" * 32)
+    licensed, ulqs_set = tmp_path / "l.json", tmp_path / "u.json"
+    assert builder.main(["--licensed-text", str(text), "--ulqs", str(items), "--set-id", "research-t1", "--output-licensed", str(licensed),
+                         "--output-ulqs", str(ulqs_set), "--salt-env", "SALT_FOR_TEST", "--access-log", str(tmp_path / "b.jsonl"),
+                         "--actor-role", "MLE"]) == 0
+    run = tmp_path / "runs" / "r1"
+    run.mkdir(parents=True)
+    (run / "payload_log.jsonl").write_text("{}\n", encoding="utf-8")
+    (run / "responses.jsonl").write_text("{}\n", encoding="utf-8")
+    prompts = tmp_path / "prompts"
+    prompts.mkdir()
+    (prompts / "p.txt").write_text("an invented prompt\n", encoding="utf-8")
+    access, report = tmp_path / "access.jsonl", tmp_path / "scan.json"
+    base = ["--fingerprints", str(licensed), "--ulqs-fingerprints", str(ulqs_set), "--research-logs", str(run), "--path", str(prompts),
+            "--require-zero", "--report", str(report)]
+    # Research fingerprints are research-plane material: the scan needs the access log and the role.
+    assert module.main(base) == 2 and module.main(base + ["--access-log", str(access)]) == 2 and not access.exists()
+    assert module.main(base + ["--access-log", str(REPO_ROOT / "docs" / "access.jsonl"), "--actor-role", "MLE"]) == 2
+    assert module.main(base + ["--access-log", str(access), "--actor-role", "MLE"]) == 0
+    logged = _access(access)
+    assert [entry[:2] for entry in logged] == [("read", "fingerprints"), ("read", "fingerprints"), ("read", "scan_target"),
+                                               ("read", "run_output"), ("write", "scan_report")]
+    built = [entry[2] for entry in _access(tmp_path / "b.jsonl") if entry[0] == "write"]
+    assert [entry[2] for entry in logged[:2]] == built  # the same digests the builder logged when it wrote them
+    assert logged[4][2] == lf_sha256(report)
+    payload_sha = __import__("hashlib").sha256((run / "payload_log.jsonl").read_bytes()).hexdigest()
+    assert logged[3][2] == canonical_sha256([["payload_log.jsonl", payload_sha]])  # responses.jsonl is not read
+    # A fingerprint file that does not parse is logged as read (by its LF sha256) before the scan refuses it.
+    broken = tmp_path / "broken.json"
+    broken.write_text("{not json", encoding="utf-8")
+    access.unlink()
+    assert module.main(["--fingerprints", str(broken), "--research-logs", str(run), "--access-log", str(access), "--actor-role", "MLE"]) == 2
+    assert _access(access) == [("read", "fingerprints", lf_sha256(broken))]
+    assert not (REPO_ROOT / "docs" / "access.jsonl").exists()

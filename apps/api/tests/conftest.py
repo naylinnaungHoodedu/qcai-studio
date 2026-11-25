@@ -10,9 +10,12 @@ from sqlalchemy.engine import make_url
 
 
 import network_guard
+import scan_guard
 
 # No test touches the network (Phase 5 spec 13.2): installed before the application is imported.
 network_guard.install()
+# No test repeats CI's whole-tree research-log scan (Phase 10 spec 8.3).
+scan_guard.install(Path(__file__).resolve().parents[3])
 
 # Tests write and delete rows, so they never use an ambient DATABASE_URL: only in-memory SQLite, or the
 # disposable database named by TEST_DATABASE_URL (the PostgreSQL CI job, task 1.10).

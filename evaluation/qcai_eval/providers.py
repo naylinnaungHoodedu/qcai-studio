@@ -141,13 +141,36 @@ def _decided(package_raw: Mapping[str, Any], name: str) -> bool:
     return ((package_raw.get("owner_decisions") or {}).get(name) or {}).get("state") == "decided"
 
 
+def _after(value: str, on: Any) -> bool:
+    import datetime as _dt
+
+    return _dt.date.fromisoformat(value) > on
+
+
+def _provider_binding(spec: Mapping[str, Any], adapter: Any, recorded: set[str]) -> list[str]:
+    """Condition (b) per provider: every provider the run queries has its own terms record."""
+    live = (spec.get("responder") or {}).get("live") or {}
+    named = live.get("providers")
+    if not isinstance(named, list) or not named or not all(isinstance(provider, str) and provider for provider in named):
+        return ["live_providers_unnamed"]
+    reasons = []
+    declared = getattr(LIVE_ADAPTERS.get(adapter), "providers", None) if isinstance(adapter, str) else None
+    if declared is not None and not set(declared) <= set(named):
+        reasons.append("live_providers_mismatch")
+    reasons += [f"provider_terms_missing:{provider}" for provider in sorted(set(named) | set(declared or ())) if provider not in recorded]
+    return reasons
+
+
 def live_refusal_reasons(spec: Mapping[str, Any], package_raw: Mapping[str, Any], environ: Mapping[str, str], arms: Any, *,
                          out_dir: Path | None = None, repo_root: Path | None = None) -> list[str]:
     """Every condition a live run lacks, in order (spec 4.9). An empty list is never reached in this repository.
 
     Plan H's four conditions are records, each resolved by path and sha256 (`governance.resolve_record`) and read under its
     own format: (a) `licence-ruling-v1`, (b) `provider-terms-v1`, (c) `irb-approval-v1`, approved on or before the run date
-    and not expired on it, and (d) `research-use-confirmation-v1`. None may sit on a public path."""
+    and not expired on it, and (d) `research-use-confirmation-v1`. None may sit on a public path, and none may be dated
+    after the run date. Condition (b) is bound to the run: `responder.live.providers` names every provider the run
+    queries (it must include each provider the adapter declares in its `providers` attribute), and `provider_terms` (one
+    reference or a list) must hold a record whose `provider_id` is each of them."""
     from . import governance
     from .ablation import arm_configuration
     from .planes import REPO_ROOT, checkout_relative, inside_checkout
@@ -174,18 +197,34 @@ def live_refusal_reasons(spec: Mapping[str, Any], package_raw: Mapping[str, Any]
         return reasons + ["created_at"]
     irb_ref = (spec.get("governance") or {}).get("irb_record")
     reasons += governance.irb_refusals(irb_ref, on, root, missing="irb_not_filed")
-    found, _terms = governance.record_refusals(spec.get("provider_terms"), governance.load_provider_terms, root,
-                                               missing="provider_terms_unrecorded", invalid="provider_terms_invalid")
-    reasons += found
+    terms_refs = spec.get("provider_terms")
+    terms_refs = list(terms_refs) if isinstance(terms_refs, list) else [terms_refs] if terms_refs else []
+    terms = []
+    if not terms_refs:
+        reasons.append("provider_terms_unrecorded")
+    for reference in terms_refs:
+        found, record = governance.record_refusals(reference, governance.load_provider_terms, root,
+                                                   missing="provider_terms_unrecorded", invalid="provider_terms_invalid")
+        reasons += found
+        if record is not None:
+            terms.append(record)
+    if any(_after(record["recorded_date"], on) for record in terms):
+        reasons.append("provider_terms_after_run")
+    if terms and len(terms) == len(terms_refs):
+        reasons += _provider_binding(spec, adapter, {record["provider_id"] for record in terms})
     found, ruling = governance.record_refusals(spec.get("licence_ruling"), governance.load_licence_ruling, root,
                                                missing="licence_ruling_unrecorded", invalid="licence_ruling_invalid")
     reasons += found
     if ruling is not None and ruling["determination"] == "negative":
         reasons.append("licence_negative")
-    found, _confirmation = governance.record_refusals(spec.get("research_use_confirmation"), governance.load_research_use, root,
-                                                      missing="research_use_unconfirmed", invalid="research_use_invalid")
+    if ruling is not None and _after(ruling["ruling_date"], on):
+        reasons.append("licence_ruling_after_run")
+    found, confirmation = governance.record_refusals(spec.get("research_use_confirmation"), governance.load_research_use, root,
+                                                     missing="research_use_unconfirmed", invalid="research_use_invalid")
     reasons += found
-    references = [irb_ref] + [spec.get(key) for key in ("provider_terms", "licence_ruling", "research_use_confirmation")]
+    if confirmation is not None and _after(confirmation["confirmed_date"], on):
+        reasons.append("research_use_after_run")
+    references = [irb_ref, *terms_refs] + [spec.get(key) for key in ("licence_ruling", "research_use_confirmation")]
     if any(governance.is_public(reference, root) for reference in references if reference):
         reasons.append("governance_record_public")
     selected = (spec.get("arms") or {}).get("selected") or []
