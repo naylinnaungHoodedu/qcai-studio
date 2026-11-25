@@ -1,8 +1,8 @@
 {
  "report": "qcai-ehmf-golden-run",
  "format_version": 1,
- "created_at": "2026-11-25T14:07:18+00:00",
- "commit": "3d5ed6a78b04dcf9c004aec0db75568de292a4d1",
+ "created_at": "2026-11-25T14:15:01+00:00",
+ "commit": "c8f1c7034df6130c0ce4909beffffb8638f048e9",
  "evidence_class": "change-control gate, not research results (plan Phase 7 H; 12.5)",
  "pins": {
   "config_package": {
@@ -481,7 +481,7 @@
    "apps/api/app/api/routes/__init__.py": "1305f814e8f8be80ab66bc6eafe75c28bb5ebf87aca416fdedaa8f46886c49ce",
    "apps/api/app/api/routes/admin.py": "a06eb9e64281ba7094d97ccb6edcbb221ec12b766b28e8ff86ae28fb9bf5c27e",
    "apps/api/app/api/routes/analytics.py": "8d7d26248fe01ae9432d31cd1ec2bc2aa05f39f90c0331a979291ab3c9c507ad",
-   "apps/api/app/api/routes/arena.py": "a96e079c4321d0448145c2940625d7767ddd5c2e0615b70e26c3c828c2ad3b43",
+   "apps/api/app/api/routes/arena.py": "f87c2a1c447cced3217601da6b94407e74916dd1a6b07f75991a8df6ab155fb3",
    "apps/api/app/api/routes/assets.py": "195e95f5c7fedf803d86467ac6666e17d01dffa3356d0bcdb25211754b36a159",
    "apps/api/app/api/routes/assistant.py": "59b53e9283d56df598bbf765e8e0a1afdff300ddc1302c563cb3107f7cdc5082",
    "apps/api/app/api/routes/auth.py": "58c44a11d99b9d9b77aed6c99b129835832d791e8753a772d278ee4440f228c0",
@@ -499,9 +499,9 @@
    "apps/api/app/api/routes/v3.py": "f6d554abb6b135933ee043347ddd5e4a93f335870577696d8b8578b6ca4071b6",
    "apps/api/app/core/after_commit.py": "e7039c1e793f2c72db1afd9277fec5bf81ac3af8faf317b0d9eab0ec892a4f9e",
    "apps/api/app/core/arena_tickets.py": "1bd8efdb738ff4e77570c7525d2271bffc2a14b23672cfeda708e87a89a53584",
-   "apps/api/app/core/auth.py": "406a930981da59c6db163583ad851858b41341b09666e0015cc389468890565b",
+   "apps/api/app/core/auth.py": "b85a04e2fdbc6f34cc55818d8c63de8296049d3d08afc4b0b83761f81ed9ff2d",
    "apps/api/app/core/authorization.py": "3fec06f3405dfb37abeead57539f345f8bf30a63b4e1211597abd2bd52acd5ab",
-   "apps/api/app/core/client_identity.py": "ebba54c74b9b28abe10deddfc3b1f300738de3be3ac49a437cf08de16f338f8a",
+   "apps/api/app/core/client_identity.py": "7bf606a779fcbef81a18feccaca9e8668e5d97d97b6e2ed5ec296ae652664e15",
    "apps/api/app/core/config.py": "27f9c302f61f1ed872189cb42d078c194aef3558af1786be2fb65e373e662b43",
    "apps/api/app/core/config_package.py": "eef3fa0ded082dcb266847e876b136d5da58f15833bdde5fb12c1538f5100874",
    "apps/api/app/core/corpus_governance.py": "39153061b8d613ca0298a5210b4d9abeb4da2298608b1b471c0cf659a7f9a4fd",
@@ -578,7 +578,7 @@
    "apps/api/app/services/microlearning.py": "dfba8b3096c6034bf234c79ef8c51315d484f4a887349ba2825c8fc8e635e1f9",
    "apps/api/app/services/project_studio.py": "f28d57683f88d8d7eefd62d4eea29e343de21e8f9cc520eb1b1fbc6290a5829d",
    "apps/api/app/services/provenance.py": "cbea0a9970dac7fe17b653e1308d26b99846e92d0c9e04b5b15be4c3a96e5857",
-   "apps/api/app/services/public_handles.py": "c8ae13fa7014efd2191eef410d5036bbe822fe9ac6cf515431498e940b251e98",
+   "apps/api/app/services/public_handles.py": "75b7c513355c7dc8ca9f97d09b5a2735b746caa3208af9cb44a60337fbe03e66",
    "apps/api/app/services/qa_engine.py": "678ab941468f21da8376ec305a82cc904ee16bc0da2551165146eebd0d4a41ca",
    "apps/api/app/services/quiz_keys.py": "c839f3da7fce2abada021d5a454cada57ed209474db93abf479fc6a6ad538131",
    "apps/api/app/services/ranking/__init__.py": "d91c6a8760f99946722444c894077782a0f7eeba22052b0db347fa8cafa879c3",
@@ -697,6 +697,6 @@
    "scripts/run_golden_set.py": "931d70dcfdc66f32a91ad9145eb85894c86c8ccd00ded6edc6ae533b4e506b08",
    "scripts/run_v1_fixtures.py": "eef14c4c906aa9abb209c97b83bf78c077ca7a6642febbc0d09b0665b86405bd"
   },
-  "sha256": "4d2a94420e9de2c5b69526092be66d72a30b488ca0224df76824cf01b4e8f2ec"
+  "sha256": "8c38703f8473beca9b03b851a07ad4347dcafe122ee2f574dbccb60b96e2d5b4"
  }
 }

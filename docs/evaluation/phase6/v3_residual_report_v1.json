@@ -1,8 +1,8 @@
 {
  "report": "qcai-v3-residual-report",
  "format_version": 1,
- "created_at": "2026-11-25T14:06:28+00:00",
- "commit": "3d5ed6a78b04dcf9c004aec0db75568de292a4d1",
+ "created_at": "2026-11-25T14:13:45+00:00",
+ "commit": "c8f1c7034df6130c0ce4909beffffb8638f048e9",
  "evidence_class": "synthetic telemetry, not research results (plan Phase 6 H: audit counts are telemetry, not research results)",
  "public_corpus_only": true,
  "config_package": {
@@ -87,7 +87,7 @@
   "rule": "imported-repository-modules-sha256-lf-v1",
   "files": {
    "apps/api/app/__init__.py": "a45661633011b095a62071507cf3309e100424dd64d34feabf2cc6d084696348",
-   "apps/api/app/core/client_identity.py": "ebba54c74b9b28abe10deddfc3b1f300738de3be3ac49a437cf08de16f338f8a",
+   "apps/api/app/core/client_identity.py": "7bf606a779fcbef81a18feccaca9e8668e5d97d97b6e2ed5ec296ae652664e15",
    "apps/api/app/core/config.py": "27f9c302f61f1ed872189cb42d078c194aef3558af1786be2fb65e373e662b43",
    "apps/api/app/core/config_package.py": "eef3fa0ded082dcb266847e876b136d5da58f15833bdde5fb12c1538f5100874",
    "apps/api/app/core/corpus_governance.py": "39153061b8d613ca0298a5210b4d9abeb4da2298608b1b471c0cf659a7f9a4fd",
@@ -172,6 +172,6 @@
    "apps/api/app/services/v3/triggers.py": "7634c7eb14f7c98aab3516648e2c7a597b51e8a8fa1232cdf430e43ea32b89e0",
    "scripts/run_v3_residual_report.py": "d48830044991aae212323bebf542267ac3d7464cdf5fb98852aef2a577d8b905"
   },
-  "sha256": "7a86084e7312efb4edb564b689456a1b387d2ee4acd57e2923819b2fa6af8d47"
+  "sha256": "0c6457125a26ab2f496b3343510919b9933443dd73dd7276ebd22ad84924dd1c"
  }
 }
