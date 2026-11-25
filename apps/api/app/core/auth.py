@@ -104,7 +104,7 @@ def get_current_user(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="A verified session is required.")
     # The rate limiter keys on this validated principal, never on a client header (task 1.6).
     request.state.principal = user
-    if user.provider != "demo" and phase8_writes_enabled(settings):
+    if user.provider != "demo" and has_bearer_subject(user) and phase8_writes_enabled(settings):
         writer = learner_writer(db, user.provider, user.user_id)
         request.state.learner_write_observation = writer.observation
         if (request.method, route_template(request)) not in _EXPLICIT_PRIVACY_LOCKS:
@@ -217,9 +217,14 @@ def require_durable_learner(request: Request, user: AuthUser = Depends(get_curre
     return user
 
 
+def has_bearer_subject(user: AuthUser) -> bool:
+    """Allow non-bearer identities and tokens with a subject to enter Phase 8."""
+    return not isinstance(user, _Auth0WithoutSubject)
+
+
 def require_bearer_subject(user: AuthUser) -> None:
     """Reject an Auth0 credential that lacks a verified, nonblank subject."""
-    if isinstance(user, _Auth0WithoutSubject):
+    if not has_bearer_subject(user):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="A bearer subject is required.")
 
 

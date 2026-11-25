@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.auth import AuthUser, get_current_user, learner_write_observation
+from app.core.auth import AuthUser, get_current_user, has_bearer_subject, learner_write_observation, require_bearer_subject
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.phase8_settings import COMPLETION_THRESHOLD
@@ -159,6 +159,11 @@ def record_quiz_attempt(
     user: AuthUser = Depends(get_current_user),
 ):
     started_at = datetime.now(UTC)
+    settings = get_settings()
+    durable = user.provider not in {"guest", "demo"}
+    sync_enabled = settings.learner_sync == "on"
+    if durable and sync_enabled:
+        require_bearer_subject(user)
     store = get_course_store()
     lesson = store.lessons.get(payload.lesson_slug)
     if lesson is None:
@@ -166,13 +171,11 @@ def record_quiz_attempt(
     # Scored on the server (task 1.2, E-110) against the server-side keys; the lesson payload carries none (R-42).
     keys = store.quiz_keys.for_lesson(payload.lesson_slug)
     score, responses, feedback = score_attempt(keys, payload.responses)
-    durable = user.provider not in {"guest", "demo"}
-    sync_enabled = get_settings().learner_sync == "on"
     subject, server_clock = user.user_id, None
-    if durable:
+    if durable and has_bearer_subject(user):
         subject = write_subject(
             db, user.provider, user.user_id,
-            bind=get_settings().learner_identity == "on", guarded=sync_enabled,
+            bind=settings.learner_identity == "on", guarded=sync_enabled,
             observation=learner_write_observation(request),
         )
         if sync_enabled:

@@ -31,8 +31,10 @@ def main(argv: list[str] | None = None) -> int:
                 result = {"state": "stopped", "reason": row.reason} if row else {"state": "clear"}
         else:
             reason = args.reason if args.action == "stop" else None
-            change_adaptation_stop(SessionLocal, reason)
-            result = {"action": args.action, "outcome": "committed"}
+            change = change_adaptation_stop(SessionLocal, reason, actor_role="operator")
+            result = {"action": args.action, "outcome": change.outcome}
+            if change.reason is not None:
+                result["reason"] = change.reason
     except (SQLAlchemyError, RuntimeError):
         print("Planner stop command failed. Verify the Phase 8 schema and database access.", file=sys.stderr)
         return 1

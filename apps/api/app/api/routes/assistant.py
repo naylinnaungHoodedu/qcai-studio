@@ -3,8 +3,8 @@ from collections.abc import Callable
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
-from app.core.auth import AuthUser, get_current_user
-from app.core.config import get_settings
+from app.core.auth import AuthUser, get_current_user, require_bearer_subject
+from app.core.config import Settings, get_settings
 from app.core.db import get_db
 from app.core.rate_limit import limiter
 from app.db_models import QAInteraction
@@ -27,6 +27,11 @@ TUTOR_TURN_RATE_LIMIT_SCOPE = "tutor-turn"
 
 def tutor_turn_rate_limit() -> str:
     return get_settings().assistant_chat_rate_limit
+
+
+def require_tutor_learner_subject(user: AuthUser, settings: Settings) -> None:
+    if settings.learner_planner == "shadow" and settings.tutor_ledger_enabled and settings.two_pass_tutor in {"shadow", "on"}:
+        require_bearer_subject(user)
 
 
 def deliver_tutor_turn(
@@ -77,6 +82,7 @@ def chat_with_teaching_assistant(
     db: Session = Depends(get_db),
     user: AuthUser = Depends(get_current_user),
 ):
+    require_tutor_learner_subject(user, get_settings())
     clean_message = sanitize_user_text(payload.message)
     if not clean_message:
         raise HTTPException(status_code=422, detail="Message cannot be empty.")

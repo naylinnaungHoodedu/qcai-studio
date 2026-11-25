@@ -238,6 +238,8 @@ def test_phase8_docs_stopped_rows_record_an_open_owner_question():
 
 
 def test_phase8_docs_the_di_rows_form_one_contiguous_table():
+    from datetime import date
+
     spec = SPEC.read_text(encoding="utf-8")
     deferred = _section(16).split("\n### 16.2 Deferred items", 1)[1].strip()
     header, delimiter, *rows = deferred.split("\n\n", 1)[0].splitlines()
@@ -254,12 +256,26 @@ def test_phase8_docs_the_di_rows_form_one_contiguous_table():
         assert set(re.findall(r"§(\d+(?:\.\d+)*)", item)) <= headings, row
         if state not in {"Closed", "Handed over"}:
             assert "Blocked by:" in item, row
+        if state == "Closed":
+            closure = re.match(r"Closed (\d{4}-\d{2}-\d{2}) (.+)", item)
+            assert closure is not None, row
+            assert date.fromisoformat(closure[1]).isoformat() == closure[1], row
+            if re.match(r"by (?:the )?owner\b", closure[2]):
+                assert re.match(r"by owner decision P2-12-D-\d{2}\b", closure[2]), row
+            else:
+                assert re.match(r"(?:by|because|after|with) \S", closure[2]), row
         if state == "Stopped":
             assert "rule 12" in item and "Owner question (open)" in item, row
     assert ids == list(range(300, max(citations) + 1))
     assert set(ids) == citations
     scope = _row("DI-320")
     assert "§0.1" in scope and "| Closed |" in scope and "section-8.1" not in scope
+    assert "Closed 2026-11-24 by owner decision P2-12-D-06" in scope
+    ownership = _section(0).split("### 0.1", 1)[1]
+    contracts_rule = next(line for line in ownership.splitlines() if line.startswith("| `tutor_pipeline/contracts.py` |"))
+    assert "2026-11-24 by owner decision P2-12-D-06" in contracts_rule
+    review = next(line for line in _section(18).splitlines() if line.startswith("| Review 6 |"))
+    assert "`dbb53e7`" in review and "P2-12-D-06" in review
 
 
 def test_phase8_docs_spec_headings_shapes_and_plan_quotes():
@@ -272,6 +288,7 @@ def test_phase8_docs_spec_headings_shapes_and_plan_quotes():
     assert _section(18).count("| Review 4 |") == 1
     assert _section(18).count("| Review 5 |") == 1
     assert _section(18).count("| Review 6 |") == 1
+    assert _section(18).count("| Review 7 |") == 1
     for model in PHASE8_MODELS:
         line = next(line for line in _section(3).splitlines() if line.startswith(f"| `{model}` |"))
         listed = set(re.findall(r"`([a-z][a-z_]+)`", line.split("|")[2]))
@@ -454,12 +471,43 @@ def test_phase8_docs_spec_section_10_names_every_learner_event_in_code():
     assert {len(re.findall(r"(?<!\\)\|", line)) for line in observability.splitlines() if line.startswith("|")} == {3}
     erasure_time = next(line for line in observability.splitlines() if line.startswith("| Erasure time |"))
     assert all(value in erasure_time for value in ('"account.delete"', '"learner.erasure"', "details.duration_ms"))
+
+
+def test_phase8_docs_each_new_route_names_its_actual_rate_limit():
+    new_routes = {route for route, policy in ROUTE_POLICIES.items() if "Phase 8" in policy.note}
+    described = {
+        ("POST", "/auth/guest-claim"): "Claim",
+        ("POST", "/auth/learner-erasure"): "Self-service erasure",
+        ("POST", "/learner-record/replicas"): "Replica issuance",
+    }
+    seen = set()
+    limits = {}
+    for name in ("auth", "learner_record"):
+        tree = ast.parse((APP / "api/routes" / f"{name}.py").read_text(encoding="utf-8"))
+        router = next(node.value for node in tree.body if isinstance(node, ast.Assign)
+                      and any(isinstance(target, ast.Name) and target.id == "router" for target in node.targets))
+        prefix = next(ast.literal_eval(arg.value) for arg in router.keywords if arg.arg == "prefix")
+        for definition in (node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))):
+            decorators = [decorator for decorator in definition.decorator_list if isinstance(decorator, ast.Call)
+                          and isinstance(decorator.func, ast.Attribute) and isinstance(decorator.func.value, ast.Name)]
+            for decorator in (call for call in decorators if call.func.value.id == "router"):
+                route = (decorator.func.attr.upper(), prefix + ast.literal_eval(decorator.args[0]))
+                if route not in new_routes:
+                    continue
+                seen.add(route)
+                for limit in (call for call in decorators if call.func.value.id == "limiter"):
+                    assert limit.func.attr == "limit" and len(limit.args) == 1
+                    factory = limit.args[0]
+                    assert isinstance(factory, ast.Lambda) and isinstance(factory.body, ast.Attribute)
+                    assert isinstance(factory.body.value, ast.Call) and ast.unparse(factory.body.value.func) == "get_settings"
+                    limits[route] = factory.body.attr
+    assert seen == new_routes and set(limits) == set(described)
     identity = (ROOT / "docs/security/identity-linking.md").read_text(encoding="utf-8")
-    for key in ("auth_login_rate_limit", "guest_legacy_upgrade_rate_limit"):
+    for route, label in described.items():
+        key = limits[route]
         default = Settings.model_fields[key].default
-        assert f"`{key}` (default {default})" in _section(9)
-        assert f"`{key}` ({default} by default)" in identity
-    assert "429" in _section(9) and "429" in identity
+        for doc, display in ((_section(9), f"default {default}"), (identity, f"{default} by default")):
+            assert re.search(rf"{re.escape(f'{label} uses `{key}` ({display})')}[^.]*\b429\b", doc), route
 
 
 def test_phase8_docs_the_consent_schema_lists_the_retention_classes_in_code():
@@ -761,6 +809,10 @@ def test_phase8_docs_distinguish_the_operator_stop_from_the_runtime_trigger():
         command = f"`python -m app.workers.learner_planner {action}`"
         assert command in book and command in _section(10)
     assert "configured API database session" in book and "same transaction" in book
+    for text in (book, _section(10)):
+        for token in ("`already-stopped`", "`unchanged`", "Only inserts and deletes append success events",
+                      "`actor_role=operator`", "`session_user`", "keyed digest"):
+            assert token in text
 
 
 def test_phase8_docs_explain_why_policy_fallbacks_are_not_degraded_logs():

@@ -598,10 +598,71 @@ def test_phase8_sync_routes_refuse_a_bearer_token_without_sub(monkeypatch, isola
         browser.get("/learner-record", headers=headers),
         browser.post("/learner-record/replicas", headers=headers, json={"preferred_replica_id": replica}),
         browser.post("/learner-record/operations", headers=headers, json=batch(replica, 1, "fixture", 0)),
+        quiz(browser, headers),
     ]
-    assert [response.status_code for response in responses] == [401] * 3
+    assert [response.status_code for response in responses] == [401] * 4
     with isolated_learner_route_sessions() as db:
-        for model in (LearnerIssuedReplica, LearnerRecord, LearnerRecordOperation, LearnerSubject, LearnerWriteGuard):
+        for model in (LearnerIssuedReplica, LearnerRecord, LearnerRecordOperation, LearnerSubject, LearnerWriteGuard,
+                      QuizAttempt, LearnerAssessmentFact):
+            assert db.scalar(select(func.count()).select_from(model)) == 0, model.__tablename__
+
+
+@pytest.mark.parametrize(("method", "path", "body"), [
+    ("POST", "/analytics/events", {"event_type": "lesson_opened"}),
+    ("POST", "/assistant/chat", {"message": "Synthetic question"}),
+    ("POST", "/tutor/turns", {"message": "Synthetic question"}),
+    ("GET", "/arena/me", None),
+    ("POST", "/arena/ticket", {}),
+    ("POST", "/auth/guest-claim", {}),
+])
+def test_phase8_other_enabled_learner_boundaries_require_an_issuer_subject(
+    method, path, body, monkeypatch, isolated_learner_route_sessions,
+):
+    from app.db_models import ArenaProfile, LearnerSubject, LearnerWriteGuard, TutorThread, TutorTurnIdempotency
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "learner_privacy", "on")
+    monkeypatch.setattr(settings, "learner_planner", "shadow")
+    monkeypatch.setattr(settings, "two_pass_tutor", "shadow")
+    monkeypatch.setattr(settings, "tutor_ledger_enabled", True)
+    monkeypatch.setattr(settings, "arena_enabled", True)
+    # Claim already requires identity mode, which requires a subject at decoding.
+    headers = _offline_bearer_claims(monkeypatch, "on" if path == "/auth/guest-claim" else "off", {})
+    if path == "/tutor/turns":
+        headers["Idempotency-Key"] = "fixture-turn"
+    response = TestClient(app).request(method, path, headers=headers, json=body)
+    assert response.status_code == 401
+    with isolated_learner_route_sessions() as db:
+        for model in (ArenaProfile, AnalyticsEvent, LearnerSubject, LearnerWriteGuard, TutorThread, TutorTurnIdempotency):
+            assert db.scalar(select(func.count()).select_from(model)) == 0, model.__tablename__
+
+
+@pytest.mark.parametrize("fallback", ["unknown", "  "])
+def test_phase8_arena_rejects_a_legacy_ticket_without_an_issuer_subject(monkeypatch, fallback):
+    from app.api.routes import arena
+    from app.core.arena_tickets import ARENA_PROTOCOL, ARENA_TICKET_VERSION, ArenaTicket
+
+    monkeypatch.setattr(get_settings(), "learner_sync", "on")
+    principal = ArenaTicket(user_id=fallback, provider="auth0", expires_at=0, nonce="fixture")
+    monkeypatch.setattr(arena, "redeem_arena_ticket", lambda *_: principal)
+    assert arena._socket_principal([ARENA_PROTOCOL, f"{ARENA_TICKET_VERSION}.fixture"], get_settings()) is None
+
+
+def test_phase8_legacy_subject_fallback_never_creates_a_phase8_guard(monkeypatch, isolated_learner_route_sessions):
+    from app.db_models import LearnerSubject, LearnerWriteGuard
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "learner_sync", "off")
+    monkeypatch.setattr(settings, "learner_privacy", "off")
+    monkeypatch.setattr(settings, "learner_planner", "shadow")
+    headers = _offline_bearer_claims(monkeypatch, "off", {})
+    browser = TestClient(app)
+    assert quiz(browser, headers).status_code == 200
+    write = batch("legacy-fixture", 1, "fixture")
+    assert browser.post("/learner-record/operations", headers=headers, json=write).status_code == 200
+    assert browser.post("/analytics/events", headers=headers, json={"event_type": "lesson_opened"}).status_code == 200
+    with isolated_learner_route_sessions() as db:
+        for model in (LearnerSubject, LearnerWriteGuard, LearnerAssessmentFact):
             assert db.scalar(select(func.count()).select_from(model)) == 0, model.__tablename__
 
 

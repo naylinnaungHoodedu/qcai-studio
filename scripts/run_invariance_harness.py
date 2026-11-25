@@ -223,7 +223,7 @@ def _change_local_stop(path: Path, reason: str | None) -> None:
         raise ValueError("Supply an existing local development SQLite database.")
     engine = create_engine(URL.create("sqlite", database=database.as_posix()))
     try:
-        change_adaptation_stop(lambda: Session(engine), reason)
+        change_adaptation_stop(lambda: Session(engine), reason, actor_role="harness")
     finally:
         engine.dispose()
 

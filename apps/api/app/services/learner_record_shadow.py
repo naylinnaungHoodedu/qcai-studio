@@ -1,11 +1,15 @@
 """Read trusted assessment history at the pedagogical boundary."""
 
 from collections.abc import Callable
+from dataclasses import dataclass
+import os
 from time import monotonic as planner_clock
+from typing import Literal
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
+from app.core.client_identity import keyed_digest
 from app.core.phase8_settings import COMPLETION_THRESHOLD, PLANNER_BUDGET_MS
 from app.db_models import LearnerAdaptationStop, LearnerAssessmentFact, QuizAttempt
 from app.services.learner_record_identity import find_subject
@@ -18,35 +22,64 @@ from app.services.learner_record_privacy import read_consent
 STOP_REASONS = ("invariance", "evidential-state")
 
 
-def stop_adaptation(db: Session, reason: str) -> None:
+@dataclass(frozen=True)
+class StopChange:
+    outcome: Literal["inserted", "already-stopped", "deleted", "unchanged"]
+    reason: str | None = None
+
+
+def stop_adaptation(db: Session, reason: str) -> StopChange:
     if reason not in STOP_REASONS:
         raise ValueError("Unknown adaptation stop reason.")
-    db.execute(insert_for(db)(LearnerAdaptationStop).values(control_id="planner", reason=reason)
-               .on_conflict_do_nothing(index_elements=["control_id"]))
+    insert = (insert_for(db)(LearnerAdaptationStop).values(control_id="planner", reason=reason)
+              .on_conflict_do_nothing(index_elements=["control_id"]).returning(LearnerAdaptationStop.reason))
+    current = select(LearnerAdaptationStop.reason).where(LearnerAdaptationStop.control_id == "planner").with_for_update()
+    for _ in range(3):
+        inserted = db.scalar(insert)
+        if inserted is not None:
+            return StopChange("inserted", inserted)
+        stored = db.scalar(current)
+        if stored is not None:
+            return StopChange("already-stopped", stored)
+        # A concurrent clear can remove the conflicting row before the read acquires its lock.
+    raise RuntimeError("The planner stop changed concurrently. Retry the command.")
 
 
-def clear_adaptation_stop(db: Session) -> None:
-    db.execute(delete(LearnerAdaptationStop).where(LearnerAdaptationStop.control_id == "planner"))
+def clear_adaptation_stop(db: Session) -> StopChange:
+    removed = db.scalar(delete(LearnerAdaptationStop).where(LearnerAdaptationStop.control_id == "planner")
+                        .returning(LearnerAdaptationStop.reason))
+    return StopChange("deleted", removed) if removed is not None else StopChange("unchanged")
 
 
-def change_adaptation_stop(session_factory: Callable[[], Session], reason: str | None) -> None:
-    """Commit the operator's stop change and its audit event in the same transaction."""
-    from app.services.security_log import append_security_event
-
-    def session_with_change() -> Session:
-        db = session_factory()
+def _stop_actor_digest(db: Session) -> str:
+    if db.get_bind().dialect.name == "postgresql":
+        login = db.execute(text("SELECT session_user")).scalar_one()
+        principal = f"postgresql:{login}"
+    elif hasattr(os, "geteuid"):
+        principal = f"posix:{os.geteuid()}"
+    else:
         try:
-            if reason is None:
-                clear_adaptation_stop(db)
-            else:
-                stop_adaptation(db, reason)
-        except BaseException:
-            db.close()
-            raise
-        return db
+            principal = f"windows:{os.getlogin()}"
+        except OSError as exc:
+            raise RuntimeError("Cannot identify the local operating-system account.") from exc
+    return keyed_digest(principal, "planner-stop-actor")
 
-    append_security_event("learner.harness.stop" if reason else "learner.harness.clear", "success",
-                          details={"reason": reason or "operator"}, session_factory=session_with_change)
+
+def change_adaptation_stop(
+    session_factory: Callable[[], Session], reason: str | None, *, actor_role: Literal["operator", "harness"],
+) -> StopChange:
+    """Commit an actual stop transition and its audit event together."""
+    from app.services.security_log import stage_security_event
+
+    with session_factory() as db:
+        change = clear_adaptation_stop(db) if reason is None else stop_adaptation(db, reason)
+        if change.outcome in {"inserted", "deleted"}:
+            event_type = "learner.harness.stop" if change.outcome == "inserted" else "learner.harness.clear"
+            stage_security_event(db, event_type, "success", actor_role=actor_role,
+                                 subject_digest=_stop_actor_digest(db),
+                                 details={"outcome": change.outcome, "reason": change.reason})
+        db.commit()
+        return change
 
 
 def shadow_presentation(

@@ -149,6 +149,40 @@ def _chain_head(db: Session) -> tuple[int, str] | None:
     return (head.seq, head.hash) if head else None
 
 
+def stage_security_event(
+    db: Session,
+    event_type: str,
+    outcome: str,
+    *,
+    actor_role: str,
+    subject_digest: str | None = None,
+    source_digest: str | None = None,
+    details: dict[str, Any] | None = None,
+    now: datetime | None = None,
+) -> AppendedEvent:
+    """Stage a chained event in the caller's transaction."""
+    if outcome not in OUTCOMES:
+        raise ValueError(f"Unknown security event outcome: {outcome}")
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _APPEND_LOCK_KEY})
+    head = _chain_head(db)
+    row = SecurityEvent(
+        seq=head[0] + 1 if head else 1,
+        created_at=_utc(now or datetime.now(UTC)),
+        event_type=event_type,
+        outcome=outcome,
+        actor_role=actor_role,
+        subject_digest=subject_digest,
+        source_digest=source_digest,
+        details=_clean_details(details),
+        prev_hash=head[1] if head else GENESIS_HASH,
+    )
+    row.hash = _row_hash(row)
+    db.add(row)
+    db.flush([row])
+    return AppendedEvent(seq=row.seq, hash=row.hash)
+
+
 def append_security_event(
     event_type: str,
     outcome: str,
@@ -164,30 +198,15 @@ def append_security_event(
     if outcome not in OUTCOMES:
         raise ValueError(f"Unknown security event outcome: {outcome}")
     created_at = _utc(now or datetime.now(UTC))
-    cleaned = _clean_details(details)
     for attempt in range(_APPEND_ATTEMPTS):
         if attempt:
             time.sleep(random.uniform(0, 0.005 * attempt))
         with session_factory() as db:
-            if db.get_bind().dialect.name == "postgresql":
-                # One writer at a time on PostgreSQL; the sequence-number retry below covers other databases.
-                db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _APPEND_LOCK_KEY})
-            head = _chain_head(db)
-            row = SecurityEvent(
-                seq=head[0] + 1 if head else 1,
-                created_at=created_at,
-                event_type=event_type,
-                outcome=outcome,
-                actor_role=actor_role,
-                subject_digest=subject_digest,
-                source_digest=source_digest,
-                details=cleaned,
-                prev_hash=head[1] if head else GENESIS_HASH,
-            )
-            row.hash = _row_hash(row)
-            appended = AppendedEvent(seq=row.seq, hash=row.hash)
-            db.add(row)
             try:
+                appended = stage_security_event(
+                    db, event_type, outcome, actor_role=actor_role, subject_digest=subject_digest,
+                    source_digest=source_digest, details=details, now=created_at,
+                )
                 db.commit()
             except IntegrityError:
                 # Another writer took this sequence number; read the new head and chain onto it.

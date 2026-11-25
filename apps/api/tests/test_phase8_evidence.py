@@ -107,7 +107,11 @@ def test_plan_i_a_harness_violation_writes_a_shared_stop_and_security_event(tmp_
         assert harness.main() == 3
         with Session(engine) as db:
             assert db.get(LearnerAdaptationStop, "planner").reason == "invariance"
-            assert db.scalar(select(SecurityEvent.event_type).order_by(SecurityEvent.seq)) == "learner.harness.stop"
+            event = db.scalars(select(SecurityEvent)).one()
+            assert (event.event_type, event.actor_role, event.details) == (
+                "learner.harness.stop", "harness", {"outcome": "inserted", "reason": "invariance"},
+            )
+            assert event.subject_digest and event.source_digest is None
         assert {"event": "learner.harness.violation", "reason": "invariance"} in [
             getattr(row, FIELDS, None) for row in caplog.records
         ]
@@ -204,8 +208,11 @@ def test_phase8_durable_stop_is_visible_to_a_new_session(fresh_database_url):
 
 
 def test_plan_l_planner_stop_worker_round_trips_through_new_sessions(fresh_database_url, monkeypatch, capsys):
-    from sqlalchemy import select
+    import os
 
+    from sqlalchemy import select, text
+
+    from app.core.client_identity import keyed_digest
     from app.db_models import SecurityEvent
     from app.services import security_log
     from app.services.learner_record_planner import LearnerPresentation
@@ -248,22 +255,36 @@ def test_plan_l_planner_stop_worker_round_trips_through_new_sessions(fresh_datab
         check_state(adapted)
         assert run("status") == {"state": "clear"}
 
-        assert run("stop", "--reason", "invariance") == {"action": "stop", "outcome": "committed"}
-        assert run("status") == {"state": "stopped", "reason": "invariance"}
+        first = run("stop", "--reason", "invariance")
+        assert first == {"action": "stop", "outcome": "inserted", "reason": "invariance"}
+        second = run("stop", "--reason", "evidential-state")
+        assert second == {"action": "stop", "outcome": "already-stopped", "reason": first["reason"]}
+        assert run("status") == {"state": "stopped", "reason": first["reason"]}
+        with Session(engine) as db:
+            row = db.get(LearnerAdaptationStop, "planner")
+            event = db.scalars(select(SecurityEvent)).one()
+            assert row.reason == event.details["reason"] == second["reason"]
         check_state(static)
         assert learner_planner.main(["clear"]) == 2
         assert "--confirm" in capsys.readouterr().err
         check_state(static)
-        assert run("clear", "--confirm") == {"action": "clear", "outcome": "committed"}
+        assert run("clear", "--confirm") == {"action": "clear", "outcome": "deleted", "reason": first["reason"]}
+        assert run("clear", "--confirm") == {"action": "clear", "outcome": "unchanged"}
         assert run("status") == {"state": "clear"}
         check_state(adapted)
         with Session(engine) as db:
             rows = list(db.scalars(select(SecurityEvent).order_by(SecurityEvent.seq)))
             assert [(row.event_type, row.outcome, row.details) for row in rows] == [
-                ("learner.harness.stop", "success", {"reason": "invariance"}),
-                ("learner.harness.clear", "success", {"reason": "operator"}),
+                ("learner.harness.stop", "success", {"outcome": "inserted", "reason": "invariance"}),
+                ("learner.harness.clear", "success", {"outcome": "deleted", "reason": "invariance"}),
             ]
-            assert all(row.subject_digest is row.source_digest is None for row in rows)
+            if engine.dialect.name == "postgresql":
+                login = db.execute(text("SELECT session_user")).scalar_one()
+                principal = f"postgresql:{login}"
+            else:
+                principal = f"posix:{os.geteuid()}" if hasattr(os, "geteuid") else f"windows:{os.getlogin()}"
+            assert all(row.actor_role == "operator" and row.source_digest is None for row in rows)
+            assert all(row.subject_digest == keyed_digest(principal, "planner-stop-actor") for row in rows)
     finally:
         engine.dispose()
 
