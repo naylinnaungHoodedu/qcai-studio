@@ -454,7 +454,8 @@ def test_ac_10_1_the_freeze_record_the_validator_writes_is_the_one_the_confirmat
 
 def test_ac_10_1_the_validator_refuses_an_unreadable_rubric_rules_file_or_agent_record_with_exit_2(tmp_path, capsys):
     # The documented exit 2 inputs: a rubric that is not there, freeze rules that do not load (here an older rules file
-    # without agent_check), and an agent-check record that is not shaped as ulqs-agent-check-v1. None is a traceback.
+    # without agent_check), an agent-check record that is not shaped as ulqs-agent-check-v1, and ratings with a main-round
+    # line outside the dataset's rated units or under another rubric. None is a traceback.
     argv, frozen, agent_record = _research_plane_freeze(tmp_path)
     validate = script("validate_ulqs")
 
@@ -503,13 +504,27 @@ def test_ac_10_1_the_validator_refuses_an_unreadable_rubric_rules_file_or_agent_
                         ("bad count", {**agent_record, "agent_false_alarms": -1})):
         write_lf(tmp_path / f"agent-{name}.json", json.dumps(value) + "\n")
         cases[f"an agent record: {name}"] = swap("--agent-check", tmp_path / f"agent-{name}.json")
+    # Ratings that do not belong to this dataset or to this rubric: a main-round unit no dataset item owns (padding that
+    # would otherwise count toward alpha), and a line labelled under another rubric than --rubric (VBT RevB Table XVI).
+    good_ratings = read_jsonl(Path(argv[argv.index("--ratings") + 1]))
+    reasons = {}
+    for name, change, reason in (("a unit outside the dataset", lambda line: line.update(unit_id="zz0"), "unit_id is not a rated unit"),
+                                 ("another rubric", lambda line: line.update(rubric_sha256="c" * 64), "rubric_sha256 is not the sha256")):
+        changed = [dict(line) for line in good_ratings]
+        change(changed[-1])
+        cases[f"ratings: {name}"] = swap("--ratings", synthetic.write_jsonl(tmp_path / f"ratings-{name.replace(' ', '-')}.jsonl", changed))
+        reasons[f"ratings: {name}"] = f"ratings line {len(changed)}: {reason}"
     for name, case in cases.items():
         (tmp_path / "freeze-record.json").unlink(missing_ok=True)
+        (tmp_path / "agreement.json").unlink(missing_ok=True)
         capsys.readouterr()
         assert validate.main(case) == 2, name
         err = capsys.readouterr().err
         assert "refused (exit 2)" in err and "Traceback" not in err, name
+        assert reasons.get(name, "") in err, name
         assert not (tmp_path / "freeze-record.json").exists(), name
+        if name in reasons:
+            assert not (tmp_path / "agreement.json").exists(), name
     # Without --freeze a malformed agent record is refused the same way (it is checked when read).
     write_lf(tmp_path / "agent-plain.json", "[]\n")
     assert validate.main(["--items", argv[argv.index("--items") + 1], "--agent-check", str(tmp_path / "agent-plain.json"),
@@ -891,7 +906,7 @@ def test_ac_10_4_research_plane_scripts_refuse_public_output_paths(tmp_path):
     licensed.write_text(fixture_texts()["licensed_passages"][0], encoding="utf-8")
     salt = tmp_path / "salt.txt"
     salt.write_text("ab" * 32, encoding="utf-8")
-    ratings = synthetic.write_jsonl(tmp_path / "r.private.jsonl", synthetic.synthetic_ratings(items, rubric_sha256=RUBRIC_SHA))
+    ratings = synthetic.write_jsonl(tmp_path / "r.private.jsonl", synthetic.synthetic_ratings(items, rubric_sha256=lf_sha256(REPO_ROOT / "lqs" / "rubric.md")))
     for public in ("docs/evaluation/phase10/out.json", "evaluation/reports/out.json"):
         target = REPO_ROOT / public
         assert script("migrate_ulqs_rc1").main(["--input", str(rc1), "--output", str(target), "--author-role", "PI", "--access-log", str(access)]) == 2
@@ -1376,7 +1391,7 @@ def test_plan_f_the_access_log_records_every_read_and_each_run_s_outcome(tmp_pat
 
 def test_plan_f_the_validator_logs_each_input_it_reads_and_each_record_it_writes(tmp_path):
     items_path, catalog_path, items = synthetic.write_fixture_set(tmp_path, synthetic.SMALL)
-    ratings = synthetic.write_jsonl(tmp_path / "r.private.jsonl", synthetic.synthetic_ratings(items, rubric_sha256=RUBRIC_SHA))
+    ratings = synthetic.write_jsonl(tmp_path / "r.private.jsonl", synthetic.synthetic_ratings(items, rubric_sha256=lf_sha256(REPO_ROOT / "lqs" / "rubric.md")))
     text = tmp_path / "text"
     text.mkdir()
     for document, body in synthetic.corpus_text(items).items():
@@ -1692,6 +1707,12 @@ def test_plan_j_a_checkpoint_s_start_day_can_only_tighten_the_run_window(tmp_pat
         with pytest.raises(runner.RunRefused) as refused:
             runner.plan_run(live, out_dir=forged(live, name, **event), resume=True)
         assert refused.value.code == 9 and refused.value.reasons == ["run_start_invalid"], name
+    # A run_events.jsonl that is a directory is an output the run cannot write, not a start that fails to read.
+    as_directory = out.parent / "events-directory"
+    (as_directory / "run_events.jsonl").mkdir(parents=True)
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(live, out_dir=as_directory, resume=True)
+    assert refused.value.code == 2 and refused.value.reasons == ["output_unwritable"]
     # A future-dated spec is refused at once, a checkpoint or not.
     with pytest.raises(runner.RunRefused) as refused:
         runner.plan_run({**live, "created_at": f"{future}T00:00:00Z"}, out_dir=out.parent / "none", resume=True)
@@ -2383,6 +2404,22 @@ def test_phase10_exit_codes_a_checkpoint_write_that_fails_is_refused_with_exit_2
         assert responses.read_bytes() == before
     else:
         assert not (out / runner.RUN_RECORD).exists()
+
+
+@pytest.mark.parametrize(("name", "resume"), [(name, resume) for name in ("run_events.jsonl", "responses.jsonl", "payload_log.jsonl",
+                                                                        "run_record.json") for resume in (False, True)])
+def test_phase10_exit_codes_an_output_file_that_is_a_directory_is_output_unwritable(tmp_path, capsys, name, resume):
+    # Every output file of a run that is a directory, the two checkpoint files (read before any write) included, refuses
+    # the run with `output_unwritable` (exit 2) and its refused outcome logged, as the runner and the script document.
+    out, access = tmp_path / "out", tmp_path / "access.jsonl"
+    (out / name).mkdir(parents=True)
+    argv = ["--spec", SYNTHETIC_SPEC, "--output-dir", out, "--access-log", access, "--actor-role", "MLE"] + (["--resume"] if resume else [])
+    capsys.readouterr()
+    assert run_main(argv) == 2
+    err = capsys.readouterr().err
+    assert "refused (exit 2): output_unwritable" in err and "Traceback" not in err, err
+    assert _access(access)[-1] == ("run", "run_spec", "refused")
+    assert (out / name).is_dir() and not any((out / name).iterdir())
 
 
 # Terms of a superseded design that no authoritative document or source may state as current (P2-12-D-03): the run

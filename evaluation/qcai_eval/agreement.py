@@ -6,6 +6,12 @@ alpha = 1 - (n - 1) * sum o_ck d2_ck / sum n_c n_k d2_ck. Nominal d2 is 0/1; ord
 d2_ck = (sum_{g between c and k} n_g - (n_c + n_k) / 2) ** 2 over the ranked values. Interval and ratio levels are not
 implemented. Ratings are research data: a ratings file is private, and the agreement record holds counts and statistics,
 never a label or a text. Rater fields hold pseudonymous codes (R1, R2, ...).
+
+The record is computed over the rated units of the live (not retired) items only: alpha, kappa and the unit and rater
+counts never see a unit outside them. `check_ratings` refuses (ValueError, naming the line and the field, never a value) a
+ratings file with a main-round line whose unit_id is not a rated unit of the dataset item its item_id names, or whose
+rubric_sha256 is not the sha256 of the rubric the record names (VBT RevB Table XVI: claims are labelled "with the frozen
+rubric"). Calibration and adjudication lines are not checked: they do not enter the record.
 """
 
 from __future__ import annotations
@@ -123,18 +129,43 @@ def load_ratings(path: Path) -> list[Mapping[str, Any]]:
     return ratings
 
 
-def _main_labels(ratings: Sequence[Mapping[str, Any]], field: str) -> dict[str, dict[str, Any]]:
-    """unit_id -> {rater: value} over the main round (a rater's later main-round line replaces the earlier one)."""
-    units: dict[str, dict[str, Any]] = {}
-    for rating in ratings:
-        if rating.get("round") != "main":
+def check_ratings(ratings: Sequence[Mapping[str, Any]], items: Sequence[Mapping[str, Any]], *, rubric_sha256: str) -> None:
+    """Refuse main-round lines that do not belong to this dataset or to this rubric (ValueError names the line and the field)."""
+    from .ulqs import rated_units
+
+    owned: dict[str, set[str]] = {}
+    for item in items:
+        if isinstance(item.get("item_id"), str):
+            owned.setdefault(item["item_id"], set()).update(rated_units(item))
+    for number, line in enumerate(ratings, start=1):
+        if line.get("round") != "main":
             continue
-        units.setdefault(rating["unit_id"], {})[rating["rater"]] = rating.get(field)
-    return units
+        if line.get("unit_id") not in owned.get(line.get("item_id"), set()):
+            raise ValueError(f"ratings line {number}: unit_id is not a rated unit of the dataset item its item_id names")
+        if line.get("rubric_sha256") != rubric_sha256:
+            raise ValueError(f"ratings line {number}: rubric_sha256 is not the sha256 of the supplied rubric")
 
 
-def units_from_ratings(ratings: Sequence[Mapping[str, Any]], field: str = "label") -> list[list]:
-    return [list(values.values()) for _unit, values in sorted(_main_labels(ratings, field).items())]
+def live_units(items: Sequence[Mapping[str, Any]]) -> set[str]:
+    """The rated units of the live (not retired) items: the only units the agreement record counts."""
+    from .ulqs import rated_units
+
+    return {unit for item in items if item.get("status") != "retired" for unit in rated_units(item)}
+
+
+def _main_labels(ratings: Sequence[Mapping[str, Any]], field: str, units: set[str] | None = None) -> dict[str, dict[str, Any]]:
+    """unit_id -> {rater: value} over the main round (a rater's later main-round line replaces the earlier one), restricted
+    to `units` when it is given."""
+    labels: dict[str, dict[str, Any]] = {}
+    for rating in ratings:
+        if rating.get("round") != "main" or (units is not None and rating["unit_id"] not in units):
+            continue
+        labels.setdefault(rating["unit_id"], {})[rating["rater"]] = rating.get(field)
+    return labels
+
+
+def units_from_ratings(ratings: Sequence[Mapping[str, Any]], field: str = "label", units: set[str] | None = None) -> list[list]:
+    return [list(values.values()) for _unit, values in sorted(_main_labels(ratings, field, units).items())]
 
 
 def coverage(ratings: Sequence[Mapping[str, Any]], items: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -171,8 +202,8 @@ def _alpha_or_none(units: list[list]) -> Fraction | None:
         return None
 
 
-def _two_rater_kappa(ratings: Sequence[Mapping[str, Any]]) -> Fraction | None:
-    labels = _main_labels(ratings, "label")
+def _two_rater_kappa(ratings: Sequence[Mapping[str, Any]], units: set[str] | None = None) -> Fraction | None:
+    labels = _main_labels(ratings, "label", units)
     raters = {rater for values in labels.values() for rater in values}
     if len(raters) != 2 or not labels or any(set(values) != raters for values in labels.values()):
         return None
@@ -185,10 +216,14 @@ def _two_rater_kappa(ratings: Sequence[Mapping[str, Any]]) -> Fraction | None:
 
 def agreement_record(ratings: Sequence[Mapping[str, Any]], items: Sequence[Mapping[str, Any]], *, rules: Any, rubric_sha256: str,
                      ratings_sha256: str) -> dict[str, Any]:
+    """The agreement record of `items` (spec 4.4). Refuses (ValueError) ratings that `check_ratings` refuses; counts only the
+    rated units of the live items."""
     from .ulqs import STRATA, dataset_content_sha256
 
-    alpha_label = _alpha_or_none(units_from_ratings(ratings, "label"))
-    alpha_ehmf = _alpha_or_none(units_from_ratings(ratings, "ehmf_type"))
+    check_ratings(ratings, items, rubric_sha256=rubric_sha256)
+    counted = live_units(items)
+    alpha_label = _alpha_or_none(units_from_ratings(ratings, "label", counted))
+    alpha_ehmf = _alpha_or_none(units_from_ratings(ratings, "ehmf_type", counted))
     covered = coverage(ratings, items)
     failures: list[str] = []
     if alpha_label is None or alpha_label < rules.alpha_min:
@@ -199,7 +234,7 @@ def agreement_record(ratings: Sequence[Mapping[str, Any]], items: Sequence[Mappi
         rated, total = covered["per_stratum"][letter]
         if rated < ceil(total * rules.share_min):
             failures.append(f"stratum_second_rated_below_share:{letter}")
-    main = [rating for rating in ratings if rating.get("round") == "main"]
+    main = [rating for rating in ratings if rating.get("round") == "main" and rating["unit_id"] in counted]
     return {
         "record": "ulqs-agreement-v1",
         "ratings_sha256": ratings_sha256,
@@ -209,7 +244,7 @@ def agreement_record(ratings: Sequence[Mapping[str, Any]], items: Sequence[Mappi
         "units": len({rating["unit_id"] for rating in main}),
         "alpha_nominal_label": _ratio(alpha_label),
         "alpha_nominal_ehmf": _ratio(alpha_ehmf),
-        "cohen_kappa_label": _ratio(_two_rater_kappa(ratings)),
+        "cohen_kappa_label": _ratio(_two_rater_kappa(ratings, counted)),
         "coverage": covered,
         "gate": {"passed": not failures, "failures": failures},
     }

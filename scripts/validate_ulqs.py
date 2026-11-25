@@ -20,7 +20,9 @@ any check that can refuse (an input that does not parse is logged by its file's 
 logged. Output names item ids, field paths and codes only, never a value.
 
 Exit codes: 0 ok; 2 usage (--freeze without --previous or --corpus-text; --access-log without --actor-role), path
-refused, an output or the access log that cannot be written, or an input unreadable or invalid: the items or previous set, the ratings, the rubric, the freeze rules, or an
+refused, an output or the access log that cannot be written, or an input unreadable or invalid: the items or previous set, the ratings
+(including a main-round rating of a unit that is not a rated unit of the dataset item its item_id names, or one whose
+rubric_sha256 is not the --rubric file's LF sha256), the rubric, the freeze rules, or an
 agent-check record that does not parse or is not shaped as `ulqs-agent-check-v1` (one whose content does not match the
 items is a freeze failure, exit 4); 3 schema problems; 4 freeze failed (codes printed); 5 evidence catalog invalid or
 unresolved pointers.
@@ -200,11 +202,11 @@ def _main(argv: list[str] | None = None) -> int:
             ratings = agreement.load_ratings(args.ratings)
             rules = ulqs.load_freeze_rules(args.rules)
             rubric_sha = lf_sha256(args.rubric)
+            agreement_value = agreement.agreement_record(ratings, items, rules=rules, rubric_sha256=rubric_sha,
+                                                         ratings_sha256=ratings_sha)
         except (OSError, ValueError) as error:
             print(f"refused (exit 2): ratings, rules or rubric unreadable or invalid ({error})", file=sys.stderr)
             return 2
-        agreement_value = agreement.agreement_record(ratings, items, rules=rules, rubric_sha256=rubric_sha,
-                                                     ratings_sha256=ratings_sha)
         write_lf(args.agreement_out, dumps_record(agreement_value))
         log("write", "agreement_record", canonical_sha256(agreement_value))
         print(f"agreement: alpha {agreement_value['alpha_nominal_label']}, second-rated share {agreement_value['coverage']['share']}, "

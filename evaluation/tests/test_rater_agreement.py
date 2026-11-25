@@ -117,3 +117,58 @@ def test_kappa_is_reported_only_for_exactly_two_raters_on_the_same_units():
     assert agreement.agreement_record(ratings, items, rules=rules, rubric_sha256=RUBRIC, ratings_sha256="b" * 64)["cohen_kappa_label"] is not None
     partial = ratings_for(items, share="1/2")
     assert agreement.agreement_record(partial, items, rules=rules, rubric_sha256=RUBRIC, ratings_sha256="b" * 64)["cohen_kappa_label"] is None
+
+
+def _one_claim_disagreement():
+    """One live item, every rated unit labelled by R1 and R2 in complete disagreement on the first claim unit."""
+    items = synthetic.synthetic_dataset({"A": 1})
+    ratings = [rating for rating in ratings_for(items, share="1", disagree=1)]
+    return items, ratings
+
+
+def test_units_outside_the_live_items_never_enter_alpha_kappa_or_the_counts():
+    # Spec conflict 9: alpha is over the rated units' labels. Padding the ratings with agreeing units of a retired item
+    # must not raise alpha, change kappa or the counts, or pass the gate.
+    items, ratings = _one_claim_disagreement()
+    rules = ulqs.load_freeze_rules()
+    base = agreement.agreement_record(ratings, items, rules=rules, rubric_sha256=RUBRIC, ratings_sha256="b" * 64)
+    retired = [{**item, "status": "retired"} for item in synthetic.synthetic_dataset({"B": 20})]
+    padding = [{"item_id": item["item_id"], "unit_id": unit, "rater": rater, "label": ("supported", "fabricated")[index % 2],
+                "ehmf_type": ("A", "B1")[index % 2], "round": "main", "rubric_sha256": RUBRIC}
+               for item in retired for index, unit in enumerate(ulqs.rated_units(item)) for rater in ("R1", "R2")]
+    padded = agreement.agreement_record(ratings + padding, items + retired, rules=rules, rubric_sha256=RUBRIC, ratings_sha256="b" * 64)
+    for key in ("alpha_nominal_label", "alpha_nominal_ehmf", "cohen_kappa_label", "units", "raters"):
+        assert padded[key] == base[key], key
+    assert padded["units"] == len(ulqs.rated_units(items[0]))
+    assert "alpha_below_floor" in padded["gate"]["failures"] and not padded["gate"]["passed"]
+
+
+def test_a_main_round_rating_of_a_unit_its_item_does_not_own_is_refused():
+    items, ratings = _one_claim_disagreement()
+    rules = ulqs.load_freeze_rules()
+    foreign = [{"item_id": items[0]["item_id"], "unit_id": f"zz{n}", "rater": rater, "label": "supported", "ehmf_type": None,
+                "round": "main", "rubric_sha256": RUBRIC} for n in range(20) for rater in ("R1", "R2")]
+    with pytest.raises(ValueError, match=rf"ratings line {len(ratings) + 1}: unit_id is not a rated unit"):
+        agreement.agreement_record(ratings + foreign, items, rules=rules, rubric_sha256=RUBRIC, ratings_sha256="b" * 64)
+    # An item_id that is not in the dataset, and a unit of another dataset item filed under this item's id, are refused too.
+    second = synthetic.synthetic_dataset({"A": 2})[1]
+    for extra in ({**ratings[0], "item_id": "SYN-A-999"}, {**ratings[0], "unit_id": ulqs.rated_units(second)[0]}):
+        with pytest.raises(ValueError, match="unit_id is not a rated unit"):
+            agreement.check_ratings(ratings + [extra], items + [second], rubric_sha256=RUBRIC)
+    # Calibration lines are outside the record and are not checked.
+    calibration = [{**line, "round": "calibration"} for line in foreign]
+    agreement.check_ratings(ratings + calibration, items, rubric_sha256=RUBRIC)
+
+
+def test_a_main_round_rating_under_another_rubric_is_refused():
+    # VBT RevB Table XVI: claims are labelled with the frozen rubric; the record names that rubric's sha256.
+    items, ratings = _one_claim_disagreement()
+    rules = ulqs.load_freeze_rules()
+    changed = [dict(line) for line in ratings]
+    changed[-1]["rubric_sha256"] = "c" * 64
+    with pytest.raises(ValueError, match=rf"ratings line {len(changed)}: rubric_sha256 is not the sha256 of the supplied rubric"):
+        agreement.agreement_record(changed, items, rules=rules, rubric_sha256=RUBRIC, ratings_sha256="b" * 64)
+    with pytest.raises(ValueError, match="rubric_sha256"):
+        agreement.agreement_record(ratings, items, rules=rules, rubric_sha256="c" * 64, ratings_sha256="b" * 64)
+    changed[-1]["round"] = "calibration"
+    agreement.check_ratings(changed, items, rubric_sha256=RUBRIC)

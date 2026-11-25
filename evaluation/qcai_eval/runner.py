@@ -623,7 +623,8 @@ def _writing():
     """Every write into a run's output (the directory, each event, response line and record, the truncation of a partial
     checkpoint line on resume, the close of the responses file): one that fails (the output directory is a file or lies
     under one, an output file is a directory or cannot be opened for writing, a full disk) refuses the run
-    (`output_unwritable`, exit 2), never a traceback."""
+    (`output_unwritable`, exit 2), never a traceback. A checkpoint file that is a directory is refused the same way
+    before it is read (`_require_file`)."""
     try:
         yield
     except OSError:
@@ -648,11 +649,20 @@ def run_digest(plan: Plan, responder_rule: str) -> str:
                              "requests": requests_digest(plan)})
 
 
+def _require_file(path: Path) -> None:
+    """A checkpoint path that exists but is not a file (a directory) is an output the run can never write: refused
+    (`output_unwritable`, exit 2) before it is read, like every other output file that is a directory."""
+    if path.exists() and not path.is_file():
+        raise RunRefused(2, ["output_unwritable"])
+
+
 def _read_checkpoint(path: Path, *, resume: bool) -> dict[str, dict]:
     """The completed responses of a checkpoint. Only the bytes after the last newline (a line an interrupted append left
     without its newline) are a partial line: `resume` truncates them and a run without it is refused
     (`partial_checkpoint`). Every newline-terminated line must be a response record, else the checkpoint is refused
-    (`checkpoint_invalid`, exit 2) and nothing is deleted: a corrupt line never costs the lines after it."""
+    (`checkpoint_invalid`, exit 2) and nothing is deleted: a corrupt line never costs the lines after it. A file that
+    cannot be read is `checkpoint_invalid` too; a path that is a directory is `output_unwritable` (`_require_file`)."""
+    _require_file(path)
     if not path.exists():
         return {}
     try:
@@ -682,7 +692,9 @@ def _read_checkpoint(path: Path, *, resume: bool) -> dict[str, dict]:
 
 def _read_events(path: Path) -> list[dict]:
     """The run events of a checkpoint. A file that cannot be read, is not UTF-8 or holds a line that is not a JSON object
-    is refused (`checkpoint_mismatch`, exit 2), never a traceback."""
+    is refused (`checkpoint_mismatch`, exit 2), never a traceback; a path that is a directory is `output_unwritable`
+    (`_require_file`)."""
+    _require_file(path)
     if not path.exists():
         return []
     try:
@@ -729,10 +741,13 @@ def checkpoint_start_refusals(out_dir: Path, today: _dt.date) -> tuple[list[str]
     run events (the resume is a fresh start, judged on today); else the events must read as UTF-8 JSON objects and the
     first must be a `start` whose `started_on` is an ISO date not after today (`run_start_invalid`). Whoever can write the output can write a start event, but an
     earlier day only tightens the record checks, so a forged one gains nothing (DI-143 is an externally timestamped
-    start). `execute_run` then checks the event's run digest (`checkpoint_mismatch`)."""
+    start). `execute_run` then checks the event's run digest (`checkpoint_mismatch`). A run_events.jsonl that is a
+    directory is not a start that fails to read but an output the run cannot write: `output_unwritable` (RunRefused, exit 2)."""
     try:
         events = _read_events(Path(out_dir) / RUN_EVENTS)
-    except RunRefused:
+    except RunRefused as refused:
+        if refused.reasons == ["output_unwritable"]:
+            raise
         return ["run_start_invalid"], None
     if not events:
         return [], None

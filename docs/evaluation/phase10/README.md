@@ -28,7 +28,7 @@ executed and no Table XVII row or HR-1..MR-3 outcome is asserted (plan Phase 10 
   class present (`governance.confirmatory_exit_code`). Its dates are judged in the run window (spec 3.13; the
   script's docstring names each date reason).
 - `validate_ulqs.py`: 0; 2 usage (`--freeze` without `--previous` or `--corpus-text`; `--access-log` without
-  `--actor-role`), path refused, an output or the access log that cannot be written, or an input unreadable or invalid (the items or previous set, the ratings, the rubric,
+  `--actor-role`), path refused, an output or the access log that cannot be written, or an input unreadable or invalid (the items or previous set, the ratings, a main-round rating of a unit its item does not own or under another rubric included, the rubric,
   the freeze rules, or an agent-check record that does not parse or is not shaped as `ulqs-agent-check-v1`); 3 schema
   problems; 4 freeze failed (an agent-check record that does not match the items is a freeze code); 5 evidence catalog
   invalid or unresolved pointers.

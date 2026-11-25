@@ -24,10 +24,10 @@ is planned, then run_events.jsonl and responses.jsonl when the run starts), its 
 interrupted or refused). --resume continues only this run's own checkpoint: a trailing partial line of responses.jsonl
 is truncated, and a checkpoint with any other line that is not a response record is refused, never truncated.
 
-An output that cannot be written (the output directory is a file or lies under one, an output file is a directory or
-cannot be opened for writing, such as a read-only checkpoint whose partial line a resume truncates, a full disk)
-refuses the run (`output_unwritable`, exit 2) and the refused outcome is logged; an access log that cannot be written
-stops the script at once (exit 2), before any further read, and that line is the one it lacks.
+An output that cannot be written (the output directory is a file or lies under one, an output file is a directory, the
+two checkpoint files included, which are refused before they are read, or a file cannot be opened for writing, such as
+a read-only checkpoint whose partial line a resume truncates, a full disk) refuses the run (`output_unwritable`, exit 2)
+and the refused outcome is logged; an access log that cannot be written stops the script at once (exit 2), before any further read, and that line is the one it lacks.
 
 Exit codes: 0 ok; 1 drift; 2 usage, a malformed spec, a path, an experiment or a checkpoint refused (another run's
 (`checkpoint_mismatch`), this run's own with a corrupt line (`checkpoint_invalid`) or a partial line without --resume

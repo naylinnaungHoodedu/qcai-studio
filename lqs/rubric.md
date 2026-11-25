@@ -33,7 +33,8 @@ vocabulary), or none.
 4. Mark answerability and abstention correctness against the item's frozen label (the abstention units above).
 5. Raters calibrate on 20 items before the main round and repeat a drift check at the mid-point (Table XVI). A second rater
    independently labels every rated unit of at least a quarter of the items, and at least ceil(n/4) items of each stratum.
-   Agreement is Krippendorff's alpha (nominal) over the main-round labels, at least 0.667 (`lqs/ulqs-v1.0-freeze-rules.json`);
+   Agreement is Krippendorff's alpha (nominal) over the main-round labels of the live items' rated units, at least 0.667
+   (`lqs/ulqs-v1.0-freeze-rules.json`); every main-round line names a unit its item owns and this rubric's sha256;
    Cohen's kappa is reported when exactly two raters label the same units. Record disagreements and adjudications.
 6. Raters are recorded by pseudonymous codes (`R1`, `R2`, ...) only; ratings files stay private.
 

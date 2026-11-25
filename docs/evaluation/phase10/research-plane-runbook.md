@@ -12,7 +12,8 @@ log is `<plane>/access.jsonl` (digests only).
 1. **Migrate.** `python scripts/migrate_ulqs_rc1.py --input <rc1.jsonl> --output <plane>/data/ulqs-v1.0.jsonl --author-role RL
    --access-log <plane>/access.jsonl` (candidate items stay candidate; human review starts false).
 2. **Ratings and agreement.** Raters label the rated units (claims and abstention units) under `lqs/rubric.md`; the
-   agreement record is written at step 4 and stays current when items change state.
+   agreement record is written at step 4 and stays current when items change state. Every main-round line names a rated
+   unit of its item and the LF sha256 of the rubric passed as `--rubric`; the validator refuses any other (exit 2).
 3. **Review and the AI-agent re-check.** Human review moves items through review to frozen and marks `item_kind`; keep
    the review set (or the last frozen set) as `<plane>/data/ulqs-v1.0-review.jsonl`, the previous set. One of the V2
    verifier models, chosen before the check, re-checks every live item against its evidence with the V2 verdict schema,
