@@ -16,6 +16,7 @@ from fastapi.routing import APIRoute, APIWebSocketRoute
 PUBLIC = "public"
 SERVICE = "service"
 PRINCIPAL = "principal"
+VERIFIED_PRINCIPAL = "verified_principal"
 ASSET_READER = "asset_reader"
 DURABLE_LEARNER = "durable_learner"
 STAFF = "staff"
@@ -31,6 +32,7 @@ ACCESS_LEVELS = {
     PUBLIC: "Anyone; no credential is read.",
     SERVICE: "No principal; called by the frontend server and guarded by its own checks (see the note).",
     PRINCIPAL: "Any verified principal: a signed guest token, a local-account session, an Auth0 token, or a demo identity.",
+    VERIFIED_PRINCIPAL: "A signed guest token, local-account session, or Auth0 token with a nonblank subject.",
     ASSET_READER: "A verified principal whose role is learner or admin.",
     DURABLE_LEARNER: "A signed-in account (local or Auth0, not guest or demo) whose role is learner or admin.",
     STAFF: "A verified principal whose role is instructor or admin.",
@@ -177,6 +179,12 @@ ROUTE_POLICIES: dict[tuple[str, str], RoutePolicy] = {
     # Learner record
     ("GET", "/learner-record"): _p(DURABLE_LEARNER, CALLER),
     ("POST", "/learner-record/operations"): _p(DURABLE_LEARNER, CALLER),
+    ("POST", "/learner-record/replicas"): _p(DURABLE_LEARNER, CALLER, "Phase 8 replica issuance."),
+    ("POST", "/auth/guest-claim"): _p(DURABLE_LEARNER, CALLER, "Phase 8. Also requires a verified guest session."),
+    ("GET", "/auth/learner-consent"): _p(VERIFIED_PRINCIPAL, CALLER, "Phase 8 provisional consent."),
+    ("PUT", "/auth/learner-consent"): _p(VERIFIED_PRINCIPAL, CALLER, "Phase 8 provisional consent."),
+    ("GET", "/auth/learner-export"): _p(VERIFIED_PRINCIPAL, CALLER, "Phase 8 local learner data."),
+    ("POST", "/auth/learner-erasure"): _p(VERIFIED_PRINCIPAL, CALLER, "Phase 8 local erasure and receipt."),
     # Projects
     ("GET", "/projects/catalog"): _p(PUBLIC),
     ("GET", "/projects/my-submissions"): _p(PRINCIPAL, CALLER),

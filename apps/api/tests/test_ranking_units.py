@@ -15,6 +15,8 @@ from app.core.config_package import (
     EHMF_SCHEMA_VERSION,
     LATEST_SCHEMA_VERSION,
     RANKING_SCHEMA_VERSION,
+    V7_PACKAGE_PATH,
+    LEARNER_SCHEMA_VERSION,
     ConfigPackageError,
     load_config_package,
 )
@@ -242,14 +244,17 @@ def test_outcome_rule_order_cluster_and_tier():
 def test_the_ranking_schema_number_is_one_constant_and_no_schema_rule_compares_with_a_literal_number():
     # E16: renumbering the Phase 9 package edits one constant (ranking.vocabulary.RANKING_FIRST_MAJOR); the loader's names
     # and bound follow it, and the shipped package carries the same number as its schema and its major.
-    assert RANKING_SCHEMA_VERSION == RANKING_FIRST_MAJOR == PACKAGE.schema_version == LATEST_SCHEMA_VERSION
-    assert PACKAGE.package_version == f"{RANKING_FIRST_MAJOR}.0.0" and DEFAULT_PACKAGE_PATH.name == f"v{RANKING_FIRST_MAJOR}.json"
+    first = load_config_package(V7_PACKAGE_PATH, governed=True)
+    assert RANKING_SCHEMA_VERSION == RANKING_FIRST_MAJOR == first.schema_version
+    assert PACKAGE.schema_version == LATEST_SCHEMA_VERSION == LEARNER_SCHEMA_VERSION
+    assert first.package_version == f"{RANKING_FIRST_MAJOR}.0.0" and V7_PACKAGE_PATH.name == f"v{RANKING_FIRST_MAJOR}.json"
+    assert DEFAULT_PACKAGE_PATH.name == f"v{LATEST_SCHEMA_VERSION}.json" and PACKAGE.ranking == first.ranking
     assert EHMF_SCHEMA_VERSION == 6
     loader = ast.parse((API_ROOT / "app" / "core" / "config_package.py").read_text(encoding="utf-8"))
     assigned = {target.id: node.value for node in loader.body if isinstance(node, ast.Assign) for target in node.targets
                 if isinstance(target, ast.Name)}
     assert isinstance(assigned["RANKING_SCHEMA_VERSION"], ast.Name) and assigned["RANKING_SCHEMA_VERSION"].id == "RANKING_FIRST_MAJOR"
-    assert isinstance(assigned["LATEST_SCHEMA_VERSION"], ast.Name) and assigned["LATEST_SCHEMA_VERSION"].id == "RANKING_SCHEMA_VERSION"
+    assert isinstance(assigned["LATEST_SCHEMA_VERSION"], ast.Name) and assigned["LATEST_SCHEMA_VERSION"].id == "LEARNER_SCHEMA_VERSION"
     for path in (API_ROOT / "app" / "core" / "config_package.py", API_ROOT / "app" / "services" / "v3" / "package_check.py",
                  API_ROOT / "app" / "services" / "v3" / "contracts.py", REPO_ROOT / "scripts" / "config_package.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))

@@ -2009,8 +2009,9 @@ def test_plan_e_the_phase_9_revision_is_additive_reversible_and_keeps_its_rows()
     config = Config(str(API_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(API_ROOT / "alembic"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == [SCHEMA_REVISION] == ["20261123_phase9_ranking"]
-    revision = script.get_revision(SCHEMA_REVISION)
+    assert script.get_heads() == [SCHEMA_REVISION] == ["20261123_phase8_learner"]
+    revision = script.get_revision("20261123_phase9_ranking")
+    assert script.get_revision(SCHEMA_REVISION).down_revision == revision.revision
     assert revision.down_revision == "20261123_phase7_ehmf"
     source = Path(revision.path).read_text(encoding="utf-8")
     assert "allow_ranking_drop" in source and "DROP FUNCTION" not in source
@@ -2046,6 +2047,7 @@ def test_plan_e_the_phase_9_downgrade_refuses_while_ranking_events_holds_rows_an
     from app.core.db import Base
     from app.core.schema_upgrades import run_schema_upgrades
     from app.services.ledger import SCHEMA_REVISION
+    from test_response_ledger_migrations import PHASE8_TABLES, PHASE9_REVISION
 
     connect_args = {"check_same_thread": False} if fresh_database_url.startswith("sqlite") else {}
     engine = create_engine(fresh_database_url, connect_args=connect_args)
@@ -2053,7 +2055,7 @@ def test_plan_e_the_phase_9_downgrade_refuses_while_ranking_events_holds_rows_an
     try:
         Base.metadata.create_all(engine)
         run_schema_upgrades(engine)
-        others = set(sa_inspect(engine).get_table_names()) - phase9
+        others = set(sa_inspect(engine).get_table_names()) - phase9 - PHASE8_TABLES
         with engine.begin() as connection:
             for kind in EVENT_KINDS:  # every kind fits its column on this dialect (varchar(24) on PostgreSQL)
                 connection.execute(text("INSERT INTO ranking_events (kind, payload, prev_sha256, sha256, observed_at) VALUES (:kind, '{}', :sha, :sha, :now)"),
@@ -2070,6 +2072,10 @@ def test_plan_e_the_phase_9_downgrade_refuses_while_ranking_events_holds_rows_an
                     connection.execute(text(statement))
         engine.dispose()
         assert _alembic(fresh_database_url, "stamp", SCHEMA_REVISION).returncode == 0
+        trimmed = _alembic(fresh_database_url, "downgrade", PHASE9_REVISION)
+        assert trimmed.returncode == 0, trimmed.stderr[-2000:]
+        assert not PHASE8_TABLES & set(sa_inspect(engine).get_table_names())
+        engine.dispose()
         refused = _alembic(fresh_database_url, "downgrade", "20261123_phase7_ehmf")
         assert refused.returncode != 0 and f"ranking_events holds {len(EVENT_KINDS)} rows" in refused.stderr, refused.stderr[-2000:]
         assert "allow_ranking_drop=true" in refused.stderr and "python -m app.workers.ranking status" in refused.stderr

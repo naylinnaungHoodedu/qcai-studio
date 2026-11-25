@@ -25,6 +25,7 @@ from app.core.config_package import (
     V4_PACKAGE_PATH,
     V5_PACKAGE_PATH,
     V6_PACKAGE_PATH,
+    V7_PACKAGE_PATH,
     WIRED_GENERATORS,
     ConfigPackageError,
     canonical_sha256,
@@ -45,6 +46,7 @@ V4_RAW = json.loads(V4_PACKAGE_PATH.read_text(encoding="utf-8"))
 V5_RAW = json.loads(V5_PACKAGE_PATH.read_text(encoding="utf-8"))
 # Package v6 (Phase 7), readable for one release after Phase 9 (DI-126): the v6 tests below read it explicitly.
 V6_RAW = json.loads(V6_PACKAGE_PATH.read_text(encoding="utf-8"))
+V7_RAW = json.loads(V7_PACKAGE_PATH.read_text(encoding="utf-8"))
 
 
 def _write(tmp_path: Path, payload: dict, *, sidecar: str | None = None) -> Path:
@@ -62,10 +64,10 @@ def test_the_shipped_package_validates_and_matches_its_hash():
     # test_v4_stays_readable_for_one_release's, test_v3_stays_readable_for_one_release's,
     # test_v2_stays_readable_for_one_release's and test_v1_stays_readable_for_one_release's.
     package = load_config_package(DEFAULT_PACKAGE_PATH, governed=True)
-    assert package.hash_verified and package.is_default_path and package.package_version == f"{RANKING_SCHEMA_VERSION}.0.0"
-    assert package.schema_version == RANKING_SCHEMA_VERSION == LATEST_SCHEMA_VERSION and package.tutor_pipeline is not None and package.v1 is not None
+    assert package.hash_verified and package.is_default_path and package.package_version == f"{LATEST_SCHEMA_VERSION}.0.0"
+    assert package.schema_version == LATEST_SCHEMA_VERSION and package.tutor_pipeline is not None and package.v1 is not None
     assert package.gateway is not None and package.v2 is not None and package.tools is not None and package.v3 is not None
-    assert package.ehmf is not None and package.ranking is not None and RAW["supersedes"]["sha256"] == canonical_sha256(V6_RAW)
+    assert package.ehmf is not None and package.ranking is not None and RAW["supersedes"]["sha256"] == canonical_sha256(V7_RAW)
     assert package.sha256 == recorded_sha256(DEFAULT_PACKAGE_PATH) == canonical_sha256(RAW)
     assert package.span_scheme == "span-v2" and package.abstention.provisional is True
     # The image copies apps/api/app, so the package ships inside it (the Dockerfile has no other path for it).
@@ -603,15 +605,14 @@ def test_v4_keeps_every_v3_value_but_the_listed_changes():
     ],
 )
 def test_v4_structural_errors_always_stop_the_load(tmp_path, edit):
-    # Each refusal holds for v4.json, still readable (DI-100), for v5, which keeps every v4 block (Phase 6 spec 13.3;
-    # read explicitly since Phase 7 ships v6), and for the shipped v6, which keeps them too (Phase 7 spec 5.2). On v5 the
-    # schema_version=5 edit is no edit, so schema_version=6 stands for it there (a v6 package needs an ehmf block).
+    # The retained packages and the shipped package apply the v4 checks. The schema_version=5 assignment has no
+    # effect on v5, so use the first invalid schema for that case.
     _the_unedited_copies_load(tmp_path)
-    for base in (V4_RAW, V5_RAW, RAW):
+    for base in (V4_RAW, V5_RAW, V6_RAW, V7_RAW, RAW):
         payload = json.loads(json.dumps(base))
         edit(payload)
-        if base is V5_RAW and payload.get("schema_version") == 5:
-            payload["schema_version"] = EHMF_SCHEMA_VERSION
+        if base is V5_RAW and payload == base:
+            payload["schema_version"] = LATEST_SCHEMA_VERSION + 1
         path = _write(tmp_path, payload)
         for governed in (True, False):
             with pytest.raises(ConfigPackageError):
@@ -708,7 +709,7 @@ def test_v6_stays_readable_for_one_release():
     assert v3_schema_models(RANKING_SCHEMA_VERSION)["V3GoldLabel"] is not GoldLabelV6Schema
     assert RAW["v3"]["schemas"]["V3GoldLabel"]["path"] != pin["path"]
     history = json.loads((REPO_ROOT / "docs" / "evaluation" / "phase7" / "package_versions.json").read_text(encoding="utf-8"))
-    assert history["entries"][0] == {"version": "6.0.0", "sha256": canonical_sha256(V6_RAW)} and RAW["supersedes"]["sha256"] == canonical_sha256(V6_RAW)
+    assert history["entries"][0] == {"version": "6.0.0", "sha256": canonical_sha256(V6_RAW)} and V7_RAW["supersedes"]["sha256"] == canonical_sha256(V6_RAW)
     v5 = load_config_package(V5_PACKAGE_PATH, governed=False)
     assert v5.hash_verified and v5.sha256 == canonical_sha256(V5_RAW) == V6_RAW["supersedes"]["sha256"]
     assert check_v3_package(v5, structural=True) == []
@@ -716,32 +717,32 @@ def test_v6_stays_readable_for_one_release():
 
 def test_the_v6_edits_v7_changes_are_exactly_the_ones_it_makes():
     # Package v7 (Phase 9 spec 5.1) is v6 with exactly these changes.
-    assert (RAW["package_version"], RAW["schema_version"], RAW["phase"]) == (f"{RANKING_SCHEMA_VERSION}.0.0", RANKING_SCHEMA_VERSION, "9")
-    assert RAW["supersedes"] == {"package_version": V6_RAW["package_version"], "sha256": canonical_sha256(V6_RAW),
+    assert (V7_RAW["package_version"], V7_RAW["schema_version"], V7_RAW["phase"]) == (f"{RANKING_SCHEMA_VERSION}.0.0", RANKING_SCHEMA_VERSION, "9")
+    assert V7_RAW["supersedes"] == {"package_version": V6_RAW["package_version"], "sha256": canonical_sha256(V6_RAW),
                                  "readable_until": "the release after the Phase 9 merge"}
-    assert set(RAW) == set(V6_RAW) | {"ranking"}
+    assert set(V7_RAW) == set(V6_RAW) | {"ranking"}
     for key in V6_RAW:
         if key not in {"package_version", "schema_version", "phase", "created", "supersedes", "flag_policy", "owner_decisions", "gateway", "v3"}:
-            assert RAW[key] == V6_RAW[key], key
-    gateway, v6_gateway = json.loads(json.dumps(RAW["gateway"])), json.loads(json.dumps(V6_RAW["gateway"]))
+            assert V7_RAW[key] == V6_RAW[key], key
+    gateway, v6_gateway = json.loads(json.dumps(V7_RAW["gateway"])), json.loads(json.dumps(V6_RAW["gateway"]))
     delta = next(member for member in gateway["registries"]["development"] if member["adapter_id"] == "fake-delta-v1")
     assert delta["fake"] == {"rule": "verbatim-support-v1", "generate_rule": "extractive-clone-v1"}
     delta["fake"].pop("generate_rule")
     assert gateway == v6_gateway
-    v3, v6_v3 = json.loads(json.dumps(RAW["v3"])), json.loads(json.dumps(V6_RAW["v3"]))
+    v3, v6_v3 = json.loads(json.dumps(V7_RAW["v3"])), json.loads(json.dumps(V6_RAW["v3"]))
     assert v3["triggers"].pop("queue_reasons") == [*v6_v3["triggers"].pop("queue_reasons"), "ranking_empty_eligible_set"]
     assert v3["schemas"]["V3GoldLabel"].pop("path") == "schemas/v3-gold-label.v1.r7.schema.json"
     v3["schemas"]["V3GoldLabel"].pop("sha256")
     v6_v3["schemas"]["V3GoldLabel"].pop("path")
     v6_v3["schemas"]["V3GoldLabel"].pop("sha256")
     assert v3 == v6_v3
-    decisions = RAW["owner_decisions"]
+    decisions = V7_RAW["owner_decisions"]
     assert set(decisions) == set(V6_RAW["owner_decisions"]) | {"D-28", "D-15", "RANKING-TOPIC-CLUSTERS", "RANKING-PARAMETERS"}
     for name, decision in V6_RAW["owner_decisions"].items():
         if name != "D-06":
             assert decisions[name] == decision, name
     assert decisions["D-06"]["operator_values"] == [*V6_RAW["owner_decisions"]["D-06"]["operator_values"], "ranking.penalties"]
-    policy = dict(RAW["flag_policy"])
+    policy = dict(V7_RAW["flag_policy"])
     assert policy.pop("ranking")["on_everywhere"] == "refused_while_d28_open"
     assert policy.pop("phase9_exit_passed") is False and policy.pop("phase9_exit_evidence") is None
     assert policy.pop("authority").startswith(V6_RAW["flag_policy"]["authority"])
@@ -892,7 +893,7 @@ def test_v5_structural_errors_always_stop_the_load(tmp_path, edit):
     # registry x-triggers-v2 and schema_version 6 are v6's own values (no edit there), and v6 takes V3 severity from
     # ehmf.weights, so it has no severity.E to remove (test_the_v5_edits_v6_changes_are_exactly_the_three_it_makes).
     _the_unedited_copies_load(tmp_path)
-    for base in (V5_RAW, V6_RAW, RAW):
+    for base in (V5_RAW, V6_RAW, V7_RAW, RAW):
         if base is not V5_RAW and not _v5_edit_applies_to_v6(edit, base):
             continue
         payload = json.loads(json.dumps(base))
@@ -914,7 +915,7 @@ def _v5_edit_applies_to_v6(edit, base=V6_RAW) -> bool:
 
 def _the_unedited_copies_load(tmp_path: Path) -> None:
     """The control: each base, written as the edited copies are, loads, so a refusal is the edit's."""
-    for base in (V4_RAW, V5_RAW, V6_RAW, RAW):
+    for base in (V4_RAW, V5_RAW, V6_RAW, V7_RAW, RAW):
         load_config_package(_write(tmp_path, json.loads(json.dumps(base))), governed=False)
 
 
@@ -924,6 +925,7 @@ def test_the_v5_edits_v6_changes_are_exactly_the_three_it_makes():
     assert V6_RAW["v3"]["triggers"]["version"] == "x-triggers-v2" and V6_RAW["schema_version"] == EHMF_SCHEMA_VERSION
     assert "E" not in V6_RAW["v3"]["priority"]["severity"] and V6_RAW["v3"]["priority"]["severity"]["source"] == "ehmf.weights"
     # v7 keeps every v6 block these edits touch, and its own schema_version (7) is an edit there too (Phase 9).
+    assert len([edit for edit in edits if not _v5_edit_applies_to_v6(edit, V7_RAW)]) == 2
     assert len([edit for edit in edits if not _v5_edit_applies_to_v6(edit, RAW)]) == 2
 
 

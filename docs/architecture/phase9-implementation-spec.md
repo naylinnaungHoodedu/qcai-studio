@@ -247,7 +247,7 @@ learner path: legacy contained answer; static generator in the two-pass shadow (
 ### 3.1 Vocabulary (`services/ranking/vocabulary.py`, standard library only)
 
 - `RANKING_VERSION "ranking-v1"`, `PARAMETERS_VERSION "ranking-params-v1"`, `EVENT_SCHEMA "ranking-event-v1"`, `STATE_SCHEMA "ranking-state-v1"`.
-- `RANKING_FIRST_MAJOR 7`: the one constant for the ranking block's first package schema and major. `config_package.RANKING_SCHEMA_VERSION` is this constant and `LATEST_SCHEMA_VERSION` follows it (E16).
+- `RANKING_FIRST_MAJOR 7` defines the ranking block's first package schema and major. `config_package.RANKING_SCHEMA_VERSION` uses that constant. Since Phase 8, `LATEST_SCHEMA_VERSION` follows `LEARNER_SCHEMA_VERSION`.
 - `CLUSTER_RULE "cluster-module-v1"`, `UNSCOPED "unscoped"`, `CLUSTERS` (the 11 `MODULE_BLUEPRINTS` slugs in order, kept equal by a test), `TASK_TYPE_RULE "tier-1-quiz-item-v1"`, `TIER_SOURCE_RULE "tier-source-v1"`.
 - `TASK_TYPES ("explanation","worked_example","hint","quiz_item","summary","video_script")`, `ACTIVE_TASK_TYPES ("explanation","quiz_item")`.
 - `RATINGS ("A","B","C","D")`.
@@ -585,8 +585,8 @@ New files: `v7.json`, `v7.json.sha256` and `schemas/v3-gold-label.v1.r7.schema.j
 
 ### 5.2 Loader (`core/config_package.py`)
 
-- `DEFAULT_PACKAGE_PATH = v7.json`, `V6_PACKAGE_PATH = v6.json`.
-- `RANKING_SCHEMA_VERSION = RANKING_FIRST_MAJOR` (imported from `ranking.vocabulary`, so the number is written once), and `LATEST_SCHEMA_VERSION = RANKING_SCHEMA_VERSION`. The bound is `1 <= schema_version <= LATEST_SCHEMA_VERSION`. `EHMF_SCHEMA_VERSION` stays 6, and every `>= EHMF_SCHEMA_VERSION` rule applies to schema 7.
+- `DEFAULT_PACKAGE_PATH` names v8 since Phase 8. `V7_PACKAGE_PATH` names the first ranking package and `V6_PACKAGE_PATH` names its predecessor.
+- `RANKING_SCHEMA_VERSION = RANKING_FIRST_MAJOR` (imported from `ranking.vocabulary`, so the number is written once), and `LATEST_SCHEMA_VERSION` names the Phase 8 floor, `LEARNER_SCHEMA_VERSION`. The bound is `1 <= schema_version <= LATEST_SCHEMA_VERSION`. `EHMF_SCHEMA_VERSION` stays 6, and every `>= EHMF_SCHEMA_VERSION` rule applies to schemas 7 and 8.
 - `ConfigPackage.ranking: RankingParams | None` (`version`, `parameters_version`, the canonical `block`, `parameters_sha256`, `static_models`, `clusters`, `active_task_types`, `cluster_rule`, the golden-set pin, `report_path`, `stop_refresh_s`, `live_routing`, `provisional`); `FlagPolicy.phase9_exit_passed` and `phase9_exit_evidence`.
 - `_parse_ranking(raw, *, decisions, v2, ehmf, tutor)` refuses:
   - an unmarked provisional block or `contexts` block, a version or a rule id (`vocabulary.RULES`) other than the code's, decision owners other than PI and PO;
@@ -610,11 +610,11 @@ New files: `v7.json`, `v7.json.sha256` and `schemas/v3-gold-label.v1.r7.schema.j
 - `_parse_adapter` (schema ≥ 7): a fake member with `generate` must name `fake.generate_rule` in `WIRED_FAKE_GENERATE_RULES` (`{"extractive-clone-v1"}`), and a member without `generate` must not. Below schema 7 the key is refused. `AdapterSpec.fake_generate_rule: str | None = None` is the last field, and `public()` is unchanged.
 - `_parse_v3`: for schema ≥ 7, `queue_reasons` must equal `QUEUE_REASONS_V7`, and the parsed params carry it. Below 7, `QUEUE_REASONS`. `v3/package_check` picks the same way, and checks the schema pins against `v3_schema_models(package.schema_version)`.
 - `_parse_flag_policy` (schema ≥ 7): `flag_policy.ranking` holds `values [off, shadow, on]`, the code's defaults, `on_requires ["phase9_exit_passed", "D-28"]`, `on_everywhere "refused_while_d28_open"`, and `shadow_generation {"default": false, "development_only": true}`. `phase9_exit_passed` must be a bool, and true needs evidence.
-- A guard test asserts that `RANKING_SCHEMA_VERSION` and `LATEST_SCHEMA_VERSION` are names for `RANKING_FIRST_MAJOR`, that the shipped package's schema, major and file name carry that number, and that no schema rule compares with it as a literal.
+- A guard test asserts that `RANKING_SCHEMA_VERSION` names `RANKING_FIRST_MAJOR`, that v7's schema, major and file name carry that number, that the shipped package meets the independent loader ceiling, and that no schema rule compares with it as a literal.
 
 ### 5.3 Scripts (`scripts/config_package.py`)
 
-- The default path is v7.
+- The default path is v8 with Phase 8.
 - `--check` runs `check_ranking_package(structural=True)` for a package with a ranking block and prints a ranking summary.
 - `--rehash` copies `ehmf.golden_set`'s pin into the recommission pin; `--write-schemas` writes each package's V3 schemas from `v3_schema_models(schema_version)`.
 - CI keeps `--check --path v6.json` for one release (DI-126).
@@ -898,7 +898,7 @@ The fakes are in `ranking_fakes.py`: `ranking_settings()`, `Log` (a hand-built i
 - The recommission set resolves in the checkout and in an image-shaped layout (`/app/app/...` with the set at `/app/<path>`), the Dockerfile copies it there, and a missing, unreadable or changed set raises `RecommissionSetError` (`test_the_recommission_set_resolves_in_a_checkout_and_in_an_image_layout`).
 - `tier_for`'s sources.
 - Every `_parse_ranking` refusal, the flag policy, the owner decisions, the v7 queue reasons and the fake generate rule (v6 refuses it).
-- `test_the_ranking_schema_number_is_one_constant_and_no_schema_rule_compares_with_a_literal_number`: `RANKING_SCHEMA_VERSION == RANKING_FIRST_MAJOR == PACKAGE.schema_version == LATEST_SCHEMA_VERSION`, the loader's two names assigned from the vocabulary constant (no second literal), the shipped package's major and file name, `EHMF_SCHEMA_VERSION == 6`, no schema rule comparing with the shipped number in the loader, the V3 package check, the V3 contracts or the package script, and the clusters equal `MODULE_BLUEPRINTS`.
+- `test_the_ranking_schema_number_is_one_constant_and_no_schema_rule_compares_with_a_literal_number`: `RANKING_SCHEMA_VERSION == RANKING_FIRST_MAJOR` agrees with the explicit v7 package's schema, major and file name. The separate `LATEST_SCHEMA_VERSION` matches the shipped schema. `EHMF_SCHEMA_VERSION == 6`, no schema rule comparing with the shipped number in the loader, the V3 package check, the V3 contracts or the package script, and the clusters equal `MODULE_BLUEPRINTS`.
 - `CloneGenerator` refusals; `record_model_change` returns its seq; `window_remaining`; the replay script's usage exits.
 - `record_cusum_alarm(db=...)` and `log_derived` log only when the caller's transaction commits: none after a rollback or a close without a commit, each once after the commit (`test_lines_describing_a_transaction_s_writes_are_logged_only_when_it_commits`).
 
@@ -907,7 +907,7 @@ The fakes are in `ranking_fakes.py`: `ranking_settings()`, `Log` (a hand-built i
 The full list, with each reason, is in the BEP phase record and the test strategy's Phase 9 table. In short:
 - The tests that pinned the shipped package as v6 read v6 through `V6_PACKAGE_PATH`, or the shipped one through `LATEST_SCHEMA_VERSION` and the package; the Phase 4 doc tests read the shipped number from the package, not a literal.
 - `test_v6_stays_readable_for_one_release` also checks the v5 and v6 gold-label pins, the pinned file and both packages' sha256 (conflict 28).
-- The Alembic head and downgrade walks take the Phase 9 step; the Phase 7 docs tests that named v6 as the shipped package accept v7 since Phase 9.
+- The Alembic tests follow the head `20261123_phase8_learner`. The downgrade walks start with Phase 8, Phase 9, and Phase 7 and retain both guarded downgrades. The Phase 7 docs tests describe the current package and an explicit v6 load.
 - The Phase 7 golden-runner tests and the EHMF golden-runner test pass a temporary `--history`, and `test_ac_7_6_no_test_runs_a_golden_set_write_against_the_committed_history` keeps it so; the Phase 7 history test checks that the history ends with exactly one entry for the shipped package, the sidecar's sha256 (5.4).
 - `test_boundary_scan.py`'s list of the API image's COPY sources gains the recommission set (4.8).
 - `test_erasure_retention.py` is unchanged and passes.

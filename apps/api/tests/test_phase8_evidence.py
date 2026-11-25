@@ -1,0 +1,394 @@
+"""Phase 8 synthetic evidence, import isolation, and shared adaptation control."""
+
+import ast
+import json
+import re
+from string import Formatter
+from pathlib import Path
+from uuid import uuid4
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+from app.core.config import Settings
+from app.db_models import Base, LearnerAdaptationStop, LearnerAssessmentFact, QuizAttempt
+from app.schemas import LearnerConsentRecord
+from app.services.erasure import user_keyed_tables
+from app.services.learner_record_privacy import retention_classes, set_consent
+from app.services.learner_record_shadow import clear_adaptation_stop, shadow_presentation, stop_adaptation
+from scripts.prove_erasure import compute as prove_erasure
+from scripts.run_invariance_harness import LEARNER_FIELDS, compute as run_harness
+
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+def test_ac_8_3_three_mastery_levels_yield_identical_claim_set_cited_spans_and_decision():
+    proof = run_harness(subset=3)
+    assert proof["items"] >= 3 and len(set(proof["plans"])) == 3
+    assert not proof["violations"] and not proof["f2_fields"]
+    assert len(set(proof["observation_sha256"])) == 1
+    assert proof["items_with_distinct_rendering"] > 0
+
+
+def test_ac_8_4_evidential_prompts_and_the_abstention_configuration_hold_zero_learner_state_fields():
+    from app.services.tutor_pipeline.evidential import EXTRACTIVE_RULE
+
+    slots = {field for _, field, _, _ in Formatter().parse(EXTRACTIVE_RULE) if field}
+    assert not slots & LEARNER_FIELDS
+    assert not run_harness(subset=3)["f2_fields"]
+
+
+def test_ac_8_4_the_scan_covers_every_phase8_learner_state_field():
+    from dataclasses import fields
+    from app.schemas import LearnerRecordOperationInput, LearnerRecordRead, LearnerReplicaIssued
+    from app.services.learner_record_planner import LearnerPresentation
+    from app.services.tutor_pipeline.contracts import LEARNER_STATE_FIELDS
+    from scripts.run_invariance_harness import learner_fields
+
+    required = set(LEARNER_STATE_FIELDS) | {field.name for field in fields(LearnerPresentation)}
+    for model in (LearnerRecordRead, LearnerRecordOperationInput, LearnerConsentRecord, LearnerReplicaIssued):
+        required.update(model.model_fields)
+    assert required | {"subject_id", "receipt_id"} <= LEARNER_FIELDS
+    for name in ("lesson_order", "planner_version", "record_version", "completed_item_ids"):
+        assert learner_fields({name: ["fixture"]}) == {name}
+
+
+@pytest.mark.parametrize("leak", ["learner-value", "lesson_order"])
+def test_ac_8_4_a_learner_value_in_an_evidential_payload_is_detected(monkeypatch, leak):
+    from app.services.tutor_pipeline import pipeline
+    from app.services.tutor_pipeline.contracts import EvidentialEnvelope
+
+    class EnvelopeWithOrder(EvidentialEnvelope):
+        lesson_order: tuple[str, ...]
+
+    original = pipeline.build_envelope
+
+    def builder(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if result is None:
+            return None
+        if leak == "lesson_order":
+            return EnvelopeWithOrder(**result.model_dump(), lesson_order=("fixture",))
+        instructions = result.instructions.model_copy(update={"rule_id": "fixture stepwise"})
+        return result.model_copy(update={"instructions": instructions})
+
+    monkeypatch.setattr(pipeline, "build_envelope", builder)
+    assert leak in run_harness(subset=3)["f2_fields"]
+
+
+def test_plan_p_the_harness_takes_the_item_set_and_the_generation_design_as_inputs(tmp_path):
+    from scripts.replay_tutor_plans import fixture_items
+
+    path = tmp_path / "public-pair.json"
+    path.write_text(json.dumps([query for _, query in fixture_items()[:2]]), encoding="utf-8")
+    report = run_harness(items_path=path, design="two-pass")
+    assert report["items"] == 2 and report["item_set"] == path.name and report["design"] == "two-pass"
+
+
+def test_plan_i_a_harness_violation_writes_a_shared_stop_and_security_event(tmp_path, monkeypatch, caplog):
+    import sys
+    from sqlalchemy import select
+    from app.core.structured_logging import FIELDS
+    from app.db_models import SecurityEvent
+    from scripts import run_invariance_harness as harness
+
+    path = tmp_path / "dev-stop.sqlite"
+    engine = create_engine(f"sqlite:///{path.as_posix()}")
+    try:
+        Base.metadata.create_all(engine)
+        monkeypatch.setattr(sys, "argv", ["harness", "--probe", "--stop-sqlite", str(path)])
+        monkeypatch.setattr(harness, "compute", lambda *args, **kwargs: {
+            "items": 1, "violations": [{"fields": ["evidence"]}], "f2_fields": [], "plans": ["concise"],
+            "items_with_distinct_rendering": 0,
+        })
+        caplog.set_level("INFO")
+        assert harness.main() == 3
+        with Session(engine) as db:
+            assert db.get(LearnerAdaptationStop, "planner").reason == "invariance"
+            event = db.scalars(select(SecurityEvent)).one()
+            assert (event.event_type, event.actor_role, event.details) == (
+                "learner.harness.stop", "harness", {"outcome": "inserted", "reason": "invariance"},
+            )
+            assert event.subject_digest and event.source_digest is None
+        assert {"event": "learner.harness.violation", "reason": "invariance"} in [
+            getattr(row, FIELDS, None) for row in caplog.records
+        ]
+    finally:
+        engine.dispose()
+
+
+def test_plan_d_task_4_leaves_one_learner_state_presentation_path():
+    from app.services import learner_record
+
+    assert not hasattr(learner_record, "build_pedagogical_context")
+    for name in ("adr/ADR-001-grounding-separation.md", "architecture/phase3-implementation-spec.md"):
+        assert "build_pedagogical_context" not in (ROOT / "docs" / name).read_text(encoding="utf-8")
+
+
+def test_ac_8_4_no_evidential_or_verifier_module_imports_a_phase8_module():
+    app = ROOT / "apps" / "api" / "app"
+    for directory in ("services/tutor_pipeline", "services/v1_checks", "services/v2_panel", "gateway"):
+        for path in (app / directory).rglob("*.py"):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if not isinstance(node, (ast.Import, ast.ImportFrom)):
+                    continue
+                names = [item.name for item in node.names]
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    names.append(node.module)
+                assert not any("learner_record" in name or "phase8_settings" in name for name in names), path.name
+
+
+def test_plan_f_the_committed_erasure_proof_matches_a_fresh_run():
+    saved = ROOT / "docs" / "evaluation" / "phase8" / "erasure_proof_v1.json"
+    assert json.loads(saved.read_text(encoding="utf-8")) == prove_erasure()
+
+
+def test_plan_p_the_committed_invariance_report_matches_a_fresh_run():
+    saved = ROOT / "docs" / "evaluation" / "phase8" / "invariance_harness_report_v1.json"
+    expected = json.loads(saved.read_text(encoding="utf-8"))
+    fresh = run_harness()
+    # The CLI additionally verifies the exact module set imported by the standalone process.
+    assert {k: v for k, v in fresh.items() if k != "inputs"} == {k: v for k, v in expected.items() if k != "inputs"}
+
+
+def test_phase8_docs_the_consent_schema_matches_the_record_model():
+    schema = ROOT / "docs" / "security" / "consent-record.v1.schema.json"
+    assert json.loads(schema.read_text(encoding="utf-8")) == LearnerConsentRecord.model_json_schema()
+
+
+def test_plan_j_all_user_keyed_tables_have_a_retention_class():
+    assert set(retention_classes()) == {table.name for table in user_keyed_tables()}
+
+
+def test_ac_8_7_the_privacy_inventory_equals_the_cookies_and_storage_keys_in_code():
+    api = ROOT / "apps" / "api" / "app"
+    frontend = ROOT / "apps" / "frontend" / "src"
+    frontend_sources = [path.read_text(encoding="utf-8") for path in frontend.rglob("*") if path.suffix in {".ts", ".tsx"}]
+    api_sources = [path.read_text(encoding="utf-8") for path in api.rglob("*.py")]
+    disclosures = (frontend / "lib" / "privacy-disclosures.ts").read_text(encoding="utf-8")
+    cookie = r"""["'`](qcai_[a-z0-9_]+)["'`]"""
+    key = r"""["'`](qcai-[a-z0-9-]+)["'`]"""
+    storage_sources = (
+        r"(?:local|session)Storage\.(?:setItem|getItem|removeItem)\(\s*" + key,
+        r"const \w*STORAGE_KEY\w* = " + key,
+    )
+    assert set(re.findall(r"name:\s*" + cookie, disclosures)) == set(re.findall(cookie, "\n".join(frontend_sources + api_sources)))
+    assert set(re.findall(r"key:\s*" + key, disclosures)) == {
+        match for pattern in storage_sources for source in frontend_sources for match in re.findall(pattern, source)
+    }
+
+
+def test_phase8_durable_stop_is_visible_to_a_new_session(fresh_database_url):
+    engine = create_engine(fresh_database_url)
+    try:
+        Base.metadata.create_all(engine)
+        subject = f"demo-{uuid4().hex}"
+        with Session(engine) as first:
+            set_consent(first, "demo", subject, "adaptation", True, Settings(_env_file=None))
+            attempt = QuizAttempt(user_id=subject, lesson_slug="first", score=1, responses={})
+            first.add(attempt)
+            first.flush()
+            first.add(LearnerAssessmentFact(attempt_id=attempt.id, user_id=subject, lesson_slug="first", mastery=0.9))
+            stop_adaptation(first, "invariance")
+            first.commit()
+        with Session(engine) as second:
+            assert second.get(LearnerAdaptationStop, "planner").reason == "invariance"
+            assert shadow_presentation(second, "demo", subject, ("first", "second"), "concise").lesson_order == (
+                "first", "second",
+            )
+            clear_adaptation_stop(second)
+            second.commit()
+        with Session(engine) as third:
+            assert third.get(LearnerAdaptationStop, "planner") is None
+            assert shadow_presentation(third, "demo", subject, ("first", "second"), "concise").plan_id == "socratic"
+    finally:
+        engine.dispose()
+
+
+def test_plan_l_planner_stop_worker_round_trips_through_new_sessions(fresh_database_url, monkeypatch, capsys):
+    import os
+
+    from sqlalchemy import select, text
+
+    from app.core.client_identity import keyed_digest
+    from app.db_models import SecurityEvent
+    from app.services import security_log
+    from app.services.learner_record_planner import LearnerPresentation
+    from app.workers import learner_planner
+
+    engine = create_engine(fresh_database_url)
+    order = ("first", "second")
+    subject = f"demo-{uuid4().hex}"
+    monkeypatch.setattr(learner_planner, "SessionLocal", lambda: Session(engine))
+
+    def check_state(plan):
+        with Session(engine) as db:
+            assert shadow_presentation(db, "demo", subject, order, "concise") == plan
+
+    def run(*args):
+        assert learner_planner.main(list(args)) == 0
+        return json.loads(capsys.readouterr().out)
+
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as db:
+            set_consent(db, "demo", subject, "adaptation", True, Settings(_env_file=None))
+            attempt = QuizAttempt(user_id=subject, lesson_slug="first", score=1, responses={})
+            db.add(attempt)
+            db.flush()
+            db.add(LearnerAssessmentFact(attempt_id=attempt.id, user_id=subject, lesson_slug="first", mastery=0.9))
+            db.commit()
+        adapted = LearnerPresentation("socratic", ("second", "first"))
+        static = LearnerPresentation("concise", order)
+        check_state(adapted)
+        assert run("status") == {"state": "clear"}
+
+        def audit_fault(_):
+            raise RuntimeError("Synthetic audit write failure.")
+
+        with monkeypatch.context() as fail:
+            fail.setattr(security_log, "_row_hash", audit_fault)
+            assert learner_planner.main(["stop", "--reason", "invariance"]) == 1
+        assert "Synthetic audit write failure" not in capsys.readouterr().err
+        check_state(adapted)
+        assert run("status") == {"state": "clear"}
+
+        first = run("stop", "--reason", "invariance")
+        assert first == {"action": "stop", "outcome": "inserted", "reason": "invariance"}
+        second = run("stop", "--reason", "evidential-state")
+        assert second == {"action": "stop", "outcome": "already-stopped", "reason": first["reason"]}
+        assert run("status") == {"state": "stopped", "reason": first["reason"]}
+        with Session(engine) as db:
+            row = db.get(LearnerAdaptationStop, "planner")
+            event = db.scalars(select(SecurityEvent)).one()
+            assert row.reason == event.details["reason"] == second["reason"]
+        check_state(static)
+        assert learner_planner.main(["clear"]) == 2
+        assert "--confirm" in capsys.readouterr().err
+        check_state(static)
+        assert run("clear", "--confirm") == {"action": "clear", "outcome": "deleted", "reason": first["reason"]}
+        assert run("clear", "--confirm") == {"action": "clear", "outcome": "unchanged"}
+        assert run("status") == {"state": "clear"}
+        check_state(adapted)
+        with Session(engine) as db:
+            rows = list(db.scalars(select(SecurityEvent).order_by(SecurityEvent.seq)))
+            assert [(row.event_type, row.outcome, row.details) for row in rows] == [
+                ("learner.harness.stop", "success", {"outcome": "inserted", "reason": "invariance"}),
+                ("learner.harness.clear", "success", {"outcome": "deleted", "reason": "invariance"}),
+            ]
+            if engine.dialect.name == "postgresql":
+                login = db.execute(text("SELECT session_user")).scalar_one()
+                principal = f"postgresql:{login}"
+            else:
+                principal = f"posix:{os.geteuid()}" if hasattr(os, "geteuid") else f"windows:{os.getlogin()}"
+            assert all(row.actor_role == "operator" and row.source_digest is None for row in rows)
+            assert all(row.subject_digest == keyed_digest(principal, "planner-stop-actor") for row in rows)
+    finally:
+        engine.dispose()
+
+
+def test_phase8_readiness_reports_the_last_stop_observation_without_querying(monkeypatch):
+    from app import main
+    from app.core.config_package import get_config_package
+    from app.core.db import SessionLocal
+    from app.services.learner_record_metrics import observe_planner_stop
+
+    settings = Settings(_env_file=None, learner_planner="shadow")
+    monkeypatch.setattr(main, "settings", settings)
+    def unexpected_connection():
+        raise AssertionError("Phase 8 readiness must not open a database connection.")
+    monkeypatch.setattr(main, "engine", type("ReadinessEngine", (), {"connect": staticmethod(unexpected_connection)})())
+    package = get_config_package(settings)
+    with SessionLocal() as db:
+        observe_planner_stop(False)
+        clear_adaptation_stop(db)
+        db.commit()
+        try:
+            active = main._phase8_fields(package)
+            assert active["learner_planner"] == active["learner_planner_setting"] == "shadow"
+            stop_adaptation(db, "invariance")
+            db.commit()
+            assert not main._phase8_fields(package)["learner_slis"]["planner_stop_observed"]
+            shadow_presentation(db, "demo", "local-fixture", ("lesson",), "concise")
+            stopped = main._phase8_fields(package)
+            assert stopped["learner_planner"] == stopped["learner_planner_setting"] == "shadow"
+            assert stopped["phase8_exit_passed"] is False and stopped["learner_slis"]["planner_stop_observed"]
+        finally:
+            clear_adaptation_stop(db)
+            db.commit()
+            observe_planner_stop(False)
+
+
+def test_phase8_migration_retains_existing_tables_and_refuses_data_loss(fresh_database_url):
+    from app.db_models import LearnerWriteGuard
+    from test_response_ledger_migrations import PHASE8_REVISION, PHASE8_TABLES, PHASE9_REVISION, _alembic, _stamp, _tables
+
+    engine = create_engine(fresh_database_url)
+    try:
+        Base.metadata.create_all(engine)
+        Base.metadata.drop_all(engine, tables=[Base.metadata.tables[name] for name in PHASE8_TABLES])
+        phase9_tables = _tables(engine)
+        assert {"ehmf_stops", "ranking_events"} <= phase9_tables
+        engine.dispose()
+        assert _alembic(fresh_database_url, "stamp", PHASE9_REVISION).returncode == 0
+        upgraded = _alembic(fresh_database_url, "upgrade", PHASE8_REVISION)
+        assert upgraded.returncode == 0, upgraded.stderr[-1800:]
+        assert _tables(engine) == phase9_tables | PHASE8_TABLES
+        with Session(engine) as db:
+            db.add(LearnerWriteGuard(key_digest=uuid4().hex, erased=True))
+            db.commit()
+        engine.dispose()
+        refused = _alembic(fresh_database_url, "downgrade", PHASE9_REVISION)
+        assert refused.returncode != 0 and "contain records" in refused.stderr
+        assert PHASE8_TABLES <= _tables(engine)
+        assert _stamp(engine) == [PHASE8_REVISION]
+    finally:
+        engine.dispose()
+def test_plan_g_the_phase8_revision_accepts_create_all_tables_an_early_guard_table_and_existing_learner_rows(
+    fresh_database_url,
+):
+    from sqlalchemy import create_engine, inspect, select
+    from sqlalchemy.orm import Session
+
+    from app.db_models import Base, LearnerRecord, LearnerRecordOperation, LearnerReplica
+    from test_response_ledger_migrations import PHASE8_REVISION, PHASE9_REVISION, _alembic, _stamp
+
+    models = (LearnerRecord, LearnerReplica, LearnerRecordOperation)
+
+    def rows(engine):
+        with engine.connect() as connection:
+            return [connection.execute(select(model.__table__)).mappings().one() for model in models]
+
+    engine = create_engine(fresh_database_url)
+    try:
+        Base.metadata.create_all(engine)
+        with engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE learner_write_guards DROP COLUMN erasure_epoch")
+            connection.exec_driver_sql("ALTER TABLE learner_write_guards DROP COLUMN last_used_at")
+        with Session(engine) as db:
+            db.add_all([
+                LearnerRecord(user_id="fixture-owner", record_version=1, completed_items=["fixture-item"]),
+                LearnerReplica(user_id="fixture-owner", replica_id="fixture-replica", last_logical_counter=1),
+                LearnerRecordOperation(user_id="fixture-owner", operation_id="fixture-operation",
+                                       replica_id="fixture-replica", logical_counter=1, operation_type="complete_item",
+                                       payload={"item_id": "fixture-item"}, payload_hash="0" * 64),
+            ])
+            db.commit()
+        original_rows = rows(engine)
+        assert {col["name"] for col in inspect(engine).get_columns("learner_write_guards")} == {"key_digest", "erased"}
+        stamp = _alembic(fresh_database_url, "stamp", PHASE9_REVISION)
+        assert stamp.returncode == 0, stamp.stderr
+        upgrade = _alembic(fresh_database_url, "upgrade", PHASE8_REVISION)
+        assert upgrade.returncode == 0, upgrade.stderr
+        assert _stamp(engine) == [PHASE8_REVISION]
+        assert {col["name"] for col in inspect(engine).get_columns("learner_write_guards")} == {
+            "key_digest", "erased", "erasure_epoch", "last_used_at",
+        }
+        assert rows(engine) == original_rows
+        check = _alembic(fresh_database_url, "check")
+        assert check.returncode == 0, check.stderr
+        assert "No new upgrade operations detected" in check.stdout
+    finally:
+        engine.dispose()

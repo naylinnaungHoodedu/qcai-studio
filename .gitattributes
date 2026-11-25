@@ -18,3 +18,6 @@ docs/evaluation/phase10/preregistration-draft.md text eol=lf
 evaluation/config/*.json text eol=lf
 evaluation/fixtures/* text eol=lf
 lqs/ulqs-*.json text eol=lf
+# Phase 8: the spec and the erasure proof stay LF in every checkout.
+docs/architecture/phase8-implementation-spec.md text eol=lf
+docs/evaluation/phase8/erasure_proof_v1.json text eol=lf

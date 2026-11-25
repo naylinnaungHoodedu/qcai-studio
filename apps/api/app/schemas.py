@@ -490,6 +490,31 @@ class LearnerRecordOperationInput(BaseModel):
 
 class LearnerRecordOperationsRequest(BaseModel):
     operations: list[LearnerRecordOperationInput] = Field(min_length=1, max_length=100)
+    expected_record_version: Any = None
+
+
+class LearnerReplicaIssued(BaseModel):
+    replica_id: str
+
+
+class LearnerReplicaRequest(BaseModel):
+    preferred_replica_id: str | None = Field(default=None, pattern=r"^replica-[a-f0-9]{32}$")
+
+
+class LearnerConsentUpdate(BaseModel):
+    consent_class: Literal["adaptation", "analytics", "research"]
+    granted: bool = Field(strict=True)
+
+
+class LearnerConsentRecord(LearnerConsentUpdate):
+    user_id: str
+    consent_version: Literal["d27-unresolved-v1"]
+    updated_at: datetime
+    source: Literal["self-service"]
+
+
+class LearnerPrivacyErasureRequest(BaseModel):
+    password: str | None = Field(default=None, max_length=256)
 
 
 class LearnerRecordOperationReceipt(BaseModel):
@@ -677,6 +702,10 @@ class AuthSessionRead(BaseModel):
 
 class AuthActionRead(BaseModel):
     status: str
+
+
+class LocalAccountDeleteRead(AuthActionRead):
+    receipt: dict | None = None
 
 
 class GuestUpgradeRequest(BaseModel):

@@ -1331,15 +1331,15 @@ def test_phase4_docs_the_phase3_spec_states_what_phase4_changed():
     assert "Phase 4 adds ledger-entry-v2." not in phase3
     shipped = re.search(r'^DEFAULT_PACKAGE_PATH = .*?"(v\d+\.json)"', (API_ROOT / "app" / "core" / "config_package.py").read_text(encoding="utf-8"),
                         flags=re.MULTILINE).group(1)
-    assert shipped == DEFAULT_PACKAGE_PATH.name and f"`.../{shipped}` with Phase 9" in phase3
+    assert shipped == DEFAULT_PACKAGE_PATH.name and f"`.../{shipped}` with Phase 8" in phase3
     assert "`DEFAULT_PACKAGE_PATH` becomes `.../v2.json`" not in phase3
     assert '`config_package_version == "2.0.0"`' not in phase3 and 'asserts `package_version == "2.0.0"`' not in phase3
     for test in ("test_plan_i_ready_reports_versions_ledger_head_and_two_pass_mode", "test_the_shipped_package_validates_and_matches_its_hash"):
         line = next(line for line in phase3.splitlines() if f"`{test}`" in line or f"::{test}`" in line)
-        assert f"{PACKAGE.package_version} for Phase 9's v{PACKAGE.schema_version}" in line, test
+        assert f"{PACKAGE.package_version} for Phase 8's v{PACKAGE.schema_version}" in line, test
     # 13.3 item 1 and 13.1 test 25 name the package their tests read; 5.2's parsing names every schema version the
     # loader accepts; the frontend row quotes the chat's render expression; 4.3 names the sufficiency's score.
-    assert "`RAW` now reads v2" not in phase3 and f"`RAW` reads the shipped package (v{PACKAGE.schema_version} since Phase 9) and `V2_RAW` reads v2" in phase3
+    assert "`RAW` now reads v2" not in phase3 and f"`RAW` reads the shipped package (v{PACKAGE.schema_version} since Phase 8) and `V2_RAW` reads v2" in phase3
     assert "a copy of `v2.json`" not in phase3
     # The loader accepts schema versions 1 to LATEST_SCHEMA_VERSION (Phase 9 reads the bound from one constant, the ranking
     # schema, E16): load a copy of the shipped package at each bound and one past it.
@@ -1350,7 +1350,7 @@ def test_phase4_docs_the_phase3_spec_states_what_phase4_changed():
     for refused_version in (0, LATEST_SCHEMA_VERSION + 1, True):
         with pytest.raises(ConfigPackageError, match="schema_version"):
             parse_config_package({**PACKAGE.raw, "schema_version": refused_version}, path=PACKAGE.path, sha256="", hash_verified=False)
-    assert "accepts `schema_version` 1 or 2. For 1" not in phase3 and f"accepts `schema_version` 1 or 2, 3 since Phase 4, 4 since Phase 5, 5 since Phase 6, and 6 since Phase 7, and {LATEST_SCHEMA_VERSION} since Phase 9" in phase3
+    assert "accepts `schema_version` 1 or 2. For 1" not in phase3 and f"accepts `schema_version` 1 or 2, 3 since Phase 4, 4 since Phase 5, 5 since Phase 6, and 6 since Phase 7, and 7 since Phase 9, and {LATEST_SCHEMA_VERSION} since Phase 8" in phase3
     chat = (REPO_ROOT / "apps" / "frontend" / "src" / "components" / "teaching-assistant-chat.tsx").read_text(encoding="utf-8")
     render = next(line.strip() for line in chat.splitlines() if "<EvidencePanel evidence={message.evidence} />" in line)
     assert f"render `{render}`" in phase3
@@ -1362,7 +1362,7 @@ def test_phase4_docs_the_phase3_spec_states_what_phase4_changed():
     shape = phase3.split("**Report shape**", 1)[1].split("- **Exit codes:**", 1)[0]
     assert record["config_package"]["version"] == PACKAGE.package_version
     assert '"config_package": {"version": "2.0.0"' not in shape and '"config_package": {"version": "...", "sha256": "..."}' in shape
-    assert f"{record['config_package']['version']} for Phase 9's v{PACKAGE.schema_version}, which the committed record holds" in shape
+    assert f"{record['config_package']['version']} for Phase 8's v{PACKAGE.schema_version}, which the committed record holds" in shape
     assert "7.17's three-plan replay report shape" in _spec_head().split("### 7.14", 1)[1].split("### 7.15", 1)[0]
 
 
@@ -1582,15 +1582,13 @@ def test_phase4_docs_the_runbook_says_what_a_legacy_record_s_sufficiency_score_h
 
 
 def test_phase4_docs_the_code_texts_name_the_shipped_package():
-    # P2-12-D-03 covers docstrings and comments: the texts that say where the budgets come from, or which package pins
-    # the schemas or is checked against the pipeline code, name the shipped package (v4 since Phase 5), as the Phase 3
-    # runbook's lines do; contracts.py names the v2 ledger schema that only package v3 pins (spec 7.14).
+    # The shipped package pins the pipeline budgets and schemas. Older packages retain their own version history.
     import inspect
 
     from app.services import tutor_followups, tutor_pipeline
     from app.services.tutor_pipeline import package_check
 
-    from app.core.config_package import V4_PACKAGE_PATH, V5_PACKAGE_PATH
+    from app.core.config_package import LATEST_SCHEMA_VERSION, V4_PACKAGE_PATH, V5_PACKAGE_PATH, V6_PACKAGE_PATH, V7_PACKAGE_PATH
 
     raw = json.loads(DEFAULT_PACKAGE_PATH.read_text(encoding="utf-8"))
     v2 = json.loads(V2_PACKAGE_PATH.read_text(encoding="utf-8"))
@@ -1599,21 +1597,27 @@ def test_phase4_docs_the_code_texts_name_the_shipped_package():
     assert raw["tutor_pipeline"]["budgets"] == v2["tutor_pipeline"]["budgets"] == v3["tutor_pipeline"]["budgets"] == v4["tutor_pipeline"]["budgets"]
     v2_schema = "schemas/ledger-entry.v2.schema.json"
     paths = {name: {entry["path"] for entry in package["tutor_pipeline"]["schemas"].values()}
-             for name, package in (("v6", raw), ("v5", json.loads(V5_PACKAGE_PATH.read_text(encoding="utf-8"))), ("v4", v4), ("v3", v3), ("v2", v2))}
+             for name, package in (("latest", raw), ("v7", json.loads(V7_PACKAGE_PATH.read_text(encoding="utf-8"))),
+                                   ("v6", json.loads(V6_PACKAGE_PATH.read_text(encoding="utf-8"))), ("v5", json.loads(V5_PACKAGE_PATH.read_text(encoding="utf-8"))), ("v4", v4), ("v3", v3), ("v2", v2))}
     assert v2_schema in paths["v3"] and v2_schema not in paths["v2"] and len(paths["v3"]) == len(paths["v2"]) + 1
     assert paths["v3"] < paths["v4"] and len(paths["v4"]) == len(paths["v3"]) + 5 and paths["v4"] == paths["v5"]
     assert paths["v6"] == paths["v5"] | {"schemas/ledger-entry.v4.schema.json"}  # Phase 7: v6 adds the LedgerEntryV4 pin
+    assert paths["latest"] == paths["v7"] == paths["v6"]
     texts = {"contracts": inspect.getdoc(contracts), "package_check": inspect.getdoc(package_check),
              "ledger": inspect.getdoc(ledger), "tutor_followups": inspect.getdoc(tutor_followups),
              "tutor_pipeline": inspect.getdoc(tutor_pipeline)}
     flat = {name: _flat(text) for name, text in texts.items()}
+    shipped = f"v{LATEST_SCHEMA_VERSION} since Phase 8"
+    for name in ("contracts", "package_check", "tutor_followups", "tutor_pipeline"):
+        assert shipped in flat[name] and "v7 since Phase 9, the shipped package" not in flat[name], name
     assert "pinned by sha256 in configuration package v2." not in flat["contracts"]
-    assert "ledger-entry.v2.schema.json" in flat["contracts"] and f"the shipped configuration package (v{PACKAGE.schema_version} since Phase 9" in flat["contracts"]
+    assert "ledger-entry.v2.schema.json" in flat["contracts"]
+    assert f"the shipped configuration package ({shipped}" in flat["contracts"]
     assert not flat["package_check"].startswith("Consistency of configuration package v2 with")
-    assert "schema 2 or later" in flat["package_check"] and f"v{PACKAGE.schema_version} since Phase 9, the shipped package" in flat["package_check"]
+    assert "schema 2 or later" in flat["package_check"]
     assert "come from configuration package v2" not in flat["ledger"] and "come from the shipped configuration package" in flat["ledger"]
     assert "(configuration package v2 tutor_pipeline.budgets" not in flat["tutor_followups"]
-    assert f"the shipped configuration package's tutor_pipeline.budgets, v{PACKAGE.schema_version} since Phase 9" in flat["tutor_followups"]
+    assert f"the shipped configuration package's tutor_pipeline.budgets, {shipped}" in flat["tutor_followups"]
     assert "package_check (configuration package v2)" not in flat["tutor_pipeline"]
     example = _comments((REPO_ROOT / "infra" / "cloudrun" / "api-production.env.example.yaml").read_text(encoding="utf-8"))
     assert "configuration package v2 tutor_pipeline.budgets" not in example

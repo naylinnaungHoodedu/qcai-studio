@@ -372,6 +372,104 @@ class LearnerRecordOperation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class LearnerIssuedReplica(Base):
+    __tablename__ = "learner_issued_replicas"
+
+    replica_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(255), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    retired: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class LearnerWriteGuard(Base):
+    __tablename__ = "learner_write_guards"
+
+    key_digest: Mapped[str] = mapped_column(String(64), primary_key=True)
+    erased: Mapped[bool] = mapped_column(Boolean, default=False)
+    erasure_epoch: Mapped[str | None] = mapped_column(String(32))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class LearnerSubject(Base):
+    __tablename__ = "learner_subjects"
+
+    principal_digest: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(255), unique=True)
+    provider: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LearnerGuestRevocation(Base):
+    __tablename__ = "learner_guest_revocations"
+
+    credential_digest: Mapped[str] = mapped_column(String(64), primary_key=True)
+    revoked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LearnerClaimAudit(Base):
+    __tablename__ = "learner_claim_audits"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    subject_digest: Mapped[str] = mapped_column(String(64))
+    guest_digest: Mapped[str] = mapped_column(String(64))
+    transferred: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LearnerConsent(Base):
+    __tablename__ = "learner_consents"
+
+    user_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    consent_class: Mapped[str] = mapped_column(String(16), primary_key=True)
+    consent_version: Mapped[str] = mapped_column(String(32))
+    granted: Mapped[bool] = mapped_column(Boolean)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    source: Mapped[str] = mapped_column(String(24))
+
+
+class LearnerErasureAudit(Base):
+    __tablename__ = "learner_erasure_audits"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    receipt_digest: Mapped[str] = mapped_column(String(64))
+    table_set_digest: Mapped[str] = mapped_column(String(64))
+    deleted_total: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LearnerConsentChange(Base):
+    __tablename__ = "learner_consent_changes"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(255), index=True)
+    consent_class: Mapped[str] = mapped_column(String(16))
+    consent_version: Mapped[str] = mapped_column(String(32))
+    granted: Mapped[bool] = mapped_column(Boolean)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    source: Mapped[str] = mapped_column(String(24))
+
+
+class LearnerAdaptationStop(Base):
+    __tablename__ = "learner_adaptation_stops"
+
+    control_id: Mapped[str] = mapped_column(String(24), primary_key=True)
+    reason: Mapped[str] = mapped_column(String(48))
+    stopped_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LearnerAssessmentFact(Base):
+    __tablename__ = "learner_assessment_facts"
+
+    attempt_id: Mapped[int] = mapped_column(
+        ForeignKey("quiz_attempts.id", ondelete="CASCADE"), primary_key=True, autoincrement=False,
+    )
+    user_id: Mapped[str] = mapped_column(String(255), index=True)
+    lesson_slug: Mapped[str] = mapped_column(String(255))
+    mastery: Mapped[float] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class TutorThread(Base):
     __tablename__ = "tutor_threads"
     __table_args__ = (Index("ix_tutor_threads_user_id_updated_at", "user_id", "updated_at"),)

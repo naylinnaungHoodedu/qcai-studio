@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.routes.assistant import TUTOR_TURN_RATE_LIMIT_SCOPE, deliver_tutor_turn, tutor_turn_rate_limit
+from app.api.routes.assistant import TUTOR_TURN_RATE_LIMIT_SCOPE, deliver_tutor_turn, require_tutor_learner_subject, tutor_turn_rate_limit
 from app.core.auth import AuthUser, get_current_user
 from app.core.config import get_settings
 from app.core.config_package import get_config_package
@@ -54,6 +54,7 @@ def create_tutor_turn(
     settings = get_settings()
     if not settings.tutor_turns_route_enabled:
         return JSONResponse(status_code=404, content={"detail": "Not Found"}, headers={"Cache-Control": "no-store"})
+    require_tutor_learner_subject(user, settings)
     params = get_config_package(settings).tutor_pipeline
     key = turn_idempotency.parse_key(idempotency_key, params)
     clean_message = sanitize_user_text(payload.message)

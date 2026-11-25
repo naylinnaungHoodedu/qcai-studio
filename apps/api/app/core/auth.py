@@ -3,12 +3,17 @@ from dataclasses import dataclass
 import jwt
 from fastapi import Cookie, Depends, Header, HTTPException, Request, status
 from jwt import PyJWKClient
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app.core.client_identity import AUTH0_LEGACY_FALLBACK, is_legacy_auth0_fallback
 from app.core.config import Settings, get_settings
 from app.core.db import get_db
 from app.core.guest_tokens import GUEST_TOKEN_COOKIE, verify_guest_token
+from app.db_models import LearnerSubject, UserAccount
 from app.services.guest_sessions import is_guest_revoked
+from app.services.learner_record_identity import principal_digest
+from app.services.learner_record_lock import WriteObservation, guard_request_writes, learner_writer, phase8_writes_enabled
 from app.services.local_accounts import AUTH_SESSION_COOKIE_NAME, resolve_local_account_from_session
 from app.services.security_log import record_security_event, route_template
 
@@ -19,6 +24,33 @@ class AuthUser:
     email: str | None
     role: str
     provider: str = "guest"
+
+
+class _Auth0WithoutSubject(AuthUser):
+    """A legacy fallback principal without a subject claim from the issuer."""
+
+
+_EXPLICIT_PRIVACY_LOCKS = {
+    ("POST", "/auth/learner-erasure"), ("DELETE", "/auth/account"), ("POST", "/auth/guest-claim"),
+}
+
+
+def learner_write_observation(request: Request) -> WriteObservation | None:
+    return getattr(request.state, "learner_write_observation", None)
+
+
+def demo_principal_allowed(db: Session, identifier: str, settings: Settings) -> bool:
+    if not phase8_writes_enabled(settings):
+        return True
+    if identifier.startswith(("acct-", "guest-", "subj-")) or "|" in identifier:
+        return False
+    if db.get(UserAccount, identifier) is not None:
+        return False
+    binding = select(LearnerSubject.principal_digest).where(or_(
+        LearnerSubject.user_id == identifier,
+        LearnerSubject.principal_digest == principal_digest("auth0", identifier),
+    ))
+    return db.scalar(binding.limit(1)) is None
 
 
 def _decode_auth0_token(token: str, settings: Settings) -> AuthUser:
@@ -43,8 +75,13 @@ def _decode_auth0_token(token: str, settings: Settings) -> AuthUser:
         # A malformed, expired or wrongly signed token: a refusal, not a 500.
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid bearer token.") from exc
     roles = payload.get("https://qcai.dev/roles") or payload.get("roles") or ["learner"]
-    return AuthUser(
-        user_id=payload.get("sub", "unknown"),
+    subject = payload.get("sub")
+    has_subject = isinstance(subject, str) and not is_legacy_auth0_fallback(subject)
+    if settings.learner_identity == "on" and not has_subject:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid bearer token.")
+    principal_type = AuthUser if has_subject else _Auth0WithoutSubject
+    return principal_type(
+        user_id=payload.get("sub", AUTH0_LEGACY_FALLBACK),
         email=payload.get("email"),
         role=roles[0] if roles else "learner",
         provider="auth0",
@@ -64,8 +101,15 @@ def get_current_user(
     user = _authenticate(
         request, authorization, x_demo_user, x_demo_role, qcai_session_token, qcai_guest_token, settings, db
     )
+    if user.provider == "demo" and not demo_principal_allowed(db, user.user_id, settings):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="A verified session is required.")
     # The rate limiter keys on this validated principal, never on a client header (task 1.6).
     request.state.principal = user
+    if user.provider != "demo" and has_bearer_subject(user) and phase8_writes_enabled(settings):
+        writer = learner_writer(db, user.provider, user.user_id)
+        request.state.learner_write_observation = writer.observation
+        if (request.method, route_template(request)) not in _EXPLICIT_PRIVACY_LOCKS:
+            guard_request_writes(db, writer)
     return user
 
 
@@ -171,4 +215,23 @@ def require_durable_learner(request: Request, user: AuthUser = Depends(get_curre
     if user.role not in {"learner", "admin"}:
         _record_denial(request, user, "role:admin|learner")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Learner role is required.")
+    return user
+
+
+def has_bearer_subject(user: AuthUser) -> bool:
+    """Allow non-bearer identities and tokens with a subject to enter Phase 8."""
+    return not isinstance(user, _Auth0WithoutSubject)
+
+
+def require_bearer_subject(user: AuthUser) -> None:
+    """Reject an Auth0 credential that lacks a verified, nonblank subject."""
+    if not has_bearer_subject(user):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="A bearer subject is required.")
+
+
+def require_verified_principal(user: AuthUser = Depends(get_current_user)) -> AuthUser:
+    """Require an authenticated account or signed guest credential for privacy operations."""
+    require_bearer_subject(user)
+    if user.provider not in {"local", "auth0", "guest"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="A verified session is required.")
     return user

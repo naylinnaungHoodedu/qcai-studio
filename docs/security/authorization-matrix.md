@@ -11,6 +11,7 @@ that each policy matches the route's real dependencies, and that this file is cu
 | `public` | Anyone; no credential is read. |
 | `service` | No principal; called by the frontend server and guarded by its own checks (see the note). |
 | `principal` | Any verified principal: a signed guest token, a local-account session, an Auth0 token, or a demo identity. |
+| `verified_principal` | A signed guest token, local-account session, or Auth0 token with a nonblank subject. |
 | `asset_reader` | A verified principal whose role is learner or admin. |
 | `durable_learner` | A signed-in account (local or Auth0, not guest or demo) whose role is learner or admin. |
 | `staff` | A verified principal whose role is instructor or admin. |
@@ -32,6 +33,11 @@ that each policy matches the route's real dependencies, and that this file is cu
 
 | Method | Path | Access | Ownership | Note |
 |---|---|---|---|---|
+| GET | `/auth/learner-consent` | `verified_principal` | `caller` | Phase 8 provisional consent. |
+| PUT | `/auth/learner-consent` | `verified_principal` | `caller` | Phase 8 provisional consent. |
+| GET | `/auth/learner-export` | `verified_principal` | `caller` | Phase 8 local learner data. |
+| POST | `/auth/learner-erasure` | `verified_principal` | `caller` | Phase 8 local erasure and receipt. |
+| POST | `/auth/guest-claim` | `durable_learner` | `caller` | Phase 8. Also requires a verified guest session. |
 | GET | `/auth/me` | `principal` | `caller` |  |
 | POST | `/auth/register` | `public` | `none` | Creates a learner account; rate-limited. |
 | POST | `/auth/login` | `public` | `none` | Rate-limited; failures are security events. |
@@ -94,6 +100,7 @@ that each policy matches the route's real dependencies, and that this file is cu
 | GET | `/insights/skill-gap` | `principal` | `caller` |  |
 | POST | `/insights/realtime-feedback` | `principal` | `caller` |  |
 | GET | `/learner-record` | `durable_learner` | `caller` |  |
+| POST | `/learner-record/replicas` | `durable_learner` | `caller` | Phase 8 replica issuance. |
 | POST | `/learner-record/operations` | `durable_learner` | `caller` |  |
 | GET | `/projects/catalog` | `public` | `none` |  |
 | GET | `/projects/my-submissions` | `principal` | `caller` |  |

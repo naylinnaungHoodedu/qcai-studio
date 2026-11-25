@@ -112,6 +112,11 @@ class Settings(BaseSettings):
     # Legacy guest-id migration window (plan L1108-1110): closed unless an end time is set.
     guest_legacy_upgrade_until: datetime | None = None
     guest_legacy_upgrade_rate_limit: str = "5/hour"
+    # Phase 8 (learner record and privacy; docs/architecture/phase8-implementation-spec.md section 6)
+    learner_sync: Literal["off", "on"] | None = None
+    learner_planner: Literal["off", "shadow", "on"] | None = None
+    learner_identity: Literal["off", "on"] | None = None
+    learner_privacy: Literal["off", "on"] | None = None
     allowed_origins: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:3000"])
     # Phase 2 (corpus, span identity, retrieval integrity). Every learner-visible change defaults to today's
     # behaviour outside development while the D-05 freeze holds (Phase 2 spec section 7).
@@ -508,6 +513,13 @@ class Settings(BaseSettings):
                     resolved_paths.append(candidate)
                     break
         return resolved_paths
+
+    @model_validator(mode="after")
+    def resolve_phase8_settings(self) -> "Settings":
+        from app.core.phase8_settings import resolve_phase8_settings
+
+        resolve_phase8_settings(self)
+        return self
 
 
 # The two_pass_tutor defaults (PD-10). Configuration package v2 records them as flag_policy.two_pass_tutor.

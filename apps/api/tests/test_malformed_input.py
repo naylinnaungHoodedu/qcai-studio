@@ -212,7 +212,7 @@ def test_a_422_keeps_the_fields_clients_read_and_drops_the_password():
 # --- Learner-record values ---
 
 
-def _learner_record_write(payload: dict, operation_type: str):
+def _learner_record_write(payload: dict, operation_type: str, learner_sync: str):
     client = _client()
     registered = client.post(
         "/auth/register",
@@ -228,7 +228,17 @@ def _learner_record_write(payload: dict, operation_type: str):
         "payload": payload,
     }
     headers = {"origin": TRUSTED_ORIGIN, "x-qcai-csrf": client.cookies.get("qcai_auth_csrf"), "content-type": "application/json", **_source()}
-    written = client.post("/learner-record/operations", content=json.dumps({"operations": [operation]}), headers=headers)
+    batch = {"operations": [operation]}
+    if learner_sync == "on":
+        issued = client.post("/learner-record/replicas", headers=headers)
+        assert issued.status_code == 201
+        operation["replica_id"] = issued.json()["replica_id"]
+        batch["expected_record_version"] = 0
+    written = client.post(
+        "/learner-record/operations",
+        content=json.dumps(batch),
+        headers=headers,
+    )
     return written, client.get("/learner-record", headers=_source())
 
 
@@ -241,8 +251,10 @@ def _learner_record_write(payload: dict, operation_type: str):
     ],
     ids=["overflowing mastery", "surrogate cursor", "surrogate preference"],
 )
-def test_a_learner_record_value_that_cannot_be_stored_is_refused_and_the_record_still_reads(operation_type, payload):
-    written, read = _learner_record_write(payload, operation_type)
+@pytest.mark.parametrize("learner_sync", ["off", "on"])
+def test_a_learner_record_value_that_cannot_be_stored_is_refused_and_the_record_still_reads(operation_type, payload, learner_sync, monkeypatch):
+    monkeypatch.setattr(get_settings(), "learner_sync", learner_sync)
+    written, read = _learner_record_write(payload, operation_type, learner_sync)
     assert written.status_code == 422, written.text
     assert read.status_code == 200
 
@@ -305,9 +317,11 @@ def test_an_over_long_user_agent_is_stored_truncated():
     assert response.status_code == 200, response.text
 
 
-def test_a_non_finite_preference_is_refused_on_postgres_and_never_a_500():
-    written, read = _learner_record_write({"key": "k", "value": float("nan")}, "set_preference")
-    assert written.status_code == (422 if ON_POSTGRES else 200), written.text
+@pytest.mark.parametrize("learner_sync", ["off", "on"])
+def test_non_finite_preference_follows_the_flagged_backend_contract(learner_sync, monkeypatch):
+    monkeypatch.setattr(get_settings(), "learner_sync", learner_sync)
+    written, read = _learner_record_write({"key": "k", "value": float("nan")}, "set_preference", learner_sync)
+    assert written.status_code == (422 if learner_sync == "on" or ON_POSTGRES else 200), written.text
     assert read.status_code == 200
 
 

@@ -57,7 +57,7 @@ def _seed_everything(db, user_id: str, created_at: datetime = NOW, existing: dic
             continue
         values = {}
         for column in table.columns:
-            if column.primary_key and isinstance(column.type, Integer):
+            if column.primary_key and isinstance(column.type, Integer) and not column.foreign_keys:
                 continue
             if column.name in USER_KEY_COLUMNS:
                 values[column.name] = user_id
@@ -116,7 +116,11 @@ def test_erasure_leaves_zero_rows_in_every_user_keyed_table(user_id):
     assert {"learner_records", "tutor_threads", "tutor_messages", "tutor_turns", "public_handles"} <= set(counts)
 
 
-def test_account_deletion_uses_full_erasure():
+def test_account_deletion_uses_full_erasure(monkeypatch):
+    from app.core.config import get_settings
+
+    # This fixture deliberately seeds the legacy erasure exemptions under the same ID.
+    monkeypatch.setattr(get_settings(), "learner_privacy", "off")
     email = f"erasure-{uuid4().hex[:8]}@qcai.local"
     with SessionLocal() as db:
         account = register_local_account(db, email, PASSWORD)
@@ -143,7 +147,8 @@ def test_retention_removes_stale_guest_rows_in_every_table_and_keeps_the_rest():
 
         timestamped = {table.name for table in _covered_tables() if "created_at" in table.c}
         everything = {table.name for table in _covered_tables()}
-        assert _surviving(db, stale_rows) == everything - timestamped
+        # Binding, account, and unexpired credentials have scope-specific retention.
+        assert _surviving(db, stale_rows) == (everything - timestamped) | {"learner_subjects", "user_accounts", "user_sessions"}
         assert _surviving(db, fresh_rows) == everything
         assert _surviving(db, account_rows) == everything
     assert {"tutor_threads", "tutor_messages", "notes"} <= set(counts)

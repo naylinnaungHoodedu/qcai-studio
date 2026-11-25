@@ -19,8 +19,13 @@ from app.core.config import get_settings
 from app.core.safe_input import text_matches
 
 CLIENT_ADDRESS_HEADER = "x-qcai-client-address"
+AUTH0_LEGACY_FALLBACK = "unknown"
 _CLIENT_ADDRESS_MAC_LENGTH = 32
 _MAX_ADDRESS_LENGTH = 64
+
+
+def is_legacy_auth0_fallback(identifier: str) -> bool:
+    return identifier == AUTH0_LEGACY_FALLBACK or not identifier.strip()
 
 
 def keyed_digest(value: str, purpose: str) -> str:

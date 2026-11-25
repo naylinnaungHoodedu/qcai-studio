@@ -2,8 +2,8 @@
 
 1. The legacy ledger record, synchronously, so the record exists before the answer leaves (plan I "ledger writes
    100% of deliveries"). The route waits at most the append budget plus the wait grace (the shipped configuration
-   package's tutor_pipeline.budgets, v7 since Phase 9, v6 since Phase 7, v5 since Phase 6 and v4 since Phase 5: 1500 + 250 ms; TUTOR_LEDGER_APPEND_BUDGET_MS overrides the
-   budget), whatever the database does
+   package's tutor_pipeline.budgets, v8 since Phase 8, v7 since Phase 9, v6 since Phase 7, v5 since Phase 6 and v4 since Phase 5).
+   Those budgets are 1500 + 250 ms, with TUTOR_LEDGER_APPEND_BUDGET_MS available to override the append budget. The wait is bounded whatever the database does
    (pool checkout included); the append fails open and is counted (ledger.record_legacy_delivery). The delivery counts
    as attempted here, after the commit, never while it is prepared, so a turn that rolls back is no attempt (18.7 E5).
 2. The two-pass shadow, as a background task that runs after the response body is sent; it never raises.

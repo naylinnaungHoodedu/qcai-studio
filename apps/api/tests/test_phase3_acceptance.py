@@ -1685,6 +1685,7 @@ def _alembic(database_url: str, *args: str) -> subprocess.CompletedProcess:
 def test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_empty_ledger(fresh_database_url):
     from alembic.autogenerate import compare_metadata
     from alembic.migration import MigrationContext
+    from test_response_ledger_migrations import PHASE8_TABLES, PHASE9_REVISION
 
     revisions, parents = set(), set()
     for path in (API_ROOT / "alembic" / "versions").glob("*.py"):
@@ -1705,7 +1706,7 @@ def test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_emp
     phase9_tables = {"ranking_events", "ranking_scans", "ranking_states", "ranking_incumbents"}  # the Phase 9 revision's, after Phase 7's
     try:
         Base.metadata.create_all(engine, tables=[table for table in Base.metadata.sorted_tables
-                                                 if table.name not in ledger_tables | phase5_tables | phase6_tables | phase7_tables | phase9_tables])
+                                                 if table.name not in ledger_tables | phase5_tables | phase6_tables | phase7_tables | phase9_tables | PHASE8_TABLES])
         # A Phase 2 database: tutor_turns has no ledger_record_expected yet (the revision adds it; spec 18.8 F12).
         with engine.begin() as connection:
             connection.exec_driver_sql("ALTER TABLE tutor_turns DROP COLUMN ledger_record_expected")
@@ -1716,6 +1717,11 @@ def test_plan_g_the_alembic_revision_is_reversible_and_refuses_to_drop_a_non_emp
         with engine.connect() as connection:
             assert compare_metadata(MigrationContext.configure(connection, opts={"compare_type": True}), Base.metadata) == []
         append_ledger_entry(make_entry(), session_factory=sessionmaker(bind=engine), budget_ms=5000)
+        engine.dispose()
+        down = _alembic(fresh_database_url, "downgrade", PHASE9_REVISION)
+        assert down.returncode == 0, down.stderr[-2000:]
+        tables = set(sa_inspect(engine).get_table_names())
+        assert not PHASE8_TABLES & tables and phase9_tables <= tables
         engine.dispose()
         # One revision at a time: the Phase 9 step drops its own (empty) tables only, then the Phase 7 step its own table,
         # then the Phase 6 step its own, then the Phase 5 step its own, and the Phase 3 revision is the current one.

@@ -1299,8 +1299,7 @@ def test_plan_e_the_phase_7_revision_is_additive_reversible_and_keeps_its_rows()
     config = Config(str(API_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(API_ROOT / "alembic"))
     script = ScriptDirectory.from_config(config)
-    # The Phase 9 revision follows this one (the head since Phase 9).
-    assert script.get_revision(script.get_heads()[0]).down_revision == "20261123_phase7_ehmf"
+    assert script.get_revision("20261123_phase9_ranking").down_revision == "20261123_phase7_ehmf"
     revision = script.get_revision("20261123_phase7_ehmf")
     assert revision.down_revision == "20261122_phase6_v3_audit"
     source = Path(revision.path).read_text(encoding="utf-8")
@@ -1343,14 +1342,16 @@ def test_plan_e_the_phase_7_downgrade_refuses_while_ehmf_stops_holds_rows_and_th
     from app.core.schema_upgrades import run_schema_upgrades
     from app.services.ledger import SCHEMA_REVISION
 
-    assert SCHEMA_REVISION == "20261123_phase9_ranking"  # the head since Phase 9, which follows the Phase 7 revision
+    from test_response_ledger_migrations import PHASE8_REVISION, PHASE8_TABLES, PHASE9_REVISION
+
+    assert SCHEMA_REVISION == PHASE8_REVISION
     phase9 = {"ranking_events", "ranking_scans", "ranking_states", "ranking_incumbents"}
     connect_args = {"check_same_thread": False} if fresh_database_url.startswith("sqlite") else {}
     engine = create_engine(fresh_database_url, connect_args=connect_args)
     try:
         Base.metadata.create_all(engine)
         run_schema_upgrades(engine)
-        others = set(sa_inspect(engine).get_table_names()) - {"ehmf_stops"}
+        others = set(sa_inspect(engine).get_table_names()) - {"ehmf_stops"} - PHASE8_TABLES
         with engine.begin() as connection:
             connection.execute(text("INSERT INTO ehmf_stops (from_config_version, to_config_version, change_seq, detected_seq, before_claims, "
                                     "before_ab, after_claims, after_ab, window_deliveries, package_sha256, created_at) VALUES "
@@ -1364,6 +1365,9 @@ def test_plan_e_the_phase_7_downgrade_refuses_while_ehmf_stops_holds_rows_and_th
                     connection.execute(text(statement))
         engine.dispose()
         assert _alembic(fresh_database_url, "stamp", SCHEMA_REVISION).returncode == 0
+        trimmed = _alembic(fresh_database_url, "downgrade", PHASE9_REVISION)
+        assert trimmed.returncode == 0, trimmed.stderr[-2000:]
+        engine.dispose()
         refused = _alembic(fresh_database_url, "downgrade", "20261122_phase6_v3_audit")
         assert refused.returncode != 0 and "ehmf_stops holds 1 rows" in refused.stderr, refused.stderr[-2000:]
         assert "allow_ehmf_drop=true" in refused.stderr and "python -m app.workers.ehmf status" in refused.stderr

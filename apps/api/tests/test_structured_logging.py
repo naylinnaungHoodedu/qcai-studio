@@ -254,6 +254,9 @@ def test_account_deletion_reports_how_long_the_erasure_took(caplog):
 
 def test_erasure_time_covers_the_erase_and_its_commit_but_not_the_password_check(monkeypatch):
     # A fake clock: the password check takes 5 s, the erase 7 ms and its commit 3 ms, so the SLI reads 10.
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "learner_privacy", "off")
     clock = {"now": 100.0}
 
     def taking(seconds: float, call):
