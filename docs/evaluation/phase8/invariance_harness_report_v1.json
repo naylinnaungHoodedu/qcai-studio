@@ -106,11 +106,11 @@
       "apps/api/app/services/v3/rules.py": "0ae84335d5f83a8f76cd17b4f50357146b6a3ed06795acf0de0f9b87456a521a",
       "apps/api/app/services/v3/stop.py": "a846ccc64ff5122a5327374b6220976cd0bef9e8aacf7ae8d81ec6131535ca6c",
       "scripts/replay_tutor_plans.py": "287a264cea97c41d4e59c958c817c00d6a84e5b8f4d47dd76a867584cc11191a",
-      "scripts/run_invariance_harness.py": "d4744d2d646f183d6c259746817905e3c37213d6dcf5e6c70cafd0b332897fd9",
+      "scripts/run_invariance_harness.py": "a364c54e6da332c4b4529b3456db64fa4c651cc075e45f63c2aaf54707004cd8",
       "scripts/run_v2_fixtures.py": "73d36d76bebc93a4e09227fcd2978e4dce518580af900eecb233cc4887c0590b"
     },
     "rule": "imported-repository-modules-sha256-lf-v1",
-    "sha256": "f609e8c5414afaee31b3d3d5425d6cac98de101c2bc62ef29d405636c5183416"
+    "sha256": "9499a999f08aaed31b49cfb7f07d8b187efa9015bf16ecd7431406db43593401"
   },
   "item_set": "public-fixtures",
   "item_set_sha256": "069e9385a571dfd8810eef92d4dc906778fcdcbcbc8d2bafccd9f4cb73e3e405",

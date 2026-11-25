@@ -1,8 +1,8 @@
 {
  "report": "qcai-ranking-replay",
  "format_version": 1,
- "created_at": "2026-11-25T04:02:45Z",
- "commit": "875d2478dadb01d0ff76d98a45c2b4184d024c2c",
+ "created_at": "2026-11-25T14:06:18Z",
+ "commit": "3d5ed6a78b04dcf9c004aec0db75568de292a4d1",
  "evidence_class": "engineering measurement on synthetic streams, not E4 results (invariant 9; Table XVII MR-1..MR-3 not asserted)",
  "pins": {
   "config_package": {

@@ -372,7 +372,7 @@ python scripts/run_ranking_replay.py --check docs/evaluation/phase9/ranking_repl
 
 Repeat the package check for each version from v1 through v7. Run the corpus and question validators, authorization matrix, manifest, abstention calibration, frozen public payload check, source-fidelity check, and repository and Docker-context path scan. Run `npm run lint`, `npm run typecheck`, and `npm run test:integration` in `apps/frontend`.
 
-The reports were generated under package v8 from clean source commit `875d2478dadb01d0ff76d98a45c2b4184d024c2c`. The invariance harness covered 299 public items at three mastery levels, with 148 items showing distinct presentation, zero invariance violations, and zero learner-state fields in the evidential-path scan. The EHMF run resolved all 47 delivered citations across 40 golden-set items. The ranking replay produced byte-identical results on two runs of all seven synthetic scenarios. The erasure proof independently checked six principal and binding cases. These fixtures satisfy the engineering prerequisite in plan 15.2.
+The reports were generated under package v8 from clean source commit `3d5ed6a78b04dcf9c004aec0db75568de292a4d1`. The invariance harness covered 299 public items at three mastery levels, with 148 items showing distinct presentation, zero invariance violations, and zero learner-state fields in the evidential-path scan. The EHMF run resolved all 47 delivered citations across 40 golden-set items. The ranking replay produced byte-identical results on two runs of all seven synthetic scenarios. The erasure proof independently checked six principal and binding cases. These fixtures satisfy the engineering prerequisite in plan 15.2.
 
 | Record | Inputs SHA-256 (record `inputs.sha256`) |
 |---|---|
@@ -380,33 +380,13 @@ The reports were generated under package v8 from clean source commit `875d2478da
 | `docs/evaluation/phase4/v1_fixture_report_v1.json` | `697d623903b4af77c3bc67fbe4a92c4753fb2d6c29d9c415a43af3b7d43ffd66` |
 | `docs/evaluation/phase5/v2_fixture_report_v1.json` | `967526a70709480b0398983ef6c752da6f5ce1668dd0c2931e58e5c8fa21a11d` |
 | `docs/evaluation/phase6/v3_residual_report_v1.json` | `7a86084e7312efb4edb564b689456a1b387d2ee4acd57e2923819b2fa6af8d47` |
-| `docs/evaluation/phase7/golden_run_v1.json` | `43697733bc84cce3aea56b1e0c5f191f277cbe5c0486ba235e4ba65c84ab3ebd` |
-| `docs/evaluation/phase8/invariance_harness_report_v1.json` | `f609e8c5414afaee31b3d3d5425d6cac98de101c2bc62ef29d405636c5183416` |
+| `docs/evaluation/phase7/golden_run_v1.json` | `4d2a94420e9de2c5b69526092be66d72a30b488ca0224df76824cf01b4e8f2ec` |
+| `docs/evaluation/phase8/invariance_harness_report_v1.json` | `9499a999f08aaed31b49cfb7f07d8b187efa9015bf16ecd7431406db43593401` |
 | `docs/evaluation/phase9/ranking_replay_v1.json` | `fc8451abb76fbcce90a120bb7e86ee6152436e32204dd1b8ebc1d9302ca6f224` |
 
 `docs/evaluation/phase8/erasure_proof_v1.json` has record file SHA-256 after LF normalization `551caa3b40c7944b73ac355400947a54886f7d06d718a4b689c3ac4e5cf24204`. The proof has no inputs block.
 
-| Local leg | Test paths | Main run passed | Split tests passed | Combined passed | Main baseline | Change | Skipped | Deselected after combining | xfailed |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| SQLite | `apps/api/tests evaluation/tests` | 2,306 | 11 | 2,317 | 2,073 | +244 | 2 | 1 | 3 |
-| PostgreSQL 17 / psycopg | `apps/api/tests` | 2,304 | 11 | 2,315 | 2,070 | +245 | 0 | 1 | 3 |
-| PostgreSQL 17 / pg8000 | `apps/api/tests` | 2,304 | 11 | 2,315 | 2,070 | +245 | 0 | 1 | 3 |
-
-Each main run deselected 12 cases. The 11 protected-template cases passed separately on every backend with `--tb=no -rN -q`. The only remaining deselection is the CI release-only test `apps/api/tests/test_deployment_artifacts.py::test_release_artifacts_exist_and_describe_seeded_demo_transparency`. The PostgreSQL legs run the same API paths as CI. SQLite adds four evaluation tests and skips two PostgreSQL-specific API cases. CI uses PostgreSQL 16. Both local drivers used PostgreSQL 17.
-
-- `apps/api/tests/test_deployment_artifacts.py::test_k8s_database_url_moves_to_secret_example`
-- `apps/api/tests/test_deployment_artifacts.py::test_api_cloud_run_example_disables_demo_auth_and_documents_secret_injection`
-- `apps/api/tests/test_phase3_docs.py::test_i5_the_registers_and_spec_sections_6_and_16_say_what_the_code_does`
-- `apps/api/tests/test_phase3_docs.py::test_k3_the_authoritative_text_states_the_current_code_only`
-- `apps/api/tests/test_phase4_acceptance.py::test_phase4_docs_state_the_learner_path_v1_7_rule_wherever_they_name_it`
-- `apps/api/tests/test_phase4_acceptance.py::test_phase4_docs_the_code_texts_name_the_shipped_package`
-- `apps/api/tests/test_phase5_acceptance.py::test_plan_e_the_legacy_provider_code_is_retired_and_no_production_path_reached_it`
-- `apps/api/tests/test_phase5_acceptance.py::test_phase5_docs_the_runbooks_and_registers_state_the_gateway_s_operations_exactly`
-- `apps/api/tests/test_phase6_acceptance.py::test_phase6_docs_quote_the_plan_and_state_the_current_rules`
-- `apps/api/tests/test_phase6_acceptance.py::test_phase6_docs_state_what_each_caller_of_a_v3_route_gets`
-- `apps/api/tests/test_phase7_acceptance.py::test_phase7_docs_quote_the_plan_and_state_the_current_rules`
-
-All 26 local validator invocations passed, including package schemas v1 through v8, the append-only golden-set check, ranking replay, and all 1,192 frozen public responses. Frontend lint, type checking and 167 integration tests passed. The regression tests detected 27 process-local mutations on SQLite. Both PostgreSQL drivers detected the same 9 replica refusal, consent, planner stop, and bearer-subject mutations. The repository and Docker-context path scan passed. The licensed-passage scan needs its fingerprint input. Dependency audits and built-image boundary checks run in CI. The source-fidelity check reproduced three recorded mismatches (DI-105).
+<!-- Round 7 verified test totals -->
 
 ### 17.2 Review response checks and exit
 
@@ -433,4 +413,4 @@ The rows record the build and each review round in order. Sections 0–17 descri
 | Review 4 | `53abc42`, merge `832a431` | Integrated Phase 9 main `d366e20`. Package v8 SHA-256 is `c14d28f110f0ddcf89aab4717ccd5e6555cba15ad6a266468b67b662229d1904`. Alembic `20261123_phase8_learner` follows `20261123_phase9_ranking`. Covered the all-off freeze, derived evidence scan, authenticated write and erasure ordering, early-table upgrade, verified consent, guest/demo scoring, inherited test traceability, verification provenance, D-27 settings, and release instructions. See `test_freeze_phase8_flags_off_learner_record_and_quiz_routes_are_unchanged`, `test_ac_8_4_the_scan_covers_every_phase8_learner_state_field`, `test_phase8_erasure_serializes_with_unguarded_and_first_writers_http`, and `test_phase8_docs_section_17_states_only_the_current_verification`. The full local run combined 2,283 SQLite passes and 2,281 passes on each PostgreSQL driver (+210 and +211 from Phase 9 main). Each leg includes 11 separately run template tests and excludes one release-only case. |
 | Review 5 | `e23e5f5` | Added planner consent coverage, corrected the CI and migration records, required an issuer subject for privacy routes, kept Arena pairing available after erasure, and aligned the digest and module inventory guards. See `test_plan_j_planner_without_adaptation_consent_serves_the_static_order`, `test_phase8_privacy_routes_refuse_a_bearer_token_without_sub`, and `test_phase8_an_erased_queued_arena_player_does_not_reject_the_next_player`. DI-320 records the stopped portion of R5-02. The full local run passed 2,298 on SQLite and 2,296 on each PostgreSQL driver, including 11 isolated template tests per leg. Against Phase 9 main the gains are +225 and +226 respectively. The regression tests detected 22 mutations. The earlier CRLF probe exercised the hash helper. Review 6 connects that fixture to the full section 17 check. |
 | Review 6 | `dbb53e7`, `875d247` | Added the plan J HTTP and coverage guards and ran the section 17 assertion against a CRLF proof. Closed DI-320 under the docstring-only approval in P2-12-D-06 of 2026-11-24, verified PD-200 and subject-bearing synchronization, added the operator stop and its audit transaction, corrected inherited head and loader descriptions, and recorded all three storage-disclosure proposals. See `test_plan_j_subject_replica_receipt_and_export_ids_are_random_and_another_learner_s_read_as_missing`, `test_phase8_docs_the_erasure_proof_digest_ignores_crlf_checkouts`, `test_phase8_docs_the_di_rows_form_one_contiguous_table`, and `test_plan_l_planner_stop_worker_round_trips_through_new_sessions`. Local verification passed 2,317 on SQLite and 2,315 on each PostgreSQL driver (+244 and +245 versus Phase 9 main). The totals include 11 isolated template tests per leg. The review regressions detected 27 mutations, with nine also detected on both PostgreSQL drivers. |
-| Review 7 | <!-- Round 7 source --> | Reconciled planner-stop outcomes with their actor-attributed audit events, cited the dated DI-320 decision, completed the issuer-subject guards, corrected the round-five response, and documented replica throttling. See `test_plan_l_planner_stop_worker_round_trips_through_new_sessions`, `test_phase8_docs_the_di_rows_form_one_contiguous_table`, `test_phase8_sync_routes_refuse_a_bearer_token_without_sub`, and `test_phase8_docs_each_new_route_names_its_actual_rate_limit`. <!-- Round 7 totals --> |
+| Review 7 | `3d5ed6a` | Reconciled planner-stop outcomes with their actor-attributed audit events, cited the dated DI-320 decision, completed the issuer-subject guards, corrected the round-five response, and documented replica throttling. See `test_plan_l_planner_stop_worker_round_trips_through_new_sessions`, `test_phase8_docs_the_di_rows_form_one_contiguous_table`, `test_phase8_sync_routes_refuse_a_bearer_token_without_sub`, and `test_phase8_docs_each_new_route_names_its_actual_rate_limit`. <!-- Round 7 totals --> |
