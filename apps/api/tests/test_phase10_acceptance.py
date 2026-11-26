@@ -2209,6 +2209,23 @@ def test_phase10_docs_the_test_strategy_maps_every_test_module_the_phase_added()
             (line.split("|") for line in section.split("### Phase 10 test files", 1)[1].splitlines() if line.startswith("| `"))}
     for name in (*PHASE10_MODULES, *(path.name for path in (REPO_ROOT / "evaluation" / "tests").glob("*.py"))):
         assert len(rows.get(name, "")) > 40, name
+    # The two tables by their exact first cells, so that one conftest.py row cannot stand for the other: the test files
+    # table names the 14 added modules (scan_guard.py, test_phase10_acceptance.py and every module of evaluation/tests
+    # except the shared test_evaluators.py), and the changes table the shared modules by their repository paths.
+    def table(heading):
+        body = section.split(f"### {heading}", 1)[1].split("\n### ", 1)[0].split("\n**", 1)[0]
+        return {cells[1].strip().strip("`"): cells[2].strip() for cells in (line.split("|") for line in body.splitlines()
+                                                                             if line.startswith("| `"))}
+
+    added = {"scan_guard.py", "test_phase10_acceptance.py",
+             *(path.name for path in (REPO_ROOT / "evaluation" / "tests").glob("*.py") if path.name != "test_evaluators.py")}
+    files = table("Phase 10 test files")
+    assert set(files) == added and all(len(text) > 40 for text in files.values()), sorted(set(files) ^ added)
+    changes = table("Phase 10 changes to existing test modules")
+    shared = {"evaluation/tests/test_evaluators.py", "apps/api/tests/conftest.py", "apps/api/tests/test_python_sources.py",
+              "apps/api/tests/test_phase9_acceptance.py"}
+    assert shared <= set(changes) and all(len(changes[name]) > 40 for name in shared), sorted(shared - set(changes))
+    assert all((REPO_ROOT / name).is_file() for name in changes)
     for ac in range(1, 7):
         assert f"| AC-10-{ac} |" in section, ac
     names = set()
