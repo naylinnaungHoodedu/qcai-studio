@@ -34,8 +34,11 @@ Exit codes: 0 ok; 1 drift; 2 usage, a malformed spec, a path, an experiment or a
 (`partial_checkpoint`), or a complete one without --resume (`output_exists`)), a run output that cannot be written
 (`output_unwritable`), a --write or --record-stub target or the access log that cannot be written (refused without a
 reason code), a non-synthetic run without the access log (`access_log_required`) or a passing pre-run scan
-(`pre_run_scan_*`), or a confirmatory run refused with no IRB, OSF, items or freeze-record reason; 3 invalid items,
-unresolved pointers or a payload-log violation, or a confirmatory run refused with an items (`items_not_frozen`,
+(`pre_run_scan_*`), an E1-E4 family the design does not compute (`analysis_plan_invalid:<experiment>`) or an E2-E4
+design that cannot run (`design`, `design.<field>`, `e2_panel_invalid`, `e4_models_invalid`, `e4_shift_invalid`,
+`experiment_requires_arms`), or a confirmatory run refused with no IRB, OSF, items or freeze-record reason; 3 invalid
+items, unresolved pointers, a design input unreadable or invalid (`<input>_unreadable`, `ratings_invalid`) or a
+payload-log violation, or a confirmatory run refused with an items (`items_not_frozen`,
 `items_split_missing`) or freeze-record (`freeze_record_*`) reason and no IRB or OSF reason; 5 interrupted (provider
 outage; --resume continues it, on a later day too); 6 a pin mismatch; 7 arm parity; 8 a confirmatory run refused
 with any IRB or OSF reason (`irb_*`, `osf_*`); 9 a live run or hold H12 refused. A refused confirmatory run lists
@@ -61,7 +64,7 @@ for path in (REPO_ROOT, API_ROOT):
 from evaluation.qcai_eval import access_log, planes, runner  # noqa: E402
 from evaluation.qcai_eval.canonical import dumps_line, dumps_record, lf_sha256, write_lf  # noqa: E402
 from evaluation.qcai_eval.payload_log import PayloadLogViolation  # noqa: E402
-from evaluation.qcai_eval.providers import RecordedResponder, StubResponder, stub_response  # noqa: E402
+from evaluation.qcai_eval.providers import RecordedResponder, StubResponder, stub_for  # noqa: E402
 
 PROVISIONAL_DEFAULTS = ("PD-68",)
 RECORDED_FAILURES = ([{"status": "timeout"}, {"status": "ok"}], [{"status": "rate_limited"}, {"status": "ok"}],
@@ -219,7 +222,7 @@ def record_stub(out_path: Path, spec_path: Path) -> int:
     scripted = dict(zip(keys, RECORDED_FAILURES))
     for request in plan.requests:
         attempts = scripted.get(request.request_key, [{"status": "ok"}])
-        response = stub_response(b"stub-responder-v1", request)
+        response = stub_for(b"stub-responder-v1", request)
         lines.append(dumps_line({"request_key": request.request_key, "attempts": list(attempts), "response": response}))
     write_lf(out_path, "".join(lines))
     print(f"wrote {out_path} ({len(lines) - 1} requests; sha256 {lf_sha256(out_path)[:12]})")

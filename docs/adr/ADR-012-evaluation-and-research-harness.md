@@ -33,9 +33,11 @@ ratified under DI-140). The Phase 10 exit is not passed (DI-129).
    the analysis plan; seeds are hashed. Stub and recorded runs repeat byte for byte. Live runs are refused here; owner
    decisions are read only from a committed package (an entry of the package history that is a `vN.json` of the package
    directory), so hold H12 refuses every run over non-synthetic data while no committed package the spec pins decides
-   D-14, and a hand-made decided copy releases nothing; a confirmatory run needs a valid IRB record and OSF record
-   (AC-10-5); E1-E4 runs are confirmatory only, and the runner implements E1's design and its registered family alone
-   (E2-E4 refused, `experiment_not_implemented`; DI-144). A confirmatory or live run is judged in its run window, never against its spec's
+   D-14, and a hand-made decided copy outside the package directory releases nothing; both are read from the working
+   tree, so the rule is a consistency check of the checkout, not proof (DI-147). A confirmatory run needs a valid IRB
+   record and OSF record (AC-10-5); E1-E4 runs are confirmatory only, and the runner implements the four designs, each
+   under its own family with its registered family computed (E2-E4 from the spec's design block on stub or recorded
+   responses, since D-07 pins no model; spec 4.14). A confirmatory or live run is judged in its run window, never against its spec's
    `created_at` (which may only not be a future date): `today`, the UTC day it is planned, and `start`, the earliest of
    today, the day its checkpoint's start event records (a resume after an outage, on any later day) and the day a live
    recording's header states (a confirmatory replay). The IRB must be approved by `start` and unexpired on `today`, and
@@ -55,7 +57,7 @@ ratified under DI-140). The Phase 10 exit is not passed (DI-129).
 ## Consequences
 
 - Every AC is provable in code on synthetic data, and no ULQS item, gold label or licensed text enters the repository or CI.
-- The real-data halves wait on the owner decisions and PI items (DI-129..DI-146); nothing here decides them.
+- The real-data halves wait on the owner decisions and PI items (DI-129..DI-147); nothing here decides them.
 - A code change to `evaluation/qcai_eval/*.py` or `scripts/run_evaluation.py` changes the committed synthetic run
   record's code pins, so CI's `run_evaluation.py --check` fails until the record is rewritten with `--write`: the record
   always names the code it ran. The pins read CRLF as LF and cover no other file, so a CRLF checkout or a change

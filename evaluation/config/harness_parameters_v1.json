@@ -1,5 +1,27 @@
 {
  "authority": "P1-D-18 (plan Phase 10 D task 5); the paper's execution values (spec M4: three replicates on a 40-item S1 subsample, API failures retried three times); ratified under DI-140 (PD-68)",
+ "designs": {
+  "E2": {
+   "dawid_skene_iterations": 50
+  },
+  "E3": {
+   "arm": "VLOOP",
+   "fixed_level": "intermediate",
+   "h3b_feature": "fk_grade",
+   "repeats": 3
+  },
+  "E4": {
+   "epsilon": "0.1",
+   "linucb_alpha": "1",
+   "shift_at": 1000,
+   "shift_points": "0.10",
+   "stream_length": 2000,
+   "streams": 1000
+  },
+  "authority": "P1-D-18 (plan Phase 10 D task 5: \"E1-E4 per Section 15\"); VBT RevB Sec. VIII-D for every value it states (E3's three levels and its single-pass repetitions, three of them; E4's 1,000 seeded streams of 2,000 requests and the ten-point shift at request 1,000); engineering parameters where the paper gives none",
+  "provisional": true,
+  "record": "PD-75"
+ },
  "format_version": 1,
  "parameters": "harness-parameters-v1",
  "provisional": true,

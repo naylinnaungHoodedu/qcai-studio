@@ -72,11 +72,19 @@ def stub_response(prefix: bytes, request: Any, *, model_id: str | None = None) -
     return {"outcome": "answered", "claims": claims, "text": text, "usage": usage, "model_id": model_id}
 
 
+def stub_for(prefix: bytes, request: Any, **kwargs: Any) -> dict[str, Any]:
+    """The stub rule for any request: `stub_response` for an answer, the design stubs (`experiments.stub_verdict`,
+    `experiments.stub_generation`) for an E2 verification and an E3 generation, all under the same prefix."""
+    from .experiments import stub_dispatch
+
+    return stub_dispatch(prefix, request, stub_response, **kwargs)
+
+
 class StubResponder:
     rule = "stub-responder-v1"
 
     def respond(self, request: Any) -> dict[str, Any]:
-        return stub_response(b"stub-responder-v1", request)
+        return stub_for(b"stub-responder-v1", request)
 
 
 class RecordedResponder:
@@ -131,7 +139,7 @@ class ScriptedProvider:
         pending = self.transient.get(request.request_key)
         if pending:
             raise TransientFailure(pending.pop(0))
-        return stub_response(b"scripted-provider-v1", request, model_id=self.model_id)
+        return stub_for(b"scripted-provider-v1", request, model_id=self.model_id)
 
 
 LIVE_ADAPTERS: Mapping[str, Callable[..., Responder]] = {}

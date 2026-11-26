@@ -2,7 +2,7 @@
 
 The harness is in `evaluation/qcai_eval` and `scripts/` (Phase 10 spec: `docs/architecture/phase10-implementation-spec.md`).
 No E1-E4 run has been executed: every procedure below waits on the research data plane (D-14), the IRB letter and the OSF
-DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-143). Not executed: nothing here is a result or an asserted outcome.
+DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-147). Not executed: nothing here is a result or an asserted outcome.
 
 1. **Freeze.** ULQS v1.0 passes `scripts/validate_ulqs.py --freeze --previous <review set> --corpus-text <dir>
    --agent-check <agent re-check record> --freeze-out <freeze record>` (with the catalog, ratings and rubric; the full
@@ -47,9 +47,13 @@ DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-143). Not execu
    Cronbach's alpha, prediction-powered inference, H1a's error rate among answers, the agent verifier's E2 accuracy
    with and without the items changed after its flags, UE-2's cumulative-link model of trust by arm and V-4's n_eff;
    `secondary_analyses` in the analysis plans) are registered and not implemented (DI-138). Every Table XVII row Phase 10
-   tests is registered as a hypothesis criterion or a `criteria_only` entry. The runner computes the registered E1
-   family (H1a, H1b, H1c with Holm) in an E1 run's record; E2, E3 and E4 have no design in the harness and are refused
-   (DI-144).
+   tests is registered as a hypothesis criterion or a `criteria_only` entry. The runner computes each experiment's
+   registered family in its run's record: E1's H1a and H1b exact McNemar paired by item on answerable items (VBT RevB
+   Table I) and H1c, with Holm; E2's verifier panel (each model verifying every claim outside its own family, the panels
+   formed by rule) with H2a, H2b and, from pinned novice ratings, H2c; E3's two-pass and single-pass designs over every
+   S7 item at three levels with H3a and H3b; E4's four models in GATE and VLOOP and their seeded replay streams over
+   eight routing policies with H4a and H4b (spec 4.14). Each design runs on stub or recorded responses until D-07 pins
+   the models.
 7. **Scan.** Before and after a run, `scripts/scan_research_logs.py` scans every research-plane log with the salted
    fingerprints and must report zero matches. The pre-run scan the run spec pins must use the research fingerprint sets,
    the ULQS set built from the run's items, cover the repository and at least one logs or records target (the harness

@@ -65,7 +65,12 @@ _READ_OBSERVER: contextvars.ContextVar[Callable[[str, str], None] | None] = cont
 
 def committed_package_sha256s() -> frozenset[str]:
     """The canonical sha256 of every committed package: an entry of the package history that is also the canonical sha256
-    of a `vN.json` file in the package directory. Empty when either cannot be read (every decision then reads open)."""
+    of a `vN.json` file in the package directory. Empty when either cannot be read: every package is then judged
+    uncommitted (`judged_package`), so every owner decision reads `uncommitted` and no hold is released.
+
+    Both are read from the working tree, never from git: a `vN.json` written into the package directory together with an
+    entry appended to the history counts as committed, so this is a consistency check of the checkout, not proof that
+    a package was committed or reviewed (DI-147)."""
     try:
         history = json.loads(PACKAGE_HISTORY.read_text(encoding="utf-8"))
         recorded = {entry["sha256"] for entry in history["entries"] if isinstance(entry.get("sha256"), str)}

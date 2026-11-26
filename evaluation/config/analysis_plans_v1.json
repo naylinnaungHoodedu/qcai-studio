@@ -13,7 +13,7 @@
    "hypotheses": [
     {
      "id": "H1a",
-     "endpoint": "item-level error (eq. 12)",
+     "endpoint": "item-level error on answerable items, paired by item (Table I; eq. 12)",
      "comparison": [
       "VLOOP",
       "GATE"
@@ -27,7 +27,7 @@
     },
     {
      "id": "H1b",
-     "endpoint": "item-level error (eq. 12)",
+     "endpoint": "item-level error on answerable items, paired by item (Table I; eq. 12)",
      "comparison": [
       "VLOOP",
       "GATE+SV"
@@ -58,7 +58,7 @@
   },
   "E2": {
    "rq": "RQ2",
-   "data": "the verification set: every human-labelled claim from E1 plus the seeded-fault set (controlled Type A-E insertions into correct E1 responses, the count per type reported with the results and the seeded faults reported separately; the insertion tool is not implemented, DI-145); a blind 2oo3 three-family verifier panel without the generator (not implemented in the harness, DI-144); Group B novice sessions for UE-1 to UE-3",
+   "data": "the verification set: every human-labelled claim from E1 plus the seeded-fault set (controlled Type A-E insertions into correct E1 responses, the count per type reported with the results and the seeded faults reported separately; the insertion tool is not implemented, DI-145); a blind 2oo3 three-family verifier panel without the generator, each model verifying every claim generated outside its own family and the panels formed by rule (1oo3, 2oo3, 3oo3, Dawid-Skene); Group B novice sessions for UE-1 to UE-3",
    "hypotheses": [
     {
      "id": "H2a",
@@ -110,7 +110,7 @@
   },
   "E3": {
    "rq": "RQ3",
-   "data": "25 S7 (stratum G) items x 3 levels x 2 designs (two-pass and single-pass generation); neither design is implemented in the harness (DI-144)",
+   "data": "25 S7 (stratum G) items x 3 levels x 2 designs (two-pass and single-pass generation); single-pass also repeated three times at one fixed level",
    "hypotheses": [
     {
      "id": "H3a",
@@ -141,7 +141,7 @@
   },
   "E4": {
    "rq": "RQ4",
-   "data": "1,000 seeded replay streams (plan 6.5 Table XVII; 15.2 MR-1) and the E4 logs; the replay streams are not implemented in the harness (DI-144)",
+   "data": "1,000 seeded replay streams (plan 6.5 Table XVII; 15.2 MR-1) and the E4 logs; every model answers every item in GATE and VLOOP, and items are resampled before each stream is drawn",
    "hypotheses": [
     {
      "id": "H4a",

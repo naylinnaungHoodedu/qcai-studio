@@ -15,7 +15,7 @@ PROVISIONAL_DEFAULTS = ("PD-72",)  # Phase 10 spec 12.1; ratified under DI-140
 LOG_FORMAT = "payload-log-v1"
 LOG_KEYS = frozenset({"log", "purpose", "run_id", "request_key", "arm", "item_id", "unit", "replicate", "seed_hex", "prompt_version",
                       "prompt_sha256", "prompt_bytes", "evidence", "response_sha256", "response_bytes", "outcome", "failure_reason",
-                      "attempts", "model_id", "cost_units"})
+                      "attempts", "model_id", "cost_units", "role", "cell"})
 EVIDENCE_KEYS = frozenset({"pointer", "content_sha256", "bytes"})
 ID = r"^[a-z0-9][a-z0-9.+:-]{0,63}$"
 PATTERNS = {
@@ -33,8 +33,10 @@ PATTERNS = {
     "outcome": re.compile(r"^(answered|abstained|provider_failure)$"),
     "failure_reason": re.compile(r"^(timeout|rate_limited|server_error|refused_payload|recorded_missing)$"),
     "model_id": re.compile(ID),
+    "role": re.compile(r"^(answer|verify|two-pass-evidential|two-pass|single-pass)$"),
+    "cell": re.compile(ID),
 }
-NULLABLE = frozenset({"unit", "response_sha256", "failure_reason", "model_id"})
+NULLABLE = frozenset({"unit", "response_sha256", "failure_reason", "model_id", "cell"})
 INTEGERS = ("replicate", "prompt_bytes", "response_bytes", "attempts", "cost_units")
 POINTER = re.compile(r"^(EV-(2025|2026|IND|SYN)-p[0-9]{3}-[0-9]{2}|span-[0-9a-f]{64})$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -102,4 +104,6 @@ def log_record(request: Any, response: Mapping[str, Any], *, run_id: str, purpos
         "attempts": len(response.get("attempts", [])),
         "model_id": response.get("model_id"),
         "cost_units": int(usage.get("input_units", 0)) + int(usage.get("output_units", 0)),
+        "role": getattr(request, "role", "answer"),
+        "cell": getattr(request, "cell", None),
     }

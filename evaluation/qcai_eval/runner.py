@@ -1,11 +1,13 @@
 """The E1-E4 runner: pins, holds, units, requests, checkpointed execution and the run record (spec 3.9-3.12, 4.12-4.13).
 
 Plan task 5: "Pinned configuration package [Evidence E-97]; E1-E4 per Section 15 [Evidence E-99]; statistics with hashed
-seeds [Evidence E-103]." The runner implements E1's design only: every live item through the seven arms, and the
-registered E1 family (H1a, H1b, H1c with Holm, `compute_registered_tests`). E2's verifier panel, E3's two designs and E4's
-seeded replay streams have no design here, so a spec naming E2, E3 or E4 is refused (`experiment_not_implemented`,
-exit 2; DI-144). A run pins the package (path and sha256, read-only), the items, the evidence catalog, the arms and
-the analysis plan by sha256; its seeds are hashed from (run_id, arm, item_id, replicate). Stub and recorded runs repeat
+seeds [Evidence E-103]." The runner implements the four designs: E1, every live item through the seven arms with the
+registered E1 family (H1a, H1b, H1c with Holm, `compute_registered_tests`), and E2's verifier panel, E3's two designs and
+E4's model grid with its seeded replay streams from the spec's `design` block (`experiments`), each with its registered
+family; no model is pinned (D-07), so the designs run on stub or recorded responses only. Every E1-E4 hypothesis the
+analysis plan registers must be one the design computes, under its test (`experiments.family_refusals`). A run pins the
+package (path and sha256, read-only), the items, the evidence catalog, the arms and the analysis plan by sha256; its
+seeds are hashed from (run_id, arm, item_id, replicate), with a design request's role, cell and subject added. Stub and recorded runs repeat
 byte for byte: no byte-compared output (the run record and the payload log) carries the wall clock or an absolute path,
 and both depend only on the plan and the responses; only a confirmatory or live run's start event in `run_events.jsonl`,
 which is not byte-compared, carries the UTC day the run was planned (`started_on`). Owner decisions are read only from a
@@ -37,7 +39,7 @@ from pathlib import Path
 import re
 from typing import Any, Callable, Mapping, Sequence
 
-from . import ablation, analysis_plans, governance, planes, statistics, ulqs
+from . import ablation, analysis_plans, experiments, governance, planes, statistics, ulqs
 from .abstention import abstention_by_turn_depth, correct_abstention
 from .canonical import canonical_json, canonical_sha256, dumps_line, dumps_record, hashed_hex, lf_sha256, read_jsonl, write_lf
 from .citation import citation_existence
@@ -59,11 +61,9 @@ SPEC_FORMAT = "ulqs-run-spec-v1"
 RECORD_FORMAT = "ulqs-run-record"
 MODES = ("stub", "recorded", "live")
 PURPOSES = ("exploratory", "confirmatory")
+# Every experiment has its design here: E1 (every live item through the seven arms, and the registered E1 family) and the
+# E2, E3 and E4 designs of `experiments`.
 EXPERIMENTS = ("harness-check", "E1", "E2", "E3", "E4")
-# The experiments whose design the runner implements (E1: every live item through the seven arms, and the registered E1
-# family). E2 (the 2oo3 verifier panel, DR and n_eff), E3 (25 S7 items x 3 levels x 2 designs) and E4 (1,000 seeded replay
-# streams) are refused until they have one (DI-144).
-IMPLEMENTED_EXPERIMENTS = ("harness-check", "E1")
 SEEDS_RULE = "sha256-run-arm-item-replicate-v1"
 SUBSAMPLE_RULE = "sha256-order-v1"
 RESPONSES = "responses.jsonl"
@@ -100,6 +100,13 @@ class Request:
     evidence: tuple[str, ...]
     gold: str
     gold_claims: tuple[str, ...] = ()
+    # A design request (experiments): its role (`answer` for E1 and E4 generations, `verify` for an E2 verification,
+    # the E3 designs' passes), its cell (the E2 verifier or the E4 model), its subject (the claim an E2 verification
+    # checks) and that claim's gold label.
+    role: str = "answer"
+    cell: str | None = None
+    subject: str | None = None
+    claim_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -174,6 +181,10 @@ def load_harness_parameters(path: Path = HARNESS_PARAMETERS) -> dict[str, Any]:
         raise ValueError("harness parameters: replicates or retries out of range")
     if not _integer((raw.get("replicate_variance_required") or {}).get("min_replicates"), 2):
         raise ValueError("harness parameters: replicate_variance_required.min_replicates")
+    designs = raw.get("designs")
+    if (not isinstance(designs, Mapping) or designs.get("provisional") is not True
+            or any(not isinstance(designs.get(name), Mapping) for name in experiments.DESIGN_EXPERIMENTS)):
+        raise ValueError("harness parameters: a provisional designs block for E2, E3 and E4")
     return raw
 
 
@@ -346,12 +357,14 @@ def _check_shape(spec: Mapping[str, Any], parameters: Mapping[str, Any]) -> None
         raise RunRefused(2, ["experiment_requires_confirmatory"])
     if spec["experiment"] == "harness-check" and spec["purpose"] == "confirmatory":
         raise RunRefused(2, ["harness_check_not_confirmatory"])
-    if spec["experiment"] not in IMPLEMENTED_EXPERIMENTS:
-        raise RunRefused(2, ["experiment_not_implemented"])
+    if spec["experiment"] in experiments.DESIGN_EXPERIMENTS:
+        shape = experiments.shape_refusals(spec["experiment"], spec.get("design"))
+        if shape:
+            raise RunRefused(2, shape)  # the design block, every nested value the planner reads (the field named)
+    if spec["experiment"] in analysis_plans.FAMILIES and spec["analysis_plan"].get("family") != spec["experiment"]:
+        raise RunRefused(2, ["analysis_plan_family_mismatch"])  # each experiment runs under its own analysis-plan family
     if spec["experiment"] == "E1":
-        # E1 runs every live item through all seven arms (paper Sec. VIII E1) under its own analysis-plan family.
-        if spec["analysis_plan"].get("family") != "E1":
-            raise RunRefused(2, ["analysis_plan_family_mismatch"])
+        # E1 runs every live item through all seven arms (paper Sec. VIII E1).
         if spec["arms"].get("selected") is not None and sorted(spec["arms"]["selected"]) != sorted(ablation.ARM_IDS):
             raise RunRefused(2, ["experiment_requires_seven_arms"])
     # AC-10-3: live runs report replicate variance; confirmatory runs too (PD-68). Both need a subsample with at least
@@ -488,6 +501,23 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
         raise RunRefused(2, [f"analysis_plan_invalid:{error}"]) from None
     if spec["analysis_plan"].get("family") not in analysis_plans.FAMILIES:
         raise RunRefused(2, ["analysis_plan.family"])
+    design = None
+    if spec["experiment"] in analysis_plans.FAMILIES:
+        # Every hypothesis of the experiment's family must be one its design computes, under that test (E1: comparing
+        # two of the selected arms), so a valid plans file that registers another test refuses the run before it
+        # starts, never after it completed.
+        refusals = experiments.family_refusals(spec["experiment"], plans_raw["families"][spec["experiment"]], selected)
+        if refusals:
+            raise RunRefused(2, refusals)
+    if spec["experiment"] in experiments.DESIGN_EXPERIMENTS:
+        needed = {"E3": {experiments.effective_design("E3", spec["design"], parameters_raw)["arm"]}, "E4": {"GATE", "VLOOP"}}.get(
+            spec["experiment"], set())
+        if not needed <= set(selected):
+            raise RunRefused(2, ["experiment_requires_arms"])
+        try:
+            design = experiments.load_design(spec["experiment"], spec, items, parameters_raw, repo_root, note)
+        except experiments.DesignRefused as refused:
+            raise RunRefused(refused.code, refused.reasons) from None
     # 7. Hold H12: no run over non-synthetic data while the research data plane (D-14) is not decided in a committed package.
     synthetic = planes.all_synthetic(items) and (catalog is None or all(r.volume == "synthetic" for r in catalog.records.values()))
     if not synthetic:
@@ -573,7 +603,10 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
                 planes.require_private_output(out_dir, root=repo_root, boundary=planes.boundary_policy(package_path))
             except planes.PathRefused:
                 raise RunRefused(2, ["output_not_private"]) from None
-    requests = _requests(spec, items, table, selected, package_sha, prompt_version, replicates)
+    if design is None:
+        requests = _requests(spec, items, table, selected, package_sha, prompt_version, replicates)
+    else:
+        requests = _design_requests(spec, items, table, package_sha, prompt_version, replicates, design, resolver)
     pins = {
         "package": {"path": spec["package"]["path"] if not Path(spec["package"]["path"]).is_absolute() else package_path.name,
                     "sha256": package_sha, "package_version": package_raw.get("package_version"), "committed": committed,
@@ -594,9 +627,11 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
             key for key in ("replicates", "retries") if key not in spec)},
         "code": code_pins(repo_root),
     }
+    if design is not None:
+        pins["design"] = experiments.design_pins(spec["experiment"], design)
     return Plan(spec=dict(spec), package_raw=judged, items=items, arms=table, requests=tuple(requests), pins=pins,
                 resolver=resolver, synthetic=synthetic, recording_source=recording_source, dated=dated,
-                planned_on=today if dated else None, checkpoint_start=checkpoint_start, extra={"analysis_plans": plans_raw})
+                planned_on=today if dated else None, checkpoint_start=checkpoint_start, extra={"analysis_plans": plans_raw, "design": design})
 
 
 def _manifest_hook(manifests: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -633,6 +668,68 @@ def _requests(spec, items, table, selected, package_sha, prompt_version, replica
                                             turn_depth=unit["turn_depth"], replicate=replicate,
                                             seed_hex=seed_hex(spec["run_id"], arm, item["item_id"], replicate), evidence=evidence,
                                             gold=unit["gold"], gold_claims=unit["gold_claims"]))
+    return requests
+
+
+def _design_requests(spec, items, table, package_sha, prompt_version, replicates, loaded, resolver) -> list[Request]:
+    """The requests of an E2, E3 or E4 design (`experiments`); the subsample's items get its replicates, as in E1."""
+    experiment = spec["experiment"]
+    design = loaded["design"]
+    run_id = spec["run_id"]
+    default = int(replicates.get("default", 1))
+    sampled = set(subsample(items, replicates))
+    extra = int((replicates.get("subsample") or {}).get("replicates", default))
+    live = sorted((item for item in items if item.get("status") != "retired"), key=lambda item: item["item_id"])
+    requests: list[Request] = []
+
+    def add(*, arm, item_id, unit, turn_depth, replicate, evidence, gold, gold_claims, role, cell, subject=None, claim_label=None):
+        configuration = ablation.arm_configuration(table, arm)
+        key = experiments.design_request_key(role=role, arm_config_sha256=canonical_sha256(configuration), item_id=item_id, unit=unit,
+                                             replicate=replicate, package_sha256=package_sha, prompt_version=prompt_version,
+                                             evidence=evidence, cell=cell, subject=subject)
+        requests.append(Request(request_key=key, arm=arm, item_id=item_id, unit=unit, turn_depth=turn_depth, replicate=replicate,
+                                seed_hex=experiments.design_seed(run_id, arm, item_id, replicate, role, cell, subject or unit),
+                                evidence=tuple(sorted(evidence)), gold=gold, gold_claims=tuple(gold_claims), role=role, cell=cell,
+                                subject=subject, claim_label=claim_label))
+
+    if experiment == "E2":
+        for claim in loaded["claims"]:
+            count = max(default, extra) if claim.item_id in sampled else default
+            evidence = tuple(pointer for pointer in claim.cited if resolver.resolve(pointer).status == "resolved")
+            arm = claim.arm if claim.arm in ablation.ARM_IDS else "GATE"
+            for verifier in design["verifiers"]:
+                if verifier["family"] == claim.family:
+                    continue  # each model verifies every claim generated outside its own provider family
+                for replicate in range(1, count + 1):
+                    add(arm=arm, item_id=claim.item_id, unit=claim.unit, turn_depth=None, replicate=replicate, evidence=evidence,
+                        gold="answer", gold_claims=(claim.claim_id,), role="verify", cell=verifier["model_id"], subject=claim.key,
+                        claim_label=claim.label)
+    elif experiment == "E3":
+        arm = design["arm"]
+        for item in (item for item in live if item.get("stratum") == "G"):
+            units = {unit["unit"]: unit for unit in _units(item)}
+            first = units[ulqs.REPLAY_LEVELS[0]]
+            evidence = () if ablation.arm_configuration(table, arm)["retrieval"] == "none" else tuple(sorted(first["evidence"]))
+            common = {"arm": arm, "item_id": item["item_id"], "turn_depth": None, "evidence": evidence, "gold": "answer",
+                      "gold_claims": first["gold_claims"], "cell": None}
+            add(unit=None, replicate=1, role="two-pass-evidential", **common)
+            for level in ulqs.REPLAY_LEVELS:
+                add(unit=level, replicate=1, role="two-pass", **common)
+            for level in ulqs.REPLAY_LEVELS:
+                for replicate in range(1, (int(design["repeats"]) if level == design["fixed_level"] else 1) + 1):
+                    add(unit=level, replicate=replicate, role="single-pass", **common)
+    else:  # E4: all four models answer every unit in GATE and VLOOP
+        for model in design["models"]:
+            for arm in ("GATE", "VLOOP"):
+                configuration = ablation.arm_configuration(table, arm)
+                for item in live:
+                    count = max(default, extra) if item["item_id"] in sampled else default
+                    for unit in _units(item):
+                        evidence = () if configuration["retrieval"] == "none" else tuple(sorted(unit["evidence"]))
+                        for replicate in range(1, count + 1):
+                            add(arm=arm, item_id=item["item_id"], unit=unit["unit"], turn_depth=unit["turn_depth"], replicate=replicate,
+                                evidence=evidence, gold=unit["gold"], gold_claims=unit["gold_claims"], role="answer",
+                                cell=model["model_id"])
     return requests
 
 
@@ -735,17 +832,22 @@ def _read_events(path: Path) -> list[dict]:
 
 
 def verify_responses(plan: Plan, responses: Mapping[str, Mapping[str, Any]]) -> None:
-    """Every response line belongs to a planned request and carries that request's arm, item, unit, replicate and seed."""
+    """Every response line belongs to a planned request and carries that request's arm, item, unit, replicate and seed (and,
+    for a design request, its role and cell)."""
     planned = {request.request_key: request for request in plan.requests}
     for key, line in responses.items():
         request = planned.get(key)
-        if request is None or any(line.get(name) != getattr(request, name) for name in ("arm", "item_id", "unit", "replicate", "seed_hex")):
+        if request is None or any(line.get(name) != getattr(request, name) for name in ("arm", "item_id", "unit", "replicate", "seed_hex")) \
+                or line.get("role", "answer") != request.role or line.get("cell") != request.cell:
             raise RunRefused(2, ["checkpoint_mismatch"])
 
 
 def _prompt_envelope(plan: Plan, request: Request) -> bytes:
-    return canonical_json({"prompt_version": plan.pins["prompt_version"], "item_id": request.item_id, "unit": request.unit,
-                           "arm": request.arm, "evidence": list(request.evidence)})
+    envelope = {"prompt_version": plan.pins["prompt_version"], "item_id": request.item_id, "unit": request.unit, "arm": request.arm,
+                "evidence": list(request.evidence)}
+    if request.role != "answer" or request.cell is not None:
+        envelope.update(role=request.role, cell=request.cell, subject=request.subject)
+    return canonical_json(envelope)
 
 
 def checkpoint_sha256(path: Path) -> str | None:
@@ -871,15 +973,23 @@ def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = Fal
     return record
 
 
+# A design response's own fields (an E2 verdict, E3 presentation features, delivered-quality signals), kept when present.
+DESIGN_RESPONSE_KEYS = ("verdict", "features", "signals")
+
+
 def _response_line(request: Request, response: Mapping[str, Any] | None, attempts: list[dict[str, str]]) -> dict[str, Any]:
     base = {"request_key": request.request_key, "arm": request.arm, "item_id": request.item_id, "unit": request.unit,
             "replicate": request.replicate, "seed_hex": request.seed_hex, "attempts": attempts}
+    if request.role != "answer" or request.cell is not None:
+        base.update(role=request.role, cell=request.cell)
     if response is None:
         return {**base, "outcome": "provider_failure", "failure_reason": attempts[-1]["status"] if attempts else "server_error",
                 "claims": [], "text": None, "usage": {"input_units": 0, "output_units": 0}, "model_id": None}
-    return {**base, "outcome": response["outcome"], "failure_reason": None, "claims": list(response.get("claims", [])),
+    line = {**base, "outcome": response["outcome"], "failure_reason": None, "claims": list(response.get("claims", [])),
             "text": response.get("text"), "usage": dict(response.get("usage") or {"input_units": 0, "output_units": 0}),
             "model_id": response.get("model_id")}
+    line.update({key: response[key] for key in DESIGN_RESPONSE_KEYS if key in response})
+    return line
 
 
 # ------------------------------------------------------------------------------------------------------------ metrics
@@ -983,10 +1093,13 @@ def _item_answer_rates(plan: Plan, responses, arm: str) -> dict[str, float]:
 
 
 def compute_registered_tests(plan: Plan, responses, metrics) -> dict[str, Any] | None:
-    """The registered E1 family (analysis plan family E1; plan 12.7, Holm per family): H1a and H1b exact McNemar on paired
-    item-level errors (eq. 12) of their comparison arms, H1c the one-sided paired bootstrap of the item answer rate
-    (eq. 17) against its margin, then Holm over the family's p-values. None unless the experiment is E1. The record
-    carries the computation only; outcomes are reported by the PI, never asserted by the harness (invariant 9)."""
+    """The registered E1 family (analysis plan family E1; plan 12.7, Holm per family): H1a and H1b exact McNemar paired by
+    item on answerable items (VBT RevB Table I: an item's error is 1 when a response to one of its answerable units holds a
+    Fabricated or Attribution-error claim, an abstention scoring as no error; `experiments.answerable_item_errors`), H1c
+    the one-sided paired bootstrap of the item answer rate (eq. 17) against its margin, then Holm over the family's
+    p-values. None unless the experiment is E1; the planner has checked that the family registers only these tests
+    (`experiments.family_refusals`). The record carries the computation only; outcomes are reported by the PI, never
+    asserted by the harness (invariant 9)."""
     if plan.spec.get("experiment") != "E1":
         return None
     family = plan.extra["analysis_plans"]["families"]["E1"]
@@ -998,10 +1111,10 @@ def compute_registered_tests(plan: Plan, responses, metrics) -> dict[str, Any] |
     for hypothesis in family["hypotheses"]:
         left_arm, right_arm = hypothesis["comparison"]
         if hypothesis["test"] == "mcnemar_exact":
-            left, right = _paired_errors(plan, responses, left_arm), _paired_errors(plan, responses, right_arm)
-            keys = sorted(set(left) & set(right), key=lambda key: (key[0], key[1] or ""))
-            result = statistics.mcnemar_exact([bool(left[key]) for key in keys], [bool(right[key]) for key in keys])
-        elif hypothesis["test"] == "paired_bootstrap_one_sided":
+            pairs = _pairs(plan, responses)
+            result = experiments.paired_by_item(experiments.answerable_item_errors(pairs, lambda request: request.arm == left_arm),
+                                                experiments.answerable_item_errors(pairs, lambda request: request.arm == right_arm))
+        else:  # paired_bootstrap_one_sided (experiments.family_refusals admits no other E1 test)
             left, right = _item_answer_rates(plan, responses, left_arm), _item_answer_rates(plan, responses, right_arm)
             items = sorted(set(left) & set(right))
             if not items:
@@ -1010,8 +1123,6 @@ def compute_registered_tests(plan: Plan, responses, metrics) -> dict[str, Any] |
             result = statistics.paired_bootstrap_one_sided(
                 [left[item] for item in items], [right[item] for item in items], resamples=int(settings.get("resamples", 1000)),
                 seed=hashed_hex(plan.spec["run_id"], "registered", hypothesis["id"]), margin=hypothesis["margin"])
-        else:  # pragma: no cover - the E1 family registers only the two tests above
-            raise ValueError(f"E1 test {hypothesis['test']} has no computation")
         results[hypothesis["id"]] = {"endpoint": hypothesis["endpoint"], "comparison": [left_arm, right_arm],
                                      "test": hypothesis["test"], **result}
     tested = {name: value["p_value"] for name, value in results.items() if "p_value" in value}
@@ -1077,7 +1188,15 @@ def compute_slis(plan: Plan, responses: Sequence[Mapping[str, Any]]) -> dict[str
 def build_record(plan: Plan, responses: Sequence[Mapping[str, Any]], *, responder_rule: str, payload_log_sha256: str) -> dict[str, Any]:
     spec = plan.spec
     confirmatory = spec["purpose"] == "confirmatory"
-    metrics = compute_metrics(plan, responses)
+    if plan.extra.get("design") is not None:
+        # E2, E3 or E4: the design's metrics, its registered family and its replicate variance (`experiments.compute`); the
+        # E1 arm comparisons and the VLOOP - GATE bootstrap belong to E1's design only.
+        metrics, registered, variance = experiments.compute(plan, responses)
+        comparisons = bootstrap = None
+    else:
+        metrics = compute_metrics(plan, responses)
+        comparisons, registered = compute_comparisons(plan, responses, metrics), compute_registered_tests(plan, responses, metrics)
+        bootstrap, variance = compute_bootstrap(plan, responses, metrics), compute_replicate_variance(plan, responses)
     digest = requests_digest(plan)
     pins = dict(plan.pins)
     pins["responder"] = {"rule": responder_rule}
@@ -1097,10 +1216,10 @@ def build_record(plan: Plan, responses: Sequence[Mapping[str, Any]], *, responde
         "pins": pins,
         "requests": {"planned": len(plan.requests), "completed": sum(r["outcome"] != "provider_failure" for r in responses), "digest": digest},
         "metrics": metrics,
-        "comparisons": compute_comparisons(plan, responses, metrics),
-        "registered_tests": compute_registered_tests(plan, responses, metrics),
-        "bootstrap": compute_bootstrap(plan, responses, metrics),
-        "replicate_variance": compute_replicate_variance(plan, responses),
+        "comparisons": comparisons,
+        "registered_tests": registered,
+        "bootstrap": bootstrap,
+        "replicate_variance": variance,
         "slis": compute_slis(plan, responses),
         "governance": {"confirmatory": confirmatory,
                        "irb": "supplied" if governance_block.get("irb_record") else "not supplied",

@@ -2,7 +2,7 @@
 
 Every input is synthetic and built in the test's own tmp_path; scripts run in-process through main(argv). AC-10-1, AC-10-4,
 AC-10-5 and AC-10-6 are proven on synthetic data and the live half of AC-10-3 with a scripted fake provider (spec R-e);
-their real-data halves are deferred (DI-129..DI-146). No test reads a private file, and none writes into the checkout.
+their real-data halves are deferred (DI-129..DI-147). No test reads a private file, and none writes into the checkout.
 """
 
 from __future__ import annotations
@@ -765,7 +765,9 @@ def test_ac_10_3_a_recorded_run_repeats_byte_identically_and_replays_its_failure
 def test_ac_10_3_the_committed_synthetic_run_record_is_current(tmp_path):
     assert run_main(["--check", SYNTHETIC_RECORD, "--spec", SYNTHETIC_SPEC]) == 0
     spec = json.loads(SYNTHETIC_SPEC.read_text(encoding="utf-8"))
-    assert spec["mode"] == "stub" and spec["purpose"] == "exploratory" and spec["package"]["path"] == "apps/api/app/config_package/v7.json"
+    # The pinned package is planes' constant (spec conflict 17), so a re-pin (DI-146) changes no assertion here.
+    assert spec["mode"] == "stub" and spec["purpose"] == "exploratory" and spec["package"]["path"] == planes.PINNED_PACKAGE
+    assert spec["package"]["package_version"] == planes.PINNED_PACKAGE_VERSION
     changed = tmp_path / "record.json"
     text = SYNTHETIC_RECORD.read_text(encoding="utf-8")
     changed.write_text(text.replace('"format_version": 1', '"format_version": 2', 1), encoding="utf-8")
@@ -1171,26 +1173,40 @@ def test_ac_10_5_an_e1_to_e4_experiment_cannot_run_exploratory(tmp_path):
         assert run_main(["--spec", write_spec(tmp_path, spec), "--output-dir", tmp_path / experiment]) == 2
 
 
-def test_ac_10_5_e2_to_e4_have_no_design_in_the_harness_and_are_refused(tmp_path, capsys):
-    # Plan task 5 "E1-E4 per Section 15": the runner implements E1's design only (every live item through the seven arms
-    # and the registered E1 family). E2's 2oo3 panel with DR and n_eff, E3's 25 S7 items x 3 levels x 2 designs and E4's
-    # 1,000 seeded replay streams have none, so a spec naming one is refused before anything is read (DI-144).
-    assert runner.IMPLEMENTED_EXPERIMENTS == ("harness-check", "E1")
+def test_ac_10_5_each_experiment_runs_its_own_design_under_its_own_family(tmp_path, monkeypatch, capsys):
+    # Plan task 5 "E1-E4 per Section 15": the runner implements the four designs (E1's seven arms; E2's verifier panel,
+    # E3's two designs, E4's model grid and replay streams, from the spec's design block). Each runs under its own
+    # analysis-plan family, E1 over all seven arms; an E2-E4 spec without its design block is refused before anything
+    # is read. A confirmatory spec still needs its gate, so the CLI refuses every one here (exit 8, no IRB or OSF record).
+    assert runner.EXPERIMENTS == ("harness-check", "E1", "E2", "E3", "E4")
     for experiment in ("E2", "E3", "E4"):
         spec = stub_spec(tmp_path / experiment, purpose="confirmatory", experiment=experiment, family=experiment,
                          run_id=f"synthetic-{experiment.lower()}-v1")
         with pytest.raises(runner.RunRefused) as refused:
             runner.plan_run(spec)
-        assert refused.value.code == 2 and refused.value.reasons == ["experiment_not_implemented"]
+        assert refused.value.code == 2 and refused.value.reasons == ["design"]
         assert run_main(["--spec", write_spec(tmp_path, spec, f"{experiment}.json"), "--output-dir", tmp_path / f"out-{experiment}"]) == 2
-        assert "experiment_not_implemented" in capsys.readouterr().err and not (tmp_path / f"out-{experiment}").exists()
-    # E1 runs under its own family and over all seven arms.
-    e1 = stub_spec(tmp_path / "e1", purpose="confirmatory", experiment="E1", run_id="synthetic-e1-v1")
-    for change, reason in (({"analysis_plan": {**e1["analysis_plan"], "family": "E2"}}, "analysis_plan_family_mismatch"),
-                           ({"arms": {**e1["arms"], "selected": ["GATE", "GATE+SV", "VLOOP"]}}, "experiment_requires_seven_arms")):
+        assert "design" in capsys.readouterr().err and not (tmp_path / f"out-{experiment}").exists()
+    e3 = stub_spec(tmp_path / "e3", purpose="confirmatory", experiment="E3", family="E3", run_id="synthetic-e3-v1", design={})
+    assert run_main(["--spec", write_spec(tmp_path, e3, "e3.json"), "--output-dir", tmp_path / "out-e3"]) == 8
+    assert "irb_missing" in capsys.readouterr().err
+    monkeypatch.setattr(governance, "confirmatory_refusals", lambda spec, **kwargs: [])
+    items_path, catalog_path, _items = synthetic.write_fixture_set(tmp_path, synthetic.SMALL, splits=True)
+    split = synthetic.spec_dict(items_path=items_path, catalog_path=catalog_path, purpose="confirmatory", experiment="E3", family="E3",
+                                run_id="synthetic-e3-v1", design={})
+    record = runner.execute_run(runner.plan_run(split), providers.StubResponder(), tmp_path / "e3-run")
+    assert record["registered_tests"]["family"] == "E3" and set(record["registered_tests"]["hypotheses"]) == {"H3a", "H3b"}
+    assert record["pins"]["design"]["experiment"] == "E3" and record["pins"]["models"] is None
+    for experiment in ("E1", "E3"):
+        spec = {**split, "experiment": experiment, "design": {} if experiment == "E3" else None}
+        family = "E2" if experiment == "E1" else "E1"
         with pytest.raises(runner.RunRefused) as refused:
-            runner.plan_run({**e1, **change})
-        assert refused.value.code == 2 and refused.value.reasons == [reason]
+            runner.plan_run({**spec, "analysis_plan": {**spec["analysis_plan"], "family": family}})
+        assert refused.value.code == 2 and refused.value.reasons == ["analysis_plan_family_mismatch"], experiment
+    e1 = {**split, "experiment": "E1", "analysis_plan": {**split["analysis_plan"], "family": "E1"}}
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**e1, "arms": {**e1["arms"], "selected": ["GATE", "GATE+SV", "VLOOP"]}})
+    assert refused.value.code == 2 and refused.value.reasons == ["experiment_requires_seven_arms"]
 
 
 # ===================================================================================================== AC-10-6
@@ -1379,6 +1395,20 @@ def test_plan_b_only_a_package_in_the_history_and_the_package_directory_is_commi
     assert governance.committed_package_sha256s() == {canonical_sha256(pinned)}
     write_lf(history_path, "not json")
     assert governance.committed_package_sha256s() == frozenset()
+    # Nothing unreadable judges a package committed: every decision then reads `uncommitted`, never open or decided.
+    judged = governance.judged_package(decided, canonical_sha256(decided) in governance.committed_package_sha256s())
+    assert {judged["owner_decisions"][name]["state"] for name in ("D-07", "D-08", "D-12", "D-14")} == {governance.UNCOMMITTED}
+    # Above, a decided copy written into the package directory with an appended history entry counted as committed: the
+    # working tree is read, never git, so the documents call the rule a consistency check, not proof (DI-147).
+    doc = " ".join(governance.committed_package_sha256s.__doc__.split())
+    assert "every owner decision reads `uncommitted` and no hold is released" in doc and "reads open" not in doc
+    assert "a consistency check of the checkout, not proof" in doc and "DI-147" in doc
+    readme = " ".join((RECORDS / "README.md").read_text(encoding="utf-8").split())
+    adr = " ".join((REPO_ROOT / "docs" / "adr" / "ADR-012-evaluation-and-research-harness.md").read_text(encoding="utf-8").split())
+    conflict = " ".join(spec_text().split("\n39. **", 1)[1].split("\n---", 1)[0].split())
+    for name, text in (("README", readme), ("ADR-012", adr), ("conflict 39", conflict)):
+        assert "consistency check of the checkout, not proof" in text and "DI-147" in text, name
+    assert "a hand-made copy with a matching sidecar included, reads every decision" not in readme
 
 
 def test_plan_b_after_d14_a_non_synthetic_run_needs_the_access_log_and_a_research_pre_run_scan(tmp_path, monkeypatch):
@@ -1593,6 +1623,11 @@ def test_plan_e_phase_10_adds_no_production_component():
     assert offenders == []
 
 
+def _from_pin(packages, pin):
+    """The package numbered `pin` and every package numbered after it."""
+    return [path for path in packages if int(path.stem[1:]) >= pin]
+
+
 def test_plan_e_every_later_package_keeps_the_pinned_package_s_boundary_and_open_decisions():
     # The harness names the package it pins in one place, planes.PINNED_PACKAGE (spec conflict 17): v7, read by explicit
     # path and sha256; since the merge of main 89f0563 at a27ba5b the shipped package is v8, and v7 stays readable under
@@ -1605,10 +1640,15 @@ def test_plan_e_every_later_package_keeps_the_pinned_package_s_boundary_and_open
     number = int(planes.PINNED_PACKAGE_PATH.stem[1:])
     packages = {path: json.loads(path.read_text(encoding="utf-8")) for path in sorted(directory.glob("v*.json"))
                 if re.fullmatch(r"v\d+\.json", path.name)}
-    later = [path for path in packages if int(path.stem[1:]) > number]
-    assert later, "no package after the pinned one"
-    for path in later:
-        assert packages[path]["boundary"] == pinned["boundary"], path.name
+    # The pinned package and every package numbered after it (none once the pin is the newest package, DI-146): the check
+    # holds whichever package the pin names, the newest included, so a re-pin to the current package changes nothing here.
+    for pin in (number, max(int(path.stem[1:]) for path in packages)):
+        boundary = packages[directory / f"v{pin}.json"]["boundary"]
+        current = _from_pin(packages, pin)
+        assert directory / f"v{pin}.json" in current, pin
+        for path in current:
+            assert packages[path]["boundary"] == boundary, (pin, path.name)
+    assert pinned["boundary"] == packages[planes.PINNED_PACKAGE_PATH]["boundary"]
     committed = governance.committed_package_sha256s()
     judged = [package for package in packages.values() if canonical_sha256(package) in committed]
     assert pinned in judged and len(judged) == len(committed) >= 2
@@ -2136,11 +2176,19 @@ def test_phase10_docs_quote_the_plan_and_state_the_current_rules():
     assert "calls it \"the deployed configuration\" of the paper's design; it is not the current production configuration" in flat
     assert "`GATE` (the deployed configuration)" not in flat
     head = spec_text().split("\n## 14. Review history\n", 1)[0]
-    for number in range(60, 75):
+    for number in range(60, 76):
         assert f"| PD-{number} |" in head
-    for number in range(129, 147):
+    for number in range(129, 148):
         assert f"| DI-{number} |" in head
     assert "The exit is not passed (DI-129)." in head
+    # Every citation of Phase 10's deferred range names its last row (spec 12.2; DI-300..DI-499 belong to the parallel
+    # track), in every evaluation document, the ADR, the test strategy, the spec, the pre-registration generator and this module.
+    last = max(int(number) for number in re.findall(r"^\| DI-(\d+) \|", head, flags=re.MULTILINE) if 129 <= int(number) < 300)
+    sources = [*sorted((REPO_ROOT / "docs" / "evaluation").rglob("*.md")), REPO_ROOT / "docs" / "adr" / "ADR-012-evaluation-and-research-harness.md",
+               REPO_ROOT / "docs" / "testing" / "test-strategy.md", SPEC_PATH, Path(analysis_plans.__file__),
+               Path(__file__)]
+    cited = [(path.name, int(number)) for path in sources for number in re.findall(r"DI-129\.\.DI-(\d+)", path.read_text(encoding="utf-8"))]
+    assert len({name for name, _number in cited}) >= 6 and all(number == last for _name, number in cited), (last, cited)
 
 
 PHASE10_MODULES = ("test_phase10_acceptance.py", "conftest.py", "test_ulqs_schema.py", "test_ulqs_pointers.py", "test_rater_agreement.py",
@@ -2176,18 +2224,29 @@ def test_phase10_docs_the_test_strategy_maps_every_test_module_the_phase_added()
 
 def test_phase10_docs_phase_8_s_test_baseline_holds_the_current_declarations_of_every_phase_10_module():
     # Phase 8's docs guards compare each module's declarations in apps/api/tests/data/phase8_shared_baseline_v1.json with
-    # the source. Each Phase 10 commit refreshes the entry of every Phase 10 module it changes (the modules the phase
-    # added, scan_guard.py, test_phase10_acceptance.py and evaluation/tests/*.py, and conftest.py, whose entry the merge
-    # a27ba5b took from Phase 10), and never the entry of another phase's module (spec 8.3; Phase 8 spec 13.3).
+    # the source. Each Phase 10 commit refreshes the entry of every module it changes among the 14 modules Phase 10 added
+    # (scan_guard.py, test_phase10_acceptance.py and every module of evaluation/tests except test_evaluators.py) and the
+    # two shared modules whose whole entry the merge a27ba5b took from Phase 10 (apps/api/tests/conftest.py and
+    # evaluation/tests/test_evaluators.py, both on main before Phase 10); in the other shared modules it changed
+    # (test_phase9_acceptance.py, test_python_sources.py) only the declarations it changes; never another phase's
+    # declaration (spec 8.3; Phase 8 spec 13.3).
     import importlib.util
 
     loader = importlib.util.spec_from_file_location("phase8_docs_symbols", API_ROOT / "tests" / "test_phase8_docs.py")
     phase8_docs = importlib.util.module_from_spec(loader)
     loader.loader.exec_module(phase8_docs)
     baseline = json.loads((API_ROOT / "tests" / "data" / "phase8_shared_baseline_v1.json").read_text(encoding="utf-8"))
-    owned = ["conftest.py", "scan_guard.py", "test_phase10_acceptance.py",
-             *sorted(path.relative_to(REPO_ROOT).as_posix() for path in (REPO_ROOT / "evaluation" / "tests").glob("*.py"))]
-    assert len(owned) == 16 and set(owned) <= set(baseline["main_test_symbols"]), sorted(set(owned) - set(baseline["main_test_symbols"]))
+    shared = ["conftest.py", "evaluation/tests/test_evaluators.py"]
+    added = ["scan_guard.py", "test_phase10_acceptance.py",
+             *sorted(path.relative_to(REPO_ROOT).as_posix() for path in (REPO_ROOT / "evaluation" / "tests").glob("*.py")
+                     if path.relative_to(REPO_ROOT).as_posix() not in shared)]
+    owned = added + shared
+    assert len(added) == 14 and set(owned) <= set(baseline["main_test_symbols"]), sorted(set(owned) - set(baseline["main_test_symbols"]))
+    # The rule as the three documents state it: the 14 added modules and the two shared ones, never "16 modules Phase 10 owns".
+    for path in (REPO_ROOT / "docs" / "architecture" / "phase8-implementation-spec.md", SPEC_PATH, REPO_ROOT / "docs" / "testing" / "test-strategy.md"):
+        text = " ".join(path.read_text(encoding="utf-8").split())
+        assert "among the 14 modules Phase 10 added" in text and "`apps/api/tests/conftest.py` and `evaluation/tests/test_evaluators.py`" in text, path.name
+        assert "16 modules" not in text and "16 Phase 10 modules" not in text, path.name
     stale = []
     for module in owned:
         path = (REPO_ROOT if "/" in module else API_ROOT / "tests") / module
@@ -2212,7 +2271,16 @@ def test_phase10_docs_section_6_names_the_current_alembic_head_and_the_shipped_p
     newest = max(int(path.stem[1:]) for path in directory.glob("v*.json") if re.fullmatch(r"v\d+\.json", path.name))
     version = json.loads((directory / f"v{newest}.json").read_text(encoding="utf-8"))["package_version"]
     assert f"The shipped package is v{newest} (`{version}`" in lines["Configuration package:"], (newest, version)
-    assert "The harness reads v7 (`7.0.0`) by explicit path and sha256" in lines["Configuration package:"]
+    pinned = f"v{int(planes.PINNED_PACKAGE_PATH.stem[1:])} (`{planes.PINNED_PACKAGE_VERSION}`)"
+    assert f"The harness reads {pinned} by explicit path and sha256" in lines["Configuration package:"], pinned
+    # The re-pin procedure (DI-146) names every edit a re-pin needs, the sentences naming the pin included, and states
+    # which tests follow the constants (spec conflict 17, README).
+    readme = " ".join((RECORDS / "README.md").read_text(encoding="utf-8").split("## Re-pinning the pinned package", 1)[1].split())
+    assert "4. rewrites the sentences that name v7: the spec's section 6 configuration-package line, M7 and conflicts 17 and 18, " \
+           "ADR-012 decision 6 and this section." in readme
+    assert "the section 6 test fails until step 4 names the new pin" in readme and "The tests read the two constants, so they follow the change." not in readme
+    conflict = " ".join(spec_text().split("\n17. **", 1)[1].split("\n18. **", 1)[0].split())
+    assert "rewrites the sentences that name v7: section 6's configuration-package line, M7, this conflict and conflict 18" in conflict
 
 
 def test_phase10_docs_the_spec_ends_in_one_review_history_table():
@@ -2260,7 +2328,7 @@ def test_phase10_docs_every_provisional_default_is_marked_where_it_lives():
     # PROVISIONAL_DEFAULTS tuple naming the row. No row names only prose.
     section = spec_text().split("### 12.1 Provisional defaults", 1)[1].split("### 12.2", 1)[0]
     rows = re.findall(r"^\| (PD-\d+) \|.*\| ([^|]+) \|$", section, flags=re.MULTILINE)
-    assert [key for key, _where in rows] == [f"PD-{n}" for n in range(60, 75)]
+    assert [key for key, _where in rows] == [f"PD-{n}" for n in range(60, 76)]
     modules = {path.name: path for path in [*Path(ulqs.__file__).resolve().parent.glob("*.py"),
                                             *[REPO_ROOT / "scripts" / name for name in NEW_SCRIPTS]]}
     for key, where in rows:

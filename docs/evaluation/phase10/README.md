@@ -20,8 +20,10 @@ executed and no Table XVII row or HR-1..MR-3 outcome is asserted (plan Phase 10 
   cannot be written (`output_unwritable`), a `--write` or `--record-stub` target or the access log that cannot be
   written (refused without a reason code), a non-synthetic run without the access log or a passing pre-run scan
   (`access_log_required`,
-  `pre_run_scan_*`), or a confirmatory run refused with no IRB, OSF, items or freeze-record reason; 3 invalid items,
-  unresolved pointers or a payload-log violation, or a confirmatory run refused with an items (`items_not_frozen`,
+  `pre_run_scan_*`), an E1-E4 family the design does not compute (`analysis_plan_invalid:<experiment>`) or an E2-E4
+  design that cannot run (`design`, `design.<field>`, `e2_panel_invalid`, `e4_models_invalid`, `e4_shift_invalid`,
+  `experiment_requires_arms`), or a confirmatory run refused with no IRB, OSF, items or freeze-record reason; 3 invalid
+  items, unresolved pointers, a design input unreadable or invalid or a payload-log violation, or a confirmatory run refused with an items (`items_not_frozen`,
   `items_split_missing`) or freeze-record (`freeze_record_*`) reason and no IRB or OSF reason; 5 interrupted (resume
   with `--resume`, on a later day too); 6 a pin mismatch; 7 arm parity; 8 a confirmatory run refused with an IRB or OSF
   reason; 9 a live run or hold H12 refused. A refused confirmatory run lists every reason and exits with the first
@@ -54,8 +56,11 @@ executed and no Table XVII row or HR-1..MR-3 outcome is asserted (plan Phase 10 
 - H12 (the research data plane, D-14): every run over non-synthetic items or catalog is refused (`hold_h12_data_plane`)
   while the package the spec pins is not a committed package that decides D-14. Owner decisions are read only from a
   committed package (an entry of `docs/evaluation/phase7/package_versions.json` that is a `vN.json` of
-  `apps/api/app/config_package`); any other package, a hand-made copy with a matching sidecar included, reads every
-  decision `uncommitted` and releases no hold, and the run record pins `committed`.
+  `apps/api/app/config_package`); any other package, such as a hand-made copy with a matching sidecar kept outside the
+  package directory, reads every decision `uncommitted` and releases no hold, and the run record pins `committed`. The
+  history and the package directory are read from the working tree, never from git, so a copy written into the package
+  directory with an entry appended to the history counts as committed: the rule is a consistency check of the
+  checkout, not proof that a package was committed or reviewed (DI-147), as the run window is for run starts (DI-143).
 - Harness SLIs (plan I): completion rate, provider failures by reason, retries and cost units per arm, in provider usage
   units, not USD. There is no production SLO.
 
@@ -74,11 +79,20 @@ the change that removes it:
 1. sets `planes.PINNED_PACKAGE` and `planes.PINNED_PACKAGE_VERSION` to the current package;
 2. re-pins the `package` block of `synthetic_run_spec_v1.json` (path, sha256 and package_version of that package);
 3. rewrites the synthetic run record (`run_evaluation.py --write`) and the pinned configuration record
-   (`check_research_harness.py --write`).
+   (`check_research_harness.py --write`);
+4. rewrites the sentences that name v7: the spec's section 6 configuration-package line, M7 and conflicts 17 and 18,
+   ADR-012 decision 6 and this section.
 
-The tests read the two constants, so they follow the change.
+The tests read the two constants (the synthetic spec's package, section 6's pinned package, the pinned package's
+boundary), so they follow steps 1-3; the section 6 test fails until step 4 names the new pin, and the boundary check
+covers the pinned package and every package numbered after it, none once the pin is the newest package.
 
-Implemented designs: E1 only (every live item through the seven arms, and the registered E1 family in the record's
-`registered_tests`). A spec naming E2, E3 or E4 is refused (`experiment_not_implemented`, exit 2; DI-144).
+Implemented designs: all four, each run under its own analysis-plan family and computing its registered family in the
+record's `registered_tests` (spec 4.12, 4.14): E1, every live item through the seven arms (H1a and H1b exact McNemar
+paired by item on answerable items, H1c); E2, the three-family verifier panel without the generator, formed by rule
+(H2a, H2b, H2c from pinned novice ratings); E3, two-pass and single-pass generation of every S7 item at three levels
+(H3a, H3b); E4, four models in GATE and VLOOP and their seeded replay streams over eight routing policies (H4a, H4b).
+E2-E4 take their models from the spec's `design` block (PD-75): none is pinned (D-07), so they run on stub or recorded
+responses only.
 
 Not executed: E1, E2, E3 and E4 (DI-138).

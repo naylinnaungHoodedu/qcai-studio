@@ -247,6 +247,12 @@ def test_the_two_level_bootstrap_follows_its_published_rule():
         replicates.append(pooled(chosen))
     assert result["share_le_zero"] == sum(1 for value in replicates if value <= 0) / 300
     assert result["estimate"] == pytest.approx(pooled(groups)) and result["rule"] == "hash-resample-two-level-v1"
+    # `indexed` (E4: one replay stream per replicate) passes the replicate, and None for the estimate, over the same draws.
+    seen = []
+    indexed = statistics.two_level_bootstrap_share_le_zero(groups, lambda chosen, b: seen.append(b) or pooled(chosen), resamples=300,
+                                                           seed="t", indexed=True)
+    assert seen == [*range(300), None] and {key: indexed[key] for key in ("share_le_zero", "estimate")} == {
+        key: result[key] for key in ("share_le_zero", "estimate")}
     assert statistics.two_level_bootstrap_share_le_zero([[1.0], [2.0, 3.0]], pooled, resamples=50, seed="t")["share_le_zero"] == 0.0
     assert statistics.two_level_bootstrap_share_le_zero([[-1.0], [0.0]], pooled, resamples=50, seed="t")["share_le_zero"] == 1.0
     with pytest.raises(ValueError):

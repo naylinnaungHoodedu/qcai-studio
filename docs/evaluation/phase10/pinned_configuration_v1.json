@@ -3,9 +3,9 @@
  "counting_rules": "plan 15.3 windows and counting rules bind only when a research row is reported (DI-138)",
  "format_version": 1,
  "harness_files": {
-  "evaluation/config/analysis_plans_v1.json": "4731b84ef26992a1de99db7e3977d39ed4641e459e7bcdd48682a48bfa1b6aed",
+  "evaluation/config/analysis_plans_v1.json": "3677d2a3d4ddb435ac1ce3c0b44a7dc7bfc69830bab1bf887d36231016709bae",
   "evaluation/config/arms_v1.json": "b704af4f515246d93b793c6897a6f45b97a9c5bd79f664eabb35113d30ba84ab",
-  "evaluation/config/harness_parameters_v1.json": "eef43743c7cf7d4943365696d2e11511be8f19ace68ba691a6e7ba2c4b1cb276",
+  "evaluation/config/harness_parameters_v1.json": "a142918ace10d42f610a37a2317cc3d74c8735f4b3583d91cec87b402337237f",
   "evaluation/fixtures/contamination_synthetic_v1.json": "e2534b3ed135c142b3fe44636310739d91b2b1d303ca4004eb080f6a036d2d05",
   "evaluation/fixtures/seeded_faults_v1.json": "1b7e3ecfb6dc5578bc819af8b3183c4d9472fc65932fb11f511127a5497e7df1",
   "lqs/ulqs-rc1-to-v1.0-mapping.json": "2aba4405b2f0493976a00f355d00644598004329a73b2bf53c1d760482c287af",

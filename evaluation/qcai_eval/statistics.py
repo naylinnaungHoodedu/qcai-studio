@@ -342,11 +342,14 @@ def _bca_p_value(share: float, z0: float, acceleration: float) -> float:
     return normal_cdf(w / denominator - z0)
 
 
-def two_level_bootstrap_share_le_zero(groups: Sequence[Sequence[Any]], statistic: Callable[[list], float], *, resamples: int,
-                                      seed: str) -> dict:
+def two_level_bootstrap_share_le_zero(groups: Sequence[Sequence[Any]], statistic: Callable[..., float], *, resamples: int,
+                                      seed: str, indexed: bool = False) -> dict:
     """A two-level bootstrap (`hash-resample-two-level-v1`): resample the groups (hash-resample-v1 with `seed` and
     resample b), then the members of the group at each position k (hash-resample-v1 with seed f"{seed}\\x1f{b}\\x1f{k}"
-    and resample 0). Reports the share of replicates at or below zero (H4a)."""
+    and resample 0). Reports the share of replicates at or below zero (H4a). With `indexed` the statistic is also told
+    the replicate, `statistic(chosen, b)`, and `statistic(groups, None)` gives the estimate: E4 draws one seeded replay
+    stream per replicate from the resampled items (VBT RevB Sec. X-A: "items are resampled before 1,000 replay streams
+    are generated")."""
     outer = [list(group) for group in groups]
     if resamples < 1 or not outer or any(not group for group in outer):
         raise ValueError("a two-level bootstrap needs non-empty groups and at least one resample")
@@ -356,9 +359,9 @@ def two_level_bootstrap_share_le_zero(groups: Sequence[Sequence[Any]], statistic
         for k, index in enumerate(hash_resample_indices(len(outer), seed, b)):
             group = outer[index]
             chosen.append([group[i] for i in hash_resample_indices(len(group), f"{seed}\x1f{b}\x1f{k}", 0)])
-        replicates.append(statistic(chosen))
+        replicates.append(statistic(chosen, b) if indexed else statistic(chosen))
     share = sum(1 for value in replicates if value <= 0) / resamples
-    return {"estimate": statistic(outer), "share_le_zero": share, "p_value": share,  # H4a's Holm input (VBT RevB Sec. X-A)
+    return {"estimate": statistic(outer, None) if indexed else statistic(outer), "share_le_zero": share, "p_value": share,  # H4a's Holm input (VBT RevB Sec. X-A)
             "resamples": resamples, "seed": seed, "method": "two-level", "rule": "hash-resample-two-level-v1"}
 
 

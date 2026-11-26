@@ -4,7 +4,7 @@
 `evaluation/config/analysis_plans_v1.json`; `--check` in CI proves this file is current. Nothing here is executed:
 no hypothesis has been tested and no HR-1 to MR-3 outcome is asserted (plan Phase 10 P; invariant 9).
 
-- Analysis plans: `analysis-plans-v1`, canonical sha256 `4731b84ef26992a1de99db7e3977d39ed4641e459e7bcdd48682a48bfa1b6aed`.
+- Analysis plans: `analysis-plans-v1`, canonical sha256 `3677d2a3d4ddb435ac1ce3c0b44a7dc7bfc69830bab1bf887d36231016709bae`.
 - Status: draft, not filed with OSF (DI-131).
 - Significance: alpha = 0.05, Holm correction within each family (plan 12.7: "E1-E4 are pre-registered
   hypothesis tests (alpha = 0.05, Holm per family), not software gates").
@@ -17,8 +17,8 @@ Data: all ULQS items x seven arms; production generator.
 
 | Hypothesis | Endpoint | Comparison | Test | Sided | Margin (null) | Table XVII criteria |
 |---|---|---|---|---|---|---|
-| H1a | item-level error (eq. 12) | VLOOP vs GATE | `mcnemar_exact` | two | - | HR-1, HR-2 |
-| H1b | item-level error (eq. 12) | VLOOP vs GATE+SV | `mcnemar_exact` | two | - | - |
+| H1a | item-level error on answerable items, paired by item (Table I; eq. 12) | VLOOP vs GATE | `mcnemar_exact` | two | - | HR-1, HR-2 |
+| H1b | item-level error on answerable items, paired by item (Table I; eq. 12) | VLOOP vs GATE+SV | `mcnemar_exact` | two | - | - |
 | H1c | answer rate (eq. 17) | VLOOP vs GATE | `paired_bootstrap_one_sided` | one | -0.05 | LQ-3 |
 
 Criteria reported without a family test: HR-3 (wilson_upper_bound, >= 125 audited answers, zero delivered B1).
@@ -27,7 +27,7 @@ Labelling: GATE, GATE+SV and VLOOP fully labelled; other arms on a random 25% of
 
 ## E2 (RQ2)
 
-Data: the verification set: every human-labelled claim from E1 plus the seeded-fault set (controlled Type A-E insertions into correct E1 responses, the count per type reported with the results and the seeded faults reported separately; the insertion tool is not implemented, DI-145); a blind 2oo3 three-family verifier panel without the generator (not implemented in the harness, DI-144); Group B novice sessions for UE-1 to UE-3.
+Data: the verification set: every human-labelled claim from E1 plus the seeded-fault set (controlled Type A-E insertions into correct E1 responses, the count per type reported with the results and the seeded faults reported separately; the insertion tool is not implemented, DI-145); a blind 2oo3 three-family verifier panel without the generator, each model verifying every claim generated outside its own family and the panels formed by rule (1oo3, 2oo3, 3oo3, Dawid-Skene); Group B novice sessions for UE-1 to UE-3.
 
 | Hypothesis | Endpoint | Comparison | Test | Sided | Margin (null) | Table XVII criteria |
 |---|---|---|---|---|---|---|
@@ -39,7 +39,7 @@ Criteria reported without a family test: V-3 (<=10% of responses escalated to V3
 
 ## E3 (RQ3)
 
-Data: 25 S7 (stratum G) items x 3 levels x 2 designs (two-pass and single-pass generation); neither design is implemented in the harness (DI-144).
+Data: 25 S7 (stratum G) items x 3 levels x 2 designs (two-pass and single-pass generation); single-pass also repeated three times at one fixed level.
 
 | Hypothesis | Endpoint | Comparison | Test | Sided | Margin (null) | Table XVII criteria |
 |---|---|---|---|---|---|---|
@@ -48,7 +48,7 @@ Data: 25 S7 (stratum G) items x 3 levels x 2 designs (two-pass and single-pass g
 
 ## E4 (RQ4)
 
-Data: 1,000 seeded replay streams (plan 6.5 Table XVII; 15.2 MR-1) and the E4 logs; the replay streams are not implemented in the harness (DI-144).
+Data: 1,000 seeded replay streams (plan 6.5 Table XVII; 15.2 MR-1) and the E4 logs; every model answers every item in GATE and VLOOP, and items are resampled before each stream is drawn.
 
 | Hypothesis | Endpoint | Comparison | Test | Sided | Margin (null) | Table XVII criteria |
 |---|---|---|---|---|---|---|
@@ -92,4 +92,4 @@ Criteria reported without a family test: MR-2; MR-3; LQ-2.
 | `effective_sample_size` | H2b, V-4 | n_eff reported with DR, each with its 95% CI (Table XVII V-4) | not implemented (DI-138) |
 
 Not executed: every hypothesis above awaits the frozen ULQS, the IRB letter, the OSF DOI and the research data
-plane (DI-129..DI-146).
+plane (DI-129..DI-147).

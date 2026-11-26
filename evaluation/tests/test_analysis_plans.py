@@ -183,8 +183,13 @@ def test_every_table_xvii_row_phase_10_tests_is_registered_and_each_family_state
     assert "seeded-fault set" in raw["families"]["E2"]["data"] and "count per type" in raw["families"]["E2"]["data"]
     assert "1,000 seeded replay streams" in raw["families"]["E4"]["data"]
     assert "25 S7" in raw["families"]["E3"]["data"] and "2 designs" in raw["families"]["E3"]["data"]
-    for family in ("E2", "E3", "E4"):
-        assert "DI-144" in raw["families"][family]["data"], family
+    # The designs the runner implements (experiments): the panel rule, E3's single-pass repeats, E4's item resampling;
+    # H1a and H1b are paired by item on answerable items (VBT RevB Table I).
+    assert "outside its own family" in raw["families"]["E2"]["data"] and "1oo3, 2oo3, 3oo3, Dawid-Skene" in raw["families"]["E2"]["data"]
+    assert "repeated three times at one fixed level" in raw["families"]["E3"]["data"]
+    assert "items are resampled before each stream is drawn" in raw["families"]["E4"]["data"]
+    for hypothesis in raw["families"]["E1"]["hypotheses"][:2]:
+        assert hypothesis["endpoint"] == "item-level error on answerable items, paired by item (Table I; eq. 12)", hypothesis["id"]
     for edit, match in ((lambda r: r["families"]["E2"]["criteria_only"].pop(2), r"missing \['UE-1'\]"),
                         (lambda r: r["families"]["E2"]["criteria_only"].remove(
                             next(e for e in r["families"]["E2"]["criteria_only"] if e.startswith("V-3"))), r"missing \['V-3'\]"),

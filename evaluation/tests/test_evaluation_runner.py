@@ -426,40 +426,403 @@ def test_the_record_s_code_pins_cover_only_the_harness_and_ignore_crlf_checkouts
     assert runner.code_pins(tmp_path) == pins
 
 
-def test_an_e1_record_computes_the_registered_e1_family_and_other_records_do_not(tmp_path):
-    # The analysis plan's E1 family: H1a exact McNemar VLOOP vs GATE, H1b VLOOP vs GATE+SV (item-level error, eq. 12), H1c
-    # the one-sided paired bootstrap of the item answer rate VLOOP - GATE against the margin -0.05 (eq. 17), then Holm over
-    # the three. A confirmatory E1 spec cannot run here (its gate), so the planned harness-check is relabelled E1.
+def _scripted(rule):
+    """A responder whose answers follow `rule(request) -> (outcome, labels)`: one claim per gold claim (or one invented
+    claim for an abstain unit), labelled in turn from `labels`."""
+
+    class Scripted:
+        def respond(self, request):
+            outcome, labels = rule(request)
+            usage = {"input_units": 1, "output_units": 1}
+            if outcome == "abstained":
+                return {"outcome": "abstained", "claims": [], "text": "stub", "usage": usage, "model_id": None}
+            ids = list(request.gold_claims) or [f"{request.item_id}-x1"]
+            claims = [{"claim_id": claim_id, "cited": list(request.evidence), "label": labels[index % len(labels)], "ehmf_type": None}
+                      for index, claim_id in enumerate(ids)]
+            return {"outcome": "answered", "claims": claims, "text": "stub", "usage": usage, "model_id": None}
+
+    Scripted.rule = "scripted-rule"
+    return Scripted()
+
+
+def _gate_passed(monkeypatch):
+    # A confirmatory E1-E4 spec cannot pass its gate here (no IRB or OSF record). The gate's own refusals are the AC-10-5
+    # tests'; here it is passed so that the design is planned (as in the AC test of a confirmatory run's coverage).
+    from evaluation.qcai_eval import governance
+
+    monkeypatch.setattr(governance, "confirmatory_refusals", lambda spec, **kwargs: [])
+
+
+def _confirmatory(tmp_path, experiment, **extra):
+    items_path, catalog_path, items = synthetic.write_fixture_set(tmp_path, synthetic.SMALL, splits=True)
+    spec = synthetic.spec_dict(items_path=items_path, catalog_path=catalog_path, purpose="confirmatory", experiment=experiment,
+                               family=experiment, run_id=f"synthetic-{experiment.lower()}-v1", **extra)
+    return spec, items
+
+
+ANSWERABLE = ["SYN-A-001", "SYN-A-002", "SYN-B-001", "SYN-B-002", "SYN-D-002", "SYN-F-001", "SYN-F-002", "SYN-G-001", "SYN-G-002"]
+
+
+def test_an_e1_record_computes_the_registered_e1_family_and_other_records_do_not(tmp_path, monkeypatch):
+    # VBT RevB Table I: H1a "VLOOP has a lower item-level error rate than GATE on answerable items", endpoint "Share of
+    # answerable items whose response contains at least one fabricated or attribution-error claim (an abstention scores
+    # as no error ...)", test "Exact McNemar, paired by item"; H1b "Same as H1a" against GATE+SV. The expected values are
+    # written out by hand: one error indicator per answerable item, whatever its turns or levels, and nothing from the
+    # gold-abstain units (VLOOP answers every one of them here, which pairing by unit would count as 7 more errors).
     from evaluation.qcai_eval import statistics
 
-    spec, _ = small_spec(tmp_path)
+    _gate_passed(monkeypatch)
+    spec, items = _confirmatory(tmp_path, "E1")
+    gate_errors = {"SYN-A-001": None, "SYN-B-001": None, "SYN-G-001": "advanced", "SYN-F-002": None}  # item: its one erring unit
+    vloop_errors = {"SYN-G-001": "beginner"}
+
+    def rule(request):
+        if request.gold == "abstain":
+            return ("answered", ["unsupported_but_true"]) if request.arm == "VLOOP" else ("abstained", [])
+        erring = {"GATE": gate_errors, "VLOOP": vloop_errors}.get(request.arm, {})
+        if request.item_id in erring and erring[request.item_id] in (None, request.unit):
+            return "answered", ["fabricated"]
+        return "answered", ["supported"]
+
     plan = runner.plan_run(spec)
-    record = runner.execute_run(plan, StubResponder(), tmp_path / "check")
-    assert record["registered_tests"] is None
-    e1 = dataclasses.replace(plan, spec={**plan.spec, "experiment": "E1"})
-    record = runner.execute_run(e1, StubResponder(), tmp_path / "e1")
+    record = runner.execute_run(plan, _scripted(rule), tmp_path / "e1")
     registered = record["registered_tests"]
-    responses = read_jsonl(tmp_path / "e1" / "responses.jsonl")
     assert registered["family"] == "E1" and set(registered["hypotheses"]) == {"H1a", "H1b", "H1c"}
-
-    def errors(arm):
-        return runner._paired_errors(e1, responses, arm)
-
-    for name, (left, right) in (("H1a", ("VLOOP", "GATE")), ("H1b", ("VLOOP", "GATE+SV"))):
-        a, b = errors(left), errors(right)
-        keys = sorted(set(a) & set(b), key=lambda key: (key[0], key[1] or ""))
-        expected = statistics.mcnemar_exact([bool(a[key]) for key in keys], [bool(b[key]) for key in keys])
-        assert registered["hypotheses"][name] == {"endpoint": "item-level error (eq. 12)", "comparison": [left, right],
-                                                  "test": "mcnemar_exact", **expected}, name
-    answered = {arm: {} for arm in ("VLOOP", "GATE")}
-    for request, response in zip(e1.requests, responses):
-        if request.arm in answered and request.replicate == 1 and request.gold == "answer" and response["outcome"] != "provider_failure":
-            answered[request.arm].setdefault(request.item_id, []).append(int(response["outcome"] == "answered"))
-    items = sorted(set(answered["VLOOP"]) & set(answered["GATE"]))
-    rate = lambda arm, item: sum(answered[arm][item]) / len(answered[arm][item])  # noqa: E731
-    h1c = statistics.paired_bootstrap_one_sided([rate("VLOOP", item) for item in items], [rate("GATE", item) for item in items],
-                                                resamples=1000, seed=hashed_hex(spec["run_id"], "registered", "H1c"), margin="-0.05")
+    assert sorted(item["item_id"] for item in items if any(unit["gold"] == "answer" for unit in runner._units(item))) == ANSWERABLE
+    vloop = [item in vloop_errors for item in ANSWERABLE]
+    for name, right_arm, right in (("H1a", "GATE", [item in gate_errors for item in ANSWERABLE]), ("H1b", "GATE+SV", [False] * 9)):
+        expected = statistics.mcnemar_exact(vloop, right)
+        assert registered["hypotheses"][name] == {"endpoint": "item-level error on answerable items, paired by item (Table I; eq. 12)",
+                                                  "comparison": ["VLOOP", right_arm], "test": "mcnemar_exact", **expected, "items": 9}, name
+    assert registered["hypotheses"]["H1a"]["right_only"] == 3 and registered["hypotheses"]["H1b"]["left_only"] == 1
+    # H1c: every answerable unit is answered in both arms, so each item's answer rate is 1 and the difference 0.
+    h1c = statistics.paired_bootstrap_one_sided([1.0] * 9, [1.0] * 9, resamples=1000,
+                                                seed=hashed_hex(spec["run_id"], "registered", "H1c"), margin="-0.05")
     assert registered["hypotheses"]["H1c"] == {"endpoint": "answer rate (eq. 17)", "comparison": ["VLOOP", "GATE"],
                                               "test": "paired_bootstrap_one_sided", **h1c}
     assert registered["holm"] == statistics.holm({name: value["p_value"] for name, value in registered["hypotheses"].items()})
     assert "GATE-vs-NR" in record["comparisons"]["pairs"]  # the exploratory comparisons stay what they were
+    check = runner.plan_run(small_spec(tmp_path / "check")[0])
+    assert runner.execute_run(check, StubResponder(), tmp_path / "check-out")["registered_tests"] is None
+
+
+def _plans_with(tmp_path, edit):
+    from evaluation.qcai_eval.canonical import canonical_sha256, dumps_record, write_lf
+
+    raw = json.loads((REPO_ROOT / synthetic.PLANS_PATH).read_text(encoding="utf-8"))
+    edit(raw)
+    path = tmp_path / "plans.json"
+    write_lf(path, dumps_record(raw))
+    return {"path": str(path), "sha256": canonical_sha256(raw), "family": "E1"}
+
+
+def _single_quantity(hypothesis, test, margin="0.03"):
+    hypothesis.pop("comparison")
+    hypothesis.update(test=test, sided="one", margin=margin)
+
+
+@pytest.mark.parametrize("edit", [
+    lambda raw: _single_quantity(raw["families"]["E1"]["hypotheses"][1], "wilson_upper_bound"),
+    lambda raw: raw["families"]["E1"]["hypotheses"][0].update(comparison=["VLOOP", "GATE", "NR"]),
+    lambda raw: _single_quantity(raw["families"]["E1"]["hypotheses"][2], "bootstrap_one_sided", "-0.05"),
+])
+def test_an_e1_family_the_design_does_not_compute_is_refused_before_anything_runs(tmp_path, monkeypatch, edit):
+    # The plans file validates (validate_plans), but E1 computes only H1a/H1b exact McNemar and H1c's paired bootstrap,
+    # each over two of the selected arms: anything else is refused when planned (exit 2), never a traceback after the run.
+    from evaluation.qcai_eval import analysis_plans
+
+    _gate_passed(monkeypatch)
+    spec, _ = _confirmatory(tmp_path, "E1")
+    plan_block = _plans_with(tmp_path, edit)
+    analysis_plans.validate_plans(json.loads(Path(plan_block["path"]).read_text(encoding="utf-8")))
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**spec, "analysis_plan": plan_block})
+    assert refused.value.code == 2 and refused.value.reasons == ["analysis_plan_invalid:E1"]
+    runner.plan_run(spec)  # the committed plans pass
+
+
+def _e2_spec(tmp_path, monkeypatch, **changes):
+    from evaluation.qcai_eval.canonical import lf_sha256
+
+    _gate_passed(monkeypatch)
+    spec, _items = _confirmatory(tmp_path, "E1")
+    runner.execute_run(runner.plan_run(spec), StubResponder(), tmp_path / "e1")
+    responses = tmp_path / "e1" / "responses.jsonl"
+    design = {"verification_set": {"path": str(responses), "sha256": lf_sha256(responses), "generator_family": "family-g"},
+              "verifiers": [{"model_id": "verifier-a", "family": "family-a"}, {"model_id": "verifier-b", "family": "family-b"},
+                            {"model_id": "verifier-c", "family": "family-c"}, {"model_id": "verifier-g", "family": "family-g"}],
+              "resamples": 400, **changes}
+    e2 = {**spec, "experiment": "E2", "run_id": "synthetic-e2-v1", "analysis_plan": {**spec["analysis_plan"], "family": "E2"},
+          "design": design}
+    return e2, read_jsonl(responses)
+
+
+def test_e2_verifies_every_labelled_claim_outside_each_verifier_s_family_and_forms_the_panels_by_rule(tmp_path, monkeypatch):
+    # VBT RevB Sec. VIII-D E2: "Each model verifies every claim generated outside its own provider family, and panels are
+    # formed afterwards by rule, so 1oo3, 2oo3, 3oo3 and Dawid-Skene panels are compared on identical claims"; Table I:
+    # H2a the 2oo3 panel's claim-level F1 against the best single verifier's, H2b DR = P_all / (m1 m2 m3).
+    from evaluation.qcai_eval import experiments, statistics
+    from evaluation.qcai_eval.canonical import canonical_sha256
+
+    spec, source = _e2_spec(tmp_path, monkeypatch)
+    plan = runner.plan_run(spec)
+    gold = {canonical_sha256({"source": "E1", "request_key": line["request_key"], "claim_id": claim["claim_id"]}):
+            claim["label"] in experiments.ERROR_LABELS for line in source if line["replicate"] == 1 and line["outcome"] == "answered"
+            for claim in line["claims"]}
+    assert {request.cell for request in plan.requests} == {"verifier-a", "verifier-b", "verifier-c"}  # not the generator's family
+    assert {request.subject for request in plan.requests} == set(gold) and {request.role for request in plan.requests} == {"verify"}
+    item_of = {request.subject: request.item_id for request in plan.requests}
+
+    def flags(subject):  # a objects to every erroneous claim, b to every claim, c to the erroneous claims of items before D
+        return (gold[subject], True, gold[subject] and item_of[subject] < "SYN-D")
+
+    class Verifiers:
+        rule = "scripted-verifiers"
+
+        def respond(self, request):
+            flag = flags(request.subject)[("verifier-a", "verifier-b", "verifier-c").index(request.cell)]
+            return {"outcome": "answered", "verdict": "object" if flag else "pass", "claims": [], "text": "v",
+                    "usage": {"input_units": 1, "output_units": 1}, "model_id": None}
+
+    record = runner.execute_run(plan, Verifiers(), tmp_path / "e2")
+    panel = record["metrics"]["panel"]
+    assert panel["members"] == ["verifier-a", "verifier-b", "verifier-c"] and panel["claims"] == len(gold)
+    for needed in (1, 2, 3):
+        rows = [(gold[subject], sum(flags(subject)) >= needed) for subject in gold]
+        counts = (sum(g and f for g, f in rows), sum((not g) and f for g, f in rows), sum(g and not f for g, f in rows))
+        rule = panel["rules"][f"{needed}oo3"]
+        assert (rule["true_positives"], rule["false_positives"], rule["false_negatives"]) == counts, needed
+    # 2oo3 flags exactly the erroneous claims (a and b agree on them; b alone objects to the rest): F1 1, as a's.
+    assert panel["rules"]["2oo3"]["F1"] == 1.0 == record["metrics"]["verifiers"]["verifier-a"]["F1"]
+    hypotheses = record["registered_tests"]["hypotheses"]
+    assert hypotheses["H2b"]["status"] == "undefined"  # a never misses an erroneous claim: m_a = 0
+    assert hypotheses["H2c"]["status"] == "awaiting_ratings"
+    assert experiments._dr([[(True, (False, False, False)), (True, (True, False, False))], [(True, (False, True, True))]]) == \
+        pytest.approx((1 / 3) / ((2 / 3) ** 3))
+    assert experiments._dr([[(True, (True, True, True))]]) == float("-inf")
+    clusters = [[(True, (True, False, True)), (False, (False, True, False))], [(True, (True, True, False))], [(False, (True, False, False))]]
+    assert experiments._f1([(g, flags_[0]) for cluster in clusters for g, flags_ in cluster]) == pytest.approx(2 * 2 / (2 * 2 + 1))
+    posterior = experiments.dawid_skene([(True, True, True), (False, False, False), (True, True, False), (False, False, True)], 50)
+    assert posterior[0] > 0.5 > posterior[1] and posterior[2] > 0.5 > posterior[3]
+    assert record["registered_tests"]["holm"] == statistics.holm(
+        {name: value["p_value"] for name, value in hypotheses.items() if "p_value" in value})
+
+
+@pytest.mark.parametrize(("change", "code", "reason"), [
+    ({"verifiers": [{"model_id": "verifier-a", "family": "family-a"}, {"model_id": "verifier-b", "family": "family-a"},
+                    {"model_id": "verifier-c", "family": "family-c"}]}, 2, "e2_panel_invalid"),
+    ({"verifiers": [{"model_id": "verifier-a", "family": "family-a"}, {"model_id": "verifier-g", "family": "family-g"},
+                    {"model_id": "verifier-c", "family": "family-c"}]}, 2, "e2_panel_invalid"),
+    ({"verifiers": "panel"}, 2, "design.verifiers"),
+    ({"verification_set": {"path": "missing.jsonl", "sha256": "0" * 64, "generator_family": "family-g"}}, 3, "verification_set_unreadable"),
+])
+def test_e2_refuses_a_panel_that_is_not_three_families_without_the_generator_and_an_input_it_cannot_read(tmp_path, monkeypatch, change,
+                                                                                                         code, reason):
+    spec, _source = _e2_spec(tmp_path, monkeypatch, **change)
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(spec)
+    assert refused.value.code == code and refused.value.reasons == [reason]
+    good, _source = _e2_spec(tmp_path / "again", monkeypatch)
+    pinned = {**good["design"]["verification_set"], "sha256": "0" * 64}
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**good, "design": {**good["design"], "verification_set": pinned}})
+    assert refused.value.code == 6 and refused.value.reasons == ["verification_set_sha256"]
+
+
+def test_e3_runs_two_pass_and_single_pass_at_three_levels_and_tests_invariance_paired_by_item(tmp_path, monkeypatch):
+    # VBT RevB Sec. VIII-D E3: "Each S7 item runs at three mastery levels ... under two designs: two-pass channel
+    # separation, in which the evidential pass runs once per item and its locked claims are reused at every level, and
+    # single-pass conditioning"; "Single-pass generation is also repeated three times at one fixed level". H3a exact
+    # McNemar on v_q (eq. 18) paired by item; H3b Friedman over the levels.
+    from evaluation.qcai_eval import statistics
+
+    _gate_passed(monkeypatch)
+    spec, items = _confirmatory(tmp_path, "E3", design={})
+    plan = runner.plan_run(spec)
+    g_items = sorted(item["item_id"] for item in items if item["stratum"] == "G")
+    assert sorted({request.item_id for request in plan.requests}) == g_items
+    per_item = [(request.role, request.unit, request.replicate) for request in plan.requests if request.item_id == g_items[0]]
+    assert per_item == [("two-pass-evidential", None, 1), ("two-pass", "beginner", 1), ("two-pass", "intermediate", 1),
+                        ("two-pass", "advanced", 1), ("single-pass", "beginner", 1), ("single-pass", "intermediate", 1),
+                        ("single-pass", "intermediate", 2), ("single-pass", "intermediate", 3), ("single-pass", "advanced", 1)]
+    assert plan.pins["design"] == {"experiment": "E3", "arm": "VLOOP", "fixed_level": "intermediate", "repeats": 3, "h3b_feature": "fk_grade",
+                                   "resamples": None, "ratings": None}
+    grades = {"beginner": 5, "intermediate": 8, "advanced": 12}
+
+    class Generator:
+        rule = "scripted-e3"
+
+        def respond(self, request):
+            drop = request.role == "single-pass" and request.item_id == g_items[0] and request.unit == "advanced"
+            claims = [] if drop else [{"claim_id": claim, "cited": list(request.evidence), "label": "supported", "ehmf_type": None}
+                                      for claim in request.gold_claims]
+            return {"outcome": "answered", "claims": claims, "text": "g", "usage": {"input_units": 1, "output_units": 1}, "model_id": None,
+                    "features": {"fk_grade": grades.get(request.unit, 0) + (1 if request.item_id == g_items[1] else 0),
+                                 "guiding_questions": 1, "prerequisite_recaps": 0, "length": 100}}
+
+    record = runner.execute_run(plan, Generator(), tmp_path / "e3")
+    tests = record["registered_tests"]["hypotheses"]
+    assert tests["H3a"] == {"endpoint": tests["H3a"]["endpoint"], "comparison": ["two-pass", "single-pass"], "test": "mcnemar_exact",
+                            **statistics.mcnemar_exact([False, False], [True, False]), "items": 2}
+    assert record["metrics"]["IV"]["two-pass"]["rate"] == 0.0 and record["metrics"]["IV"]["single-pass"]["rate"] == 0.5
+    friedman = statistics.friedman([[5.0, 8.0, 12.0], [6.0, 9.0, 13.0]])
+    assert {key: tests["H3b"][key] for key in friedman} == friedman and tests["H3b"]["feature"] == "fk_grade"
+    assert record["metrics"]["two_pass_lock_kept"] == {"items": 2, "kept": 2}
+    assert record["replicate_variance"]["single-pass"]["violations"]["successes"] == 0
+
+
+E4_MODELS = [{"model_id": "model-a", "family": "family-a", "price_per_unit": "0.003", "local": False},
+             {"model_id": "model-b", "family": "family-b", "price_per_unit": "0.002", "local": False},
+             {"model_id": "model-c", "family": "family-c", "price_per_unit": "0.004", "local": False},
+             {"model_id": "model-l", "family": "local", "price_per_unit": "0.001", "local": True}]
+
+
+def _e4_spec(tmp_path, monkeypatch, **changes):
+    _gate_passed(monkeypatch)
+    items_path, catalog_path, items = synthetic.write_fixture_set(tmp_path, synthetic.SMALL, splits=True)
+    design = {"models": E4_MODELS, "pilot_commercial": "model-b", "streams": 4, "stream_length": 40,
+              "shift": {"model": "model-b", "topic": items[0]["topic"], "at": 20}, **changes}
+    spec = synthetic.spec_dict(items_path=items_path, catalog_path=catalog_path, purpose="confirmatory", experiment="E4", family="E4",
+                               run_id="synthetic-e4-v1", design=design)
+    return spec, items
+
+
+def test_e4_answers_every_unit_with_four_models_in_gate_and_vloop_and_tests_h4a_and_h4b(tmp_path, monkeypatch):
+    # VBT RevB Sec. VIII-D E4: "All four models answer all items in arms GATE and VLOOP"; "1,000 seeded streams of 2,000
+    # requests compare the proposed controller, with and without hysteresis, against static-best, round-robin rotation,
+    # cheapest-eligible, epsilon-greedy, a LinUCB-style bandit ... and threshold escalation"; Table I H4b "Exact McNemar"
+    # on the local and the pilot-selected commercial model's error rates without verification (GATE).
+    from evaluation.qcai_eval import experiments, statistics
+
+    spec, items = _e4_spec(tmp_path, monkeypatch)
+    plan = runner.plan_run(spec)
+    check = runner.plan_run(small_spec(tmp_path / "check")[0])
+    units = {(r.item_id, r.unit, r.replicate) for r in check.requests if r.arm == "GATE"}
+    for model in ("model-a", "model-b", "model-c", "model-l"):
+        for arm in ("GATE", "VLOOP"):
+            assert {(r.item_id, r.unit, r.replicate) for r in plan.requests if r.cell == model and r.arm == arm} == units
+    assert len(plan.requests) == 8 * len(units) and len({r.request_key for r in plan.requests}) == len(plan.requests)
+    errors = {"model-l": {"SYN-A-001", "SYN-B-002", "SYN-G-001"}, "model-b": {"SYN-G-001"}}
+
+    def rule(request):
+        if request.gold == "abstain":
+            return "abstained", []
+        return "answered", ["fabricated" if request.arm == "GATE" and request.item_id in errors.get(request.cell, ()) else "supported"]
+
+    record = runner.execute_run(plan, _scripted(rule), tmp_path / "e4")
+    h4b = record["registered_tests"]["hypotheses"]["H4b"]
+    expected = statistics.mcnemar_exact([item in errors["model-l"] for item in ANSWERABLE], [item in errors["model-b"] for item in ANSWERABLE])
+    assert {key: h4b[key] for key in expected} == expected and h4b["items"] == 9 and h4b["tost"]["status"] == "awaiting_ratings"
+    h4a = record["registered_tests"]["hypotheses"]["H4a"]
+    assert h4a["streams"] == 4 and h4a["stream_length"] == 40 and 0.0 <= h4a["p_value"] <= 1.0
+    assert set(h4a["quality_per_price"]) == set(experiments.POLICIES)
+    assert record["registered_tests"]["holm"] == statistics.holm({"H4a": h4a["p_value"], "H4b": h4b["p_value"]})
+    # Every delivered answer is clean and every abstention delivers nothing: the local model, the cheapest, is static-best.
+    population, excluded, prices = experiments._replay_population(plan, read_jsonl(tmp_path / "e4" / "responses.jsonl"))
+    assert excluded == 0 and len(population) == len({(item, unit) for item, unit, _r in units})
+    stream = experiments._replay_stream(plan, population, sorted(population, key=lambda u: (u[0], u[1] or "")), prices, "unit-test")
+    assert stream["static_best"] == "model-l" and stream["policies"]["static-best"] == stream["policies"]["cheapest-eligible"]
+    assert "at_later_prices" not in h4a
+    # "at both Gemini prices if runs straddle 1 January 2027": a model's later list price replays H4a again beside it.
+    later = [{**entry, "later_price": {"from": "2027-01-01", "price_per_unit": "0.006"}} if entry["model_id"] == "model-b" else entry
+             for entry in E4_MODELS]
+    spec_later = {**spec, "design": {**spec["design"], "models": later}}
+    plan_later = runner.plan_run(spec_later)
+    record_later = runner.execute_run(plan_later, _scripted(rule), tmp_path / "e4-later")
+    at_later = record_later["registered_tests"]["hypotheses"]["H4a"]["at_later_prices"]
+    assert at_later["later_price"] == {"model-b": {"from": "2027-01-01", "price_per_unit": "0.006"}} and at_later["enters_holm"] is False
+    assert experiments._replay_population(plan_later, read_jsonl(tmp_path / "e4-later" / "responses.jsonl"), later=True)[2] == {
+        **prices, "model-b": 0.006}
+    assert record_later["registered_tests"]["holm"] == record["registered_tests"]["holm"]
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**spec, "design": {**spec["design"], "models": [{**later[1], "later_price": {"from": "soon", "price_per_unit": "1"}},
+                                                                          *E4_MODELS[:1], *E4_MODELS[2:]]}})
+    assert refused.value.reasons == ["design.models"]
+
+
+def test_e4_policies_route_by_their_rules_and_the_shift_resamples_the_degraded_model_s_failures(tmp_path, monkeypatch):
+    # "At request 1,000, one model's first-pass error rate in one topic is raised by ten percentage points by resampling
+    # its own recorded failed responses": here at request 0 by 50 points over a topic where model-b fails half the time.
+    from evaluation.qcai_eval import experiments
+
+    spec, _items = _e4_spec(tmp_path, monkeypatch, stream_length=8,
+                            shift={"model": "model-b", "topic": "invented topic a", "at": 0, "points": "0.5"})
+    plan = runner.plan_run(spec)
+    price = {"model-a": 0.003, "model-b": 0.002, "model-c": 0.004, "model-l": 0.001}
+    clean = {model: experiments.Outcome(y=1, quality=1.0, cost=price[model], first_cost=price[model]) for model in price}
+    failed = {model: experiments.Outcome(y=0, quality=0.0, cost=price[model], first_cost=price[model]) for model in price}
+    population = {("SYN-A-001", None): {"topic": "invented topic a", "outcomes": {**clean, "model-l": failed["model-l"]}},
+                  ("SYN-A-002", None): {"topic": "invented topic a", "outcomes": {**clean, "model-b": failed["model-b"]}},
+                  ("SYN-B-001", None): {"topic": "invented topic b", "outcomes": clean}}
+    result = experiments._replay_stream(plan, population, sorted(population), price, "policy-test")
+    assert result["shift_rate"] == 1.0  # 0.5 points over a base error of 1/2: every clean model-b outcome in topic a fails
+    policies = result["policies"]
+    # Over the pool, quality per price: l 2/0.003, a 3/0.009, b 2/0.006, c 3/0.012, so static-best is the local model.
+    assert result["static_best"] == "model-l"
+    assert policies["cheapest-eligible"]["cost"] == pytest.approx(8 * 0.001)
+    assert policies["round-robin"]["cost"] == pytest.approx(2 * sum(price.values()))  # a, b, c, l twice each
+    # Escalation pays every first pass that fails on the way up: never less than the cheapest model's cost.
+    assert policies["threshold-escalation"]["cost"] >= policies["cheapest-eligible"]["cost"]
+    assert policies["threshold-escalation"]["verified_quality"] >= policies["cheapest-eligible"]["verified_quality"]
+    for policy in ("controller", "controller-no-hysteresis"):
+        assert {"detection_delay", "switches", "alarms"} <= set(policies[policy]), policy
+    # Every request on SYN-A-001: l fails its first pass (0.001 paid), b's clean outcome is shifted to a failure (0.002
+    # paid), a passes and delivers (0.003): 0.006 and one verified answer per request.
+    # Static-best is chosen on the pool before the shift (b: 1/0.002), so after it static-best delivers nothing.
+    single = experiments._replay_stream(plan, population, [("SYN-A-001", None)], price, "policy-test")
+    one = single["policies"]
+    assert one["threshold-escalation"]["cost"] == pytest.approx(8 * 0.006) and one["threshold-escalation"]["verified_quality"] == 8.0
+    assert single["static_best"] == "model-b" and one["static-best"]["verified_quality"] == 0.0
+    assert one["cheapest-eligible"]["verified_quality"] == 0.0
+
+
+@pytest.mark.parametrize("experiment", ["E2", "E3", "E4"])
+def test_each_design_run_repeats_byte_identically(tmp_path, monkeypatch, experiment):
+    # AC-10-3 for the E2, E3 and E4 designs: a stub run repeats byte for byte (the run record and the payload log).
+    if experiment == "E2":
+        spec, _source = _e2_spec(tmp_path, monkeypatch)
+    elif experiment == "E3":
+        _gate_passed(monkeypatch)
+        spec, _items = _confirmatory(tmp_path, "E3", design={})
+    else:
+        spec, _items = _e4_spec(tmp_path, monkeypatch)
+    outputs = []
+    for name in ("first", "second"):
+        record = runner.execute_run(runner.plan_run(spec), StubResponder(), tmp_path / name)
+        outputs.append([(tmp_path / name / file).read_bytes() for file in ("run_record.json", "payload_log.jsonl")])
+        assert record["experiment"] == experiment and record["registered_tests"]["family"] == experiment
+        assert record["comparisons"] is None and record["bootstrap"] is None
+    assert outputs[0] == outputs[1]
+    lines = read_jsonl(tmp_path / "first" / "payload_log.jsonl")
+    assert {line["role"] for line in lines} <= {"answer", "verify", "two-pass-evidential", "two-pass", "single-pass"}
+
+
+@pytest.mark.parametrize(("experiment", "change", "reason"), [
+    ("E4", {"pilot_commercial": "model-l"}, "e4_models_invalid"),
+    ("E4", {"models": E4_MODELS[:3]}, "e4_models_invalid"),
+    ("E4", {"shift": {"model": "model-z", "topic": "invented topic a"}}, "e4_shift_invalid"),
+    ("E4", {"shift": {"model": "model-b", "topic": "invented topic a", "points": "2"}}, "design.shift"),
+    ("E3", {"fixed_level": "expert"}, "design.fixed_level"),
+])
+def test_a_design_block_that_cannot_run_is_refused_with_exit_2(tmp_path, monkeypatch, experiment, change, reason):
+    if experiment == "E4":
+        spec, _items = _e4_spec(tmp_path, monkeypatch, **change)
+    else:
+        _gate_passed(monkeypatch)
+        spec, _items = _confirmatory(tmp_path, "E3", design=change)
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(spec)
+    assert refused.value.code == 2 and refused.value.reasons == [reason]
+
+
+@pytest.mark.parametrize("experiment", ["E3", "E4"])
+def test_a_design_whose_arms_are_not_selected_is_refused(tmp_path, monkeypatch, experiment):
+    # E3 runs in the pinned arm (VLOOP, PD-75) and E4 in GATE and VLOOP; parity covers the selected arms only.
+    if experiment == "E4":
+        spec, _items = _e4_spec(tmp_path, monkeypatch)
+    else:
+        _gate_passed(monkeypatch)
+        spec, _items = _confirmatory(tmp_path, "E3", design={})
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**spec, "arms": {**spec["arms"], "selected": ["NR", "LEX", "SEM", "GATE", "GATE+SV", "GATE+V1"]}})
+    assert refused.value.code == 2 and refused.value.reasons == ["experiment_requires_arms"]
