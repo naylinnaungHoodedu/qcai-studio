@@ -265,6 +265,82 @@ def test_a_checkpoint_line_that_is_not_a_response_record_is_refused(tmp_path, li
         assert refused.value.code == 2 and refused.value.reasons == ["checkpoint_invalid"]
 
 
+# A checkpoint response line changed in one field, each a line the metrics or the payload log could not read: refused
+# as checkpoint_invalid (exit 2) before any request is sent, never a KeyError or AttributeError after the run.
+MALFORMED_CHECKPOINT_LINES = {
+    "outcome_missing": lambda line: line.pop("outcome"),
+    "outcome_not_a_string": lambda line: line.update(outcome=7),
+    "outcome_unknown": lambda line: line.update(outcome="weird"),
+    "claims_not_a_list": lambda line: line.update(claims="x"),
+    "claim_not_an_object": lambda line: line.update(claims=["x"]),
+    "cited_a_string": lambda line: line.update(claims=[{"claim_id": "c-1", "cited": "EV-SYN-001", "label": "supported"}]),
+    "claims_missing": lambda line: line.pop("claims"),
+    "usage_not_an_object": lambda line: line.update(usage="x"),
+    "usage_missing": lambda line: line.pop("usage"),
+    "usage_null": lambda line: line.update(usage=None),
+    "usage_negative": lambda line: line.update(usage={"input_units": -1, "output_units": 0}),
+    "signals_float": lambda line: line.update(signals={"V": 0.5}),
+    "latency_first_after_total": lambda line: line.update(latency={"first_token_ms": 5, "total_ms": 1}),
+    "text_not_a_string": lambda line: line.update(text=5),
+    "attempts_missing": lambda line: line.pop("attempts"),
+    "attempt_not_an_object": lambda line: line.update(attempts=["ok"]),
+    "failure_reason_on_an_answer": lambda line: line.update(failure_reason="timeout"),
+    "provider_failure_without_reason": lambda line: line.update(outcome="provider_failure", failure_reason=None),
+}
+
+
+@pytest.mark.parametrize("case", sorted(MALFORMED_CHECKPOINT_LINES))
+def test_a_checkpoint_response_line_the_run_cannot_read_is_refused_before_any_request_is_sent(tmp_path, case):
+    # Spec 4.12: "any newline-terminated line that is not a UTF-8 JSON response record" is checkpoint_invalid (exit 2).
+    spec, _ = small_spec(tmp_path)
+    plan, out = _interrupted(tmp_path, spec)
+    lines = (out / "responses.jsonl").read_text(encoding="utf-8").splitlines()
+    first = json.loads(lines[0])
+    assert runner.checkpoint_line_problem(first) is None and first["outcome"] in ("answered", "abstained")
+    MALFORMED_CHECKPOINT_LINES[case](first)
+    (out / "responses.jsonl").write_text("\n".join([json.dumps(first, sort_keys=True)] + lines[1:]) + "\n", encoding="utf-8",
+                                         newline="\n")
+    before = (out / "responses.jsonl").read_bytes()
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.execute_run(plan, ScriptedProvider(), out, resume=True)
+    assert refused.value.code == 2 and refused.value.reasons == ["checkpoint_invalid"]
+    assert (out / "responses.jsonl").read_bytes() == before and not (out / "run_record.json").exists()
+
+
+def test_a_well_formed_provider_failure_line_resumes_and_a_malformed_one_is_refused_through_the_cli(tmp_path):
+    # A provider_failure line as the runner writes it (attempts, reason, no claims) is a response record and resumes; through
+    # the CLI with the access log, a malformed reused line is refused (exit 2) with the refused outcome logged, before the
+    # remaining requests are sent.
+    if str(REPO_ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import run_evaluation
+
+    spec, _ = small_spec(tmp_path, counts={"A": 1, "B": 0, "C": 0, "D": 0, "E": 0, "F": 0, "G": 0}, selected=["GATE"],
+                         replicates={"default": 1})
+    record = runner.execute_run(runner.plan_run(spec), Flaky(4), tmp_path / "failed")
+    line = read_jsonl(tmp_path / "failed" / "responses.jsonl")[0]
+    assert line["outcome"] == "provider_failure" and runner.checkpoint_line_problem(line) is None
+    assert runner.checkpoint_line_problem({**line, "attempts": []} | {"failure_reason": "evidential_pass_failed"}) is None
+    full_spec, _ = small_spec(tmp_path / "cli")
+    path = tmp_path / "spec.json"
+    path.write_text(json.dumps(full_spec), encoding="utf-8")
+    assert run_evaluation.main(["--spec", str(path), "--output-dir", str(tmp_path / "run1")]) == 0
+    events = (tmp_path / "run1" / "run_events.jsonl").read_text(encoding="utf-8").splitlines()
+    responses = (tmp_path / "run1" / "responses.jsonl").read_text(encoding="utf-8").splitlines()
+    first = json.loads(responses[0])
+    first.pop("outcome")
+    run2 = tmp_path / "run2"
+    run2.mkdir()
+    (run2 / "run_events.jsonl").write_text(events[0] + "\n", encoding="utf-8", newline="\n")
+    (run2 / "responses.jsonl").write_text("\n".join([json.dumps(first)] + responses[1:10]) + "\n", encoding="utf-8", newline="\n")
+    before = (run2 / "responses.jsonl").read_bytes()
+    log = tmp_path / "access.jsonl"
+    assert run_evaluation.main(["--spec", str(path), "--output-dir", str(run2), "--resume", "--access-log", str(log),
+                                "--actor-role", "PI"]) == 2
+    assert read_jsonl(log)[-1].get("outcome") == "refused" and (run2 / "responses.jsonl").read_bytes() == before
+    assert record["slis"]["provider_failures"] == {"timeout": 1}
+
+
 MALFORMED = [
     (lambda s: s.update(package="v7.json"), "package.path"),
     (lambda s: s["package"].pop("path"), "package.path"),
@@ -453,6 +529,44 @@ def test_a_well_formed_recording_plans_and_a_tampered_invalid_one_is_a_pin_misma
     with pytest.raises(runner.RunRefused) as refused:
         runner.plan_run(spec)
     assert refused.value.code == 6 and refused.value.reasons == ["recording_sha256"]
+
+
+@pytest.mark.parametrize("tamper", ["malformed", "well_formed"])
+def test_a_recorded_run_replays_the_recording_the_planner_verified_even_when_the_file_changes_after_planning(
+        tmp_path, monkeypatch, tamper):
+    # The planner checks the recording's sha256, its run pins and every entry; the run replays that same responder
+    # (`plan.recorded_responder`), never a second read of the path: a file replaced after planning is neither a traceback
+    # (malformed) nor replayed under the pinned sha256 (well formed).
+    if str(REPO_ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import run_evaluation
+
+    spec = _recording_spec(tmp_path / "recording")
+    path = tmp_path / "spec.json"
+    path.write_text(json.dumps(spec), encoding="utf-8")
+    assert run_evaluation.main(["--spec", str(path), "--output-dir", str(tmp_path / "baseline")]) == 0
+    recording = Path(spec["responder"]["recorded"]["path"])
+    lines = read_jsonl(recording)
+    if tamper == "malformed":
+        lines[1]["response"]["outcome"] = 7
+    else:
+        lines[1]["response"]["text"] = "A different invented answer."
+    plan_run = runner.plan_run
+
+    def plan_then_replace(*args, **kwargs):
+        plan = plan_run(*args, **kwargs)
+        recording.write_bytes("".join(json.dumps(line, sort_keys=True, separators=(",", ":")) + "\n" for line in lines).encode("utf-8"))
+        return plan
+
+    monkeypatch.setattr(runner, "plan_run", plan_then_replace)
+    log = tmp_path / "access.jsonl"
+    assert run_evaluation.main(["--spec", str(path), "--output-dir", str(tmp_path / "out"), "--access-log", str(log),
+                                "--actor-role", "MLE"]) == 0
+    assert read_jsonl(log)[-1].get("outcome") == "completed"
+    for name in ("responses.jsonl", "payload_log.jsonl"):
+        assert (tmp_path / "out" / name).read_bytes() == (tmp_path / "baseline" / name).read_bytes(), name
+    plan = plan_run(_recording_spec(tmp_path / "again"))
+    assert run_evaluation._responder(plan) is plan.recorded_responder and plan.recorded_responder is not None
 
 
 def test_e4_usage_at_the_recording_bound_and_prices_at_price_max_run_to_completion(tmp_path, monkeypatch):
@@ -819,11 +933,23 @@ E4_MODELS = [{"model_id": "model-a", "family": "family-a", "price_per_input_unit
 LATER_PRICE = {"from": "2099-01-01", "price_per_input_unit": "0.002", "price_per_output_unit": "0.004"}
 
 
+# A shift the scripted E4 tests can carry: model-b fails the GATE first pass of SYN-G-001 (rule `_fails_g`), not SYN-G-002's.
+SHIFT_G = {"model": "model-b", "topic": "invented topic g", "at": 20}
+
+
+def _fails_g(request) -> bool:
+    return request.cell == "model-b" and request.arm == "GATE" and request.item_id == "SYN-G-001"
+
+
 def _e4_spec(tmp_path, monkeypatch, **changes):
     _gate_passed(monkeypatch)
     items_path, catalog_path, items = synthetic.write_fixture_set(tmp_path, synthetic.SMALL, splits=True)
+    # The shift is one the streams' population can carry: under the stub, model-b fails some but not every first pass in
+    # this topic among the items left after the commissioning hold-out (`experiments.shift_injection`).
+    topic = "invented topic c"
+    assert any(item["topic"] == topic for item in items)
     design = {"models": E4_MODELS, "pilot_commercial": "model-b", "streams": 4, "stream_length": 40, "commissioning_items": 4,
-              "shift": {"model": "model-b", "topic": items[0]["topic"], "at": 20}, **changes}
+              "shift": {"model": "model-b", "topic": topic, "at": 20}, **changes}
     spec = synthetic.spec_dict(items_path=items_path, catalog_path=catalog_path, purpose="confirmatory", experiment="E4", family="E4",
                                run_id="synthetic-e4-v1", design=design)
     return spec, items
@@ -836,7 +962,7 @@ def test_e4_answers_every_unit_with_four_models_in_gate_and_vloop_and_tests_h4a_
     # on the local and the pilot-selected commercial model's error rates without verification (GATE).
     from evaluation.qcai_eval import experiments, statistics
 
-    spec, items = _e4_spec(tmp_path, monkeypatch)
+    spec, items = _e4_spec(tmp_path, monkeypatch, shift=SHIFT_G)
     plan = runner.plan_run(spec)
     check = runner.plan_run(small_spec(tmp_path / "check")[0])
     units = {(r.item_id, r.unit, r.replicate) for r in check.requests if r.arm == "GATE"}
@@ -857,6 +983,8 @@ def test_e4_answers_every_unit_with_four_models_in_gate_and_vloop_and_tests_h4a_
     assert {key: h4b[key] for key in expected} == expected and h4b["items"] == 9 and h4b["tost"]["status"] == "awaiting_ratings"
     h4a = record["registered_tests"]["hypotheses"]["H4a"]
     assert h4a["streams"] == 4 and h4a["stream_length"] == 40 and 0.0 <= h4a["p_value"] <= 1.0
+    # model-b fails SYN-G-001's three GATE units and passes SYN-G-002's: base error 1/2, so the ten points inject at 0.2.
+    assert h4a["shift"]["rate"] == pytest.approx(0.2) and h4a["detection"]["shift_rate"] == pytest.approx(0.2)
     # Four commissioning items cannot earn rating B (its 5% trust bound of 0.90 needs 28 clean first passes), so the
     # controller and cheapest-eligible abstain on every request and only the six other policies report a quality per price.
     assert set(h4a["quality_per_price"]) == set(experiments.POLICIES) - {"controller", "controller-no-hysteresis", "cheapest-eligible"}
@@ -982,7 +1110,7 @@ def _repin(path, lines):
     return {"path": str(path), "sha256": lf_sha256(path)}
 
 
-def test_the_registered_protocol_values_are_the_harness_defaults():
+def test_the_registered_protocol_values_are_the_harness_defaults(tmp_path):
     # VBT RevB Sec. VIII-D: "Single-pass generation is also repeated three times"; "1,000 seeded streams of 2,000 requests
     # ... At request 1,000, one model's first-pass error rate in one topic is raised by ten percentage points".
     from evaluation.qcai_eval import experiments
@@ -990,11 +1118,27 @@ def test_the_registered_protocol_values_are_the_harness_defaults():
     defaults = runner.load_harness_parameters()["designs"]
     assert experiments.REGISTERED_DESIGN == {"E3": {"repeats": defaults["E3"]["repeats"]},
                                              "E4": {"streams": defaults["E4"]["streams"], "stream_length": defaults["E4"]["stream_length"],
-                                                    "shift.at": defaults["E4"]["shift_at"], "shift.points": defaults["E4"]["shift_points"],
-                                                    "commissioning_items": defaults["E4"]["commissioning_items"]}}
-    # VBT RevB Sec. VII: "Commissioning therefore uses the 30-item pilot plus the golden set (80 items)".
-    assert experiments.REGISTERED_DESIGN["E4"] == {"streams": 1000, "stream_length": 2000, "shift.at": 1000, "shift.points": "0.10",
-                                                   "commissioning_items": 80}
+                                                    "shift.at": defaults["E4"]["shift_at"], "shift.points": defaults["E4"]["shift_points"]}}
+    assert experiments.REGISTERED_DESIGN["E4"] == {"streams": 1000, "stream_length": 2000, "shift.at": 1000, "shift.points": "0.10"}
+    # VBT RevB Sec. VII's "30-item pilot plus the golden set (80 items)" are not ULQS items: the hold-out of 80 run items in
+    # their place is a provisional engineering default, not a registered value, and the streams keep at least 120 items
+    # (AC-10-1's smallest ULQS, "120-200 items across S1-S7").
+    assert (defaults["E4"]["commissioning_items"], defaults["E4"]["min_stream_items"]) == (80, 120)
+    # The floor is always the harness parameters': a spec's value (which the shape check refuses) never replaces it.
+    design = {"models": E4_MODELS, "pilot_commercial": "model-b", "shift": {"model": "model-b", "topic": "t"}, "min_stream_items": 1}
+    assert experiments.effective_design("E4", design, runner.load_harness_parameters())["min_stream_items"] == 120
+    # A harness parameters file whose streams' floor is missing or not a positive integer is refused when it is loaded.
+    raw = json.loads(runner.HARNESS_PARAMETERS.read_text(encoding="utf-8"))
+    for value in (None, 0, "120", True):
+        edited = json.loads(json.dumps(raw))
+        if value is None:
+            edited["designs"]["E4"].pop("min_stream_items")
+        else:
+            edited["designs"]["E4"]["min_stream_items"] = value
+        path = tmp_path / "harness_parameters.json"
+        path.write_text(json.dumps(edited), encoding="utf-8")
+        with pytest.raises(ValueError, match="min_stream_items"):
+            runner.load_harness_parameters(path)
 
 
 def test_a_design_default_taken_from_the_harness_parameters_is_named_in_the_record_s_used_for(tmp_path, monkeypatch):
@@ -1016,16 +1160,15 @@ def test_a_design_default_taken_from_the_harness_parameters_is_named_in_the_reco
 
 def test_a_design_that_departs_from_the_registered_protocol_is_refused_over_research_data_and_live_and_named_when_synthetic(
         tmp_path, monkeypatch):
-    # Analysis plan H2a and H2b "resamples": 10000; E4's 1,000 streams of 2,000 requests, the shift at request 1,000 and
-    # its 80 commissioning items.
+    # Analysis plan H2a and H2b "resamples": 10000; E4's 1,000 streams of 2,000 requests and the shift at request 1,000;
+    # over research data, E4's streams keep at least 120 items after the commissioning hold-out (a provisional floor).
     from evaluation.qcai_eval import planes
 
     spec, _items = _e4_spec(tmp_path, monkeypatch)
     record = runner.execute_run(runner.plan_run(spec), StubResponder(), tmp_path / "e4")
     expected = [{"field": "design.streams", "registered": 1000, "effective": 4},
                 {"field": "design.stream_length", "registered": 2000, "effective": 40},
-                {"field": "design.shift.at", "registered": 1000, "effective": 20},
-                {"field": "design.commissioning_items", "registered": 80, "effective": 4}]
+                {"field": "design.shift.at", "registered": 1000, "effective": 20}]
     assert record["pins"]["design"]["departures"] == expected
     assert record["registered_tests"]["protocol"] == "departs_from_registration" and record["registered_tests"]["departures"] == expected
     e2, _source = _e2_spec(tmp_path / "e2", monkeypatch)
@@ -1036,17 +1179,37 @@ def test_a_design_that_departs_from_the_registered_protocol_is_refused_over_rese
         runner.plan_run({**spec, "mode": "live", "responder": {"live": {"adapter": "none"}}})
     assert refused.value.code == 2 and refused.value.reasons == [
         "design_departs_from_registration:design.streams", "design_departs_from_registration:design.stream_length",
-        "design_departs_from_registration:design.shift.at", "design_departs_from_registration:design.commissioning_items"]
+        "design_departs_from_registration:design.shift.at"]
     # Over research data the departure is refused, and the registered values pass on to hold H12.
     monkeypatch.setattr(planes, "all_synthetic", lambda items: False)
     with pytest.raises(runner.RunRefused) as refused:
         runner.plan_run(spec)
     assert refused.value.code == 2 and refused.value.reasons[0] == "design_departs_from_registration:design.streams"
-    registered = {key: value for key, value in spec["design"].items() if key not in ("streams", "stream_length", "commissioning_items")}
+    registered = {key: value for key, value in spec["design"].items() if key not in ("streams", "stream_length")}
     registered["shift"] = {"model": "model-b", "topic": spec["design"]["shift"]["topic"]}
+    # The 14 items less the four commissioning items leave 10 for the streams: below the floor of 120 they are refused;
+    # at a floor of 10 the registered values pass on to hold H12, and at 11 they are refused again.
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**spec, "design": registered})
+    assert refused.value.code == 2 and refused.value.reasons == ["e4_stream_items_below_floor"]
+    load = runner.load_harness_parameters
+
+    def floor_at(value):
+        def patched(*args, **kwargs):
+            raw = load(*args, **kwargs)
+            raw["designs"]["E4"]["min_stream_items"] = value
+            return raw
+        return patched
+
+    monkeypatch.setattr(runner, "load_harness_parameters", floor_at(10))
     with pytest.raises(runner.RunRefused) as refused:
         runner.plan_run({**spec, "design": registered})
     assert refused.value.code == 9 and refused.value.reasons == ["hold_h12_data_plane"]
+    monkeypatch.setattr(runner, "load_harness_parameters", floor_at(11))
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**spec, "design": registered})
+    assert refused.value.code == 2 and refused.value.reasons == ["e4_stream_items_below_floor"]
+    monkeypatch.setattr(runner, "load_harness_parameters", floor_at(10))
     with pytest.raises(runner.RunRefused) as refused:
         runner.plan_run({**spec, "design": {**registered, "shift": {**registered["shift"], "points": "0.2"}}})
     assert refused.value.reasons == ["design_departs_from_registration:design.shift.points"]
@@ -1353,6 +1516,8 @@ def test_e3_records_its_exact_set_comparison_as_the_stand_in_for_entailment_and_
     ("E3", {"arm": ["VLOOP"]}, "design.arm"), ("E3", {"arm": "XX"}, "design.arm"),
     ("E2", {"dawid_skene_iterations": "x"}, "design.dawid_skene_iterations"),
     ("E2", {"dawid_skene_iterations": 0}, "design.dawid_skene_iterations"),
+    # The streams' floor is the harness parameters' (PD-75): a spec cannot lower it.
+    ("E4", {"min_stream_items": 1}, "design.min_stream_items"),
 ])
 def test_every_design_value_the_computation_reads_is_shape_checked_with_exit_2(tmp_path, monkeypatch, experiment, change, reason):
     if experiment == "E4":
@@ -1478,14 +1643,14 @@ def test_e4_reports_latency_as_median_and_95th_percentile_where_responses_record
 def test_e4_gates_each_hypothesis_on_the_labels_it_reads(tmp_path, monkeypatch):
     # VBT RevB Sec. VIII-D: "Human claim labels for E4 cover at least the GATE responses of the local model and of the
     # pilot-selected commercial model, which H4b's error-rate comparison needs"; H4a's replay reads every cell.
-    spec, _items = _e4_spec(tmp_path, monkeypatch)
+    spec, _items = _e4_spec(tmp_path, monkeypatch, shift=SHIFT_G)
     plan = runner.plan_run(spec)
 
     def labelled_except(cell, arm):
         def rule(request):
             if request.gold == "abstain":
                 return "abstained", []
-            return "answered", [None if (request.cell, request.arm) == (cell, arm) else "supported"]
+            return "answered", [None if (request.cell, request.arm) == (cell, arm) else "fabricated" if _fails_g(request) else "supported"]
         return _scripted(rule)
 
     record = runner.execute_run(plan, labelled_except("model-c", "VLOOP"), tmp_path / "c")
@@ -1506,7 +1671,7 @@ def test_e4_gates_each_hypothesis_on_the_labels_it_reads(tmp_path, monkeypatch):
     def labelled_first_replicate(request):
         if request.gold == "abstain":
             return "abstained", []
-        return "answered", ["supported" if request.replicate == 1 else None]
+        return "answered", [("fabricated" if _fails_g(request) else "supported") if request.replicate == 1 else None]
 
     record = runner.execute_run(plan, _scripted(labelled_first_replicate), tmp_path / "first")
     tests = record["registered_tests"]
@@ -1673,7 +1838,9 @@ def test_e4_commissions_each_model_from_its_own_outcomes_on_held_out_items_and_c
     nobody = {model: {"clean": 0, "failed": 30, "generated": 30, "mean_q": "0"} for model in PRICE}
     stream = experiments._replay_stream(plan, rest, sorted(rest), sorted(PRICE), "s", commission=nobody)["policies"]
     assert stream["cheapest-eligible"] == {"verified_quality": 0.0, "cost": 0.0, "quality_per_price": None}
-    # H4a commissions from the held-out units and draws its streams only from the others.
+    # H4a commissions from the held-out units and draws its streams only from the others; one of the others fails model-a's
+    # first pass, so the shift has a failed outcome to inject.
+    population[sorted(rest)[0]] = {"topic": "invented topic b", "outcomes": _outcomes({"model-l", "model-a"})}
     drawn = []
     replay = experiments._replay_stream
 
@@ -1686,10 +1853,58 @@ def test_e4_commissions_each_model_from_its_own_outcomes_on_held_out_items_and_c
     result = experiments._h4a(plan, population, {model: (cost, cost) for model, cost in PRICE.items()}, experiments._hypotheses(plan)["H4a"])
     assert drawn and not set(drawn) & set(held)
     assert result["commissioning"] == {"items": 30, "units": 30, "rule": experiments.COMMISSIONING_RULE,
-                                       "stands_in_for": experiments.COMMISSIONING_STAND_IN, "models": records}
+                                       "stands_in_for": experiments.COMMISSIONING_STAND_IN, "models": records, "stream_items": 10,
+                                       "min_stream_items": 120, "below_floor": True, "floor_rule": experiments.STREAM_FLOOR_RULE}
+    plan.extra["design"]["design"]["min_stream_items"] = 10  # exactly the floor: not below it
+    assert experiments._h4a(plan, population, {model: (cost, cost) for model, cost in PRICE.items()},
+                            experiments._hypotheses(plan)["H4a"])["commissioning"]["below_floor"] is False
     plan.extra["design"]["design"]["commissioning_items"] = 40  # nothing left for the streams
     assert experiments._h4a(plan, population, {model: (cost, cost) for model, cost in PRICE.items()},
                             experiments._hypotheses(plan)["H4a"])["status"] == "undefined"
+
+
+def test_h4a_is_undefined_when_the_streams_population_cannot_carry_the_shift_and_otherwise_reports_its_rate(tmp_path, monkeypatch):
+    # VBT RevB Sec. VIII-D: "At request 1,000, one model's first-pass error rate in one topic is raised by ten percentage
+    # points". When the commissioning hold-out takes every item of the shift topic, or the shift model has no failed (or
+    # no clean) first pass there among the streams' items, no shift can be injected: MR-2's figures would read "detected
+    # 0" as if the controller had missed a real shift, so H4a is undefined and names why.
+    from evaluation.qcai_eval import experiments
+
+    plan = _policy_plan(tmp_path, monkeypatch, commissioning_items=1, streams=2, stream_length=10,
+                        shift={"model": "model-a", "topic": "invented topic b", "at": 5, "points": "0.10"})
+    prices = {model: (cost, cost) for model, cost in PRICE.items()}
+    hypothesis = experiments._hypotheses(plan)["H4a"]
+    items = [f"SYN-A-{index:03d}" for index in range(1, 8)]
+    units = [(item, unit) for item in items for unit in ("t1", "t2")]
+    held_item = next(iter({unit[0] for unit in experiments.commissioning_split(plan, dict.fromkeys(units))[0]}))
+    others = [item for item in items if item != held_item]
+
+    def population(failing_in_topic=(), topic_items=()):
+        # The held-out item is always in the shift topic, with model-a failing its t2 unit; `topic_items` put other items
+        # in the shift topic too, with model-a failing the units in `failing_in_topic`.
+        return {(item, unit): {"topic": "invented topic b" if item == held_item or item in topic_items else "invented topic a",
+                               "outcomes": _outcomes({"model-a"} if (item, unit) == (held_item, "t2") or (item, unit) in failing_in_topic else ())}
+                for item, unit in units}
+
+    held, rest = experiments.commissioning_split(plan, population())
+    assert {unit[0] for unit in held} == {held_item} and all(value["topic"] == "invented topic a" for value in rest.values())
+    result = experiments._h4a(plan, population(), prices, hypothesis)
+    assert result["status"] == "undefined" and result["shift_not_injected"] == "topic_absent"
+    assert result["reason"] == experiments.SHIFT_NOT_INJECTED["topic_absent"] and result["shift"]["rate"] == 0.0
+    assert "detection" not in result and result["commissioning"]["items"] == 1
+    # The shift topic among the streams' items, but the shift model never fails there (or always does): nothing to inject.
+    topic = others[:2]
+    assert experiments._h4a(plan, population(topic_items=topic), prices, hypothesis)["shift_not_injected"] == "no_failed_outcome"
+    every = [(item, unit) for item in topic for unit in ("t1", "t2")]
+    assert experiments._h4a(plan, population(every, topic), prices, hypothesis)["shift_not_injected"] == "no_clean_outcome"
+    mixed = population([(topic[0], "t1"), (topic[0], "t2")], topic)
+    plan.extra["design"]["design"]["shift"]["points"] = "0"
+    assert experiments._h4a(plan, mixed, prices, hypothesis)["shift_not_injected"] == "zero_points"
+    # A shift the streams can carry: base error 1/2, so ten points inject at 0.2, and the detection block reports it.
+    plan.extra["design"]["design"]["shift"]["points"] = "0.10"
+    result = experiments._h4a(plan, mixed, prices, hypothesis)
+    assert "status" not in result and result["shift"]["rate"] == pytest.approx(0.2)
+    assert result["detection"]["shift_rate"] == pytest.approx(0.2) and result["detection"]["streams"] == 2
 
 
 def test_the_e4_record_carries_the_h4a_difference_interval_and_the_mr_2_and_mr_3_figures_labelled(tmp_path, monkeypatch):
@@ -1700,6 +1915,7 @@ def test_the_e4_record_carries_the_h4a_difference_interval_and_the_mr_2_and_mr_3
     assert interval == h4a["interval_95"] and interval["level"] == "0.95"
     assert interval["lower"] is None or interval["upper"] is None or interval["lower"] <= interval["upper"]
     assert "MR-2" in h4a["detection"]["rule"] and "not its outcome" in h4a["detection"]["criterion"]
+    assert h4a["detection"]["shift_rate"] > 0 and h4a["shift"]["rate"] == h4a["detection"]["shift_rate"]
     assert "MR-3" in h4a["switches"]["rule"] and h4a["switches"]["streams"] == 4
 
 

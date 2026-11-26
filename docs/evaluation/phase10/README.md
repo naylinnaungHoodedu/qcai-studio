@@ -23,7 +23,8 @@ executed and no Table XVII row or HR-1..MR-3 outcome is asserted (plan Phase 10 
   `pre_run_scan_*`), an E1-E4 family the design does not compute (`analysis_plan_invalid:<experiment>`) or an E2-E4
   design that cannot run (`design`, `design.<field>`, `design_departs_from_registration:<field>` in a live run or over
   research data, `e2_panel_invalid`, `verification_set_empty`, `e3_no_s7_items`, `e4_models_invalid`,
-  `e4_shift_invalid`, `e4_later_price_in_force`, `experiment_requires_arms`), or a confirmatory run refused with no
+  `e4_shift_invalid`, `e4_later_price_in_force`, `e4_stream_items_below_floor` in a live run or over research data,
+  `experiment_requires_arms`), or a confirmatory run refused with no
   IRB, OSF, items or freeze-record reason; 3 invalid items, unresolved pointers, a recording entry the run cannot
   read (`recording_invalid`), a design input (`<input>`:
   `verification_set`, `e4_responses`, `ratings`) unreadable (`<input>_unreadable`) or invalid (`<input>_invalid`,

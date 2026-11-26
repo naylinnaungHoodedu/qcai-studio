@@ -133,6 +133,9 @@ class Plan:
     planned_on: _dt.date | None = None
     checkpoint_start: _dt.date | None = None
     extra: dict = field(default_factory=dict)
+    # A recorded run's responder: the RecordedResponder the planner read, whose bytes matched the pinned sha256 and the run
+    # pins and whose every entry passed its check. The run replays this object, never a second read of the path.
+    recorded_responder: Any = None
 
 
 # ------------------------------------------------------------------------------------------------------------ helpers
@@ -191,6 +194,8 @@ def load_harness_parameters(path: Path = HARNESS_PARAMETERS) -> dict[str, Any]:
     if (not isinstance(designs, Mapping) or designs.get("provisional") is not True
             or any(not isinstance(designs.get(name), Mapping) for name in experiments.DESIGN_EXPERIMENTS)):
         raise ValueError("harness parameters: a provisional designs block for E2, E3 and E4")
+    if not _integer(designs["E4"].get("min_stream_items"), 1):
+        raise ValueError("harness parameters: designs.E4.min_stream_items")
     return raw
 
 
@@ -537,6 +542,12 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
         if design["departures"] and (spec["mode"] == "live" or not synthetic):
             fields = [f"design_departs_from_registration:{entry['field']}" for entry in design["departures"]]
             raise RunRefused(2, list(dict.fromkeys(fields)))
+        # E4's commissioning hold-out costs the streams its items: a live run or a run over research data must keep the
+        # streams' floor (`experiments.stream_floor_refusals`); a synthetic replay below it is flagged in its record.
+        if spec["experiment"] == "E4" and (spec["mode"] == "live" or not synthetic):
+            floor = experiments.stream_floor_refusals(design["design"], items)
+            if floor:
+                raise RunRefused(2, floor)
     # 7. Hold H12: no run over non-synthetic data while the research data plane (D-14) is not decided in a committed package.
     if not synthetic:
         if not _decided(judged, "D-14"):
@@ -550,6 +561,7 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
             raise RunRefused(2, missing)
     # The recorded responder and its pins.
     recording_source = recording_started_on = None
+    responder = None
     dated = spec["mode"] == "live" or spec["purpose"] == "confirmatory"
     if spec["mode"] == "recorded":
         recorded = (spec.get("responder") or {}).get("recorded") or {}
@@ -660,7 +672,8 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
         pins["design"] = experiments.design_pins(spec["experiment"], design)
     return Plan(spec=dict(spec), package_raw=judged, items=items, arms=table, requests=tuple(requests), pins=pins,
                 resolver=resolver, synthetic=synthetic, recording_source=recording_source, dated=dated,
-                planned_on=today if dated else None, checkpoint_start=checkpoint_start, extra={"analysis_plans": plans_raw, "design": design})
+                planned_on=today if dated else None, checkpoint_start=checkpoint_start, extra={"analysis_plans": plans_raw, "design": design},
+                recorded_responder=responder)
 
 
 def _manifest_hook(manifests: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -810,12 +823,47 @@ def _require_file(path: Path) -> None:
         raise RunRefused(2, ["output_unwritable"])
 
 
+CHECKPOINT_REASON = re.compile(r"^[a-z][a-z_]{0,63}$")
+CHECKPOINT_FIELDS = ("attempts", "outcome", "failure_reason", "claims", "text", "usage", "model_id")
+
+
+def checkpoint_line_problem(line: Mapping[str, Any]) -> str | None:
+    """The first field of a checkpoint line that is not a response record as `_response_line` writes it, or None: `attempts`
+    a list of {status} (a lowercase reason), every field `_response_line` writes present, `outcome` answered, abstained or
+    provider_failure (with a lowercase `failure_reason`; else `failure_reason` null), `usage` an object, and the response
+    fields as `providers.response_problem` checks a recorded response (claims, cited pointers, text, usage, model id,
+    verdict, features, signals, latency), so that a line the metrics or the payload log could not read refuses the run
+    before any request is sent."""
+    from .providers import response_problem
+
+    attempts = line.get("attempts")
+    if not isinstance(attempts, list) or not all(
+            isinstance(attempt, Mapping) and set(attempt) == {"status"} and isinstance(attempt["status"], str)
+            and CHECKPOINT_REASON.match(attempt["status"]) for attempt in attempts):
+        return "attempts"
+    for name in CHECKPOINT_FIELDS:
+        if name not in line:
+            return name
+    if line["outcome"] == "provider_failure":
+        if not isinstance(line["failure_reason"], str) or not CHECKPOINT_REASON.match(line["failure_reason"]):
+            return "failure_reason"
+        response = {**line, "outcome": "abstained"}  # the rest of a failure line is checked as a response's fields
+    else:
+        if line["failure_reason"] is not None:
+            return "failure_reason"
+        response = line
+    if not isinstance(line["usage"], Mapping):
+        return "usage"
+    return response_problem(response)
+
+
 def _read_checkpoint(path: Path, *, resume: bool) -> dict[str, dict]:
     """The completed responses of a checkpoint. Only the bytes after the last newline (a line an interrupted append left
     without its newline) are a partial line: `resume` truncates them and a run without it is refused
-    (`partial_checkpoint`). Every newline-terminated line must be a response record, else the checkpoint is refused
-    (`checkpoint_invalid`, exit 2) and nothing is deleted: a corrupt line never costs the lines after it. A file that
-    cannot be read is `checkpoint_invalid` too; a path that is a directory is `output_unwritable` (`_require_file`)."""
+    (`partial_checkpoint`). Every newline-terminated line must be a response record (a JSON object with a 64-hex
+    `request_key` whose fields pass `checkpoint_line_problem`), else the checkpoint is refused (`checkpoint_invalid`,
+    exit 2) before any request is sent and nothing is deleted: a corrupt line never costs the lines after it. A file
+    that cannot be read is `checkpoint_invalid` too; a path that is a directory is `output_unwritable` (`_require_file`)."""
     _require_file(path)
     if not path.exists():
         return {}
@@ -831,7 +879,8 @@ def _read_checkpoint(path: Path, *, resume: bool) -> dict[str, dict]:
             record = json.loads(line.decode("utf-8"))
         except ValueError:  # UnicodeDecodeError included
             raise RunRefused(2, ["checkpoint_invalid"]) from None
-        if not isinstance(record, dict) or not isinstance(record.get("request_key"), str) or not HEX64.match(record["request_key"]):
+        if (not isinstance(record, dict) or not isinstance(record.get("request_key"), str) or not HEX64.match(record["request_key"])
+                or checkpoint_line_problem(record) is not None):
             raise RunRefused(2, ["checkpoint_invalid"])
         completed[record["request_key"]] = record
     if tail:

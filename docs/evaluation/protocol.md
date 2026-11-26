@@ -59,9 +59,14 @@ DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-148). Not execu
    reported separately, and their seeded replay streams over eight routing policies with H4a (with the 95% interval of
    its difference) and H4b (spec 4.14). Each design runs on stub or recorded responses until D-07 pins the models, and
    a run over research data runs the registered protocol (the hypotheses' resamples, E3's three repeats, E4's 1,000
-   streams of 2,000 requests and its shift). E3 compares claim sets exactly, standing in for the paper's bidirectional
-   entailment with human checks on disagreements, and E4's measured local cost and latency wait on a pinned local model
-   and the live adapters (spec conflict 40; DI-148).
+   streams of 2,000 requests and its shift). Before E4's streams, `commissioning_items` run items (80 by default) are
+   held out in seeded order, each model is commissioned from its own outcomes on them, and the streams draw only the
+   other items: a live run or a run over research data must keep at least 120 items for the streams, so the hold-out
+   shrinks the replay's population by those items; H4a is undefined when the shift cannot be injected into the streams'
+   items. E3 compares claim sets exactly, standing in for the paper's bidirectional entailment with human checks on
+   disagreements; E4's held-out run items stand in for the paper's 30-item pilot plus the golden set, of which no
+   responses of the four models exist; and E4's measured local cost and latency wait on a pinned local model and the
+   live adapters (spec conflict 40; DI-148).
 7. **Scan.** Before and after a run, `scripts/scan_research_logs.py` scans every research-plane log with the salted
    fingerprints and must report zero matches. The pre-run scan the run spec pins must use the research fingerprint sets,
    the ULQS set built from the run's items, cover the repository and at least one logs or records target (the harness

@@ -4,7 +4,7 @@
 `evaluation/config/analysis_plans_v1.json`; `--check` in CI proves this file is current. Nothing here is executed:
 no hypothesis has been tested and no HR-1 to MR-3 outcome is asserted (plan Phase 10 P; invariant 9).
 
-- Analysis plans: `analysis-plans-v1`, canonical sha256 `3677d2a3d4ddb435ac1ce3c0b44a7dc7bfc69830bab1bf887d36231016709bae`.
+- Analysis plans: `analysis-plans-v1`, canonical sha256 `207077dfb2e70cfa39d5c2967752ac0f7c2a9f742a96846c4ca8752fdea52959`.
 - Status: draft, not filed with OSF (DI-131).
 - Significance: alpha = 0.05, Holm correction within each family (plan 12.7: "E1-E4 are pre-registered
   hypothesis tests (alpha = 0.05, Holm per family), not software gates").
@@ -48,7 +48,7 @@ Data: 25 S7 (stratum G) items x 3 levels x 2 designs (two-pass and single-pass g
 
 ## E4 (RQ4)
 
-Data: 1,000 seeded replay streams (plan 6.5 Table XVII; 15.2 MR-1) and the E4 logs; every model answers every item in GATE and VLOOP, and items are resampled before each stream is drawn.
+Data: 1,000 seeded replay streams (plan 6.5 Table XVII; 15.2 MR-1) and the E4 logs; every model answers every item in GATE and VLOOP; before the streams, commissioning_items run items (80 by default, a provisional stand-in for the paper's 30-item pilot plus the golden set, of which no responses of the four models exist; DI-148) are held out in seeded order, each model is commissioned from its own outcomes on them, and the streams draw only the other items, at least 120 of them in a live run or a run over research data; the remaining items are resampled before each stream is drawn.
 
 | Hypothesis | Endpoint | Comparison | Test | Sided | Margin (null) | Table XVII criteria |
 |---|---|---|---|---|---|---|

@@ -22,7 +22,9 @@ subsample (`replicate_subsample_short`).
 (also when it then refuses the run), each checkpoint file it reads (`run_output`: run_events.jsonl when a dated resume
 is planned, then run_events.jsonl and responses.jsonl when the run starts), its start and its outcome (completed,
 interrupted or refused). --resume continues only this run's own checkpoint: a trailing partial line of responses.jsonl
-is truncated, and a checkpoint with any other line that is not a response record is refused, never truncated.
+is truncated, and a checkpoint with any other line that is not a response record (`runner.checkpoint_line_problem`: a
+line the metrics or the payload log could not read) is refused before any request is sent, never truncated. A recorded
+run replays the recording the planner read and checked (`Plan.recorded_responder`), never a second read of the file.
 
 An output that cannot be written (the output directory is a file or lies under one, an output file is a directory, the
 two checkpoint files included, which are refused before they are read, or a file cannot be opened for writing, such as
@@ -37,7 +39,7 @@ reason code), a non-synthetic run without the access log (`access_log_required`)
 (`pre_run_scan_*`), an E1-E4 family the design does not compute (`analysis_plan_invalid:<experiment>`) or an E2-E4
 design that cannot run (`design`, `design.<field>`, `design_departs_from_registration:<field>` in a live run or over
 research data, `e2_panel_invalid`, `verification_set_empty`, `e3_no_s7_items`, `e4_models_invalid`, `e4_shift_invalid`,
-`e4_later_price_in_force`, `experiment_requires_arms`), or a confirmatory run refused with no IRB, OSF, items or
+`e4_later_price_in_force`, `e4_stream_items_below_floor` in a live run or over research data, `experiment_requires_arms`), or a confirmatory run refused with no IRB, OSF, items or
 freeze-record reason; 3 invalid items, unresolved pointers, a recording entry the run cannot read (`recording_invalid`:
 each entry's attempts and response are shape-checked when the recording is read, before any request), a design input (`<input>`: `verification_set`,
 `e4_responses`, `ratings`) unreadable (`<input>_unreadable`) or invalid (`<input>_invalid`, `verification_set_items`,
@@ -69,7 +71,7 @@ for path in (REPO_ROOT, API_ROOT):
 from evaluation.qcai_eval import access_log, planes, runner  # noqa: E402
 from evaluation.qcai_eval.canonical import dumps_line, dumps_record, lf_sha256, write_lf  # noqa: E402
 from evaluation.qcai_eval.payload_log import PayloadLogViolation  # noqa: E402
-from evaluation.qcai_eval.providers import RecordedResponder, StubResponder, stub_for  # noqa: E402
+from evaluation.qcai_eval.providers import StubResponder, stub_for  # noqa: E402
 
 PROVISIONAL_DEFAULTS = ("PD-68",)
 RECORDED_FAILURES = ([{"status": "timeout"}, {"status": "ok"}], [{"status": "rate_limited"}, {"status": "ok"}],
@@ -85,13 +87,16 @@ def _commit() -> str | None:
 
 
 def _responder(plan: runner.Plan):
+    """The run's responder. A recorded run replays the planner's own RecordedResponder (`plan.recorded_responder`), whose
+    bytes matched the pinned sha256 and the run pins and whose entries were checked: the file is never read a second time,
+    so a recording replaced after planning is neither replayed under the pinned sha256 nor a traceback."""
     mode = plan.spec["mode"]
     if mode == "stub":
         return StubResponder()
     if mode == "recorded":
-        recorded = plan.spec["responder"]["recorded"]
-        path = Path(recorded["path"])
-        return RecordedResponder(path if path.is_absolute() else REPO_ROOT / path)
+        if plan.recorded_responder is None:
+            raise runner.RunRefused(6, ["recording_unreadable"])
+        return plan.recorded_responder
     raise runner.RunRefused(9, ["no_live_adapter"])
 
 

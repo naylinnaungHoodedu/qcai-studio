@@ -258,6 +258,8 @@ def shape_refusals(experiment: str, design: Any) -> list[str]:
         for key in ("streams", "stream_length", "commissioning_items"):
             if key in design and not _positive_int(design[key]):
                 reasons.append(f"design.{key}")
+        if "min_stream_items" in design:  # the streams' floor is the harness parameters' (PD-75), never the spec's
+            reasons.append("design.min_stream_items")
         if "epsilon" in design and not _rational(design["epsilon"], Fraction(0), Fraction(1)):
             reasons.append("design.epsilon")
         if "linucb_alpha" in design and not _rational(design["linucb_alpha"], Fraction(0)):
@@ -274,11 +276,12 @@ def shape_refusals(experiment: str, design: Any) -> list[str]:
 # The protocol values the registration fixes: the analysis plan's per-hypothesis `resamples` (H2a, H2b 10,000), and VBT
 # RevB Sec. VIII-D's E3 "Single-pass generation is also repeated three times at one fixed level" and E4 "1,000 seeded
 # streams of 2,000 requests ... At request 1,000, one model's first-pass error rate in one topic is raised by ten
-# percentage points" (plan 6.5 Table XVII "1,000 replay streams"), and VBT RevB Sec. VII's commissioning on 80 items ("the
-# 30-item pilot plus the golden set (80 items)"; `commissioning_items`). `harness_parameters_v1.json` `designs` holds the same
-# values as the defaults (PD-75; a test keeps them equal).
-REGISTERED_DESIGN = {"E3": {"repeats": 3}, "E4": {"streams": 1000, "stream_length": 2000, "shift.at": 1000, "shift.points": "0.10",
-                                                  "commissioning_items": 80}}
+# percentage points" (plan 6.5 Table XVII "1,000 replay streams"). `harness_parameters_v1.json` `designs` holds the same
+# values as the defaults (PD-75; a test keeps them equal). E4's `commissioning_items` is not registered: the paper's 80
+# commissioning items ("the 30-item pilot plus the golden set (80 items)", VBT RevB Sec. VII) are not ULQS items, and the
+# harness's hold-out of run items in their place is an engineering stand-in (PD-75, DI-148) whose cost, the items the
+# streams lose, is bounded by the streams' floor (`min_stream_items`, `stream_floor_refusals`).
+REGISTERED_DESIGN = {"E3": {"repeats": 3}, "E4": {"streams": 1000, "stream_length": 2000, "shift.at": 1000, "shift.points": "0.10"}}
 
 
 def departures(experiment: str, design: Mapping[str, Any], family: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -330,6 +333,7 @@ def effective_design(experiment: str, design: Mapping[str, Any], parameters: Map
         for key in ("streams", "stream_length", "epsilon", "linucb_alpha", "commissioning_items"):
             effective.setdefault(key, defaults[key])
         effective["shift"] = {"at": defaults["shift_at"], "points": defaults["shift_points"], **effective["shift"]}
+        effective["min_stream_items"] = defaults["min_stream_items"]  # always the harness parameters' (shape_refusals)
     elif experiment == "E2":
         effective.setdefault("dawid_skene_iterations", defaults["dawid_skene_iterations"])
     return effective
@@ -470,6 +474,7 @@ def design_pins(experiment: str, loaded: Mapping[str, Any]) -> dict[str, Any]:
         pins.update(models=[dict(entry) for entry in design["models"]], pilot_commercial=design["pilot_commercial"],
                     streams=design["streams"], stream_length=design["stream_length"], shift=dict(design["shift"]),
                     epsilon=design["epsilon"], linucb_alpha=design["linucb_alpha"], commissioning_items=design["commissioning_items"],
+                    min_stream_items=design["min_stream_items"],
                     policies=list(POLICIES),
                     local_cost=design.get("local_cost"))
     pins["resamples"] = design.get("resamples")
@@ -969,6 +974,32 @@ SWITCH_RULE = ("MR-3's counting (plan 15.1): incumbent switches per context per 
 CRITERION_NOTE = "figures under the criterion's counting rule, not its outcome: MR-2 and MR-3 are criteria_only and reported by the PI (DI-138)"
 
 
+SHIFT_NOT_INJECTED = {
+    "topic_absent": "the shift topic has no unit in the streams' population, so no shift is injected",
+    "no_failed_outcome": "the shift model has no failed first pass in the shift topic among the streams' population, so it has no "
+                         "failed outcome to inject",
+    "no_clean_outcome": "the shift model fails every first pass in the shift topic among the streams' population, so its error "
+                        "rate cannot be raised",
+    "zero_points": "the shift raises the error rate by zero points",
+}
+
+
+def shift_injection(design: Mapping[str, Any], population: Mapping) -> tuple[list, float, str | None]:
+    """(the shift model's failed units in the shift topic, the rate at which a clean outcome of it there is replaced by one
+    of them, the reason no shift is injected or None). The rate is points / (1 - base error), capped at 1; it is 0, with
+    the reason (`SHIFT_NOT_INJECTED`), when the topic has no unit in `population`, the model has no failed or no clean
+    first pass there, or the points are zero."""
+    shift = design["shift"]
+    in_topic = [unit for unit in sorted(population, key=lambda u: (u[0], u[1] or "")) if population[unit]["topic"] == shift["topic"]]
+    failed = [unit for unit in in_topic if population[unit]["outcomes"][shift["model"]].y == 0]
+    points = Fraction(shift["points"])
+    reason = ("topic_absent" if not in_topic else "no_failed_outcome" if not failed else
+              "no_clean_outcome" if len(failed) == len(in_topic) else "zero_points" if points == 0 else None)
+    if reason is not None:
+        return failed, 0.0, reason
+    return failed, min(1.0, float(points) / (1 - len(failed) / len(in_topic))), None
+
+
 def _replay_stream(plan: Any, population: Mapping, units: Sequence, models: Sequence[str], seed: str, *,
                    commission: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
     """One stream: `stream_length` requests drawn (seeded) from `units`, the injected shift, and every policy replayed.
@@ -979,10 +1010,7 @@ def _replay_stream(plan: Any, population: Mapping, units: Sequence, models: Sequ
     length = int(design["stream_length"])
     shift = design["shift"]
     shift_model, shift_topic, shift_at = shift["model"], shift["topic"], int(shift["at"])
-    in_topic = [unit for unit in sorted(population, key=lambda u: (u[0], u[1] or "")) if population[unit]["topic"] == shift_topic]
-    failed = [unit for unit in in_topic if population[unit]["outcomes"][shift_model].y == 0]
-    base_error = (len(failed) / len(in_topic)) if in_topic else 1.0
-    rate = min(1.0, float(Fraction(shift["points"])) / (1 - base_error)) if failed and base_error < 1 else 0.0
+    failed, rate, _reason = shift_injection(design, population)
     stream = []
     for t in range(length):
         unit = units[_index(seed, len(units), "request", t)]
@@ -1096,7 +1124,19 @@ COMMISSIONING_RULE = ("commissioning-holdout-v1: the first `commissioning_items`
                       "clean, failed: not, mean_q: the mean delivered quality), and the streams draw only the other items")
 COMMISSIONING_STAND_IN = ("VBT RevB Sec. VII: \"Commissioning therefore uses the 30-item pilot plus the golden set (80 items)\"; "
                           "\"In the replay, commissioning and evaluation use disjoint items.\" No pilot or golden-set responses of "
-                          "the four models exist, so the harness holds out run items instead (DI-148)")
+                          "the four models exist, so the harness holds out run items instead, and the streams lose those items "
+                          "(DI-148)")
+STREAM_FLOOR_RULE = ("the streams keep at least `min_stream_items` items after the hold-out (120, the smallest ULQS AC-10-1 admits: "
+                     "\"120-200 items across S1-S7\", VBT RevB p. 15, Sec. VIII-B; PD-75): a live run or a run over research data whose live "
+                     "items less `commissioning_items` fall below it is refused (`e4_stream_items_below_floor`), and a replay "
+                     "whose streams' population falls below it is flagged (`below_floor`)")
+
+
+def stream_floor_refusals(design: Mapping[str, Any], items: Sequence[Mapping[str, Any]]) -> list[str]:
+    """`e4_stream_items_below_floor` when the live items left for the streams after the `commissioning_items` hold-out are
+    fewer than `min_stream_items` (STREAM_FLOOR_RULE); the planner applies it to a live run or a run over research data."""
+    live = sum(1 for item in items if item.get("status") != "retired")
+    return ["e4_stream_items_below_floor"] if live - int(design["commissioning_items"]) < int(design["min_stream_items"]) else []
 
 
 def commissioning_split(plan: Any, population: Mapping) -> tuple[dict, dict]:
@@ -1250,11 +1290,22 @@ def _h4a(plan: Any, population: Mapping, prices: Mapping[str, tuple[float, float
         return {"status": "undefined", "reason": "no unit has a verified outcome for every model"}
     held_out, population = commissioning_split(plan, population)
     commission = commissioning(held_out, sorted(prices))
+    stream_items = len({unit[0] for unit in population})
     record = {"items": len({unit[0] for unit in held_out}), "units": len(held_out), "rule": COMMISSIONING_RULE,
-              "stands_in_for": COMMISSIONING_STAND_IN, "models": commission}
+              "stands_in_for": COMMISSIONING_STAND_IN, "models": commission, "stream_items": stream_items,
+              "min_stream_items": int(design["min_stream_items"]), "below_floor": stream_items < int(design["min_stream_items"]),
+              "floor_rule": STREAM_FLOOR_RULE}
     if not population:
         return {"status": "undefined", "reason": "no item is left for the streams after the commissioning items are held out",
                 "commissioning": record}
+    _failed, shift_rate, not_injected = shift_injection(design, population)
+    shift = {"model": design["shift"]["model"], "topic": design["shift"]["topic"], "at": int(design["shift"]["at"]),
+             "points": design["shift"]["points"], "rate": shift_rate}
+    if not_injected is not None:
+        # MR-2's figures need the injected degradation: without it every stream would read "not detected" as if the
+        # controller had missed a real shift, so H4a is undefined and names why.
+        return {"status": "undefined", "reason": SHIFT_NOT_INJECTED[not_injected], "shift_not_injected": not_injected,
+                "shift": shift, "commissioning": record}
     groups: dict[str, list] = {}
     for unit in population:
         groups.setdefault(unit[0], []).append(unit)
@@ -1283,8 +1334,8 @@ def _h4a(plan: Any, population: Mapping, prices: Mapping[str, tuple[float, float
     detected = [delay for delay in delays if delay is not None]
     worst = [max(run["switches_per_1000_drift_free"].values()) for run in runs if run["switches_per_1000_drift_free"]]
     return {**share, "difference_interval_95": share["interval_95"], "streams": len(streams), "stream_length": int(design["stream_length"]),
-            "commissioning": record, "quality_per_price": summary,
-            "detection": {"streams": len(runs), "detected": len(detected), "within_100": sum(1 for delay in detected if delay <= 100),
+            "commissioning": record, "quality_per_price": summary, "shift": shift,
+            "detection": {"streams": len(runs), "shift_rate": shift_rate, "detected": len(detected), "within_100": sum(1 for delay in detected if delay <= 100),
                           "median_delay": sorted(detected)[len(detected) // 2] if detected else None,
                           "streams_with_false_alarms": sum(1 for run in runs if run["false_alarms"]), "rule": DETECTION_RULE,
                           "criterion": CRITERION_NOTE},
