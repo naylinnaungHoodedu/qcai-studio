@@ -31,7 +31,7 @@ PATTERNS = {
     "prompt_sha256": re.compile(r"^[0-9a-f]{64}$"),
     "response_sha256": re.compile(r"^[0-9a-f]{64}$"),
     "outcome": re.compile(r"^(answered|abstained|provider_failure)$"),
-    "failure_reason": re.compile(r"^(timeout|rate_limited|server_error|refused_payload|recorded_missing)$"),
+    "failure_reason": re.compile(r"^(timeout|rate_limited|server_error|refused_payload|recorded_missing|evidential_pass_failed)$"),
     "model_id": re.compile(ID),
     "role": re.compile(r"^(answer|verify|two-pass-evidential|two-pass|single-pass)$"),
     "cell": re.compile(ID),

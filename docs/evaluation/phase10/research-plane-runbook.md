@@ -74,7 +74,8 @@ log is `<plane>/access.jsonl` (digests only).
    own file, so this is a consistency check, not tamper evidence (DI-143); an earlier start day only tightens the
    checks. Keep run outputs in the research plane and review each run's start in the access log (step 9). A
    confirmatory run covers every live item of both splits and gives the subsample's 40 S1 items their replicates
-   (fewer live items in the stratum: `replicate_subsample_short`). A confirmatory recorded run replays a live recording
+   (fewer live items in the stratum: `replicate_subsample_short`); an E3 run uses no subsample, its replicate variance
+   being its single-pass repeats at the fixed level. A confirmatory recorded run replays a live recording
    whose header states the live run's start (`started_on`, required, `recording_started_on_missing`, and not after
    today, `recording_after_run`); its window starts on that day, so the IRB must have been approved by then and be
    unexpired on the replay day.

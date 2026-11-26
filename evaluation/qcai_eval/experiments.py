@@ -5,6 +5,9 @@ Each design plans its requests from the run spec's `design` block, runs them thr
 does (stub, recorded; live refused), and computes its registered family with Holm from the responses. Nothing here
 pins a model: the verifier panel, both E3 designs' generator and E4's four models and prices are the spec's (D-07 pins
 them for a real run; until then only synthetic, stub or recorded runs exist, and E1-E4 runs stay confirmatory only).
+A live run or a run over research data runs the registered protocol (`REGISTERED_DESIGN`, the hypotheses' `resamples`;
+`departures`); a synthetic run may depart, and its record names each departure and files its family as
+`departs_from_registration`.
 
 - **E2** (verifier reliability; H2a-c). The verification set is every labelled claim of a pinned E1 responses file
   (generator family named) and, optionally, of a pinned E4 responses file (the generator of each line is its model,
@@ -15,19 +18,26 @@ them for a real run; until then only synthetic, stub or recorded runs exist, and
   one-sided cluster percentile lower bound against 1; H2c: the paired AUC bootstrap of the panel against Group B novice
   trust ratings, computed only from a pinned ratings file (none exists before IRB approval, D-08).
 - **E3** (adaptation invariance; H3a-b). Every live S7 (stratum G) item at the three levels under two designs: two-pass
-  (one `two-pass-evidential` request, then a `two-pass` presentation request per level) and single-pass (`single-pass`
-  per level), plus single-pass repeated at one fixed level. v_q = 1 when the claim set or the cited span set differs
-  across the levels (eq. 18). H3a: exact McNemar of v_q two-pass vs single-pass, paired by item; H3b: Friedman's test of
-  a presentation feature across the levels under two-pass.
-- **E4** (model comparison and ranking replay; H4a-b). All four models answer every unit in GATE and VLOOP. The replay
-  resamples items, then draws seeded streams from them (`statistics.two_level_bootstrap_share_le_zero`, one replicate
-  per stream), with one model's first-pass error rate in one topic raised by resampling its own failed responses from a
-  request on, and replays eight routing policies: the Phase 9 controller with and without hysteresis, static-best,
-  round-robin, cheapest-eligible, epsilon-greedy, a LinUCB-style bandit and threshold escalation. H4a: the share of
-  streams in which the controller's verified quality per price unit is at most the larger of static-best's and
-  round-robin's; H4b: exact McNemar of the local model's and the pilot-selected commercial model's item-level error on
-  answerable items in GATE, and the paired TOST of their expert EQC ratings from a pinned ratings file (reported
-  inconclusive: ICC(2,k) and Cronbach's alpha are not implemented, DI-138).
+  (one `two-pass-evidential` request, then a `two-pass` presentation request per level, each sent with the evidential
+  response's locked claims) and single-pass (`single-pass` per level), plus single-pass repeated at one fixed level.
+  v_q = 1 when the claim set or the cited span set differs across the levels (eq. 18), compared exactly (PD-75; the
+  paper's bidirectional entailment with human checks on disagreements is DI-148, and the record lists the items whose
+  sets differ). H3a: exact McNemar of v_q two-pass vs single-pass, paired by item; H3b: Friedman's test of a
+  presentation feature across the levels under two-pass.
+- **E4** (model comparison and ranking replay; H4a-b). All four models answer every unit in GATE and VLOOP; a response's
+  cost is its logged input and output units at the model's input and output list prices (the local model's prices
+  are a stand-in for measured energy plus amortized hardware, which the record reports separately; DI-148), and the
+  latency a response records is reported as median and 95th percentile. The replay resamples items, then draws seeded
+  streams from them (`statistics.two_level_bootstrap_share_le_zero`, one replicate per stream), with one model's
+  first-pass error rate in one topic raised by resampling its own failed responses from a request on, and replays eight
+  routing policies: the Phase 9 controller with and without hysteresis, static-best, round-robin, cheapest-eligible,
+  epsilon-greedy, a LinUCB-style bandit and threshold escalation. H4a: the share of streams in which the controller's
+  verified quality per price is at most the larger of static-best's and round-robin's, with the 95% percentile interval
+  of that difference; the controller's detection, false alarms and switches are reported under MR-2's and MR-3's
+  counting rules as figures, not outcomes. H4b: exact McNemar of the local model's and the pilot-selected commercial
+  model's item-level error on answerable items in GATE, and the paired TOST of their expert EQC ratings from a pinned
+  ratings file (reported inconclusive: ICC(2,k) and Cronbach's alpha are not implemented, DI-138). Each hypothesis waits
+  (`awaiting_labels`) only for the labels it reads: H4a every model's GATE and VLOOP responses, H4b the two GATE cells.
 
 The engineering parameters no plan text fixes are provisional (PD-75; `evaluation/config/harness_parameters_v1.json`
 `designs`). Outcomes are reported by the PI, never asserted by the harness (invariant 9).
@@ -36,6 +46,7 @@ The engineering parameters no plan text fixes are provisional (PD-75; `evaluatio
 from __future__ import annotations
 
 from dataclasses import dataclass
+import datetime as _dt
 from decimal import Decimal
 from fractions import Fraction
 import hashlib
@@ -129,24 +140,58 @@ def _decimal(value: Any, *, positive: bool = False, unit: bool = False) -> bool:
     return (not positive or number > 0) and (not unit or 0 < number < 1)
 
 
-def _later_price_ok(value: Any) -> bool:
-    """A model's optional later list price: {"from": "YYYY-MM-DD", "price_per_unit": a positive decimal} (VBT RevB Sec.
-    VIII-D: "at both Gemini prices if runs straddle 1 January 2027")."""
-    if value is None:
-        return True
-    if not isinstance(value, Mapping) or set(value) != {"from", "price_per_unit"} or not _decimal(value.get("price_per_unit"), positive=True):
+def _rational(value: Any, low: Fraction, high: Fraction | None = None) -> bool:
+    """A rational string in [low, high] (high None: unbounded)."""
+    if not isinstance(value, str):
         return False
     try:
-        import datetime
-
-        datetime.date.fromisoformat(value["from"])
-    except (TypeError, ValueError):
+        number = Fraction(value)
+    except (ValueError, ZeroDivisionError):
         return False
-    return isinstance(value["from"], str) and len(value["from"]) == 10
+    return number >= low and (high is None or number <= high)
+
+
+def _day(value: Any) -> bool:
+    if not isinstance(value, str) or len(value) != 10:
+        return False
+    try:
+        _dt.date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
+PRICE_KEYS = ("price_per_input_unit", "price_per_output_unit")
+
+
+def _later_price_ok(value: Any) -> bool:
+    """A model's optional later list price: {"from": "YYYY-MM-DD", "price_per_input_unit", "price_per_output_unit"},
+    positive decimals (VBT RevB Sec. VIII-D: "at both Gemini prices if runs straddle 1 January 2027")."""
+    if value is None:
+        return True
+    return (isinstance(value, Mapping) and set(value) == {"from", *PRICE_KEYS} and _day(value.get("from"))
+            and all(_decimal(value.get(key), positive=True) for key in PRICE_KEYS))
+
+
+def _local_cost_ok(value: Any) -> bool:
+    """The local model's measured cost of the run, when the operator supplies it: {"energy", "amortized_hardware"}, each a
+    non-negative decimal in USD (VBT RevB Sec. VIII-D: "local cost is reported separately as measured energy plus
+    amortized hardware")."""
+    if value is None:
+        return True
+    return (isinstance(value, Mapping) and set(value) == {"energy", "amortized_hardware"}
+            and all(_rational(value.get(key), Fraction(0)) for key in ("energy", "amortized_hardware")))
+
+
+def _model_ok(entry: Any) -> bool:
+    return (isinstance(entry, Mapping) and isinstance(entry.get("model_id"), str) and bool(MODEL_ID.match(entry["model_id"]))
+            and isinstance(entry.get("family"), str) and bool(entry["family"]) and isinstance(entry.get("local"), bool)
+            and all(_decimal(entry.get(key), positive=True) for key in PRICE_KEYS) and _later_price_ok(entry.get("later_price")))
 
 
 def shape_refusals(experiment: str, design: Any) -> list[str]:
-    """The `design` block's shape (exit 2, the field named): every nested value the planner reads."""
+    """The `design` block's shape (exit 2, the field named): every nested value the planner and the computation read, so
+    that a malformed value is refused before anything runs, never a traceback after the run completed."""
     if not isinstance(design, Mapping):
         return ["design"]
     reasons = []
@@ -164,28 +209,67 @@ def shape_refusals(experiment: str, design: Any) -> list[str]:
                                                         and MODEL_ID.match(entry["model_id"]) and isinstance(entry.get("family"), str)
                                                         and entry["family"] for entry in verifiers)):
             reasons.append("design.verifiers")
+        if "dawid_skene_iterations" in design and not _positive_int(design["dawid_skene_iterations"]):
+            reasons.append("design.dawid_skene_iterations")
     elif experiment == "E3":
+        from .ablation import ARM_IDS
+
+        if "arm" in design and design["arm"] not in ARM_IDS:
+            reasons.append("design.arm")
         if "fixed_level" in design and design["fixed_level"] not in ulqs.REPLAY_LEVELS:
             reasons.append("design.fixed_level")
         if "repeats" in design and not _positive_int(design["repeats"], 2):
             reasons.append("design.repeats")
+        if "h3b_feature" in design and design["h3b_feature"] not in FEATURES:
+            reasons.append("design.h3b_feature")
     elif experiment == "E4":
         models = design.get("models")
-        if (not isinstance(models, list) or not all(
-                isinstance(entry, Mapping) and isinstance(entry.get("model_id"), str) and MODEL_ID.match(entry["model_id"])
-                and isinstance(entry.get("family"), str) and entry["family"] and _decimal(entry.get("price_per_unit"), positive=True)
-                and isinstance(entry.get("local"), bool) and _later_price_ok(entry.get("later_price")) for entry in models)):
+        if not isinstance(models, list) or not all(_model_ok(entry) for entry in models):
             reasons.append("design.models")
         if not isinstance(design.get("pilot_commercial"), str):
             reasons.append("design.pilot_commercial")
         for key in ("streams", "stream_length"):
             if key in design and not _positive_int(design[key]):
                 reasons.append(f"design.{key}")
+        if "epsilon" in design and not _rational(design["epsilon"], Fraction(0), Fraction(1)):
+            reasons.append("design.epsilon")
+        if "linucb_alpha" in design and not _rational(design["linucb_alpha"], Fraction(0)):
+            reasons.append("design.linucb_alpha")
+        if not _local_cost_ok(design.get("local_cost")):
+            reasons.append("design.local_cost")
         shift = design.get("shift")
         if (not isinstance(shift, Mapping) or not isinstance(shift.get("model"), str) or not isinstance(shift.get("topic"), str)
                 or ("at" in shift and not _positive_int(shift["at"], 0)) or ("points" in shift and not _decimal(shift["points"], unit=True))):
             reasons.append("design.shift")
     return reasons
+
+
+# The protocol values the registration fixes: the analysis plan's per-hypothesis `resamples` (H2a, H2b 10,000), and VBT
+# RevB Sec. VIII-D's E3 "Single-pass generation is also repeated three times at one fixed level" and E4 "1,000 seeded
+# streams of 2,000 requests ... At request 1,000, one model's first-pass error rate in one topic is raised by ten
+# percentage points" (plan 6.5 Table XVII "1,000 replay streams"). `harness_parameters_v1.json` `designs` holds the same
+# values as the defaults (PD-75; a test keeps them equal).
+REGISTERED_DESIGN = {"E3": {"repeats": 3}, "E4": {"streams": 1000, "stream_length": 2000, "shift.at": 1000, "shift.points": "0.10"}}
+
+
+def departures(experiment: str, design: Mapping[str, Any], family: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Each effective design value that differs from the registered protocol (`REGISTERED_DESIGN` and the hypotheses'
+    registered `resamples`), as {field, registered, effective} (with the hypothesis for a resamples departure). The
+    planner refuses a departure in a live run or a run over non-synthetic data (`design_departs_from_registration:<field>`,
+    exit 2); a synthetic run may depart, and its record names every departure (`pins.design.departures`) and files its
+    family as `protocol: departs_from_registration`, never as the registered result."""
+    found: list[dict[str, Any]] = []
+    if design.get("resamples") is not None:
+        for hypothesis in family.get("hypotheses") or []:
+            if hypothesis.get("resamples") is not None and int(design["resamples"]) != int(hypothesis["resamples"]):
+                found.append({"field": "design.resamples", "hypothesis": hypothesis["id"], "registered": int(hypothesis["resamples"]),
+                              "effective": int(design["resamples"])})
+    for field, registered in REGISTERED_DESIGN.get(experiment, {}).items():
+        value = design["shift"][field.split(".", 1)[1]] if field.startswith("shift.") else design[field]
+        same = Fraction(value) == Fraction(registered) if field == "shift.points" else value == registered
+        if not same:
+            found.append({"field": f"design.{field}", "registered": registered, "effective": value})
+    return found
 
 
 def effective_design(experiment: str, design: Mapping[str, Any], parameters: Mapping[str, Any]) -> dict[str, Any]:
@@ -224,19 +308,38 @@ def _read_lines(reference: Mapping[str, Any], repo_root: Path, kind: str, note: 
     return lines
 
 
+def _line_ok(line: Mapping[str, Any]) -> bool:
+    """A responses line's shape as the verification set reads it: an integer replicate, a string outcome and arm, a
+    string or null unit and cell, and a list of claim objects, each with a string `claim_id`, a string or null `label`
+    and a list of string `cited` pointers (absent: none)."""
+    replicate, claims = line.get("replicate"), line.get("claims")
+    if not isinstance(replicate, int) or isinstance(replicate, bool) or not isinstance(line.get("outcome"), str):
+        return False
+    if not isinstance(line.get("arm"), str) or not isinstance(line.get("unit"), (str, type(None))) or not isinstance(line.get("cell"), (str, type(None))):
+        return False
+    if claims is None:
+        return True
+    return isinstance(claims, list) and all(
+        isinstance(claim, Mapping) and isinstance(claim.get("claim_id"), str) and isinstance(claim.get("label"), (str, type(None)))
+        and isinstance(claim.get("cited", []), list) and all(isinstance(pointer, str) for pointer in claim.get("cited", []))
+        for claim in claims)
+
+
 def _claims_of(lines: Sequence[Mapping[str, Any]], *, live: set[str], family_of: Callable[[Mapping[str, Any]], str | None], source: str,
                kind: str) -> list[Claim]:
     claims = []
     for line in lines:
         if line.get("item_id") not in live or not isinstance(line.get("request_key"), str):
             raise DesignRefused(3, [f"{kind}_items"])
+        if not _line_ok(line):
+            raise DesignRefused(3, [f"{kind}_invalid"])
         if line.get("replicate") != 1 or line.get("outcome") != "answered":
             continue
         family = family_of(line)
         if family is None:
             raise DesignRefused(3, [f"{kind}_generator_unknown"])
         for claim in line.get("claims") or []:
-            if not isinstance(claim, Mapping) or claim.get("label") is None:
+            if claim.get("label") is None:
                 continue  # only labelled claims enter the verification set
             key = canonical_sha256({"source": source, "request_key": line["request_key"], "claim_id": claim.get("claim_id")})
             claims.append(Claim(key=key, source_request_key=line["request_key"], arm=str(line.get("arm")), item_id=line["item_id"],
@@ -308,9 +411,11 @@ def design_pins(experiment: str, loaded: Mapping[str, Any]) -> dict[str, Any]:
     elif experiment == "E4":
         pins.update(models=[dict(entry) for entry in design["models"]], pilot_commercial=design["pilot_commercial"],
                     streams=design["streams"], stream_length=design["stream_length"], shift=dict(design["shift"]),
-                    epsilon=design["epsilon"], linucb_alpha=design["linucb_alpha"], policies=list(POLICIES))
+                    epsilon=design["epsilon"], linucb_alpha=design["linucb_alpha"], policies=list(POLICIES),
+                    local_cost=design.get("local_cost"))
     pins["resamples"] = design.get("resamples")
     pins["ratings"] = None if design.get("ratings") is None else {"sha256": design["ratings"]["sha256"]}
+    pins["departures"] = list(loaded.get("departures") or [])
     return pins
 
 
@@ -547,6 +652,9 @@ def _h2c(plan: Any, base: Mapping[str, Any], complete: Sequence[tuple[Claim, tup
 # ------------------------------------------------------------------------------------------------------------ E3
 
 
+SET_RULE = "claim-or-span-set-differs-v1"  # exact claim-id and cited-span sets (PD-75), standing in for entailment (DI-148)
+
+
 def _set_of(response: Mapping[str, Any]) -> tuple[tuple[str, ...], tuple[str, ...]]:
     claims = [claim for claim in response.get("claims") or [] if isinstance(claim, Mapping)]
     return (tuple(sorted(str(claim.get("claim_id")) for claim in claims)),
@@ -588,12 +696,20 @@ def compute_e3(plan: Any, responses: Sequence[Mapping[str, Any]]) -> tuple[dict,
         "items": len(items),
         "IV": {role: {**statistics.wilson_interval(sum(values.values()), len(values)), "excluded_items": excluded[role]}
                for role, values in violations.items()},
+        # VBT RevB Sec. VIII-D compares claim sets "by bidirectional entailment with human checks on disagreements"; the
+        # harness compares claim ids and cited spans exactly (PD-75), and lists the items whose sets differ for that check
+        # (the entailment checker and the human checks are DI-148).
+        "claim_set_comparison": {"rule": SET_RULE, "stands_in_for": "bidirectional entailment of claim sets with human checks on "
+                                                                     "disagreements (VBT RevB Sec. VIII-D; DI-148)",
+                                 "human_checks": "awaiting_human_checks",
+                                 "disagreements": {role: sorted(item for item, value in values.items() if value)
+                                                   for role, values in violations.items()}},
         "two_pass_lock_kept": {"items": len(violations["two-pass"]), "kept": lock_kept},
         "presentation_features": {name: {"items": len(values)} for name, values in sorted(features.items())},
     }
     variance = {"single-pass": {"fixed_level": design["fixed_level"], "repeats": int(design["repeats"]),
                                 "violations": statistics.wilson_interval(sum(repeats.values()), len(repeats)),
-                                "rule": "claim-or-span-set-differs-v1"}}
+                                "rule": SET_RULE}}
     hypotheses = _hypotheses(plan)
     results: dict[str, Any] = {}
     for name, hypothesis in hypotheses.items():
@@ -630,8 +746,8 @@ def _index(seed: str, n: int, *parts: Any) -> int:
 class Outcome:
     y: int             # 1 when the first pass (GATE) is clean
     quality: float     # the delivered (VLOOP) response's verified quality
-    cost: float        # its usage units times the model's price per unit
-    first_cost: float  # the first pass's usage units times the price
+    cost: float        # its logged input and output units at the model's input and output list prices
+    first_cost: float  # the first pass's cost, priced the same way
 
 
 def _quality(response: Mapping[str, Any], gold: str, weights: Mapping[str, Any] | None) -> float:
@@ -647,17 +763,39 @@ def _quality(response: Mapping[str, Any], gold: str, weights: Mapping[str, Any] 
     return float(response.get("outcome") == "answered" and gold == "answer" and not _has_error(response))
 
 
-def _usage(response: Mapping[str, Any]) -> int:
-    usage = response.get("usage") or {}
-    return int(usage.get("input_units", 0)) + int(usage.get("output_units", 0))
+def _units(response: Mapping[str, Any]) -> tuple[int, int]:
+    """A response's logged (input, output) usage units; a value that is not a non-negative integer counts 0."""
+    usage = response.get("usage") if isinstance(response.get("usage"), Mapping) else {}
+    values = [usage.get(key, 0) for key in ("input_units", "output_units")]
+    inputs, outputs = (value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0 for value in values)
+    return inputs, outputs
+
+
+def _cost(response: Mapping[str, Any], price: tuple[float, float]) -> float:
+    """Logged usage at the list prices (VBT RevB Sec. VIII-D: "Cost is computed from logged tokens at the list prices";
+    Table XIV prices input and output tokens separately): input units times the input price plus output units times the
+    output price. A response that logged no usage is priced as one input and one output unit (PD-75), so that no
+    delivered response is free."""
+    inputs, outputs = _units(response)
+    if inputs + outputs == 0:
+        inputs = outputs = 1
+    return inputs * price[0] + outputs * price[1]
+
+
+def prices_of(design: Mapping[str, Any], *, later: bool = False) -> dict[str, tuple[float, float]]:
+    """Each model's (input, output) price per unit: the list prices in force at the run's start, or with `later` each
+    model's later list price where it has one."""
+    prices = {}
+    for entry in design["models"]:
+        source = (entry.get("later_price") or entry) if later else entry
+        prices[entry["model_id"]] = (float(Decimal(source["price_per_input_unit"])), float(Decimal(source["price_per_output_unit"])))
+    return prices
 
 
 def _replay_population(plan: Any, responses: Sequence[Mapping[str, Any]], *, later: bool = False):
-    """The units every model has a verified outcome for, each model's outcome on each, and the prices: the list prices in
-    force at the run's start, or with `later` each model's later list price where it has one."""
+    """The units every model has a verified outcome for, each model's outcome on each, and the prices (`prices_of`)."""
     design = plan.extra["design"]["design"]
-    prices = {entry["model_id"]: float(Decimal((entry.get("later_price") or entry)["price_per_unit"] if later else entry["price_per_unit"]))
-              for entry in design["models"]}
+    prices = prices_of(design, later=later)
     weights = ((plan.package_raw.get("ranking") or {}).get("quality") or {}).get("weights")
     grid: dict[tuple[str, str | None], dict[str, dict[str, Mapping]]] = {}
     meta: dict[tuple[str, str | None], tuple[str, str]] = {}
@@ -680,7 +818,7 @@ def _replay_population(plan: Any, responses: Sequence[Mapping[str, Any]], *, lat
             vloop, vloop_request = arms["VLOOP"]
             first_error = _has_error(gate) or (gate_request.gold == "abstain" and gate.get("outcome") == "answered")
             outcomes[model] = Outcome(y=int(not first_error), quality=_quality(vloop, vloop_request.gold, weights),
-                                      cost=max(_usage(vloop), 1) * prices[model], first_cost=max(_usage(gate), 1) * prices[model])
+                                      cost=_cost(vloop, prices[model]), first_cost=_cost(gate, prices[model]))
         population[unit] = {"topic": meta[unit][0], "outcomes": outcomes}
     return population, excluded, prices
 
@@ -689,7 +827,8 @@ class _Controller:
     """The Phase 9 ranking controller as a routing policy: each request is routed to Algorithm 1's choice for its context
     (`app.services.ranking.selection.select` on the controller's state), then its verified outcome is applied as an
     `outcome` input (`controller.apply_in_place`); a fallback abstains. Without hysteresis, the promotion margin delta is 0
-    and one batch suffices (n_d = 1)."""
+    and one batch suffices (n_d = 1). It records every alarm (request index, CUSUM stream) and every incumbent switch
+    (request index, context key, count)."""
 
     def __init__(self, block: Mapping[str, Any], models: Sequence[Mapping[str, Any]], *, hysteresis: bool) -> None:
         from app.services.ranking.controller import apply_in_place
@@ -702,13 +841,14 @@ class _Controller:
         self.state = empty_state()
         self.seq = 0
         self.alarms: list[tuple[int, str]] = []
+        self.switches: list[tuple[int, str, int]] = []
         self.params_of = params_of
         self._input("config", {"package_version": "e4-replay", "package_sha256": "0" * 64, "parameters_sha256": sha256_hex(canonical(block)),
                                "parameters": block})
-        for entry in models:
+        for entry in models:  # cost units per call: one input and one output unit at the list prices, in thousandths
+            per_call = (Decimal(entry["price_per_input_unit"]) + Decimal(entry["price_per_output_unit"])) * 1000
             self._input("model_seen", {"model": {"adapter_id": entry["model_id"], "family": entry["family"], "provider": entry["family"],
-                                                 "model_id": entry["model_id"], "model_version": "e4", "cost_units_per_call":
-                                                 int(Decimal(entry["price_per_unit"]) * 1000)}})
+                                                 "model_id": entry["model_id"], "model_version": "e4", "cost_units_per_call": int(per_call)}})
         self._input("availability", {"models": {entry["model_id"]: None for entry in models}})
         for entry in models:  # the Phase 9 synthetic commissioning prior (PD-75)
             self._input("commission", {"adapter_id": entry["model_id"], "version": "e4", "clean": 40, "failed": 0, "generated": 40,
@@ -722,28 +862,44 @@ class _Controller:
     def context(self, topic: str | None) -> dict[str, Any]:
         return {"cluster": topic if topic in self.clusters else "unscoped", "task_type": "explanation", "tier": 2}
 
-    def choose(self, t: int, topic: str | None) -> str | None:
-        from app.services.ranking.selection import ensure_models, select
+    def key(self, topic: str | None) -> str:
         from app.services.ranking.types import Context
 
+        return Context(**self.context(topic)).key()
+
+    def choose(self, t: int, topic: str | None) -> str | None:
+        from app.services.ranking.selection import ensure_models, select
+
         params = self.params_of(self.state)
-        key = Context(**self.context(topic)).key()
+        key = self.key(topic)
         ensure_models(self.state, params, key)
         decision, _u = select(self.state, params, key, ledger_seq=t + 1)
         return decision.model if decision.kind != "fallback" else None
 
     def observe(self, t: int, topic: str | None, model: str, outcome: Outcome) -> None:
+        before = int(self.state["counts"]["switches"])
         derived = self._input("outcome", {"ledger_seq": t + 1, "created_at": "2026-11-23T00:00:00.000000Z", "model": model,
                                           "context": self.context(topic), "y": outcome.y,
                                           "signals": {"V": format(outcome.quality, ".6f"), "S": None, "K": None, "H": "0", "F": None},
                                           "cost_units": int(round(outcome.cost * 1000)), "latency_ms": None, "tier_source": "v2"})
         self.alarms += [(t, payload["stream"]) for kind, payload in derived if kind == "alarm"]
+        switched = int(self.state["counts"]["switches"]) - before  # an outcome input changes only its own context
+        if switched:
+            self.switches.append((t, self.key(topic), switched))
 
 
-def _replay_stream(plan: Any, population: Mapping, units: Sequence, prices: Mapping[str, float], seed: str) -> dict[str, Any]:
+DETECTION_RULE = ("MR-2's counting (plan 15.1): the degraded model's responses in the shifted topic, from the shift to the first "
+                  "alarm on that model's CUSUM stream for the topic's context (model-cluster); every alarm before the shift is a "
+                  "false alarm")
+SWITCH_RULE = ("MR-3's counting (plan 15.1): incumbent switches per context per 1,000 drift-free requests, the requests before "
+               "the shift")
+CRITERION_NOTE = "figures under the criterion's counting rule, not its outcome: MR-2 and MR-3 are criteria_only and reported by the PI (DI-138)"
+
+
+def _replay_stream(plan: Any, population: Mapping, units: Sequence, models: Sequence[str], seed: str) -> dict[str, Any]:
     """One stream: `stream_length` requests drawn (seeded) from `units`, the injected shift, and every policy replayed."""
     design = plan.extra["design"]["design"]
-    models = sorted(prices)
+    models = sorted(models)
     length = int(design["stream_length"])
     shift = design["shift"]
     shift_model, shift_topic, shift_at = shift["model"], shift["topic"], int(shift["at"])
@@ -767,8 +923,8 @@ def _replay_stream(plan: Any, population: Mapping, units: Sequence, prices: Mapp
             entry[0] += population[unit]["outcomes"][model].quality
             entry[1] += population[unit]["outcomes"][model].cost
     static_best = min(models, key=lambda model: (-(pool[model][0] / pool[model][1]), model))
-    cheapest = min(models, key=lambda model: (prices[model], model))
-    by_price = sorted(models, key=lambda model: (prices[model], model))
+    by_cost = sorted(models, key=lambda model: (pool[model][1], model))  # the pool's cost at the list prices, cheapest first
+    cheapest = by_cost[0]
     epsilon = float(Fraction(design["epsilon"]))
     alpha = float(Fraction(design["linucb_alpha"]))
     results: dict[str, dict[str, Any]] = {}
@@ -783,18 +939,22 @@ def _replay_stream(plan: Any, population: Mapping, units: Sequence, prices: Mapp
                 results[policy] = {"status": "no_ranking_block"}
                 continue
             controller = _Controller(block, plan.extra["design"]["design"]["models"], hysteresis=policy == "controller")
+            affected = f"model-cluster:{shift_model}:{controller.context(shift_topic)['cluster']}"
+            drift_free: dict[str, int] = {}
         means: dict[str, list[float]] = {model: [0.0, 0.0] for model in models}
         arms: dict[tuple[str, str | None], list[float]] = {}
         for t, (unit, topic, outcomes) in enumerate(stream):
             spent = 0.0
             if controller is not None:
+                if t < shift_at:
+                    drift_free[controller.key(topic)] = drift_free.get(controller.key(topic), 0) + 1
                 model = controller.choose(t, topic)
                 if model is None:
                     continue
                 controller.observe(t, topic, model, outcomes[model])
                 if t >= shift_at and model == shift_model and topic == shift_topic:
                     degraded_seen += 1
-                if delay is None and any(at >= shift_at and _stream_model(stream_name) == shift_model for at, stream_name in controller.alarms):
+                if delay is None and any(at >= shift_at and stream_name == affected for at, stream_name in controller.alarms):
                     delay = degraded_seen
             elif policy == "static-best":
                 model = static_best
@@ -817,8 +977,8 @@ def _replay_stream(plan: Any, population: Mapping, units: Sequence, prices: Mapp
 
                 model = min(models, key=lambda name: (-upper(name), name))
             else:  # threshold escalation: cheapest first, escalating while the first pass fails verification
-                for model in by_price:
-                    if outcomes[model].y == 1 or model == by_price[-1]:
+                for model in by_cost:
+                    if outcomes[model].y == 1 or model == by_cost[-1]:
                         break
                     spent += outcomes[model].first_cost
             outcome = outcomes[model]
@@ -832,18 +992,20 @@ def _replay_stream(plan: Any, population: Mapping, units: Sequence, prices: Mapp
             entry[1] += reward
         results[policy] = {"verified_quality": quality, "cost": cost, "quality_per_price": None if cost == 0 else quality / cost}
         if controller is not None:
-            results[policy].update(detection_delay=delay, switches=int(controller.state["counts"]["switches"]),
-                                   alarms=int(controller.state["counts"]["alarms"]))
+            before_shift: dict[str, int] = {}
+            for at, key, count in controller.switches:
+                if at < shift_at:
+                    before_shift[key] = before_shift.get(key, 0) + count
+            results[policy].update(
+                detection_delay=delay, false_alarms=sum(1 for at, _stream in controller.alarms if at < shift_at),
+                switches=int(controller.state["counts"]["switches"]), alarms=int(controller.state["counts"]["alarms"]),
+                switches_per_1000_drift_free={key: 1000 * before_shift.get(key, 0) / count for key, count in sorted(drift_free.items())})
     return {"policies": results, "static_best": static_best, "shift_rate": rate}
 
 
-def _stream_model(stream: str) -> str | None:
-    """The model a Phase 9 CUSUM stream belongs to (`model:<id>` or `model-cluster:<id>:<cluster>`)."""
-    parts = stream.split(":")
-    return parts[1] if len(parts) >= 2 and parts[0] in ("model", "model-cluster") else None
-
-
 def _h4a_difference(result: Mapping[str, Any]) -> float:
+    """H4a's statistic on one stream: the controller's verified quality per price minus the larger of static-best's and
+    round-robin's (-inf when one of them delivered at no cost, which the one-sided share counts at or below 0)."""
     policies = result["policies"]
     values = [policies.get(name, {}).get("quality_per_price") for name in ("controller", "static-best", "round-robin")]
     if any(value is None for value in values):
@@ -851,15 +1013,52 @@ def _h4a_difference(result: Mapping[str, Any]) -> float:
     return values[0] - max(values[1], values[2])
 
 
+def _pending(pairs: Sequence[tuple[Any, Mapping[str, Any]]], select: Callable[[Any], bool]) -> bool:
+    """Whether a completed replicate-1 response the selection covers holds a claim without a human label."""
+    return _labels_pending([(request, response) for request, response in pairs if request.replicate == 1 and select(request)])
+
+
+def _percentiles(values: Sequence[int]) -> dict[str, Any]:
+    """The median (the mean of the two middle values for an even count) and the nearest-rank 95th percentile."""
+    ordered = sorted(values)
+    n = len(ordered)
+    middle = n // 2
+    median = ordered[middle] if n % 2 else (ordered[middle - 1] + ordered[middle]) / 2
+    return {"n": n, "median": median, "p95": ordered[max(0, -(-95 * n // 100) - 1)], "rule": "median-and-nearest-rank-p95-v1"}
+
+
+def _latency(rows: Sequence[tuple[Any, Mapping[str, Any]]]) -> dict[str, Any]:
+    """VBT RevB Sec. VIII-D: "Latency is recorded as time to first token and total time (median and 95th percentile)",
+    from each completed response's `latency` {first_token_ms, total_ms} (non-negative integers, first token not after
+    the total); a response without one is counted as not recorded."""
+    first, total = [], []
+    for _request, response in rows:
+        value = response.get("latency")
+        if (isinstance(value, Mapping) and set(value) == {"first_token_ms", "total_ms"}
+                and all(isinstance(value[key], int) and not isinstance(value[key], bool) and value[key] >= 0 for key in value)
+                and value["first_token_ms"] <= value["total_ms"]):
+            first.append(value["first_token_ms"])
+            total.append(value["total_ms"])
+    if not first:
+        return {"status": "not_recorded", "responses": len(rows)}
+    return {"time_to_first_token_ms": _percentiles(first), "total_time_ms": _percentiles(total), "not_recorded": len(rows) - len(first)}
+
+
 def compute_e4(plan: Any, responses: Sequence[Mapping[str, Any]]) -> tuple[dict, dict, dict]:
     design = plan.extra["design"]["design"]
     pairs = list(zip(plan.requests, responses))
     models = [entry["model_id"] for entry in design["models"]]
-    metrics: dict[str, Any] = {"cells": {}}
+    local = next(entry["model_id"] for entry in design["models"] if entry["local"])
+    prices = prices_of(design)
+    metrics: dict[str, Any] = {"cells": {}, "cost": {}, "latency": {}}
     for model in models:
         for arm in ("GATE", "VLOOP"):
             rows = [(request, response) for request, response in pairs if request.cell == model and request.arm == arm and request.replicate == 1]
             done = [(request, response) for request, response in rows if _done(response)]
+            metrics["latency"][f"{model}|{arm}"] = _latency(done)
+            if _labels_pending(done):
+                metrics["cells"][f"{model}|{arm}"] = {"status": "awaiting_labels", "units": len(rows)}
+                continue
             errors = answerable_item_errors(rows, lambda request: True)
             metrics["cells"][f"{model}|{arm}"] = {
                 "units": len(rows), "provider_failures_excluded": len(rows) - len(done),
@@ -867,17 +1066,37 @@ def compute_e4(plan: Any, responses: Sequence[Mapping[str, Any]]) -> tuple[dict,
                 "answer_rate": statistics.wilson_interval(sum(1 for request, response in done if request.gold == "answer"
                                                               and response.get("outcome") == "answered"),
                                                           sum(1 for request, _response in done if request.gold == "answer"))}
+        done = [response for request, response in pairs if request.cell == model and request.replicate == 1 and _done(response)]
+        units = [_units(response) for response in done]
+        cost = {"responses": len(done), "input_units": sum(i for i, _o in units), "output_units": sum(o for _i, o in units),
+                "cost": sum(_cost(response, prices[model]) for response in done)}
+        if model == local:
+            # "local cost is reported separately as measured energy plus amortized hardware" (VBT RevB Sec. VIII-D): the
+            # replay prices the local model by its spec-stated per-unit stand-in (PD-75); the measured cost is the
+            # operator's `local_cost`, when supplied (DI-148).
+            measured = design.get("local_cost")
+            cost.update(basis="per-unit stand-in for measured energy plus amortized hardware (PD-75)",
+                        measured={"status": "not_measured", "needs": "measured energy plus amortized hardware (DI-148)"} if measured is None
+                        else {"energy": measured["energy"], "amortized_hardware": measured["amortized_hardware"],
+                              "total": str(Decimal(measured["energy"]) + Decimal(measured["amortized_hardware"]))})
+            metrics["local_cost"] = {"model": local, **cost}
+        else:
+            metrics["cost"][model] = {**cost, "basis": "logged input and output units at the list prices"}
     variance = _cell_replicate_variance(plan, pairs)
-    if _labels_pending(pairs):
-        return {**metrics, "status": "awaiting_labels"}, {"family": "E4", "status": "awaiting_labels"}, variance
-    population, excluded, prices = _replay_population(plan, responses)
-    metrics["replay"] = {"units": len(population), "excluded_units": excluded}
     hypotheses = _hypotheses(plan)
     results: dict[str, Any] = {}
-    local = next(entry["model_id"] for entry in design["models"] if entry["local"])
+    replay_pending = _pending(pairs, lambda request: True)  # H4a replays every model's GATE and VLOOP responses
+    if not replay_pending:
+        population, excluded, prices = _replay_population(plan, responses)
+        metrics["replay"] = {"units": len(population), "excluded_units": excluded}
+    else:
+        metrics["replay"] = {"status": "awaiting_labels"}
     for name, hypothesis in hypotheses.items():
         base = {"endpoint": hypothesis["endpoint"], "comparison": list(hypothesis["comparison"]), "test": hypothesis["test"]}
         if name == "H4a":
+            if replay_pending:
+                results[name] = {**base, "status": "awaiting_labels", "needs": "every model's GATE and VLOOP responses labelled (replicate 1)"}
+                continue
             results[name] = {**base, **_h4a(plan, population, prices, hypothesis), "margin": hypothesis["margin"]}
             later = {entry["model_id"]: entry["later_price"] for entry in design["models"] if entry.get("later_price")}
             if later:
@@ -887,6 +1106,14 @@ def compute_e4(plan: Any, responses: Sequence[Mapping[str, Any]]) -> tuple[dict,
                 results[name]["at_later_prices"] = {"later_price": later, "enters_holm": False,
                                                     **_h4a(plan, later_population, later_prices, hypothesis)}
         elif name == "H4b":
+            # H4b reads only the GATE responses of the local and the pilot-selected commercial model (VBT RevB Sec. VIII-D:
+            # "Human claim labels for E4 cover at least the GATE responses of the local model and of the pilot-selected
+            # commercial model, which H4b's error-rate comparison needs").
+            compared = (local, design["pilot_commercial"])
+            if _pending(pairs, lambda request: request.arm == "GATE" and request.cell in compared):
+                results[name] = {**base, "status": "awaiting_labels", "needs": "the GATE responses of the local and the pilot-selected "
+                                                                                 "commercial model labelled (replicate 1)"}
+                continue
             left = answerable_item_errors(pairs, lambda request: request.cell == local and request.arm == "GATE")
             right = answerable_item_errors(pairs, lambda request: request.cell == design["pilot_commercial"] and request.arm == "GATE")
             results[name] = {**base, "local": local, "commercial": design["pilot_commercial"], **paired_by_item(left, right),
@@ -897,7 +1124,7 @@ def compute_e4(plan: Any, responses: Sequence[Mapping[str, Any]]) -> tuple[dict,
                              "MR-2, MR-3 and LQ-2 are reported without a family test (criteria_only)"}, variance
 
 
-def _h4a(plan: Any, population: Mapping, prices: Mapping[str, float], hypothesis: Mapping[str, Any]) -> dict[str, Any]:
+def _h4a(plan: Any, population: Mapping, prices: Mapping[str, tuple[float, float]], hypothesis: Mapping[str, Any]) -> dict[str, Any]:
     design = plan.extra["design"]["design"]
     if not population:
         return {"status": "undefined", "reason": "no unit has a verified outcome for every model"}
@@ -910,7 +1137,7 @@ def _h4a(plan: Any, population: Mapping, prices: Mapping[str, float], hypothesis
 
     def difference(chosen: list, replicate: int | None) -> float:
         units = [unit for group in chosen for unit in group]
-        result = _replay_stream(plan, population, units, prices, f"{seed}\x1fstream\x1f{'estimate' if replicate is None else replicate}")
+        result = _replay_stream(plan, population, units, sorted(prices), f"{seed}\x1fstream\x1f{'estimate' if replicate is None else replicate}")
         if replicate is not None:
             streams.append(result)
         return _h4a_difference(result)
@@ -923,11 +1150,18 @@ def _h4a(plan: Any, population: Mapping, prices: Mapping[str, float], hypothesis
         if values:
             summary[policy] = {"mean": sum(values) / len(values), "interval_95": [values[int(0.025 * len(values))],
                                                                                    values[min(len(values) - 1, int(0.975 * len(values)))]]}
-    delays = [result["policies"]["controller"].get("detection_delay") for result in streams if "controller" in result["policies"]]
+    runs = [result["policies"]["controller"] for result in streams if "detection_delay" in result["policies"].get("controller", {})]
+    delays = [run["detection_delay"] for run in runs]
     detected = [delay for delay in delays if delay is not None]
-    return {**share, "streams": len(streams), "stream_length": int(design["stream_length"]), "quality_per_price": summary,
-            "detection": {"streams": len(delays), "detected": len(detected), "within_100": sum(1 for delay in detected if delay <= 100),
-                          "median_delay": sorted(detected)[len(detected) // 2] if detected else None}}
+    worst = [max(run["switches_per_1000_drift_free"].values()) for run in runs if run["switches_per_1000_drift_free"]]
+    return {**share, "difference_interval_95": share["interval_95"], "streams": len(streams), "stream_length": int(design["stream_length"]),
+            "quality_per_price": summary,
+            "detection": {"streams": len(runs), "detected": len(detected), "within_100": sum(1 for delay in detected if delay <= 100),
+                          "median_delay": sorted(detected)[len(detected) // 2] if detected else None,
+                          "streams_with_false_alarms": sum(1 for run in runs if run["false_alarms"]), "rule": DETECTION_RULE,
+                          "criterion": CRITERION_NOTE},
+            "switches": {"streams": len(worst), "max_per_context_per_1000_drift_free": max(worst) if worst else None,
+                         "streams_at_most_2": sum(1 for value in worst if value <= 2), "rule": SWITCH_RULE, "criterion": CRITERION_NOTE}}
 
 
 def _h4b_tost(plan: Any, pairs: Sequence, local: str, hypothesis: Mapping[str, Any]) -> dict[str, Any]:
@@ -961,11 +1195,15 @@ def _cell_replicate_variance(plan: Any, pairs: Sequence) -> dict[str, Any]:
         return variance
     for model in sorted({request.cell for request, _response in pairs}):
         for arm in ("GATE", "VLOOP"):
+            rows = [(request, response) for request, response in pairs
+                    if request.cell == model and request.arm == arm and request.item_id in sampled and _done(response)]
+            if _labels_pending(rows):
+                variance[f"{model}|{arm}"] = {"status": "awaiting_labels"}
+                continue
             by_replicate: dict[int, list[int]] = {}
-            for request, response in pairs:
-                if request.cell == model and request.arm == arm and request.item_id in sampled and _done(response):
-                    by_replicate.setdefault(request.replicate, []).append(int(_has_error(response) or (
-                        request.gold == "abstain" and response.get("outcome") == "answered")))
+            for request, response in rows:
+                by_replicate.setdefault(request.replicate, []).append(int(_has_error(response) or (
+                    request.gold == "abstain" and response.get("outcome") == "answered")))
             rates = [sum(values) / len(values) for _replicate, values in sorted(by_replicate.items())]
             variance[f"{model}|{arm}"] = {"er_by_replicate": rates, "variance": statistics.sample_variance(rates), "rule": "sample-variance-v1"}
     return variance
@@ -997,15 +1235,21 @@ def finite(value: Any) -> Any:
 
 
 def compute(plan: Any, responses: Sequence[Mapping[str, Any]]) -> tuple[dict, dict, dict]:
-    """(metrics, registered tests, replicate variance) of a design run."""
+    """(metrics, registered tests, replicate variance) of a design run. The family names its protocol: `registered`, or
+    `departs_from_registration` with the departures (`departures`; only a synthetic run may depart), and the hypotheses
+    still waiting for an input (`pending`), whose p-values Holm has not yet seen."""
     experiment = plan.spec["experiment"]
     if experiment == "E2":
         metrics, registered = compute_e2(plan, responses)
         result = (metrics, registered, _verifier_replicate_variance(plan, responses))
-    elif experiment == "E3":
-        result = compute_e3(plan, responses)
     else:
-        result = compute_e4(plan, responses)
+        result = compute_e3(plan, responses) if experiment == "E3" else compute_e4(plan, responses)
+    registered = result[1]
+    found = list(plan.extra["design"].get("departures") or [])
+    registered["protocol"] = "departs_from_registration" if found else "registered"
+    registered["departures"] = found
+    registered["pending"] = sorted(name for name, value in registered["hypotheses"].items()
+                                   if str(value.get("status", "")).startswith("awaiting_"))
     return tuple(finite(part) for part in result)  # type: ignore[return-value]
 
 
@@ -1022,18 +1266,23 @@ def stub_verdict(prefix: bytes, request: Any) -> dict[str, Any]:
 
 
 def stub_generation(prefix: bytes, request: Any) -> dict[str, Any]:
-    """`stub-responder-v1` for an E3 generation, the same rule for both designs and every level (no design effect by
-    construction): answers when b[0] < 240; each gold claim kept unless b[1 + i] % 8 == 0, citing the unit's evidence;
-    presentation features from b[20..23]."""
+    """`stub-responder-v1` for an E3 generation. The evidential pass and each single-pass generation answer when b[0] <
+    240, keeping each gold claim unless b[1 + i] % 8 == 0, citing the unit's evidence; a two-pass presentation pass
+    answers with exactly the locked claims it was sent (`request.locked`), as the two-pass design reuses them at every
+    level. Presentation features come from b[20..23]."""
     digest = hashlib.sha256(prefix + request.request_key.encode("utf-8")).digest()
     text = "stub:" + request.request_key[:16]
     usage = {"input_units": 1, "output_units": 1}
+    features = {"fk_grade": 4 + digest[20] % 9, "guiding_questions": digest[21] % 3, "prerequisite_recaps": digest[22] % 2,
+                "length": 60 + digest[23]}
+    if getattr(request, "role", None) == "two-pass":
+        claims = [{"claim_id": claim_id, "cited": list(cited), "label": "supported", "ehmf_type": None}
+                  for claim_id, cited in getattr(request, "locked", ())]
+        return {"outcome": "answered", "claims": claims, "features": features, "text": text, "usage": usage, "model_id": None}
     if digest[0] >= 240:
         return {"outcome": "abstained", "claims": [], "text": text, "usage": usage, "model_id": None}
     claims = [{"claim_id": claim_id, "cited": list(request.evidence), "label": "supported", "ehmf_type": None}
               for index, claim_id in enumerate(request.gold_claims) if digest[1 + index % 19] % 8]
-    features = {"fk_grade": 4 + digest[20] % 9, "guiding_questions": digest[21] % 3, "prerequisite_recaps": digest[22] % 2,
-                "length": 60 + digest[23]}
     return {"outcome": "answered", "claims": claims, "features": features, "text": text, "usage": usage, "model_id": None}
 
 

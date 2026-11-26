@@ -57,7 +57,7 @@ ratified under DI-140). The Phase 10 exit is not passed (DI-129).
 ## Consequences
 
 - Every AC is provable in code on synthetic data, and no ULQS item, gold label or licensed text enters the repository or CI.
-- The real-data halves wait on the owner decisions and PI items (DI-129..DI-147); nothing here decides them.
+- The real-data halves wait on the owner decisions and PI items (DI-129..DI-148); nothing here decides them.
 - A code change to `evaluation/qcai_eval/*.py` or `scripts/run_evaluation.py` changes the committed synthetic run
   record's code pins, so CI's `run_evaluation.py --check` fails until the record is rewritten with `--write`: the record
   always names the code it ran. The pins read CRLF as LF and cover no other file, so a CRLF checkout or a change

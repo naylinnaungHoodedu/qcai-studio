@@ -21,11 +21,16 @@ executed and no Table XVII row or HR-1..MR-3 outcome is asserted (plan Phase 10 
   written (refused without a reason code), a non-synthetic run without the access log or a passing pre-run scan
   (`access_log_required`,
   `pre_run_scan_*`), an E1-E4 family the design does not compute (`analysis_plan_invalid:<experiment>`) or an E2-E4
-  design that cannot run (`design`, `design.<field>`, `e2_panel_invalid`, `e4_models_invalid`, `e4_shift_invalid`,
-  `experiment_requires_arms`), or a confirmatory run refused with no IRB, OSF, items or freeze-record reason; 3 invalid
-  items, unresolved pointers, a design input unreadable or invalid or a payload-log violation, or a confirmatory run refused with an items (`items_not_frozen`,
+  design that cannot run (`design`, `design.<field>`, `design_departs_from_registration:<field>` in a live run or over
+  research data, `e2_panel_invalid`, `verification_set_empty`, `e3_no_s7_items`, `e4_models_invalid`,
+  `e4_shift_invalid`, `e4_later_price_in_force`, `experiment_requires_arms`), or a confirmatory run refused with no
+  IRB, OSF, items or freeze-record reason; 3 invalid items, unresolved pointers, a design input (`<input>`:
+  `verification_set`, `e4_responses`, `ratings`) unreadable (`<input>_unreadable`) or invalid (`<input>_invalid`,
+  `<input>_items`, `<input>_generator_unknown`, `ratings_invalid`) or a payload-log violation, or a confirmatory run
+  refused with an items (`items_not_frozen`,
   `items_split_missing`) or freeze-record (`freeze_record_*`) reason and no IRB or OSF reason; 5 interrupted (resume
-  with `--resume`, on a later day too); 6 a pin mismatch; 7 arm parity; 8 a confirmatory run refused with an IRB or OSF
+  with `--resume`, on a later day too); 6 a pin mismatch (a design input's `<input>_sha256` among them); 7 arm parity;
+  8 a confirmatory run refused with an IRB or OSF
   reason; 9 a live run or hold H12 refused. A refused confirmatory run lists every reason and exits with the first
   class present (`governance.confirmatory_exit_code`). Its dates are judged in the run window (spec 3.13; the
   script's docstring names each date reason).
@@ -90,8 +95,13 @@ covers the pinned package and every package numbered after it, none once the pin
 Implemented designs: all four, each run under its own analysis-plan family and computing its registered family in the
 record's `registered_tests` (spec 4.12, 4.14): E1, every live item through the seven arms (H1a and H1b exact McNemar
 paired by item on answerable items, H1c); E2, the three-family verifier panel without the generator, formed by rule
-(H2a, H2b, H2c from pinned novice ratings); E3, two-pass and single-pass generation of every S7 item at three levels
-(H3a, H3b); E4, four models in GATE and VLOOP and their seeded replay streams over eight routing policies (H4a, H4b).
+(H2a, H2b, H2c from pinned novice ratings); E3, two-pass generation (the evidential pass's locked claims sent to each
+level's presentation pass) and single-pass generation of every S7 item at three levels (H3a, H3b); E4, four models in
+GATE and VLOOP, costed at their input and output list prices (the local model's cost reported separately), and their
+seeded replay streams over eight routing policies (H4a, H4b). A live run or a run over research data runs the registered
+protocol (`design_departs_from_registration:<field>` otherwise); a synthetic run may depart and its record names each
+departure. E3's exact claim-set comparison stands in for the paper's entailment comparison, and E4's measured local cost
+and latency wait on a pinned local model and the live adapters (spec conflict 40; DI-148).
 E2-E4 take their models from the spec's `design` block (PD-75): none is pinned (D-07), so they run on stub or recorded
 responses only.
 

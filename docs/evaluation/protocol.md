@@ -2,7 +2,7 @@
 
 The harness is in `evaluation/qcai_eval` and `scripts/` (Phase 10 spec: `docs/architecture/phase10-implementation-spec.md`).
 No E1-E4 run has been executed: every procedure below waits on the research data plane (D-14), the IRB letter and the OSF
-DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-147). Not executed: nothing here is a result or an asserted outcome.
+DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-148). Not executed: nothing here is a result or an asserted outcome.
 
 1. **Freeze.** ULQS v1.0 passes `scripts/validate_ulqs.py --freeze --previous <review set> --corpus-text <dir>
    --agent-check <agent re-check record> --freeze-out <freeze record>` (with the catalog, ratings and rubric; the full
@@ -51,9 +51,14 @@ DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-147). Not execu
    registered family in its run's record: E1's H1a and H1b exact McNemar paired by item on answerable items (VBT RevB
    Table I) and H1c, with Holm; E2's verifier panel (each model verifying every claim outside its own family, the panels
    formed by rule) with H2a, H2b and, from pinned novice ratings, H2c; E3's two-pass and single-pass designs over every
-   S7 item at three levels with H3a and H3b; E4's four models in GATE and VLOOP and their seeded replay streams over
-   eight routing policies with H4a and H4b (spec 4.14). Each design runs on stub or recorded responses until D-07 pins
-   the models.
+   S7 item at three levels (each two-pass presentation pass sent the evidential pass's locked claims) with H3a and H3b;
+   E4's four models in GATE and VLOOP, priced by their input and output list prices with the local model's cost
+   reported separately, and their seeded replay streams over eight routing policies with H4a (with the 95% interval of
+   its difference) and H4b (spec 4.14). Each design runs on stub or recorded responses until D-07 pins the models, and
+   a run over research data runs the registered protocol (the hypotheses' resamples, E3's three repeats, E4's 1,000
+   streams of 2,000 requests and its shift). E3 compares claim sets exactly, standing in for the paper's bidirectional
+   entailment with human checks on disagreements, and E4's measured local cost and latency wait on a pinned local model
+   and the live adapters (spec conflict 40; DI-148).
 7. **Scan.** Before and after a run, `scripts/scan_research_logs.py` scans every research-plane log with the salted
    fingerprints and must report zero matches. The pre-run scan the run spec pins must use the research fingerprint sets,
    the ULQS set built from the run's items, cover the repository and at least one logs or records target (the harness

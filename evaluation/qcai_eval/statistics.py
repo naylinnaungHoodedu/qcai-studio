@@ -346,7 +346,9 @@ def two_level_bootstrap_share_le_zero(groups: Sequence[Sequence[Any]], statistic
                                       seed: str, indexed: bool = False) -> dict:
     """A two-level bootstrap (`hash-resample-two-level-v1`): resample the groups (hash-resample-v1 with `seed` and
     resample b), then the members of the group at each position k (hash-resample-v1 with seed f"{seed}\\x1f{b}\\x1f{k}"
-    and resample 0). Reports the share of replicates at or below zero (H4a). With `indexed` the statistic is also told
+    and resample 0). Reports the share of replicates at or below zero (H4a) and the 95% percentile interval of the
+    replicates (`interval_95`, the sorted replicates at floor(0.025 B) and ceil(0.975 B) - 1, as `bootstrap`; Table XVII
+    MR-1: "95% interval of the difference excludes 0"). With `indexed` the statistic is also told
     the replicate, `statistic(chosen, b)`, and `statistic(groups, None)` gives the estimate: E4 draws one seeded replay
     stream per replicate from the resampled items (VBT RevB Sec. X-A: "items are resampled before 1,000 replay streams
     are generated")."""
@@ -361,8 +363,10 @@ def two_level_bootstrap_share_le_zero(groups: Sequence[Sequence[Any]], statistic
             chosen.append([group[i] for i in hash_resample_indices(len(group), f"{seed}\x1f{b}\x1f{k}", 0)])
         replicates.append(statistic(chosen, b) if indexed else statistic(chosen))
     share = sum(1 for value in replicates if value <= 0) / resamples
+    ordered = sorted(replicates)
+    interval = {"lower": ordered[floor(Fraction(1, 40) * resamples)], "upper": ordered[ceil(Fraction(39, 40) * resamples) - 1], "level": "0.95"}
     return {"estimate": statistic(outer, None) if indexed else statistic(outer), "share_le_zero": share, "p_value": share,  # H4a's Holm input (VBT RevB Sec. X-A)
-            "resamples": resamples, "seed": seed, "method": "two-level", "rule": "hash-resample-two-level-v1"}
+            "interval_95": interval, "resamples": resamples, "seed": seed, "method": "two-level", "rule": "hash-resample-two-level-v1"}
 
 
 def _ranks(values: Sequence[float]) -> list[float]:

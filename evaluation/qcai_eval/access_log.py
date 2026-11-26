@@ -21,7 +21,7 @@ ROLES = ("PI", "MLE", "DS", "RL", "RV")
 ACTIONS = ("read", "write", "run", "export")
 KINDS = ("ulqs_items", "evidence_catalog", "corpus_text", "ratings", "licensed_text", "fingerprints", "agreement_record",
          "freeze_record", "scan_report", "scan_target", "run_spec", "recording", "run_output", "irb_record", "osf_record",
-         "governance_record", "agent_check_record")
+         "governance_record", "agent_check_record", "verification_set", "e4_responses")
 OUTCOMES = ("started", "completed", "interrupted", "refused")
 
 

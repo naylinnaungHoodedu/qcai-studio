@@ -247,6 +247,13 @@ def test_the_two_level_bootstrap_follows_its_published_rule():
         replicates.append(pooled(chosen))
     assert result["share_le_zero"] == sum(1 for value in replicates if value <= 0) / 300
     assert result["estimate"] == pytest.approx(pooled(groups)) and result["rule"] == "hash-resample-two-level-v1"
+    # H4a / MR-1's "95% interval of the difference": the sorted replicates at floor(0.025 B) = 7 and ceil(0.975 B) - 1 = 292.
+    ordered = sorted(replicates)
+    assert result["interval_95"] == {"lower": ordered[7], "upper": ordered[292], "level": "0.95"}
+    odd = statistics.two_level_bootstrap_share_le_zero(groups, pooled, resamples=41, seed="t")["interval_95"]
+    odd_replicates = sorted(pooled([[groups[g][i] for i in statistics.hash_resample_indices(len(groups[g]), f"t\x1f{b}\x1f{k}", 0)]
+                                    for k, g in enumerate(statistics.hash_resample_indices(4, "t", b))]) for b in range(41))
+    assert (odd["lower"], odd["upper"]) == (odd_replicates[1], odd_replicates[39])  # floor(1.025) = 1, ceil(39.975) - 1 = 39
     # `indexed` (E4: one replay stream per replicate) passes the replicate, and None for the estimate, over the same draws.
     seen = []
     indexed = statistics.two_level_bootstrap_share_le_zero(groups, lambda chosen, b: seen.append(b) or pooled(chosen), resamples=300,

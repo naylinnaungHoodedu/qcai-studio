@@ -9,7 +9,7 @@ artifact's sha256; it holds no names, no identifiers of people and no text. `eva
 | `at` | UTC time, `YYYY-MM-DDTHH:MM:SSZ` |
 | `actor_role` | `PI`, `MLE`, `DS`, `RL`, `RV`: the role given on the command line (`--actor-role`; the migrator's `--author-role`) |
 | `action` | `read`, `write`, `run`, `export` |
-| `artifact_kind` | `ulqs_items`, `evidence_catalog`, `corpus_text`, `ratings`, `licensed_text`, `fingerprints`, `agreement_record`, `freeze_record`, `scan_report`, `scan_target`, `run_spec`, `recording`, `run_output`, `irb_record`, `osf_record`, `governance_record`, `agent_check_record` |
+| `artifact_kind` | `ulqs_items`, `evidence_catalog`, `corpus_text`, `ratings`, `licensed_text`, `fingerprints`, `agreement_record`, `freeze_record`, `scan_report`, `scan_target`, `run_spec`, `recording`, `run_output`, `irb_record`, `osf_record`, `governance_record`, `agent_check_record`, `verification_set`, `e4_responses` |
 | `artifact_sha256` | the artifact's sha256 (a dataset, catalog or file hash) |
 | `purpose` | a short purpose code (for example `validate`, `migrate rc1 to v1.0`, `exploratory`) |
 | `run_id` | optional: the run the access belongs to |
@@ -25,8 +25,9 @@ path that is not writable) stops the script at once with exit 2, before any furt
 could not write is the only one missing:
 
 - `run_evaluation.py`: the spec read (`run_spec`), then each input as soon as the planner reads it (the items, the
-  catalog, the recording, and each governance record and the pre-run scan with the sha256 of the bytes read, whether or
-  not it matches its pin), each checkpoint file it reads (`run_output`, the sha256 of the bytes read:
+  catalog, the recording, an E2-E4 design's pinned inputs (`verification_set`, `e4_responses`, `ratings`), and each
+  governance record and the pre-run scan with the sha256 of the bytes read, whether or not it matches its pin), each
+  checkpoint file it reads (`run_output`, the sha256 of the bytes read:
   `run_events.jsonl` when a confirmatory or live `--resume` is planned, before the gate's reads, and `run_events.jsonl`
   and `responses.jsonl` when the run starts, before any checkpoint check), the run's start, and its outcome: `completed`
   (with the payload log's sha256), `interrupted` (with the checkpoint's sha256) or `refused`. A run that stops early,

@@ -646,7 +646,7 @@ def test_e3_runs_two_pass_and_single_pass_at_three_levels_and_tests_invariance_p
                         ("two-pass", "advanced", 1), ("single-pass", "beginner", 1), ("single-pass", "intermediate", 1),
                         ("single-pass", "intermediate", 2), ("single-pass", "intermediate", 3), ("single-pass", "advanced", 1)]
     assert plan.pins["design"] == {"experiment": "E3", "arm": "VLOOP", "fixed_level": "intermediate", "repeats": 3, "h3b_feature": "fk_grade",
-                                   "resamples": None, "ratings": None}
+                                   "resamples": None, "ratings": None, "departures": []}
     grades = {"beginner": 5, "intermediate": 8, "advanced": 12}
 
     class Generator:
@@ -671,10 +671,11 @@ def test_e3_runs_two_pass_and_single_pass_at_three_levels_and_tests_invariance_p
     assert record["replicate_variance"]["single-pass"]["violations"]["successes"] == 0
 
 
-E4_MODELS = [{"model_id": "model-a", "family": "family-a", "price_per_unit": "0.003", "local": False},
-             {"model_id": "model-b", "family": "family-b", "price_per_unit": "0.002", "local": False},
-             {"model_id": "model-c", "family": "family-c", "price_per_unit": "0.004", "local": False},
-             {"model_id": "model-l", "family": "local", "price_per_unit": "0.001", "local": True}]
+E4_MODELS = [{"model_id": "model-a", "family": "family-a", "price_per_input_unit": "0.001", "price_per_output_unit": "0.002", "local": False},
+             {"model_id": "model-b", "family": "family-b", "price_per_input_unit": "0.0005", "price_per_output_unit": "0.0015", "local": False},
+             {"model_id": "model-c", "family": "family-c", "price_per_input_unit": "0.001", "price_per_output_unit": "0.003", "local": False},
+             {"model_id": "model-l", "family": "local", "price_per_input_unit": "0.0004", "price_per_output_unit": "0.0006", "local": True}]
+LATER_PRICE = {"from": "2099-01-01", "price_per_input_unit": "0.002", "price_per_output_unit": "0.004"}
 
 
 def _e4_spec(tmp_path, monkeypatch, **changes):
@@ -720,22 +721,21 @@ def test_e4_answers_every_unit_with_four_models_in_gate_and_vloop_and_tests_h4a_
     # Every delivered answer is clean and every abstention delivers nothing: the local model, the cheapest, is static-best.
     population, excluded, prices = experiments._replay_population(plan, read_jsonl(tmp_path / "e4" / "responses.jsonl"))
     assert excluded == 0 and len(population) == len({(item, unit) for item, unit, _r in units})
-    stream = experiments._replay_stream(plan, population, sorted(population, key=lambda u: (u[0], u[1] or "")), prices, "unit-test")
+    stream = experiments._replay_stream(plan, population, sorted(population, key=lambda u: (u[0], u[1] or "")), sorted(prices), "unit-test")
     assert stream["static_best"] == "model-l" and stream["policies"]["static-best"] == stream["policies"]["cheapest-eligible"]
     assert "at_later_prices" not in h4a
     # "at both Gemini prices if runs straddle 1 January 2027": a model's later list price replays H4a again beside it.
-    later = [{**entry, "later_price": {"from": "2027-01-01", "price_per_unit": "0.006"}} if entry["model_id"] == "model-b" else entry
-             for entry in E4_MODELS]
+    later = [{**entry, "later_price": LATER_PRICE} if entry["model_id"] == "model-b" else entry for entry in E4_MODELS]
     spec_later = {**spec, "design": {**spec["design"], "models": later}}
     plan_later = runner.plan_run(spec_later)
     record_later = runner.execute_run(plan_later, _scripted(rule), tmp_path / "e4-later")
     at_later = record_later["registered_tests"]["hypotheses"]["H4a"]["at_later_prices"]
-    assert at_later["later_price"] == {"model-b": {"from": "2027-01-01", "price_per_unit": "0.006"}} and at_later["enters_holm"] is False
+    assert at_later["later_price"] == {"model-b": LATER_PRICE} and at_later["enters_holm"] is False
     assert experiments._replay_population(plan_later, read_jsonl(tmp_path / "e4-later" / "responses.jsonl"), later=True)[2] == {
-        **prices, "model-b": 0.006}
+        **prices, "model-b": (0.002, 0.004)}
     assert record_later["registered_tests"]["holm"] == record["registered_tests"]["holm"]
     with pytest.raises(runner.RunRefused) as refused:
-        runner.plan_run({**spec, "design": {**spec["design"], "models": [{**later[1], "later_price": {"from": "soon", "price_per_unit": "1"}},
+        runner.plan_run({**spec, "design": {**spec["design"], "models": [{**later[1], "later_price": {"from": "soon", "price_per_input_unit": "1", "price_per_output_unit": "1"}},
                                                                           *E4_MODELS[:1], *E4_MODELS[2:]]}})
     assert refused.value.reasons == ["design.models"]
 
@@ -754,7 +754,7 @@ def test_e4_policies_route_by_their_rules_and_the_shift_resamples_the_degraded_m
     population = {("SYN-A-001", None): {"topic": "invented topic a", "outcomes": {**clean, "model-l": failed["model-l"]}},
                   ("SYN-A-002", None): {"topic": "invented topic a", "outcomes": {**clean, "model-b": failed["model-b"]}},
                   ("SYN-B-001", None): {"topic": "invented topic b", "outcomes": clean}}
-    result = experiments._replay_stream(plan, population, sorted(population), price, "policy-test")
+    result = experiments._replay_stream(plan, population, sorted(population), sorted(price), "policy-test")
     assert result["shift_rate"] == 1.0  # 0.5 points over a base error of 1/2: every clean model-b outcome in topic a fails
     policies = result["policies"]
     # Over the pool, quality per price: l 2/0.003, a 3/0.009, b 2/0.006, c 3/0.012, so static-best is the local model.
@@ -769,7 +769,7 @@ def test_e4_policies_route_by_their_rules_and_the_shift_resamples_the_degraded_m
     # Every request on SYN-A-001: l fails its first pass (0.001 paid), b's clean outcome is shifted to a failure (0.002
     # paid), a passes and delivers (0.003): 0.006 and one verified answer per request.
     # Static-best is chosen on the pool before the shift (b: 1/0.002), so after it static-best delivers nothing.
-    single = experiments._replay_stream(plan, population, [("SYN-A-001", None)], price, "policy-test")
+    single = experiments._replay_stream(plan, population, [("SYN-A-001", None)], sorted(price), "policy-test")
     one = single["policies"]
     assert one["threshold-escalation"]["cost"] == pytest.approx(8 * 0.006) and one["threshold-escalation"]["verified_quality"] == 8.0
     assert single["static_best"] == "model-b" and one["static-best"]["verified_quality"] == 0.0
@@ -826,3 +826,621 @@ def test_a_design_whose_arms_are_not_selected_is_refused(tmp_path, monkeypatch, 
     with pytest.raises(runner.RunRefused) as refused:
         runner.plan_run({**spec, "arms": {**spec["arms"], "selected": ["NR", "LEX", "SEM", "GATE", "GATE+SV", "GATE+V1"]}})
     assert refused.value.code == 2 and refused.value.reasons == ["experiment_requires_arms"]
+
+
+# ------------------------------------------------------------------------------------------------ the designs' known answers
+
+
+def _repin(path, lines):
+    from evaluation.qcai_eval.canonical import lf_sha256
+
+    synthetic.write_jsonl(path, lines)
+    return {"path": str(path), "sha256": lf_sha256(path)}
+
+
+def test_the_registered_protocol_values_are_the_harness_defaults():
+    # VBT RevB Sec. VIII-D: "Single-pass generation is also repeated three times"; "1,000 seeded streams of 2,000 requests
+    # ... At request 1,000, one model's first-pass error rate in one topic is raised by ten percentage points".
+    from evaluation.qcai_eval import experiments
+
+    defaults = runner.load_harness_parameters()["designs"]
+    assert experiments.REGISTERED_DESIGN == {"E3": {"repeats": defaults["E3"]["repeats"]},
+                                             "E4": {"streams": defaults["E4"]["streams"], "stream_length": defaults["E4"]["stream_length"],
+                                                    "shift.at": defaults["E4"]["shift_at"], "shift.points": defaults["E4"]["shift_points"]}}
+    assert experiments.REGISTERED_DESIGN["E4"] == {"streams": 1000, "stream_length": 2000, "shift.at": 1000, "shift.points": "0.10"}
+
+
+def test_a_design_that_departs_from_the_registered_protocol_is_refused_over_research_data_and_live_and_named_when_synthetic(
+        tmp_path, monkeypatch):
+    # Analysis plan H2a and H2b "resamples": 10000; E4's 1,000 streams of 2,000 requests and the shift at request 1,000.
+    from evaluation.qcai_eval import planes
+
+    spec, _items = _e4_spec(tmp_path, monkeypatch)
+    record = runner.execute_run(runner.plan_run(spec), StubResponder(), tmp_path / "e4")
+    expected = [{"field": "design.streams", "registered": 1000, "effective": 4},
+                {"field": "design.stream_length", "registered": 2000, "effective": 40},
+                {"field": "design.shift.at", "registered": 1000, "effective": 20}]
+    assert record["pins"]["design"]["departures"] == expected
+    assert record["registered_tests"]["protocol"] == "departs_from_registration" and record["registered_tests"]["departures"] == expected
+    e2, _source = _e2_spec(tmp_path / "e2", monkeypatch)
+    assert runner.plan_run(e2).pins["design"]["departures"] == [
+        {"field": "design.resamples", "hypothesis": name, "registered": 10000, "effective": 400} for name in ("H2a", "H2b")]
+    # A live run departs from nothing: refused before the live checks.
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**spec, "mode": "live", "responder": {"live": {"adapter": "none"}}})
+    assert refused.value.code == 2 and refused.value.reasons == [
+        "design_departs_from_registration:design.streams", "design_departs_from_registration:design.stream_length",
+        "design_departs_from_registration:design.shift.at"]
+    # Over research data the departure is refused, and the registered values pass on to hold H12.
+    monkeypatch.setattr(planes, "all_synthetic", lambda items: False)
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(spec)
+    assert refused.value.code == 2 and refused.value.reasons[0] == "design_departs_from_registration:design.streams"
+    registered = {key: value for key, value in spec["design"].items() if key not in ("streams", "stream_length")}
+    registered["shift"] = {"model": "model-b", "topic": spec["design"]["shift"]["topic"]}
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**spec, "design": registered})
+    assert refused.value.code == 9 and refused.value.reasons == ["hold_h12_data_plane"]
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**spec, "design": {**registered, "shift": {**registered["shift"], "points": "0.2"}}})
+    assert refused.value.reasons == ["design_departs_from_registration:design.shift.points"]
+
+
+def test_e2_h2a_and_h2c_are_the_registered_bootstraps_of_the_hand_built_panel(tmp_path, monkeypatch):
+    # Table I H2a: F1 of the 2oo3 panel minus the best single verifier's, a one-sided cluster BCa bootstrap over items;
+    # H2c: the paired AUC bootstrap of the panel against the novices' trust (lower trust: more likely erroneous).
+    from evaluation.qcai_eval import experiments, statistics
+    from evaluation.qcai_eval.canonical import canonical_sha256
+
+    spec, source = _e2_spec(tmp_path, monkeypatch)
+    keys = [line["request_key"] for line in source if line["replicate"] == 1 and line["outcome"] == "answered" and line["claims"]]
+    gold = {canonical_sha256({"source": "E1", "request_key": line["request_key"], "claim_id": claim["claim_id"]}):
+            (line["request_key"], line["item_id"], claim["label"] in experiments.ERROR_LABELS, position) for line in source
+            if line["replicate"] == 1 and line["outcome"] == "answered" for position, claim in enumerate(line["claims"])}
+    assert any(position for _key, _item, _error, position in gold.values())  # some responses hold more than one claim
+    trust = {key: 2.0 if index % 3 == 0 else 4.0 + index % 2 for index, key in enumerate(sorted(keys))}
+    ratings = _repin(tmp_path / "trust.jsonl", [{"rating": "novice-trust", "source_request_key": key, "value": value}
+                                               for key, value in sorted(trust.items())])
+    spec = {**spec, "design": {**spec["design"], "ratings": ratings}}
+
+    def flags(subject):  # a: the erroneous claims of items before D; b: every erroneous claim, every claim of A items and each
+        _key, item, error, position = gold[subject]  # response's second claim; c: the erroneous claims of items from B on and
+        second = position == 1  # each response's second claim (so a response's largest objecting share is not its smallest)
+        return (error and item < "SYN-D", error or item < "SYN-B" or second, (error and item >= "SYN-B") or second)
+
+    class Verifiers:
+        rule = "scripted-verifiers"
+
+        def respond(self, request):
+            flag = flags(request.subject)[("verifier-a", "verifier-b", "verifier-c").index(request.cell)]
+            return {"outcome": "answered", "verdict": "object" if flag else "pass", "claims": [], "text": "v",
+                    "usage": {"input_units": 1, "output_units": 1}, "model_id": None}
+
+    record = runner.execute_run(runner.plan_run(spec), Verifiers(), tmp_path / "e2")
+    hypotheses = record["registered_tests"]["hypotheses"]
+
+    def f1(rows):
+        tp = sum(1 for g, f in rows if g and f)
+        wrong = sum(1 for g, f in rows if g != f)
+        return 0.0 if tp == 0 else 2 * tp / (2 * tp + wrong)
+
+    def advantage(chosen):
+        rows = [row for cluster in chosen for row in cluster]
+        return f1([(g, sum(f) >= 2) for g, f in rows]) - max(f1([(g, f[j]) for g, f in rows]) for j in range(3))
+
+    by_item = {}
+    for subject, (_key, item, error, _position) in sorted(gold.items()):
+        by_item.setdefault(item, []).append((error, flags(subject)))
+    clusters = [by_item[item] for item in sorted(by_item)]
+    assert advantage(clusters) != 0  # a and c miss errors, b and c object to correct claims: the panel and its best member differ
+    expected = statistics.cluster_bootstrap_bca_one_sided(clusters, advantage, resamples=400,
+                                                          seed=hashed_hex(spec["run_id"], "registered", "H2a"), margin="0")
+    h2a = hypotheses["H2a"]
+    assert h2a["estimate"] == pytest.approx(advantage(clusters)) and h2a["margin"] == "0"
+    for key, value in expected.items():
+        assert h2a[key] == (pytest.approx(value) if isinstance(value, float) else value), key
+    # H2c from the pinned trust ratings: per response, the largest share of members objecting to one of its claims.
+    by_response = {}
+    for subject, (key, _item, error, _position) in gold.items():
+        by_response.setdefault(key, []).append((error, sum(flags(subject)) / 3))
+    rated = sorted(set(by_response) & set(trust))
+    expected = statistics.paired_bootstrap_auc_one_sided([any(g for g, _s in by_response[key]) for key in rated],
+                                                         [max(s for _g, s in by_response[key]) for key in rated],
+                                                         [-trust[key] for key in rated], resamples=400,
+                                                         seed=hashed_hex(spec["run_id"], "registered", "H2c"), margin="0")
+    assert hypotheses["H2c"]["responses"] == len(rated)
+    for key, value in expected.items():
+        assert hypotheses["H2c"][key] == (pytest.approx(value) if isinstance(value, float) else value), key
+    assert record["registered_tests"]["pending"] == []
+
+
+@pytest.mark.parametrize(("experiment", "rows"), [
+    ("E2", [{"rating": "eqc", "source_request_key": "k", "value": 3}]),
+    ("E2", [{"rating": "novice-trust", "source_request_key": "k", "value": 3, "rater": "r"}]),
+    ("E4", [{"rating": "eqc", "source_request_key": "k", "value": True}]),
+    ("E4", [{"rating": "novice-trust", "source_request_key": "k", "value": 3}]),
+])
+def test_a_ratings_file_that_is_not_the_design_s_ratings_is_refused_with_exit_3(tmp_path, monkeypatch, experiment, rows):
+    ratings = _repin(tmp_path / "ratings.jsonl", rows)
+    if experiment == "E2":
+        spec, _source = _e2_spec(tmp_path, monkeypatch, ratings=ratings)
+    else:
+        spec, _items = _e4_spec(tmp_path, monkeypatch, ratings=ratings)
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(spec)
+    assert refused.value.code == 3 and refused.value.reasons == ["ratings_invalid"]
+
+
+def _verification_edit(kind, lines):
+    labelled = next(line for line in lines if line["replicate"] == 1 and line["outcome"] == "answered" and line["claims"])
+    if kind == "cited":
+        labelled["claims"][0]["cited"] = 5
+    elif kind == "claims":
+        labelled["claims"] = "x"
+    elif kind == "replicate":
+        labelled["replicate"] = "1"
+    elif kind == "unit":
+        labelled["unit"] = 3
+    elif kind == "item":
+        labelled["item_id"] = "SYN-A-999"
+    elif kind == "unlabelled":
+        for line in lines:
+            for claim in line["claims"]:
+                claim["label"] = None
+    return lines
+
+
+@pytest.mark.parametrize(("kind", "code", "reason"), [
+    ("cited", 3, "verification_set_invalid"), ("claims", 3, "verification_set_invalid"), ("replicate", 3, "verification_set_invalid"),
+    ("unit", 3, "verification_set_invalid"), ("item", 3, "verification_set_items"), ("unlabelled", 2, "verification_set_empty"),
+])
+def test_e2_refuses_a_verification_set_it_cannot_read_as_labelled_claims(tmp_path, monkeypatch, kind, code, reason):
+    spec, source = _e2_spec(tmp_path, monkeypatch)
+    pinned = _repin(tmp_path / "edited.jsonl", _verification_edit(kind, source))
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**spec, "design": {**spec["design"], "verification_set": {**spec["design"]["verification_set"], **pinned}}})
+    assert refused.value.code == code and refused.value.reasons == [reason]
+
+
+VERIFIER_MODELS = [{**E4_MODELS[0], "model_id": "verifier-a"}, {**E4_MODELS[1], "model_id": "verifier-b"},
+                   {**E4_MODELS[2], "model_id": "verifier-c"}, {**E4_MODELS[3], "model_id": "verifier-g", "family": "family-g"}]
+
+
+def _e4_responses_for_e2(tmp_path, monkeypatch):
+    """An E4 stub run whose four models are E2's four verifiers (the paper's four models), pinned for E2."""
+    spec, items = _e4_spec(tmp_path / "e4in", monkeypatch, models=VERIFIER_MODELS, pilot_commercial="verifier-b")
+    spec["design"]["shift"]["model"] = "verifier-b"
+    runner.execute_run(runner.plan_run(spec), StubResponder(), tmp_path / "e4out")
+    lines = read_jsonl(tmp_path / "e4out" / "responses.jsonl")
+    return _repin(tmp_path / "e4.jsonl", lines), lines
+
+
+def test_e2_verifies_e4_claims_outside_each_generator_s_family_and_refuses_an_unknown_generator(tmp_path, monkeypatch):
+    # VBT RevB Sec. VIII-D E2: the verification set takes the human-labelled claims of E1 and E4; "Each model verifies
+    # every claim generated outside its own provider family".
+    e4, lines = _e4_responses_for_e2(tmp_path, monkeypatch)
+    spec, _source = _e2_spec(tmp_path, monkeypatch, e4_responses=e4)
+    plan = runner.plan_run(spec)
+    claims = [claim for claim in plan.extra["design"]["claims"] if claim.source == "E4"]
+    expected = sum(1 for line in lines if line["replicate"] == 1 and line["outcome"] == "answered" for claim in line["claims"]
+                   if claim["label"] is not None)
+    assert len(claims) == expected > 0
+    family = {"verifier-a": "family-a", "verifier-b": "family-b", "verifier-c": "family-c", "verifier-g": "family-g"}
+    assert {claim.family for claim in claims} == set(family.values())
+    for claim in claims:
+        cells = {request.cell for request in plan.requests if request.subject == claim.key}
+        assert cells == {verifier for verifier in family if family[verifier] != claim.family}, claim.family
+    record = runner.execute_run(plan, StubResponder(), tmp_path / "e2")
+    assert record["metrics"]["verification_set"]["by_source"]["E4"] == expected
+    unknown = _repin(tmp_path / "unknown.jsonl", [{**line, "cell": "model-z"} for line in lines])
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**spec, "design": {**spec["design"], "e4_responses": unknown}})
+    assert refused.value.code == 3 and refused.value.reasons == ["e4_responses_generator_unknown"]
+    broken = _repin(tmp_path / "broken.jsonl", _verification_edit("cited", lines))
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**spec, "design": {**spec["design"], "e4_responses": broken}})
+    assert refused.value.code == 3 and refused.value.reasons == ["e4_responses_invalid"]
+
+
+def test_e3_with_no_live_s7_item_is_refused_and_e3_needs_no_replicate_subsample(tmp_path, monkeypatch):
+    _gate_passed(monkeypatch)
+    items_path, catalog_path, _items = synthetic.write_fixture_set(tmp_path, {**synthetic.SMALL, "G": 0}, splits=True)
+    spec = synthetic.spec_dict(items_path=items_path, catalog_path=catalog_path, purpose="confirmatory", experiment="E3", family="E3",
+                               run_id="synthetic-e3-v1", design={})
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(spec)
+    assert refused.value.code == 2 and refused.value.reasons == ["e3_no_s7_items"]
+    # E3's replicate variance is its single-pass repeats; it uses no subsample, so a confirmatory E3 run needs none (E1 does).
+    e3, _items = _confirmatory(tmp_path / "e3", "E3", design={})
+    e1, _items = _confirmatory(tmp_path / "e1", "E1")
+    for replicates, reason in (({"default": 1}, "replicate_subsample_required"),
+                               ({"default": 1, "subsample": {"stratum": "A", "size": 99, "replicates": 3}}, "replicate_subsample_short")):
+        plan = runner.plan_run({**e3, "replicates": replicates})
+        assert {request.replicate for request in plan.requests if request.role != "single-pass"} == {1}
+        with pytest.raises(runner.RunRefused) as refused:
+            runner.plan_run({**e1, "replicates": replicates})
+        assert refused.value.reasons == [reason]
+
+
+def test_e3_two_pass_presentation_requests_are_sent_the_evidential_pass_s_locked_claims(tmp_path, monkeypatch):
+    # VBT RevB Sec. VIII-D E3: "the evidential pass runs once per item and its locked claims are reused at every level".
+    import hashlib
+
+    from evaluation.qcai_eval.canonical import canonical_json
+
+    _gate_passed(monkeypatch)
+    spec, items = _confirmatory(tmp_path, "E3", design={})
+    plan = runner.plan_run(spec)
+    g_items = sorted(item["item_id"] for item in items if item["stratum"] == "G")
+    evidential = {request.item_id: request.request_key for request in plan.requests if request.role == "two-pass-evidential"}
+    assert all((request.depends_on == evidential[request.item_id]) == (request.role == "two-pass") for request in plan.requests)
+    seen = []
+
+    class Generator:
+        rule = "scripted-e3"
+
+        def respond(self, request):
+            seen.append(request)
+            if request.role == "two-pass-evidential" and request.item_id == g_items[1]:
+                raise TransientFailure("timeout")
+            if request.role == "two-pass":
+                claims = [{"claim_id": claim_id, "cited": list(cited), "label": "supported", "ehmf_type": None}
+                          for claim_id, cited in request.locked]
+            else:
+                claims = [{"claim_id": claim, "cited": list(request.evidence)[:1], "label": "supported", "ehmf_type": None}
+                          for claim in request.gold_claims]
+            return {"outcome": "answered", "claims": claims, "text": "g", "usage": {"input_units": 1, "output_units": 1}, "model_id": None}
+
+    record = runner.execute_run(plan, Generator(), tmp_path / "e3")
+    lines = {line["request_key"]: line for line in read_jsonl(tmp_path / "e3" / "responses.jsonl")}
+    sent = [request for request in seen if request.role == "two-pass"]
+    assert {request.item_id for request in sent} == {g_items[0]} and len(sent) == 3
+    locked = runner.locked_claims(lines[evidential[g_items[0]]])
+    assert locked and all(request.locked == locked for request in sent)
+    for request in plan.requests:
+        if request.role == "two-pass" and request.item_id == g_items[1]:
+            line = lines[request.request_key]
+            assert (line["outcome"], line["failure_reason"], line["attempts"]) == ("provider_failure", "evidential_pass_failed", [])
+    assert record["metrics"]["IV"]["two-pass"]["excluded_items"] == 1
+    assert record["slis"]["provider_failures"] == {"evidential_pass_failed": 3, "timeout": 1} and record["slis"]["retries"] == 3
+    # The prompt envelope a two-pass request is logged with carries the locked claims.
+    log = {line["request_key"]: line for line in read_jsonl(tmp_path / "e3" / "payload_log.jsonl")}
+    request = sent[0]
+    envelope = canonical_json({"prompt_version": plan.pins["prompt_version"], "item_id": request.item_id, "unit": request.unit,
+                               "arm": request.arm, "evidence": list(request.evidence), "role": "two-pass", "cell": None, "subject": None,
+                               "locked": [[claim_id, list(cited)] for claim_id, cited in locked]})
+    assert log[request.request_key]["prompt_sha256"] == hashlib.sha256(envelope).hexdigest()
+    # The stub's presentation pass answers with the locked claims, so its two-pass levels keep the evidential set.
+    stub = runner.execute_run(plan, StubResponder(), tmp_path / "stub")
+    kept = stub["metrics"]["two_pass_lock_kept"]
+    assert kept["kept"] == kept["items"] > 0 and stub["metrics"]["IV"]["two-pass"]["successes"] == 0
+    # A recording of the stub records each two-pass request as sent.
+    if str(REPO_ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import run_evaluation
+
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec), encoding="utf-8")
+    assert run_evaluation.main(["--spec", str(spec_path), "--record-stub", str(tmp_path / "recording.jsonl")]) == 0
+    recorded = {line["request_key"]: line["response"] for line in read_jsonl(tmp_path / "recording.jsonl")[1:]}
+    for request in plan.requests:
+        if request.role == "two-pass":
+            pairs = runner.locked_claims(recorded[request.depends_on])
+            assert [[c["claim_id"], c["cited"]] for c in recorded[request.request_key]["claims"]] == [[i, list(c)] for i, c in pairs]
+
+
+def test_e3_records_its_exact_set_comparison_as_the_stand_in_for_entailment_and_lists_the_disagreements(tmp_path, monkeypatch):
+    # VBT RevB Sec. VIII-D E3: "Claim sets are compared by bidirectional entailment with human checks on disagreements"
+    # (PD-75's stand-in: exact claim-id and cited-span sets; DI-148).
+    _gate_passed(monkeypatch)
+    spec, items = _confirmatory(tmp_path, "E3", design={})
+    g_items = sorted(item["item_id"] for item in items if item["stratum"] == "G")
+
+    class Generator:
+        rule = "scripted-e3"
+
+        def respond(self, request):
+            drop = request.role == "single-pass" and request.item_id == g_items[0] and request.unit == "advanced"
+            pairs = request.locked if request.role == "two-pass" else [(claim, tuple(request.evidence)) for claim in request.gold_claims]
+            claims = [] if drop else [{"claim_id": claim, "cited": list(cited), "label": "supported", "ehmf_type": None} for claim, cited in pairs]
+            return {"outcome": "answered", "claims": claims, "text": "g", "usage": {"input_units": 1, "output_units": 1}, "model_id": None}
+
+    record = runner.execute_run(runner.plan_run(spec), Generator(), tmp_path / "e3")
+    comparison = record["metrics"]["claim_set_comparison"]
+    assert comparison["rule"] == "claim-or-span-set-differs-v1" and "bidirectional entailment" in comparison["stands_in_for"]
+    assert comparison["human_checks"] == "awaiting_human_checks"
+    assert comparison["disagreements"] == {"two-pass": [], "single-pass": [g_items[0]]}
+
+
+@pytest.mark.parametrize(("experiment", "change", "reason"), [
+    ("E4", {"epsilon": "abc"}, "design.epsilon"), ("E4", {"epsilon": "2"}, "design.epsilon"), ("E4", {"epsilon": 0.1}, "design.epsilon"),
+    ("E4", {"linucb_alpha": [1]}, "design.linucb_alpha"), ("E4", {"linucb_alpha": "-1"}, "design.linucb_alpha"),
+    ("E4", {"local_cost": {"energy": "x", "amortized_hardware": "1"}}, "design.local_cost"),
+    ("E4", {"models": [{**E4_MODELS[0], "price_per_input_unit": "0"}, *E4_MODELS[1:]]}, "design.models"),
+    ("E4", {"models": [{key: value for key, value in E4_MODELS[0].items() if key != "price_per_output_unit"}, *E4_MODELS[1:]]},
+     "design.models"),
+    ("E3", {"h3b_feature": ["x"]}, "design.h3b_feature"), ("E3", {"h3b_feature": "nope"}, "design.h3b_feature"),
+    ("E3", {"arm": ["VLOOP"]}, "design.arm"), ("E3", {"arm": "XX"}, "design.arm"),
+    ("E2", {"dawid_skene_iterations": "x"}, "design.dawid_skene_iterations"),
+    ("E2", {"dawid_skene_iterations": 0}, "design.dawid_skene_iterations"),
+])
+def test_every_design_value_the_computation_reads_is_shape_checked_with_exit_2(tmp_path, monkeypatch, experiment, change, reason):
+    if experiment == "E4":
+        spec, _items = _e4_spec(tmp_path, monkeypatch, **change)
+    elif experiment == "E2":
+        spec, _source = _e2_spec(tmp_path, monkeypatch, **change)
+    else:
+        _gate_passed(monkeypatch)
+        spec, _items = _confirmatory(tmp_path, "E3", design=change)
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(spec)
+    assert refused.value.code == 2 and refused.value.reasons == [reason]
+
+
+@pytest.mark.parametrize("experiment", ["E2", "E3", "E4"])
+def test_no_malformed_design_value_ends_in_a_traceback_through_the_run(tmp_path, monkeypatch, experiment):
+    # Every node of the design block replaced in turn by a value of the wrong type, or by a string open() refuses: the
+    # planner refuses (RunRefused), or the run completes; any other exception would reach the CLI as a traceback.
+    if experiment == "E2":
+        base, _source = _e2_spec(tmp_path, monkeypatch, dawid_skene_iterations=5)
+    elif experiment == "E3":
+        _gate_passed(monkeypatch)
+        base, _items = _confirmatory(tmp_path, "E3", design={"arm": "VLOOP", "fixed_level": "intermediate", "repeats": 3, "h3b_feature": "fk_grade"})
+    else:
+        base, _items = _e4_spec(tmp_path, monkeypatch, epsilon="0.1", linucb_alpha="1", stream_length=20, streams=2)
+    runner.execute_run(runner.plan_run(base), StubResponder(), tmp_path / "base")
+    runs = 0
+    for path in list(_nodes(base["design"]))[1:]:
+        for bad in ("x", [1], {"path": 1}, None, "a\x00b.jsonl", -1):
+            spec = json.loads(json.dumps(base))
+            target = spec["design"]
+            for key in path[:-1]:
+                target = target[key]
+            target[path[-1]] = bad
+            try:
+                plan = runner.plan_run(spec)
+            except runner.RunRefused:
+                continue
+            runs += 1
+            runner.execute_run(plan, StubResponder(), tmp_path / f"run-{runs}")  # a replacement that is a valid value runs
+
+
+def test_e4_prices_input_and_output_units_at_their_list_prices_and_reports_the_local_cost_separately(tmp_path, monkeypatch):
+    # VBT RevB Sec. VIII-D: "Cost is computed from logged tokens at the list prices in force on the run date (Table XIV) ...
+    # local cost is reported separately as measured energy plus amortized hardware"; Table XIV prices input and output.
+    from evaluation.qcai_eval import experiments
+
+    assert experiments._cost({"usage": {"input_units": 3, "output_units": 5}}, (0.001, 0.002)) == pytest.approx(0.013)
+    assert experiments._cost({"usage": {"input_units": 0, "output_units": 0}}, (0.001, 0.002)) == pytest.approx(0.003)
+    spec, _items = _e4_spec(tmp_path, monkeypatch, local_cost={"energy": "1.25", "amortized_hardware": "0.75"})
+    plan = runner.plan_run(spec)
+
+    class Usage:
+        rule = "usage"
+
+        def respond(self, request):
+            return {**StubResponder().respond(request), "usage": {"input_units": 10, "output_units": 2}}
+
+    record = runner.execute_run(plan, Usage(), tmp_path / "e4")
+    responses = {model: sum(1 for r in plan.requests if r.cell == model and r.replicate == 1) for model in ("model-a", "model-l")}
+    cost = record["metrics"]["cost"]["model-a"]
+    assert {key: cost[key] for key in ("responses", "input_units", "output_units", "basis")} == {
+        "responses": responses["model-a"], "input_units": 10 * responses["model-a"], "output_units": 2 * responses["model-a"],
+        "basis": "logged input and output units at the list prices"}
+    assert cost["cost"] == pytest.approx(responses["model-a"] * (10 * 0.001 + 2 * 0.002))
+    assert set(record["metrics"]["cost"]) == {"model-a", "model-b", "model-c"}
+    local = record["metrics"]["local_cost"]
+    assert local["model"] == "model-l" and local["measured"] == {"energy": "1.25", "amortized_hardware": "0.75", "total": "2.00"}
+    assert local["cost"] == pytest.approx(responses["model-l"] * (10 * 0.0004 + 2 * 0.0006)) and "stand-in" in local["basis"]
+    population, _excluded, prices = experiments._replay_population(plan, read_jsonl(tmp_path / "e4" / "responses.jsonl"))
+    assert prices["model-a"] == (0.001, 0.002)
+    assert all(unit["outcomes"]["model-c"].cost == pytest.approx(10 * 0.001 + 2 * 0.003) for unit in population.values())
+    plain = runner.execute_run(runner.plan_run(_e4_spec(tmp_path / "plain", monkeypatch)[0]), StubResponder(), tmp_path / "plain-out")
+    assert plain["metrics"]["local_cost"]["measured"]["status"] == "not_measured"
+    # The base list price must be in force at the run's start: a later price already in effect is refused.
+    past = [{**entry, "later_price": {**LATER_PRICE, "from": "2000-01-01"}} if entry["model_id"] == "model-b" else entry for entry in E4_MODELS]
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**spec, "design": {**spec["design"], "models": past}})
+    assert refused.value.code == 2 and refused.value.reasons == ["e4_later_price_in_force"]
+
+
+def test_e4_reports_latency_as_median_and_95th_percentile_where_responses_record_it(tmp_path, monkeypatch):
+    # VBT RevB Sec. VIII-D: "Latency is recorded as time to first token and total time (median and 95th percentile)."
+    from evaluation.qcai_eval import experiments
+
+    spec, _items = _e4_spec(tmp_path, monkeypatch)
+    plan = runner.plan_run(spec)
+
+    class Timed:
+        rule = "timed"
+
+        def respond(self, request):
+            response = StubResponder().respond(request)
+            if request.cell == "model-a" and request.arm == "GATE":
+                slow = request.item_id == "SYN-A-001"
+                response = {**response, "latency": {"first_token_ms": 70 if slow else 50, "total_ms": 900 if slow else 200}}
+            return response
+
+    record = runner.execute_run(plan, Timed(), tmp_path / "e4")
+    units = sum(1 for r in plan.requests if r.cell == "model-a" and r.arm == "GATE" and r.replicate == 1)
+    total = sorted([200] * (units - 1) + [900])
+    latency = record["metrics"]["latency"]["model-a|GATE"]
+    assert latency["time_to_first_token_ms"]["median"] == 50 and latency["total_time_ms"]["median"] == 200
+    assert latency["total_time_ms"]["p95"] == total[-(-95 * units // 100) - 1] and latency["total_time_ms"]["n"] == units
+    assert record["metrics"]["latency"]["model-a|VLOOP"]["status"] == "not_recorded"
+    assert experiments._percentiles([1, 2, 3, 4]) == {"n": 4, "median": 2.5, "p95": 4, "rule": "median-and-nearest-rank-p95-v1"}
+    assert experiments._percentiles(list(range(1, 41)))["p95"] == 38 and experiments._percentiles([7, 1, 3])["median"] == 3
+
+
+def test_e4_gates_each_hypothesis_on_the_labels_it_reads(tmp_path, monkeypatch):
+    # VBT RevB Sec. VIII-D: "Human claim labels for E4 cover at least the GATE responses of the local model and of the
+    # pilot-selected commercial model, which H4b's error-rate comparison needs"; H4a's replay reads every cell.
+    spec, _items = _e4_spec(tmp_path, monkeypatch)
+    plan = runner.plan_run(spec)
+
+    def labelled_except(cell, arm):
+        def rule(request):
+            if request.gold == "abstain":
+                return "abstained", []
+            return "answered", [None if (request.cell, request.arm) == (cell, arm) else "supported"]
+        return _scripted(rule)
+
+    record = runner.execute_run(plan, labelled_except("model-c", "VLOOP"), tmp_path / "c")
+    tests = record["registered_tests"]
+    assert tests["hypotheses"]["H4a"]["status"] == "awaiting_labels" and "p_value" in tests["hypotheses"]["H4b"]
+    assert tests["pending"] == ["H4a"] and record["metrics"]["cells"]["model-c|VLOOP"]["status"] == "awaiting_labels"
+    assert "item_error_answerable" in record["metrics"]["cells"]["model-c|GATE"] and record["metrics"]["replay"]["status"] == "awaiting_labels"
+    assert record["replicate_variance"]["model-c|VLOOP"] == {"status": "awaiting_labels"}
+    assert "variance" in record["replicate_variance"]["model-c|GATE"]
+    record = runner.execute_run(plan, labelled_except("model-l", "GATE"), tmp_path / "l")
+    assert {name: value.get("status") for name, value in record["registered_tests"]["hypotheses"].items()} == {
+        "H4a": "awaiting_labels", "H4b": "awaiting_labels"}
+    record = runner.execute_run(plan, labelled_except("model-z", "GATE"), tmp_path / "all")
+    assert record["registered_tests"]["pending"] == [] and "p_value" in record["registered_tests"]["hypotheses"]["H4a"]
+
+
+def test_e4_h4b_s_tost_is_the_paired_tost_of_the_pinned_eqc_ratings(tmp_path, monkeypatch):
+    from evaluation.qcai_eval import statistics
+
+    spec, _items = _e4_spec(tmp_path, monkeypatch)
+    plan = runner.plan_run(spec)
+    vloop = sorted((r for r in plan.requests if r.arm == "VLOOP" and r.replicate == 1 and r.cell in ("model-l", "model-b")),
+                   key=lambda r: (r.item_id, r.unit or "", r.cell))
+    score = {r.request_key: 4.0 + (0.3 if r.cell == "model-b" else 0.0) + 0.1 * (index % 4) for index, r in enumerate(vloop)}
+    ratings = _repin(tmp_path / "eqc.jsonl", [{"rating": "eqc", "source_request_key": key, "value": value} for key, value in score.items()])
+    record = runner.execute_run(runner.plan_run({**spec, "design": {**spec["design"], "ratings": ratings}}), StubResponder(), tmp_path / "e4")
+    units = sorted({(r.item_id, r.unit) for r in vloop}, key=lambda unit: (unit[0], unit[1] or ""))
+    cell = {(r.item_id, r.unit, r.cell): score[r.request_key] for r in vloop}
+    expected = statistics.paired_tost([cell[(i, u, "model-l")] for i, u in units], [cell[(i, u, "model-b")] for i, u in units], margin="0.5")
+    tost = record["registered_tests"]["hypotheses"]["H4b"]["tost"]
+    assert tost["pairs"] == len(units) and tost["confirmatory"] == "inconclusive" and tost["enters_holm"] is False
+    for key, value in expected.items():
+        assert tost[key] == (pytest.approx(value) if isinstance(value, float) else value), key
+
+
+def test_h4a_s_statistic_is_the_controller_minus_the_larger_of_static_best_and_round_robin():
+    from evaluation.qcai_eval import experiments
+
+    def result(controller, static_best, round_robin):
+        return {"policies": {"controller": {"quality_per_price": controller}, "static-best": {"quality_per_price": static_best},
+                             "round-robin": {"quality_per_price": round_robin}}}
+
+    assert experiments._h4a_difference(result(5.0, 3.0, 4.0)) == 1.0
+    assert experiments._h4a_difference(result(3.5, 3.0, 4.0)) == -0.5  # beats static-best, loses to round-robin
+    assert experiments._h4a_difference(result(3.5, 4.0, 3.0)) == -0.5
+    assert experiments._h4a_difference(result(None, 3.0, 4.0)) == float("-inf")
+
+
+PRICE = {"model-a": 0.003, "model-b": 0.002, "model-c": 0.004, "model-l": 0.001}
+
+
+def _policy_plan(tmp_path, monkeypatch, **design):
+    spec, _items = _e4_spec(tmp_path, monkeypatch)
+    plan = runner.plan_run(spec)
+    plan.extra["design"]["design"].update(design)
+    return plan
+
+
+def _outcomes(failing=()):
+    from evaluation.qcai_eval import experiments
+
+    return {model: experiments.Outcome(y=int(model not in failing), quality=float(model not in failing), cost=cost, first_cost=cost)
+            for model, cost in PRICE.items()}
+
+
+def test_the_controller_routes_by_algorithm_1_and_counts_detection_false_alarms_and_switches_by_mr_2_and_mr_3(tmp_path, monkeypatch):
+    # The pinned package's ranking block: identical commissioning priors and lambda_u 0, so Algorithm 1's argmax ties
+    # break to the smallest adapter id, model-a; the Bernoulli CUSUM adds ln(p1/p0) = ln 3 per error and alarms above
+    # h = 4.0, so four consecutive errors alarm (4 ln 3 > 4 > 3 ln 3) on both of the model's streams; a batch closes at 25
+    # responses, and 25 failures after the 40-clean commissioning prior demote model-a (a switch, to model-b).
+    from evaluation.qcai_eval import experiments
+
+    plan = _policy_plan(tmp_path, monkeypatch, stream_length=8, shift={"model": "model-a", "topic": "invented topic b", "at": 0, "points": "0.5"})
+    clean = {("SYN-B-001", None): {"topic": "invented topic b", "outcomes": _outcomes()}}
+    result = experiments._replay_stream(plan, clean, list(clean), sorted(PRICE), "s")["policies"]
+    for policy in ("controller", "controller-no-hysteresis"):
+        assert {key: result[policy][key] for key in ("verified_quality", "detection_delay", "false_alarms", "switches", "alarms")} == {
+            "verified_quality": 8.0, "detection_delay": None, "false_alarms": 0, "switches": 0, "alarms": 0}, policy
+        assert result[policy]["cost"] == pytest.approx(8 * 0.003)
+    failing = {("SYN-B-001", None): {"topic": "invented topic b", "outcomes": _outcomes({"model-a"})}}
+    # Ten drift-free failures: alarms at the 4th and 8th request on both of model-a's streams, all before the shift.
+    plan.extra["design"]["design"].update(stream_length=10, shift={"model": "model-a", "topic": "invented topic b", "at": 10, "points": "0.5"})
+    run = experiments._replay_stream(plan, failing, list(failing), sorted(PRICE), "s")["policies"]["controller"]
+    assert (run["false_alarms"], run["alarms"], run["detection_delay"], run["switches"]) == (4, 4, None, 0)
+    # 30 requests: the demotion at the 25th is one switch; per 1,000 drift-free requests it counts only before the shift.
+    plan.extra["design"]["design"].update(stream_length=30, shift={"model": "model-a", "topic": "invented topic b", "at": 30, "points": "0.5"})
+    run = experiments._replay_stream(plan, failing, list(failing), sorted(PRICE), "s")["policies"]["controller"]
+    assert run["switches"] == 1 and run["switches_per_1000_drift_free"] == {"unscoped|explanation|2": pytest.approx(1000 / 30)}
+    assert run["verified_quality"] == 5.0  # model-b delivers the last five
+    plan.extra["design"]["design"]["shift"]["at"] = 20
+    run = experiments._replay_stream(plan, failing, list(failing), sorted(PRICE), "s")["policies"]["controller"]
+    assert run["switches"] == 1 and run["switches_per_1000_drift_free"] == {"unscoped|explanation|2": 0.0} and run["false_alarms"] == 10
+    # Detection counts the degraded model's responses in the shifted topic up to the first alarm on its stream for that
+    # topic's context. Two failures in another topic first (seed s54 draws B, B, then shifted-topic units): model-a's global
+    # stream alarms at its fourth error (the second degraded response), the shifted topic's stream at its own fourth.
+    units = [("SYN-B-001", None), ("SYN-N-001", None), ("SYN-N-002", None)]
+    population = {units[0]: {"topic": "invented topic b", "outcomes": _outcomes({"model-a"})},
+                  units[1]: {"topic": "nisq-hybrid-workflows", "outcomes": _outcomes()},
+                  units[2]: {"topic": "nisq-hybrid-workflows", "outcomes": _outcomes({"model-a"})}}
+    plan.extra["design"]["design"].update(stream_length=6, shift={"model": "model-a", "topic": "nisq-hybrid-workflows", "at": 2, "points": "0.5"})
+    assert [units[experiments._index("s54", 3, "request", t)][0] for t in range(6)] == [
+        "SYN-B-001", "SYN-B-001", "SYN-N-002", "SYN-N-001", "SYN-N-001", "SYN-N-001"]
+    stream = experiments._replay_stream(plan, population, units, sorted(PRICE), "s54")
+    run = stream["policies"]["controller"]
+    assert stream["shift_rate"] == 1.0 and run["detection_delay"] == 4 and run["false_alarms"] == 0 and run["alarms"] == 2
+
+
+def test_epsilon_greedy_and_linucb_route_by_their_rules(tmp_path, monkeypatch):
+    # epsilon-greedy: each model once in adapter-id order, then the best mean reward (quality per price) unless a seeded
+    # draw below epsilon explores; LinUCB on the topic: the largest mean reward over (1 + pulls) plus alpha sqrt(1 / (1 +
+    # pulls)), ties by adapter id.
+    from evaluation.qcai_eval import experiments
+
+    plan = _policy_plan(tmp_path, monkeypatch, stream_length=8, epsilon="0", linucb_alpha="0",
+                        shift={"model": "model-a", "topic": "invented topic b", "at": 0, "points": "0.5"})
+    clean = {("SYN-B-001", None): {"topic": "invented topic b", "outcomes": _outcomes()}}
+    result = experiments._replay_stream(plan, clean, list(clean), sorted(PRICE), "s")["policies"]
+    assert result["epsilon-greedy"]["cost"] == pytest.approx(0.003 + 0.002 + 0.004 + 0.001 + 4 * 0.001)  # then always model-l
+    assert result["linucb"]["cost"] == pytest.approx(8 * 0.003)  # alpha 0: model-a first, and its reward keeps it ahead
+    plan.extra["design"]["design"].update(epsilon="1", linucb_alpha="100000")
+    result = experiments._replay_stream(plan, clean, list(clean), sorted(PRICE), "s")["policies"]
+    models = sorted(PRICE)
+    explored = [models[experiments._index("s", 4, "epsilon-greedy", "explore", t)] for t in range(4, 8)]
+    assert result["epsilon-greedy"]["cost"] == pytest.approx(0.010 + sum(PRICE[model] for model in explored))
+    assert result["linucb"]["cost"] == pytest.approx(2 * sum(PRICE.values()))  # the bonus dominates: the least pulled, in turn
+
+
+def test_the_e4_record_carries_the_h4a_difference_interval_and_the_mr_2_and_mr_3_figures_labelled(tmp_path, monkeypatch):
+    spec, _items = _e4_spec(tmp_path, monkeypatch)
+    record = runner.execute_run(runner.plan_run(spec), StubResponder(), tmp_path / "e4")
+    h4a = record["registered_tests"]["hypotheses"]["H4a"]
+    interval = h4a["difference_interval_95"]
+    assert interval == h4a["interval_95"] and interval["level"] == "0.95"
+    assert interval["lower"] is None or interval["upper"] is None or interval["lower"] <= interval["upper"]
+    assert "MR-2" in h4a["detection"]["rule"] and "not its outcome" in h4a["detection"]["criterion"]
+    assert "MR-3" in h4a["switches"]["rule"] and h4a["switches"]["streams"] == 4
+
+
+def test_a_design_run_logs_its_design_inputs_and_its_outcome_to_the_access_log(tmp_path, monkeypatch, capsys):
+    # Spec 3.11: the runner logs each input as the planner reads it and the run's outcome, so a refused run keeps its reads.
+    if str(REPO_ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import run_evaluation
+
+    e4, _lines = _e4_responses_for_e2(tmp_path, monkeypatch)
+    e2, _source = _e2_spec(tmp_path, monkeypatch, e4_responses=e4)
+    rated, _items = _e4_spec(tmp_path / "rated", monkeypatch, ratings=_repin(tmp_path / "eqc.jsonl", []))
+    for name, spec, kinds in (("e2", e2, {"verification_set", "e4_responses"}), ("e4", rated, {"ratings"})):
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps(spec), encoding="utf-8")
+        for gate, code, outcome in (("passed", 0, "completed"), ("refused", 8, "refused")):
+            if gate == "refused":
+                monkeypatch.undo()  # the confirmatory gate as committed: no IRB or OSF record
+            access = tmp_path / f"{name}-{gate}-access.jsonl"
+            assert run_evaluation.main(["--spec", str(path), "--output-dir", str(tmp_path / f"{name}-{gate}"), "--access-log", str(access),
+                                        "--actor-role", "MLE"]) == code
+            assert "Traceback" not in capsys.readouterr().err
+            lines = read_jsonl(access)
+            assert kinds <= {line["artifact_kind"] for line in lines if line["action"] == "read"}, name
+            assert [line["outcome"] for line in lines if line["action"] == "run"][-1] == outcome
+        _gate_passed(monkeypatch)

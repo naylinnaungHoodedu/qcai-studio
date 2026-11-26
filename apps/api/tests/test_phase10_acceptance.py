@@ -2,7 +2,7 @@
 
 Every input is synthetic and built in the test's own tmp_path; scripts run in-process through main(argv). AC-10-1, AC-10-4,
 AC-10-5 and AC-10-6 are proven on synthetic data and the live half of AC-10-3 with a scripted fake provider (spec R-e);
-their real-data halves are deferred (DI-129..DI-147). No test reads a private file, and none writes into the checkout.
+their real-data halves are deferred (DI-129..DI-148). No test reads a private file, and none writes into the checkout.
 """
 
 from __future__ import annotations
@@ -2178,7 +2178,7 @@ def test_phase10_docs_quote_the_plan_and_state_the_current_rules():
     head = spec_text().split("\n## 14. Review history\n", 1)[0]
     for number in range(60, 76):
         assert f"| PD-{number} |" in head
-    for number in range(129, 148):
+    for number in range(129, 149):
         assert f"| DI-{number} |" in head
     assert "The exit is not passed (DI-129)." in head
     # Every citation of Phase 10's deferred range names its last row (spec 12.2; DI-300..DI-499 belong to the parallel

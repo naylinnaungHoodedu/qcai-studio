@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from collections import Counter
 import contextlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import datetime as _dt
 from fractions import Fraction
 import hashlib
@@ -107,6 +107,12 @@ class Request:
     cell: str | None = None
     subject: str | None = None
     claim_label: str | None = None
+    # An E3 `two-pass` presentation request depends on its item's `two-pass-evidential` request (`depends_on`, that
+    # request's key): `execute_run` sends it only after that response, with its locked claims (`locked`: sorted
+    # (claim_id, sorted cited pointers) pairs), and records it as a provider failure (`evidential_pass_failed`) without
+    # sending it when the evidential pass failed.
+    depends_on: str | None = None
+    locked: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -368,8 +374,9 @@ def _check_shape(spec: Mapping[str, Any], parameters: Mapping[str, Any]) -> None
         if spec["arms"].get("selected") is not None and sorted(spec["arms"]["selected"]) != sorted(ablation.ARM_IDS):
             raise RunRefused(2, ["experiment_requires_seven_arms"])
     # AC-10-3: live runs report replicate variance; confirmatory runs too (PD-68). Both need a subsample with at least
-    # `min_replicates` replicates.
-    if spec["mode"] == "live" or spec["purpose"] == "confirmatory":
+    # `min_replicates` replicates, except E3, whose replicate variance is its single-pass repeats at the fixed level
+    # (VBT RevB Sec. VIII-D) and which uses no subsample.
+    if (spec["mode"] == "live" or spec["purpose"] == "confirmatory") and spec["experiment"] != "E3":
         block = effective_replicates(spec, parameters).get("subsample") or {}
         if int(block.get("replicates", 0)) < int(parameters["replicate_variance_required"]["min_replicates"]):
             raise RunRefused(2, ["replicate_subsample_required"])
@@ -502,6 +509,7 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
     if spec["analysis_plan"].get("family") not in analysis_plans.FAMILIES:
         raise RunRefused(2, ["analysis_plan.family"])
     design = None
+    synthetic = planes.all_synthetic(items) and (catalog is None or all(r.volume == "synthetic" for r in catalog.records.values()))
     if spec["experiment"] in analysis_plans.FAMILIES:
         # Every hypothesis of the experiment's family must be one its design computes, under that test (E1: comparing
         # two of the selected arms), so a valid plans file that registers another test refuses the run before it
@@ -518,8 +526,14 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
             design = experiments.load_design(spec["experiment"], spec, items, parameters_raw, repo_root, note)
         except experiments.DesignRefused as refused:
             raise RunRefused(refused.code, refused.reasons) from None
+        # The registered protocol (`experiments.departures`): a live run or a run over non-synthetic data runs it as
+        # registered; a synthetic run may depart, and its record names each departure and never files the family as the
+        # registered result.
+        design["departures"] = experiments.departures(spec["experiment"], design["design"], plans_raw["families"][spec["experiment"]])
+        if design["departures"] and (spec["mode"] == "live" or not synthetic):
+            fields = [f"design_departs_from_registration:{entry['field']}" for entry in design["departures"]]
+            raise RunRefused(2, list(dict.fromkeys(fields)))
     # 7. Hold H12: no run over non-synthetic data while the research data plane (D-14) is not decided in a committed package.
-    synthetic = planes.all_synthetic(items) and (catalog is None or all(r.volume == "synthetic" for r in catalog.records.values()))
     if not synthetic:
         if not _decided(judged, "D-14"):
             raise RunRefused(9, ["hold_h12_data_plane"])
@@ -565,6 +579,11 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
         if not recording_reasons:
             starts.append(governance.iso_day(recording_started_on))
     start = min(starts)
+    # E4 prices at "the list prices in force on the run date" (VBT RevB Sec. VIII-D): a model's base list price must be in
+    # force at the run's start, so a later list price must take effect after it.
+    if design is not None and spec["experiment"] == "E4" and any(
+            entry.get("later_price") and governance.iso_day(entry["later_price"]["from"]) <= start for entry in design["design"]["models"]):
+        raise RunRefused(2, ["e4_later_price_in_force"])
     # 8. The confirmatory gate (AC-10-5).
     if spec["purpose"] == "confirmatory":
         reasons = window + governance.confirmatory_refusals(
@@ -578,8 +597,8 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
             reasons.append("items_split_missing")
         # The replicate subsample (PD-68, the paper's "three replicates on a 40-item S1 subsample") must be met in full:
         # a confirmatory run whose subsample stratum holds fewer live items than its size is refused, never replicated
-        # over fewer items than its record pins.
-        if len(subsample(items, replicates)) < int((replicates.get("subsample") or {}).get("size", 0)):
+        # over fewer items than its record pins. E3 uses no subsample (`_check_shape`).
+        if spec["experiment"] != "E3" and len(subsample(items, replicates)) < int((replicates.get("subsample") or {}).get("size", 0)):
             reasons.append("replicate_subsample_short")
         if reasons:
             raise RunRefused(governance.confirmatory_exit_code(reasons), reasons)
@@ -672,7 +691,12 @@ def _requests(spec, items, table, selected, package_sha, prompt_version, replica
 
 
 def _design_requests(spec, items, table, package_sha, prompt_version, replicates, loaded, resolver) -> list[Request]:
-    """The requests of an E2, E3 or E4 design (`experiments`); the subsample's items get its replicates, as in E1."""
+    """The requests of an E2, E3 or E4 design (`experiments`). E2: one `verify` request per claim and verifier outside the
+    claim's family, the claims of the subsample's items replicated; E3: the live G items only, each request at replicate
+    1 except the single-pass repeats at the fixed level (its replicate variance; the subsample is not used), and each
+    `two-pass` request depending on its item's `two-pass-evidential` request (`depends_on`: it is sent with that
+    response's locked claims, `locked`); E4: every live unit for each model in GATE and VLOOP, the subsample's items
+    replicated, as in E1."""
     experiment = spec["experiment"]
     design = loaded["design"]
     run_id = spec["run_id"]
@@ -682,7 +706,8 @@ def _design_requests(spec, items, table, package_sha, prompt_version, replicates
     live = sorted((item for item in items if item.get("status") != "retired"), key=lambda item: item["item_id"])
     requests: list[Request] = []
 
-    def add(*, arm, item_id, unit, turn_depth, replicate, evidence, gold, gold_claims, role, cell, subject=None, claim_label=None):
+    def add(*, arm, item_id, unit, turn_depth, replicate, evidence, gold, gold_claims, role, cell, subject=None, claim_label=None,
+            depends_on=None) -> str:
         configuration = ablation.arm_configuration(table, arm)
         key = experiments.design_request_key(role=role, arm_config_sha256=canonical_sha256(configuration), item_id=item_id, unit=unit,
                                              replicate=replicate, package_sha256=package_sha, prompt_version=prompt_version,
@@ -690,7 +715,8 @@ def _design_requests(spec, items, table, package_sha, prompt_version, replicates
         requests.append(Request(request_key=key, arm=arm, item_id=item_id, unit=unit, turn_depth=turn_depth, replicate=replicate,
                                 seed_hex=experiments.design_seed(run_id, arm, item_id, replicate, role, cell, subject or unit),
                                 evidence=tuple(sorted(evidence)), gold=gold, gold_claims=tuple(gold_claims), role=role, cell=cell,
-                                subject=subject, claim_label=claim_label))
+                                subject=subject, claim_label=claim_label, depends_on=depends_on))
+        return key
 
     if experiment == "E2":
         for claim in loaded["claims"]:
@@ -712,9 +738,9 @@ def _design_requests(spec, items, table, package_sha, prompt_version, replicates
             evidence = () if ablation.arm_configuration(table, arm)["retrieval"] == "none" else tuple(sorted(first["evidence"]))
             common = {"arm": arm, "item_id": item["item_id"], "turn_depth": None, "evidence": evidence, "gold": "answer",
                       "gold_claims": first["gold_claims"], "cell": None}
-            add(unit=None, replicate=1, role="two-pass-evidential", **common)
+            evidential = add(unit=None, replicate=1, role="two-pass-evidential", **common)
             for level in ulqs.REPLAY_LEVELS:
-                add(unit=level, replicate=1, role="two-pass", **common)
+                add(unit=level, replicate=1, role="two-pass", depends_on=evidential, **common)
             for level in ulqs.REPLAY_LEVELS:
                 for replicate in range(1, (int(design["repeats"]) if level == design["fixed_level"] else 1) + 1):
                     add(unit=level, replicate=replicate, role="single-pass", **common)
@@ -847,7 +873,31 @@ def _prompt_envelope(plan: Plan, request: Request) -> bytes:
                 "evidence": list(request.evidence)}
     if request.role != "answer" or request.cell is not None:
         envelope.update(role=request.role, cell=request.cell, subject=request.subject)
+    if request.depends_on is not None:  # a two-pass presentation request carries its item's locked claims
+        envelope["locked"] = [[claim_id, list(cited)] for claim_id, cited in request.locked]
     return canonical_json(envelope)
+
+
+def locked_claims(response: Mapping[str, Any]) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """An evidential response's locked claims: its (claim_id, sorted cited pointers) pairs, sorted (a claim without a
+    string id, and a pointer that is not a string, are left out)."""
+    pairs = set()
+    for claim in response.get("claims") or []:
+        if isinstance(claim, Mapping) and isinstance(claim.get("claim_id"), str):
+            cited = claim.get("cited") if isinstance(claim.get("cited"), list) else []
+            pairs.add((claim["claim_id"], tuple(sorted({pointer for pointer in cited if isinstance(pointer, str)}))))
+    return tuple(sorted(pairs))
+
+
+def with_dependency(request: Request, responses: Mapping[str, Mapping[str, Any]]) -> Request | None:
+    """`request` as it is sent: unchanged without `depends_on`; with it, carrying the locked claims of the response it
+    depends on, or None when that response failed or is missing (the request is then not sent)."""
+    if request.depends_on is None:
+        return request
+    source = responses.get(request.depends_on)
+    if source is None or source.get("outcome") not in ("answered", "abstained"):
+        return None
+    return replace(request, locked=locked_claims(source))
 
 
 def checkpoint_sha256(path: Path) -> str | None:
@@ -933,9 +983,10 @@ def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = Fal
                 continue
             attempts: list[dict[str, str]] = []
             response = None
-            for _attempt in range(1 + retries):
+            sent = with_dependency(request, completed)
+            for _attempt in range(1 + retries if sent is not None else 0):  # never sent when its evidential pass failed
                 try:
-                    response = responder.respond(request)
+                    response = responder.respond(sent)
                 except TransientFailure as failure:
                     attempts.append({"status": failure.reason})
                     continue
@@ -946,6 +997,8 @@ def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = Fal
                 attempts.append({"status": "ok"})
                 break
             line = _response_line(request, response, attempts)
+            if sent is None:
+                line["failure_reason"] = "evidential_pass_failed"
             with _writing():
                 handle.write(dumps_line(line))
                 handle.flush()
@@ -958,8 +1011,9 @@ def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = Fal
     verify_responses(plan, {line["request_key"]: line for line in responses})
     log_lines = []
     for request, response in zip(plan.requests, responses):
+        sent = with_dependency(request, completed) or request
         record = log_record(request, response, run_id=spec["run_id"], purpose=spec["purpose"], prompt_version=plan.pins["prompt_version"],
-                            prompt_bytes=_prompt_envelope(plan, request), resolver=plan.resolver)
+                            prompt_bytes=_prompt_envelope(plan, sent), resolver=plan.resolver)
         validate_log_record(record)
         log_lines.append(dumps_line(record))
     payload_text = "".join(log_lines)
@@ -974,7 +1028,7 @@ def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = Fal
 
 
 # A design response's own fields (an E2 verdict, E3 presentation features, delivered-quality signals), kept when present.
-DESIGN_RESPONSE_KEYS = ("verdict", "features", "signals")
+DESIGN_RESPONSE_KEYS = ("verdict", "features", "signals", "latency")
 
 
 def _response_line(request: Request, response: Mapping[str, Any] | None, attempts: list[dict[str, str]]) -> dict[str, Any]:
@@ -1181,7 +1235,8 @@ def compute_slis(plan: Plan, responses: Sequence[Mapping[str, Any]]) -> dict[str
     completed = sum(1 for response in responses if response["outcome"] != "provider_failure")
     planned = len(plan.requests)
     return {"planned_requests": planned, "completed_requests": completed, "completion_rate": completed / planned if planned else 0.0,
-            "provider_failures": dict(sorted(failures.items())), "retries": attempts - len(responses), "attempts": attempts,
+            "provider_failures": dict(sorted(failures.items())),
+            "retries": sum(max(0, len(response.get("attempts", [])) - 1) for response in responses), "attempts": attempts,
             "cost_units": cost, "cost_unit": "provider usage units (not USD; D-06, A-15)"}
 
 

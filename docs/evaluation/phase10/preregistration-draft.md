@@ -92,4 +92,4 @@ Criteria reported without a family test: MR-2; MR-3; LQ-2.
 | `effective_sample_size` | H2b, V-4 | n_eff reported with DR, each with its 95% CI (Table XVII V-4) | not implemented (DI-138) |
 
 Not executed: every hypothesis above awaits the frozen ULQS, the IRB letter, the OSF DOI and the research data
-plane (DI-129..DI-147).
+plane (DI-129..DI-148).

@@ -35,12 +35,16 @@ Exit codes: 0 ok; 1 drift; 2 usage, a malformed spec, a path, an experiment or a
 (`output_unwritable`), a --write or --record-stub target or the access log that cannot be written (refused without a
 reason code), a non-synthetic run without the access log (`access_log_required`) or a passing pre-run scan
 (`pre_run_scan_*`), an E1-E4 family the design does not compute (`analysis_plan_invalid:<experiment>`) or an E2-E4
-design that cannot run (`design`, `design.<field>`, `e2_panel_invalid`, `e4_models_invalid`, `e4_shift_invalid`,
-`experiment_requires_arms`), or a confirmatory run refused with no IRB, OSF, items or freeze-record reason; 3 invalid
-items, unresolved pointers, a design input unreadable or invalid (`<input>_unreadable`, `ratings_invalid`) or a
+design that cannot run (`design`, `design.<field>`, `design_departs_from_registration:<field>` in a live run or over
+research data, `e2_panel_invalid`, `verification_set_empty`, `e3_no_s7_items`, `e4_models_invalid`, `e4_shift_invalid`,
+`e4_later_price_in_force`, `experiment_requires_arms`), or a confirmatory run refused with no IRB, OSF, items or
+freeze-record reason; 3 invalid items, unresolved pointers, a design input (`<input>`: `verification_set`,
+`e4_responses`, `ratings`) unreadable (`<input>_unreadable`) or invalid (`<input>_invalid`, `verification_set_items`,
+`e4_responses_items`, `verification_set_generator_unknown`, `e4_responses_generator_unknown`, `ratings_invalid`) or a
 payload-log violation, or a confirmatory run refused with an items (`items_not_frozen`,
 `items_split_missing`) or freeze-record (`freeze_record_*`) reason and no IRB or OSF reason; 5 interrupted (provider
-outage; --resume continues it, on a later day too); 6 a pin mismatch; 7 arm parity; 8 a confirmatory run refused
+outage; --resume continues it, on a later day too); 6 a pin mismatch (a design input's `<input>_sha256` among them);
+7 arm parity; 8 a confirmatory run refused
 with any IRB or OSF reason (`irb_*`, `osf_*`); 9 a live run or hold H12 refused. A refused confirmatory run lists
 every reason; its code is the first class present (`governance.confirmatory_exit_code`).
 """
@@ -220,9 +224,13 @@ def record_stub(out_path: Path, spec_path: Path) -> int:
     lines = [dumps_line({"recording": "recorded-responses-v1", "source": "synthetic", "run_pins_sha256": pins})]
     keys = sorted(request.request_key for request in plan.requests)
     scripted = dict(zip(keys, RECORDED_FAILURES))
+    recorded: dict[str, dict] = {}
     for request in plan.requests:
         attempts = scripted.get(request.request_key, [{"status": "ok"}])
-        response = stub_for(b"stub-responder-v1", request)
+        # An E3 two-pass request is recorded as sent: with its evidential response's locked claims.
+        sent = runner.with_dependency(request, recorded) or request
+        response = stub_for(b"stub-responder-v1", sent)
+        recorded[request.request_key] = response
         lines.append(dumps_line({"request_key": request.request_key, "attempts": list(attempts), "response": response}))
     write_lf(out_path, "".join(lines))
     print(f"wrote {out_path} ({len(lines) - 1} requests; sha256 {lf_sha256(out_path)[:12]})")
