@@ -32,14 +32,14 @@ Exit codes: 0 zero matches (with full coverage only under --require-zero: withou
 report's `result` says `incomplete` and stderr names the targets), or the self-test detected the sentinel; 1 matches,
 incomplete coverage under --require-zero (or the self-test missed); 2 usage (including research fingerprints without
 --access-log and --actor-role, --ulqs-fingerprints with --synthetic-fixture, an access log on a public path, research
-fingerprints or their report on a public path, or a report or access log that cannot be written).
+fingerprints or their report on a public path, or a report or access log that cannot be written);
+10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 from pathlib import Path
 import secrets
 import sys
@@ -51,7 +51,7 @@ for path in (REPO_ROOT, API_ROOT):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from evaluation.qcai_eval import access_log, contamination, planes  # noqa: E402
+from evaluation.qcai_eval import access_log, contamination, inputs, planes  # noqa: E402
 from evaluation.qcai_eval.canonical import canonical_sha256, dumps_line, dumps_record, lf_sha256, write_lf  # noqa: E402
 
 PURPOSE = "contamination scan"
@@ -86,7 +86,7 @@ def _fingerprints_digest(path: Path) -> str | None:
     """The digest the builder logs for the file it wrote (the canonical sha256 of its `fingerprints`), or the file's LF
     sha256 when it does not parse that far; None when it cannot be read."""
     try:
-        return canonical_sha256(json.loads(Path(path).read_text(encoding="utf-8"))["fingerprints"])
+        return canonical_sha256(inputs.read_json(path)["fingerprints"])
     except (OSError, ValueError, KeyError, TypeError):
         try:
             return lf_sha256(path)
@@ -223,12 +223,17 @@ def _main(argv: list[str] | None = None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """An output or the access log that cannot be written is refused with exit 2, never a traceback (spec 5)."""
+    """An output or the access log that cannot be written is refused with exit 2; any other exception the script does not
+    handle is the last-resort refusal, exit 10 (`internal_error`, `planes.internal_error`): never a traceback, never exit 1
+    (spec 5)."""
     try:
         return _main(argv)
     except planes.UNWRITABLE as error:
         print(f"refused (exit 2): {error}", file=sys.stderr)
         return 2
+    except Exception as error:  # the last-resort handler (planes.INTERNAL_ERROR)
+        planes.internal_error(error)
+        return 10
 
 
 if __name__ == "__main__":

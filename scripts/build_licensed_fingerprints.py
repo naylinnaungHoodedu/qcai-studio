@@ -13,7 +13,8 @@ refuse; ULQS items that do not parse are logged by the file's LF sha256), and th
 ULQS items are validated (`ulqs.validate_dataset`) before any fingerprint is built from them.
 
 Exit codes: 0 ok; 2 refused path or usage, a licensed text or the ULQS file unreadable, a licensed text that is not
-text or .docx, or an output or the access log that cannot be written; 3 bad salt; 4 the ULQS items are not valid JSON lines or fail validation.
+text or .docx, or an output or the access log that cannot be written; 3 bad salt; 4 the ULQS items are not valid JSON lines or fail validation;
+10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
 """
 
 from __future__ import annotations
@@ -131,12 +132,17 @@ def _main(argv: list[str] | None = None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """An output or the access log that cannot be written is refused with exit 2, never a traceback (spec 5)."""
+    """An output or the access log that cannot be written is refused with exit 2; any other exception the script does not
+    handle is the last-resort refusal, exit 10 (`internal_error`, `planes.internal_error`): never a traceback, never exit 1
+    (spec 5)."""
     try:
         return _main(argv)
     except planes.UNWRITABLE as error:
         print(f"refused (exit 2): {error}", file=sys.stderr)
         return 2
+    except Exception as error:  # the last-resort handler (planes.INTERNAL_ERROR)
+        planes.internal_error(error)
+        return 10
 
 
 if __name__ == "__main__":

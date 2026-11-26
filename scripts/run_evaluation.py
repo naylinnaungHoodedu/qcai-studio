@@ -48,15 +48,14 @@ payload-log violation, or a confirmatory run refused with an items (`items_not_f
 `items_split_missing`) or freeze-record (`freeze_record_*`) reason and no IRB or OSF reason; 5 interrupted (provider
 outage; --resume continues it, on a later day too); 6 a pin mismatch (a design input's `<input>_sha256` among them);
 7 arm parity; 8 a confirmatory run refused
-with any IRB or OSF reason (`irb_*`, `osf_*`); 9 a live run or hold H12 refused. A refused confirmatory run lists
+with any IRB or OSF reason (`irb_*`, `osf_*`); 9 a live run or hold H12 refused;
+10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message, after the run's refused outcome is logged). A refused confirmatory run lists
 every reason; its code is the first class present (`governance.confirmatory_exit_code`).
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
 from pathlib import Path
 import subprocess
 import sys
@@ -68,8 +67,8 @@ for path in (REPO_ROOT, API_ROOT):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from evaluation.qcai_eval import access_log, planes, runner  # noqa: E402
-from evaluation.qcai_eval.canonical import dumps_line, dumps_record, lf_sha256, write_lf  # noqa: E402
+from evaluation.qcai_eval import access_log, inputs, planes, runner  # noqa: E402
+from evaluation.qcai_eval.canonical import dumps_line, lf_sha256, write_lf  # noqa: E402
 from evaluation.qcai_eval.payload_log import PayloadLogViolation  # noqa: E402
 from evaluation.qcai_eval.providers import StubResponder, stub_for  # noqa: E402
 
@@ -145,6 +144,11 @@ def run(spec_path: Path, out_dir: Path, *, resume: bool = False, access: Path | 
     except runner.RunRefused as error:
         log("run", "run_spec", spec_sha, spec, "refused")
         return _refused(error)
+    except planes.UNWRITABLE:
+        raise
+    except Exception:  # logged as refused, then the last-resort handler of `main` (exit 10)
+        log("run", "run_spec", spec_sha, spec, "refused")
+        raise
     log("run", "run_spec", spec_sha, spec, "started")
     try:
         record = runner.execute_run(plan, _responder(plan), out_dir, resume=resume, commit=_commit(),
@@ -160,6 +164,11 @@ def run(spec_path: Path, out_dir: Path, *, resume: bool = False, access: Path | 
         log("run", "run_spec", spec_sha, spec, "refused")
         print(f"payload-log violation (exit 3): {error}", file=sys.stderr)
         return 3
+    except planes.UNWRITABLE:
+        raise
+    except Exception:  # logged as refused, then the last-resort handler of `main` (exit 10)
+        log("run", "run_spec", spec_sha, spec, "refused")
+        raise
     log("run", "run_output", record["outputs"]["payload_log_sha256"], spec, "completed")
     slis = record["slis"]
     print(f"run {spec['run_id']} ({record['mode']}, {record['purpose']}): {slis['completed_requests']} of {slis['planned_requests']} "
@@ -204,7 +213,7 @@ def check(record_path: Path, spec_path: Path) -> int:
         return code
     try:
         committed = record_path.read_bytes().replace(b"\r\n", b"\n").decode("utf-8")
-        committed_record = json.loads(committed)
+        committed_record = inputs.loads(committed)
     except (OSError, ValueError):
         print(f"drift: {record_path} is missing or unreadable", file=sys.stderr)
         return 1
@@ -271,12 +280,17 @@ def _main(argv: list[str] | None = None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """An output or the access log that cannot be written is refused with exit 2, never a traceback (spec 5)."""
+    """An output or the access log that cannot be written is refused with exit 2; any other exception the script does not
+    handle is the last-resort refusal, exit 10 (`internal_error`, `planes.internal_error`): never a traceback, never exit 1
+    (spec 5)."""
     try:
         return _main(argv)
     except planes.UNWRITABLE as error:
         print(f"refused (exit 2): {error}", file=sys.stderr)
         return 2
+    except Exception as error:  # the last-resort handler (planes.INTERNAL_ERROR)
+        planes.internal_error(error)
+        return 10
 
 
 if __name__ == "__main__":

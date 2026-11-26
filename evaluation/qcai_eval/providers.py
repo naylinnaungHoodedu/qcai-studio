@@ -18,6 +18,7 @@ import re
 from typing import Any, Callable, Mapping, Protocol
 
 from .agreement import CLAIM_LABELS
+from . import inputs
 from .canonical import read_jsonl
 
 PROVISIONAL_DEFAULTS = ("PD-68",)
@@ -220,7 +221,10 @@ class RecordedResponder:
     rule = RECORDING_FORMAT
 
     def __init__(self, path: Path) -> None:
-        lines = read_jsonl(Path(path))
+        try:
+            lines = read_jsonl(Path(path))
+        except inputs.InputInvalid as error:  # a value no step can compute with: an entry the run cannot read
+            raise RecordingInvalid(str(error)) from None
         if not lines or not isinstance(lines[0], Mapping) or lines[0].get("recording") != RECORDING_FORMAT:
             raise ValueError("not a recorded-responses-v1 file")
         self.header = lines[0]

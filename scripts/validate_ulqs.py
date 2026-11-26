@@ -25,14 +25,13 @@ refused, an output or the access log that cannot be written, or an input unreada
 rubric_sha256 is not the --rubric file's LF sha256), the rubric, the freeze rules, or an
 agent-check record that does not parse or is not shaped as `ulqs-agent-check-v1` (one whose content does not match the
 items is a freeze failure, exit 4); 3 schema problems; 4 freeze failed (codes printed); 5 evidence catalog invalid or
-unresolved pointers.
+unresolved pointers; 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
 """
 
 from __future__ import annotations
 
 import argparse
 from collections import Counter
-import json
 from pathlib import Path
 import sys
 
@@ -42,7 +41,7 @@ for path in (REPO_ROOT, API_ROOT):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from evaluation.qcai_eval import access_log, agreement, planes, ulqs  # noqa: E402
+from evaluation.qcai_eval import access_log, agreement, inputs, planes, ulqs  # noqa: E402
 from evaluation.qcai_eval.canonical import canonical_sha256, dumps_record, lf_sha256, read_jsonl, write_lf  # noqa: E402
 from evaluation.qcai_eval.pointers import EvidenceCatalog, PointerResolver, content_sha256, public_span_lookup, resolve_items  # noqa: E402
 
@@ -158,7 +157,7 @@ def _main(argv: list[str] | None = None) -> int:
     if args.agent_check is not None:
         log("read", "agent_check_record", _file_sha(args.agent_check))
         try:
-            agent_record = json.loads(args.agent_check.read_text(encoding="utf-8"))
+            agent_record = inputs.read_json(args.agent_check)
         except (OSError, ValueError) as error:
             print(f"refused (exit 2): agent check unreadable ({error})", file=sys.stderr)
             return 2
@@ -168,7 +167,9 @@ def _main(argv: list[str] | None = None) -> int:
     if args.ratings and (args.rubric is None or args.agreement_out is None):
         print("usage (exit 2): --ratings needs --rubric and --agreement-out", file=sys.stderr)
         return 2
-    counts = Counter((item.get("stratum"), item.get("status")) for item in items)
+    # The counts name a stratum or status only when it is a string; a value of another type is a schema problem (exit 3).
+    counts = Counter(tuple(value if isinstance(value, str) else "invalid" for value in (item.get("stratum"), item.get("status")))
+                     for item in items)
     print(f"{len(items)} items: " + ", ".join(f"{stratum}/{status} {n}" for (stratum, status), n in sorted(counts.items(), key=str)))
     problems = ulqs.validate_dataset(items)
     if problems:
@@ -247,12 +248,17 @@ def _main(argv: list[str] | None = None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """An output or the access log that cannot be written is refused with exit 2, never a traceback (spec 5)."""
+    """An output or the access log that cannot be written is refused with exit 2; any other exception the script does not
+    handle is the last-resort refusal, exit 10 (`internal_error`, `planes.internal_error`): never a traceback, never exit 1
+    (spec 5)."""
     try:
         return _main(argv)
     except planes.UNWRITABLE as error:
         print(f"refused (exit 2): {error}", file=sys.stderr)
         return 2
+    except Exception as error:  # the last-resort handler (planes.INTERNAL_ERROR)
+        planes.internal_error(error)
+        return 10
 
 
 if __name__ == "__main__":

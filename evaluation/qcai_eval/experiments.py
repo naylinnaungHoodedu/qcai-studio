@@ -56,7 +56,7 @@ from pathlib import Path
 import re
 from typing import Any, Callable, Mapping, Sequence
 
-from . import statistics, ulqs
+from . import inputs, statistics, ulqs
 from .canonical import canonical_sha256, hashed_hex, lf_sha256, read_jsonl
 
 PROVISIONAL_DEFAULTS = ("PD-75",)
@@ -352,6 +352,8 @@ def _read_lines(reference: Mapping[str, Any], repo_root: Path, kind: str, note: 
         raise DesignRefused(6, [f"{kind}_sha256"])
     try:
         lines = read_jsonl(path)
+    except inputs.InputInvalid:  # a value no step can compute with (NaN, an infinity, 1e400, 10**400): invalid content
+        raise DesignRefused(3, [f"{kind}_invalid"]) from None
     except (OSError, ValueError):
         raise DesignRefused(3, [f"{kind}_unreadable"]) from None
     if not all(isinstance(line, Mapping) for line in lines):

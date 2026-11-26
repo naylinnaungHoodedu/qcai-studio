@@ -29,13 +29,13 @@ from __future__ import annotations
 from contextlib import contextmanager
 import contextvars
 import datetime as _dt
-import json
 import os
 from pathlib import Path
 import re
 from typing import Any, Callable, Iterator, Mapping
 
 from .canonical import canonical_sha256, lf_sha256
+from . import inputs
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_DIRECTORY = REPO_ROOT / "apps" / "api" / "app" / "config_package"
@@ -72,7 +72,7 @@ def committed_package_sha256s() -> frozenset[str]:
     entry appended to the history counts as committed, so this is a consistency check of the checkout, not proof that
     a package was committed or reviewed (DI-147)."""
     try:
-        history = json.loads(PACKAGE_HISTORY.read_text(encoding="utf-8"))
+        history = inputs.read_json(PACKAGE_HISTORY)
         recorded = {entry["sha256"] for entry in history["entries"] if isinstance(entry.get("sha256"), str)}
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return frozenset()
@@ -81,7 +81,7 @@ def committed_package_sha256s() -> frozenset[str]:
         if not PACKAGE_FILE.match(path.name):
             continue
         try:
-            sha = canonical_sha256(json.loads(path.read_text(encoding="utf-8")))
+            sha = canonical_sha256(inputs.read_json(path))
         except (OSError, ValueError):
             continue
         if sha in recorded:
@@ -134,7 +134,7 @@ def _hex(raw: Mapping[str, Any], field: str) -> None:
 
 def _load(path: Path, record: str, keys: tuple[str, ...]) -> dict[str, Any]:
     try:
-        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+        raw = inputs.read_json(path)
     except (OSError, ValueError):
         raise GovernanceError("file") from None
     if not isinstance(raw, dict) or raw.get("record") != record:
@@ -341,7 +341,7 @@ def scan_refusals(reference: Any, repo_root: Path, *, dataset_content_sha256: st
     if not reference:
         return [missing]
     try:
-        scan = json.loads(resolve_record(reference, repo_root, kind="scan_report").read_text(encoding="utf-8"))
+        scan = inputs.read_json(resolve_record(reference, repo_root, kind="scan_report"))
     except GovernanceError as error:
         return [f"pre_run_scan_invalid:{error.field}"]
     except (OSError, ValueError):
@@ -354,25 +354,31 @@ def scan_refusals(reference: Any, repo_root: Path, *, dataset_content_sha256: st
         reasons.append("pre_run_scan_invalid:result")
     sets = [entry for entry in scan["fingerprint_sets"] if isinstance(entry, Mapping) and isinstance(entry.get("id"), str)
             and not entry["id"].startswith(NON_RESEARCH_SET_PREFIXES)]
-    if not {"licensed", "ulqs"} <= {entry.get("kind") for entry in sets}:
+    if not {"licensed", "ulqs"} <= {_text(entry.get("kind")) for entry in sets}:
         reasons.append("pre_run_scan_invalid:fingerprint_sets")
     if not any(entry.get("kind") == "ulqs" and entry.get("dataset_content_sha256") == dataset_content_sha256 for entry in sets):
         reasons.append("pre_run_scan_invalid:dataset")
     targets = [target for target in scan["targets"] if isinstance(target, Mapping)]
-    scanned = {target.get("target") for target in targets if _count(target.get("scanned")) > 0}
+    scanned = {_text(target.get("target")) for target in targets if _count(target.get("scanned")) > 0}
     if "repository" not in scanned or not scanned & {"research-logs", "path"}:
         reasons.append("pre_run_scan_invalid:targets")
     # Coverage: every target scanned a file and excluded none for a reason that leaves its coverage incomplete (the
     # scanner's --require-zero rule), whatever the report's own `result` or `incomplete_targets` say.
     if scan.get("incomplete_targets") or any(_count(target.get("scanned")) == 0 or any(
-            not isinstance(entry, Mapping) or entry.get("reason") in _incomplete_reasons(target.get("target"))
+            not isinstance(entry, Mapping) or _text(entry.get("reason")) in _incomplete_reasons(target.get("target"))
             for entry in _list(target.get("excluded"))) for target in targets) or len(targets) != len(scan["targets"]):
         reasons.append("pre_run_scan_invalid:coverage")
     return reasons
 
 
 def _incomplete_reasons(target_kind: Any) -> frozenset[str]:
-    return STRICT_INCOMPLETE_REASONS if target_kind in STRICT_TARGETS else INCOMPLETE_REASONS
+    return STRICT_INCOMPLETE_REASONS if _text(target_kind) in STRICT_TARGETS else INCOMPLETE_REASONS
+
+
+def _text(value: Any) -> str | None:
+    """A report field as the set and membership tests read it: the string, or None for a value of another type (a list
+    or an object is unhashable and would raise TypeError; it matches no kind, target or reason)."""
+    return value if isinstance(value, str) else None
 
 
 def _count(value: Any) -> int:

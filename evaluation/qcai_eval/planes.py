@@ -38,6 +38,17 @@ class PathRefused(ValueError):
     """A research-plane script was given a path outside the research plane."""
 
 
+# The last-resort exit code of every research-plane script (spec 5): any exception its `main` does not otherwise handle.
+# Never 1, which means drift (or a match, for the scanner); the stderr line names the exception's class, never its
+# message, which could quote an input. run_evaluation.py logs the run's `refused` outcome before it.
+INTERNAL_ERROR = 10
+
+
+def internal_error(error: BaseException) -> None:
+    """The last-resort refusal line on stderr: the reason `internal_error` and the exception's class only."""
+    print(f"refused (exit {INTERNAL_ERROR}): internal_error ({type(error).__name__})", file=sys.stderr)
+
+
 # What each research-plane script's `main` refuses with exit 2 (spec 5): an output (`canonical.write_lf`) or the access
 # log (`access_log.append`) that cannot be written. Neither is an uncaught traceback with exit 1, a code with another meaning.
 UNWRITABLE = (OutputUnwritable, LogUnwritable)

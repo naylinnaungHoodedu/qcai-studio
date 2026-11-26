@@ -16,12 +16,12 @@ is open (DI-131), so the plans' status must start with `draft` and may not use t
 from __future__ import annotations
 
 from fractions import Fraction
-import json
 from pathlib import Path
 from typing import Any, Mapping
 
 from . import statistics
 from .canonical import canonical_sha256
+from . import inputs
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PLANS_PATH = REPO_ROOT / "evaluation" / "config" / "analysis_plans_v1.json"
@@ -78,7 +78,43 @@ def _forbidden(value: Any, path: str = "") -> list[str]:
     return found
 
 
+def _strings(value: Any) -> bool:
+    return isinstance(value, list) and all(isinstance(entry, str) for entry in value)
+
+
+def _shape_problem(raw: Any) -> str | None:
+    """The first container of the plans that is not of the type the checks below and the pre-registration read, or None:
+    the plans, `tests` and `secondary_analyses` objects; each family an object whose `hypotheses` is a list of objects
+    with a string `id` and string lists for `criteria` and `criteria_only`; each secondary analysis's `for` a string
+    list. A value of the wrong type is a PlanError (exit 2 in the runner), never a TypeError or AttributeError."""
+    if not isinstance(raw, Mapping):
+        return "plans: not an object"
+    for name in ("families", "tests", "secondary_analyses"):
+        if not isinstance(raw.get(name), Mapping):
+            return f"{name}: not an object"
+    for family, body in raw["families"].items():
+        if not isinstance(body, Mapping):
+            return f"{family}: not an object"
+        if "criteria_only" in body and not _strings(body["criteria_only"]):
+            return f"{family}.criteria_only: not a list of strings"
+        hypotheses = body.get("hypotheses", [])
+        if not isinstance(hypotheses, list) or not all(isinstance(hypothesis, Mapping) for hypothesis in hypotheses):
+            return f"{family}.hypotheses: not a list of objects"
+        for hypothesis in hypotheses:
+            if not isinstance(hypothesis.get("id"), str):
+                return f"{family}.hypotheses: an id is not a string"
+            if "criteria" in hypothesis and not _strings(hypothesis["criteria"]):
+                return f"{family}.{hypothesis['id']}.criteria: not a list of strings"
+    for name, entry in raw["secondary_analyses"].items():
+        if isinstance(entry, Mapping) and "for" in entry and not _strings(entry["for"]):
+            return f"secondary_analyses.{name}.for: not a list of strings"
+    return None
+
+
 def validate_plans(raw: Mapping[str, Any]) -> None:
+    problem = _shape_problem(raw)
+    if problem is not None:
+        raise PlanError(problem)
     forbidden = _forbidden(raw)
     if forbidden:
         raise PlanError(f"outcome keys are refused in an analysis plan: {', '.join(forbidden)}")
@@ -180,7 +216,7 @@ def _check_hypothesis(where: str, identifier: Any, hypothesis: Mapping[str, Any]
 
 
 def load_plans(path: Path = PLANS_PATH) -> dict[str, Any]:
-    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    raw = inputs.read_json(path)
     validate_plans(raw)
     return raw
 

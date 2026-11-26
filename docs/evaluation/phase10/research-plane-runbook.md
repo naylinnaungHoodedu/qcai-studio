@@ -70,7 +70,10 @@ log is `<plane>/access.jsonl` (digests only).
    run events that are not UTF-8 JSON, is refused (exit 2) and left as it is, for the operator to inspect. Each
    checkpoint file the run reads is in the access log (`run_output`). An output directory that is a file or lies under
    one, or any output the run cannot write, is refused (`output_unwritable`, exit 2) with its `refused` outcome logged.
-   `created_at` may be any past day (never a future one, `created_at_in_future`). The checkpoint is the operator's
+   Every input is decoded strictly (no `NaN`, infinity, overflowing, underflowing or out-of-range number) and shape-checked
+   before any request is sent; an exit 10 (`internal_error`, naming only the exception's class) is a harness defect no
+   validator caught, never a property of the data: keep the inputs as they are, the run's `refused` outcome is in the
+   access log, and report it. `created_at` may be any past day (never a future one, `created_at_in_future`). The checkpoint is the operator's
    own file, so this is a consistency check, not tamper evidence (DI-143); an earlier start day only tightens the
    checks. Keep run outputs in the research plane and review each run's start in the access log (step 10). A
    confirmatory run covers every live item of both splits and gives the subsample's 40 S1 items their replicates

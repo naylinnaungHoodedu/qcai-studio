@@ -10,13 +10,13 @@ seeded_faults_report_v1.json (the reference detector over the synthetic seeded-f
 Exit codes: 0 ok; 1 drift (a record that differs from the generated one, or is missing or unreadable); 2 usage (an
 unknown option, `--check` with `--write`, or a path argument holding a NUL) or a --dir the records cannot be written to
 (--write); 3 a known answer not met or an
-invalid analysis plan; 6 a pin (the package differs from its sidecar); 7 arm parity.
+invalid analysis plan; 6 a pin (the package differs from its sidecar); 7 arm parity;
+10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 import sys
 
@@ -26,7 +26,7 @@ for path in (REPO_ROOT, API_ROOT):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from evaluation.qcai_eval import ablation, analysis_plans, planes, seeded_faults, ulqs  # noqa: E402
+from evaluation.qcai_eval import ablation, analysis_plans, inputs, planes, seeded_faults, ulqs  # noqa: E402
 from evaluation.qcai_eval.canonical import canonical_sha256, dumps_record, lf_sha256, read_jsonl, write_lf  # noqa: E402
 from evaluation.qcai_eval.pointers import EvidenceCatalog  # noqa: E402
 
@@ -45,7 +45,7 @@ class Refused(Exception):
 
 
 def _json(relative: str) -> dict:
-    return json.loads((REPO_ROOT / relative).read_text(encoding="utf-8"))
+    return inputs.read_json(REPO_ROOT / relative)
 
 
 def pinned_configuration() -> dict:
@@ -127,12 +127,17 @@ def _main(argv: list[str] | None = None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """An output or the access log that cannot be written is refused with exit 2, never a traceback (spec 5)."""
+    """An output or the access log that cannot be written is refused with exit 2; any other exception the script does not
+    handle is the last-resort refusal, exit 10 (`internal_error`, `planes.internal_error`): never a traceback, never exit 1
+    (spec 5)."""
     try:
         return _main(argv)
     except planes.UNWRITABLE as error:
         print(f"refused (exit 2): {error}", file=sys.stderr)
         return 2
+    except Exception as error:  # the last-resort handler (planes.INTERNAL_ERROR)
+        planes.internal_error(error)
+        return 10
 
 
 if __name__ == "__main__":

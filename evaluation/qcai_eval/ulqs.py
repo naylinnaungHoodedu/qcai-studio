@@ -14,13 +14,13 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from fractions import Fraction
-import json
 from math import ceil
 from pathlib import Path
 import re
 from typing import Any, Mapping, Sequence
 
 from .canonical import canonical_sha256, hashed_hex, read_jsonl
+from . import inputs
 
 PROVISIONAL_DEFAULTS = ("PD-60", "PD-61", "PD-64")
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -77,7 +77,7 @@ PROVENANCE_KEYS = ("created_utc", "author", "migrated_from", "migration_disposit
 
 def _schema_vocabulary() -> tuple[str, ...]:
     # The corpus-scope vocabulary is read from the schema file: the one place it is written down.
-    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    schema = inputs.read_json(SCHEMA_PATH)
     return tuple(schema["properties"]["corpus_scope"]["items"]["enum"])
 
 
@@ -501,16 +501,22 @@ def validate_item(raw: Mapping[str, Any]) -> list[Problem]:
     return check.problems
 
 
+def _list(value: Any) -> list[Any]:
+    """`value` when it is a list, else empty: the duplicate checks read only what `validate_item` can report on, so a
+    field of the wrong type (a bool, a number, an object) is its problem, never a TypeError here."""
+    return value if isinstance(value, list) else []
+
+
 def _claim_ids(item: Mapping[str, Any]) -> list[str]:
-    ids = [claim.get("claim_id") for claim in item.get("atomic_claims", []) or [] if isinstance(claim, dict)]
-    for turn in item.get("conversation", []) or []:
+    ids = [claim.get("claim_id") for claim in _list(item.get("atomic_claims")) if isinstance(claim, dict)]
+    for turn in _list(item.get("conversation")):
         if isinstance(turn, dict):
-            ids += [claim.get("claim_id") for claim in turn.get("atomic_claims", []) or [] if isinstance(claim, dict)]
+            ids += [claim.get("claim_id") for claim in _list(turn.get("atomic_claims")) if isinstance(claim, dict)]
     return [value for value in ids if isinstance(value, str)]
 
 
 def _turn_ids(item: Mapping[str, Any]) -> list[str]:
-    return [turn.get("turn_id") for turn in item.get("conversation", []) or []
+    return [turn.get("turn_id") for turn in _list(item.get("conversation"))
             if isinstance(turn, dict) and isinstance(turn.get("turn_id"), str)]
 
 
@@ -672,9 +678,11 @@ def load_freeze_rules(path: Path = DEFAULT_FREEZE_RULES) -> FreezeRules:
     of the wrong type (an item bound that is not an integer, `Infinity` and `1.5` included) or out of range."""
     text = Path(path).read_text(encoding="utf-8")
     try:
-        raw = json.loads(text)
+        raw = inputs.loads(text)
     except RecursionError:
         raise ValueError("freeze rules: nested too deeply to parse") from None
+    except inputs.InputInvalid as error:
+        raise ValueError(f"freeze rules: {error}") from None
     if not isinstance(raw, Mapping):
         raise ValueError("freeze rules: not a JSON object")
     try:

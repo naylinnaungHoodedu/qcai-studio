@@ -2146,7 +2146,8 @@ def test_phase10_docs_quote_the_plan_and_state_the_current_rules():
     assert "3 a known answer not met or an invalid analysis plan" in harness_doc
     assert ("`check_research_harness.py`: 0; 1 drift (a record that differs, or is missing or unreadable); 2 usage (an unknown "
             "option, `--check` with `--write`, or a path argument holding a NUL) or a `--dir` the records cannot be written to "
-            "(`--write`); 3 a known answer not met or an invalid analysis plan; 6 a pin; 7 parity.") in readme
+            "(`--write`); 3 a known answer not met or an invalid analysis plan; 6 a pin; 7 parity; 10 an unexpected internal "
+            "error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).") in readme
     assert "a path argument holding a NUL" in harness_doc and "a --dir the records cannot be written to" in harness_doc
     # run_evaluation.py's exit 2 names every checkpoint refusal and the unwritable output, in each exit-code statement.
     run_doc = script("run_evaluation").__doc__.split("Exit codes:", 1)[1]
@@ -2339,6 +2340,33 @@ def test_phase10_docs_the_spec_ends_in_one_review_history_table():
         assert name in names or name.endswith("_"), name
 
 
+def test_phase10_docs_every_current_state_location_names_the_same_round_figures_and_runbook():
+    # The repository's current-state locations agree (P2-12-D-03): section 13's latest verification and section 9's
+    # measured cost are both stated at the head of the history table's last round, section 13's `evaluation/tests` total
+    # is section 9's collected count, and section 10's runbook steps are the runbook's, in order. (The BEP records'
+    # current-state sections are held to section 13 by the BEP's check_records.py, outside the repository.)
+    head, history = spec_text().split("\n## 14. Review history\n", 1)
+    last = re.findall(r"^\| Review (\d+)\b", history, flags=re.MULTILINE)[-1]
+    flat = " ".join(head.split())
+    marker = f"**Latest verification (local, at the review {last} head).**"
+    assert marker in flat, last
+    section9 = " ".join(head.split("\n## 9. CI changes", 1)[1].split("\n## 10.", 1)[0].split())
+    assert re.findall(r"measured on the workstation at the review (\d+) head", section9) == [last], last
+    collected = re.search(r"`evaluation/tests` about \d+ s \(one job; (\d+) tests\)", section9).group(1)
+    verification = flat.split(marker, 1)[1].split("**Exit (plan P).**", 1)[0]
+    assert re.findall(r"`evaluation/tests` alone (\d+) passed", verification) == [collected], collected
+    runbook = (RECORDS / "research-plane-runbook.md").read_text(encoding="utf-8")
+    steps = [(int(number), re.sub(r"\s*\(.*", "", title).lower()) for number, title in
+             re.findall(r"^(\d+)\. \*\*(.+?)\.\*\*", runbook, flags=re.MULTILINE)]
+    section10 = " ".join(head.split("\n## 10. Docs and evidence", 1)[1].split("\n## 11.", 1)[0].split())
+    listed = re.search(r"`research-plane-runbook\.md` \((1 [^)]*)\)\.", section10)
+    assert listed, section10[:400]
+    entries = [entry.strip() for entry in re.split(r"; (?=\d+ )", listed.group(1))]
+    assert [int(entry.split(" ", 1)[0]) for entry in entries] == [number for number, _title in steps] == list(range(1, len(steps) + 1))
+    for entry, (_number, title) in zip(entries, steps):
+        assert entry.split(" ", 1)[1].lower().startswith(title), (entry, title)
+
+
 def test_phase10_docs_spec_section_9_is_the_current_ci_block():
     # Spec 9 states the CI changes: its YAML block is the Phase 10 block of ci.yml as it is, comments included.
     ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8").replace("\r\n", "\n")
@@ -2447,12 +2475,12 @@ def _returnable_codes(name):
 
 def _ci_exit_codes(comment):
     """The codes a CI comment lists: each `N` after "exit ", ", ", "; " or "(" and before a space or a comma."""
-    return {int(code) for code in re.findall(r"(?:exit |, |; |\()(\d)(?=[ ,])", " ".join(comment.split()))}
+    return {int(code) for code in re.findall(r"(?:exit |, |; |\()(\d+)(?=[ ,])", " ".join(comment.split()))}
 
 
 def _exit_codes(text):
     """The codes an exit-code statement lists: each `N` that opens it or follows "; " ("0 ok; 1 drift; 2 usage ...")."""
-    return {int(code) for code in re.findall(r"(?:^|; )(\d)(?=[ ;])", " ".join(text.split()) + " ")}
+    return {int(code) for code in re.findall(r"(?:^|; )(\d+)(?=[ ;])", " ".join(text.split()) + " ")}
 
 
 def _documented_exit_codes():
@@ -2566,13 +2594,19 @@ def _scenario_check_research_harness(tmp_path, monkeypatch, code):
 
 
 EXIT_CONTRACT = {
-    "run_evaluation.py": (_scenario_run_evaluation, (0, 1, 2, 3, 5, 6, 7, 8, 9)),
-    "validate_ulqs.py": (_scenario_validate_ulqs, (0, 2, 3, 4, 5)),
-    "migrate_ulqs_rc1.py": (_scenario_migrate_ulqs_rc1, (0, 2, 3)),
-    "build_licensed_fingerprints.py": (_scenario_build_licensed_fingerprints, (0, 2, 3, 4)),
-    "scan_research_logs.py": (_scenario_scan_research_logs, (0, 1, 2)),
-    "check_research_harness.py": (_scenario_check_research_harness, (0, 1, 2, 3, 6, 7)),
+    "run_evaluation.py": (_scenario_run_evaluation, (0, 1, 2, 3, 5, 6, 7, 8, 9, 10)),
+    "validate_ulqs.py": (_scenario_validate_ulqs, (0, 2, 3, 4, 5, 10)),
+    "migrate_ulqs_rc1.py": (_scenario_migrate_ulqs_rc1, (0, 2, 3, 10)),
+    "build_licensed_fingerprints.py": (_scenario_build_licensed_fingerprints, (0, 2, 3, 4, 10)),
+    "scan_research_logs.py": (_scenario_scan_research_logs, (0, 1, 2, 10)),
+    "check_research_harness.py": (_scenario_check_research_harness, (0, 1, 2, 3, 6, 7, 10)),
 }
+# Exit 10, the last-resort handler (`planes.INTERNAL_ERROR`): a library function each script calls on its ordinary path
+# raises an exception no validator anticipates (a stand-in for a defect); the script must refuse with exit 10, name the
+# exception's class and not its message, and print no traceback.
+LAST_RESORT = {"run_evaluation.py": (runner, "execute_run"), "validate_ulqs.py": (ulqs, "validate_dataset"),
+               "migrate_ulqs_rc1.py": (ulqs, "validate_dataset"), "build_licensed_fingerprints.py": (contamination, "build_ulqs"),
+               "scan_research_logs.py": (contamination, "report"), "check_research_harness.py": (seeded_faults, "reference_report")}
 
 
 def test_phase10_exit_codes_every_document_names_the_codes_the_contract_reaches():
@@ -2597,9 +2631,22 @@ def test_phase10_exit_codes_every_document_names_the_codes_the_contract_reaches(
 @pytest.mark.parametrize(("name", "code"), [(name, code) for name, (_s, codes) in EXIT_CONTRACT.items() for code in codes])
 def test_phase10_exit_codes_each_documented_code_is_reached(tmp_path, monkeypatch, capsys, name, code):
     scenario, _codes = EXIT_CONTRACT[name]
-    argv = scenario(tmp_path, monkeypatch, code)
+    argv = scenario(tmp_path, monkeypatch, 0 if code == 10 else code)
+    if code == 10:
+        def defect(*args, **kwargs):
+            raise RuntimeError("an unanticipated defect quoting an input: " + synthetic.SENTINEL)
+
+        monkeypatch.setattr(*LAST_RESORT[name], defect)
+        if name == "run_evaluation.py":  # the run's refused outcome is logged before the last-resort refusal
+            argv = argv + ["--access-log", tmp_path / "access.jsonl", "--actor-role", "MLE"]
+    capsys.readouterr()
     assert script(name[:-3]).main([str(value) for value in argv]) == code, capsys.readouterr().err
-    assert "Traceback" not in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "Traceback" not in err
+    if code == 10:
+        assert "refused (exit 10): internal_error (RuntimeError)" in err and synthetic.SENTINEL not in err, err
+        if name == "run_evaluation.py":
+            assert _access(tmp_path / "access.jsonl")[-2:] == [("run", "run_spec", "started"), ("run", "run_spec", "refused")]
     assert not (REPO_ROOT / "docs" / "evaluation" / "contract-rc1.jsonl").exists()
 
 
@@ -2659,6 +2706,8 @@ def test_phase10_exit_codes_an_unwritable_output_or_access_log_is_refused_with_e
     main = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "main")
     handlers = [handler for node in ast.walk(main) if isinstance(node, ast.Try) for handler in node.handlers]
     assert any(ast.unparse(handler.type) == "planes.UNWRITABLE" and _literal_codes(handler, set()) == {2} for handler in handlers)
+    # ... and the last-resort handler after it: every other exception is exit 10 (planes.INTERNAL_ERROR), never 1.
+    assert ast.unparse(handlers[-1].type) == "Exception" and _literal_codes(handlers[-1], set()) == {planes.INTERNAL_ERROR}
 
 
 class _FailingClose:

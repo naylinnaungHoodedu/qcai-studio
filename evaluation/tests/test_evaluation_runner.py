@@ -1942,3 +1942,300 @@ def test_a_design_run_logs_its_design_inputs_and_its_outcome_to_the_access_log(t
             assert kinds <= {line["artifact_kind"] for line in lines if line["action"] == "read"}, name
             assert [line["outcome"] for line in lines if line["action"] == "run"][-1] == outcome
         _gate_passed(monkeypatch)
+
+
+# ------------------------------------------------------------------------------- the hostile-value sweep of every input
+# One generated sweep (spec 5, the exit-code contract): for each kind of research-plane input, every node of a valid
+# fixture is replaced in turn by each hostile value class, written as JSON text (so that NaN, Infinity, 1e400, 1e-400
+# and 10**400 reach the decoder as numbers, and their spellings as strings), the input re-pinned where a spec pins it,
+# and the script run through its `main`. Each variant must end in a documented refusal or a completed run: never exit 1
+# (drift, or a match), never the last-resort exit 10 (`internal_error`: an exception no validator caught), and never a
+# traceback.
+
+HOSTILE = {"wrong_type": None, "list": "[1]", "dict": '{"k": 1}', "null": "null", "bool": "true", "rational": '"1/3"',
+           "overflow": "1e400", "overflow_text": '"1e400"', "underflow": "1e-400", "underflow_text": '"1e-400"',
+           "huge_integer": "1" + "0" * 400, "nan": "NaN", "infinity": "Infinity", "negative": "-1", "empty": '""'}
+_MARK = "\u0001hostile\u0001"
+SWEEP_CODES = {"run_evaluation": {0, 2, 3, 5, 6, 7, 8, 9}, "validate_ulqs": {0, 2, 3, 4, 5}}
+SWEEP_COUNTS = {stratum: 1 for stratum in "ABCDEFG"}  # one item per stratum where the input does not concern the items
+# Both records valid: a confirmatory run's refusal moves on to the items (items_not_frozen, exit 3); a gate record alone
+# leaves the gate's reasons for the records the variant does not supply.
+SWEEP_VALID = {"irb_record": 3, "osf_record": 3, "freeze_record": ["irb_missing", "osf_missing", "pre_run_scan_missing"],
+               "scan_report": ["irb_missing", "osf_missing", "freeze_record_missing"], "provider_terms": [], "licence_ruling": [],
+               "research_use": []}
+
+
+def _hostile_texts(document, root=()):
+    """(node path, value class, the JSON text of `document` with that node replaced) for every node under `root`."""
+    marker = json.dumps(_MARK)
+    start = document
+    for key in root:
+        start = start[key]
+    for relative in list(_nodes(start))[0 if root else 1:]:
+        path = tuple(root) + tuple(relative)
+        copy = json.loads(json.dumps(document))
+        target = copy
+        for key in path[:-1]:
+            target = target[key]
+        original = target[path[-1]]
+        target[path[-1]] = _MARK
+        text = json.dumps(copy)
+        for name, token in HOSTILE.items():
+            wrong = '"x"' if not isinstance(original, str) else "7"
+            yield path, name, text.replace(marker, token if token is not None else wrong)
+
+
+def _lines_with(lines, index, text):
+    return "".join((text if number == index else json.dumps(line)) + "\n" for number, line in enumerate(lines))
+
+
+def _sweep_main(name, argv):
+    import contextlib
+    import importlib
+    import io
+
+    if str(REPO_ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    err, out = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stderr(err), contextlib.redirect_stdout(out):
+        code = importlib.import_module(name).main([str(value) for value in argv])
+    return code, err.getvalue()
+
+
+def _pin_file(path, text):
+    from evaluation.qcai_eval.canonical import lf_sha256
+
+    Path(path).write_bytes(text.encode("utf-8"))
+    return {"path": str(path), "sha256": lf_sha256(path)}
+
+
+def _spec_argv(tmp_path, spec, number, *extra):
+    """The argv of a run of `spec` (a dict, or the JSON text of a variant) into its own output directory."""
+    spec_path = tmp_path / f"spec-{number}.json"
+    spec_path.write_bytes((spec if isinstance(spec, str) else json.dumps(spec)).encode("utf-8"))
+    return ["--spec", spec_path, "--output-dir", tmp_path / f"out-{number}", *extra]
+
+
+def _labelled_index(lines):
+    return next(index for index, line in enumerate(lines) if line["replicate"] == 1 and line["outcome"] == "answered" and line["claims"])
+
+
+def _sweep_case(kind, tmp_path, monkeypatch):
+    """(script, [(document, root, render)]) for one input kind: `render(text, number)` writes the variant (the JSON text
+    of the document with one node replaced) where the script reads it, and returns the script's argv."""
+    import shutil
+
+    from evaluation.qcai_eval.canonical import lf_sha256
+
+    if kind == "run_spec":
+        spec, _items = small_spec(tmp_path)
+        return "run_evaluation", [(spec, (), lambda text, n: _spec_argv(tmp_path, text, n))]
+    if kind in ("design_e2", "design_e3", "design_e4"):
+        if kind == "design_e2":
+            spec, _source = _e2_spec(tmp_path, monkeypatch, dawid_skene_iterations=5, resamples=50)
+        elif kind == "design_e3":
+            _gate_passed(monkeypatch)
+            spec, _items = _confirmatory(tmp_path, "E3", design={"arm": "VLOOP", "fixed_level": "intermediate", "repeats": 3,
+                                                                "h3b_feature": "fk_grade"})
+        else:
+            spec, _items = _e4_spec(tmp_path, monkeypatch, epsilon="0.1", linucb_alpha="1", stream_length=20, streams=2)
+        return "run_evaluation", [(spec, ("design",), lambda text, n: _spec_argv(tmp_path, text, n))]
+    if kind == "recording":
+        lines = read_jsonl(synthetic.RECORDED_FIXTURE)
+        spec = _recording_spec(tmp_path / "recording")
+
+        def entry(index):
+            def write(text, n):
+                pinned = _pin_file(tmp_path / f"recording-{n}.jsonl", _lines_with(lines, index, text))
+                return _spec_argv(tmp_path, {**spec, "responder": {"recorded": pinned}}, n)
+            return write
+        return "run_evaluation", [(lines[0], (), entry(0)), (lines[1], (), entry(1))]
+    if kind in ("checkpoint_responses", "checkpoint_events"):
+        spec, _items = small_spec(tmp_path)
+        base = tmp_path / "out-base"
+        assert _sweep_main("run_evaluation", _spec_argv(tmp_path, spec, "base"))[0] == 0
+        name = runner.RESPONSES if kind == "checkpoint_responses" else runner.RUN_EVENTS
+        lines = read_jsonl(base / name)
+
+        def write(text, n):
+            out = tmp_path / f"out-{n}"
+            shutil.copytree(base, out)
+            (out / name).write_bytes(_lines_with(lines, 0, text).encode("utf-8"))
+            return ["--spec", tmp_path / "spec-base.json", "--output-dir", out, "--resume"]
+        return "run_evaluation", [(lines[0], (), write)]
+    if kind in ("verification_set", "e4_responses"):
+        if kind == "verification_set":
+            spec, lines = _e2_spec(tmp_path, monkeypatch, dawid_skene_iterations=5, resamples=50)
+        else:
+            e4, lines = _e4_responses_for_e2(tmp_path, monkeypatch)
+            spec, _source = _e2_spec(tmp_path, monkeypatch, dawid_skene_iterations=5, resamples=50, e4_responses=e4)
+        index = _labelled_index(lines)
+
+        def write(text, n):
+            pinned = _pin_file(tmp_path / f"{kind}-{n}.jsonl", _lines_with(lines, index, text))
+            return _spec_argv(tmp_path, {**spec, "design": {**spec["design"], kind: {**spec["design"][kind], **pinned}}}, n)
+        return "run_evaluation", [(lines[index], (), write)]
+    if kind == "design_ratings":
+        spec, _items = _e4_spec(tmp_path, monkeypatch, epsilon="0.1", linucb_alpha="1", stream_length=20, streams=2)
+        plan = runner.plan_run(spec)
+        keys = sorted(r.request_key for r in plan.requests if r.arm == "VLOOP" and r.replicate == 1 and r.cell in ("model-l", "model-b"))
+        lines = [{"rating": "eqc", "source_request_key": key, "value": 4.0 + 0.1 * (index % 4)} for index, key in enumerate(keys)]
+
+        def write(text, n):
+            pinned = _pin_file(tmp_path / f"ratings-{n}.jsonl", _lines_with(lines, 0, text))
+            return _spec_argv(tmp_path, {**spec, "design": {**spec["design"], "ratings": pinned}}, n)
+        return "run_evaluation", [(lines[0], (), write)]
+    if kind in ("analysis_plans", "arms"):
+        # Pinned by the canonical sha256 of the value as the standard json module reads it (NaN and 1e400 included), so
+        # that the variant reaches the planner's own read and checks, not only the pin.
+        from evaluation.qcai_eval.canonical import canonical_sha256
+
+        spec, _items = small_spec(tmp_path, counts=SWEEP_COUNTS)
+        block = "analysis_plan" if kind == "analysis_plans" else "arms"
+        document = json.loads((REPO_ROOT / (synthetic.PLANS_PATH if kind == "analysis_plans" else synthetic.ARMS_PATH)).read_text(encoding="utf-8"))
+
+        def write(text, n):
+            path = tmp_path / f"{kind}-{n}.json"
+            path.write_bytes(text.encode("utf-8"))
+            pinned = {"path": str(path), "sha256": canonical_sha256(json.loads(text))}
+            return _spec_argv(tmp_path, {**spec, block: {**spec[block], **pinned}}, n)
+        return "run_evaluation", [(document, (), write)]
+    if kind in ("irb_record", "osf_record"):
+        spec, _items = small_spec(tmp_path, purpose="confirmatory", experiment="E1", run_id="synthetic-confirmatory-v1")
+        records = {"irb_record": synthetic.irb_record(tmp_path / "irb.private.json"),
+                   "osf_record": synthetic.osf_record(tmp_path / "osf.private.json", analysis_plan_sha256=spec["analysis_plan"]["sha256"])}
+        record = json.loads(Path(records[kind]["path"]).read_text(encoding="utf-8"))
+
+        def write(text, n):
+            pinned = _pin_file(tmp_path / f"{kind}-{n}.private.json", text)
+            return _spec_argv(tmp_path, {**spec, "governance": {**records, kind: pinned}}, n)
+        return "run_evaluation", [(record, (), write)]
+    if kind in ("freeze_record", "scan_report", "provider_terms", "licence_ruling", "research_use"):
+        # The records the confirmatory and live gates read, through the gate functions the planner calls: each variant
+        # must give reasons (a list of strings), never an exception.
+        from evaluation.qcai_eval import governance
+
+        content = "c" * 64
+        made = {"freeze_record": lambda path: synthetic.freeze_record(path, dataset_sha256="d" * 64),
+                "scan_report": lambda path: synthetic.pass_scan(path, dataset_content_sha256=content),
+                "provider_terms": synthetic.provider_terms_record, "licence_ruling": synthetic.licence_ruling_record,
+                "research_use": synthetic.research_use_record}[kind](tmp_path / f"{kind}.private.json")
+        record = json.loads(Path(made["path"]).read_text(encoding="utf-8"))
+        loaders = {"provider_terms": governance.load_provider_terms, "licence_ruling": governance.load_licence_ruling,
+                   "research_use": governance.load_research_use}
+
+        def write(text, n):
+            pinned = _pin_file(tmp_path / f"{kind}-{n}.private.json", text)
+            if kind in loaders:
+                return lambda: governance.record_refusals(pinned, loaders[kind], REPO_ROOT, missing="missing", invalid="invalid")[0]
+            return lambda: governance.confirmatory_refusals(
+                {"created_at": synthetic.CREATED, "mode": "live", "governance": {}, kind if kind == "freeze_record" else "pre_run_scan": pinned},
+                analysis_plan_sha256="a" * 64, dataset_sha256="d" * 64, dataset_content_sha256=content, items_states={"frozen": 3},
+                package_raw={"owner_decisions": {"D-14": {"state": "decided"}}}, repo_root=REPO_ROOT)
+        return "governance", [(record, (), write)]
+    if kind in ("ulqs_items", "catalog"):
+        lines = read_jsonl(synthetic.ITEMS_FIXTURE if kind == "ulqs_items" else synthetic.CATALOG_FIXTURE)
+        # Items: the first of strata A (single turn), F (multi-turn) and G (progress-conditioned levels); the catalog's first line.
+        indices = [next(i for i, line in enumerate(lines) if line["stratum"] == stratum) for stratum in "AFG"] if kind == "ulqs_items" else [0]
+
+        def line(index):
+            def write(text, n):
+                path = tmp_path / f"{kind}-{n}.jsonl"
+                path.write_bytes(_lines_with(lines, index, text).encode("utf-8"))
+                if kind == "ulqs_items":
+                    return ["--items", path, "--catalog", synthetic.CATALOG_FIXTURE]
+                return ["--items", synthetic.ITEMS_FIXTURE, "--catalog", path]
+            return write
+        return "validate_ulqs", [(lines[index], (), line(index)) for index in indices]
+    rubric = tmp_path / "rubric.md"
+    rubric.write_text("# an invented rubric\n", encoding="utf-8")
+    ratings = synthetic.synthetic_ratings(read_jsonl(synthetic.ITEMS_FIXTURE), rubric_sha256=lf_sha256(rubric), share="1/4", disagree=1)
+    if kind == "ratings":
+        def write(text, n):
+            path = tmp_path / f"ratings-{n}.jsonl"
+            path.write_bytes(_lines_with(ratings, 0, text).encode("utf-8"))
+            return ["--items", synthetic.ITEMS_FIXTURE, "--catalog", synthetic.CATALOG_FIXTURE, "--ratings", path, "--rubric", rubric,
+                    "--agreement-out", tmp_path / f"agreement-{n}.json"]
+        return "validate_ulqs", [(ratings[0], (), write)]
+    assert kind == "freeze_rules", kind
+    ratings_path = synthetic.write_jsonl(tmp_path / "ratings.jsonl", ratings)
+    rules = json.loads(ulqs.DEFAULT_FREEZE_RULES.read_text(encoding="utf-8"))
+
+    def write(text, n):
+        path = tmp_path / f"rules-{n}.json"
+        path.write_bytes(text.encode("utf-8"))
+        return ["--items", synthetic.ITEMS_FIXTURE, "--catalog", synthetic.CATALOG_FIXTURE, "--ratings", ratings_path, "--rubric", rubric, "--rules", path,
+                "--agreement-out", tmp_path / f"agreement-{n}.json"]
+    return "validate_ulqs", [(rules, (), write)]
+
+
+SWEEP_KINDS = ("run_spec", "design_e2", "design_e3", "design_e4", "recording", "checkpoint_responses", "checkpoint_events",
+               "verification_set", "e4_responses", "design_ratings", "analysis_plans", "arms", "irb_record", "osf_record", "freeze_record", "scan_report",
+               "provider_terms", "licence_ruling", "research_use", "ulqs_items",
+               "catalog", "ratings", "freeze_rules")
+
+
+@pytest.mark.parametrize("kind", SWEEP_KINDS)
+def test_no_hostile_value_in_any_research_plane_input_ends_in_a_traceback_exit_1_or_the_last_resort(tmp_path, monkeypatch, kind):
+    # Two costs no variant depends on are removed so that the sweep runs in CI time: the per-line fsync of responses.jsonl
+    # and the `git rev-parse` of the record's commit.
+    import os
+
+    if str(REPO_ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import run_evaluation
+
+    monkeypatch.setattr(os, "fsync", lambda descriptor: None)
+    monkeypatch.setattr(run_evaluation, "_commit", lambda: None)
+    name, documents = _sweep_case(kind, tmp_path, monkeypatch)
+    failures, number = [], 0
+    for index, (document, root, render) in enumerate(documents):
+        if name == "governance":
+            reasons = render(json.dumps(document), f"valid-{index}")()
+            assert reasons == SWEEP_VALID.get(kind, []), reasons  # the fixture itself is valid
+            for path, value_class, text in _hostile_texts(document, root):
+                number += 1
+                try:
+                    reasons = render(text, number)()
+                except Exception as error:  # noqa: BLE001 - the sweep reports every exception a gate raised
+                    failures.append((path, value_class, type(error).__name__))
+                    continue
+                if not (isinstance(reasons, list) and all(isinstance(reason, str) for reason in reasons)):
+                    failures.append((path, value_class, reasons))
+            continue
+        # The fixture itself is valid: unchanged, it runs (or, for a governance record, reaches the refusal after the gate).
+        code, err = _sweep_main(name, render(json.dumps(document), f"valid-{index}"))
+        assert code == SWEEP_VALID.get(kind, 0) and "Traceback" not in err, (code, err[-500:])
+        for path, value_class, text in _hostile_texts(document, root):
+            number += 1
+            code, err = _sweep_main(name, render(text, number))
+            if code not in SWEEP_CODES[name] or "Traceback" in err:
+                failures.append((path, value_class, code, err.strip().splitlines()[-1:]))
+    assert number and failures == [], (number, len(failures), failures[:20])
+
+
+def test_every_research_plane_input_is_decoded_strictly(tmp_path):
+    # inputs.loads, the one decoder of every research-plane input: the standard json module would accept each of these
+    # and hand a later step a value it cannot compute with (NaN, an infinity, 0.0 for a non-zero number, an integer no
+    # float holds, a nesting no decoder can read). Each is refused as InputInvalid, a ValueError, so every reader refuses
+    # the input with its own documented code; ordinary values decode unchanged.
+    from evaluation.qcai_eval import inputs
+
+    for text in ('{"v": NaN}', '{"v": Infinity}', '{"v": -Infinity}', '{"v": 1e400}', '{"v": -1e400}', '{"v": 1e-400}',
+                 '{"v": 0.1e-400}', '{"v": ' + "1" + "0" * 400 + "}", '{"v": -' + "9" * 17 + "}", "[" * 100_000 + "]" * 100_000):
+        with pytest.raises(inputs.InputInvalid):
+            inputs.loads(text)
+    assert inputs.loads('{"a": [1, 2.5, 0.0, 0e5, -0.0, 5e-324, 9007199254740992, -9007199254740992, "NaN", "1e400"]}') == {
+        "a": [1, 2.5, 0.0, 0.0, -0.0, 5e-324, 2 ** 53, -(2 ** 53), "NaN", "1e400"]}
+    assert inputs.loads(b'{"b": true}') == {"b": True}
+    path = tmp_path / "lines.jsonl"
+    path.write_text('{"ok": 1}\n{"v": NaN}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match=r"^line 2: a non-finite number \(NaN\)$"):
+        read_jsonl(path)
+    # Through a reader: a run spec holding NaN is refused as unreadable (exit 2), never planned with a NaN in it.
+    spec, _items = small_spec(tmp_path)
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps({**spec, "created_at": float("nan")}), encoding="utf-8")
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.load_spec(spec_path)
+    assert refused.value.code == 2 and refused.value.reasons == ["spec_unreadable"]

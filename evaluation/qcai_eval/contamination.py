@@ -35,6 +35,8 @@ import subprocess
 import unicodedata
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
+from . import inputs
+
 LICENSED_FORMAT = "qcai-licensed-fingerprints/1"
 ULQS_FORMAT = "qcai-ulqs-fingerprints/1"
 HASH = "hmac-sha256-trunc32"
@@ -178,12 +180,12 @@ def set_from_payload(payload: Mapping[str, Any]) -> FingerprintSet:
 
 
 def load_fingerprint_file(path: Path) -> FingerprintSet:
-    return set_from_payload(json.loads(Path(path).read_text(encoding="utf-8")))
+    return set_from_payload(inputs.read_json(path))
 
 
 def synthetic_sets(fixture_path: Path) -> list[FingerprintSet]:
     """Fingerprints built in memory from the committed synthetic fixture with its published salt (public CI)."""
-    fixture = json.loads(Path(fixture_path).read_text(encoding="utf-8"))
+    fixture = inputs.read_json(fixture_path)
     if fixture.get("fixture") != SYNTHETIC_FIXTURE_FORMAT or fixture.get("synthetic") is not True:
         raise ValueError("not a synthetic contamination fixture")
     salt = bytes.fromhex(fixture["salt_hex"])

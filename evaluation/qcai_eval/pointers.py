@@ -81,6 +81,8 @@ class EvidenceCatalog:
                 raise ValueError(f"catalog line {number}: volume enum")
             if not isinstance(line["document_id"], str) or not line["document_id"]:
                 raise ValueError(f"catalog line {number}: document_id type")
+            if not isinstance(line["corpus_version"], str) or not line["corpus_version"]:
+                raise ValueError(f"catalog line {number}: corpus_version type")
             if not _integer(line["page"]) or line["page"] < 1:
                 raise ValueError(f"catalog line {number}: page")
             if not (_integer(line["char_start"]) and _integer(line["char_end"]) and 0 <= line["char_start"] < line["char_end"]):

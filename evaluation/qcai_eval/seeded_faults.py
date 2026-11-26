@@ -14,11 +14,11 @@ inserts Type A-E errors into correct E1 responses (spec conflict 38; DI-145).
 from __future__ import annotations
 
 from pathlib import Path
-import json
 import re
 from typing import Any, Mapping
 
 from .canonical import canonical_sha256
+from . import inputs
 from .citation import citation_existence
 from .statistics import wilson_interval
 
@@ -41,7 +41,7 @@ STOPWORDS = frozenset({"about", "above", "after", "again", "also", "been", "befo
 
 
 def load_fixture(path: Path = DEFAULT_FIXTURE) -> dict[str, Any]:
-    fixture = json.loads(Path(path).read_text(encoding="utf-8"))
+    fixture = inputs.read_json(path)
     if fixture.get("fixture") != "seeded-faults-v1" or fixture.get("synthetic") is not True:
         raise ValueError("not a synthetic seeded-faults-v1 fixture")
     if tuple(fixture.get("finding_types", ())) != FINDING_TYPES:

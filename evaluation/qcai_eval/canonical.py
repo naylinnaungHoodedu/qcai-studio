@@ -11,6 +11,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from . import inputs
+
 
 def canonical_json(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
@@ -26,13 +28,16 @@ def lf_sha256(path: Path) -> str:
 
 
 def read_jsonl(path: Path) -> list[dict]:
-    """The objects of a JSONL file. An error names the line number only, never the line's content."""
+    """The objects of a JSONL file, each line decoded by `inputs.loads`. An error names the line number and the class of
+    value refused, never the line's content."""
     records: list[dict] = []
     for number, line in enumerate(Path(path).read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
             continue
         try:
-            value = json.loads(line)
+            value = inputs.loads(line)
+        except inputs.InputInvalid as error:  # still InputInvalid, so a reader can refuse it as invalid content
+            raise inputs.InputInvalid(f"line {number}: {error}") from None
         except json.JSONDecodeError:
             raise ValueError(f"line {number}: not valid JSON") from None
         if not isinstance(value, dict):

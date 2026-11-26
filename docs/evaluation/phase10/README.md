@@ -33,28 +33,28 @@ executed and no Table XVII row or HR-1..MR-3 outcome is asserted (plan Phase 10 
   `items_split_missing`) or freeze-record (`freeze_record_*`) reason and no IRB or OSF reason; 5 interrupted (resume
   with `--resume`, on a later day too); 6 a pin mismatch (a design input's `<input>_sha256` among them); 7 arm parity;
   8 a confirmatory run refused with an IRB or OSF
-  reason; 9 a live run or hold H12 refused. A refused confirmatory run lists every reason and exits with the first
+  reason; 9 a live run or hold H12 refused; 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message, after the run's refused outcome is logged). A refused confirmatory run lists every reason and exits with the first
   class present (`governance.confirmatory_exit_code`). Its dates are judged in the run window (spec 3.13; the
   script's docstring names each date reason).
 - `validate_ulqs.py`: 0; 2 usage (`--freeze` without `--previous` or `--corpus-text`; `--access-log` without
   `--actor-role`), path refused, an output or the access log that cannot be written, or an input unreadable or invalid (the items or previous set, the ratings, a main-round rating of a unit its item does not own or under another rubric included, the rubric,
   the freeze rules, or an agent-check record that does not parse or is not shaped as `ulqs-agent-check-v1`); 3 schema
   problems; 4 freeze failed (an agent-check record that does not match the items is a freeze code); 5 evidence catalog
-  invalid or unresolved pointers.
+  invalid or unresolved pointers; 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
 - `migrate_ulqs_rc1.py`: 0; 2 refused path or usage, or an output or the access log that cannot be written; 3 the input unreadable, an input item fails rc1 validation, or a migrated
-  record fails v1.0 validation.
+  record fails v1.0 validation; 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
 - `build_licensed_fingerprints.py`: 0; 2 refused (a path, no `--access-log` or `--actor-role`, an unreadable input, a
-  licensed text that is not text or .docx, or an output or the access log that cannot be written); 3 bad salt; 4 ULQS items that are not JSON lines or fail validation.
+  licensed text that is not text or .docx, or an output or the access log that cannot be written); 3 bad salt; 4 ULQS items that are not JSON lines or fail validation; 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
 - `scan_research_logs.py`: 0 zero matches (with full coverage only under `--require-zero`: without it an incomplete
   scan also exits 0, its report's `result` says `incomplete` and stderr names the targets), or the self-test found its
   sentinel; 1 matches, or incomplete coverage under `--require-zero` (or the self-test missed); 2 usage (including
   research fingerprints without `--access-log` and `--actor-role`, `--ulqs-fingerprints` with `--synthetic-fixture`,
   an access log on a public path, research fingerprints or their report on a public path, or a report or access log
-  that cannot be written).
+  that cannot be written); 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
 - `check_research_harness.py`: 0; 1 drift (a record that differs, or is missing or unreadable); 2 usage (an
   unknown option, `--check` with `--write`, or a path argument holding a NUL) or a `--dir` the records cannot be
   written to (`--write`); 3 a known answer
-  not met or an invalid analysis plan; 6 a pin; 7 parity.
+  not met or an invalid analysis plan; 6 a pin; 7 parity; 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
 
 ## Holds and SLIs
 

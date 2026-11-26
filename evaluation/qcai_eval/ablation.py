@@ -8,11 +8,11 @@ each arm differs from GATE exactly on its declared variables and on nothing else
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from .canonical import canonical_sha256
+from . import inputs
 
 PROVISIONAL_DEFAULTS = ("PD-67",)  # Phase 10 spec 12.1; ratified under DI-140
 
@@ -46,7 +46,33 @@ class ArmTable:
     raw: Mapping[str, Any]
 
 
+def _shape_problem(raw: Any) -> str | None:
+    """The first part of an arms table that is not of the type `table_from_raw` reads, or None: an object whose `arms` is
+    a list of objects with string `arm`, `scenario` and `isolates` and an object `ablation` (when present), whose
+    `variables` is an object of lists and whose `gate_configuration` is an object. A table of another shape is a
+    ParityError (exit 7 in the runner and the harness check), never a TypeError, KeyError or ValueError."""
+    if not isinstance(raw, Mapping):
+        return "arms table: not an object"
+    arms = raw.get("arms", [])
+    if not isinstance(arms, list) or not all(isinstance(entry, Mapping) for entry in arms):
+        return "arms: not a list of objects"
+    for entry in arms:
+        if not all(isinstance(entry.get(key), str) for key in ("arm", "scenario", "isolates")):
+            return "arms: arm, scenario and isolates must be strings"
+        if not isinstance(entry.get("ablation", {}), Mapping):
+            return f"{entry['arm']}: ablation is not an object"
+    variables = raw.get("variables", {})
+    if not isinstance(variables, Mapping) or not all(isinstance(values, list) for values in variables.values()):
+        return "variables: not an object of lists"
+    if not isinstance(raw.get("gate_configuration", {}), Mapping):
+        return "gate_configuration: not an object"
+    return None
+
+
 def table_from_raw(raw: Mapping[str, Any]) -> ArmTable:
+    problem = _shape_problem(raw)
+    if problem is not None:
+        raise ParityError(problem)
     arms = {}
     for entry in raw.get("arms", []):
         arm = Arm(arm=entry["arm"], scenario=entry["scenario"], ablation=dict(entry.get("ablation", {})), isolates=entry["isolates"])
@@ -59,7 +85,7 @@ def table_from_raw(raw: Mapping[str, Any]) -> ArmTable:
 
 
 def load_arms(path: Path = ARMS_PATH) -> ArmTable:
-    table = table_from_raw(json.loads(Path(path).read_text(encoding="utf-8")))
+    table = table_from_raw(inputs.read_json(path))
     check_table(table)
     return table
 

@@ -12,14 +12,13 @@ The rc1 read is logged as soon as the file is read, before any check that can re
 does not parse), so a refused migration still leaves its read in the log.
 
 Exit codes: 0 ok; 2 refused path or usage, or an output or the access log that cannot be written; 3 the input is unreadable, an input item fails rc1 validation, or a migrated
-record fails v1.0 validation.
+record fails v1.0 validation; 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
 """
 
 from __future__ import annotations
 
 import argparse
 from collections import Counter
-import json
 from pathlib import Path
 import sys
 
@@ -29,7 +28,7 @@ for path in (REPO_ROOT, API_ROOT):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from evaluation.qcai_eval import access_log, planes, ulqs  # noqa: E402
+from evaluation.qcai_eval import access_log, inputs, planes, ulqs  # noqa: E402
 from evaluation.qcai_eval.canonical import dumps_line, lf_sha256, read_jsonl, write_lf  # noqa: E402
 
 PROVISIONAL_DEFAULTS = ("PD-61",)  # Phase 10 spec 12.1; ratified under DI-140
@@ -75,7 +74,7 @@ def _main(argv: list[str] | None = None) -> int:
     except planes.PathRefused as error:
         print(f"refused (exit 2): {error}", file=sys.stderr)
         return 2
-    mapping = json.loads(args.mapping.read_text(encoding="utf-8"))
+    mapping = inputs.read_json(args.mapping)
 
     def log(action: str, sha256: str | None) -> None:
         if sha256 is not None:
@@ -130,12 +129,17 @@ def _main(argv: list[str] | None = None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """An output or the access log that cannot be written is refused with exit 2, never a traceback (spec 5)."""
+    """An output or the access log that cannot be written is refused with exit 2; any other exception the script does not
+    handle is the last-resort refusal, exit 10 (`internal_error`, `planes.internal_error`): never a traceback, never exit 1
+    (spec 5)."""
     try:
         return _main(argv)
     except planes.UNWRITABLE as error:
         print(f"refused (exit 2): {error}", file=sys.stderr)
         return 2
+    except Exception as error:  # the last-resort handler (planes.INTERNAL_ERROR)
+        planes.internal_error(error)
+        return 10
 
 
 if __name__ == "__main__":

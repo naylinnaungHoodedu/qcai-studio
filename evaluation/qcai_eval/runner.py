@@ -39,14 +39,14 @@ from pathlib import Path
 import re
 from typing import Any, Callable, Mapping, Sequence
 
-from . import ablation, analysis_plans, experiments, governance, planes, statistics, ulqs
+from . import ablation, analysis_plans, experiments, governance, inputs, planes, statistics, ulqs
 from .abstention import abstention_by_turn_depth, correct_abstention
 from .canonical import canonical_json, canonical_sha256, dumps_line, dumps_record, hashed_hex, lf_sha256, read_jsonl, write_lf
 from .citation import citation_existence
 from .fabrication import fabrication_rate
 from .faithfulness import citation_faithfulness
 from .invariance import invariance_violations
-from .payload_log import PayloadLogViolation, log_record, validate_log_record
+from .payload_log import log_record, validate_log_record
 from .pointers import EvidenceCatalog, PointerResolver, public_span_lookup, resolve_items
 from .providers import RecordedResponder, RecordingInvalid
 
@@ -148,7 +148,7 @@ def _path(value: str, repo_root: Path) -> Path:
 
 def load_spec(path: Path) -> dict[str, Any]:
     try:
-        spec = json.loads(Path(path).read_text(encoding="utf-8"))
+        spec = inputs.read_json(path)
     except (OSError, ValueError):
         raise RunRefused(2, ["spec_unreadable"]) from None
     if not isinstance(spec, dict):
@@ -183,7 +183,7 @@ def _units(item: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 def load_harness_parameters(path: Path = HARNESS_PARAMETERS) -> dict[str, Any]:
     """The provisional run defaults (PD-68): the paper's replicate subsample and retries, and the replicate-variance rule."""
-    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    raw = inputs.read_json(path)
     if raw.get("parameters") != "harness-parameters-v1" or raw.get("provisional") is not True:
         raise ValueError("not a provisional harness-parameters-v1 file")
     if _replicate_problems(raw.get("replicates")) or not _integer(raw.get("retries"), 0, MAX_RETRIES):
@@ -429,7 +429,7 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
     # 2. The package, by explicit path and sha256 (never the application's default path).
     package_path = _path(spec["package"]["path"], repo_root)
     try:
-        package_raw = json.loads(package_path.read_text(encoding="utf-8"))
+        package_raw = inputs.read_json(package_path)
     except (OSError, ValueError):
         raise RunRefused(6, ["package_unreadable"]) from None
     package_sha = canonical_sha256(package_raw)
@@ -481,7 +481,7 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
         raise RunRefused(3, ["unresolved_pointers"] + [f"{item}:{path}:{status}" for item, path, status, _kind in report.problems[:20]])
     # 5. The arms and parity.
     try:
-        arms_raw = json.loads(_path(spec["arms"]["path"], repo_root).read_text(encoding="utf-8"))
+        arms_raw = inputs.read_json(_path(spec["arms"]["path"], repo_root))
     except (OSError, ValueError):
         raise RunRefused(6, ["arms_unreadable"]) from None
     arms_sha = canonical_sha256(arms_raw)
@@ -505,7 +505,7 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
         raise RunRefused(7, [str(error)]) from None
     # 6. The analysis plan.
     try:
-        plans_raw = json.loads(_path(spec["analysis_plan"]["path"], repo_root).read_text(encoding="utf-8"))
+        plans_raw = inputs.read_json(_path(spec["analysis_plan"]["path"], repo_root))
     except (OSError, ValueError):
         raise RunRefused(6, ["analysis_plan_unreadable"]) from None
     plans_sha = canonical_sha256(plans_raw)
@@ -876,7 +876,7 @@ def _read_checkpoint(path: Path, *, resume: bool) -> dict[str, dict]:
     completed: dict[str, dict] = {}
     for line in lines:
         try:
-            record = json.loads(line.decode("utf-8"))
+            record = inputs.loads(line)
         except ValueError:  # UnicodeDecodeError included
             raise RunRefused(2, ["checkpoint_invalid"]) from None
         if (not isinstance(record, dict) or not isinstance(record.get("request_key"), str) or not HEX64.match(record["request_key"])
@@ -907,7 +907,7 @@ def _read_events(path: Path) -> list[dict]:
     events = []
     for line in text.splitlines():
         try:
-            event = json.loads(line)
+            event = inputs.loads(line)
         except ValueError:
             raise RunRefused(2, ["checkpoint_mismatch"]) from None
         if not isinstance(event, dict):
@@ -999,19 +999,20 @@ def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = Fal
             digest = checkpoint_sha256(out_dir / name)
             if digest is not None:
                 on_read("run_output", digest)
+    # The run events are read once here; every check below uses this read.
+    events = _read_events(out_dir / RUN_EVENTS)
     if plan.dated:
         # The output must be the checkpoint the plan's run window was judged on: a resume planned from a start event
         # continues that event's run, and a plan judged as a fresh start writes into an output without run events.
-        events = _read_events(out_dir / RUN_EVENTS) if resume else []
-        recorded = governance.iso_day(events[0].get("started_on")) if events else None
-        if recorded != plan.checkpoint_start or (events and recorded is None):
+        resumed = events if resume else []
+        recorded = governance.iso_day(resumed[0].get("started_on")) if resumed else None
+        if recorded != plan.checkpoint_start or (resumed and recorded is None):
             raise RunRefused(2, ["checkpoint_mismatch"])
     with _writing():
         out_dir.mkdir(parents=True, exist_ok=True)
     responses_path = out_dir / RESPONSES
     responder_rule = getattr(responder, "rule", "unknown")
     digest = run_digest(plan, responder_rule)
-    events = _read_events(out_dir / RUN_EVENTS)
     if resume:
         # The checkpoint must be this run's: the first event is its start, which pins the run digest (run id, mode,
         # responder rule, pins and the planned keys and seeds). Nothing in another run's directory is touched before this.
