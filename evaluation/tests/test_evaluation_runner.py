@@ -2123,18 +2123,28 @@ def _sweep_case(kind, tmp_path, monkeypatch):
             pinned = {"path": str(path), "sha256": _standard_sha(text)}
             return _spec_argv(tmp_path, {**spec, block: {**spec[block], **pinned}}, n)
         return "run_evaluation", [(document, (), write)]
-    if kind in ("package", "package_live"):
-        # A package holding what the harness reads (its owner decisions, `semantic` and version; the rest of a real
-        # package is only pinned), pinned by sha256 and sidecar. Stub runs judge it uncommitted; the live kind judges every
-        # variant as committed (so its decisions are read as written) and, when valid, is refused by the live checks (9).
+    if kind in ("package", "package_live", "package_e4"):
+        # A package holding what the harness reads (its owner decisions, `semantic`, version and the ranking fields E4's
+        # replay reads; the rest of a real package is only pinned), pinned by sha256 and sidecar. Stub runs judge it
+        # uncommitted; the live kind judges every variant as committed (so its decisions are read as written) and, when
+        # valid, is refused by the live checks (9). The E4 kind sweeps the ranking block through a confirmatory E4 stub run
+        # (its gate passed), whose replay reads the block only after every request was sent.
         from evaluation.qcai_eval import governance
 
         real = json.loads((REPO_ROOT / synthetic.PACKAGE_PATH).read_text(encoding="utf-8"))
+        ranking = real["ranking"]
+        read = ("trust", "quality", "ratings", "tier_permissions", "selection", "promotion", "micro_batch", "cusum", "penalties", "seed")
         document = {"package_version": real["package_version"], "semantic": real["semantic"],
-                    "owner_decisions": {name: real["owner_decisions"][name] for name in ("D-07", "D-14")}}
+                    "owner_decisions": {name: real["owner_decisions"][name] for name in ("D-07", "D-14")},
+                    "ranking": {**{name: ranking[name] for name in read},
+                                "recommission": {name: ranking["recommission"][name] for name in ("deflation", "uncommissioned_prior")},
+                                "contexts": {"clusters": ranking["contexts"]["clusters"][:2]}}}
         live = kind == "package_live"
         extra = {"mode": "live", "responder": {"live": {"adapter": None}}} if live else {}
-        spec, _items = small_spec(tmp_path, counts=SWEEP_COUNTS, **extra)
+        if kind == "package_e4":
+            spec, _items = _e4_spec(tmp_path, monkeypatch, epsilon="0.1", linucb_alpha="1", stream_length=20, streams=2)
+        else:
+            spec, _items = small_spec(tmp_path, counts=SWEEP_COUNTS, **extra)
         if live:
             monkeypatch.setattr(governance, "committed_package_sha256s", lambda: _Everything())
 
@@ -2144,7 +2154,7 @@ def _sweep_case(kind, tmp_path, monkeypatch):
             sha = _standard_sha(text)
             (tmp_path / f"package-{n}.json.sha256").write_text(sha + "\n", encoding="utf-8")
             return _spec_argv(tmp_path, {**spec, "package": {**spec["package"], "path": str(path), "sha256": sha}}, n)
-        return "run_evaluation", [(document, (), write)]
+        return "run_evaluation", [(document, ("ranking",) if kind == "package_e4" else (), write)]
     if kind == "harness_parameters":
         spec, _items = small_spec(tmp_path, counts=SWEEP_COUNTS)
         document = json.loads(runner.HARNESS_PARAMETERS.read_text(encoding="utf-8"))
@@ -2246,8 +2256,8 @@ def _sweep_case(kind, tmp_path, monkeypatch):
                 return lambda: governance.record_refusals(pinned, loaders[kind], REPO_ROOT, missing="missing", invalid="invalid")[0]
             return lambda: governance.confirmatory_refusals(
                 {"created_at": synthetic.CREATED, "mode": "live", "governance": {}, kind if kind == "freeze_record" else "pre_run_scan": pinned},
-                analysis_plan_sha256="a" * 64, dataset_sha256="d" * 64, dataset_content_sha256=content, items_states={"frozen": 3},
-                package_raw={"owner_decisions": {"D-14": {"state": "decided"}}}, repo_root=REPO_ROOT)
+                analysis_plan_sha256="a" * 64, dataset_sha256="d" * 64, dataset_content_sha256=content, corpus_version=synthetic.CORPUS_VERSION,
+                items_states={"frozen": 3}, package_raw={"owner_decisions": {"D-14": {"state": "decided"}}}, repo_root=REPO_ROOT)
         return "governance", [(record, (), write)]
     if kind in ("ulqs_items", "catalog"):
         lines = read_jsonl(synthetic.ITEMS_FIXTURE if kind == "ulqs_items" else synthetic.CATALOG_FIXTURE)
@@ -2263,6 +2273,15 @@ def _sweep_case(kind, tmp_path, monkeypatch):
                 return ["--items", synthetic.ITEMS_FIXTURE, "--catalog", path]
             return write
         return "validate_ulqs", [(lines[index], (), line(index)) for index in indices]
+    if kind == "previous_items":
+        # The set a freeze starts from (--previous), validated as the items are before it is used (exit 2).
+        lines = read_jsonl(synthetic.ITEMS_FIXTURE)
+
+        def write(text, n):
+            path = tmp_path / f"previous-{n}.jsonl"
+            path.write_bytes(_lines_with(lines, 0, text).encode("utf-8"))
+            return ["--items", synthetic.ITEMS_FIXTURE, "--catalog", synthetic.CATALOG_FIXTURE, "--previous", path]
+        return "validate_ulqs", [(lines[0], (), write)]
     rubric = tmp_path / "rubric.md"
     rubric.write_text("# an invented rubric\n", encoding="utf-8")
     ratings = synthetic.synthetic_ratings(read_jsonl(synthetic.ITEMS_FIXTURE), rubric_sha256=lf_sha256(rubric), share="1/4", disagree=1)
@@ -2287,8 +2306,8 @@ def _sweep_case(kind, tmp_path, monkeypatch):
 
 SWEEP_KINDS = ("run_spec", "design_e2", "design_e3", "design_e4", "recording", "checkpoint_responses", "checkpoint_events",
                "verification_set", "e4_responses", "design_ratings", "analysis_plans", "arms", "irb_record", "osf_record", "freeze_record", "scan_report",
-               "provider_terms", "licence_ruling", "research_use", "ulqs_items",
-               "catalog", "ratings", "freeze_rules", "package", "package_live", "harness_parameters", "rc1_mapping",
+               "provider_terms", "licence_ruling", "research_use", "ulqs_items", "previous_items",
+               "catalog", "ratings", "freeze_rules", "package", "package_live", "package_e4", "harness_parameters", "rc1_mapping",
                "licensed_fingerprints", "ulqs_fingerprints", "synthetic_fixture", "agent_check")
 
 
@@ -2348,10 +2367,12 @@ def test_a_recording_value_the_decoder_refuses_is_recording_invalid_before_any_r
 
 @pytest.mark.parametrize(("package", "reason"), [
     ([1], "package_invalid:package"), ("x", "package_invalid:package"), ({"owner_decisions": [1]}, "package_invalid:owner_decisions"),
-    ({"owner_decisions": {"D-14": "decided"}}, "package_invalid:owner_decisions"), ({"semantic": [1]}, "package_invalid:semantic")])
+    ({"owner_decisions": {"D-14": "decided"}}, "package_invalid:owner_decisions"), ({"semantic": [1]}, "package_invalid:semantic"),
+    ({"ranking": [1]}, "package_invalid:ranking"), ({"ranking": {"trust": [1]}}, "package_invalid:ranking.trust.gamma")])
 def test_a_pinned_package_the_harness_cannot_read_is_refused_as_package_invalid(tmp_path, package, reason):
     # A hand-made package with a matching sha256 and sidecar, but not shaped as the harness reads it (an object; owner
-    # decisions an object of objects; `semantic` an object), is refused with exit 6, never the last-resort exit 10.
+    # decisions an object of objects; `semantic` an object; `ranking` absent, null or shaped as E4's replay reads it,
+    # whatever the experiment), is refused with exit 6, never the last-resort exit 10.
     from evaluation.qcai_eval.canonical import canonical_sha256
 
     spec, _items = small_spec(tmp_path)
@@ -2364,6 +2385,73 @@ def test_a_pinned_package_the_harness_cannot_read_is_refused_as_package_invalid(
     assert (refused.value.code, refused.value.reasons) == (6, [reason])
     code, err = _sweep_main("run_evaluation", _spec_argv(tmp_path, {**spec, "package": {**spec["package"], "path": str(path), "sha256": sha}}, "p"))
     assert code == 6 and "internal_error" not in err
+
+
+def test_run_events_holding_a_raw_line_separator_read_back_as_one_event_each(tmp_path):
+    # Review 22: the run-events reader split with str.splitlines, which breaks inside a string holding a raw U+2028,
+    # U+2029 or U+0085 (as dumps_line writes it); it splits at LF only, as read_jsonl does, and still reads CRLF.
+    from evaluation.qcai_eval.canonical import dumps_line
+
+    events = [{"event": "start", "note": f"an invented{separator}note"} for separator in ("\u2028", "\u2029", "\u0085")]
+    path = tmp_path / runner.RUN_EVENTS
+    path.write_bytes("".join(dumps_line(event) for event in events).encode("utf-8"))
+    assert runner._read_events(path) == events
+    path.write_bytes("".join(dumps_line(event) for event in events).replace("\n", "\r\n").encode("utf-8"))
+    assert runner._read_events(path) == events
+
+
+def _ranking_with(path, value):
+    real = json.loads((REPO_ROOT / synthetic.PACKAGE_PATH).read_text(encoding="utf-8"))["ranking"]
+    target = real
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+    return real
+
+
+@pytest.mark.parametrize(("ranking", "reason"), [
+    ([1], "package_invalid:ranking"), ("x", "package_invalid:ranking"), ({"quality": [1]}, "package_invalid:ranking.trust.gamma"),
+    (_ranking_with(("quality",), [1]), "package_invalid:ranking.quality.eta"),
+    (_ranking_with(("quality", "weights"), {"V": "0.35"}), "package_invalid:ranking.quality.weights"),
+    (_ranking_with(("quality", "eta"), "x"), "package_invalid:ranking.quality.eta"),
+    (_ranking_with(("cusum", "p1"), 0.15), "package_invalid:ranking.cusum.p1"),
+    (_ranking_with(("promotion", "n_d"), "3"), "package_invalid:ranking.promotion.n_d"),
+    (_ranking_with(("selection", "first_incumbent_is_switch"), "false"), "package_invalid:ranking.selection.first_incumbent_is_switch"),
+    (_ranking_with(("tier_permissions", "A"), "x"), "package_invalid:ranking.tier_permissions.A"),
+    (_ranking_with(("ratings",), {"A": "0.95"}), "package_invalid:ranking.ratings"),
+    (_ranking_with(("seed",), 7), "package_invalid:ranking.seed"),
+    (_ranking_with(("contexts", "clusters", 5), [None]), "package_invalid:ranking.contexts.clusters"),
+    # Shaped as the replay reads it, but refused by the ranking arithmetic (the Beta quantile at 0): the dry run.
+    (_ranking_with(("trust", "quantile"), "0"), "package_invalid:ranking"),
+    (_ranking_with(("quality", "initial_qbar"), "1e400"), "package_invalid:ranking")])
+def test_an_e4_run_over_a_package_whose_ranking_block_the_replay_cannot_read_is_refused_before_any_request(
+        tmp_path, monkeypatch, ranking, reason):
+    # Review 22: E4's replay reads the package's ranking block only after every request was sent, so a malformed block
+    # (with a matching sha256 and sidecar) ended in the last-resort exit 10 after 192 responses were written. It is now
+    # refused when the run is planned (exit 6): its shape by `package_problem` (`experiments.ranking_problem`), its
+    # arithmetic by a dry run of the controller policies (`experiments.ranking_replay_problem`).
+    spec, _items = _e4_spec(tmp_path, monkeypatch, shift=SHIFT_G)
+    package = synthetic.decided_package(tmp_path, ranking=ranking)
+    pinned = {**spec, "package": {**spec["package"], "path": package["path"], "sha256": package["sha256"]}}
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(pinned)
+    assert (refused.value.code, refused.value.reasons) == (6, [reason])
+    code, err = _sweep_main("run_evaluation", _spec_argv(tmp_path, pinned, "r"))
+    assert (code, err.strip().splitlines()[-1]) == (6, f"refused (exit 6): {reason}")
+    assert not (tmp_path / "out-r" / runner.RESPONSES).exists()
+
+
+def test_an_e4_run_over_a_package_with_a_null_ranking_block_is_not_refused(tmp_path, monkeypatch):
+    # An absent or null block is not malformed: the run completes, and the replay's controller policies then report
+    # `no_ranking_block` (`experiments`).
+    from evaluation.qcai_eval import experiments
+
+    spec, _items = _e4_spec(tmp_path, monkeypatch, shift=SHIFT_G)
+    package = synthetic.decided_package(tmp_path, ranking=None)
+    plan = runner.plan_run({**spec, "package": {**spec["package"], "path": package["path"], "sha256": package["sha256"]}})
+    assert runner.package_problem(plan.package_raw) is None and experiments.ranking_replay_problem(None, []) is None
+    record = runner.execute_run(plan, StubResponder(), tmp_path / "out")
+    assert record["experiment"] == "E4" and len(read_jsonl(tmp_path / "out" / runner.RESPONSES)) == len(plan.requests)
 
 
 @pytest.mark.parametrize("text", ["[1]", '"x"', "null", '{"parameters": "harness-parameters-v1", "replicate_variance_required": [1]}'])

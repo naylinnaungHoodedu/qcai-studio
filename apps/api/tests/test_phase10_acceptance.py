@@ -532,6 +532,76 @@ def test_ac_10_1_the_validator_refuses_an_unreadable_rubric_rules_file_or_agent_
                           "--access-log", str(tmp_path / "access.jsonl"), "--actor-role", "RL"]) == 2
 
 
+def test_ac_10_1_a_malformed_previous_set_is_refused_with_exit_2_never_used_as_the_freeze_baseline(tmp_path, capsys):
+    # Review 22: --previous was only read, never validated, so a predecessor whose status or item_id was a list crashed the
+    # transition and agent checks (the last-resort exit 10), and a malformed but string-typed one was used as the baseline
+    # the state rules and the frozen content are judged against. It is validated as the items are (exit 2).
+    argv, frozen, _agent_record = _research_plane_freeze(tmp_path)
+    validate = script("validate_ulqs")
+    previous = read_jsonl(Path(argv[argv.index("--previous") + 1]))
+    first = next(index for index, item in enumerate(previous) if item["status"] == "review")
+    variants = {"a status that is a list": {"status": [1]}, "an item_id that is a list": {"item_id": [1]},
+                "an unknown status": {"status": "approved"}, "a stratum outside A-G": {"stratum": "Z"}}
+    for name, change in variants.items():
+        changed = [dict(item) for item in previous]
+        changed[first].update(change)
+        case = list(argv)
+        case[case.index("--previous") + 1] = synthetic.write_jsonl(tmp_path / f"previous-{name.replace(' ', '-')}.jsonl", changed)
+        (tmp_path / "freeze-record.json").unlink(missing_ok=True)
+        capsys.readouterr()
+        assert validate.main([str(value) for value in case]) == 2, name
+        err = capsys.readouterr().err
+        assert "refused (exit 2): previous items invalid" in err and "internal_error" not in err and "Traceback" not in err, name
+        assert not (tmp_path / "freeze-record.json").exists(), name
+    assert validate.main(argv) == 0  # the valid previous set still freezes
+
+
+def test_ac_10_1_a_corpus_text_document_that_is_not_utf_8_is_an_unavailable_document_never_exit_10(tmp_path, capsys):
+    # Review 22: a <document_id>.txt in another encoding raised UnicodeDecodeError past the reader's OSError handler (exit
+    # 10). It is read as unavailable, so its pointers are not text-verified: unresolved pointers (exit 5), and with
+    # --freeze a failed freeze (exit 4).
+    validate = script("validate_ulqs")
+    text = tmp_path / "corpus"
+    text.mkdir()
+    for document in {line["document_id"] for line in read_jsonl(synthetic.CATALOG_FIXTURE)}:
+        (text / f"{document}.txt").write_bytes(b"\xff\xfe")
+    capsys.readouterr()
+    code = validate.main(["--items", str(synthetic.ITEMS_FIXTURE), "--catalog", str(synthetic.CATALOG_FIXTURE), "--corpus-text", str(text)])
+    err = capsys.readouterr().err
+    assert code == 5 and "internal_error" not in err and "unresolved pointers (exit 5)" in err, (code, err)
+    (tmp_path / "freeze").mkdir()
+    argv, _frozen, _agent_record = _research_plane_freeze(tmp_path / "freeze")
+    corpus = Path(argv[argv.index("--corpus-text") + 1])
+    for path in corpus.iterdir():
+        path.write_bytes(b"\xff\xfe")
+    capsys.readouterr()
+    code = validate.main(argv)
+    err = capsys.readouterr().err
+    assert code == 4 and "internal_error" not in err and "freeze check failed (exit 4)" in err, (code, err)
+
+
+@pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085"])
+def test_ac_10_1_a_set_the_migrator_writes_with_a_raw_line_separator_is_read_back_by_the_validator(tmp_path, capsys, separator):
+    # Review 22: the migrator writes JSONL with dumps_line (ensure_ascii=False), so U+2028, U+2029 or U+0085 in a text, even
+    # escaped in the rc1 file, is written raw; read_jsonl split at str.splitlines boundaries and the validator refused the
+    # migrator's own output as "items unreadable (line 1: not valid JSON)" (runbook steps 1 and 4).
+    rc1 = synthetic.rc1_items(read_jsonl(synthetic.ITEMS_FIXTURE))
+    rc1[0]["question"] = rc1[0]["question"] + f"{separator}continued"
+    source = tmp_path / "rc1.jsonl"
+    source.write_text("".join(json.dumps(item) + "\n" for item in rc1), encoding="utf-8")  # escaped, as json.dumps writes it
+    out = tmp_path / "v1.private.jsonl"
+    migrate = script("migrate_ulqs_rc1")
+    assert migrate.main(["--input", str(source), "--output", str(out), "--author-role", "RL", "--access-log", str(tmp_path / "a.jsonl")]) == 0
+    assert separator in out.read_text(encoding="utf-8")
+    migrated = read_jsonl(out)
+    assert len(migrated) == len(rc1) and separator in migrated[0]["question"]
+    capsys.readouterr()
+    code = script("validate_ulqs").main(["--items", str(out), "--access-log", str(tmp_path / "a.jsonl"), "--actor-role", "RL"])
+    err = capsys.readouterr().err
+    # Read and schema-valid (no exit 2 or 3); with no --catalog its EV pointers stay unresolved (exit 5).
+    assert code == 5 and "unreadable" not in err and "unresolved pointers (exit 5)" in err, (code, err)
+
+
 def test_ac_10_1_the_strata_targets_are_the_paper_s_in_one_provisional_data_file():
     rules = ulqs.load_freeze_rules()
     raw = rules.raw
@@ -1038,6 +1108,11 @@ def test_ac_10_4_the_fingerprint_builder_writes_format_1_that_scan_boundary_read
     assert lines[0]["artifact_sha256"] == __import__("hashlib").sha256(licensed.read_bytes()).hexdigest()
     loaded = script("scan_boundary").load_fingerprints(out_l)
     assert loaded["n"] == 12 and loaded["id"] == "syn-1" and loaded["set"]
+    # The licensed set is bound to the run it is made for (review 22): the items' corpus version and content sha256,
+    # which the pre-run scan gate compares with the run's.
+    licensed_set = contamination.load_fingerprint_file(out_l)
+    assert licensed_set.corpus_version == synthetic.CORPUS_VERSION
+    assert licensed_set.dataset_content_sha256 == ulqs.dataset_content_sha256(read_jsonl(items_path))
     ulqs_set = contamination.load_fingerprint_file(out_u)
     assert ulqs_set.kind == "ulqs" and ulqs_set.n == 6 and ulqs_set.exact
     question = read_jsonl(items_path)[0]["question"]
@@ -1047,6 +1122,15 @@ def test_ac_10_4_the_fingerprint_builder_writes_format_1_that_scan_boundary_read
     captured = capsys.readouterr()
     assert salt_hex not in captured.out + captured.err and ("5a" * 16) not in captured.out + captured.err
     assert salt_hex not in access.read_text(encoding="utf-8")
+    # A salt file that is not UTF-8 is a bad salt (exit 3), never the last-resort exit 10 (review 22); so is one that is
+    # not hex.
+    salt_argv = argv[:argv.index("--salt-env")] + argv[argv.index("--salt-env") + 2:]
+    for name, data in (("salt-binary.bin", b"\xff\xfe00"), ("salt-text.txt", b"zz")):
+        (tmp_path / name).write_bytes(data)
+        capsys.readouterr()
+        assert builder.main([*salt_argv, "--salt-file", str(tmp_path / name)]) == 3, name
+        err = capsys.readouterr().err
+        assert "refused (exit 3): the salt must be hex" in err and "internal_error" not in err, name
 
 
 def test_ac_10_4_the_fingerprint_builder_refuses_a_set_that_would_check_nothing(tmp_path, monkeypatch, capsys):
@@ -1077,6 +1161,15 @@ def test_ac_10_4_the_fingerprint_builder_refuses_a_set_that_would_check_nothing(
     monkeypatch.setattr(contamination, "build_ulqs", real)
     assert builder.main(argv(long)) == 0
     assert contamination.load_fingerprint_file(out_l).shingles and contamination.load_fingerprint_file(out_u).exact
+    # Items that name two corpus versions give no corpus the licensed set can be bound to (exit 4, nothing written).
+    out_l.unlink()
+    out_u.unlink()
+    mixed = read_jsonl(items_path)
+    mixed[0]["corpus_version"] = "QCAI-CORPUS-" + "2026-01-01"
+    synthetic.write_jsonl(items_path, mixed)
+    capsys.readouterr()
+    assert builder.main(argv(long)) == 4
+    assert "name 2 corpus versions, not one" in capsys.readouterr().err and not out_l.exists() and not out_u.exists()
 
 
 def test_ac_10_4_no_tracked_file_holds_a_real_catalog_pointer_or_ulqs_item_record():

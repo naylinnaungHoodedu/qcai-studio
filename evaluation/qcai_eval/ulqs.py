@@ -604,6 +604,9 @@ def check_transition(before: Mapping[str, Any] | None, after: Mapping[str, Any])
         if target not in ("draft", "candidate"):
             problems.append(Problem(item_id, "status", "transition"))
         return problems
+    if not isinstance(source, str) or not isinstance(target, str):  # a state of another type is never a transition
+        problems.append(Problem(item_id, "status", "transition"))
+        return problems
     if source != target and target not in TRANSITIONS.get(source, set()):
         problems.append(Problem(item_id, "status", "transition"))
     if source == "review" and target == "frozen":
@@ -788,7 +791,7 @@ def agent_check_failures(record: Mapping[str, Any] | None, items: Sequence[Mappi
     if previous is None:
         required = live_ids | {item_id for item_id in checked if item_id in current_ids}
     else:
-        required = live_ids | {item.get("item_id") for item in previous if isinstance(item, Mapping)
+        required = live_ids | {item.get("item_id") for item in previous if isinstance(item, Mapping) and isinstance(item.get("item_id"), str)
                                and item.get("status") != "retired" and item.get("item_id") in current_ids}
     retired_checked = {item.get("item_id") for item in items if item.get("status") == "retired" and item.get("item_id") in checked}
     changed = {item.get("item_id") for item in live if item.get("item_id") in checked and checked[item["item_id"]] != item_content_sha256(item)}

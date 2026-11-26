@@ -27,11 +27,21 @@ def lf_sha256(path: Path) -> str:
     return hashlib.sha256(Path(path).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
+def jsonl_lines(text: str) -> list[str]:
+    """The lines of a JSONL text: split at LF only, a CR before it dropped (CRLF reads as LF), the empty piece after a
+    final LF dropped. Never `str.splitlines`, which also breaks at U+2028, U+2029 and U+0085: JSON allows those raw
+    inside a string, and `dumps_line` writes them raw (ensure_ascii=False), so the harness reads back what it writes."""
+    lines = [line[:-1] if line.endswith("\r") else line for line in text.split("\n")]
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
 def read_jsonl(path: Path) -> list[dict]:
-    """The objects of a JSONL file, each line decoded by `inputs.loads`. An error names the line number and the class of
-    value refused, never the line's content."""
+    """The objects of a JSONL file (`jsonl_lines`), each line decoded by `inputs.loads`. An error names the line number
+    and the class of value refused, never the line's content."""
     records: list[dict] = []
-    for number, line in enumerate(Path(path).read_text(encoding="utf-8").splitlines(), start=1):
+    for number, line in enumerate(jsonl_lines(Path(path).read_text(encoding="utf-8")), start=1):
         if not line.strip():
             continue
         try:

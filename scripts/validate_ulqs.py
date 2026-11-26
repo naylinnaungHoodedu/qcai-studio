@@ -20,7 +20,8 @@ any check that can refuse (an input that does not parse is logged by its file's 
 logged. Output names item ids, field paths and codes only, never a value.
 
 Exit codes: 0 ok; 2 usage (--freeze without --previous or --corpus-text; --access-log without --actor-role), path
-refused, an output or the access log that cannot be written, or an input unreadable or invalid: the items or previous set, the ratings
+refused, an output or the access log that cannot be written, or an input unreadable or invalid: the items, the previous
+set (validated as the items are, `ulqs.validate_dataset`: `previous items invalid`), the ratings
 (including a main-round rating of a unit that is not a rated unit of the dataset item its item_id names, or one whose
 rubric_sha256 is not the --rubric file's LF sha256), the rubric, the freeze rules, or an
 agent-check record that does not parse or is not shaped as `ulqs-agent-check-v1` (one whose content does not match the
@@ -58,7 +59,7 @@ def _corpus_text(directory: Path | None, seen: dict[str, str]):
         path = Path(directory) / f"{document_id}.txt"
         try:
             text = path.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, ValueError):  # a document that cannot be read or is not UTF-8 (UnicodeDecodeError) is unavailable
             return None
         seen[document_id] = content_sha256(text)
         return text
@@ -153,6 +154,14 @@ def _main(argv: list[str] | None = None) -> int:
             print(f"refused (exit 2): previous items unreadable ({error})", file=sys.stderr)
             return 2
         log("read", "ulqs_items", _items_sha(previous, args.previous))
+        # The previous set is the baseline every state transition and the frozen content are judged against: it is
+        # validated as the items are (ulqs.validate_dataset), so a malformed predecessor is refused, never used.
+        previous_problems = ulqs.validate_dataset(previous)
+        if previous_problems:
+            for problem in previous_problems[:200]:
+                print(f"previous problem: {problem}")
+            print(f"refused (exit 2): previous items invalid ({len(previous_problems)} schema problems)", file=sys.stderr)
+            return 2
     agent_record = None
     if args.agent_check is not None:
         log("read", "agent_check_record", _file_sha(args.agent_check))

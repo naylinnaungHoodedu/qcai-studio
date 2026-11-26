@@ -41,7 +41,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from . import ablation, analysis_plans, experiments, governance, inputs, planes, statistics, ulqs
 from .abstention import abstention_by_turn_depth, correct_abstention
-from .canonical import canonical_json, canonical_sha256, dumps_line, dumps_record, hashed_hex, lf_sha256, read_jsonl, write_lf
+from .canonical import canonical_json, canonical_sha256, dumps_line, dumps_record, hashed_hex, jsonl_lines, lf_sha256, read_jsonl, write_lf
 from .citation import citation_existence
 from .fabrication import fabrication_rate
 from .faithfulness import citation_faithfulness
@@ -420,8 +420,9 @@ def plan_run(spec: Mapping[str, Any], *, repo_root: Path = REPO_ROOT, environ: M
 
 def package_problem(package_raw: Any) -> str | None:
     """The first field of a package the harness reads that is not shaped as it reads it, or None: the package is an object,
-    `owner_decisions` is absent, null or an object of objects (each decision's `state` is read), and `semantic` is absent,
-    null or an object (its `enabled_by_default` is read by the live checks)."""
+    `owner_decisions` is absent, null or an object of objects (each decision's `state` is read), `semantic` is absent,
+    null or an object (its `enabled_by_default` is read by the live checks), and `ranking` is absent, null or an object
+    shaped as E4's replay reads it (`experiments.ranking_problem`, which names the field as `ranking.<field>`)."""
     if not isinstance(package_raw, Mapping):
         return "package"
     decisions = package_raw.get("owner_decisions")
@@ -429,7 +430,7 @@ def package_problem(package_raw: Any) -> str | None:
         return "owner_decisions"
     if package_raw.get("semantic") is not None and not isinstance(package_raw["semantic"], Mapping):
         return "semantic"
-    return None
+    return experiments.ranking_problem(package_raw.get("ranking"))
 
 
 def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str, str], out_dir: Path | None,
@@ -552,6 +553,12 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
             design = experiments.load_design(spec["experiment"], spec, items, parameters_raw, repo_root, note)
         except experiments.DesignRefused as refused:
             raise RunRefused(refused.code, refused.reasons) from None
+        # E4's replay reads the package's ranking block only after every request was sent: a dry run of its controller
+        # policies on that block (`experiments.ranking_replay_problem`) refuses a block the ranking arithmetic refuses now.
+        if spec["experiment"] == "E4":
+            problem = experiments.ranking_replay_problem(package_raw.get("ranking"), design["design"]["models"])
+            if problem is not None:
+                raise RunRefused(6, [f"package_invalid:{problem}"])
         # The registered protocol (`experiments.departures`): a live run or a run over non-synthetic data runs it as
         # registered; a synthetic run may depart, and its record names each departure and never files the family as the
         # registered result.
@@ -573,6 +580,7 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
         if access_log is None:
             missing.append("access_log_required")
         missing += governance.scan_refusals(spec.get("pre_run_scan"), repo_root, dataset_content_sha256=items_content_sha,
+                                            corpus_version=next(iter(corpus_versions)) if len(corpus_versions) == 1 else None,
                                             missing="pre_run_scan_required")
         if missing:
             raise RunRefused(2, missing)
@@ -626,6 +634,7 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
     if spec["purpose"] == "confirmatory":
         reasons = window + governance.confirmatory_refusals(
             spec, analysis_plan_sha256=plans_sha, dataset_sha256=items_sha, dataset_content_sha256=items_content_sha,
+            corpus_version=next(iter(corpus_versions)) if len(corpus_versions) == 1 else None,
             items_states=states, package_raw=judged, repo_root=repo_root, recording_source=recording_source, start=start,
             today=today)
         # Plan 10.5(2) "calibration and confirmation items split [Risk R-25]": every live item of a confirmatory run
@@ -922,7 +931,7 @@ def _read_events(path: Path) -> list[dict]:
     except (OSError, UnicodeDecodeError):
         raise RunRefused(2, ["checkpoint_mismatch"]) from None
     events = []
-    for line in text.splitlines():
+    for line in jsonl_lines(text):
         try:
             event = inputs.loads(line)
         except ValueError:

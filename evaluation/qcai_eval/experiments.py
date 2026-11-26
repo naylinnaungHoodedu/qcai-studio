@@ -889,6 +889,79 @@ def _replay_population(plan: Any, responses: Sequence[Mapping[str, Any]], *, lat
     return population, excluded, prices
 
 
+# The fields of a package's `ranking` block the E4 replay reads (`_quality`, `_Controller`, and through its `config` input
+# `app.services.ranking.state.Params`), each with the shape it is read in. `ranking_problem` checks them before any request.
+_RANKING_DECIMALS = (("trust", "gamma"), ("trust", "quantile"), ("quality", "eta"), ("quality", "initial_qbar"),
+                     ("selection", "eps_s"), ("promotion", "delta"), ("cusum", "p0"), ("cusum", "p1"), ("cusum", "h"),
+                     ("recommission", "deflation"), ("recommission", "uncommissioned_prior", "alpha"),
+                     ("recommission", "uncommissioned_prior", "beta"), ("penalties", "lambda_u"), ("penalties", "lambda_l"))
+_RANKING_COUNTS = (("promotion", "n_d"), ("micro_batch", "responses"), ("micro_batch", "seconds"))
+_RANKING_FLAGS = (("tier_permissions", "B_tier_1_when_no_A"), ("selection", "first_incumbent_is_switch"))
+_RANKING_WEIGHTS = ("V", "S", "K", "F")  # app.services.ranking.quality.SIGNAL_NAMES: eq. (8) reads a weight for each
+_RANKING_RATINGS = ("A", "B", "C")
+_RANKING_TIERS = ("A", "B", "C", "D")
+_ABSENT = object()
+
+
+def _ranking_at(block: Mapping[str, Any], path: Sequence[str]) -> Any:
+    node: Any = block
+    for key in path:
+        if not isinstance(node, Mapping) or key not in node:
+            return _ABSENT
+        node = node[key]
+    return node
+
+
+def _ranking_decimal(value: Any) -> bool:
+    """A finite decimal as the ranking arithmetic reads it (`app.services.ranking.numeric.D`): a string or an integer,
+    never a float or a bool."""
+    if isinstance(value, bool) or not isinstance(value, (str, int)):
+        return False
+    try:
+        return Decimal(value).is_finite()
+    except (ArithmeticError, ValueError):
+        return False
+
+
+def ranking_problem(block: Any) -> str | None:
+    """The first field of a package's `ranking` block that is not shaped as the E4 replay reads it, as `ranking` or
+    `ranking.<dotted field>`, or None: the block is absent, null (E4's controller policies then report
+    `no_ranking_block`) or an object whose decimal fields are finite decimal strings or integers, whose counts are
+    positive integers, whose flags are booleans, whose `quality.weights` give a decimal for each of V, S, K and F and
+    `ratings` one for each of A, B and C, whose `tier_permissions` A-D are lists of integers, whose `seed` is a string
+    and whose `contexts.clusters` is a list of strings (each read as a context's cluster). The arithmetic a value takes
+    part in is checked by `ranking_replay_problem` when an E4 run is planned."""
+    if block is None:
+        return None
+    if not isinstance(block, Mapping):
+        return "ranking"
+    for path in _RANKING_DECIMALS:
+        if not _ranking_decimal(_ranking_at(block, path)):
+            return "ranking." + ".".join(path)
+    for path in _RANKING_COUNTS:
+        value = _ranking_at(block, path)
+        if type(value) is not int or value < 1:
+            return "ranking." + ".".join(path)
+    for path in _RANKING_FLAGS:
+        if not isinstance(_ranking_at(block, path), bool):
+            return "ranking." + ".".join(path)
+    for name, required in (("quality.weights", _RANKING_WEIGHTS), ("ratings", _RANKING_RATINGS)):
+        values = _ranking_at(block, name.split("."))
+        if not isinstance(values, Mapping) or not set(required) <= set(values) \
+                or not all(isinstance(key, str) and _ranking_decimal(value) for key, value in values.items()):
+            return f"ranking.{name}"
+    for tier in _RANKING_TIERS:
+        value = _ranking_at(block, ("tier_permissions", tier))
+        if not isinstance(value, list) or not all(type(entry) is int for entry in value):
+            return f"ranking.tier_permissions.{tier}"
+    if not isinstance(block.get("seed"), str):
+        return "ranking.seed"
+    clusters = _ranking_at(block, ("contexts", "clusters"))
+    if not isinstance(clusters, list) or not all(isinstance(entry, str) for entry in clusters):
+        return "ranking.contexts.clusters"
+    return None
+
+
 class _Controller:
     """The Phase 9 ranking controller as a routing policy: each request is routed to Algorithm 1's choice for its context
     (`app.services.ranking.selection.select` on the controller's state), then its verified outcome is applied as an
@@ -966,6 +1039,29 @@ class _Controller:
         switched = int(self.state["counts"]["switches"]) - before  # an outcome input changes only its own context
         if switched:
             self.switches.append((t, self.key(topic), switched))
+
+
+def ranking_replay_problem(block: Any, models: Sequence[Mapping[str, Any]]) -> str | None:
+    """`ranking_problem`, then, for a ranking object, a dry run of the replay's controller policies on it before any
+    request is sent: both controllers (`_Controller`, with and without hysteresis) are built over the design's models,
+    each commissioned from one clean and one failed response, and route and learn from one outcome in every context
+    (each cluster and the unscoped one). A block whose values the ranking arithmetic refuses is `ranking`, so that no E4
+    run sends a request whose replay would then fail."""
+    problem = ranking_problem(block)
+    if problem is not None or block is None:
+        return problem
+    commission = {entry["model_id"]: {"clean": 1, "failed": 1, "generated": 2, "mean_q": "0.5"} for entry in models}
+    try:
+        for hysteresis in (True, False):
+            controller = _Controller(block, models, hysteresis=hysteresis, commission=commission)
+            for t, topic in enumerate([*sorted(controller.clusters), None]):
+                controller.eligible(topic)
+                model = controller.choose(t, topic)
+                if model is not None:
+                    controller.observe(t, topic, model, Outcome(y=t % 2, quality=0.5, cost=1.0, first_cost=1.0))
+    except (ArithmeticError, LookupError, TypeError, ValueError, AttributeError):
+        return "ranking"
+    return None
 
 
 DETECTION_RULE = ("MR-2's counting (plan 15.1): the degraded model's responses in the shifted topic, from the shift to the first "

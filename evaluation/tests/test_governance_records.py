@@ -42,7 +42,7 @@ def refusals(tmp_path, **spec):
     base = {"created_at": "2026-11-24T00:00:00Z", "mode": "live", "governance": {"irb_record": None, "osf_record": None}}
     base.update(spec)
     return governance.confirmatory_refusals(base, analysis_plan_sha256=PLAN_SHA, dataset_sha256="d" * 64, dataset_content_sha256=CONTENT_SHA,
-                                            items_states={"frozen": 3}, package_raw={"owner_decisions": {"D-14": {"state": "decided"}}},
+                                            corpus_version=synthetic.CORPUS_VERSION, items_states={"frozen": 3}, package_raw={"owner_decisions": {"D-14": {"state": "decided"}}},
                                             repo_root=REPO_ROOT)
 
 
@@ -75,7 +75,7 @@ def test_dates_and_hashes_are_checked_against_the_run(tmp_path):
 def test_the_refusal_order_with_nothing_supplied(tmp_path):
     reasons = governance.confirmatory_refusals(
         {"created_at": "2026-11-24T00:00:00Z", "mode": "stub", "governance": {}}, analysis_plan_sha256=PLAN_SHA, dataset_sha256="d" * 64,
-        dataset_content_sha256=CONTENT_SHA, items_states={"candidate": 2}, package_raw={"owner_decisions": {"D-14": {"state": "open"}}}, repo_root=REPO_ROOT)
+        dataset_content_sha256=CONTENT_SHA, corpus_version=synthetic.CORPUS_VERSION, items_states={"candidate": 2}, package_raw={"owner_decisions": {"D-14": {"state": "open"}}}, repo_root=REPO_ROOT)
     assert reasons == ["irb_missing", "osf_missing", "D-14 open", "items_not_frozen", "freeze_record_missing", "pre_run_scan_missing",
                        "stub_not_confirmatory"]
 
@@ -106,8 +106,28 @@ _TARGET_LOGS = {"target": "research-logs", "root": "prior-run", "files": 4, "sca
                 "excluded": [{"path": "responses.jsonl", "reason": "research data (model outputs)"}], "files_with_hits": []}
 
 
+def _licensed_entry(**changes):
+    entry = {"id": "research-licensed-t1", "kind": "licensed", "dataset_content_sha256": CONTENT_SHA,
+             "corpus_version": synthetic.CORPUS_VERSION, "shingle_words": 12, "fingerprints": 40, "exact": 0}
+    return {**entry, **changes}
+
+
+_ULQS_ENTRY = {"id": "research-ulqs-t1", "kind": "ulqs", "dataset_content_sha256": CONTENT_SHA, "corpus_version": None,
+               "shingle_words": 6, "fingerprints": 30, "exact": 5}
+
+
 @pytest.mark.parametrize(("overrides", "reason"), [
     ({"result": "fail", "matches_total": 2}, "pre_run_scan_invalid:result"),
+    # Review 22: a licensed set counts only when it was built for this run: alongside its items (the same content sha256)
+    # and for the corpus version they name. A set of any 12-word text, with no binding, never satisfies the gate.
+    ({"fingerprint_sets": [_licensed_entry(dataset_content_sha256=None, corpus_version=None), _ULQS_ENTRY]},
+     "pre_run_scan_invalid:licensed_corpus"),
+    ({"fingerprint_sets": [_licensed_entry(dataset_content_sha256="f" * 64), _ULQS_ENTRY]}, "pre_run_scan_invalid:licensed_corpus"),
+    ({"fingerprint_sets": [_licensed_entry(corpus_version="ANOTHER-CORPUS"), _ULQS_ENTRY]}, "pre_run_scan_invalid:licensed_corpus"),
+    ({"fingerprint_sets": [_licensed_entry(corpus_version=None), _ULQS_ENTRY]}, "pre_run_scan_invalid:licensed_corpus"),
+    ({"fingerprint_sets": [_licensed_entry(corpus_version=["x"]), _ULQS_ENTRY]}, "pre_run_scan_invalid:licensed_corpus"),
+    ({"fingerprint_sets": [_licensed_entry(id="synthetic-licensed-v1"), _ULQS_ENTRY]}, "pre_run_scan_invalid:licensed_corpus"),
+    ({"fingerprint_sets": [_licensed_entry(fingerprints=0), _ULQS_ENTRY]}, "pre_run_scan_invalid:licensed_corpus"),
     ({"result": "incomplete"}, "pre_run_scan_invalid:result"),
     ({"matches_total": 1}, "pre_run_scan_invalid:result"),
     ({"fingerprint_sets": []}, "pre_run_scan_invalid:fingerprint_sets"),
@@ -171,9 +191,19 @@ _TARGET_LOGS = {"target": "research-logs", "root": "prior-run", "files": 4, "sca
 ])
 def test_a_pre_run_scan_must_be_a_passing_research_scan_bound_to_the_items(tmp_path, overrides, reason):
     ok = synthetic.pass_scan(tmp_path / "ok.json", dataset_content_sha256=CONTENT_SHA)
-    assert governance.scan_refusals(ok, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, missing="m") == []
+    assert governance.scan_refusals(ok, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, corpus_version=synthetic.CORPUS_VERSION, missing="m") == []
     broken = synthetic.pass_scan(tmp_path / "broken.json", dataset_content_sha256=CONTENT_SHA, **overrides)
-    assert reason in governance.scan_refusals(broken, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, missing="m")
+    assert reason in governance.scan_refusals(broken, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, corpus_version=synthetic.CORPUS_VERSION, missing="m")
+
+
+def test_a_pre_run_scan_is_refused_for_a_run_whose_items_name_no_single_corpus_version(tmp_path):
+    # The run passes the one corpus version its items name, or None when they name more than one: no licensed set
+    # matches None, so the gate refuses the scan.
+    ok = synthetic.pass_scan(tmp_path / "ok.json", dataset_content_sha256=CONTENT_SHA)
+    assert governance.scan_refusals(ok, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, corpus_version=None, missing="m") == [
+        "pre_run_scan_invalid:licensed_corpus"]
+    assert governance.scan_refusals(ok, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, corpus_version="ANOTHER-CORPUS", missing="m") == [
+        "pre_run_scan_invalid:licensed_corpus"]
 
 
 def test_a_scan_the_scanner_wrote_with_incomplete_coverage_says_incomplete_and_is_refused(tmp_path):
@@ -191,7 +221,7 @@ def test_a_scan_the_scanner_wrote_with_incomplete_coverage_says_incomplete_and_i
                                     "--path", str(tmp_path / "prompts"), "--require-zero", "--report", str(path)]) == 1
     report = json.loads(path.read_text(encoding="utf-8"))
     assert report["matches_total"] == 0 and report["result"] == "incomplete" and report["incomplete_targets"] == ["prompts"]
-    reasons = governance.scan_refusals(synthetic.record_ref(path), REPO_ROOT, dataset_content_sha256=CONTENT_SHA, missing="m")
+    reasons = governance.scan_refusals(synthetic.record_ref(path), REPO_ROOT, dataset_content_sha256=CONTENT_SHA, corpus_version=synthetic.CORPUS_VERSION, missing="m")
     assert "pre_run_scan_invalid:result" in reasons and "pre_run_scan_invalid:coverage" in reasons
     assert governance.INCOMPLETE_REASONS == contamination.INCOMPLETE_REASONS
 
@@ -201,7 +231,7 @@ def test_a_repository_target_s_binary_assets_leave_the_pre_run_scan_complete(tmp
     # gate's reasons equal the scanner's, for each target kind.
     repo = {**_TARGET_REPO, "excluded": [{"path": "logo.png", "reason": "binary"}, {"path": "font.woff2", "reason": "binary"}]}
     ok = synthetic.pass_scan(tmp_path / "ok.json", dataset_content_sha256=CONTENT_SHA, targets=[repo, _TARGET_LOGS])
-    assert governance.scan_refusals(ok, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, missing="m") == []
+    assert governance.scan_refusals(ok, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, corpus_version=synthetic.CORPUS_VERSION, missing="m") == []
     assert governance.INCOMPLETE_REASONS == contamination.INCOMPLETE_REASONS
     assert governance.STRICT_TARGETS == contamination.STRICT_TARGETS
     assert governance.STRICT_INCOMPLETE_REASONS == contamination.STRICT_INCOMPLETE_REASONS
@@ -224,7 +254,7 @@ def test_the_confirmatory_gate_judges_every_record_in_the_run_window(tmp_path, m
     def gate(start=None, today=None, **spec):
         return governance.confirmatory_refusals(
             {"created_at": "2026-11-24T00:00:00Z", "mode": "live", **ok, **spec}, analysis_plan_sha256=PLAN_SHA,
-            dataset_sha256="d" * 64, dataset_content_sha256=CONTENT_SHA, items_states={"frozen": 3},
+            dataset_sha256="d" * 64, dataset_content_sha256=CONTENT_SHA, corpus_version=synthetic.CORPUS_VERSION, items_states={"frozen": 3},
             package_raw={"owner_decisions": {"D-14": {"state": "decided"}}}, repo_root=REPO_ROOT, start=start, today=today)
 
     assert gate() == [] and refusals(tmp_path, **ok) == []
@@ -314,20 +344,20 @@ def test_a_record_path_open_refuses_is_an_invalid_file_never_a_traceback(tmp_pat
         with pytest.raises(governance.GovernanceError) as error:
             governance.resolve_record(nul, REPO_ROOT)
         assert error.value.field == "file"
-        assert governance.scan_refusals(nul, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, missing="m") == ["pre_run_scan_invalid:file"]
+        assert governance.scan_refusals(nul, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, corpus_version=synthetic.CORPUS_VERSION, missing="m") == ["pre_run_scan_invalid:file"]
         assert governance.irb_refusals(nul, governance.run_date({"created_at": synthetic.CREATED}), REPO_ROOT, missing="m") == ["irb_invalid:file"]
         assert governance.is_public(nul, REPO_ROOT) is True, path
 
 
 def test_ci_s_synthetic_scan_report_and_dangling_references_do_not_pass_the_pre_run_scan(tmp_path):
     ci = _ci_scan_report(tmp_path)
-    reasons = governance.scan_refusals(ci, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, missing="m")
+    reasons = governance.scan_refusals(ci, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, corpus_version=synthetic.CORPUS_VERSION, missing="m")
     assert "pre_run_scan_invalid:fingerprint_sets" in reasons and "pre_run_scan_invalid:dataset" in reasons
-    assert governance.scan_refusals(None, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, missing="m") == ["m"]
+    assert governance.scan_refusals(None, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, corpus_version=synthetic.CORPUS_VERSION, missing="m") == ["m"]
     assert governance.scan_refusals({"path": str(tmp_path / "absent.json"), "sha256": "0" * 64}, REPO_ROOT,
-                                    dataset_content_sha256=CONTENT_SHA, missing="m") == ["pre_run_scan_invalid:file"]
+                                    dataset_content_sha256=CONTENT_SHA, corpus_version=synthetic.CORPUS_VERSION, missing="m") == ["pre_run_scan_invalid:file"]
     tampered = dict(ci, sha256="0" * 64)
-    assert governance.scan_refusals(tampered, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, missing="m") == ["pre_run_scan_invalid:sha256"]
+    assert governance.scan_refusals(tampered, REPO_ROOT, dataset_content_sha256=CONTENT_SHA, corpus_version=synthetic.CORPUS_VERSION, missing="m") == ["pre_run_scan_invalid:sha256"]
 
 
 @pytest.mark.parametrize(("builder", "loader", "overrides", "field"), [

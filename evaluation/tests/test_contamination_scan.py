@@ -297,20 +297,27 @@ def test_the_access_log_digest_covers_only_the_files_the_scan_read(tmp_path, mon
 
 
 def test_the_report_names_each_set_s_kind_and_the_ulqs_set_s_dataset():
-    # The report names each set's id, kind and ULQS dataset, and its size (never a fingerprint), so that the confirmatory
-    # gate can refuse a scan made with an empty set. (The licensed set is built from a passage of 12 words or more: an
-    # empty set is refused by set_from_payload, test_a_fingerprint_set_that_would_check_nothing_or_is_malformed_is_refused.)
-    items = synthetic.synthetic_dataset({"A": 1})
-    ulqs_set = contamination.set_from_payload(contamination.build_ulqs(items, SALT, set_id="u"))
-    licensed = contamination.set_from_payload(contamination.build_licensed([fixture()["licensed_passages"][0]], SALT, set_id="l"))
+    # The report names each set's id, kind, dataset and (a licensed set's) corpus version, and its size (never a
+    # fingerprint), so that the confirmatory gate can refuse a scan made with an empty set or with a licensed set built
+    # for another run. (The licensed set is built from a passage of 12 words or more: an empty set is refused by
+    # set_from_payload, test_a_fingerprint_set_that_would_check_nothing_or_is_malformed_is_refused.)
     from evaluation.qcai_eval import ulqs
 
-    report = contamination.report([], [licensed, ulqs_set])
+    items = synthetic.synthetic_dataset({"A": 1})
+    content = ulqs.dataset_content_sha256(items)
+    ulqs_set = contamination.set_from_payload(contamination.build_ulqs(items, SALT, set_id="u"))
+    licensed = contamination.set_from_payload(contamination.build_licensed(
+        [fixture()["licensed_passages"][0]], SALT, set_id="l", corpus_version=synthetic.CORPUS_VERSION, dataset_content_sha256=content))
+    unbound = contamination.set_from_payload(contamination.build_licensed([fixture()["licensed_passages"][0]], SALT, set_id="l0"))
+
+    report = contamination.report([], [licensed, ulqs_set, unbound])
     assert report["fingerprint_sets"] == [
-        {"id": "l", "kind": "licensed", "dataset_content_sha256": None, "shingle_words": 12, "fingerprints": len(licensed.shingles),
-         "exact": 0},
-        {"id": "u", "kind": "ulqs", "dataset_content_sha256": ulqs.dataset_content_sha256(items), "shingle_words": 6,
-         "fingerprints": len(ulqs_set.shingles), "exact": len(ulqs_set.exact)}]
+        {"id": "l", "kind": "licensed", "dataset_content_sha256": content, "corpus_version": synthetic.CORPUS_VERSION,
+         "shingle_words": 12, "fingerprints": len(licensed.shingles), "exact": 0},
+        {"id": "u", "kind": "ulqs", "dataset_content_sha256": content, "corpus_version": None, "shingle_words": 6,
+         "fingerprints": len(ulqs_set.shingles), "exact": len(ulqs_set.exact)},
+        {"id": "l0", "kind": "licensed", "dataset_content_sha256": None, "corpus_version": None, "shingle_words": 12,
+         "fingerprints": len(unbound.shingles), "exact": 0}]
     assert licensed.shingles and ulqs_set.shingles and ulqs_set.exact
     assert not any(fingerprint in json.dumps(report) for fingerprint in licensed.shingles | ulqs_set.shingles | ulqs_set.exact)
 
@@ -344,7 +351,12 @@ _ABSENT = object()
     (_licensed_payload(exact=[1]), "exact"),
     (_licensed_payload(fingerprint_set_id=""), "fingerprint_set_id"),
     (_licensed_payload(fingerprint_set_id=["x"]), "fingerprint_set_id"),
-    (_licensed_payload(dataset_content_sha256="f" * 64), "dataset_content_sha256"),
+    (_licensed_payload(dataset_content_sha256="x"), "dataset_content_sha256"),
+    (_licensed_payload(dataset_content_sha256=["f" * 64]), "dataset_content_sha256"),
+    (_licensed_payload(corpus_version=""), "corpus_version"),
+    (_licensed_payload(corpus_version=5), "corpus_version"),
+    ({**contamination.build_ulqs([{"question": "an invented question of words"}], SALT, set_id="u"), "corpus_version": "x"},
+     "corpus_version"),
     ({**contamination.build_ulqs([{"question": "an invented question of words"}], SALT, set_id="u"), "dataset_content_sha256": "x"},
      "dataset_content_sha256"),
     ([1], "not a qcai"),
@@ -606,3 +618,17 @@ def test_the_scanner_logs_research_fingerprints_targets_and_its_report(tmp_path,
         assert module.main(argv + ["--research-logs", str(run), "--access-log", str(access), "--actor-role", "MLE"]) == 2, argv
         assert "not a private-plane path" in capsys.readouterr().err, argv
     assert not access.exists() and not public_report.exists()
+
+
+@pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085"])
+def test_the_exact_family_finds_a_ulqs_text_holding_a_raw_line_separator_in_a_plain_log(separator):
+    # Review 22: the scanner's segments came from str.splitlines, which breaks at U+2028, U+2029 and U+0085, so a ULQS
+    # text holding one, logged raw in a plain text line, was never a whole segment and its exact fingerprint was missed.
+    # The segments now also split at LF only.
+    import dataclasses
+
+    salt = b"\x5a" * 32
+    text = f"an invented question{separator}about an invented archive"
+    built = contamination.set_from_payload(contamination.build_ulqs([{"question": text}], salt, set_id="research-ulqs-t1"))
+    exact_only = dataclasses.replace(built, shingles=frozenset())
+    assert contamination.scan_text(f"an invented log line. {text}", [exact_only])["ulqs"] == 1

@@ -36,6 +36,7 @@ import unicodedata
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from . import inputs
+from .canonical import jsonl_lines
 
 LICENSED_FORMAT = "qcai-licensed-fingerprints/1"
 ULQS_FORMAT = "qcai-ulqs-fingerprints/1"
@@ -130,13 +131,23 @@ def _negative_texts(block: Any) -> list[str]:
     return _texts(block.get("sections_searched")) + _texts(block.get("queries")) + _texts(block.get("limitations"))
 
 
-def build_licensed(texts: Iterable[str], salt: bytes, *, set_id: str, n: int = LICENSED_N) -> dict[str, Any]:
+def build_licensed(texts: Iterable[str], salt: bytes, *, set_id: str, n: int = LICENSED_N, corpus_version: str | None = None,
+                   dataset_content_sha256: str | None = None) -> dict[str, Any]:
+    """A licensed set. The builder (`scripts/build_licensed_fingerprints.py`) binds it to the run it is made for: the
+    corpus version the ULQS items name (`corpus_version`) and the status-free content sha256 of the items it was built
+    alongside (`dataset_content_sha256`), which the pre-run scan gate (`governance.scan_refusals`) compares with the
+    run's."""
     texts = list(texts)
     shingles: set[str] = set()
     for text in texts:
         shingles |= fingerprint_shingles(text, salt, n)
-    return {"format": LICENSED_FORMAT, "hash": HASH, "fingerprint_set_id": set_id, "salt_hex": salt.hex(), "shingle_words": n,
-            "fingerprints": sorted(shingles), "sources": {"documents": len(texts), "shingles": len(shingles)}}
+    payload = {"format": LICENSED_FORMAT, "hash": HASH, "fingerprint_set_id": set_id, "salt_hex": salt.hex(), "shingle_words": n,
+               "fingerprints": sorted(shingles), "sources": {"documents": len(texts), "shingles": len(shingles)}}
+    if corpus_version is not None:
+        payload["corpus_version"] = corpus_version
+    if dataset_content_sha256 is not None:
+        payload["dataset_content_sha256"] = dataset_content_sha256
+    return payload
 
 
 def build_ulqs(items: Iterable[Mapping[str, Any]], salt: bytes, *, set_id: str, n: int = ULQS_N) -> dict[str, Any]:
@@ -166,7 +177,8 @@ class FingerprintSet:
     n: int
     shingles: frozenset[str]
     exact: frozenset[str]
-    dataset_content_sha256: str | None = None  # a ULQS set: the status-free content sha256 of the items it was built from
+    dataset_content_sha256: str | None = None  # the status-free content sha256 of the items it was built from (or alongside)
+    corpus_version: str | None = None  # a licensed set: the corpus version of the ULQS items it was built alongside
 
 
 _FINGERPRINT = re.compile(r"[0-9a-f]{32}")
@@ -185,7 +197,8 @@ def set_from_payload(payload: Any) -> FingerprintSet:
     ULQS format with the registered hash; a hex salt of at least `MIN_SALT_BYTES`; `shingle_words` absent or the set's
     registered N (`SET_N`: 12 licensed, 6 ULQS); lists of 32-hex fingerprints; a non-empty set (a licensed set needs a
     shingle, a ULQS set a shingle or an exact fingerprint), so that an empty set can never let a scan pass without
-    anything being checked; a non-empty string id; and, for a ULQS set, a 64-hex `dataset_content_sha256` or none."""
+    anything being checked; a non-empty string id; a 64-hex `dataset_content_sha256` or none; and, for a licensed set, a
+    non-empty string `corpus_version` or none (a ULQS set carries none)."""
     if not isinstance(payload, Mapping) or payload.get("hash") != HASH or payload.get("format") not in (LICENSED_FORMAT, ULQS_FORMAT):
         raise ValueError("not a qcai licensed or ULQS fingerprint file")
     kind = "licensed" if payload["format"] == LICENSED_FORMAT else "ulqs"
@@ -207,9 +220,13 @@ def set_from_payload(payload: Any) -> FingerprintSet:
     if not shingles and not (kind == "ulqs" and exact):
         raise ValueError(f"fingerprint file: an empty {kind} set (no fingerprint to check)")
     dataset = payload.get("dataset_content_sha256")
-    if dataset is not None and not (kind == "ulqs" and isinstance(dataset, str) and _SHA256.fullmatch(dataset)):
+    if dataset is not None and not (isinstance(dataset, str) and _SHA256.fullmatch(dataset)):
         raise ValueError("fingerprint file: dataset_content_sha256")
-    return FingerprintSet(id=set_id, kind=kind, salt=salt, n=n, shingles=shingles, exact=exact, dataset_content_sha256=dataset)
+    corpus_version = payload.get("corpus_version")
+    if corpus_version is not None and not (kind == "licensed" and isinstance(corpus_version, str) and corpus_version):
+        raise ValueError("fingerprint file: corpus_version")
+    return FingerprintSet(id=set_id, kind=kind, salt=salt, n=n, shingles=shingles, exact=exact, dataset_content_sha256=dataset,
+                          corpus_version=corpus_version)
 
 
 def load_fingerprint_file(path: Path) -> FingerprintSet:
@@ -235,14 +252,17 @@ def synthetic_sets(fixture_path: Path) -> list[FingerprintSet]:
 
 
 def set_summary(fingerprint_set: FingerprintSet) -> dict[str, Any]:
-    """A set as the scan report names it: its id, kind and ULQS dataset, and its size (never a fingerprint)."""
+    """A set as the scan report names it: its id, kind, dataset and corpus version, and its size (never a fingerprint)."""
     return {"id": fingerprint_set.id, "kind": fingerprint_set.kind, "dataset_content_sha256": fingerprint_set.dataset_content_sha256,
+            "corpus_version": fingerprint_set.corpus_version,
             "shingle_words": fingerprint_set.n, "fingerprints": len(fingerprint_set.shingles), "exact": len(fingerprint_set.exact)}
 
 
 def _segments(text: str) -> list[str]:
+    """Every line of `text`, split at LF only (`canonical.jsonl_lines`, so a text holding a raw U+2028, U+2029 or U+0085
+    stays whole) and at every `str.splitlines` boundary too, plus each line's sentences and JSON string pieces."""
     segments = []
-    for line in text.splitlines():
+    for line in dict.fromkeys(jsonl_lines(text) + text.splitlines()):
         segments.append(line)
         segments += re.split(r"(?<=[.!?])\s+|\"\s*[,:]\s*\"|\\n", line)
     return segments

@@ -308,15 +308,16 @@ def commit_for_test(monkeypatch: Any, package: Mapping[str, Any]) -> None:
     monkeypatch.setattr(governance, "committed_package_sha256s", lambda: committed() | {package["sha256"]})
 
 
-def pass_scan(path: Path, *, dataset_content_sha256: str, **overrides: Any) -> dict[str, str]:
+def pass_scan(path: Path, *, dataset_content_sha256: str, corpus_version: str = CORPUS_VERSION, **overrides: Any) -> dict[str, str]:
     """A pre-run scan report shaped like one that passes the gate (governance.scan_refusals): a licensed and a ULQS set
-    with research ids and non-empty sizes, the ULQS set bound to the items, a repository and a research-logs target that each scanned a file.
-    Its counts are invented; tests pass `overrides` to break one condition at a time."""
+    with research ids and non-empty sizes, the ULQS set bound to the items and the licensed set to the items and their
+    corpus version, a repository and a research-logs target that each scanned a file. Its counts are invented; tests
+    pass `overrides` to break one condition at a time."""
     value = {"report": "qcai-research-log-scan", "format_version": 1,
-             "fingerprint_sets": [{"id": "research-licensed-t1", "kind": "licensed", "dataset_content_sha256": None,
-                                   "shingle_words": 12, "fingerprints": 40, "exact": 0},
+             "fingerprint_sets": [{"id": "research-licensed-t1", "kind": "licensed", "dataset_content_sha256": dataset_content_sha256,
+                                   "corpus_version": corpus_version, "shingle_words": 12, "fingerprints": 40, "exact": 0},
                                   {"id": "research-ulqs-t1", "kind": "ulqs", "dataset_content_sha256": dataset_content_sha256,
-                                   "shingle_words": 6, "fingerprints": 30, "exact": 5}],
+                                   "corpus_version": None, "shingle_words": 6, "fingerprints": 30, "exact": 5}],
              "targets": [{"target": "repository", "root": ".", "files": 3, "scanned": 2, "excluded": [], "files_with_hits": []},
                          {"target": "research-logs", "root": "prior-run", "files": 4, "scanned": 3, "excluded": [],
                           "files_with_hits": []}],

@@ -47,7 +47,11 @@ log is `<plane>/access.jsonl` (digests only).
    least 32 bytes, never printed or committed). Build the ULQS set from the exact frozen item file the run spec pins:
    the runner accepts a pre-run scan only when its ULQS set's `dataset_content_sha256` is the status-free content sha256
    of the run's items, and review edits (human review, `item_kind`) change it, so a set built before the freeze is
-   refused (`pre_run_scan_invalid:dataset`). Rebuild it whenever the frozen set changes.
+   refused (`pre_run_scan_invalid:dataset`). The licensed set is bound to the same run: it records the corpus version
+   the items name and their content sha256, and the runner accepts it only when both are the run's
+   (`pre_run_scan_invalid:licensed_corpus`), so build both sets in one call. Rebuild them whenever the frozen set
+   changes. The builder checks only that each licensed text gives a fingerprint: that the `--licensed-text` files are
+   the licensed corpus volumes the catalog's corpus version names is the operator's to ensure (DI-141).
 6. **Pre-run scan.** `python scripts/scan_research_logs.py --fingerprints <plane>/data/licensed.json --ulqs-fingerprints
    <plane>/data/ulqs.json --repo --include-env-files --path <plane>/records [--research-logs <plane>/runs/<id> for each
    earlier run] --require-zero --report <plane>/records/pre-run-scan.json --access-log <plane>/access.jsonl --actor-role
@@ -72,8 +76,10 @@ log is `<plane>/access.jsonl` (digests only).
    one, or any output the run cannot write, is refused (`output_unwritable`, exit 2) with its `refused` outcome logged.
    Every input is decoded strictly (no `NaN`, infinity, overflowing, underflowing or out-of-range number, and no string
    that cannot be encoded as UTF-8, such as an escaped unpaired surrogate) and shape-checked by its own validator before
-   any request is sent (the package, the harness parameters, the rc1 mapping, the fingerprint files and the agent-check
-   record among them); an exit 10 (`internal_error`, naming only the exception's class) is a harness defect no
+   any request is sent (the package with its ranking block, which an E4 run also dry-runs through the controller
+   policies, the harness parameters, the rc1 mapping, the previous item set, the fingerprint files, the salt file, the
+   corpus-text documents (one that is not UTF-8 is unavailable) and the agent-check record among them); JSONL files
+   are split at LF only, so a text holding a raw U+2028, U+2029 or U+0085 reads back as written; an exit 10 (`internal_error`, naming only the exception's class) is a harness defect no
    validator caught, never a property of the data: keep the inputs as they are, the run's `refused` outcome is in the
    access log, and report it. `created_at` may be any past day (never a future one, `created_at_in_future`). The checkpoint is the operator's
    own file, so this is a consistency check, not tamper evidence (DI-143); an earlier start day only tightens the

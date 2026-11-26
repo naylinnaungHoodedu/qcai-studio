@@ -338,3 +338,54 @@ def test_transition_problems_compare_an_item_set_with_its_predecessor():
     assert [(p.item_id, p.code) for p in ulqs.transition_problems(frozen, frozen[1:])] == [("SYN-A-001", "removed")]
     assert [p.code for p in ulqs.transition_problems(frozen[1:], frozen)] == ["transition"]  # a new item cannot start frozen
     assert ulqs.transition_problems(frozen, [{**frozen[0], "status": "retired"}] + frozen[1:]) == []
+
+
+def test_a_predecessor_whose_status_or_item_id_is_not_a_string_is_a_problem_never_an_exception(tmp_path):
+    # Review 22: a previous item whose status was a list raised TypeError in check_transition (an unhashable dict key), and
+    # one whose item_id was a list raised TypeError in agent_check_failures (an unhashable set member). validate_ulqs.py
+    # now validates the previous set first (exit 2); the checks themselves also read such an item as a problem.
+    reviewed = [{**item, "status": "review", "item_kind": "instructional",
+                 "validation": {**item["validation"], "human_reviewed": True}} for item in synthetic.synthetic_dataset({"A": 2, "C": 1})]
+    frozen = [{**item, "status": "frozen"} for item in reviewed]
+    bad_status = [{**reviewed[0], "status": [1]}] + reviewed[1:]
+    assert [(p.item_id, p.path, p.code) for p in ulqs.transition_problems(bad_status, frozen)] == [("SYN-A-001", "status", "transition")]
+    assert [p.code for p in ulqs.check_transition(reviewed[0], {**frozen[0], "status": [1]})] == ["transition"]
+    raw = json.loads(ulqs.DEFAULT_FREEZE_RULES.read_text(encoding="utf-8"))
+    raw["agent_check"]["pinned_models"] = [synthetic.SYNTHETIC_AGENT_MODEL]
+    (tmp_path / "rules.json").write_text(json.dumps(raw), encoding="utf-8")
+    rules = ulqs.load_freeze_rules(tmp_path / "rules.json")
+    record = synthetic.agent_check(frozen)
+    assert ulqs.agent_check_failures(record, frozen, rules=rules, previous=reviewed) == []
+    bad_id = [{**reviewed[0], "item_id": [1]}] + reviewed[1:]
+    assert ulqs.agent_check_failures(record, frozen, rules=rules, previous=bad_id) == []
+
+
+# The characters str.splitlines breaks at that JSON allows raw inside a string (dumps_line writes them raw).
+LINE_SEPARATORS = ("\u2028", "\u2029", "\u0085")
+
+
+@pytest.mark.parametrize("separator", LINE_SEPARATORS)
+def test_read_jsonl_reads_back_every_record_dumps_line_writes(tmp_path, separator):
+    # Review 22: read_jsonl split with str.splitlines, which also breaks at U+2028, U+2029 and U+0085, so a record
+    # dumps_line wrote with one of them in a string came back as two fragments ("line 1: not valid JSON"). It splits at
+    # LF only; a CRLF file still reads as LF, and the empty piece after a final LF is not a line.
+    from evaluation.qcai_eval.canonical import dumps_line, jsonl_lines, write_lf
+
+    records = [{"q": f"an invented{separator}text"}, {"q": "another invented text"}]
+    path = tmp_path / "records.jsonl"
+    write_lf(path, "".join(dumps_line(record) for record in records))
+    assert separator in path.read_text(encoding="utf-8")  # written raw, not escaped
+    assert read_jsonl(path) == records
+    path.write_bytes("".join(dumps_line(record) for record in records).replace("\n", "\r\n").encode("utf-8"))
+    assert read_jsonl(path) == records
+    assert jsonl_lines("a\r\nb\n") == ["a", "b"] and jsonl_lines("a\nb") == ["a", "b"] and jsonl_lines("") == []
+
+
+@pytest.mark.parametrize("separator", LINE_SEPARATORS)
+def test_the_legacy_loader_reads_a_line_whose_string_holds_a_raw_line_separator(tmp_path, separator):
+    path = tmp_path / "manifest.jsonl"
+    record = {"id": "SYN-LQS-1", "stratum": "answerable_single_source", "question": f"an invented{separator}question",
+              "expected_answerable": True, "expected_span_ids": []}
+    path.write_bytes((json.dumps(record, ensure_ascii=False) + "\n").encode("utf-8"))
+    items = load_lqs(path)
+    assert len(items) == 1 and items[0].question == record["question"]

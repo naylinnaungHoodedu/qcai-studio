@@ -329,11 +329,15 @@ def record_refusals(reference: Any, loader: Callable[[Path], dict[str, Any]], re
         return [f"{invalid}:{error.field}"], None
 
 
-def scan_refusals(reference: Any, repo_root: Path, *, dataset_content_sha256: str, missing: str) -> list[str]:
+def scan_refusals(reference: Any, repo_root: Path, *, dataset_content_sha256: str, corpus_version: str | None,
+                  missing: str) -> list[str]:
     """The pre-run contamination scan (plan L "Stop: contamination"; 10.5(3)): a resolved `qcai-research-log-scan` report
     that passed with zero matches, made with a licensed and a ULQS research fingerprint set (never only the synthetic
     fixture's or the self-test's), each non-empty by the size the report records (a licensed set with at least one
-    shingle, a ULQS set with at least one shingle or exact fingerprint), whose ULQS set was built from this run's items (the status-free content sha256), over
+    shingle, a ULQS set with at least one shingle or exact fingerprint), whose ULQS set was built from this run's items (the
+    status-free content sha256) and whose licensed set was built for this run (`pre_run_scan_invalid:licensed_corpus`
+    otherwise): alongside this run's items (the same content sha256) and for the corpus version they name
+    (`corpus_version`, None when the run's items name more than one, which no set matches), over
     the tracked repository (tests and public artifacts) and at least one research-logs or path target (logs, prompts),
     with full coverage: every target scanned a file, none excluded a file as too large or unreadable, and no research-logs
     or path target excluded a file as binary or not text (plan 10.5(3): "pre-run scan proving no ULQS text in prompts,
@@ -362,6 +366,10 @@ def scan_refusals(reference: Any, repo_root: Path, *, dataset_content_sha256: st
         reasons.append("pre_run_scan_invalid:fingerprint_sets")
     if not any(entry.get("kind") == "ulqs" and entry.get("dataset_content_sha256") == dataset_content_sha256 for entry in sets):
         reasons.append("pre_run_scan_invalid:dataset")
+    if corpus_version is None or not any(
+            entry.get("kind") == "licensed" and entry.get("dataset_content_sha256") == dataset_content_sha256
+            and entry.get("corpus_version") == corpus_version for entry in sets):
+        reasons.append("pre_run_scan_invalid:licensed_corpus")
     targets = [target for target in scan["targets"] if isinstance(target, Mapping)]
     scanned = {_text(target.get("target")) for target in targets if _count(target.get("scanned")) > 0}
     if "repository" not in scanned or not scanned & {"research-logs", "path"}:
@@ -394,7 +402,7 @@ def _list(value: Any) -> list[Any]:
 
 
 def confirmatory_refusals(spec: Mapping[str, Any], *, analysis_plan_sha256: str, dataset_sha256: str, dataset_content_sha256: str,
-                          items_states: Mapping[str, int], package_raw: Mapping[str, Any], repo_root: Path,
+                          corpus_version: str | None, items_states: Mapping[str, int], package_raw: Mapping[str, Any], repo_root: Path,
                           recording_source: str | None = None, start: _dt.date | None = None,
                           today: _dt.date | None = None) -> list[str]:
     """The confirmatory gate's reasons, in order (spec 4.10), judged in the run window (`start`, `today`; both default to
@@ -434,7 +442,7 @@ def confirmatory_refusals(spec: Mapping[str, Any], *, analysis_plan_sha256: str,
         except GovernanceError:
             reasons.append("freeze_record_failed")
     reasons += scan_refusals(spec.get("pre_run_scan"), repo_root, dataset_content_sha256=dataset_content_sha256,
-                             missing="pre_run_scan_missing")
+                             corpus_version=corpus_version, missing="pre_run_scan_missing")
     if spec.get("mode") == "stub":
         reasons.append("stub_not_confirmatory")
     if spec.get("mode") == "recorded" and recording_source != "live":

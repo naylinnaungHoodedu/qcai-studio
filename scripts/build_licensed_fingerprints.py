@@ -14,8 +14,11 @@ ULQS items are validated (`ulqs.validate_dataset`) before any fingerprint is bui
 
 Exit codes: 0 ok; 2 refused path or usage, a licensed text or the ULQS file unreadable, a licensed text that is not
 text or .docx or that holds fewer than 12 words (it gives no shingle, so it would check nothing), or an output or the
-access log that cannot be written; 3 bad salt; 4 the ULQS items are not valid JSON lines or fail validation, or give an
-empty ULQS set (no text of at least 3 words); nothing is written on a refusal. Every set written reads back as the
+access log that cannot be written; 3 bad salt (a salt file that cannot be read or is not UTF-8 included); 4 the ULQS
+items are not valid JSON lines or fail validation, name more than one corpus version, or give an empty ULQS set (no text
+of at least 3 words); nothing is written on a refusal. The licensed set records the items' corpus version and their
+status-free content sha256 (`corpus_version`, `dataset_content_sha256`), which the pre-run scan gate compares with the
+run's (`governance.scan_refusals`). Every set written reads back as the
 scanner reads it (`contamination.set_from_payload`);
 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
 """
@@ -44,7 +47,7 @@ def _salt(args: argparse.Namespace) -> bytes | None:
     else:
         try:
             value = args.salt_file.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, ValueError):  # a salt file that cannot be read or is not UTF-8 (UnicodeDecodeError) is a bad salt
             return None
     try:
         salt = bytes.fromhex(value.strip())
@@ -127,7 +130,14 @@ def _main(argv: list[str] | None = None) -> int:
             print(f"problem: {problem}")
         print(f"refused (exit 4): {len(problems)} ULQS schema problems", file=sys.stderr)
         return 4
-    licensed = contamination.build_licensed(texts, salt, set_id=args.set_id)
+    # The licensed set is bound to the run it is made for (`governance.scan_refusals`): the one corpus version the ULQS
+    # items name and the content sha256 of those items.
+    corpus_versions = sorted({item["corpus_version"] for item in items})
+    if len(corpus_versions) != 1:
+        print(f"refused (exit 4): the ULQS items name {len(corpus_versions)} corpus versions, not one", file=sys.stderr)
+        return 4
+    licensed = contamination.build_licensed(texts, salt, set_id=args.set_id, corpus_version=corpus_versions[0],
+                                            dataset_content_sha256=ulqs.dataset_content_sha256(items))
     ulqs_set = contamination.build_ulqs(items, salt, set_id=args.set_id)
     # Each set must read back as the scanner reads it (contamination.set_from_payload): never write a set it refuses,
     # an empty one among them (a ULQS set whose items hold no text of at least 3 words).
