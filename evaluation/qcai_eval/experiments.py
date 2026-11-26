@@ -51,7 +51,7 @@ from decimal import Decimal
 from fractions import Fraction
 import hashlib
 import json
-from math import sqrt
+from math import isfinite, sqrt
 from pathlib import Path
 import re
 from typing import Any, Callable, Mapping, Sequence
@@ -130,23 +130,29 @@ def _positive_int(value: Any, low: int = 1) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= low
 
 
-def _decimal(value: Any, *, positive: bool = False, unit: bool = False) -> bool:
+def _number(value: Any) -> Fraction | None:
+    """A decimal or rational string the computation can use: Fraction-readable and float-representable (finite once
+    converted, so that '1e400' is refused here, not an OverflowError or an infinite figure after the run)."""
     if not isinstance(value, str):
-        return False
+        return None
     try:
         number = Fraction(value)
-    except (ValueError, ZeroDivisionError):
+        return number if isfinite(float(number)) else None
+    except (ValueError, ZeroDivisionError, OverflowError):
+        return None
+
+
+def _decimal(value: Any, *, positive: bool = False, unit: bool = False) -> bool:
+    number = _number(value)
+    if number is None:
         return False
     return (not positive or number > 0) and (not unit or 0 < number < 1)
 
 
 def _rational(value: Any, low: Fraction, high: Fraction | None = None) -> bool:
-    """A rational string in [low, high] (high None: unbounded)."""
-    if not isinstance(value, str):
-        return False
-    try:
-        number = Fraction(value)
-    except (ValueError, ZeroDivisionError):
+    """A float-representable rational string (`_number`) in [low, high] (high None: no upper bound)."""
+    number = _number(value)
+    if number is None:
         return False
     return number >= low and (high is None or number <= high)
 
@@ -329,7 +335,7 @@ def _claims_of(lines: Sequence[Mapping[str, Any]], *, live: set[str], family_of:
                kind: str) -> list[Claim]:
     claims = []
     for line in lines:
-        if line.get("item_id") not in live or not isinstance(line.get("request_key"), str):
+        if not isinstance(line.get("item_id"), str) or line["item_id"] not in live or not isinstance(line.get("request_key"), str):
             raise DesignRefused(3, [f"{kind}_items"])
         if not _line_ok(line):
             raise DesignRefused(3, [f"{kind}_invalid"])

@@ -983,6 +983,8 @@ def _verification_edit(kind, lines):
         labelled["unit"] = 3
     elif kind == "item":
         labelled["item_id"] = "SYN-A-999"
+    elif kind == "item_list":
+        labelled["item_id"] = [labelled["item_id"]]  # unhashable: refused, never a TypeError from the set membership test
     elif kind == "unlabelled":
         for line in lines:
             for claim in line["claims"]:
@@ -992,7 +994,8 @@ def _verification_edit(kind, lines):
 
 @pytest.mark.parametrize(("kind", "code", "reason"), [
     ("cited", 3, "verification_set_invalid"), ("claims", 3, "verification_set_invalid"), ("replicate", 3, "verification_set_invalid"),
-    ("unit", 3, "verification_set_invalid"), ("item", 3, "verification_set_items"), ("unlabelled", 2, "verification_set_empty"),
+    ("unit", 3, "verification_set_invalid"), ("item", 3, "verification_set_items"), ("item_list", 3, "verification_set_items"),
+    ("unlabelled", 2, "verification_set_empty"),
 ])
 def test_e2_refuses_a_verification_set_it_cannot_read_as_labelled_claims(tmp_path, monkeypatch, kind, code, reason):
     spec, source = _e2_spec(tmp_path, monkeypatch)
@@ -1155,6 +1158,10 @@ def test_e3_records_its_exact_set_comparison_as_the_stand_in_for_entailment_and_
 @pytest.mark.parametrize(("experiment", "change", "reason"), [
     ("E4", {"epsilon": "abc"}, "design.epsilon"), ("E4", {"epsilon": "2"}, "design.epsilon"), ("E4", {"epsilon": 0.1}, "design.epsilon"),
     ("E4", {"linucb_alpha": [1]}, "design.linucb_alpha"), ("E4", {"linucb_alpha": "-1"}, "design.linucb_alpha"),
+    # Fraction-readable but not float-representable: refused here, never an OverflowError in the computation after the run.
+    ("E4", {"linucb_alpha": "1e400"}, "design.linucb_alpha"),
+    ("E4", {"local_cost": {"energy": "1e400", "amortized_hardware": "1"}}, "design.local_cost"),
+    ("E4", {"models": [{**E4_MODELS[0], "price_per_input_unit": "1e400"}, *E4_MODELS[1:]]}, "design.models"),
     ("E4", {"local_cost": {"energy": "x", "amortized_hardware": "1"}}, "design.local_cost"),
     ("E4", {"models": [{**E4_MODELS[0], "price_per_input_unit": "0"}, *E4_MODELS[1:]]}, "design.models"),
     ("E4", {"models": [{key: value for key, value in E4_MODELS[0].items() if key != "price_per_output_unit"}, *E4_MODELS[1:]]},
@@ -1297,6 +1304,17 @@ def test_e4_gates_each_hypothesis_on_the_labels_it_reads(tmp_path, monkeypatch):
         "H4a": "awaiting_labels", "H4b": "awaiting_labels"}
     record = runner.execute_run(plan, labelled_except("model-z", "GATE"), tmp_path / "all")
     assert record["registered_tests"]["pending"] == [] and "p_value" in record["registered_tests"]["hypotheses"]["H4a"]
+    # The metrics read replicate 1 only: claims of replicates 2 and 3 left unlabelled in every cell hold neither hypothesis.
+    assert any(request.replicate > 1 for request in plan.requests)
+
+    def labelled_first_replicate(request):
+        if request.gold == "abstain":
+            return "abstained", []
+        return "answered", ["supported" if request.replicate == 1 else None]
+
+    record = runner.execute_run(plan, _scripted(labelled_first_replicate), tmp_path / "first")
+    tests = record["registered_tests"]
+    assert tests["pending"] == [] and "p_value" in tests["hypotheses"]["H4a"] and "p_value" in tests["hypotheses"]["H4b"]
 
 
 def test_e4_h4b_s_tost_is_the_paired_tost_of_the_pinned_eqc_ratings(tmp_path, monkeypatch):
@@ -1375,6 +1393,10 @@ def test_the_controller_routes_by_algorithm_1_and_counts_detection_false_alarms_
     plan.extra["design"]["design"]["shift"]["at"] = 20
     run = experiments._replay_stream(plan, failing, list(failing), sorted(PRICE), "s")["policies"]["controller"]
     assert run["switches"] == 1 and run["switches_per_1000_drift_free"] == {"unscoped|explanation|2": 0.0} and run["false_alarms"] == 10
+    # The shift at 26 of 30: the demotion at the 25th is before it, and the denominator is the 26 drift-free requests only.
+    plan.extra["design"]["design"]["shift"]["at"] = 26
+    run = experiments._replay_stream(plan, failing, list(failing), sorted(PRICE), "s")["policies"]["controller"]
+    assert run["switches"] == 1 and run["switches_per_1000_drift_free"] == {"unscoped|explanation|2": pytest.approx(1000 / 26)}
     # Detection counts the degraded model's responses in the shifted topic up to the first alarm on its stream for that
     # topic's context. Two failures in another topic first (seed s54 draws B, B, then shifted-topic units): model-a's global
     # stream alarms at its fourth error (the second degraded response), the shifted topic's stream at its own fourth.
