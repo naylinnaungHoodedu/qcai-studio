@@ -130,23 +130,35 @@ def _positive_int(value: Any, low: int = 1) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= low
 
 
-def _number(value: Any) -> Fraction | None:
-    """A decimal or rational string the computation can use: Fraction-readable and float-representable (finite once
-    converted, so that '1e400' is refused here, not an OverflowError or an infinite figure after the run)."""
+PRICE_MAX = Fraction(10 ** 6)  # USD per unit: keeps the replay's cost units inside the controller's exact arithmetic
+
+
+def _number(value: Any, *, decimal: bool = False) -> Fraction | None:
+    """A rational string the computation can use: Fraction-readable and float-representable (finite once converted, so
+    that '1e400' is refused here, not an OverflowError or an infinite figure after the run). With `decimal`, a value the
+    computation reads with Decimal: it must also be Decimal-readable and finite there ('1/2' is refused, not a
+    decimal.InvalidOperation after the run)."""
     if not isinstance(value, str):
         return None
     try:
+        if decimal and not Decimal(value).is_finite():
+            return None
         number = Fraction(value)
         return number if isfinite(float(number)) else None
-    except (ValueError, ZeroDivisionError, OverflowError):
+    except (ValueError, ArithmeticError):
         return None
 
 
-def _decimal(value: Any, *, positive: bool = False, unit: bool = False) -> bool:
-    number = _number(value)
+def _decimal(value: Any, *, positive: bool = False, unit: bool = False, low: Fraction | None = None,
+             high: Fraction | None = None) -> bool:
+    """A Decimal-readable, float-representable string (`_number` with `decimal`). `positive`: above 0 and still above 0
+    as a float ('1e-400' underflows to 0.0 and is refused, never a division by a zero cost); `unit`: in (0, 1); `low`,
+    `high`: in [low, high]."""
+    number = _number(value, decimal=True)
     if number is None:
         return False
-    return (not positive or number > 0) and (not unit or 0 < number < 1)
+    return ((not positive or (number > 0 and float(number) > 0)) and (not unit or 0 < number < 1)
+            and (low is None or number >= low) and (high is None or number <= high))
 
 
 def _rational(value: Any, low: Fraction, high: Fraction | None = None) -> bool:
@@ -172,27 +184,36 @@ PRICE_KEYS = ("price_per_input_unit", "price_per_output_unit")
 
 def _later_price_ok(value: Any) -> bool:
     """A model's optional later list price: {"from": "YYYY-MM-DD", "price_per_input_unit", "price_per_output_unit"},
-    positive decimals (VBT RevB Sec. VIII-D: "at both Gemini prices if runs straddle 1 January 2027")."""
+    positive decimals up to PRICE_MAX (`_price_ok`; VBT RevB Sec. VIII-D: "at both Gemini prices if runs straddle 1 January
+    2027")."""
     if value is None:
         return True
     return (isinstance(value, Mapping) and set(value) == {"from", *PRICE_KEYS} and _day(value.get("from"))
-            and all(_decimal(value.get(key), positive=True) for key in PRICE_KEYS))
+            and all(_price_ok(value.get(key)) for key in PRICE_KEYS))
+
+
+def _price_ok(value: Any) -> bool:
+    """A list price per unit, read with Decimal by the computation: a positive decimal (positive as a float too) of at
+    most PRICE_MAX, so that the replay's cost units (the cost in thousandths of a USD) stay inside the ranking
+    controller's exact arithmetic (34 digits, quantum 1e-18): "1e306" is refused here, never a decimal.InvalidOperation
+    after the run."""
+    return _decimal(value, positive=True, high=PRICE_MAX)
 
 
 def _local_cost_ok(value: Any) -> bool:
     """The local model's measured cost of the run, when the operator supplies it: {"energy", "amortized_hardware"}, each a
-    non-negative decimal in USD (VBT RevB Sec. VIII-D: "local cost is reported separately as measured energy plus
+    non-negative decimal in USD, read with Decimal (VBT RevB Sec. VIII-D: "local cost is reported separately as measured energy plus
     amortized hardware")."""
     if value is None:
         return True
     return (isinstance(value, Mapping) and set(value) == {"energy", "amortized_hardware"}
-            and all(_rational(value.get(key), Fraction(0)) for key in ("energy", "amortized_hardware")))
+            and all(_decimal(value.get(key), low=Fraction(0)) for key in ("energy", "amortized_hardware")))
 
 
 def _model_ok(entry: Any) -> bool:
     return (isinstance(entry, Mapping) and isinstance(entry.get("model_id"), str) and bool(MODEL_ID.match(entry["model_id"]))
             and isinstance(entry.get("family"), str) and bool(entry["family"]) and isinstance(entry.get("local"), bool)
-            and all(_decimal(entry.get(key), positive=True) for key in PRICE_KEYS) and _later_price_ok(entry.get("later_price")))
+            and all(_price_ok(entry.get(key)) for key in PRICE_KEYS) and _later_price_ok(entry.get("later_price")))
 
 
 def shape_refusals(experiment: str, design: Any) -> list[str]:
@@ -234,7 +255,7 @@ def shape_refusals(experiment: str, design: Any) -> list[str]:
             reasons.append("design.models")
         if not isinstance(design.get("pilot_commercial"), str):
             reasons.append("design.pilot_commercial")
-        for key in ("streams", "stream_length"):
+        for key in ("streams", "stream_length", "commissioning_items"):
             if key in design and not _positive_int(design[key]):
                 reasons.append(f"design.{key}")
         if "epsilon" in design and not _rational(design["epsilon"], Fraction(0), Fraction(1)):
@@ -253,9 +274,11 @@ def shape_refusals(experiment: str, design: Any) -> list[str]:
 # The protocol values the registration fixes: the analysis plan's per-hypothesis `resamples` (H2a, H2b 10,000), and VBT
 # RevB Sec. VIII-D's E3 "Single-pass generation is also repeated three times at one fixed level" and E4 "1,000 seeded
 # streams of 2,000 requests ... At request 1,000, one model's first-pass error rate in one topic is raised by ten
-# percentage points" (plan 6.5 Table XVII "1,000 replay streams"). `harness_parameters_v1.json` `designs` holds the same
+# percentage points" (plan 6.5 Table XVII "1,000 replay streams"), and VBT RevB Sec. VII's commissioning on 80 items ("the
+# 30-item pilot plus the golden set (80 items)"; `commissioning_items`). `harness_parameters_v1.json` `designs` holds the same
 # values as the defaults (PD-75; a test keeps them equal).
-REGISTERED_DESIGN = {"E3": {"repeats": 3}, "E4": {"streams": 1000, "stream_length": 2000, "shift.at": 1000, "shift.points": "0.10"}}
+REGISTERED_DESIGN = {"E3": {"repeats": 3}, "E4": {"streams": 1000, "stream_length": 2000, "shift.at": 1000, "shift.points": "0.10",
+                                                  "commissioning_items": 80}}
 
 
 def departures(experiment: str, design: Mapping[str, Any], family: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -278,6 +301,24 @@ def departures(experiment: str, design: Mapping[str, Any], family: Mapping[str, 
     return found
 
 
+DEFAULTED = {"E2": ("dawid_skene_iterations",), "E3": ("arm", "fixed_level", "repeats", "h3b_feature"),
+             "E4": ("streams", "stream_length", "epsilon", "linucb_alpha", "commissioning_items", "shift.at", "shift.points")}
+
+
+def defaults_taken(experiment: str, design: Mapping[str, Any]) -> list[str]:
+    """The design fields the spec leaves to `harness_parameters_v1.json` `designs` (`effective_design` fills them); the
+    record's `pins.harness_parameters.used_for` names `designs` when there is any."""
+    taken = []
+    for field in DEFAULTED.get(experiment, ()):
+        if field.startswith("shift."):
+            shift = design.get("shift")
+            if not isinstance(shift, Mapping) or field.split(".", 1)[1] not in shift:
+                taken.append(field)
+        elif field not in design:
+            taken.append(field)
+    return taken
+
+
 def effective_design(experiment: str, design: Mapping[str, Any], parameters: Mapping[str, Any]) -> dict[str, Any]:
     """The design block with the provisional defaults (`harness_parameters_v1.json` `designs`, PD-75) filled in."""
     defaults = (parameters.get("designs") or {}).get(experiment) or {}
@@ -286,7 +327,7 @@ def effective_design(experiment: str, design: Mapping[str, Any], parameters: Map
         for key in ("arm", "fixed_level", "repeats", "h3b_feature"):
             effective.setdefault(key, defaults[key])
     elif experiment == "E4":
-        for key in ("streams", "stream_length", "epsilon", "linucb_alpha"):
+        for key in ("streams", "stream_length", "epsilon", "linucb_alpha", "commissioning_items"):
             effective.setdefault(key, defaults[key])
         effective["shift"] = {"at": defaults["shift_at"], "points": defaults["shift_points"], **effective["shift"]}
     elif experiment == "E2":
@@ -397,11 +438,22 @@ def load_design(experiment: str, spec: Mapping[str, Any], items: Sequence[Mappin
         rows = _read_lines(design["ratings"], repo_root, "ratings", note)
         kind = {"E2": "novice-trust", "E4": "eqc"}.get(experiment)
         if kind is None or not all(row.get("rating") == kind and isinstance(row.get("source_request_key"), str)
-                                   and isinstance(row.get("value"), (int, float)) and not isinstance(row.get("value"), bool)
+                                   and _finite_value(row.get("value"))
                                    and set(row) == {"rating", "source_request_key", "value"} for row in rows):
             raise DesignRefused(3, ["ratings_invalid"])
         loaded["ratings"] = rows
     return loaded
+
+
+def _finite_value(value: Any) -> bool:
+    """A rating's value: a JSON number (not a bool) that converts to a finite float; a huge integer (an OverflowError in
+    float()), NaN or Infinity is refused as ratings_invalid, never a traceback in the statistics after the run."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return isfinite(float(value))
+    except OverflowError:
+        return False
 
 
 def design_pins(experiment: str, loaded: Mapping[str, Any]) -> dict[str, Any]:
@@ -417,7 +469,8 @@ def design_pins(experiment: str, loaded: Mapping[str, Any]) -> dict[str, Any]:
     elif experiment == "E4":
         pins.update(models=[dict(entry) for entry in design["models"]], pilot_commercial=design["pilot_commercial"],
                     streams=design["streams"], stream_length=design["stream_length"], shift=dict(design["shift"]),
-                    epsilon=design["epsilon"], linucb_alpha=design["linucb_alpha"], policies=list(POLICIES),
+                    epsilon=design["epsilon"], linucb_alpha=design["linucb_alpha"], commissioning_items=design["commissioning_items"],
+                    policies=list(POLICIES),
                     local_cost=design.get("local_cost"))
     pins["resamples"] = design.get("resamples")
     pins["ratings"] = None if design.get("ratings") is None else {"sha256": design["ratings"]["sha256"]}
@@ -833,10 +886,13 @@ class _Controller:
     """The Phase 9 ranking controller as a routing policy: each request is routed to Algorithm 1's choice for its context
     (`app.services.ranking.selection.select` on the controller's state), then its verified outcome is applied as an
     `outcome` input (`controller.apply_in_place`); a fallback abstains. Without hysteresis, the promotion margin delta is 0
-    and one batch suffices (n_d = 1). It records every alarm (request index, CUSUM stream) and every incumbent switch
-    (request index, context key, count)."""
+    and one batch suffices (n_d = 1). Each model is commissioned from its own outcomes on the commissioning items
+    (`commission`: {model: {clean, failed, generated, mean_q}}, `commissioning`; VBT RevB Sec. VII: "Posteriors start from
+    commissioning: alpha0 = 1 + clean responses and beta0 = 1 + failed ones"). It records every alarm (request index, CUSUM
+    stream) and every incumbent switch (request index, context key, count)."""
 
-    def __init__(self, block: Mapping[str, Any], models: Sequence[Mapping[str, Any]], *, hysteresis: bool) -> None:
+    def __init__(self, block: Mapping[str, Any], models: Sequence[Mapping[str, Any]], *, hysteresis: bool,
+                 commission: Mapping[str, Mapping[str, Any]]) -> None:
         from app.services.ranking.controller import apply_in_place
         from app.services.ranking.state import canonical, empty_state, params_of, sha256_hex
 
@@ -856,9 +912,11 @@ class _Controller:
             self._input("model_seen", {"model": {"adapter_id": entry["model_id"], "family": entry["family"], "provider": entry["family"],
                                                  "model_id": entry["model_id"], "model_version": "e4", "cost_units_per_call": int(per_call)}})
         self._input("availability", {"models": {entry["model_id"]: None for entry in models}})
-        for entry in models:  # the Phase 9 synthetic commissioning prior (PD-75)
-            self._input("commission", {"adapter_id": entry["model_id"], "version": "e4", "clean": 40, "failed": 0, "generated": 40,
-                                       "mean_q": "0.9", "run_sha256": "0" * 64})
+        for entry in models:  # each model's own commissioning outcomes, on items disjoint from the stream's
+            record = commission[entry["model_id"]]
+            self._input("commission", {"adapter_id": entry["model_id"], "version": "e4", "clean": int(record["clean"]),
+                                       "failed": int(record["failed"]), "generated": int(record["generated"]),
+                                       "mean_q": str(record["mean_q"]), "run_sha256": "0" * 64})
         self.clusters = set(self.params_of(self.state).clusters)
 
     def _input(self, kind: str, payload: Mapping[str, Any]) -> list:
@@ -872,6 +930,15 @@ class _Controller:
         from app.services.ranking.types import Context
 
         return Context(**self.context(topic)).key()
+
+    def eligible(self, topic: str | None) -> tuple[str, ...]:
+        """The models eligible to generate in the request's context (Phase 9 `selection.eligible_set`: rating and tier)."""
+        from app.services.ranking.selection import eligible_set, ensure_models
+
+        params = self.params_of(self.state)
+        key = self.key(topic)
+        ensure_models(self.state, params, key)
+        return eligible_set(self.state, params, key)
 
     def choose(self, t: int, topic: str | None) -> str | None:
         from app.services.ranking.selection import ensure_models, select
@@ -902,8 +969,11 @@ SWITCH_RULE = ("MR-3's counting (plan 15.1): incumbent switches per context per 
 CRITERION_NOTE = "figures under the criterion's counting rule, not its outcome: MR-2 and MR-3 are criteria_only and reported by the PI (DI-138)"
 
 
-def _replay_stream(plan: Any, population: Mapping, units: Sequence, models: Sequence[str], seed: str) -> dict[str, Any]:
-    """One stream: `stream_length` requests drawn (seeded) from `units`, the injected shift, and every policy replayed."""
+def _replay_stream(plan: Any, population: Mapping, units: Sequence, models: Sequence[str], seed: str, *,
+                   commission: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+    """One stream: `stream_length` requests drawn (seeded) from `units`, the injected shift, and every policy replayed.
+    `commission` is each model's commissioning record (`commissioning`), read by the controller and by cheapest-eligible's
+    eligibility."""
     design = plan.extra["design"]["design"]
     models = sorted(models)
     length = int(design["stream_length"])
@@ -930,7 +1000,6 @@ def _replay_stream(plan: Any, population: Mapping, units: Sequence, models: Sequ
             entry[1] += population[unit]["outcomes"][model].cost
     static_best = min(models, key=lambda model: (-(pool[model][0] / pool[model][1]), model))
     by_cost = sorted(models, key=lambda model: (pool[model][1], model))  # the pool's cost at the list prices, cheapest first
-    cheapest = by_cost[0]
     epsilon = float(Fraction(design["epsilon"]))
     alpha = float(Fraction(design["linucb_alpha"]))
     results: dict[str, dict[str, Any]] = {}
@@ -944,9 +1013,19 @@ def _replay_stream(plan: Any, population: Mapping, units: Sequence, models: Sequ
             if not isinstance(block, Mapping):
                 results[policy] = {"status": "no_ranking_block"}
                 continue
-            controller = _Controller(block, plan.extra["design"]["design"]["models"], hysteresis=policy == "controller")
+            controller = _Controller(block, plan.extra["design"]["design"]["models"], hysteresis=policy == "controller",
+                                     commission=commission)
             affected = f"model-cluster:{shift_model}:{controller.context(shift_topic)['cluster']}"
             drift_free: dict[str, int] = {}
+        commissioned = None
+        if policy == "cheapest-eligible":
+            # VBT RevB Sec. VII: a model below rating B is "ineligible to generate"; the baseline routes to the cheapest
+            # model the commissioned controller holds eligible in the request's context, and abstains (a fallback, as the
+            # controller does) when none is. Its eligibility is the commissioning's: the baseline does not learn.
+            if not isinstance(block, Mapping):
+                results[policy] = {"status": "no_ranking_block"}
+                continue
+            commissioned = _Controller(block, plan.extra["design"]["design"]["models"], hysteresis=True, commission=commission)
         means: dict[str, list[float]] = {model: [0.0, 0.0] for model in models}
         arms: dict[tuple[str, str | None], list[float]] = {}
         for t, (unit, topic, outcomes) in enumerate(stream):
@@ -967,7 +1046,10 @@ def _replay_stream(plan: Any, population: Mapping, units: Sequence, models: Sequ
             elif policy == "round-robin":
                 model = models[t % len(models)]
             elif policy == "cheapest-eligible":
-                model = cheapest
+                eligible = set(commissioned.eligible(topic))
+                model = next((name for name in by_cost if name in eligible), None)
+                if model is None:
+                    continue
             elif policy == "epsilon-greedy":
                 untried = [name for name in models if means[name][1] == 0]
                 if untried:
@@ -1007,6 +1089,38 @@ def _replay_stream(plan: Any, population: Mapping, units: Sequence, models: Sequ
                 switches=int(controller.state["counts"]["switches"]), alarms=int(controller.state["counts"]["alarms"]),
                 switches_per_1000_drift_free={key: 1000 * before_shift.get(key, 0) / count for key, count in sorted(drift_free.items())})
     return {"policies": results, "static_best": static_best, "shift_rate": rate}
+
+
+COMMISSIONING_RULE = ("commissioning-holdout-v1: the first `commissioning_items` replay items in sha256(seed, item) order are held "
+                      "out with all their units; each model is commissioned from its own outcomes on them (clean: first pass "
+                      "clean, failed: not, mean_q: the mean delivered quality), and the streams draw only the other items")
+COMMISSIONING_STAND_IN = ("VBT RevB Sec. VII: \"Commissioning therefore uses the 30-item pilot plus the golden set (80 items)\"; "
+                          "\"In the replay, commissioning and evaluation use disjoint items.\" No pilot or golden-set responses of "
+                          "the four models exist, so the harness holds out run items instead (DI-148)")
+
+
+def commissioning_split(plan: Any, population: Mapping) -> tuple[dict, dict]:
+    """(the held-out commissioning units, the streams' population): the first `commissioning_items` items of the population
+    in sha256(seed, item) order, with all their units, are held out (COMMISSIONING_RULE), so that commissioning and
+    evaluation use disjoint items."""
+    count = int(plan.extra["design"]["design"]["commissioning_items"])
+    seed = _seed(plan, "E4-commissioning")
+    items = sorted({unit[0] for unit in population}, key=lambda item: (hashed_hex(seed, item), item))
+    held = set(items[:count])
+    return ({unit: value for unit, value in population.items() if unit[0] in held},
+            {unit: value for unit, value in population.items() if unit[0] not in held})
+
+
+def commissioning(held_out: Mapping, models: Sequence[str]) -> dict[str, dict[str, Any]]:
+    """Each model's commissioning record from its own outcomes on the held-out units: {clean, failed, generated, mean_q},
+    the Phase 9 `commission` input (alpha0 = 1 + clean, beta0 = 1 + failed, the quality estimate mean_q)."""
+    records = {}
+    for model in models:
+        outcomes = [held_out[unit]["outcomes"][model] for unit in sorted(held_out, key=lambda u: (u[0], u[1] or ""))]
+        clean = sum(outcome.y for outcome in outcomes)
+        mean = sum(outcome.quality for outcome in outcomes) / len(outcomes) if outcomes else 0.0
+        records[model] = {"clean": clean, "failed": len(outcomes) - clean, "generated": len(outcomes), "mean_q": format(mean, ".6f")}
+    return records
 
 
 def _h4a_difference(result: Mapping[str, Any]) -> float:
@@ -1134,6 +1248,13 @@ def _h4a(plan: Any, population: Mapping, prices: Mapping[str, tuple[float, float
     design = plan.extra["design"]["design"]
     if not population:
         return {"status": "undefined", "reason": "no unit has a verified outcome for every model"}
+    held_out, population = commissioning_split(plan, population)
+    commission = commissioning(held_out, sorted(prices))
+    record = {"items": len({unit[0] for unit in held_out}), "units": len(held_out), "rule": COMMISSIONING_RULE,
+              "stands_in_for": COMMISSIONING_STAND_IN, "models": commission}
+    if not population:
+        return {"status": "undefined", "reason": "no item is left for the streams after the commissioning items are held out",
+                "commissioning": record}
     groups: dict[str, list] = {}
     for unit in population:
         groups.setdefault(unit[0], []).append(unit)
@@ -1143,7 +1264,8 @@ def _h4a(plan: Any, population: Mapping, prices: Mapping[str, tuple[float, float
 
     def difference(chosen: list, replicate: int | None) -> float:
         units = [unit for group in chosen for unit in group]
-        result = _replay_stream(plan, population, units, sorted(prices), f"{seed}\x1fstream\x1f{'estimate' if replicate is None else replicate}")
+        result = _replay_stream(plan, population, units, sorted(prices), f"{seed}\x1fstream\x1f{'estimate' if replicate is None else replicate}",
+                                commission=commission)
         if replicate is not None:
             streams.append(result)
         return _h4a_difference(result)
@@ -1161,7 +1283,7 @@ def _h4a(plan: Any, population: Mapping, prices: Mapping[str, tuple[float, float
     detected = [delay for delay in delays if delay is not None]
     worst = [max(run["switches_per_1000_drift_free"].values()) for run in runs if run["switches_per_1000_drift_free"]]
     return {**share, "difference_interval_95": share["interval_95"], "streams": len(streams), "stream_length": int(design["stream_length"]),
-            "quality_per_price": summary,
+            "commissioning": record, "quality_per_price": summary,
             "detection": {"streams": len(runs), "detected": len(detected), "within_100": sum(1 for delay in detected if delay <= 100),
                           "median_delay": sorted(detected)[len(detected) // 2] if detected else None,
                           "streams_with_false_alarms": sum(1 for run in runs if run["false_alarms"]), "rule": DETECTION_RULE,

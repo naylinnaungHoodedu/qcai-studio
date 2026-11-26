@@ -302,6 +302,9 @@ MALFORMED = [
     (lambda s: s.update(provider_terms="terms.json"), "provider_terms"),
     (lambda s: s.update(provider_terms=[]), "provider_terms"),
     (lambda s: s.update(provider_terms=[{"path": "t.json", "sha256": "0" * 64}, "t2.json"]), "provider_terms"),
+    # Labels reach a run only inside its responses: a `labels` value, even one naming a file, is refused, never ignored.
+    (lambda s: s.update(labels={"path": "nowhere/labels.jsonl", "sha256": "0" * 64}), "labels"),
+    (lambda s: s.update(labels="labels.jsonl"), "labels"),
 ]
 
 
@@ -337,6 +340,144 @@ def test_no_malformed_value_anywhere_in_a_spec_ends_in_a_traceback(tmp_path, mod
                 runner.plan_run(spec)
             except runner.RunRefused:
                 pass
+
+
+def _response_of(lines):
+    return lines[1]["response"]
+
+
+def _claim_of(lines):
+    return lines[1]["response"]["claims"][0]
+
+
+# Each malformed recording entry (the first entry of the committed synthetic recording, changed in one field): the run
+# is refused as recording_invalid (exit 3) when the recording is read, never a KeyError, TypeError, IndexError,
+# ValueError or OverflowError after requests were written.
+MALFORMED_RECORDINGS = {
+    "response_without_outcome": lambda lines: _response_of(lines).pop("outcome"),
+    "outcome_outside_the_enumeration": lambda lines: _response_of(lines).update(outcome="weird"),
+    "outcome_provider_failure": lambda lines: _response_of(lines).update(outcome="provider_failure"),
+    "claims_not_a_list": lambda lines: _response_of(lines).update(claims=5),
+    "claim_not_an_object": lambda lines: _response_of(lines).update(claims=[5]),
+    "claim_id_not_a_string": lambda lines: _claim_of(lines).update(claim_id=5),
+    "cited_not_a_list": lambda lines: _claim_of(lines).update(cited=5),
+    "cited_not_strings": lambda lines: _claim_of(lines).update(cited=[1]),
+    "label_unknown": lambda lines: _claim_of(lines).update(label="bogus"),
+    "ehmf_type_not_a_string": lambda lines: _claim_of(lines).update(ehmf_type=5),
+    "text_not_a_string": lambda lines: _response_of(lines).update(text=5),
+    "usage_not_an_object": lambda lines: _response_of(lines).update(usage="x"),
+    "usage_negative": lambda lines: _response_of(lines).update(usage={"input_units": -1, "output_units": 1}),
+    "usage_above_the_bound": lambda lines: _response_of(lines).update(usage={"input_units": 10 ** 6 + 1, "output_units": 1}),
+    "usage_huge": lambda lines: _response_of(lines).update(usage={"input_units": 10 ** 400, "output_units": 1}),
+    "usage_bool": lambda lines: _response_of(lines).update(usage={"input_units": True, "output_units": 1}),
+    "usage_float": lambda lines: _response_of(lines).update(usage={"input_units": 1.5, "output_units": 1}),
+    "usage_unknown_key": lambda lines: _response_of(lines).update(usage={"tokens": 1}),
+    "model_id_not_an_id": lambda lines: _response_of(lines).update(model_id="Not An Id"),
+    "verdict_unknown": lambda lines: _response_of(lines).update(verdict="maybe"),
+    "features_not_an_object": lambda lines: _response_of(lines).update(features=5),
+    "features_huge_integer": lambda lines: _response_of(lines).update(features={"fk_grade": 10 ** 400}),
+    "features_infinite": lambda lines: _response_of(lines).update(features={"fk_grade": float("inf")}),
+    "features_string": lambda lines: _response_of(lines).update(features={"fk_grade": "x"}),
+    "features_unknown": lambda lines: _response_of(lines).update(features={"colour": 1}),
+    "signals_float": lambda lines: _response_of(lines).update(signals={"V": 0.5}),
+    "signals_above_one": lambda lines: _response_of(lines).update(signals={"V": "2"}),
+    "signals_nan": lambda lines: _response_of(lines).update(signals={"V": "NaN"}),
+    "signals_not_decimal": lambda lines: _response_of(lines).update(signals={"V": "high"}),
+    "signals_unknown": lambda lines: _response_of(lines).update(signals={"Z": "0.5"}),
+    "latency_first_after_total": lambda lines: _response_of(lines).update(latency={"first_token_ms": 5, "total_ms": 1}),
+    "latency_missing_key": lambda lines: _response_of(lines).update(latency={"total_ms": 1}),
+    "latency_negative": lambda lines: _response_of(lines).update(latency={"first_token_ms": -1, "total_ms": 1}),
+    "response_missing": lambda lines: lines[1].pop("response"),
+    "response_not_an_object": lambda lines: lines[1].update(response=[1]),
+    "attempts_empty": lambda lines: lines[1].update(attempts=[]),
+    "attempts_not_a_list": lambda lines: lines[1].update(attempts="ok"),
+    "attempt_status_unknown": lambda lines: lines[1].update(attempts=[{"status": "boom"}]),
+    "attempt_extra_key": lambda lines: lines[1].update(attempts=[{"status": "ok", "note": "x"}]),
+    "attempt_not_an_object": lambda lines: lines[1].update(attempts=["ok"]),
+    "request_key_not_a_string": lambda lines: lines[1].update(request_key=5),
+    "request_key_repeated": lambda lines: lines.append(json.loads(json.dumps(lines[1]))),
+}
+
+
+def _recording_spec(tmp_path, mutate=None):
+    from evaluation.qcai_eval.canonical import lf_sha256
+
+    lines = read_jsonl(synthetic.RECORDED_FIXTURE)
+    if mutate is not None:
+        mutate(lines)
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    path = tmp_path / "recording.jsonl"
+    path.write_bytes("".join(json.dumps(line, sort_keys=True, separators=(",", ":")) + "\n" for line in lines).encode("utf-8"))
+    spec = synthetic.spec_dict(items_path="evaluation/fixtures/synthetic_ulqs_v1.jsonl",
+                               catalog_path="evaluation/fixtures/synthetic_evidence_catalog_v1.jsonl", run_id="synthetic-recorded-v1",
+                               mode="recorded", responder={"recorded": {"path": str(path), "sha256": lf_sha256(path)}})
+    return spec
+
+
+@pytest.mark.parametrize("case", sorted(MALFORMED_RECORDINGS))
+def test_a_recording_entry_the_run_cannot_read_is_refused_as_recording_invalid_and_never_a_traceback(tmp_path, case):
+    spec = _recording_spec(tmp_path, MALFORMED_RECORDINGS[case])
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(spec)
+    assert refused.value.code == 3 and refused.value.reasons == ["recording_invalid"]
+    # Through the CLI with the access log: exit 3, and the run's refused outcome is logged after the recording's read.
+    if str(REPO_ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import run_evaluation
+
+    path = tmp_path / "spec.json"
+    path.write_text(json.dumps(spec), encoding="utf-8")
+    log = tmp_path / "access.jsonl"
+    assert run_evaluation.main(["--spec", str(path), "--output-dir", str(tmp_path / "out"), "--access-log", str(log),
+                                "--actor-role", "MLE"]) == 3
+    lines = read_jsonl(log)
+    assert lines[-1].get("outcome") == "refused" and any(line.get("artifact_kind") == "recording" for line in lines)
+    assert not (tmp_path / "out" / "responses.jsonl").exists()
+
+
+def test_a_well_formed_recording_plans_and_a_tampered_invalid_one_is_a_pin_mismatch_first(tmp_path):
+    # The unchanged recording plans; an entry whose attempts all fail needs no response; a file that is not the pinned one
+    # is refused as recording_sha256 (exit 6) before its entries are judged.
+    from evaluation.qcai_eval.providers import UNITS_MAX
+
+    runner.plan_run(_recording_spec(tmp_path / "plain"))
+    failing = _recording_spec(tmp_path / "failing", lambda lines: (lines[1].update(attempts=[{"status": "server_error"}] * 4),
+                                                                   lines[1].pop("response")))
+    runner.plan_run(failing)
+    bounded = _recording_spec(tmp_path / "bounded", lambda lines: _response_of(lines).update(
+        usage={"input_units": UNITS_MAX, "output_units": 0}, signals={"V": "1", "S": None, "H": 0}, features={"fk_grade": 8.5},
+        latency={"first_token_ms": 1, "total_ms": 1}, verdict="pass"))
+    runner.plan_run(bounded)
+    spec = _recording_spec(tmp_path / "tampered", MALFORMED_RECORDINGS["response_missing"])
+    spec["responder"]["recorded"]["sha256"] = "0" * 64
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(spec)
+    assert refused.value.code == 6 and refused.value.reasons == ["recording_sha256"]
+
+
+def test_e4_usage_at_the_recording_bound_and_prices_at_price_max_run_to_completion(tmp_path, monkeypatch):
+    # The bounds the recording check (UNITS_MAX) and the design check (PRICE_MAX) admit are bounds the computation can
+    # use: every response logging UNITS_MAX units of each kind at PRICE_MAX per unit replays without an exception.
+    from evaluation.qcai_eval import experiments
+    from evaluation.qcai_eval.providers import UNITS_MAX
+
+    price = str(experiments.PRICE_MAX)
+    models = [{**entry, "price_per_input_unit": price, "price_per_output_unit": price} for entry in E4_MODELS]
+    spec, _items = _e4_spec(tmp_path, monkeypatch, models=models, stream_length=20, streams=2)
+
+    class Heavy(StubResponder):
+        def respond(self, request):
+            return {**super().respond(request), "usage": {"input_units": UNITS_MAX, "output_units": UNITS_MAX}}
+
+    plan = runner.plan_run(spec)
+    record = runner.execute_run(plan, Heavy(), tmp_path / "run")
+    assert record["metrics"]["cost"]["model-a"]["input_units"] > 0
+    # The controller applies each outcome's cost units (the cost in thousandths): at the bound, with every model eligible.
+    cost = 2.0 * UNITS_MAX * float(experiments.PRICE_MAX)
+    outcome = experiments.Outcome(y=1, quality=1.0, cost=cost, first_cost=cost)
+    population = {("SYN-A-001", None): {"topic": "invented topic a", "outcomes": {model: outcome for model in PRICE}}}
+    result = experiments._replay_stream(plan, population, list(population), sorted(PRICE), "s", commission=COMMISSION)["policies"]
+    assert result["controller"]["verified_quality"] == 20.0 and result["controller"]["cost"] == pytest.approx(20 * cost)
 
 
 @pytest.mark.parametrize(("block", "code", "reason"), [("items", 3, "items_unreadable"), ("evidence_catalog", 3, "catalog_invalid"),
@@ -681,7 +822,7 @@ LATER_PRICE = {"from": "2099-01-01", "price_per_input_unit": "0.002", "price_per
 def _e4_spec(tmp_path, monkeypatch, **changes):
     _gate_passed(monkeypatch)
     items_path, catalog_path, items = synthetic.write_fixture_set(tmp_path, synthetic.SMALL, splits=True)
-    design = {"models": E4_MODELS, "pilot_commercial": "model-b", "streams": 4, "stream_length": 40,
+    design = {"models": E4_MODELS, "pilot_commercial": "model-b", "streams": 4, "stream_length": 40, "commissioning_items": 4,
               "shift": {"model": "model-b", "topic": items[0]["topic"], "at": 20}, **changes}
     spec = synthetic.spec_dict(items_path=items_path, catalog_path=catalog_path, purpose="confirmatory", experiment="E4", family="E4",
                                run_id="synthetic-e4-v1", design=design)
@@ -716,12 +857,15 @@ def test_e4_answers_every_unit_with_four_models_in_gate_and_vloop_and_tests_h4a_
     assert {key: h4b[key] for key in expected} == expected and h4b["items"] == 9 and h4b["tost"]["status"] == "awaiting_ratings"
     h4a = record["registered_tests"]["hypotheses"]["H4a"]
     assert h4a["streams"] == 4 and h4a["stream_length"] == 40 and 0.0 <= h4a["p_value"] <= 1.0
-    assert set(h4a["quality_per_price"]) == set(experiments.POLICIES)
+    # Four commissioning items cannot earn rating B (its 5% trust bound of 0.90 needs 28 clean first passes), so the
+    # controller and cheapest-eligible abstain on every request and only the six other policies report a quality per price.
+    assert set(h4a["quality_per_price"]) == set(experiments.POLICIES) - {"controller", "controller-no-hysteresis", "cheapest-eligible"}
+    assert h4a["commissioning"]["items"] == 4 and set(h4a["commissioning"]["models"]) == set(PRICE)
     assert record["registered_tests"]["holm"] == statistics.holm({"H4a": h4a["p_value"], "H4b": h4b["p_value"]})
     # Every delivered answer is clean and every abstention delivers nothing: the local model, the cheapest, is static-best.
     population, excluded, prices = experiments._replay_population(plan, read_jsonl(tmp_path / "e4" / "responses.jsonl"))
     assert excluded == 0 and len(population) == len({(item, unit) for item, unit, _r in units})
-    stream = experiments._replay_stream(plan, population, sorted(population, key=lambda u: (u[0], u[1] or "")), sorted(prices), "unit-test")
+    stream = experiments._replay_stream(plan, population, sorted(population, key=lambda u: (u[0], u[1] or "")), sorted(prices), "unit-test", commission=COMMISSION)
     assert stream["static_best"] == "model-l" and stream["policies"]["static-best"] == stream["policies"]["cheapest-eligible"]
     assert "at_later_prices" not in h4a
     # "at both Gemini prices if runs straddle 1 January 2027": a model's later list price replays H4a again beside it.
@@ -754,7 +898,7 @@ def test_e4_policies_route_by_their_rules_and_the_shift_resamples_the_degraded_m
     population = {("SYN-A-001", None): {"topic": "invented topic a", "outcomes": {**clean, "model-l": failed["model-l"]}},
                   ("SYN-A-002", None): {"topic": "invented topic a", "outcomes": {**clean, "model-b": failed["model-b"]}},
                   ("SYN-B-001", None): {"topic": "invented topic b", "outcomes": clean}}
-    result = experiments._replay_stream(plan, population, sorted(population), sorted(price), "policy-test")
+    result = experiments._replay_stream(plan, population, sorted(population), sorted(price), "policy-test", commission=COMMISSION)
     assert result["shift_rate"] == 1.0  # 0.5 points over a base error of 1/2: every clean model-b outcome in topic a fails
     policies = result["policies"]
     # Over the pool, quality per price: l 2/0.003, a 3/0.009, b 2/0.006, c 3/0.012, so static-best is the local model.
@@ -769,7 +913,7 @@ def test_e4_policies_route_by_their_rules_and_the_shift_resamples_the_degraded_m
     # Every request on SYN-A-001: l fails its first pass (0.001 paid), b's clean outcome is shifted to a failure (0.002
     # paid), a passes and delivers (0.003): 0.006 and one verified answer per request.
     # Static-best is chosen on the pool before the shift (b: 1/0.002), so after it static-best delivers nothing.
-    single = experiments._replay_stream(plan, population, [("SYN-A-001", None)], sorted(price), "policy-test")
+    single = experiments._replay_stream(plan, population, [("SYN-A-001", None)], sorted(price), "policy-test", commission=COMMISSION)
     one = single["policies"]
     assert one["threshold-escalation"]["cost"] == pytest.approx(8 * 0.006) and one["threshold-escalation"]["verified_quality"] == 8.0
     assert single["static_best"] == "model-b" and one["static-best"]["verified_quality"] == 0.0
@@ -846,20 +990,42 @@ def test_the_registered_protocol_values_are_the_harness_defaults():
     defaults = runner.load_harness_parameters()["designs"]
     assert experiments.REGISTERED_DESIGN == {"E3": {"repeats": defaults["E3"]["repeats"]},
                                              "E4": {"streams": defaults["E4"]["streams"], "stream_length": defaults["E4"]["stream_length"],
-                                                    "shift.at": defaults["E4"]["shift_at"], "shift.points": defaults["E4"]["shift_points"]}}
-    assert experiments.REGISTERED_DESIGN["E4"] == {"streams": 1000, "stream_length": 2000, "shift.at": 1000, "shift.points": "0.10"}
+                                                    "shift.at": defaults["E4"]["shift_at"], "shift.points": defaults["E4"]["shift_points"],
+                                                    "commissioning_items": defaults["E4"]["commissioning_items"]}}
+    # VBT RevB Sec. VII: "Commissioning therefore uses the 30-item pilot plus the golden set (80 items)".
+    assert experiments.REGISTERED_DESIGN["E4"] == {"streams": 1000, "stream_length": 2000, "shift.at": 1000, "shift.points": "0.10",
+                                                   "commissioning_items": 80}
+
+
+def test_a_design_default_taken_from_the_harness_parameters_is_named_in_the_record_s_used_for(tmp_path, monkeypatch):
+    # pins.harness_parameters {sha256, used_for}: `designs` when an E2-E4 design took any value from the file's designs block.
+    from evaluation.qcai_eval import experiments
+
+    spec, _items = _e4_spec(tmp_path, monkeypatch)  # epsilon, linucb_alpha and shift.points left to the file
+    plan = runner.plan_run(spec)
+    assert experiments.defaults_taken("E4", spec["design"]) == ["epsilon", "linucb_alpha", "shift.points"]
+    assert plan.pins["harness_parameters"]["used_for"] == ["designs"]
+    assert plan.pins["design"]["commissioning_items"] == 4
+    assert plan.pins["design"]["epsilon"] == runner.load_harness_parameters()["designs"]["E4"]["epsilon"]
+    full = {**spec["design"], "epsilon": "0.1", "linucb_alpha": "1", "shift": {**spec["design"]["shift"], "points": "0.10"}}
+    assert experiments.defaults_taken("E4", full) == []
+    assert runner.plan_run({**spec, "design": full}).pins["harness_parameters"]["used_for"] == []
+    no_replicates = {key: value for key, value in spec.items() if key != "retries"}
+    assert runner.plan_run(no_replicates).pins["harness_parameters"]["used_for"] == ["designs", "retries"]
 
 
 def test_a_design_that_departs_from_the_registered_protocol_is_refused_over_research_data_and_live_and_named_when_synthetic(
         tmp_path, monkeypatch):
-    # Analysis plan H2a and H2b "resamples": 10000; E4's 1,000 streams of 2,000 requests and the shift at request 1,000.
+    # Analysis plan H2a and H2b "resamples": 10000; E4's 1,000 streams of 2,000 requests, the shift at request 1,000 and
+    # its 80 commissioning items.
     from evaluation.qcai_eval import planes
 
     spec, _items = _e4_spec(tmp_path, monkeypatch)
     record = runner.execute_run(runner.plan_run(spec), StubResponder(), tmp_path / "e4")
     expected = [{"field": "design.streams", "registered": 1000, "effective": 4},
                 {"field": "design.stream_length", "registered": 2000, "effective": 40},
-                {"field": "design.shift.at", "registered": 1000, "effective": 20}]
+                {"field": "design.shift.at", "registered": 1000, "effective": 20},
+                {"field": "design.commissioning_items", "registered": 80, "effective": 4}]
     assert record["pins"]["design"]["departures"] == expected
     assert record["registered_tests"]["protocol"] == "departs_from_registration" and record["registered_tests"]["departures"] == expected
     e2, _source = _e2_spec(tmp_path / "e2", monkeypatch)
@@ -870,13 +1036,13 @@ def test_a_design_that_departs_from_the_registered_protocol_is_refused_over_rese
         runner.plan_run({**spec, "mode": "live", "responder": {"live": {"adapter": "none"}}})
     assert refused.value.code == 2 and refused.value.reasons == [
         "design_departs_from_registration:design.streams", "design_departs_from_registration:design.stream_length",
-        "design_departs_from_registration:design.shift.at"]
+        "design_departs_from_registration:design.shift.at", "design_departs_from_registration:design.commissioning_items"]
     # Over research data the departure is refused, and the registered values pass on to hold H12.
     monkeypatch.setattr(planes, "all_synthetic", lambda items: False)
     with pytest.raises(runner.RunRefused) as refused:
         runner.plan_run(spec)
     assert refused.value.code == 2 and refused.value.reasons[0] == "design_departs_from_registration:design.streams"
-    registered = {key: value for key, value in spec["design"].items() if key not in ("streams", "stream_length")}
+    registered = {key: value for key, value in spec["design"].items() if key not in ("streams", "stream_length", "commissioning_items")}
     registered["shift"] = {"model": "model-b", "topic": spec["design"]["shift"]["topic"]}
     with pytest.raises(runner.RunRefused) as refused:
         runner.plan_run({**spec, "design": registered})
@@ -959,6 +1125,12 @@ def test_e2_h2a_and_h2c_are_the_registered_bootstraps_of_the_hand_built_panel(tm
     ("E2", [{"rating": "novice-trust", "source_request_key": "k", "value": 3, "rater": "r"}]),
     ("E4", [{"rating": "eqc", "source_request_key": "k", "value": True}]),
     ("E4", [{"rating": "novice-trust", "source_request_key": "k", "value": 3}]),
+    # A value the statistics cannot read as a finite float: refused here, never an OverflowError after the run.
+    ("E4", [{"rating": "eqc", "source_request_key": "k", "value": 10 ** 400}]),
+    ("E4", [{"rating": "eqc", "source_request_key": "k", "value": float("inf")}]),
+    ("E4", [{"rating": "eqc", "source_request_key": "k", "value": float("nan")}]),
+    ("E2", [{"rating": "novice-trust", "source_request_key": "k", "value": 10 ** 400}]),
+    ("E2", [{"rating": "novice-trust", "source_request_key": "k", "value": float("-inf")}]),
 ])
 def test_a_ratings_file_that_is_not_the_design_s_ratings_is_refused_with_exit_3(tmp_path, monkeypatch, experiment, rows):
     ratings = _repin(tmp_path / "ratings.jsonl", rows)
@@ -1162,6 +1334,17 @@ def test_e3_records_its_exact_set_comparison_as_the_stand_in_for_entailment_and_
     ("E4", {"linucb_alpha": "1e400"}, "design.linucb_alpha"),
     ("E4", {"local_cost": {"energy": "1e400", "amortized_hardware": "1"}}, "design.local_cost"),
     ("E4", {"models": [{**E4_MODELS[0], "price_per_input_unit": "1e400"}, *E4_MODELS[1:]]}, "design.models"),
+    # Decimal-readable as the computation reads them: a rational form ("1/2") is refused, never a decimal.InvalidOperation.
+    ("E4", {"models": [{**E4_MODELS[0], "price_per_input_unit": "1/2"}, *E4_MODELS[1:]]}, "design.models"),
+    ("E4", {"models": [{**E4_MODELS[0], "later_price": {**LATER_PRICE, "price_per_output_unit": "1/3"}}, *E4_MODELS[1:]]},
+     "design.models"),
+    ("E4", {"local_cost": {"energy": "1/3", "amortized_hardware": "1"}}, "design.local_cost"),
+    ("E4", {"local_cost": {"energy": "1", "amortized_hardware": "NaN"}}, "design.local_cost"),
+    # Positive as a float too: "1e-400" underflows to 0.0 and is refused, never a division by a zero cost.
+    ("E4", {"models": [{**E4_MODELS[0], "price_per_input_unit": "1e-400"}, *E4_MODELS[1:]]}, "design.models"),
+    # At most PRICE_MAX: "1e306" would overflow the controller's exact cost-unit arithmetic after the run.
+    ("E4", {"models": [{**E4_MODELS[0], "price_per_input_unit": "1e306"}, *E4_MODELS[1:]]}, "design.models"),
+    ("E4", {"models": [{**E4_MODELS[0], "price_per_output_unit": "1000000.001"}, *E4_MODELS[1:]]}, "design.models"),
     ("E4", {"local_cost": {"energy": "x", "amortized_hardware": "1"}}, "design.local_cost"),
     ("E4", {"models": [{**E4_MODELS[0], "price_per_input_unit": "0"}, *E4_MODELS[1:]]}, "design.models"),
     ("E4", {"models": [{key: value for key, value in E4_MODELS[0].items() if key != "price_per_output_unit"}, *E4_MODELS[1:]]},
@@ -1184,6 +1367,19 @@ def test_every_design_value_the_computation_reads_is_shape_checked_with_exit_2(t
     assert refused.value.code == 2 and refused.value.reasons == [reason]
 
 
+def test_e4_prices_at_the_shape_check_s_bounds_run_to_completion(tmp_path, monkeypatch):
+    # The bounds the shape check admits are bounds the computation can use: every price at PRICE_MAX, or at the smallest
+    # positive float, and a local cost in exponent form, run through the replay and the controller without an exception.
+    from evaluation.qcai_eval import experiments
+
+    for name, price in (("max", str(experiments.PRICE_MAX)), ("tiny", "5e-324")):
+        models = [{**entry, "price_per_input_unit": price, "price_per_output_unit": price} for entry in E4_MODELS]
+        spec, _items = _e4_spec(tmp_path / name, monkeypatch, models=models, epsilon="0.1", linucb_alpha="1", stream_length=20,
+                                streams=2, local_cost={"energy": "1e3", "amortized_hardware": "0"})
+        record = runner.execute_run(runner.plan_run(spec), StubResponder(), tmp_path / name / "run")
+        assert record["metrics"]["local_cost"]["measured"]["total"] == "1000"
+
+
 @pytest.mark.parametrize("experiment", ["E2", "E3", "E4"])
 def test_no_malformed_design_value_ends_in_a_traceback_through_the_run(tmp_path, monkeypatch, experiment):
     # Every node of the design block replaced in turn by a value of the wrong type, or by a string open() refuses: the
@@ -1198,7 +1394,7 @@ def test_no_malformed_design_value_ends_in_a_traceback_through_the_run(tmp_path,
     runner.execute_run(runner.plan_run(base), StubResponder(), tmp_path / "base")
     runs = 0
     for path in list(_nodes(base["design"]))[1:]:
-        for bad in ("x", [1], {"path": 1}, None, "a\x00b.jsonl", -1):
+        for bad in ("x", [1], {"path": 1}, None, "a\x00b.jsonl", -1, "1/3", "1e-400", "1e306"):
             spec = json.loads(json.dumps(base))
             target = spec["design"]
             for key in path[:-1]:
@@ -1350,6 +1546,9 @@ def test_h4a_s_statistic_is_the_controller_minus_the_larger_of_static_best_and_r
 
 
 PRICE = {"model-a": 0.003, "model-b": 0.002, "model-c": 0.004, "model-l": 0.001}
+# A commissioning record per model as the replay tests set it (experiments.commissioning gives the run's own): 40 clean
+# first passes, every model eligible.
+COMMISSION = {model: {"clean": 40, "failed": 0, "generated": 40, "mean_q": "0.9"} for model in PRICE}
 
 
 def _policy_plan(tmp_path, monkeypatch, **design):
@@ -1375,7 +1574,7 @@ def test_the_controller_routes_by_algorithm_1_and_counts_detection_false_alarms_
 
     plan = _policy_plan(tmp_path, monkeypatch, stream_length=8, shift={"model": "model-a", "topic": "invented topic b", "at": 0, "points": "0.5"})
     clean = {("SYN-B-001", None): {"topic": "invented topic b", "outcomes": _outcomes()}}
-    result = experiments._replay_stream(plan, clean, list(clean), sorted(PRICE), "s")["policies"]
+    result = experiments._replay_stream(plan, clean, list(clean), sorted(PRICE), "s", commission=COMMISSION)["policies"]
     for policy in ("controller", "controller-no-hysteresis"):
         assert {key: result[policy][key] for key in ("verified_quality", "detection_delay", "false_alarms", "switches", "alarms")} == {
             "verified_quality": 8.0, "detection_delay": None, "false_alarms": 0, "switches": 0, "alarms": 0}, policy
@@ -1383,19 +1582,19 @@ def test_the_controller_routes_by_algorithm_1_and_counts_detection_false_alarms_
     failing = {("SYN-B-001", None): {"topic": "invented topic b", "outcomes": _outcomes({"model-a"})}}
     # Ten drift-free failures: alarms at the 4th and 8th request on both of model-a's streams, all before the shift.
     plan.extra["design"]["design"].update(stream_length=10, shift={"model": "model-a", "topic": "invented topic b", "at": 10, "points": "0.5"})
-    run = experiments._replay_stream(plan, failing, list(failing), sorted(PRICE), "s")["policies"]["controller"]
+    run = experiments._replay_stream(plan, failing, list(failing), sorted(PRICE), "s", commission=COMMISSION)["policies"]["controller"]
     assert (run["false_alarms"], run["alarms"], run["detection_delay"], run["switches"]) == (4, 4, None, 0)
     # 30 requests: the demotion at the 25th is one switch; per 1,000 drift-free requests it counts only before the shift.
     plan.extra["design"]["design"].update(stream_length=30, shift={"model": "model-a", "topic": "invented topic b", "at": 30, "points": "0.5"})
-    run = experiments._replay_stream(plan, failing, list(failing), sorted(PRICE), "s")["policies"]["controller"]
+    run = experiments._replay_stream(plan, failing, list(failing), sorted(PRICE), "s", commission=COMMISSION)["policies"]["controller"]
     assert run["switches"] == 1 and run["switches_per_1000_drift_free"] == {"unscoped|explanation|2": pytest.approx(1000 / 30)}
     assert run["verified_quality"] == 5.0  # model-b delivers the last five
     plan.extra["design"]["design"]["shift"]["at"] = 20
-    run = experiments._replay_stream(plan, failing, list(failing), sorted(PRICE), "s")["policies"]["controller"]
+    run = experiments._replay_stream(plan, failing, list(failing), sorted(PRICE), "s", commission=COMMISSION)["policies"]["controller"]
     assert run["switches"] == 1 and run["switches_per_1000_drift_free"] == {"unscoped|explanation|2": 0.0} and run["false_alarms"] == 10
     # The shift at 26 of 30: the demotion at the 25th is before it, and the denominator is the 26 drift-free requests only.
     plan.extra["design"]["design"]["shift"]["at"] = 26
-    run = experiments._replay_stream(plan, failing, list(failing), sorted(PRICE), "s")["policies"]["controller"]
+    run = experiments._replay_stream(plan, failing, list(failing), sorted(PRICE), "s", commission=COMMISSION)["policies"]["controller"]
     assert run["switches"] == 1 and run["switches_per_1000_drift_free"] == {"unscoped|explanation|2": pytest.approx(1000 / 26)}
     # Detection counts the degraded model's responses in the shifted topic up to the first alarm on its stream for that
     # topic's context. Two failures in another topic first (seed s54 draws B, B, then shifted-topic units): model-a's global
@@ -1407,7 +1606,7 @@ def test_the_controller_routes_by_algorithm_1_and_counts_detection_false_alarms_
     plan.extra["design"]["design"].update(stream_length=6, shift={"model": "model-a", "topic": "nisq-hybrid-workflows", "at": 2, "points": "0.5"})
     assert [units[experiments._index("s54", 3, "request", t)][0] for t in range(6)] == [
         "SYN-B-001", "SYN-B-001", "SYN-N-002", "SYN-N-001", "SYN-N-001", "SYN-N-001"]
-    stream = experiments._replay_stream(plan, population, units, sorted(PRICE), "s54")
+    stream = experiments._replay_stream(plan, population, units, sorted(PRICE), "s54", commission=COMMISSION)
     run = stream["policies"]["controller"]
     assert stream["shift_rate"] == 1.0 and run["detection_delay"] == 4 and run["false_alarms"] == 0 and run["alarms"] == 2
 
@@ -1421,15 +1620,76 @@ def test_epsilon_greedy_and_linucb_route_by_their_rules(tmp_path, monkeypatch):
     plan = _policy_plan(tmp_path, monkeypatch, stream_length=8, epsilon="0", linucb_alpha="0",
                         shift={"model": "model-a", "topic": "invented topic b", "at": 0, "points": "0.5"})
     clean = {("SYN-B-001", None): {"topic": "invented topic b", "outcomes": _outcomes()}}
-    result = experiments._replay_stream(plan, clean, list(clean), sorted(PRICE), "s")["policies"]
+    result = experiments._replay_stream(plan, clean, list(clean), sorted(PRICE), "s", commission=COMMISSION)["policies"]
     assert result["epsilon-greedy"]["cost"] == pytest.approx(0.003 + 0.002 + 0.004 + 0.001 + 4 * 0.001)  # then always model-l
     assert result["linucb"]["cost"] == pytest.approx(8 * 0.003)  # alpha 0: model-a first, and its reward keeps it ahead
     plan.extra["design"]["design"].update(epsilon="1", linucb_alpha="100000")
-    result = experiments._replay_stream(plan, clean, list(clean), sorted(PRICE), "s")["policies"]
+    result = experiments._replay_stream(plan, clean, list(clean), sorted(PRICE), "s", commission=COMMISSION)["policies"]
     models = sorted(PRICE)
     explored = [models[experiments._index("s", 4, "epsilon-greedy", "explore", t)] for t in range(4, 8)]
     assert result["epsilon-greedy"]["cost"] == pytest.approx(0.010 + sum(PRICE[model] for model in explored))
     assert result["linucb"]["cost"] == pytest.approx(2 * sum(PRICE.values()))  # the bonus dominates: the least pulled, in turn
+
+
+def test_e4_commissions_each_model_from_its_own_outcomes_on_held_out_items_and_cheapest_eligible_routes_to_an_eligible_model(
+        tmp_path, monkeypatch):
+    # VBT RevB Sec. VII: "Posteriors start from commissioning: alpha0 = 1 + clean responses and beta0 = 1 + failed ones";
+    # "Commissioning therefore uses the 30-item pilot plus the golden set (80 items)"; "In the replay, commissioning and
+    # evaluation use disjoint items"; a model below rating B is "ineligible to generate". Rating B needs the 5% trust
+    # bound at 0.90: 30 clean of 30 reach it (0.05 ** (1 / 31) > 0.90), 27 of 30 do not.
+    from decimal import Decimal
+
+    from evaluation.qcai_eval import experiments
+
+    plan = _policy_plan(tmp_path, monkeypatch, commissioning_items=30, streams=2, stream_length=10,
+                        shift={"model": "model-a", "topic": "invented topic b", "at": 10, "points": "0.5"})
+    units = [(f"SYN-A-{index:03d}", None) for index in range(1, 41)]
+    population = {unit: {"topic": "invented topic b", "outcomes": _outcomes({"model-l"})} for unit in units}
+    held, rest = experiments.commissioning_split(plan, population)
+    assert len(held) == 30 and len(rest) == 10 and set(held) | set(rest) == set(units) and not set(held) & set(rest)
+    for unit in sorted(held)[:3]:  # model-a fails three commissioning items only: 27 clean, below rating B
+        population[unit] = {"topic": "invented topic b", "outcomes": _outcomes({"model-l", "model-a"})}
+    held, rest = experiments.commissioning_split(plan, population)
+    records = experiments.commissioning(held, sorted(PRICE))
+    assert records == {"model-a": {"clean": 27, "failed": 3, "generated": 30, "mean_q": "0.900000"},
+                       "model-b": {"clean": 30, "failed": 0, "generated": 30, "mean_q": "1.000000"},
+                       "model-c": {"clean": 30, "failed": 0, "generated": 30, "mean_q": "1.000000"},
+                       "model-l": {"clean": 0, "failed": 30, "generated": 30, "mean_q": "0.000000"}}
+    models = plan.extra["design"]["design"]["models"]
+    block = plan.package_raw["ranking"]
+    controller = experiments._Controller(block, models, hysteresis=True, commission=records)
+    for model, record in records.items():  # the Phase 9 commission input: alpha0 = 1 + clean, beta0 = 1 + failed, qbar = mean_q
+        prior = controller.state["models"][model]["prior"]
+        assert (Decimal(prior["alpha"]), Decimal(prior["beta"]), Decimal(prior["qbar"])) == (
+            1 + record["clean"], 1 + record["failed"], Decimal(record["mean_q"])), model
+    assert controller.eligible("invented topic b") == ("model-b", "model-c")
+    assert experiments._Controller(block, models, hysteresis=True, commission=COMMISSION).eligible("invented topic b") == tuple(sorted(PRICE))
+    # cheapest-eligible: model-l is the cheapest over the pool but ineligible, so every request goes to model-b.
+    stream = experiments._replay_stream(plan, rest, sorted(rest), sorted(PRICE), "s", commission=records)["policies"]
+    assert stream["cheapest-eligible"]["cost"] == pytest.approx(10 * 0.002) and stream["cheapest-eligible"]["verified_quality"] == 10.0
+    everyone = experiments._replay_stream(plan, rest, sorted(rest), sorted(PRICE), "s", commission=COMMISSION)["policies"]
+    assert everyone["cheapest-eligible"]["cost"] == pytest.approx(10 * 0.001) and everyone["cheapest-eligible"]["verified_quality"] == 0.0
+    # No model eligible: cheapest-eligible abstains, as the controller's fallback does.
+    nobody = {model: {"clean": 0, "failed": 30, "generated": 30, "mean_q": "0"} for model in PRICE}
+    stream = experiments._replay_stream(plan, rest, sorted(rest), sorted(PRICE), "s", commission=nobody)["policies"]
+    assert stream["cheapest-eligible"] == {"verified_quality": 0.0, "cost": 0.0, "quality_per_price": None}
+    # H4a commissions from the held-out units and draws its streams only from the others.
+    drawn = []
+    replay = experiments._replay_stream
+
+    def spy(plan_, population_, units_, models_, seed_, *, commission):
+        drawn.extend(units_)
+        assert commission == records
+        return replay(plan_, population_, units_, models_, seed_, commission=commission)
+
+    monkeypatch.setattr(experiments, "_replay_stream", spy)
+    result = experiments._h4a(plan, population, {model: (cost, cost) for model, cost in PRICE.items()}, experiments._hypotheses(plan)["H4a"])
+    assert drawn and not set(drawn) & set(held)
+    assert result["commissioning"] == {"items": 30, "units": 30, "rule": experiments.COMMISSIONING_RULE,
+                                       "stands_in_for": experiments.COMMISSIONING_STAND_IN, "models": records}
+    plan.extra["design"]["design"]["commissioning_items"] = 40  # nothing left for the streams
+    assert experiments._h4a(plan, population, {model: (cost, cost) for model, cost in PRICE.items()},
+                            experiments._hypotheses(plan)["H4a"])["status"] == "undefined"
 
 
 def test_the_e4_record_carries_the_h4a_difference_interval_and_the_mr_2_and_mr_3_figures_labelled(tmp_path, monkeypatch):

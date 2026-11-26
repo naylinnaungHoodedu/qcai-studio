@@ -809,7 +809,7 @@
    "evaluation/qcai_eval/citation.py": "b42439d6ed5826094e02573895c0b64153834a1b6cdac7450140b05adfd8cf42",
    "evaluation/qcai_eval/claims.py": "0b49dcb6ec658b8c72cb7bdc544e5ffb1af63c727b775d05a4c24766c791846b",
    "evaluation/qcai_eval/contamination.py": "d6bc5e8cb617d4ac8c1892c2d1bcb774182503bff9dc5813305a5734803f2bb9",
-   "evaluation/qcai_eval/experiments.py": "6afaf2d6b357982c16c9010457ad32af0e5e16f7eb344c531cda069249b27357",
+   "evaluation/qcai_eval/experiments.py": "cd9999eecbd0430fbae37a4d2807e5fb14d37401c4a2704e8c98d8309310e543",
    "evaluation/qcai_eval/fabrication.py": "b1e6d10453720a9f8174ca3e54945231984dfa816ba19dca24112d9664d5459e",
    "evaluation/qcai_eval/faithfulness.py": "9020a01d7d9730ce678e5e04c1d14e89e2e725e8a5af88c9b8696f3dbbf981e5",
    "evaluation/qcai_eval/governance.py": "6409e475aa68caf8e554ff641ef57a4b09b94f81c6506604db72b4e799aab33c",
@@ -818,22 +818,22 @@
    "evaluation/qcai_eval/payload_log.py": "b852782347b8acc3151636e984162f99bb1102854c23aeee365b72d3df896312",
    "evaluation/qcai_eval/planes.py": "a90e8a5842b4cb4d76821f2a3e1099d2668bcf14ee2570f19cbb10e9aba33f4f",
    "evaluation/qcai_eval/pointers.py": "49551f9cef3c7db9736f213f95816f6be9e36cddc43369aad19d72bd01f4c014",
-   "evaluation/qcai_eval/providers.py": "cebdab8350cf667a466bd07422c34f8e3ec08a29a932f9fb32e2912bf17625c0",
+   "evaluation/qcai_eval/providers.py": "a90d6661a6723b2e3b9bd596540dc995e0b9a3000dea0327e154709322e1057d",
    "evaluation/qcai_eval/reporting.py": "3cc299f92ad3b9086f1335afe3f1f8668df1369c13a44d114931f86ed77f0c6f",
    "evaluation/qcai_eval/retrieval.py": "fad7346aea2e3b850eb73c0b9410fcf67d9ab910ad058855bcee767100d42e16",
-   "evaluation/qcai_eval/runner.py": "94f03d93cf2c85e81eab13ab1b65c510c4e6174240f8d13ec47459b6d4f7da4f",
+   "evaluation/qcai_eval/runner.py": "5fb206f51b68a09494ae90f2fffa6bbd4eeb82f203dde0e97089c2cb86308097",
    "evaluation/qcai_eval/seeded_faults.py": "77fd4907d4a3dd3980fd087e6301852c96111cc3360ad34e829d637445a5fd8d",
    "evaluation/qcai_eval/statistics.py": "dfb60008ca26b53766c4c5bc5571d2827db07e7bcf907b31d93ac4fb36a3d784",
    "evaluation/qcai_eval/synthetic.py": "b55469a9f565ae046c850f8c411b714aedf2c89724ade8510175d3505065835d",
    "evaluation/qcai_eval/ulqs.py": "c5e9ce87ab2020dd2fb96aedf5f652ad4a93a282caf72ad5866787c48fdd2f4b",
-   "scripts/run_evaluation.py": "937a69ee306fb0de39b9dbea0b0296195e391834440c2d0ebcd0743020947d0c"
+   "scripts/run_evaluation.py": "2a1859f58bbf3f37b77b81029fa13426d244c1cb1e8442fe74aa7c78ba3b1865"
   },
   "evidence_catalog": {
    "corpus_version": "SYNTHETIC-CORPUS-v1",
    "sha256": "67fe97fde1e1274e7f42d7fa4a2cc1434df8844d996ff467f4c2ec8392121d09"
   },
   "harness_parameters": {
-   "sha256": "a142918ace10d42f610a37a2317cc3d74c8735f4b3583d91cec87b402337237f",
+   "sha256": "d0c2cb6518a0610fa7899362b1deb9909dfc915b5a44c1c238f7807bbd693668",
    "used_for": []
   },
   "items": {

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted for engineering on 2026-11-24 (Phase 10; plan L1680-1742). The parameters are provisional defaults (PD-60..PD-74,
+Accepted for engineering on 2026-11-24 (Phase 10; plan L1680-1742). The parameters are provisional defaults (PD-60..PD-75,
 ratified under DI-140). The Phase 10 exit is not passed (DI-129).
 
 ## Context

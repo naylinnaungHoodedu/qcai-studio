@@ -36,7 +36,10 @@ DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-148). Not execu
    later day too: its run window starts on the day its checkpoint records, so its IRB must have been approved by then
    and still be valid on the resume day, and every other record dated by its start.
 5. **Label.** Atomic claims are labelled supported, attribution error, unsupported but true, or fabricated, with the EHMF
-   type; abstaining units are labelled supported or unsupported abstention (`lqs/rubric.md`).
+   type; abstaining units are labelled supported or unsupported abstention (`lqs/rubric.md`). The labels reach the
+   registered tests only inside a run's responses: a labelled live recording replayed as a confirmatory recorded run
+   (`phase10/research-plane-runbook.md` step 8; the run spec's `labels` is null). The tool that writes that recording is
+   not built (DI-143).
 6. **Analyse.** Exact McNemar, the one-sided, paired, cluster, BCa, paired-AUC and two-level bootstraps, the Friedman test
    and the paired TOST of the pre-registration, each hypothesis entering Holm within its family at alpha 0.05 through one
    p-value, with its null as the plans state it (H2b: DR <= 1). The equivalence part of H4b is confirmatory only if

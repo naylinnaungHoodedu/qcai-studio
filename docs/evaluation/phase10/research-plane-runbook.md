@@ -72,14 +72,21 @@ log is `<plane>/access.jsonl` (digests only).
    one, or any output the run cannot write, is refused (`output_unwritable`, exit 2) with its `refused` outcome logged.
    `created_at` may be any past day (never a future one, `created_at_in_future`). The checkpoint is the operator's
    own file, so this is a consistency check, not tamper evidence (DI-143); an earlier start day only tightens the
-   checks. Keep run outputs in the research plane and review each run's start in the access log (step 9). A
+   checks. Keep run outputs in the research plane and review each run's start in the access log (step 10). A
    confirmatory run covers every live item of both splits and gives the subsample's 40 S1 items their replicates
    (fewer live items in the stratum: `replicate_subsample_short`); an E3 run uses no subsample, its replicate variance
    being its single-pass repeats at the fixed level. A confirmatory recorded run replays a live recording
    whose header states the live run's start (`started_on`, required, `recording_started_on_missing`, and not after
    today, `recording_after_run`); its window starts on that day, so the IRB must have been approved by then and be
    unexpired on the replay day.
-8. **Scan.** `python scripts/scan_research_logs.py --fingerprints ... --research-logs <plane>/runs/<id> --require-zero
+8. **Label.** The registered tests and E2's verification set read the human claim labels inside a run's responses,
+   and a live provider's responses carry none, so a run's H1a-H1c, H4a and H4b wait (`awaiting_labels`) and an E2 design
+   over them has no verification set (`verification_set_empty`) until the raters' labels (`lqs/rubric.md`) are written
+   into the claims of a live recording of the run (`recorded-responses-v1`, its header stating the live run's start) and
+   that recording is replayed as a confirmatory recorded run (step 7). The run spec's `labels` is null (any other value
+   is refused, `labels`, exit 2). No tool derives that recording from a completed live run or writes the labels into
+   it yet (DI-143), so until one exists no confirmatory run reads human labels.
+9. **Scan.** `python scripts/scan_research_logs.py --fingerprints ... --research-logs <plane>/runs/<id> --require-zero
    --report <plane>/records/post-run-scan.json --access-log <plane>/access.jsonl --actor-role MLE`, and fill the contamination
    report.
-9. **Access log.** Review `<plane>/access.jsonl` (`access-log-format.md`) with the PI before any export.
+10. **Access log.** Review `<plane>/access.jsonl` (`access-log-format.md`) with the PI before any export.

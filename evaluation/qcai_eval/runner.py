@@ -48,7 +48,7 @@ from .faithfulness import citation_faithfulness
 from .invariance import invariance_violations
 from .payload_log import PayloadLogViolation, log_record, validate_log_record
 from .pointers import EvidenceCatalog, PointerResolver, public_span_lookup, resolve_items
-from .providers import RecordedResponder
+from .providers import RecordedResponder, RecordingInvalid
 
 PROVISIONAL_DEFAULTS = ("PD-61", "PD-68", "PD-73")
 REPO_ROOT = planes.REPO_ROOT
@@ -307,6 +307,10 @@ def _type_problems(spec: Mapping[str, Any]) -> list[str]:
     for key in ("responder", "governance"):
         if key in spec and not isinstance(spec[key], Mapping):
             reasons.append(key)
+    # Human claim labels reach a run only inside its responses (a labelled recording replayed as a recorded run; the
+    # research-plane runbook): the spec's `labels` is null, and any other value is refused, never accepted unread.
+    if spec.get("labels") is not None:
+        reasons.append("labels")
     responder = spec.get("responder")
     if isinstance(responder, Mapping):
         recorded, live = responder.get("recorded"), responder.get("live")
@@ -552,14 +556,19 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
         recording_path = _path(recorded["path"], repo_root) if "path" in recorded else None
         recording_sha = None if recording_path is None else _file_sha256(recording_path)
         note("recording", recording_sha)
+        invalid = False
         try:
             if recording_path is None:
                 raise KeyError("path")
             responder = RecordedResponder(recording_path)
+        except RecordingInvalid:
+            invalid = True  # refused after the sha256 check: a file that is not the pinned one is a pin mismatch first
         except (KeyError, OSError, ValueError):
             raise RunRefused(6, ["recording_unreadable"]) from None
         if recording_sha != recorded.get("sha256"):
             raise RunRefused(6, ["recording_sha256"])
+        if invalid:
+            raise RunRefused(3, ["recording_invalid"])
         if responder.header.get("run_pins_sha256") != recording_pins(package_sha, items_sha, catalog_sha, arms_sha, prompt_version):
             raise RunRefused(6, ["recording_pins_mismatch"])
         recording_source = responder.source
@@ -643,7 +652,8 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
         "prompt_version": prompt_version,
         "retries": retries,
         "harness_parameters": {"sha256": canonical_sha256(parameters_raw), "used_for": sorted(
-            key for key in ("replicates", "retries") if key not in spec)},
+            [key for key in ("replicates", "retries") if key not in spec]
+            + (["designs"] if design is not None and experiments.defaults_taken(spec["experiment"], spec["design"]) else []))},
         "code": code_pins(repo_root),
     }
     if design is not None:

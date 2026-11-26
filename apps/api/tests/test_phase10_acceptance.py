@@ -2300,6 +2300,28 @@ def test_phase10_docs_section_6_names_the_current_alembic_head_and_the_shipped_p
     assert "rewrites the sentences that name v7: section 6's configuration-package line, M7, this conflict and conflict 18" in conflict
 
 
+def test_phase10_docs_the_scope_names_every_spec_the_branch_edits_and_every_pd_range_is_the_spec_s():
+    # Spec 0.1 ("Phase 10 edits only these paths") names every architecture spec section 7 says the branch edits (the
+    # Phase 9 spec, E15, among them), and every "PD-60..PD-n" citation in the Phase 10 docs (ADR-012's status among them)
+    # is M16's range.
+    spec = spec_text()
+    scope = spec.split("### 0.1 Binding constraints", 1)[1].split("### 0.2", 1)[0]
+    files = spec.split("\n## 7. File-by-file changes", 1)[1].split("\n## 8.", 1)[0]
+    edited = sorted(set(re.findall(r"docs/architecture/phase(\d+)-implementation-spec\.md", files)), key=int)
+    assert "9" in edited, edited
+    for number in edited:
+        assert f"docs/architecture/phase{number}-implementation-spec.md" in scope or f"Phase {number} spec" in scope, number
+    pd_range = re.search(r"Phase 10 uses (PD-60\.\.PD-\d+) and", spec).group(1)
+    texts = {"spec": spec, "ADR-012": (REPO_ROOT / "docs/adr/ADR-012-evaluation-and-research-harness.md").read_text(encoding="utf-8"),
+             "test strategy": (REPO_ROOT / "docs/testing/test-strategy.md").read_text(encoding="utf-8")}
+    for path in sorted((REPO_ROOT / "docs/evaluation").rglob("*.md")):
+        texts[path.name] = path.read_text(encoding="utf-8")
+    assert "PD-60..PD-" in texts["ADR-012"]
+    for name, text in texts.items():
+        for cited in re.findall(r"PD-60\.\.PD-\d+", " ".join(text.split())):
+            assert cited == pd_range, (name, cited)
+
+
 def test_phase10_docs_the_spec_ends_in_one_review_history_table():
     spec = spec_text()
     head, history = spec.split("\n## 14. Review history\n", 1)

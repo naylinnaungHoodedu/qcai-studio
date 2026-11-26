@@ -9,17 +9,34 @@ live run is always refused.
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 import hashlib
+from math import isfinite
 import os
 from pathlib import Path
+import re
 from typing import Any, Callable, Mapping, Protocol
 
+from .agreement import CLAIM_LABELS
 from .canonical import read_jsonl
 
 PROVISIONAL_DEFAULTS = ("PD-68",)
 UNRESOLVABLE_POINTER = "EV-SYN-p999-99"
 FAILURE_REASONS = ("timeout", "rate_limited", "server_error", "refused_payload", "recorded_missing")
 RECORDING_FORMAT = "recorded-responses-v1"
+RECORDED_STATUSES = ("ok", "timeout", "rate_limited", "server_error", "refused_payload")
+RECORDED_OUTCOMES = ("answered", "abstained")
+USAGE_KEYS = ("input_units", "output_units")
+# Usage units per response: a bound that keeps a response's cost (units times a price of at most experiments.PRICE_MAX)
+# inside float range and the replay's cost units inside the ranking controller's exact arithmetic.
+UNITS_MAX = 10 ** 6
+SIGNAL_KEYS = ("V", "S", "K", "H", "F")
+MODEL_ID = re.compile(r"^[a-z0-9][a-z0-9.+:-]{0,63}$")
+
+
+class RecordingInvalid(ValueError):
+    """A recorded-responses-v1 line whose entry the runner or the metrics cannot read (the message names the line and the
+    field, never a value); the planner refuses the run as `recording_invalid` (exit 3)."""
 
 
 class ProviderOutage(RuntimeError):
@@ -87,17 +104,134 @@ class StubResponder:
         return stub_for(b"stub-responder-v1", request)
 
 
+def _int_in(value: Any, low: int, high: int | None = None) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= low and (high is None or value <= high)
+
+
+def _finite_number(value: Any) -> bool:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return isfinite(float(value))
+    except OverflowError:
+        return False
+
+
+def _signal_ok(value: Any) -> bool:
+    """A quality signal as eq. (8) reads it (`app.services.ranking.quality`): null, or a decimal string or an integer in
+    [0, 1] (the ranking arithmetic refuses a float)."""
+    if value is None:
+        return True
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        return False
+    try:
+        number = Decimal(value)
+    except (InvalidOperation, ValueError):
+        return False
+    return number.is_finite() and 0 <= number <= 1
+
+
+def _claim_problem(claim: Any) -> str | None:
+    if not isinstance(claim, Mapping):
+        return "claims"
+    if not isinstance(claim.get("claim_id"), str):
+        return "claims.claim_id"
+    cited = claim.get("cited", [])
+    if not isinstance(cited, list) or not all(isinstance(pointer, str) for pointer in cited):
+        return "claims.cited"
+    if claim.get("label") is not None and claim.get("label") not in CLAIM_LABELS:
+        return "claims.label"
+    if claim.get("ehmf_type") is not None and not isinstance(claim.get("ehmf_type"), str):
+        return "claims.ehmf_type"
+    return None
+
+
+def response_problem(response: Any) -> str | None:
+    """The first field of a recorded response that the runner, the payload log or the metrics could not read, or None:
+    `outcome` answered or abstained; `claims` a list of objects, each with a string `claim_id`, a list of string `cited`
+    pointers, a `label` among the claim labels or null and a string or null `ehmf_type`; `text` a string or null; `usage`
+    non-negative integer `input_units` and `output_units` of at most UNITS_MAX; `model_id` an id or null; and, when present,
+    `verdict` pass or object, `features` finite numbers keyed by the presentation features, `signals` eq. (8)'s V, S, K, H
+    and F as decimals in [0, 1] or null, `latency` {first_token_ms, total_ms} non-negative integers, the first not after
+    the total."""
+    from .experiments import FEATURES, VERDICTS
+
+    if not isinstance(response, Mapping):
+        return "response"
+    if response.get("outcome") not in RECORDED_OUTCOMES:
+        return "outcome"
+    claims = response.get("claims", [])
+    if not isinstance(claims, list):
+        return "claims"
+    for claim in claims:
+        problem = _claim_problem(claim)
+        if problem:
+            return problem
+    if response.get("text") is not None and not isinstance(response.get("text"), str):
+        return "text"
+    usage = response.get("usage")
+    if usage is not None and (not isinstance(usage, Mapping) or not set(usage) <= set(USAGE_KEYS)
+                              or not all(_int_in(usage[key], 0, UNITS_MAX) for key in usage)):
+        return "usage"
+    model_id = response.get("model_id")
+    if model_id is not None and not (isinstance(model_id, str) and MODEL_ID.match(model_id)):
+        return "model_id"
+    if response.get("verdict") is not None and response.get("verdict") not in VERDICTS:
+        return "verdict"
+    features = response.get("features")
+    if features is not None and (not isinstance(features, Mapping) or not set(features) <= set(FEATURES)
+                                 or not all(_finite_number(value) for value in features.values())):
+        return "features"
+    signals = response.get("signals")
+    if signals is not None and (not isinstance(signals, Mapping) or not set(signals) <= set(SIGNAL_KEYS)
+                                or not all(_signal_ok(value) for value in signals.values())):
+        return "signals"
+    latency = response.get("latency")
+    if latency is not None and (not isinstance(latency, Mapping) or set(latency) != {"first_token_ms", "total_ms"}
+                                or not all(_int_in(latency[key], 0) for key in latency)
+                                or latency["first_token_ms"] > latency["total_ms"]):
+        return "latency"
+    return None
+
+
+def entry_problem(entry: Any) -> str | None:
+    """The first field of a recording entry that cannot be replayed, or None: a string `request_key`; `attempts` (absent:
+    one ok attempt) a non-empty list of {status}, each status ok or a provider failure reason; and the `response`, which
+    `response_problem` checks, required when an attempt is ok."""
+    if not isinstance(entry, Mapping) or not isinstance(entry.get("request_key"), str):
+        return "request_key"
+    attempts = entry.get("attempts", [{"status": "ok"}])
+    if (not isinstance(attempts, list) or not attempts
+            or not all(isinstance(attempt, Mapping) and set(attempt) == {"status"} and attempt["status"] in RECORDED_STATUSES
+                       for attempt in attempts)):
+        return "attempts"
+    if "response" in entry or any(attempt["status"] == "ok" for attempt in attempts):
+        problem = response_problem(entry.get("response"))
+        if problem:
+            return problem if problem == "response" else f"response.{problem}"
+    return None
+
+
 class RecordedResponder:
-    """Replays a `recorded-responses-v1` file: each recorded failed attempt raises again, in order, then the response."""
+    """Replays a `recorded-responses-v1` file: each recorded failed attempt raises again, in order, then the response.
+    Every entry is checked when the file is read (`entry_problem`; RecordingInvalid), so a malformed entry refuses the run
+    before any request is sent, never a traceback after requests were written."""
 
     rule = RECORDING_FORMAT
 
     def __init__(self, path: Path) -> None:
         lines = read_jsonl(Path(path))
-        if not lines or lines[0].get("recording") != RECORDING_FORMAT:
+        if not lines or not isinstance(lines[0], Mapping) or lines[0].get("recording") != RECORDING_FORMAT:
             raise ValueError("not a recorded-responses-v1 file")
         self.header = lines[0]
-        self.entries = {line["request_key"]: line for line in lines[1:]}
+        self.entries: dict[str, Mapping[str, Any]] = {}
+        for number, line in enumerate(lines[1:], start=2):
+            problem = entry_problem(line)
+            if problem is None and line["request_key"] in self.entries:
+                problem = "request_key (repeated)"
+            if problem is not None:
+                raise RecordingInvalid(f"line {number}: {problem}")
+            self.entries[line["request_key"]] = line
         self.calls: dict[str, int] = {}
 
     @property
