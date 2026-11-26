@@ -30,7 +30,9 @@ the files that target actually read (never of an environment file it excluded, a
 
 Exit codes: 0 zero matches (with full coverage only under --require-zero: without it an incomplete scan also exits 0, the
 report's `result` says `incomplete` and stderr names the targets), or the self-test detected the sentinel; 1 matches,
-incomplete coverage under --require-zero (or the self-test missed); 2 usage (including research fingerprints without
+incomplete coverage under --require-zero (or the self-test missed); 2 usage (including a fingerprint file or synthetic
+fixture that is unreadable, not strict JSON or not shaped as its format, an empty fingerprint set among them:
+`fingerprints unreadable`, `contamination.set_from_payload`; research fingerprints without
 --access-log and --actor-role, --ulqs-fingerprints with --synthetic-fixture, an access log on a public path, research
 fingerprints or their report on a public path, or a report or access log that cannot be written);
 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).

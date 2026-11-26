@@ -13,7 +13,10 @@ refuse; ULQS items that do not parse are logged by the file's LF sha256), and th
 ULQS items are validated (`ulqs.validate_dataset`) before any fingerprint is built from them.
 
 Exit codes: 0 ok; 2 refused path or usage, a licensed text or the ULQS file unreadable, a licensed text that is not
-text or .docx, or an output or the access log that cannot be written; 3 bad salt; 4 the ULQS items are not valid JSON lines or fail validation;
+text or .docx or that holds fewer than 12 words (it gives no shingle, so it would check nothing), or an output or the
+access log that cannot be written; 3 bad salt; 4 the ULQS items are not valid JSON lines or fail validation, or give an
+empty ULQS set (no text of at least 3 words); nothing is written on a refusal. Every set written reads back as the
+scanner reads it (`contamination.set_from_payload`);
 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
 """
 
@@ -97,6 +100,10 @@ def _main(argv: list[str] | None = None) -> int:
         if text is None:
             print(f"refused (exit 2): {path.name} is not a text or .docx file", file=sys.stderr)
             return 2
+        if len(contamination.normalized_words(text)) < contamination.LICENSED_N:  # no shingle: it would check nothing
+            print(f"refused (exit 2): licensed text {path.name} holds fewer than {contamination.LICENSED_N} words, so it gives no "
+                  "fingerprint", file=sys.stderr)
+            return 2
         texts.append(text)
     try:
         ulqs_sha = lf_sha256(args.ulqs)
@@ -122,6 +129,14 @@ def _main(argv: list[str] | None = None) -> int:
         return 4
     licensed = contamination.build_licensed(texts, salt, set_id=args.set_id)
     ulqs_set = contamination.build_ulqs(items, salt, set_id=args.set_id)
+    # Each set must read back as the scanner reads it (contamination.set_from_payload): never write a set it refuses,
+    # an empty one among them (a ULQS set whose items hold no text of at least 3 words).
+    for payload, code, label in ((licensed, 2, "licensed"), (ulqs_set, 4, "ULQS")):
+        try:
+            contamination.set_from_payload(payload)
+        except ValueError as error:
+            print(f"refused (exit {code}): the {label} fingerprint set is not usable ({error})", file=sys.stderr)
+            return code
     write_lf(args.output_licensed, dumps_record(licensed))
     write_lf(args.output_ulqs, dumps_record(ulqs_set))
     for payload in (licensed, ulqs_set):

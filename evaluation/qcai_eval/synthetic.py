@@ -7,6 +7,7 @@ its catalog; tests build larger sets (the 160-item AC-10-1 set) in their own tem
 
 from __future__ import annotations
 
+import json
 from math import ceil
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -142,6 +143,33 @@ def synthetic_catalog(items: Sequence[Mapping[str, Any]], *, with_text: bool = T
 
 def corpus_text(items: Sequence[Mapping[str, Any]]) -> dict[str, str]:
     return {f"syn-doc-{ptr.lower()}": evidence_text(ptr) for ptr in all_pointers(items)}
+
+
+def rc1_items(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Synthetic items reshaped as rc1 records (schema 1.0, licensed class, EV-2026 pointers); every M5 field appears
+    (the migrator's input in the tests)."""
+    volume = "qcai" + "_2026"
+    reshaped = []
+    for index, item in enumerate(json.loads(json.dumps(items))):
+        text = json.dumps(item).replace("SYN-", "ULQS-").replace("EV-ULQS-", "EV-2026-")
+        rc1 = json.loads(text)
+        for key in ("dataset_version", "item_kind", "split"):
+            rc1.pop(key, None)
+        rc1["validation"].pop("human_reviewed")
+        rc1.update(schema_version="1.0", license_class="private_eval_full_span", corpus_version="QCAI-CORPUS-2030-01-01",
+                   corpus_scope=[volume], status="candidate")
+        rc1["provenance"] = {"created_utc": "2030-01-01T00:00:00Z", "author": SENTINEL,
+                             "migrated_from": "invented-v0", "migration_disposition": "convert" if index % 2 else "revise",
+                             "note": "invented note"}
+        rc1["question"] = f"{rc1['question']} {SENTINEL}"
+        if index == 0:
+            rc1["reasoning_chain"] = ["invented step one", "invented step two"]
+            rc1["notes"] = "invented notes"
+        for block in [rc1] + rc1.get("conversation", []):
+            if "negative_evidence" in block:
+                block["negative_evidence"]["corpus_version"] = "QCAI-CORPUS-2030-01-01"
+        reshaped.append(rc1)
+    return reshaped
 
 
 def write_jsonl(path: Path, records: Sequence[Mapping[str, Any]]) -> Path:
@@ -282,11 +310,13 @@ def commit_for_test(monkeypatch: Any, package: Mapping[str, Any]) -> None:
 
 def pass_scan(path: Path, *, dataset_content_sha256: str, **overrides: Any) -> dict[str, str]:
     """A pre-run scan report shaped like one that passes the gate (governance.scan_refusals): a licensed and a ULQS set
-    with research ids, the ULQS set bound to the items, a repository and a research-logs target that each scanned a file.
+    with research ids and non-empty sizes, the ULQS set bound to the items, a repository and a research-logs target that each scanned a file.
     Its counts are invented; tests pass `overrides` to break one condition at a time."""
     value = {"report": "qcai-research-log-scan", "format_version": 1,
-             "fingerprint_sets": [{"id": "research-licensed-t1", "kind": "licensed", "dataset_content_sha256": None},
-                                  {"id": "research-ulqs-t1", "kind": "ulqs", "dataset_content_sha256": dataset_content_sha256}],
+             "fingerprint_sets": [{"id": "research-licensed-t1", "kind": "licensed", "dataset_content_sha256": None,
+                                   "shingle_words": 12, "fingerprints": 40, "exact": 0},
+                                  {"id": "research-ulqs-t1", "kind": "ulqs", "dataset_content_sha256": dataset_content_sha256,
+                                   "shingle_words": 6, "fingerprints": 30, "exact": 5}],
              "targets": [{"target": "repository", "root": ".", "files": 3, "scanned": 2, "excluded": [], "files_with_hits": []},
                          {"target": "research-logs", "root": "prior-run", "files": 4, "scanned": 3, "excluded": [],
                           "files_with_hits": []}],

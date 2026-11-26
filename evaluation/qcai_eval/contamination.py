@@ -169,14 +169,47 @@ class FingerprintSet:
     dataset_content_sha256: str | None = None  # a ULQS set: the status-free content sha256 of the items it was built from
 
 
-def set_from_payload(payload: Mapping[str, Any]) -> FingerprintSet:
-    if payload.get("hash") != HASH or payload.get("format") not in (LICENSED_FORMAT, ULQS_FORMAT):
+_FINGERPRINT = re.compile(r"[0-9a-f]{32}")
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+SET_N = {"licensed": LICENSED_N, "ulqs": ULQS_N}
+
+
+def _fingerprint_list(value: Any, field: str) -> frozenset[str]:
+    if not isinstance(value, list) or not all(isinstance(entry, str) and _FINGERPRINT.fullmatch(entry) for entry in value):
+        raise ValueError(f"fingerprint file: {field} is not a list of 32-hex fingerprints")
+    return frozenset(value)
+
+
+def set_from_payload(payload: Any) -> FingerprintSet:
+    """A fingerprint file's set, shape-checked (ValueError naming the field, never a value): an object of the licensed or
+    ULQS format with the registered hash; a hex salt of at least `MIN_SALT_BYTES`; `shingle_words` absent or the set's
+    registered N (`SET_N`: 12 licensed, 6 ULQS); lists of 32-hex fingerprints; a non-empty set (a licensed set needs a
+    shingle, a ULQS set a shingle or an exact fingerprint), so that an empty set can never let a scan pass without
+    anything being checked; a non-empty string id; and, for a ULQS set, a 64-hex `dataset_content_sha256` or none."""
+    if not isinstance(payload, Mapping) or payload.get("hash") != HASH or payload.get("format") not in (LICENSED_FORMAT, ULQS_FORMAT):
         raise ValueError("not a qcai licensed or ULQS fingerprint file")
     kind = "licensed" if payload["format"] == LICENSED_FORMAT else "ulqs"
-    default_n = LICENSED_N if kind == "licensed" else ULQS_N
-    return FingerprintSet(id=str(payload.get("fingerprint_set_id", "unknown")), kind=kind, salt=bytes.fromhex(payload["salt_hex"]),
-                          n=int(payload.get("shingle_words", default_n)), shingles=frozenset(payload["fingerprints"]),
-                          exact=frozenset(payload.get("exact", [])), dataset_content_sha256=payload.get("dataset_content_sha256"))
+    set_id = payload.get("fingerprint_set_id", "unknown")
+    if not isinstance(set_id, str) or not set_id:
+        raise ValueError("fingerprint file: fingerprint_set_id")
+    salt_hex = payload.get("salt_hex")
+    try:
+        salt = bytes.fromhex(salt_hex) if isinstance(salt_hex, str) else b""
+    except ValueError:
+        salt = b""
+    if len(salt) < MIN_SALT_BYTES:
+        raise ValueError(f"fingerprint file: salt_hex is not hex of at least {MIN_SALT_BYTES} bytes")
+    n = payload.get("shingle_words", SET_N[kind])
+    if type(n) is not int or n != SET_N[kind]:
+        raise ValueError(f"fingerprint file: shingle_words is not {SET_N[kind]}")
+    shingles = _fingerprint_list(payload.get("fingerprints"), "fingerprints")
+    exact = _fingerprint_list(payload.get("exact", []), "exact")
+    if not shingles and not (kind == "ulqs" and exact):
+        raise ValueError(f"fingerprint file: an empty {kind} set (no fingerprint to check)")
+    dataset = payload.get("dataset_content_sha256")
+    if dataset is not None and not (kind == "ulqs" and isinstance(dataset, str) and _SHA256.fullmatch(dataset)):
+        raise ValueError("fingerprint file: dataset_content_sha256")
+    return FingerprintSet(id=set_id, kind=kind, salt=salt, n=n, shingles=shingles, exact=exact, dataset_content_sha256=dataset)
 
 
 def load_fingerprint_file(path: Path) -> FingerprintSet:
@@ -184,15 +217,27 @@ def load_fingerprint_file(path: Path) -> FingerprintSet:
 
 
 def synthetic_sets(fixture_path: Path) -> list[FingerprintSet]:
-    """Fingerprints built in memory from the committed synthetic fixture with its published salt (public CI)."""
+    """Fingerprints built in memory from the committed synthetic fixture with its published salt (public CI). A fixture
+    that is not an object of that format with a hex salt and two lists of strings is refused (ValueError)."""
     fixture = inputs.read_json(fixture_path)
-    if fixture.get("fixture") != SYNTHETIC_FIXTURE_FORMAT or fixture.get("synthetic") is not True:
+    if not isinstance(fixture, Mapping) or fixture.get("fixture") != SYNTHETIC_FIXTURE_FORMAT or fixture.get("synthetic") is not True:
         raise ValueError("not a synthetic contamination fixture")
+    for field in ("licensed_passages", "ulqs_texts"):
+        if not isinstance(fixture.get(field), list) or not all(isinstance(text, str) for text in fixture[field]):
+            raise ValueError(f"synthetic fixture: {field} is not a list of strings")
+    if not isinstance(fixture.get("salt_hex"), str):
+        raise ValueError("synthetic fixture: salt_hex")
     salt = bytes.fromhex(fixture["salt_hex"])
     licensed = build_licensed(fixture["licensed_passages"], salt, set_id="synthetic-licensed-v1")
     items = [{"question": text} for text in fixture["ulqs_texts"]]
     ulqs = build_ulqs(items, salt, set_id="synthetic-ulqs-v1")
     return [set_from_payload(licensed), set_from_payload(ulqs)]
+
+
+def set_summary(fingerprint_set: FingerprintSet) -> dict[str, Any]:
+    """A set as the scan report names it: its id, kind and ULQS dataset, and its size (never a fingerprint)."""
+    return {"id": fingerprint_set.id, "kind": fingerprint_set.kind, "dataset_content_sha256": fingerprint_set.dataset_content_sha256,
+            "shingle_words": fingerprint_set.n, "fingerprints": len(fingerprint_set.shingles), "exact": len(fingerprint_set.exact)}
 
 
 def _segments(text: str) -> list[str]:
@@ -388,5 +433,5 @@ def report(targets: Sequence[Mapping[str, Any]], sets: Sequence[FingerprintSet])
     incomplete = incomplete_targets(targets)
     result = "fail" if total else "incomplete" if incomplete else "pass"
     return {"report": "qcai-research-log-scan", "format_version": 1,
-            "fingerprint_sets": [{"id": s.id, "kind": s.kind, "dataset_content_sha256": s.dataset_content_sha256} for s in sets],
+            "fingerprint_sets": [set_summary(s) for s in sets],
             "targets": list(targets), "matches_total": total, "incomplete_targets": incomplete, "result": result}

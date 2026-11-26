@@ -1954,15 +1954,38 @@ def test_a_design_run_logs_its_design_inputs_and_its_outcome_to_the_access_log(t
 
 HOSTILE = {"wrong_type": None, "list": "[1]", "dict": '{"k": 1}', "null": "null", "bool": "true", "rational": '"1/3"',
            "overflow": "1e400", "overflow_text": '"1e400"', "underflow": "1e-400", "underflow_text": '"1e-400"',
-           "huge_integer": "1" + "0" * 400, "nan": "NaN", "infinity": "Infinity", "negative": "-1", "empty": '""'}
+           "huge_integer": "1" + "0" * 400, "huge_integer_digits": "1" * 5000, "nan": "NaN", "infinity": "Infinity", "negative": "-1",
+           "empty": '""', "lone_surrogate": '"a\\ud800b"'}
 _MARK = "\u0001hostile\u0001"
-SWEEP_CODES = {"run_evaluation": {0, 2, 3, 5, 6, 7, 8, 9}, "validate_ulqs": {0, 2, 3, 4, 5}}
+SWEEP_CODES = {"run_evaluation": {0, 2, 3, 5, 6, 7, 8, 9}, "validate_ulqs": {0, 2, 3, 4, 5}, "migrate_ulqs_rc1": {0, 2, 3},
+               "scan_research_logs": {0, 2}}
 SWEEP_COUNTS = {stratum: 1 for stratum in "ABCDEFG"}  # one item per stratum where the input does not concern the items
 # Both records valid: a confirmatory run's refusal moves on to the items (items_not_frozen, exit 3); a gate record alone
 # leaves the gate's reasons for the records the variant does not supply.
 SWEEP_VALID = {"irb_record": 3, "osf_record": 3, "freeze_record": ["irb_missing", "osf_missing", "pre_run_scan_missing"],
                "scan_report": ["irb_missing", "osf_missing", "freeze_record_missing"], "provider_terms": [], "licence_ruling": [],
-               "research_use": []}
+               "research_use": [], "package_live": 9}
+
+
+class _Everything:
+    """A set holding every package sha256 (the live package kind judges each variant as committed)."""
+
+    def __contains__(self, value):
+        return True
+
+    def __or__(self, other):
+        return self
+
+
+def _standard_sha(text):
+    """The canonical sha256 of `text` as the standard json module reads it, or a placeholder when it cannot (an integer
+    past its digit limit, or a string no hash can encode): the strict decoder refuses those before any pin is compared."""
+    from evaluation.qcai_eval.canonical import canonical_sha256
+
+    try:
+        return canonical_sha256(json.loads(text))
+    except (ValueError, UnicodeEncodeError):
+        return "0" * 64
 
 
 def _hostile_texts(document, root=()):
@@ -2097,9 +2120,102 @@ def _sweep_case(kind, tmp_path, monkeypatch):
         def write(text, n):
             path = tmp_path / f"{kind}-{n}.json"
             path.write_bytes(text.encode("utf-8"))
-            pinned = {"path": str(path), "sha256": canonical_sha256(json.loads(text))}
+            pinned = {"path": str(path), "sha256": _standard_sha(text)}
             return _spec_argv(tmp_path, {**spec, block: {**spec[block], **pinned}}, n)
         return "run_evaluation", [(document, (), write)]
+    if kind in ("package", "package_live"):
+        # A package holding what the harness reads (its owner decisions, `semantic` and version; the rest of a real
+        # package is only pinned), pinned by sha256 and sidecar. Stub runs judge it uncommitted; the live kind judges every
+        # variant as committed (so its decisions are read as written) and, when valid, is refused by the live checks (9).
+        from evaluation.qcai_eval import governance
+
+        real = json.loads((REPO_ROOT / synthetic.PACKAGE_PATH).read_text(encoding="utf-8"))
+        document = {"package_version": real["package_version"], "semantic": real["semantic"],
+                    "owner_decisions": {name: real["owner_decisions"][name] for name in ("D-07", "D-14")}}
+        live = kind == "package_live"
+        extra = {"mode": "live", "responder": {"live": {"adapter": None}}} if live else {}
+        spec, _items = small_spec(tmp_path, counts=SWEEP_COUNTS, **extra)
+        if live:
+            monkeypatch.setattr(governance, "committed_package_sha256s", lambda: _Everything())
+
+        def write(text, n):
+            path = tmp_path / f"package-{n}.json"
+            path.write_bytes(text.encode("utf-8"))
+            sha = _standard_sha(text)
+            (tmp_path / f"package-{n}.json.sha256").write_text(sha + "\n", encoding="utf-8")
+            return _spec_argv(tmp_path, {**spec, "package": {**spec["package"], "path": str(path), "sha256": sha}}, n)
+        return "run_evaluation", [(document, (), write)]
+    if kind == "harness_parameters":
+        spec, _items = small_spec(tmp_path, counts=SWEEP_COUNTS)
+        document = json.loads(runner.HARNESS_PARAMETERS.read_text(encoding="utf-8"))
+        load = runner.load_harness_parameters
+
+        def write(text, n):
+            path = tmp_path / f"harness-{n}.json"
+            path.write_bytes(text.encode("utf-8"))
+            monkeypatch.setattr(runner, "load_harness_parameters", lambda path_=path: load(path_))
+            return _spec_argv(tmp_path, spec, n)
+        return "run_evaluation", [(document, (), write)]
+    if kind == "rc1_mapping":
+        source = synthetic.write_jsonl(tmp_path / "rc1.jsonl", synthetic.rc1_items(synthetic.synthetic_dataset(synthetic.SMALL)))
+        document = json.loads((REPO_ROOT / "lqs" / "ulqs-rc1-to-v1.0-mapping.json").read_text(encoding="utf-8"))
+
+        def write(text, n):
+            path = tmp_path / f"mapping-{n}.json"
+            path.write_bytes(text.encode("utf-8"))
+            return ["--input", source, "--output", tmp_path / f"v1-{n}.jsonl", "--author-role", "PI",
+                    "--access-log", tmp_path / f"access-{n}.jsonl", "--mapping", path]
+        return "migrate_ulqs_rc1", [(document, (), write)]
+    if kind in ("licensed_fingerprints", "ulqs_fingerprints", "synthetic_fixture"):
+        from evaluation.qcai_eval import contamination
+
+        fixture = json.loads(synthetic.CONTAMINATION_FIXTURE.read_text(encoding="utf-8"))
+        logs = tmp_path / "logs"
+        logs.mkdir()
+        (logs / "log.txt").write_text("an invented clean log line\n", encoding="utf-8")
+        if kind == "synthetic_fixture":
+            def write(text, n):
+                path = tmp_path / f"fixture-{n}.json"
+                path.write_bytes(text.encode("utf-8"))
+                return ["--synthetic-fixture", path, "--path", logs, "--require-zero"]
+            return "scan_research_logs", [(fixture, (), write)]
+        salt = bytes.fromhex(fixture["salt_hex"])
+        sets = {"licensed_fingerprints": contamination.build_licensed(fixture["licensed_passages"][:1], salt, set_id="research-licensed-t1"),
+                "ulqs_fingerprints": contamination.build_ulqs([{"question": fixture["ulqs_texts"][0]}], salt, set_id="research-ulqs-t1")}
+        other = "ulqs_fingerprints" if kind == "licensed_fingerprints" else "licensed_fingerprints"
+        fixed = tmp_path / f"{other}.private.json"
+        fixed.write_text(json.dumps(sets[other]), encoding="utf-8")
+
+        def write(text, n):
+            path = tmp_path / f"{kind}-{n}.private.json"
+            path.write_bytes(text.encode("utf-8"))
+            licensed, ulqs_path = (path, fixed) if kind == "licensed_fingerprints" else (fixed, path)
+            return ["--fingerprints", licensed, "--ulqs-fingerprints", ulqs_path, "--research-logs", logs, "--require-zero",
+                    "--access-log", tmp_path / f"access-{n}.jsonl", "--actor-role", "PI"]
+        return "scan_research_logs", [(sets[kind], (), write)]
+    if kind == "agent_check":
+        # The agent-check record through the checks validate_ulqs.py makes of it (strict decoding and its shape, both
+        # refused with exit 2, then the freeze's agent-check codes): each variant must give reasons, never an exception.
+        from evaluation.qcai_eval import inputs
+
+        items = read_jsonl(synthetic.ITEMS_FIXTURE)
+        raw_rules = json.loads(ulqs.DEFAULT_FREEZE_RULES.read_text(encoding="utf-8"))
+        raw_rules["agent_check"]["pinned_models"] = [synthetic.SYNTHETIC_AGENT_MODEL]  # so that a valid record passes
+        (tmp_path / "rules.json").write_text(json.dumps(raw_rules), encoding="utf-8")
+        rules = ulqs.load_freeze_rules(tmp_path / "rules.json")
+        record = synthetic.agent_check(items)
+
+        def write(text, n):
+            def reasons():
+                try:
+                    value = inputs.loads(text)
+                except ValueError:
+                    return ["agent_check_unreadable"]
+                if not ulqs.agent_check_shape_ok(value):
+                    return ["agent_check_invalid"]
+                return ulqs.agent_check_failures(value, items, rules=rules, previous=items)
+            return reasons
+        return "governance", [(record, (), write)]
     if kind in ("irb_record", "osf_record"):
         spec, _items = small_spec(tmp_path, purpose="confirmatory", experiment="E1", run_id="synthetic-confirmatory-v1")
         records = {"irb_record": synthetic.irb_record(tmp_path / "irb.private.json"),
@@ -2172,7 +2288,8 @@ def _sweep_case(kind, tmp_path, monkeypatch):
 SWEEP_KINDS = ("run_spec", "design_e2", "design_e3", "design_e4", "recording", "checkpoint_responses", "checkpoint_events",
                "verification_set", "e4_responses", "design_ratings", "analysis_plans", "arms", "irb_record", "osf_record", "freeze_record", "scan_report",
                "provider_terms", "licence_ruling", "research_use", "ulqs_items",
-               "catalog", "ratings", "freeze_rules")
+               "catalog", "ratings", "freeze_rules", "package", "package_live", "harness_parameters", "rc1_mapping",
+               "licensed_fingerprints", "ulqs_fingerprints", "synthetic_fixture", "agent_check")
 
 
 @pytest.mark.parametrize("kind", SWEEP_KINDS)
@@ -2214,6 +2331,57 @@ def test_no_hostile_value_in_any_research_plane_input_ends_in_a_traceback_exit_1
     assert number and failures == [], (number, len(failures), failures[:20])
 
 
+@pytest.mark.parametrize(("value", "reason"), [
+    ("1" * 5000, "recording_invalid"), ('"a\\ud800b"', "recording_invalid")])
+def test_a_recording_value_the_decoder_refuses_is_recording_invalid_before_any_request(tmp_path, value, reason):
+    # Review 21: a 5000-digit integer reached Python's own conversion limit (a plain ValueError, read as the pin class
+    # `recording_unreadable`, exit 6), and a lone surrogate passed the decoder and crashed the run after it started
+    # (exit 10). Both are invalid content of a pinned recording: exit 3 `recording_invalid`, before any request.
+    lines = read_jsonl(synthetic.RECORDED_FIXTURE)
+    spec = _recording_spec(tmp_path / "recording")
+    entry = json.dumps(lines[1]).replace(json.dumps(lines[1]["response"]["claims"][0]["claim_id"]), value, 1)
+    pinned = _pin_file(tmp_path / "recording.jsonl", _lines_with(lines, 1, entry))
+    code, err = _sweep_main("run_evaluation", _spec_argv(tmp_path, {**spec, "responder": {"recorded": pinned}}, "r"))
+    assert (code, err.strip().splitlines()[-1]) == (3, f"refused (exit 3): {reason}")
+    assert not (tmp_path / "out-r" / runner.RESPONSES).exists()
+
+
+@pytest.mark.parametrize(("package", "reason"), [
+    ([1], "package_invalid:package"), ("x", "package_invalid:package"), ({"owner_decisions": [1]}, "package_invalid:owner_decisions"),
+    ({"owner_decisions": {"D-14": "decided"}}, "package_invalid:owner_decisions"), ({"semantic": [1]}, "package_invalid:semantic")])
+def test_a_pinned_package_the_harness_cannot_read_is_refused_as_package_invalid(tmp_path, package, reason):
+    # A hand-made package with a matching sha256 and sidecar, but not shaped as the harness reads it (an object; owner
+    # decisions an object of objects; `semantic` an object), is refused with exit 6, never the last-resort exit 10.
+    from evaluation.qcai_eval.canonical import canonical_sha256
+
+    spec, _items = small_spec(tmp_path)
+    path = tmp_path / "package.json"
+    path.write_text(json.dumps(package), encoding="utf-8")
+    sha = canonical_sha256(package)
+    (tmp_path / "package.json.sha256").write_text(sha + "\n", encoding="utf-8")
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**spec, "package": {**spec["package"], "path": str(path), "sha256": sha}})
+    assert (refused.value.code, refused.value.reasons) == (6, [reason])
+    code, err = _sweep_main("run_evaluation", _spec_argv(tmp_path, {**spec, "package": {**spec["package"], "path": str(path), "sha256": sha}}, "p"))
+    assert code == 6 and "internal_error" not in err
+
+
+@pytest.mark.parametrize("text", ["[1]", '"x"', "null", '{"parameters": "harness-parameters-v1", "replicate_variance_required": [1]}'])
+def test_harness_parameters_not_shaped_as_an_object_are_refused_as_harness_parameters_invalid(tmp_path, monkeypatch, text):
+    # The sweep replaces nodes inside the file; a whole file of another type (or a block that is not an object) is a
+    # ValueError of the loader, so the run is refused with exit 6, never the last-resort exit 10.
+    path = tmp_path / "harness.json"
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(ValueError):
+        runner.load_harness_parameters(path)
+    load = runner.load_harness_parameters
+    monkeypatch.setattr(runner, "load_harness_parameters", lambda: load(path))
+    spec, _items = small_spec(tmp_path)
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(spec)
+    assert (refused.value.code, refused.value.reasons) == (6, ["harness_parameters_invalid"])
+
+
 def test_every_research_plane_input_is_decoded_strictly(tmp_path):
     # inputs.loads, the one decoder of every research-plane input: the standard json module would accept each of these
     # and hand a later step a value it cannot compute with (NaN, an infinity, 0.0 for a non-zero number, an integer no
@@ -2222,9 +2390,14 @@ def test_every_research_plane_input_is_decoded_strictly(tmp_path):
     from evaluation.qcai_eval import inputs
 
     for text in ('{"v": NaN}', '{"v": Infinity}', '{"v": -Infinity}', '{"v": 1e400}', '{"v": -1e400}', '{"v": 1e-400}',
-                 '{"v": 0.1e-400}', '{"v": ' + "1" + "0" * 400 + "}", '{"v": -' + "9" * 17 + "}", "[" * 100_000 + "]" * 100_000):
+                 '{"v": 0.1e-400}', '{"v": ' + "1" + "0" * 400 + "}", '{"v": -' + "9" * 17 + "}", "[" * 100_000 + "]" * 100_000,
+                 # past the interpreter's 4300-digit conversion limit (its own ValueError is not InputInvalid)
+                 '{"v": ' + "1" * 5000 + "}", '{"v": -' + "1" * 5000 + "}", '{"v": 90071992547409921}',
+                 # an unpaired UTF-16 surrogate, in a value, a key, a nested list and alone
+                 '{"v": "\\ud800"}', '{"\\udfff": 1}', '[["a\\udfffb"]]', '"\\ud800"', '{"v": ["ok", {"w": "\\udc00"}]}'):
         with pytest.raises(inputs.InputInvalid):
             inputs.loads(text)
+    assert inputs.loads('{"v": "\\ud83d\\ude00"}') == {"v": "\U0001f600"}  # a surrogate pair is one character
     assert inputs.loads('{"a": [1, 2.5, 0.0, 0e5, -0.0, 5e-324, 9007199254740992, -9007199254740992, "NaN", "1e400"]}') == {
         "a": [1, 2.5, 0.0, 0.0, -0.0, 5e-324, 2 ** 53, -(2 ** 53), "NaN", "1e400"]}
     assert inputs.loads(b'{"b": true}') == {"b": True}

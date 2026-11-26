@@ -9,7 +9,11 @@ decoded here, once, by `loads`. It admits only values every later step can compu
 - a number with a fraction or an exponent must be a finite float (`1e400` overflows to infinity and is refused) that
   does not underflow (`1e-400` reads as 0.0 although its digits are not zero, and is refused);
 - an integer must lie within +-2**53 (`INTEGER_LIMIT`), so that it is exactly representable as a float and every count,
-  bound and seed the harness derives from it stays in range (`10**400` is refused);
+  bound and seed the harness derives from it stays in range (`10**400` is refused; an integer of more digits than
+  2**53 has is refused before it is converted, so one past the interpreter's 4300-digit conversion limit is refused the
+  same way, never as that limit's plain ValueError);
+- every string, object keys included, must be encodable as UTF-8 (an escaped unpaired UTF-16 surrogate such as
+  `\\ud800` decodes to a string no hash, log or output can encode, and is refused);
 - nesting the decoder can read (a document nested past the interpreter's recursion limit raises `RecursionError`,
   which is not a ValueError, and is refused).
 
@@ -29,12 +33,14 @@ import re
 from typing import Any
 
 INTEGER_LIMIT = 2 ** 53
+_INTEGER_DIGITS = len(str(INTEGER_LIMIT))
 _NONZERO_DIGIT = re.compile(r"[1-9]")
 
 
 class InputInvalid(ValueError):
     """A research-plane input holds a value no later step can compute with (a non-finite, underflowing or out-of-range
-    number, or nesting too deep to decode). The message names the class of value, never the input's content."""
+    number, a string that is not encodable as UTF-8, or nesting too deep to decode). The message names the class of value,
+    never the input's content."""
 
 
 def _constant(name: str) -> Any:
@@ -52,6 +58,8 @@ def _float(text: str) -> float:
 
 
 def _integer(text: str) -> int:
+    if len(text.lstrip("-")) > _INTEGER_DIGITS:  # JSON has no leading zeros: more digits than 2**53 is out of range
+        raise InputInvalid("an integer outside +-2**53")
     value = int(text)
     if abs(value) > INTEGER_LIMIT:
         raise InputInvalid("an integer outside +-2**53")
@@ -64,9 +72,33 @@ def loads(text: str | bytes) -> Any:
     if isinstance(text, (bytes, bytearray)):
         text = bytes(text).decode("utf-8")  # UnicodeDecodeError is a ValueError
     try:
-        return json.loads(text, parse_constant=_constant, parse_float=_float, parse_int=_integer)
+        value = json.loads(text, parse_constant=_constant, parse_float=_float, parse_int=_integer)
     except RecursionError:  # nesting deeper than the decoder's recursion limit
         raise InputInvalid("nesting too deep") from None
+    _check_strings(value)
+    return value
+
+
+def _check_strings(value: Any) -> None:
+    """Every string of a decoded value, object keys included, encodes as UTF-8 (iteratively: no recursion limit)."""
+    pending = [value]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, str):
+            strings: list[Any] = [node]
+        elif isinstance(node, dict):
+            strings = list(node)
+            pending.extend(node.values())
+        elif isinstance(node, list):
+            strings = []
+            pending.extend(node)
+        else:
+            continue
+        for string in strings:
+            try:
+                string.encode("utf-8")
+            except UnicodeEncodeError:
+                raise InputInvalid("a string with an unpaired surrogate") from None
 
 
 def read_json(path: Path) -> Any:

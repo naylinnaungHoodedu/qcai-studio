@@ -11,7 +11,11 @@ path), and the access log is required. The script prints counts by stratum and s
 The rc1 read is logged as soon as the file is read, before any check that can refuse (by the file's LF sha256 when it
 does not parse), so a refused migration still leaves its read in the log.
 
-Exit codes: 0 ok; 2 refused path or usage, or an output or the access log that cannot be written; 3 the input is unreadable, an input item fails rc1 validation, or a migrated
+The mapping is read and shape-checked (`mapping_problem`) before the input is read; a mapping that cannot be read, is
+not strict JSON or is not shaped as `ulqs-rc1-to-v1.0` format 1 is refused (exit 2, `mapping unreadable` or
+`mapping invalid (<field>)`).
+
+Exit codes: 0 ok; 2 refused path or usage, a mapping unreadable or invalid, or an output or the access log that cannot be written; 3 the input is unreadable, an input item fails rc1 validation, or a migrated
 record fails v1.0 validation; 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
 """
 
@@ -35,6 +39,31 @@ PROVISIONAL_DEFAULTS = ("PD-61",)  # Phase 10 spec 12.1; ratified under DI-140
 
 MAPPING_PATH = REPO_ROOT / "lqs" / "ulqs-rc1-to-v1.0-mapping.json"
 ROLES = ("PI", "RL")
+
+
+def _strings(value: object) -> bool:
+    return isinstance(value, str) and bool(value)
+
+
+def mapping_problem(mapping: object) -> str | None:
+    """The first field of the rc1 mapping that is not shaped as `ulqs-rc1-to-v1.0` format 1 needs, or None: the source's
+    schema version and its states (strings), the target's schema and dataset versions, `fields` (each a string rule),
+    `added` (`validation.human_reviewed` a boolean, `item_kind` null or a string) and `states`, which maps every source
+    state to itself (no item moves past its rc1 state)."""
+    if not isinstance(mapping, dict) or mapping.get("mapping") != "ulqs-rc1-to-v1.0" or mapping.get("format_version") != 1:
+        return "mapping"
+    source, target, fields, added, states = (mapping.get(key) for key in ("source", "target", "fields", "added", "states"))
+    if not isinstance(source, dict) or not _strings(source.get("schema_version")) or not isinstance(source.get("status"), list)             or not source["status"] or not all(_strings(state) for state in source["status"]):
+        return "source"
+    if not isinstance(target, dict) or not all(_strings(target.get(key)) for key in ("schema_version", "dataset_version")):
+        return "target"
+    if not isinstance(fields, dict) or not all(isinstance(rule, str) for rule in fields.values()):
+        return "fields"
+    if not isinstance(added, dict) or type(added.get("validation.human_reviewed")) is not bool             or not (added.get("item_kind") is None or isinstance(added.get("item_kind"), str)) or "item_kind" not in added:
+        return "added"
+    if not isinstance(states, dict) or any(states.get(state) != state for state in source["status"]):
+        return "states"
+    return None
 
 
 def migrate_item(item: dict, *, mapping: dict, author_role: str, split: str) -> dict:
@@ -74,7 +103,15 @@ def _main(argv: list[str] | None = None) -> int:
     except planes.PathRefused as error:
         print(f"refused (exit 2): {error}", file=sys.stderr)
         return 2
-    mapping = inputs.read_json(args.mapping)
+    try:
+        mapping = inputs.read_json(args.mapping)
+    except (OSError, ValueError) as error:
+        print(f"refused (exit 2): mapping unreadable ({type(error).__name__})", file=sys.stderr)
+        return 2
+    problem = mapping_problem(mapping)
+    if problem is not None:
+        print(f"refused (exit 2): mapping invalid ({problem})", file=sys.stderr)
+        return 2
 
     def log(action: str, sha256: str | None) -> None:
         if sha256 is not None:

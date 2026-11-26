@@ -551,28 +551,7 @@ def test_ac_10_1_the_strata_targets_are_the_paper_s_in_one_provisional_data_file
 
 def _rc1(items):
     """Synthetic items reshaped as rc1 records (schema 1.0, licensed class, EV-2026 pointers); every M5 field appears."""
-    volume = "qcai" + "_2026"
-    reshaped = []
-    for index, item in enumerate(json.loads(json.dumps(items))):
-        text = json.dumps(item).replace("SYN-", "ULQS-").replace("EV-ULQS-", "EV-2026-")
-        rc1 = json.loads(text)
-        for key in ("dataset_version", "item_kind", "split"):
-            rc1.pop(key, None)
-        rc1["validation"].pop("human_reviewed")
-        rc1.update(schema_version="1.0", license_class="private_eval_full_span", corpus_version="QCAI-CORPUS-2030-01-01",
-                   corpus_scope=[volume], status="candidate")
-        rc1["provenance"] = {"created_utc": "2030-01-01T00:00:00Z", "author": synthetic.SENTINEL,
-                             "migrated_from": "invented-v0", "migration_disposition": "convert" if index % 2 else "revise",
-                             "note": "invented note"}
-        rc1["question"] = f"{rc1['question']} {synthetic.SENTINEL}"
-        if index == 0:
-            rc1["reasoning_chain"] = ["invented step one", "invented step two"]
-            rc1["notes"] = "invented notes"
-        for block in [rc1] + rc1.get("conversation", []):
-            if "negative_evidence" in block:
-                block["negative_evidence"]["corpus_version"] = "QCAI-CORPUS-2030-01-01"
-        reshaped.append(rc1)
-    return reshaped
+    return synthetic.rc1_items(items)
 
 
 def test_ac_10_1_the_rc1_shape_migrates_to_v1_0_and_the_migrator_writes_only_private_paths(tmp_path, capsys):
@@ -1068,6 +1047,36 @@ def test_ac_10_4_the_fingerprint_builder_writes_format_1_that_scan_boundary_read
     captured = capsys.readouterr()
     assert salt_hex not in captured.out + captured.err and ("5a" * 16) not in captured.out + captured.err
     assert salt_hex not in access.read_text(encoding="utf-8")
+
+
+def test_ac_10_4_the_fingerprint_builder_refuses_a_set_that_would_check_nothing(tmp_path, monkeypatch, capsys):
+    # Plan "Stop: contamination": a licensed text of fewer than 12 words gives no shingle, so a scan with its set would
+    # report zero licensed-span matches without checking anything. The builder refuses it (exit 2) and an empty ULQS set
+    # (exit 4), and writes neither file; each set it writes reads back as the scanner reads it.
+    items_path, _catalog, _items = synthetic.write_fixture_set(tmp_path, synthetic.SMALL)
+    monkeypatch.setenv("FINGERPRINT_SALT_FOR_TEST", "5a" * 32)
+    out_l, out_u = tmp_path / "l.private.json", tmp_path / "u.private.json"
+    builder = script("build_licensed_fingerprints")
+
+    def argv(licensed):
+        return ["--licensed-text", str(licensed), "--ulqs", str(items_path), "--set-id", "syn-1", "--output-licensed", str(out_l),
+                "--output-ulqs", str(out_u), "--salt-env", "FINGERPRINT_SALT_FOR_TEST", "--access-log", str(tmp_path / "access.jsonl"),
+                "--actor-role", "DS"]
+
+    short = tmp_path / "short.txt"
+    short.write_text("three invented words", encoding="utf-8")
+    long = tmp_path / "long.txt"
+    long.write_text(fixture_texts()["licensed_passages"][0], encoding="utf-8")
+    assert builder.main(argv(short)) == 2
+    assert "fewer than 12 words" in capsys.readouterr().err and not out_l.exists() and not out_u.exists()
+    real = contamination.build_ulqs
+    monkeypatch.setattr(contamination, "build_ulqs", lambda items, salt, set_id: {**real(items, salt, set_id=set_id), "exact": [],
+                                                                                  "fingerprints": []})
+    assert builder.main(argv(long)) == 4
+    assert "ULQS fingerprint set is not usable" in capsys.readouterr().err and not out_l.exists() and not out_u.exists()
+    monkeypatch.setattr(contamination, "build_ulqs", real)
+    assert builder.main(argv(long)) == 0
+    assert contamination.load_fingerprint_file(out_l).shingles and contamination.load_fingerprint_file(out_u).exact
 
 
 def test_ac_10_4_no_tracked_file_holds_a_real_catalog_pointer_or_ulqs_item_record():
@@ -1582,6 +1591,33 @@ def test_plan_f_a_refused_migration_still_logs_the_rc1_read(tmp_path):
     assert migrate.main(argv) == 3
     assert _access(access) == [("read", "ulqs_items", None)] and read_jsonl(access)[0]["artifact_sha256"] == lf_sha256(source)
     assert {line["actor_role"] for line in read_jsonl(access)} == {"PI"}
+
+
+@pytest.mark.parametrize(("mapping", "reason"), [
+    (None, "mapping unreadable (FileNotFoundError)"), ("[1, 2]", "mapping invalid (mapping)"), ("{}", "mapping invalid (mapping)"),
+    ('{"fields": {}}', "mapping invalid (mapping)"), ("NaN", "mapping unreadable (InputInvalid)"), ("not json", "mapping unreadable (JSONDecodeError)"),
+    (lambda raw: {**raw, "source": [1]}, "mapping invalid (source)"), (lambda raw: {**raw, "target": {}}, "mapping invalid (target)"),
+    (lambda raw: {**raw, "fields": {"item_id": 1}}, "mapping invalid (fields)"),
+    (lambda raw: {**raw, "added": {"item_kind": None}}, "mapping invalid (added)"),
+    (lambda raw: {**raw, "states": {"draft": "draft", "candidate": "frozen"}}, "mapping invalid (states)"),
+    (lambda raw: {**raw, "states": []}, "mapping invalid (states)"),
+])
+def test_plan_g_a_missing_or_malformed_rc1_mapping_is_refused_with_exit_2_before_the_input_is_read(tmp_path, capsys, mapping, reason):
+    # The mapping is read and shape-checked before the rc1 input (spec 5): a missing, non-strict or wrongly shaped
+    # mapping is the documented usage refusal (exit 2), never the last-resort exit 10, and nothing is read or written.
+    source = synthetic.write_jsonl(tmp_path / "rc1.jsonl", _rc1(synthetic.synthetic_dataset(synthetic.SMALL)))
+    path = tmp_path / "mapping.json"
+    if isinstance(mapping, str):
+        path.write_text(mapping, encoding="utf-8")
+    elif mapping is not None:
+        path.write_text(json.dumps(mapping(json.loads((REPO_ROOT / "lqs" / "ulqs-rc1-to-v1.0-mapping.json").read_text(encoding="utf-8")))),
+                        encoding="utf-8")
+    output, access = tmp_path / "v1.jsonl", tmp_path / "access.jsonl"
+    code = script("migrate_ulqs_rc1").main(["--input", str(source), "--output", str(output), "--author-role", "PI", "--access-log", str(access),
+                                            "--mapping", str(path)])
+    err = capsys.readouterr().err
+    assert code == 2 and f"refused (exit 2): {reason}" in err and "internal_error" not in err
+    assert not output.exists() and not access.exists()
 
 
 def _imports(path):

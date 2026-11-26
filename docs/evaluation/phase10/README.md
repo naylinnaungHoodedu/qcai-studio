@@ -20,7 +20,7 @@ executed and no Table XVII row or HR-1..MR-3 outcome is asserted (plan Phase 10 
   cannot be written (`output_unwritable`), a `--write` or `--record-stub` target or the access log that cannot be
   written (refused without a reason code), a non-synthetic run without the access log or a passing pre-run scan
   (`access_log_required`,
-  `pre_run_scan_*`), an E1-E4 family the design does not compute (`analysis_plan_invalid:<experiment>`) or an E2-E4
+  `pre_run_scan_*`), an analysis plans file its validator refuses (`analysis_plan_invalid:<problem>`, the validator's message, such as `families: not an object`) or an E1-E4 family the design does not compute (`analysis_plan_invalid:<experiment>`) or an E2-E4
   design that cannot run (`design`, `design.<field>`, `design_departs_from_registration:<field>` in a live run or over
   research data, `e2_panel_invalid`, `verification_set_empty`, `e3_no_s7_items`, `e4_models_invalid`,
   `e4_shift_invalid`, `e4_later_price_in_force`, `e4_stream_items_below_floor` in a live run or over research data,
@@ -31,7 +31,7 @@ executed and no Table XVII row or HR-1..MR-3 outcome is asserted (plan Phase 10 
   `<input>_items`, `<input>_generator_unknown`, `ratings_invalid`) or a payload-log violation, or a confirmatory run
   refused with an items (`items_not_frozen`,
   `items_split_missing`) or freeze-record (`freeze_record_*`) reason and no IRB or OSF reason; 5 interrupted (resume
-  with `--resume`, on a later day too); 6 a pin mismatch (a design input's `<input>_sha256` among them); 7 arm parity;
+  with `--resume`, on a later day too); 6 a pin mismatch (a design input's `<input>_sha256` among them), or a pinned file that cannot be read, is not strict JSON or is not shaped as the harness reads it (`harness_parameters_invalid`, `package_unreadable`, `package_invalid:<field>`, `arms_unreadable`, `analysis_plan_unreadable`, `recording_unreadable`); 7 arm parity;
   8 a confirmatory run refused with an IRB or OSF
   reason; 9 a live run or hold H12 refused; 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message, after the run's refused outcome is logged). A refused confirmatory run lists every reason and exits with the first
   class present (`governance.confirmatory_exit_code`). Its dates are judged in the run window (spec 3.13; the
@@ -41,13 +41,15 @@ executed and no Table XVII row or HR-1..MR-3 outcome is asserted (plan Phase 10 
   the freeze rules, or an agent-check record that does not parse or is not shaped as `ulqs-agent-check-v1`); 3 schema
   problems; 4 freeze failed (an agent-check record that does not match the items is a freeze code); 5 evidence catalog
   invalid or unresolved pointers; 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
-- `migrate_ulqs_rc1.py`: 0; 2 refused path or usage, or an output or the access log that cannot be written; 3 the input unreadable, an input item fails rc1 validation, or a migrated
+- `migrate_ulqs_rc1.py`: 0; 2 refused path or usage, a mapping that cannot be read, is not strict JSON or is not shaped as `ulqs-rc1-to-v1.0` format 1 (`mapping unreadable`, `mapping invalid (<field>)`, before the input is read), or an output or the access log that cannot be written; 3 the input unreadable, an input item fails rc1 validation, or a migrated
   record fails v1.0 validation; 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
 - `build_licensed_fingerprints.py`: 0; 2 refused (a path, no `--access-log` or `--actor-role`, an unreadable input, a
-  licensed text that is not text or .docx, or an output or the access log that cannot be written); 3 bad salt; 4 ULQS items that are not JSON lines or fail validation; 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
+  licensed text that is not text or .docx or holds fewer than 12 words, so that it gives no fingerprint, or an output or the access log that cannot be written); 3 bad salt; 4 ULQS items that are not JSON lines, fail validation or give an empty ULQS set; nothing is written on a refusal, and every set written reads back as the scanner reads it; 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
 - `scan_research_logs.py`: 0 zero matches (with full coverage only under `--require-zero`: without it an incomplete
   scan also exits 0, its report's `result` says `incomplete` and stderr names the targets), or the self-test found its
-  sentinel; 1 matches, or incomplete coverage under `--require-zero` (or the self-test missed); 2 usage (including
+  sentinel; 1 matches, or incomplete coverage under `--require-zero` (or the self-test missed); 2 usage (including a
+  fingerprint file or synthetic fixture that cannot be read, is not strict JSON or is not shaped as its format, an
+  empty set among them: `fingerprints unreadable`, `contamination.set_from_payload`;
   research fingerprints without `--access-log` and `--actor-role`, `--ulqs-fingerprints` with `--synthetic-fixture`,
   an access log on a public path, research fingerprints or their report on a public path, or a report or access log
   that cannot be written); 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).

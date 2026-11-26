@@ -184,11 +184,12 @@ def _units(item: Mapping[str, Any]) -> list[dict[str, Any]]:
 def load_harness_parameters(path: Path = HARNESS_PARAMETERS) -> dict[str, Any]:
     """The provisional run defaults (PD-68): the paper's replicate subsample and retries, and the replicate-variance rule."""
     raw = inputs.read_json(path)
-    if raw.get("parameters") != "harness-parameters-v1" or raw.get("provisional") is not True:
+    if not isinstance(raw, Mapping) or raw.get("parameters") != "harness-parameters-v1" or raw.get("provisional") is not True:
         raise ValueError("not a provisional harness-parameters-v1 file")
     if _replicate_problems(raw.get("replicates")) or not _integer(raw.get("retries"), 0, MAX_RETRIES):
         raise ValueError("harness parameters: replicates or retries out of range")
-    if not _integer((raw.get("replicate_variance_required") or {}).get("min_replicates"), 2):
+    variance = raw.get("replicate_variance_required")
+    if not isinstance(variance, Mapping) or not _integer(variance.get("min_replicates"), 2):
         raise ValueError("harness parameters: replicate_variance_required.min_replicates")
     designs = raw.get("designs")
     if (not isinstance(designs, Mapping) or designs.get("provisional") is not True
@@ -417,6 +418,20 @@ def plan_run(spec: Mapping[str, Any], *, repo_root: Path = REPO_ROOT, environ: M
                          resume=resume)
 
 
+def package_problem(package_raw: Any) -> str | None:
+    """The first field of a package the harness reads that is not shaped as it reads it, or None: the package is an object,
+    `owner_decisions` is absent, null or an object of objects (each decision's `state` is read), and `semantic` is absent,
+    null or an object (its `enabled_by_default` is read by the live checks)."""
+    if not isinstance(package_raw, Mapping):
+        return "package"
+    decisions = package_raw.get("owner_decisions")
+    if decisions is not None and (not isinstance(decisions, Mapping) or not all(isinstance(entry, Mapping) for entry in decisions.values())):
+        return "owner_decisions"
+    if package_raw.get("semantic") is not None and not isinstance(package_raw["semantic"], Mapping):
+        return "semantic"
+    return None
+
+
 def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str, str], out_dir: Path | None,
               access_log: Path | None, note: Callable[[str, str | None], None], resume: bool = False) -> Plan:
     try:
@@ -435,6 +450,8 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
     package_sha = canonical_sha256(package_raw)
     if package_sha != spec["package"].get("sha256") or _sidecar(package_path) != package_sha:
         raise RunRefused(6, ["package_sha256"])
+    if package_problem(package_raw) is not None:
+        raise RunRefused(6, [f"package_invalid:{package_problem(package_raw)}"])
     # Owner decisions are judged only from a committed package (governance module docstring): a hand-made copy with a
     # matching sidecar reads every decision `uncommitted`, so it releases no hold.
     committed = package_sha in governance.committed_package_sha256s()

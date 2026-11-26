@@ -70,8 +70,10 @@ log is `<plane>/access.jsonl` (digests only).
    run events that are not UTF-8 JSON, is refused (exit 2) and left as it is, for the operator to inspect. Each
    checkpoint file the run reads is in the access log (`run_output`). An output directory that is a file or lies under
    one, or any output the run cannot write, is refused (`output_unwritable`, exit 2) with its `refused` outcome logged.
-   Every input is decoded strictly (no `NaN`, infinity, overflowing, underflowing or out-of-range number) and shape-checked
-   before any request is sent; an exit 10 (`internal_error`, naming only the exception's class) is a harness defect no
+   Every input is decoded strictly (no `NaN`, infinity, overflowing, underflowing or out-of-range number, and no string
+   that cannot be encoded as UTF-8, such as an escaped unpaired surrogate) and shape-checked by its own validator before
+   any request is sent (the package, the harness parameters, the rc1 mapping, the fingerprint files and the agent-check
+   record among them); an exit 10 (`internal_error`, naming only the exception's class) is a harness defect no
    validator caught, never a property of the data: keep the inputs as they are, the run's `refused` outcome is in the
    access log, and report it. `created_at` may be any past day (never a future one, `created_at_in_future`). The checkpoint is the operator's
    own file, so this is a consistency check, not tamper evidence (DI-143); an earlier start day only tightens the

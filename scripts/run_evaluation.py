@@ -36,7 +36,7 @@ Exit codes: 0 ok; 1 drift; 2 usage, a malformed spec, a path, an experiment or a
 (`partial_checkpoint`), or a complete one without --resume (`output_exists`)), a run output that cannot be written
 (`output_unwritable`), a --write or --record-stub target or the access log that cannot be written (refused without a
 reason code), a non-synthetic run without the access log (`access_log_required`) or a passing pre-run scan
-(`pre_run_scan_*`), an E1-E4 family the design does not compute (`analysis_plan_invalid:<experiment>`) or an E2-E4
+(`pre_run_scan_*`), an analysis plans file its validator refuses (`analysis_plan_invalid:<problem>`, the validator's message, such as `families: not an object`) or an E1-E4 family the design does not compute (`analysis_plan_invalid:<experiment>`) or an E2-E4
 design that cannot run (`design`, `design.<field>`, `design_departs_from_registration:<field>` in a live run or over
 research data, `e2_panel_invalid`, `verification_set_empty`, `e3_no_s7_items`, `e4_models_invalid`, `e4_shift_invalid`,
 `e4_later_price_in_force`, `e4_stream_items_below_floor` in a live run or over research data, `experiment_requires_arms`), or a confirmatory run refused with no IRB, OSF, items or
@@ -46,7 +46,7 @@ each entry's attempts and response are shape-checked when the recording is read,
 `e4_responses_items`, `verification_set_generator_unknown`, `e4_responses_generator_unknown`, `ratings_invalid`) or a
 payload-log violation, or a confirmatory run refused with an items (`items_not_frozen`,
 `items_split_missing`) or freeze-record (`freeze_record_*`) reason and no IRB or OSF reason; 5 interrupted (provider
-outage; --resume continues it, on a later day too); 6 a pin mismatch (a design input's `<input>_sha256` among them);
+outage; --resume continues it, on a later day too); 6 a pin mismatch (a design input's `<input>_sha256` among them), or a pinned file that cannot be read, is not strict JSON or is not shaped as the harness reads it (`harness_parameters_invalid`, `package_unreadable`, `package_invalid:<field>`, `arms_unreadable`, `analysis_plan_unreadable`, `recording_unreadable`);
 7 arm parity; 8 a confirmatory run refused
 with any IRB or OSF reason (`irb_*`, `osf_*`); 9 a live run or hold H12 refused;
 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message, after the run's refused outcome is logged). A refused confirmatory run lists

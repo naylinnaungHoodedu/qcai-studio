@@ -297,14 +297,118 @@ def test_the_access_log_digest_covers_only_the_files_the_scan_read(tmp_path, mon
 
 
 def test_the_report_names_each_set_s_kind_and_the_ulqs_set_s_dataset():
+    # The report names each set's id, kind and ULQS dataset, and its size (never a fingerprint), so that the confirmatory
+    # gate can refuse a scan made with an empty set. (The licensed set is built from a passage of 12 words or more: an
+    # empty set is refused by set_from_payload, test_a_fingerprint_set_that_would_check_nothing_or_is_malformed_is_refused.)
     items = synthetic.synthetic_dataset({"A": 1})
     ulqs_set = contamination.set_from_payload(contamination.build_ulqs(items, SALT, set_id="u"))
-    licensed = contamination.set_from_payload(contamination.build_licensed(["x"], SALT, set_id="l"))
+    licensed = contamination.set_from_payload(contamination.build_licensed([fixture()["licensed_passages"][0]], SALT, set_id="l"))
     from evaluation.qcai_eval import ulqs
 
     report = contamination.report([], [licensed, ulqs_set])
-    assert report["fingerprint_sets"] == [{"id": "l", "kind": "licensed", "dataset_content_sha256": None},
-                                          {"id": "u", "kind": "ulqs", "dataset_content_sha256": ulqs.dataset_content_sha256(items)}]
+    assert report["fingerprint_sets"] == [
+        {"id": "l", "kind": "licensed", "dataset_content_sha256": None, "shingle_words": 12, "fingerprints": len(licensed.shingles),
+         "exact": 0},
+        {"id": "u", "kind": "ulqs", "dataset_content_sha256": ulqs.dataset_content_sha256(items), "shingle_words": 6,
+         "fingerprints": len(ulqs_set.shingles), "exact": len(ulqs_set.exact)}]
+    assert licensed.shingles and ulqs_set.shingles and ulqs_set.exact
+    assert not any(fingerprint in json.dumps(report) for fingerprint in licensed.shingles | ulqs_set.shingles | ulqs_set.exact)
+
+
+def _licensed_payload(**changes):
+    payload = contamination.build_licensed([fixture()["licensed_passages"][0]], SALT, set_id="research-licensed-t1")
+    payload.update(changes)
+    return {key: value for key, value in payload.items() if value is not _ABSENT}
+
+
+_ABSENT = object()
+
+
+@pytest.mark.parametrize(("payload", "message"), [
+    (_licensed_payload(fingerprints=[]), "an empty licensed set"),
+    (contamination.build_licensed(["a b c"], SALT, set_id="l"), "an empty licensed set"),
+    ({**contamination.build_ulqs([{"question": "two words"}], SALT, set_id="u")}, "an empty ulqs set"),
+    (_licensed_payload(salt_hex=""), "salt_hex"),
+    (_licensed_payload(salt_hex="ab" * 31), "salt_hex"),
+    (_licensed_payload(salt_hex="zz" * 32), "salt_hex"),
+    (_licensed_payload(salt_hex=5), "salt_hex"),
+    (_licensed_payload(salt_hex=_ABSENT), "salt_hex"),
+    (_licensed_payload(shingle_words=0), "shingle_words"),
+    (_licensed_payload(shingle_words=6), "shingle_words"),
+    (_licensed_payload(shingle_words=True), "shingle_words"),
+    (_licensed_payload(shingle_words=[1]), "shingle_words"),
+    (_licensed_payload(fingerprints=5), "fingerprints"),
+    (_licensed_payload(fingerprints=["zz"]), "fingerprints"),
+    (_licensed_payload(fingerprints=[{}]), "fingerprints"),
+    (_licensed_payload(fingerprints=_ABSENT), "fingerprints"),
+    (_licensed_payload(exact=[1]), "exact"),
+    (_licensed_payload(fingerprint_set_id=""), "fingerprint_set_id"),
+    (_licensed_payload(fingerprint_set_id=["x"]), "fingerprint_set_id"),
+    (_licensed_payload(dataset_content_sha256="f" * 64), "dataset_content_sha256"),
+    ({**contamination.build_ulqs([{"question": "an invented question of words"}], SALT, set_id="u"), "dataset_content_sha256": "x"},
+     "dataset_content_sha256"),
+    ([1], "not a qcai"),
+    ("x", "not a qcai"),
+])
+def test_a_fingerprint_set_that_would_check_nothing_or_is_malformed_is_refused(payload, message):
+    # Plan "Stop: contamination" (AC-10-4, AC-10-6): a set with no fingerprint would let a scan report zero matches without
+    # anything being checked, so it is refused, like a salt shorter than MIN_SALT_BYTES, an N other than the kind's
+    # registered one and a fingerprint that is not 32-hex; every refusal is a ValueError (the scanner's exit 2,
+    # `fingerprints unreadable`), never a TypeError or AttributeError (the last-resort exit 10).
+    with pytest.raises(ValueError, match=message) as refused:
+        contamination.set_from_payload(payload)
+    assert type(refused.value) is ValueError
+
+
+def test_a_ulqs_set_of_short_texts_holds_only_exact_fingerprints_and_is_accepted():
+    built = contamination.build_ulqs([{"question": "an invented question"}], SALT, set_id="u")
+    loaded = contamination.set_from_payload(built)
+    assert not loaded.shingles and loaded.exact and loaded.n == contamination.ULQS_N
+
+
+@pytest.mark.parametrize("change", [
+    lambda fixture: [1], lambda fixture: {**fixture, "salt_hex": 5}, lambda fixture: {**fixture, "salt_hex": "ab"},
+    lambda fixture: {**fixture, "licensed_passages": "x"}, lambda fixture: {**fixture, "ulqs_texts": [1]},
+    lambda fixture: {**fixture, "licensed_passages": ["too few words"]},
+])
+def test_a_malformed_synthetic_fixture_is_refused_as_unreadable_fingerprints(tmp_path, change, capsys):
+    path = tmp_path / "fixture.json"
+    path.write_text(json.dumps(change(fixture())), encoding="utf-8")
+    with pytest.raises(ValueError):
+        contamination.synthetic_sets(path)
+    if str(REPO_ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import scan_research_logs
+
+    assert scan_research_logs.main(["--synthetic-fixture", str(path), "--self-test"]) == 2
+    assert "fingerprints unreadable" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("payload", [
+    [1], [], {"format": contamination.LICENSED_FORMAT, "hash": contamination.HASH, "salt_hex": 5, "fingerprints": []},
+    _licensed_payload(fingerprints=[]), _licensed_payload(fingerprints=5), _licensed_payload(fingerprints=[{}]),
+    _licensed_payload(shingle_words=[1]), _licensed_payload(salt_hex="", fingerprints=["zz"], shingle_words=0),
+])
+def test_the_scanner_refuses_an_empty_or_malformed_research_fingerprint_file_with_exit_2(tmp_path, payload, capsys):
+    # Review 21: the reproduced cases (an empty licensed set passed `--require-zero`; a list or a wrongly typed field
+    # reached the last-resort exit 10) are each `fingerprints unreadable`, exit 2, before any target is scanned.
+    if str(REPO_ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import scan_research_logs
+
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "log.txt").write_text("an invented clean log line\n", encoding="utf-8")
+    licensed = tmp_path / "l.private.json"
+    licensed.write_text(json.dumps(payload), encoding="utf-8")
+    ulqs_path = tmp_path / "u.private.json"
+    ulqs_path.write_text(json.dumps(contamination.build_ulqs([{"question": "an invented question"}], SALT, set_id="u")), encoding="utf-8")
+    report = tmp_path / "report.private.json"
+    code = scan_research_logs.main(["--fingerprints", str(licensed), "--ulqs-fingerprints", str(ulqs_path), "--research-logs", str(logs),
+                                    "--require-zero", "--report", str(report), "--access-log", str(tmp_path / "access.jsonl"),
+                                    "--actor-role", "PI"])
+    err = capsys.readouterr().err
+    assert code == 2 and "fingerprints unreadable" in err and "internal_error" not in err and not report.exists()
 
 
 def test_ci_scans_the_whole_tracked_tree_once_with_the_env_templates_and_require_zero():

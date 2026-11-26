@@ -332,7 +332,8 @@ def record_refusals(reference: Any, loader: Callable[[Path], dict[str, Any]], re
 def scan_refusals(reference: Any, repo_root: Path, *, dataset_content_sha256: str, missing: str) -> list[str]:
     """The pre-run contamination scan (plan L "Stop: contamination"; 10.5(3)): a resolved `qcai-research-log-scan` report
     that passed with zero matches, made with a licensed and a ULQS research fingerprint set (never only the synthetic
-    fixture's or the self-test's), whose ULQS set was built from this run's items (the status-free content sha256), over
+    fixture's or the self-test's), each non-empty by the size the report records (a licensed set with at least one
+    shingle, a ULQS set with at least one shingle or exact fingerprint), whose ULQS set was built from this run's items (the status-free content sha256), over
     the tracked repository (tests and public artifacts) and at least one research-logs or path target (logs, prompts),
     with full coverage: every target scanned a file, none excluded a file as too large or unreadable, and no research-logs
     or path target excluded a file as binary or not text (plan 10.5(3): "pre-run scan proving no ULQS text in prompts,
@@ -352,8 +353,11 @@ def scan_refusals(reference: Any, repo_root: Path, *, dataset_content_sha256: st
     reasons = []
     if scan.get("result") != "pass" or scan.get("matches_total") != 0:
         reasons.append("pre_run_scan_invalid:result")
+    # A set counts only with a research id and a size that checks something (`contamination.set_summary`): a licensed set
+    # with a shingle, a ULQS set with a shingle or an exact fingerprint; an empty or unsized set never satisfies the gate.
     sets = [entry for entry in scan["fingerprint_sets"] if isinstance(entry, Mapping) and isinstance(entry.get("id"), str)
-            and not entry["id"].startswith(NON_RESEARCH_SET_PREFIXES)]
+            and not entry["id"].startswith(NON_RESEARCH_SET_PREFIXES)
+            and _count(entry.get("fingerprints")) + (_count(entry.get("exact")) if entry.get("kind") == "ulqs" else 0) > 0]
     if not {"licensed", "ulqs"} <= {_text(entry.get("kind")) for entry in sets}:
         reasons.append("pre_run_scan_invalid:fingerprint_sets")
     if not any(entry.get("kind") == "ulqs" and entry.get("dataset_content_sha256") == dataset_content_sha256 for entry in sets):
