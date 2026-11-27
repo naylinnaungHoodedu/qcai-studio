@@ -221,7 +221,15 @@ def test_each_family_registers_the_paper_s_execution_and_design_protocol_and_the
     assert "Design protocol: `streams` 1000, `stream_length` 2000, `shift.at` 1000, `shift.points` 0.10." in text
     assert text.count("files its family as `departs_from_registration`") == 4
     # Any other value, a missing protocol or one of the wrong type is refused, so the plans' sha256 binds the protocol.
+    # Review 27: a value Python's `==` takes for the paper's (`true` for 1, `3.0` for 3, `1.0`, a float shift) is refused
+    # too: it would change the plans' sha256 and the draft's wording while still passing as the paper's values.
     for edit, match in ((lambda r: r["families"]["E1"]["protocol"]["execution"].update(retries=0), "E1.protocol: must be the paper's"),
+                        (lambda r: r["families"]["E1"]["protocol"]["execution"].update({"replicates.default": True}), "E1.protocol"),
+                        (lambda r: r["families"]["E2"]["protocol"]["execution"].update(retries=3.0), "E2.protocol"),
+                        (lambda r: r["families"]["E4"]["protocol"]["execution"].update({"replicates.default": 1.0}), "E4.protocol"),
+                        (lambda r: r["families"]["E3"]["protocol"]["design"].update(repeats=3.0), "E3.protocol"),
+                        (lambda r: r["families"]["E4"]["protocol"]["design"].update({"shift.at": 1000.0}), "E4.protocol"),
+                        (lambda r: r["families"]["E4"]["protocol"]["design"].update(streams=True), "E4.protocol"),
                         (lambda r: r["families"]["E2"]["protocol"]["execution"].update({"replicates.subsample.size": 39}), "E2.protocol"),
                         (lambda r: r["families"]["E3"]["protocol"]["design"].update(repeats=2), "E3.protocol"),
                         (lambda r: r["families"]["E3"]["protocol"]["execution"].update({"replicates.default": 1}), "E3.protocol"),

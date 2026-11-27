@@ -3483,7 +3483,7 @@
       "test_h4b_carries_the_eqc_reliability_condition_and_the_secondary_analyses_are_registered": "0b6c634c39a6f3e942f91e2929d2ef074b97fdf3923e4266f16e71c3fd8712fe",
       "test_the_preregistration_is_generated_as_a_draft_with_every_test_status": "ca3b70d1005d39da5e42af71e78b67b304f4a8accfdc9398fc3d74acd0b0ff8b",
       "test_every_table_xvii_row_phase_10_tests_is_registered_and_each_family_states_its_data": "c65a5c403fe692709a2694b4ff015bbe37c5197293f5a238539d0d8da3079dd8",
-      "test_each_family_registers_the_paper_s_execution_and_design_protocol_and_the_draft_states_it": "1aa0fed743cd7ca5484baa250656525aead8d7daa601eb2c8556ad98c31d4bae"
+      "test_each_family_registers_the_paper_s_execution_and_design_protocol_and_the_draft_states_it": "a2cfb1527fd8f216469086f54abfd0db86374a974cd1911e466216655592eca1"
     },
     "evaluation/tests/test_contamination_scan.py": {
       "REPO_ROOT": "1040065b1ae3274d3319311f9f2704f4a6d6fba3441d46ffe50248e82808a99c",
@@ -3954,7 +3954,7 @@
       "_FailingClose": "8472770f823a4d66c7ba55ca283c17fa9af04157534ddca922cd8f98a2de1dce",
       "test_phase10_exit_codes_a_checkpoint_write_that_fails_is_refused_with_exit_2": "2779d221cf336bc937b9ed044952946a004a026084621c748c714a127bcd35f9",
       "test_phase10_exit_codes_an_output_file_that_is_a_directory_is_output_unwritable": "5b0012c8f3cdfd97bd1573669c9009be2be8eeffc40191987bf91cc32cbf944b",
-      "RETIRED_TERMS": "7d4fdfe2454d7a332131de3d895f12a57b366351f9e71d6c48ea3340d571ad38",
+      "RETIRED_TERMS": "4a91201178a77129f2749b8589cdfe266dac14b6ce9c6b58cb54aee5b3fe7d34",
       "test_phase10_docs_no_authoritative_text_states_a_retired_rule": "0ad0abd882bf24468e5c353f94f50b18143f31cf171fc436370dd45a80426284"
     },
     "test_python_sources.py": {

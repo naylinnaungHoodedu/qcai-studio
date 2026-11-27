@@ -3072,9 +3072,11 @@ def test_phase10_exit_codes_an_output_file_that_is_a_directory_is_output_unwrita
 # Terms of a superseded design that no authoritative document or source may state as current (P2-12-D-03): the run
 # window replaced the rule that a run's created_at be today and the start check of a resume (spec 3.13); a dated run's
 # start event carries started_on, so only the byte-compared outputs are free of the wall clock (spec 3.9). Only
-# `os.path.realpath` maps a NUL path on Windows (open() and os.stat raise on every platform; spec R-a).
+# `os.path.realpath` maps a NUL path on Windows (open() and os.stat raise on every platform; spec R-a). The registered
+# execution and design protocol is each family's `protocol` in the analysis plans, no longer a code constant (review 26).
 RETIRED_TERMS = ("created_at_not_today", "created_at_not_start_date", "start_check", "start_date_refusals", "run_date_refusals",
-                 "resuming=", "no output carries the wall clock", "Windows maps it silently", "POSIX path calls raise")
+                 "resuming=", "no output carries the wall clock", "Windows maps it silently", "POSIX path calls raise",
+                 "REGISTERED_EXECUTION", "REGISTERED_DESIGN")
 
 
 def test_phase10_docs_no_authoritative_text_states_a_retired_rule():

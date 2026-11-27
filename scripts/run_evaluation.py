@@ -43,7 +43,7 @@ reason code), a non-synthetic run without the access log (`access_log_required`)
 design that cannot run (`design`, `design.<field>`, `design_departs_from_registration:<field>` in a live run or over
 research data, `e2_panel_invalid`, `verification_set_empty`, `e3_no_s7_items`, `e4_models_invalid`, `e4_shift_invalid`,
 `e4_later_price_in_force`, `e4_stream_items_below_floor` in a live run or over research data, `experiment_requires_arms`),
-an E1-E4 run whose replicates or retries depart from the registered execution protocol in a live run or over research data (`design_departs_from_registration:<field>`, the field one of `replicates.default`, `replicates.subsample.stratum`, `replicates.subsample.size`, `replicates.subsample.replicates` and `retries`; `runner.REGISTERED_EXECUTION`), or a confirmatory run refused with no IRB, OSF, items or
+an E1-E4 run whose replicates or retries depart from the registered execution protocol in a live run or over research data (`design_departs_from_registration:<field>`, the field one of `replicates.default`, `replicates.subsample.stratum`, `replicates.subsample.size`, `replicates.subsample.replicates` and `retries`; the family's `protocol.execution` in `evaluation/config/analysis_plans_v1.json`), or a confirmatory run refused with no IRB, OSF, items or
 freeze-record reason; 3 invalid items, unresolved pointers, a recording entry the run cannot read (`recording_invalid`:
 each entry's attempts and response are shape-checked when the recording is read, before any request), a design input (`<input>`: `verification_set`,
 `e4_responses`, `ratings`) unreadable (`<input>_unreadable`) or invalid (`<input>_invalid`, `verification_set_items`,

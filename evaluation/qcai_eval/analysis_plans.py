@@ -10,8 +10,8 @@ that value (`PAPER_NULLS`). H4b carries the paper's EQC reliability condition (`
 analyses the paper and Table XVII name are registered (`SECONDARY_ANALYSES`), implemented or not. Every Table XVII row
 Phase 10 tests (`PHASE10_CRITERIA`) is registered once a family's hypothesis criterion or `criteria_only` entry, and each
 family states its data (`data`) and its protocol (`protocol`: the execution values every E1-E4 run keeps and, for E3
-and E4, the design values; each must be the paper's, `PAPER_PROTOCOL`), which the runner judges a run against and the
-pre-registration draft states, so the plans' sha256 an OSF record pins covers them. Nothing is filed with OSF while D-08
+and E4, the design values; each must be the paper's in value and in JSON type, `PAPER_PROTOCOL`), which the runner
+judges a run against and the pre-registration draft states, so the plans' sha256 an OSF record pins covers them. Nothing is filed with OSF while D-08
 is open (DI-131), so the plans' status must start with `draft` and may not use the word `registered`.
 """
 
@@ -101,6 +101,17 @@ def _forbidden(value: Any, path: str = "") -> list[str]:
     return found
 
 
+def _same_json(value: Any, expected: Any) -> bool:
+    """Whether `value` is `expected` as JSON: the same type at every level as well as the same value, so `true` or `1.0` is
+    not the paper's `1` and `3.0` not its `3` (Python's `==` accepts both, and the plans' sha256 and the draft would then
+    change while the plans still passed as the paper's values)."""
+    if type(value) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return value.keys() == expected.keys() and all(_same_json(value[key], expected[key]) for key in expected)
+    return value == expected
+
+
 def _strings(value: Any) -> bool:
     return isinstance(value, list) and all(isinstance(entry, str) for entry in value)
 
@@ -167,7 +178,7 @@ def validate_plans(raw: Mapping[str, Any]) -> None:
     for family, body in families.items():
         if not isinstance(body.get("data"), str) or not body["data"]:
             raise PlanError(f"{family}: states its data")
-        if body["protocol"] != PAPER_PROTOCOL[family]:
+        if not _same_json(body["protocol"], PAPER_PROTOCOL[family]):
             raise PlanError(f"{family}.protocol: must be the paper's execution and design values (VBT RevB Sec. VIII-C, VIII-D)")
         for entry in body.get("criteria_only", []):
             criterion = entry.split(" ", 1)[0] if isinstance(entry, str) else None
