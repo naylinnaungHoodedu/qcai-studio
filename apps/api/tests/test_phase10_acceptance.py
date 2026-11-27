@@ -2469,6 +2469,16 @@ def test_phase10_docs_the_spec_ends_in_one_review_history_table():
     # Section 13's current-state verification is stated at the head of the last review round of the history table.
     rounds = re.findall(r"^\| Review (\d+)\b", history, flags=re.MULTILINE)
     assert rounds and f"**Latest verification (local, at the review {rounds[-1]} head).**" in head, rounds[-1:]
+    # Every round after the pre-code spec rows names its commits by hash in its Commit cell, the latest round included,
+    # and no cell stands in for a hash ("this commit", "the documents commit", "the commit after it"): a placeholder
+    # written in one round goes stale the moment its commit exists (review 24 found the review 16 and 20-23 cells so).
+    cells = [line.split(" | ", 2)[:2] for line in history.splitlines() if line.startswith("| ") and not line.startswith("| Round |")
+             and not line.startswith("|---")]
+    for name, commit in cells:
+        if "(pre-code)" in name:
+            continue
+        assert re.search(r"`[0-9a-f]{7,40}`", commit), (name, commit)
+        assert not re.search(r"this commit|documents commit|commits? after|its hash is", commit, flags=re.IGNORECASE), (name, commit)
     names = set()
     for root in (API_ROOT / "tests", REPO_ROOT / "evaluation" / "tests"):
         for path in root.glob("test_*.py"):
