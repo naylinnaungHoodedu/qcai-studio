@@ -1,0 +1,385 @@
+"""Responders for the runner: the stub, recorded responses, a scripted fake provider, and the live refusal (spec 4.9; PD-68).
+
+No responder here touches the network or imports a model client. Live adapters are not wired (DI-132): `LIVE_ADAPTERS` is
+empty, and a live adapter, once one exists, runs on a research gateway separate from the application's process gateway
+(plan section 7: "research runs use a separate gateway and span store"). `live_refusal_reasons` names every condition a
+live run still lacks, plan H's four conditions among them as resolved, hash-checked records; in this repository a
+live run is always refused.
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal, InvalidOperation
+import hashlib
+from math import isfinite
+import os
+from pathlib import Path
+import re
+from typing import Any, Callable, Mapping, Protocol
+
+from .agreement import CLAIM_LABELS
+from . import inputs
+from .canonical import read_jsonl
+
+PROVISIONAL_DEFAULTS = ("PD-68",)
+UNRESOLVABLE_POINTER = "EV-SYN-p999-99"
+FAILURE_REASONS = ("timeout", "rate_limited", "server_error", "refused_payload", "recorded_missing")
+RECORDING_FORMAT = "recorded-responses-v1"
+RECORDED_STATUSES = ("ok", "timeout", "rate_limited", "server_error", "refused_payload")
+RECORDED_OUTCOMES = ("answered", "abstained")
+USAGE_KEYS = ("input_units", "output_units")
+# Usage units per response: a bound that keeps a response's cost (units times a price of at most experiments.PRICE_MAX)
+# inside float range and the replay's cost units inside the ranking controller's exact arithmetic.
+UNITS_MAX = 10 ** 6
+SIGNAL_KEYS = ("V", "S", "K", "H", "F")
+MODEL_ID = re.compile(r"^[a-z0-9][a-z0-9.+:-]{0,63}$")
+
+
+class RecordingInvalid(ValueError):
+    """A recorded-responses-v1 line whose entry the runner or the metrics cannot read (the message names the line and the
+    field, never a value); the planner refuses the run as `recording_invalid` (exit 3)."""
+
+
+class ProviderOutage(RuntimeError):
+    """The provider is down: the run stops at a checkpoint and resumes later (plan J: "provider outage resumes")."""
+
+
+class TransientFailure(RuntimeError):
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+class Responder(Protocol):
+    rule: str
+
+    def respond(self, request: Any) -> dict[str, Any]: ...
+
+
+def _owner(request: Any) -> str:
+    unit = request.unit
+    return unit if isinstance(unit, str) and "-t" in unit else request.item_id
+
+
+def stub_response(prefix: bytes, request: Any, *, model_id: str | None = None) -> dict[str, Any]:
+    """`stub-responder-v1`: decisions from sha256(prefix + request_key), the same rule for every arm (R-f)."""
+    digest = hashlib.sha256(prefix + request.request_key.encode("utf-8")).digest()
+    follows = digest[0] < 224
+    answers = (request.gold == "answer") == follows
+    text = "stub:" + request.request_key[:16]
+    usage = {"input_units": 1, "output_units": 1}
+    if not answers:
+        return {"outcome": "abstained", "claims": [], "text": text, "usage": usage, "model_id": model_id}
+    claims = []
+    if request.gold == "answer":
+        for index, claim_id in enumerate(request.gold_claims):
+            value = digest[1 + index % 31] % 16
+            if value == 0:
+                label, cited, ehmf = "fabricated", [UNRESOLVABLE_POINTER], "B1"
+            elif value == 1:
+                label, cited, ehmf = "attribution_error", list(request.evidence), "B2"
+            elif value == 2:
+                label, cited, ehmf = "unsupported_but_true", [], None
+            else:
+                label, cited, ehmf = "supported", list(request.evidence), None
+            claims.append({"claim_id": claim_id, "cited": cited, "label": label, "ehmf_type": ehmf})
+    else:
+        fabricated = digest[1] % 2 == 0
+        claims.append({"claim_id": f"{_owner(request)}-stub-c1", "cited": [UNRESOLVABLE_POINTER] if fabricated else [],
+                       "label": "fabricated" if fabricated else "unsupported_but_true", "ehmf_type": "B1" if fabricated else None})
+    return {"outcome": "answered", "claims": claims, "text": text, "usage": usage, "model_id": model_id}
+
+
+def stub_for(prefix: bytes, request: Any, **kwargs: Any) -> dict[str, Any]:
+    """The stub rule for any request: `stub_response` for an answer, the design stubs (`experiments.stub_verdict`,
+    `experiments.stub_generation`) for an E2 verification and an E3 generation, all under the same prefix."""
+    from .experiments import stub_dispatch
+
+    return stub_dispatch(prefix, request, stub_response, **kwargs)
+
+
+class StubResponder:
+    rule = "stub-responder-v1"
+
+    def respond(self, request: Any) -> dict[str, Any]:
+        return stub_for(b"stub-responder-v1", request)
+
+
+def _int_in(value: Any, low: int, high: int | None = None) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= low and (high is None or value <= high)
+
+
+def _finite_number(value: Any) -> bool:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return isfinite(float(value))
+    except OverflowError:
+        return False
+
+
+def _signal_ok(value: Any) -> bool:
+    """A quality signal as eq. (8) reads it (`app.services.ranking.quality`): null, or a decimal string or an integer in
+    [0, 1] (the ranking arithmetic refuses a float)."""
+    if value is None:
+        return True
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        return False
+    try:
+        number = Decimal(value)
+    except (InvalidOperation, ValueError):
+        return False
+    return number.is_finite() and 0 <= number <= 1
+
+
+def _claim_problem(claim: Any) -> str | None:
+    if not isinstance(claim, Mapping):
+        return "claims"
+    if not isinstance(claim.get("claim_id"), str):
+        return "claims.claim_id"
+    cited = claim.get("cited", [])
+    if not isinstance(cited, list) or not all(isinstance(pointer, str) for pointer in cited):
+        return "claims.cited"
+    if claim.get("label") is not None and claim.get("label") not in CLAIM_LABELS:
+        return "claims.label"
+    if claim.get("ehmf_type") is not None and not isinstance(claim.get("ehmf_type"), str):
+        return "claims.ehmf_type"
+    return None
+
+
+def response_problem(response: Any) -> str | None:
+    """The first field of a recorded response that the runner, the payload log or the metrics could not read, or None:
+    `outcome` answered or abstained; `claims` a list of objects, each with a string `claim_id`, a list of string `cited`
+    pointers, a `label` among the claim labels or null and a string or null `ehmf_type`; `text` a string or null; `usage`
+    non-negative integer `input_units` and `output_units` of at most UNITS_MAX; `model_id` an id or null; and, when present,
+    `verdict` pass or object, `features` finite numbers keyed by the presentation features, `signals` eq. (8)'s V, S, K, H
+    and F as decimals in [0, 1] or null, `latency` {first_token_ms, total_ms} non-negative integers, the first not after
+    the total."""
+    from .experiments import FEATURES, VERDICTS
+
+    if not isinstance(response, Mapping):
+        return "response"
+    if response.get("outcome") not in RECORDED_OUTCOMES:
+        return "outcome"
+    claims = response.get("claims", [])
+    if not isinstance(claims, list):
+        return "claims"
+    for claim in claims:
+        problem = _claim_problem(claim)
+        if problem:
+            return problem
+    if response.get("text") is not None and not isinstance(response.get("text"), str):
+        return "text"
+    usage = response.get("usage")
+    if usage is not None and (not isinstance(usage, Mapping) or not set(usage) <= set(USAGE_KEYS)
+                              or not all(_int_in(usage[key], 0, UNITS_MAX) for key in usage)):
+        return "usage"
+    model_id = response.get("model_id")
+    if model_id is not None and not (isinstance(model_id, str) and MODEL_ID.match(model_id)):
+        return "model_id"
+    if response.get("verdict") is not None and response.get("verdict") not in VERDICTS:
+        return "verdict"
+    features = response.get("features")
+    if features is not None and (not isinstance(features, Mapping) or not set(features) <= set(FEATURES)
+                                 or not all(_finite_number(value) for value in features.values())):
+        return "features"
+    signals = response.get("signals")
+    if signals is not None and (not isinstance(signals, Mapping) or not set(signals) <= set(SIGNAL_KEYS)
+                                or not all(_signal_ok(value) for value in signals.values())):
+        return "signals"
+    latency = response.get("latency")
+    if latency is not None and (not isinstance(latency, Mapping) or set(latency) != {"first_token_ms", "total_ms"}
+                                or not all(_int_in(latency[key], 0) for key in latency)
+                                or latency["first_token_ms"] > latency["total_ms"]):
+        return "latency"
+    return None
+
+
+def entry_problem(entry: Any) -> str | None:
+    """The first field of a recording entry that cannot be replayed, or None: a string `request_key`; `attempts` (absent:
+    one ok attempt) a non-empty list of {status}, each status ok or a provider failure reason; and the `response`, which
+    `response_problem` checks, required when an attempt is ok."""
+    if not isinstance(entry, Mapping) or not isinstance(entry.get("request_key"), str):
+        return "request_key"
+    attempts = entry.get("attempts", [{"status": "ok"}])
+    if (not isinstance(attempts, list) or not attempts
+            or not all(isinstance(attempt, Mapping) and set(attempt) == {"status"} and attempt["status"] in RECORDED_STATUSES
+                       for attempt in attempts)):
+        return "attempts"
+    if "response" in entry or any(attempt["status"] == "ok" for attempt in attempts):
+        problem = response_problem(entry.get("response"))
+        if problem:
+            return problem if problem == "response" else f"response.{problem}"
+    return None
+
+
+class RecordedResponder:
+    """Replays a `recorded-responses-v1` file: each recorded failed attempt raises again, in order, then the response.
+    Every entry is checked when the file is read (`entry_problem`; RecordingInvalid), so a malformed entry refuses the run
+    before any request is sent, never a traceback after requests were written."""
+
+    rule = RECORDING_FORMAT
+
+    def __init__(self, path: Path) -> None:
+        try:
+            lines = read_jsonl(Path(path))
+        except inputs.InputInvalid as error:  # a value no step can compute with: an entry the run cannot read
+            raise RecordingInvalid(str(error)) from None
+        if not lines or not isinstance(lines[0], Mapping) or lines[0].get("recording") != RECORDING_FORMAT:
+            raise ValueError("not a recorded-responses-v1 file")
+        self.header = lines[0]
+        self.entries: dict[str, Mapping[str, Any]] = {}
+        for number, line in enumerate(lines[1:], start=2):
+            problem = entry_problem(line)
+            if problem is None and line["request_key"] in self.entries:
+                problem = "request_key (repeated)"
+            if problem is not None:
+                raise RecordingInvalid(f"line {number}: {problem}")
+            self.entries[line["request_key"]] = line
+        self.calls: dict[str, int] = {}
+
+    @property
+    def source(self) -> str:
+        return str(self.header.get("source"))
+
+    def respond(self, request: Any) -> dict[str, Any]:
+        entry = self.entries.get(request.request_key)
+        if entry is None:
+            raise TransientFailure("recorded_missing")
+        index = self.calls.get(request.request_key, 0)
+        self.calls[request.request_key] = index + 1
+        attempts = entry.get("attempts", [{"status": "ok"}])
+        status = attempts[index]["status"] if index < len(attempts) else attempts[-1]["status"]
+        if status != "ok":
+            raise TransientFailure(status)
+        return dict(entry["response"])
+
+
+class ScriptedProvider:
+    """A fake provider for tests: the stub rule under its own prefix, a scripted outage and scripted transient failures."""
+
+    rule = "scripted-provider-v1"
+
+    def __init__(self, *, outage_at: int | None = None, transient: Mapping[str, list[str]] | None = None,
+                 model_id: str = "scripted-model-v1") -> None:
+        self.outage_at = outage_at
+        self.transient = {key: list(value) for key, value in (transient or {}).items()}
+        self.model_id = model_id
+        self.calls = 0
+        self.outage_done = False
+
+    def respond(self, request: Any) -> dict[str, Any]:
+        call = self.calls
+        self.calls += 1
+        if self.outage_at is not None and call == self.outage_at and not self.outage_done:
+            self.outage_done = True
+            raise ProviderOutage("scripted outage")
+        pending = self.transient.get(request.request_key)
+        if pending:
+            raise TransientFailure(pending.pop(0))
+        return stub_for(b"scripted-provider-v1", request, model_id=self.model_id)
+
+
+LIVE_ADAPTERS: Mapping[str, Callable[..., Responder]] = {}
+
+
+def _decided(package_raw: Mapping[str, Any], name: str) -> bool:
+    return ((package_raw.get("owner_decisions") or {}).get(name) or {}).get("state") == "decided"
+
+
+def _after(value: str, on: Any) -> bool:
+    import datetime as _dt
+
+    return _dt.date.fromisoformat(value) > on
+
+
+def _provider_binding(spec: Mapping[str, Any], adapter: Any, recorded: set[str]) -> list[str]:
+    """Condition (b) per provider: every provider the run queries has its own terms record."""
+    live = (spec.get("responder") or {}).get("live") or {}
+    named = live.get("providers")
+    if not isinstance(named, list) or not named or not all(isinstance(provider, str) and provider for provider in named):
+        return ["live_providers_unnamed"]
+    reasons = []
+    declared = getattr(LIVE_ADAPTERS.get(adapter), "providers", None) if isinstance(adapter, str) else None
+    if declared is not None and not set(declared) <= set(named):
+        reasons.append("live_providers_mismatch")
+    reasons += [f"provider_terms_missing:{provider}" for provider in sorted(set(named) | set(declared or ())) if provider not in recorded]
+    return reasons
+
+
+def live_refusal_reasons(spec: Mapping[str, Any], package_raw: Mapping[str, Any], environ: Mapping[str, str], arms: Any, *,
+                         out_dir: Path | None = None, repo_root: Path | None = None, start: Any = None,
+                         today: Any = None) -> list[str]:
+    """Every condition a live run lacks, in order (spec 4.9). An empty list is never reached in this repository.
+
+    `package_raw` is the package as the runner judges it (`governance.judged_package`): a package outside the committed
+    history reads every owner decision `uncommitted`, so D-07, D-08, D-12 and D-14 are open for it.
+
+    Plan H's four conditions are records, each resolved by path and sha256 (`governance.resolve_record`) and read under its
+    own format: (a) `licence-ruling-v1`, (b) `provider-terms-v1`, (c) `irb-approval-v1` and (d)
+    `research-use-confirmation-v1`. None may sit on a public path. They are judged in the run window the runner supplies
+    (`start`, `today`; both default to `governance.utc_today()`; governance module docstring): the IRB approved by `start`
+    and unexpired on `today`, and no other record dated after `start`; `created_at` may not be a future date. Condition (b)
+    is bound to the run: `responder.live.providers` names every provider the run queries (it must include each provider
+    the adapter declares in its `providers` attribute), and `provider_terms` (one reference or a list) must hold a record
+    whose `provider_id` is each of them."""
+    from . import governance
+    from .ablation import arm_configuration
+    from .planes import REPO_ROOT, checkout_relative, inside_checkout
+
+    root = repo_root or REPO_ROOT
+    reasons: list[str] = []
+    adapter = ((spec.get("responder") or {}).get("live") or {}).get("adapter")
+    if adapter not in LIVE_ADAPTERS:
+        reasons.append("no_live_adapter")
+    plane = environ.get("RESEARCH_PLANE_ROOT")
+    plane_ok = False
+    if plane:
+        plane_path = Path(os.path.abspath(plane))
+        if plane_path.is_dir() and not inside_checkout(plane_path, root) and out_dir is not None:
+            plane_ok = checkout_relative(out_dir, plane_path) is not None
+    if not plane_ok:
+        reasons.append("research_plane_absent")
+    for name in ("D-14", "D-07", "D-08", "D-12"):
+        if not _decided(package_raw, name):
+            reasons.append(f"{name} open")
+    today = today or governance.utc_today()
+    on = min(start, today) if start else today
+    reasons += governance.created_at_refusals(spec, today)
+    irb_ref = (spec.get("governance") or {}).get("irb_record")
+    reasons += governance.irb_refusals(irb_ref, on, root, missing="irb_not_filed", today=today)
+    terms_refs = spec.get("provider_terms")
+    terms_refs = list(terms_refs) if isinstance(terms_refs, list) else [terms_refs] if terms_refs else []
+    terms = []
+    if not terms_refs:
+        reasons.append("provider_terms_unrecorded")
+    for reference in terms_refs:
+        found, record = governance.record_refusals(reference, governance.load_provider_terms, root,
+                                                   missing="provider_terms_unrecorded", invalid="provider_terms_invalid")
+        reasons += found
+        if record is not None:
+            terms.append(record)
+    if any(_after(record["recorded_date"], on) for record in terms):
+        reasons.append("provider_terms_after_run")
+    if terms and len(terms) == len(terms_refs):
+        reasons += _provider_binding(spec, adapter, {record["provider_id"] for record in terms})
+    found, ruling = governance.record_refusals(spec.get("licence_ruling"), governance.load_licence_ruling, root,
+                                               missing="licence_ruling_unrecorded", invalid="licence_ruling_invalid")
+    reasons += found
+    if ruling is not None and ruling["determination"] == "negative":
+        reasons.append("licence_negative")
+    if ruling is not None and _after(ruling["ruling_date"], on):
+        reasons.append("licence_ruling_after_run")
+    found, confirmation = governance.record_refusals(spec.get("research_use_confirmation"), governance.load_research_use, root,
+                                                     missing="research_use_unconfirmed", invalid="research_use_invalid")
+    reasons += found
+    if confirmation is not None and _after(confirmation["confirmed_date"], on):
+        reasons.append("research_use_after_run")
+    references = [irb_ref, *terms_refs] + [spec.get(key) for key in ("licence_ruling", "research_use_confirmation")]
+    if any(governance.is_public(reference, root) for reference in references if reference):
+        reasons.append("governance_record_public")
+    selected = (spec.get("arms") or {}).get("selected") or []
+    semantic_on = bool((package_raw.get("semantic") or {}).get("enabled_by_default"))
+    if not semantic_on and any(arm_configuration(arms, arm).get("retrieval") == "semantic" for arm in selected if arm in arms.arms):
+        reasons.append("semantic_backend_off")
+    return reasons

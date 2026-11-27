@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from .canonical import jsonl_lines
+
 
 STRATA = {
     "answerable_single_source",
@@ -30,7 +32,7 @@ class LQSItem:
 
 def load_lqs(path: Path) -> list[LQSItem]:
     items: list[LQSItem] = []
-    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for line_number, raw_line in enumerate(jsonl_lines(path.read_text(encoding="utf-8")), start=1):  # never splitlines (U+2028)
         if not raw_line.strip():
             continue
         try:

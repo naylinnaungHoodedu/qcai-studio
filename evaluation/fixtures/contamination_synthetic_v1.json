@@ -1,0 +1,16 @@
+{
+ "fixture": "contamination-synthetic-v1",
+ "synthetic": true,
+ "note": "Invented passages and questions with a published salt: public CI builds synthetic fingerprints from them in memory (spec 3.15; DI-141 holds the real fingerprints). The texts appear in no other tracked file; the scanner excludes this file from its own targets.",
+ "salt_hex": "86525bcc6706c58added799f699add920099f0be5258d4a4849458a5479ae57f",
+ "licensed_passages": [
+  "Brindlewick tide keepers record each evening how far the silver eels travel upstream past the seventh mossy weir, then they carve the tally into soft cedar boards that hang beside the ferry bell until the next lantern festival.",
+  "In the hill town of Ostravel the glassblowers cool every amber bowl inside a cellar of packed snow for exactly three nights, because the guild insists that faster cooling makes the rims sing a sour note when tapped.",
+  "Cartographers of the drifting Mirelund archipelago redraw their charts every spring since the floating peat islands wander with the wind, and each chart is signed by two pilots who have rowed the new channels themselves."
+ ],
+ "ulqs_texts": [
+  "Why do Ostravel glassblowers chill bowls in snow?",
+  "Who charts drifting Mirelund islands?",
+  "Where do Brindlewick keepers hang their eel tallies?"
+ ]
+}

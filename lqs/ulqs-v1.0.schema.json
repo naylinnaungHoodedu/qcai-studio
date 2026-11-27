@@ -1,0 +1,136 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "ulqs-item-schema-1.1",
+ "title": "ULQS v1.0 item (accepts the rc1 shape, schema_version 1.0, and v1.0 records, schema_version 1.1)",
+ "description": "Interoperability statement of the rules evaluation/qcai_eval/ulqs.py validates (Phase 10 spec 3.1; PD-60). Provisional: ratified under DI-140. The validator CI runs is ulqs.validate_item; a unit test keeps the two in agreement.",
+ "provisional": true,
+ "type": "object",
+ "required": ["item_id", "schema_version", "corpus_version", "status", "stratum", "corpus_scope", "topic", "concepts", "difficulty", "bloom", "retrieval_type", "question", "weight", "leakage_risk", "license_class", "quality_scores", "provenance", "validation"],
+ "additionalProperties": false,
+ "properties": {
+  "item_id": {"type": "string", "pattern": "^(ULQS|SYN)-([A-G])-([0-9]{3,})$"},
+  "schema_version": {"enum": ["1.0", "1.1"]},
+  "dataset_version": {"enum": ["ULQS-v1.0"]},
+  "corpus_version": {"type": "string", "pattern": "^(QCAI-CORPUS-[0-9]{4}-[0-9]{2}-[0-9]{2}|SYNTHETIC-CORPUS-v1)$"},
+  "status": {"enum": ["draft", "candidate", "review", "frozen", "release", "retired"]},
+  "stratum": {"enum": ["A", "B", "C", "D", "E", "F", "G"]},
+  "corpus_scope": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["qcai_2025", "qcai_2026", "industry_use_cases", "synthetic"]}},
+  "topic": {"$ref": "#/$defs/text"},
+  "concepts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}},
+  "difficulty": {"enum": ["easy", "medium", "hard"]},
+  "bloom": {"enum": ["remember", "understand", "apply", "analyze", "evaluate", "create"]},
+  "retrieval_type": {"enum": ["single_span", "multi_span", "negative_evidence", "multi_turn"]},
+  "question": {"$ref": "#/$defs/text"},
+  "weight": {"type": "number", "exclusiveMinimum": 0},
+  "leakage_risk": {"enum": ["low", "medium", "high"]},
+  "license_class": {"enum": ["private_eval_full_span", "synthetic"]},
+  "quality_scores": {
+   "type": "object", "additionalProperties": false,
+   "required": ["retrieval_difficulty", "grounding_difficulty", "citation_difficulty", "abstention_difficulty", "educational_value"],
+   "properties": {
+    "retrieval_difficulty": {"$ref": "#/$defs/score"}, "grounding_difficulty": {"$ref": "#/$defs/score"},
+    "citation_difficulty": {"$ref": "#/$defs/score"}, "abstention_difficulty": {"$ref": "#/$defs/score"},
+    "educational_value": {"$ref": "#/$defs/score"}
+   }
+  },
+  "provenance": {
+   "type": "object", "additionalProperties": false, "required": ["created_utc", "author"],
+   "properties": {
+    "created_utc": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "author": {"$ref": "#/$defs/text"}, "migrated_from": {"$ref": "#/$defs/text"},
+    "migration_disposition": {"enum": ["convert", "revise"]}, "note": {"$ref": "#/$defs/text"}
+   }
+  },
+  "validation": {
+   "type": "object", "additionalProperties": false, "required": ["citation_resolved", "evidence_verified", "duplicate_checked"],
+   "properties": {
+    "citation_resolved": {"type": "boolean"}, "evidence_verified": {"type": "boolean"}, "duplicate_checked": {"type": "boolean"},
+    "human_reviewed": {"type": "boolean", "default": false}
+   }
+  },
+  "item_kind": {"enum": ["instructional", "bibliographic", null]},
+  "split": {"enum": ["calibration", "confirmation", null]},
+  "expected_behavior": {"enum": ["answer", "abstain"]},
+  "evidence_ids": {"$ref": "#/$defs/pointers"},
+  "atomic_claims": {"$ref": "#/$defs/claims"},
+  "gold_answer": {"$ref": "#/$defs/texts"},
+  "abstention_rationale": {"$ref": "#/$defs/texts"},
+  "reasoning_chain": {"$ref": "#/$defs/texts"},
+  "notes": {"$ref": "#/$defs/texts"},
+  "negative_evidence": {"$ref": "#/$defs/negative_evidence"},
+  "base_question": {"$ref": "#/$defs/text"},
+  "replays": {
+   "type": "array", "minItems": 3, "maxItems": 3,
+   "items": {"type": "object", "additionalProperties": false, "required": ["level", "gold_answer"],
+             "properties": {"level": {"enum": ["beginner", "intermediate", "advanced"]}, "gold_answer": {"$ref": "#/$defs/texts"},
+                            "presentation_notes": {"$ref": "#/$defs/texts"}}}
+  },
+  "invariance_checked": {"type": "boolean"},
+  "conversation": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/turn"}}
+ },
+ "allOf": [
+  {"if": {"properties": {"schema_version": {"const": "1.1"}}}, "then": {"required": ["dataset_version"]}},
+  {"if": {"properties": {"stratum": {"enum": ["A", "B", "C", "D", "E"]}}}, "then": {"required": ["expected_behavior"]}},
+  {"if": {"properties": {"stratum": {"enum": ["F", "G"]}}}, "then": {"not": {"required": ["expected_behavior"]}}},
+  {"if": {"properties": {"stratum": {"enum": ["A", "B"]}}}, "then": {"properties": {"expected_behavior": {"const": "answer"}}, "required": ["evidence_ids", "atomic_claims", "gold_answer"]}},
+  {"if": {"properties": {"stratum": {"const": "B"}}}, "then": {"properties": {"evidence_ids": {"minItems": 2}}}},
+  {"if": {"properties": {"stratum": {"enum": ["C", "E"]}}}, "then": {"properties": {"expected_behavior": {"const": "abstain"}}}},
+  {"if": {"properties": {"expected_behavior": {"const": "abstain"}}, "required": ["expected_behavior"]},
+   "then": {"required": ["negative_evidence", "abstention_rationale"], "not": {"anyOf": [{"required": ["evidence_ids"]}, {"required": ["atomic_claims"]}, {"required": ["gold_answer"]}]}}},
+  {"if": {"properties": {"stratum": {"const": "D"}, "expected_behavior": {"const": "answer"}}, "required": ["stratum", "expected_behavior"]},
+   "then": {"required": ["evidence_ids", "atomic_claims", "gold_answer"]}},
+  {"if": {"properties": {"stratum": {"const": "F"}}}, "then": {"required": ["conversation"], "not": {"anyOf": [{"required": ["evidence_ids"]}, {"required": ["atomic_claims"]}, {"required": ["gold_answer"]}]}},
+   "else": {"not": {"required": ["conversation"]}}},
+  {"if": {"properties": {"stratum": {"const": "G"}}}, "then": {"required": ["base_question", "replays", "invariance_checked", "evidence_ids", "atomic_claims"]},
+   "else": {"not": {"anyOf": [{"required": ["base_question"]}, {"required": ["replays"]}, {"required": ["invariance_checked"]}]}}}
+ ],
+ "x-rules-not-expressible": [
+  "the item_id letter equals stratum (stratum_mismatch)",
+  "the SYN- prefix if and only if license_class is synthetic, and EV-SYN pointers only on synthetic items (synthetic_mismatch)",
+  "a claim_id is <owner id>-c<n> (an item or a turn), unique in the dataset; a claim's evidence_ids are a non-empty subset of its owner's (claim_pointer_not_in_item)",
+  "a turn_id is <item_id>-t<n>, unique in the dataset; each turn follows the answer or abstain rules of its own expected_behavior",
+  "the three replays carry the levels beginner, intermediate and advanced, each once (replay_levels)",
+  "item_kind is non-null for the review -> frozen transition and at freeze (ulqs.check_transition, ulqs.freeze_check)"
+ ],
+ "$defs": {
+  "text": {"type": "string", "minLength": 1, "pattern": "\\S"},
+  "texts": {"oneOf": [{"$ref": "#/$defs/text"}, {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}}]},
+  "score": {"type": "integer", "minimum": 0, "maximum": 3},
+  "pointer": {"type": "string", "pattern": "^(EV-(2025|2026|IND|SYN)-p[0-9]{3}-[0-9]{2}|span-[0-9a-f]{64})$"},
+  "pointers": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/pointer"}},
+  "claims": {
+   "type": "array",
+   "items": {"type": "object", "additionalProperties": false, "required": ["claim_id", "text", "evidence_ids"],
+             "properties": {"claim_id": {"type": "string", "pattern": "^(ULQS|SYN)-[A-G]-[0-9]{3,}(-t[0-9]+)?-c[0-9]+$"},
+                            "text": {"$ref": "#/$defs/text"}, "evidence_ids": {"$ref": "#/$defs/pointers", "minItems": 1}}}
+  },
+  "negative_evidence": {
+   "type": "object", "additionalProperties": false,
+   "required": ["corpus_version", "sections_searched", "queries", "methods", "verdict", "verified_utc", "limitations"],
+   "properties": {
+    "corpus_version": {"type": "string", "pattern": "^(QCAI-CORPUS-[0-9]{4}-[0-9]{2}-[0-9]{2}|SYNTHETIC-CORPUS-v1)$"},
+    "sections_searched": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}},
+    "queries": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}},
+    "methods": {"type": "array", "minItems": 1, "items": {"enum": ["lexical_bm25", "regex", "semantic"]}},
+    "verdict": {"const": "none_found"},
+    "verified_utc": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "limitations": {"$ref": "#/$defs/texts"}
+   }
+  },
+  "turn": {
+   "type": "object", "additionalProperties": false, "required": ["turn_id", "user_utterance", "resolved_query", "expected_behavior"],
+   "properties": {
+    "turn_id": {"type": "string", "pattern": "^(ULQS|SYN)-F-[0-9]{3,}-t[0-9]+$"},
+    "user_utterance": {"$ref": "#/$defs/text"}, "resolved_query": {"$ref": "#/$defs/text"},
+    "expected_behavior": {"enum": ["answer", "abstain"]},
+    "gold_answer": {"$ref": "#/$defs/texts"}, "evidence_ids": {"$ref": "#/$defs/pointers"}, "atomic_claims": {"$ref": "#/$defs/claims"},
+    "abstention_rationale": {"$ref": "#/$defs/texts"}, "negative_evidence": {"$ref": "#/$defs/negative_evidence"}
+   },
+   "allOf": [
+    {"if": {"properties": {"expected_behavior": {"const": "answer"}}}, "then": {"required": ["gold_answer", "evidence_ids", "atomic_claims"]}},
+    {"if": {"properties": {"expected_behavior": {"const": "abstain"}}},
+     "then": {"required": ["negative_evidence", "abstention_rationale"], "not": {"anyOf": [{"required": ["evidence_ids"]}, {"required": ["atomic_claims"]}, {"required": ["gold_answer"]}]}}}
+   ]
+  }
+ }
+}

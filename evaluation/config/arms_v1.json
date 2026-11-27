@@ -1,0 +1,105 @@
+{
+ "arms_version": "arms-v1",
+ "provisional": true,
+ "source": "VBT RevB p. 17, Sec. VIII-C, Table XV",
+ "authority": "P1-D-18 (plan Phase 10 D task 4); ratified under DI-140 (PD-67)",
+ "baseline": "GATE",
+ "variables": {
+  "retrieval": [
+   "none",
+   "lexical",
+   "semantic"
+  ],
+  "abstention_gate": [
+   true,
+   false
+  ],
+  "verification": [
+   "none",
+   "single-verifier-refine-or-refuse",
+   "v1-only",
+   "v1-v2-panel-2oo3-correction"
+  ]
+ },
+ "gate_configuration": {
+  "retrieval": "semantic",
+  "abstention_gate": true,
+  "verification": "none",
+  "generator": "pinned-e1-generator (D-07)",
+  "prompt_version": "e1-prompt-v1",
+  "retrieval_parameters": "package:retrieval+semantic+abstention",
+  "decoding": "provider-default",
+  "context_length": "package:gateway",
+  "items": "run-spec",
+  "seeds": "sha256-run-arm-item-replicate-v1"
+ },
+ "arms": [
+  {
+   "arm": "NR",
+   "scenario": "Base-1",
+   "ablation": {
+    "retrieval": "none",
+    "abstention_gate": false
+   },
+   "isolates": "The contribution of retrieval"
+  },
+  {
+   "arm": "LEX",
+   "scenario": "Base-2",
+   "ablation": {
+    "retrieval": "lexical"
+   },
+   "isolates": "The fallback path and its floor"
+  },
+  {
+   "arm": "SEM",
+   "scenario": "Base-3",
+   "ablation": {
+    "abstention_gate": false
+   },
+   "isolates": "Retrieval quality apart from refusal"
+  },
+  {
+   "arm": "GATE",
+   "scenario": "Base-4",
+   "ablation": {},
+   "isolates": "The deployed configuration"
+  },
+  {
+   "arm": "GATE+SV",
+   "scenario": "Prior",
+   "ablation": {
+    "verification": "single-verifier-refine-or-refuse"
+   },
+   "isolates": "The single-verifier pattern"
+  },
+  {
+   "arm": "GATE+V1",
+   "scenario": "Own-1",
+   "ablation": {
+    "verification": "v1-only"
+   },
+   "isolates": "The value of deterministic checks"
+  },
+  {
+   "arm": "VLOOP",
+   "scenario": "Own-2",
+   "ablation": {
+    "verification": "v1-v2-panel-2oo3-correction"
+   },
+   "isolates": "The full V-Loop pipeline"
+  }
+ ],
+ "verification_modes": {
+  "single-verifier-refine-or-refuse": {
+   "verifier": "pilot-best-f1 commercial model (30-item pilot, excluded from analysis; D-07)"
+  },
+  "v1-only": {
+   "checks": "V1.1-V1.9"
+  },
+  "v1-v2-panel-2oo3-correction": {
+   "rule": "tier-2 2oo3",
+   "correction_cycles": 2
+  }
+ }
+}

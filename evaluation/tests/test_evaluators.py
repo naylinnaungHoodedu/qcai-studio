@@ -1,6 +1,6 @@
 import pytest
 
-from evaluation.qcai_eval.ablation import assert_arm_parity
+from evaluation.qcai_eval.ablation import ARM_IDS, ParityError, arm_configuration, assert_arm_parity, load_arms
 from evaluation.qcai_eval.abstention import abstention_by_turn_depth, correct_abstention
 from evaluation.qcai_eval.invariance import invariance_violations
 from evaluation.qcai_eval.lqs_loader import LQSItem, validate_lqs
@@ -50,12 +50,12 @@ def test_abstention_and_arm_parity_follow_frozen_design():
     )
     assert rate["successes"] == 2
     assert set(abstention_by_turn_depth([{"expected_answerable": False, "abstained": True, "turn_depth": 2}])) == {2}
+    # The seven Table XV arms (Phase 10): each arm's manifest is its configuration plus a shared block; parity holds, and
+    # an arm that differs from GATE outside its declared ablation variables is refused.
+    table = load_arms()
     shared = {"lqs": "v1", "model": "pinned"}
-    assert_arm_parity(
-        {
-            "A": {"arm": "A", "retrieval_mode": "none", "abstention_gate": False, **shared},
-            "B": {"arm": "B", "retrieval_mode": "lexical", "abstention_gate": True, **shared},
-            "C": {"arm": "C", "retrieval_mode": "semantic", "abstention_gate": False, **shared},
-            "D": {"arm": "D", "retrieval_mode": "semantic", "abstention_gate": True, **shared},
-        }
-    )
+    manifests = {arm: {**arm_configuration(table, arm), **shared} for arm in ARM_IDS}
+    assert_arm_parity(manifests, table=table)
+    manifests["SEM"] = {**manifests["SEM"], "model": "other"}
+    with pytest.raises(ParityError, match="undeclared_difference:model"):
+        assert_arm_parity(manifests, table=table)

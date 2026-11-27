@@ -24,6 +24,9 @@ lqs/private/
 lqs/ratings/*.private.jsonl
 docs/thesis/ethics/private/
 evaluation/reports/*.private.json
+# Phase 10: every private-plane research file, wherever it lies (boundary-v1 private_plane_globs)
+**/*.private.json
+**/*.private.jsonl
 
 # Logs
 *.log
