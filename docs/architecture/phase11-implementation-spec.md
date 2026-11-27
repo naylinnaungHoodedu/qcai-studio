@@ -5,7 +5,8 @@
 - **Slice 11-0 branch:** `phase11/entry-records`, cut from `origin/main` `25a8f89` (Phase 10 merged, PR #42). Phases 2-10 are on `main`; the shipped configuration package is v8 (`8.0.0`, `apps/api/app/config_package/v8.json`) and the single Alembic head is `20261123_phase8_learner`.
 - **Plan:** `D:\QC_AI_Studio\QC_AI_Studio_Ultimate_Software_Upgrade_Plan.txt` (sha256 `68354a7c…`). Plan locations used here:
   - The Phase 11 block: L1744-1799 (preconditions L1751-1752, tasks 1-9 L1756-1765, AC-11-1..AC-11-8 L1781-1788, exit P L1798-1799).
-  - Holds H4 and H9: L1915 and L1920. Decisions D-10 and D-15: L2551 and L2556. Open questions Q-03, Q-13 and Q-20: L2930, L2942 and L2950.
+  - Holds H4 and H9: L1915 and L1920. Decisions D-06, D-10, D-15 and D-18: L2547, L2551, L2556 and L2559 (D-18 in 18.3: L2992). Open questions Q-03, Q-13 and Q-20: L2930, L2942 and L2950. Assumption A-15: L3192. The SLO approval rule ("PO and PI approve each change below [Decision D-06]"): L2718.
+  - The decision owners of the Phase 1 and Phase 2 exits: L1148 ("Decision owner: Product Owner.") and L1219 ("Decision owner: Principal Investigator.").
 - **Fixed decisions:** E1-E26 of the Phase 11 design (`BEP-2-12/00_meta/workflows/p11/p11_design.txt`, run `wf_3dbd3308-f36`, corrected under G1-G7). The design is the engineering source; this spec states what the code does, slice by slice, as each slice lands.
 - **Builder:** Claude on the main track (owner decision P2-12-D-08). Entry decision: P2-12-D-10 (section 0.2).
 
@@ -21,6 +22,7 @@
 - **Secrets.** Never open `infra/cloudrun/*.env.yaml`, `apps/frontend/.env.local` or any `.env*` file.
 - **Git.** Every change reaches `main` through a reviewed PR; no history rewrite, force-push or `git stash`.
 - **Numbering.** Phase 11 takes main-track numbers after the highest rows on `main` at its start (P2-12-D-08): DI-149 onward and PD-76 onward. PD-200..PD-249 and DI-300..DI-399 are Phase 8's; PD-250..PD-299 and DI-400..DI-499 are Phase 12's (P2-12-D-09); Phase 11 uses neither range.
+- **ADR numbers.** `main` `25a8f89` holds ADR-001 to ADR-012 (`docs/adr/`; ADR-012 is Phase 10's). ADR-013 is reserved for slice 11-D's media ADR and ADR-014 for Phase 12 (design QC-21, G5); no other Phase 11 slice takes an ADR number.
 - **Status words.** No record may say a Phase 11 AC "passed". Records say "mechanism proven in CI" and name the deferred item that carries the rest (design E1).
 
 ### 0.2 Entry (design E1; decision P2-12-D-10)
@@ -29,9 +31,9 @@ Phase 11 enters under P1-D-18 with every named precondition and hold unmet, as P
 
 | # | Precondition or hold (plan) | Owner | Release evidence | State at entry (2026-11-27) |
 |---|---|---|---|---|
-| 1 | Phase 1 and Phase 2 exits (L1752) | PO | The exit gates | NOT passed: Phase 1 ended with recorded deviations (P1-D-18); the Phase 2 exit is not passed |
-| 2 | D-10 REC "Media to object storage", "existing route" (L2551) | PfO | Ratification | Not ratified; slice 11-D builds on the recommended "existing route" reading as a provisional default for the PfO's ratification |
-| 3 | D-15 REC "Environments", "five" (L2556) | PfO | Ratification and the environments | Not ratified; no staging environment exists, so the CT-09 and CT-10 staging runs are deferred |
+| 1 | Phase 1 and Phase 2 exits (L1752) | PO for Phase 1 (L1148); PI for Phase 2 (L1219) | Each phase's exit gate (plan P) | NOT passed: Phase 1 ended with recorded deviations (P1-D-18); the Phase 2 exit is not passed |
+| 2 | D-10 REC "Media to object storage", "existing route" (L2551) | PfO | None named in the plan (a REC decision); the PfO's ratification | Not ratified; slice 11-D builds on the recommended "existing route" reading as a provisional default for the PfO's ratification |
+| 3 | D-15 REC "Environments", "five" (L2556) | PfO | None named in the plan (a REC decision); the PfO's ratification and the environments | Not ratified; no staging environment exists, so the CT-09 and CT-10 staging runs are deferred |
 | 4 | Q-03 "Backups/PITR; restore tested?" (L2930), evidence "Backup id, drill" | PfO | The current backup id and a drill | Partly evidenced only: a dated Phase 0 drill exists (2026-10-28), the current backup and PITR state are UNVERIFIED, and no backups were taken 2026-11-03..16. Not answered |
 | 5 | Q-13 "Ingress; API instance count?" (L2942), evidence "Scaling export" | PfO | A scaling export | Unanswered; every per-instance assumption is provisional until it is answered |
 | 6 | Q-20 "Budget and capacity?" (L2950), evidence "Approved budget" | PO, PI | An approved budget | Unanswered; it underlies the A-15 amounts and hold H9 |
@@ -101,7 +103,7 @@ Slice 11-0: `docs/architecture/phase11-implementation-spec.md` (new), `docs/test
 
 ## 8. Tests
 
-Slice 11-0 adds no test. The earlier phases' documentation guards (`test_phase3_docs.py`, the `*_docs_*` tests of `test_phase4_acceptance.py` to `test_phase10_acceptance.py`, `test_phase8_docs.py`) read `docs/testing/test-strategy.md` and pass unchanged.
+Slice 11-0 adds no test module and changes no test. The earlier phases' documentation guards that read `docs/testing/test-strategy.md` and the specs (`test_phase3_docs.py`, `test_phase8_docs.py`, and the tests of `test_phase4_acceptance.py`, `test_phase5_acceptance.py`, `test_phase6_acceptance.py`, `test_phase7_acceptance.py`, `test_phase9_acceptance.py` and `test_phase10_acceptance.py` selected by `-k 'docs or strategy or spec or k3 or i8'`) pass unchanged. The slice's own guards are the BEP record checks `check_p11_entry_*` in `BEP-2-12/00_meta/check_records.py` (outside the repository): they hold the registers to section 12, the decision and section 0.2 to the plan's preconditions and holds with their owners and release evidence, the records to the NOT passed exit, the test strategy's Phase 11 map to the test modules Phase 11 adds, and section 14 and the phase record's history to each other.
 
 ## 9. CI changes
 
@@ -121,14 +123,14 @@ The BEP package `BEP-2-12/phase11/` (the phase record), `00_meta/DECISIONS.md` (
 
 | # | Decision | Plan text | Default applied | Where |
 |---|---|---|---|---|
-| PD-76 | LCP and INP budgets (D-06; PI decision owner, PO and PI approve) | Task 1: "RECOMMENDATION (operator-set value): LCP < 2.5 s, INP < 200 ms." | LCP p75 < 2500 ms and INP p75 < 200 ms, provisional until D-06; CLS p75 < 0.1 is the plan's value (L1781), not provisional | `docs/testing/test-strategy.md` (Performance row and the Phase 11 section) |
+| PD-76 | LCP and INP budgets (D-06, L2547: PI decision owner; PO and PI approve each change, L2718) | Task 1: "RECOMMENDATION (operator-set value): LCP < 2.5 s, INP < 200 ms." | LCP p75 < 2500 ms and INP p75 < 200 ms, provisional until D-06; CLS p75 < 0.1 is the plan's value (L1781), not provisional | `docs/testing/test-strategy.md` (Performance row and the Phase 11 section) |
 
 ### 12.2 Deferred items
 
 | # | Item | Who | State |
 |---|---|---|---|
-| DI-149 | The Phase 11 entry (design E1; P2-12-D-10): Phase 11 entered with every named precondition and hold unmet. Blocked by: the Phase 1 and Phase 2 exits (P1-D-18); D-10 REC and D-15 REC (PfO ratification); Q-03 (PfO; the current backup id and a drill); Q-13 (PfO; a scaling export); Q-20 (PO, PI; an approved budget); hold H4 (D-18; a capacity statement); hold H9 (A-15; an approved budget; only repository storage code proceeds). | PO / PfO / PI | Open |
-| DI-150 | The Phase 11 exit (plan P: "AC-11-1 to AC-11-8 passed; SLOs, runbooks, RACI filed."). Recorded NOT passed from the outset: every AC needs production, owner or calendar evidence (section 2), and the SLOs and RACI become binding only after D-06 and D-18. Blocked by: DI-149 and each AC's deferred items as the slices record them. | PO | Open |
+| DI-149 | The Phase 11 entry (design E1; P2-12-D-10): Phase 11 entered with every named precondition and hold unmet. Blocked by: the Phase 1 and Phase 2 exits (P1-D-18); D-10 REC and D-15 REC (PfO ratification); Q-03 (PfO; partly evidenced only, not answered; the current backup id and a drill); Q-13 (PfO; a scaling export); Q-20 (PO, PI; an approved budget); hold H4 (D-18; a capacity statement); hold H9 (A-15; an approved budget; only repository storage code proceeds). | PO / PfO / PI | Open |
+| DI-150 | The Phase 11 exit (plan P: "AC-11-1 to AC-11-8 passed; SLOs, runbooks, RACI filed."). Recorded NOT passed from the outset: every AC needs production, owner or calendar evidence (the Phase 11 spec's section 2), and the SLOs and RACI become binding only after D-06 and D-18. Blocked by: DI-149 and each AC's deferred items as the slices record them. | PO | Open |
 
 ## 13. Verification, work order and exit
 
@@ -138,5 +140,8 @@ The BEP package `BEP-2-12/phase11/` (the phase record), `00_meta/DECISIONS.md` (
 
 ## 14. Review history
 
-| Round | Commit | What changed |
+The rows below record what each round fixed, in order. A row may describe behaviour or text a later round superseded; sections 0-13 are authoritative and describe the current state.
+
+| Round | Commit | Findings fixed (one line each, with their checks) |
 |---|---|---|
+| Entry | `10021b4` | Slice 11-0 records: this skeleton, the test strategy's Phase 11 section, `.gitattributes`; P2-12-D-10, DI-149, DI-150 and PD-76 (checks `check_p11_entry_*`) |
