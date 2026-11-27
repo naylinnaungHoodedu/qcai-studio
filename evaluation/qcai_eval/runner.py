@@ -1076,6 +1076,9 @@ def execute_run(plan: Plan, responder: Any, out_dir: Path, *, resume: bool = Fal
     with _writing():
         out_dir.mkdir(parents=True, exist_ok=True)
     responses_path = out_dir / RESPONSES
+    # A responses path that is a directory is `output_unwritable` before any check reads its size: a directory's
+    # st_size is 0 on Windows but not on POSIX, where the size check below would refuse it as `checkpoint_mismatch`.
+    _require_file(responses_path)
     responder_rule = getattr(responder, "rule", "unknown")
     digest = run_digest(plan, responder_rule)
     if resume:
