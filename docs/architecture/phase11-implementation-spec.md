@@ -55,7 +55,7 @@ In scope (L1754): performance, accessibility, content QA, media, supply chain, S
 
 | Slice | Content (design) | State |
 |---|---|---|
-| 11-0 | Entry records: P2-12-D-10, DI-149 and DI-150, this skeleton, the test strategy's Phase 11 section | This PR |
+| 11-0 | Entry records: P2-12-D-10, DI-149 and DI-150, this skeleton, the test strategy's Phase 11 section | In review on `phase11/entry-records`; not merged |
 | 11-A | Operations core, the shared contracts first (11-E, 11-C, 11-D and Phase 12 read them): the per-declaration test-baseline helper, full bump stability before a configuration package bump, the v9 bump, SLIs, the cost caps and shared limits (task 9), the vitals endpoint and checker, the restore drill tooling | Not started |
 | 11-E | Supply chain (task 5): SHA-pinned actions and digest-pinned images, SBOMs, provenance verification | Not started |
 | 11-B | Content QA (tasks 3 and the transcript contract): the source-fidelity register v2 and the transcript-or-nothing policy | Not started |

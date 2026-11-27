@@ -426,7 +426,7 @@ Every test module Phase 10 added, with what it proves, then every existing modul
 
 ## Phase 11 acceptance map (plan Phase 11 K)
 
-Slice 11-0 (entry records) adds no test: each later slice adds its tests and names them here, in its own PR (`docs/architecture/phase11-implementation-spec.md`, section 1). Every AC below needs production, owner or calendar evidence, so the exit is not passed at merge (DI-150), and no AC is recorded as passed: a slice's tests prove the repository mechanism in CI, and the rest is a deferred item. CLS p75 < 0.1 is the plan's value; the LCP and INP budgets (L1756, "operator-set value") are provisional until D-06 (PD-76).
+Test modules Phase 11 has added: none yet. Slice 11-0 (entry records) adds no test module; each later slice names every test module it adds here, by its repository path and with what it proves, in its own PR (`docs/architecture/phase11-implementation-spec.md`, section 1), and the AC rows below name its tests. Every AC below needs production, owner or calendar evidence, so the exit is not passed at merge (DI-150), and no AC is recorded as passed: a slice's tests prove the repository mechanism in CI, and the rest is a deferred item. CLS p75 < 0.1 is the plan's value; the LCP and INP budgets (L1756, "operator-set value") are provisional until D-06 (PD-76).
 
 | AC | Statement | Repository mechanism (slice) | Tests |
 |---|---|---|---|
