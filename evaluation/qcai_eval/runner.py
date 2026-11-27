@@ -224,15 +224,14 @@ def effective_retries(spec: Mapping[str, Any], parameters: Mapping[str, Any]) ->
     return int(spec["retries"] if "retries" in spec else parameters["retries"])
 
 
-# The paper's execution protocol (VBT RevB Sec. VIII-C: "Within-model variability is estimated from three replicates on a
-# 40-item S1 subsample"; "API failures are retried three times, then logged and counted"): every other item runs once.
-# The harness parameters' defaults are these values (PD-68; a test keeps them equal). A registered experiment (E1-E4)
-# whose effective values depart from them is refused in a live run or over non-synthetic data
+# The registered execution protocol is the experiment's family's `protocol.execution` in the analysis plans (the paper's
+# values, VBT RevB Sec. VIII-C, which `analysis_plans.validate_plans` requires: three replicates on a 40-item S1
+# subsample, every other item once, three retries; E3 only its retries), so the plans' sha256 an OSF record pins covers
+# it and the pre-registration draft states it. The harness parameters' defaults are these values (PD-68; a test keeps
+# them equal). An E1-E4 run whose effective values depart from it is refused in a live run or over non-synthetic data
 # (`design_departs_from_registration:<field>`, exit 2); a synthetic E1-E4 run may depart, and its record names each
 # departure (`pins.execution.departures`) and files its family as `departs_from_registration`. A harness-check run
 # files no registered family (it is never confirmatory) and its record pins the effective values it ran.
-REGISTERED_EXECUTION = {"replicates.default": 1, "replicates.subsample.stratum": "A", "replicates.subsample.size": 40,
-                        "replicates.subsample.replicates": 3, "retries": 3}
 
 
 def execution_applies(spec: Mapping[str, Any]) -> bool:
@@ -240,17 +239,16 @@ def execution_applies(spec: Mapping[str, Any]) -> bool:
     return spec["experiment"] in analysis_plans.FAMILIES
 
 
-def execution_departures(experiment: str, replicates: Mapping[str, Any], retries: int) -> list[dict[str, Any]]:
-    """Each effective execution value that differs from `REGISTERED_EXECUTION`, as {field, registered, effective}. E3
-    sends each request once, except its single-pass repeats (its replicate variance, `_design_requests`), so only its
-    retries are judged; every other experiment is judged on its default replicates, its subsample and its retries."""
+def execution_departures(registered: Mapping[str, Any], replicates: Mapping[str, Any], retries: int) -> list[dict[str, Any]]:
+    """Each field of the family's registered execution protocol (`protocol.execution` of the analysis plans) whose
+    effective value differs, as {field, registered, effective}, in the protocol's order. E3's protocol registers only its
+    retries (it sends each request once, except its single-pass repeats, its replicate variance, `_design_requests`);
+    every other family's registers its default replicates, its subsample and its retries."""
     block = replicates.get("subsample") or {}
-    effective: dict[str, Any] = {"retries": retries}
-    if experiment != "E3":
-        effective = {"replicates.default": replicates.get("default"),
-                     **{f"replicates.subsample.{key}": block.get(key) for key in ("stratum", "size", "replicates")}, **effective}
-    return [{"field": field, "registered": REGISTERED_EXECUTION[field], "effective": value}
-            for field, value in effective.items() if value != REGISTERED_EXECUTION[field]]
+    effective = {"replicates.default": replicates.get("default"), "retries": retries,
+                 **{f"replicates.subsample.{key}": block.get(key) for key in ("stratum", "size", "replicates")}}
+    return [{"field": field, "registered": value, "effective": effective.get(field)}
+            for field, value in registered.items() if effective.get(field) != value]
 
 
 def subsample(items: Sequence[Mapping[str, Any]], replicates: Mapping[str, Any]) -> list[str]:
@@ -566,10 +564,12 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
         raise RunRefused(2, ["analysis_plan.family"])
     design = None
     synthetic = planes.all_synthetic(items) and (catalog is None or all(r.volume == "synthetic" for r in catalog.records.values()))
-    # The registered execution protocol (`REGISTERED_EXECUTION`): an E1-E4 run that is live or over non-synthetic data
-    # keeps the paper's replicates and retries; a synthetic E1-E4 run may depart, and its record names each departure. A
-    # design's own departures (`experiments.departures`) are listed before these.
-    execution = execution_departures(spec["experiment"], replicates, retries) if execution_applies(spec) else None
+    # The registered execution protocol (the family's `protocol.execution`): an E1-E4 run that is live or over
+    # non-synthetic data keeps the paper's replicates and retries; a synthetic E1-E4 run may depart, and its record names
+    # each departure. These departures are refused together with a design's own (`experiments.departures`, listed
+    # first), before E4's streams' floor.
+    registered_execution = plans_raw["families"][spec["experiment"]]["protocol"]["execution"] if execution_applies(spec) else None
+    execution = execution_departures(registered_execution, replicates, retries) if registered_execution is not None else None
     refuse_departures = spec["mode"] == "live" or not synthetic
     execution_fields = [f"design_departs_from_registration:{entry['field']}" for entry in execution or []]
     if spec["experiment"] in analysis_plans.FAMILIES:
@@ -732,7 +732,7 @@ def _plan_run(spec: Mapping[str, Any], *, repo_root: Path, environ: Mapping[str,
         "code": code_pins(repo_root),
     }
     if execution is not None:
-        pins["execution"] = {"registered": dict(REGISTERED_EXECUTION), "departures": execution}
+        pins["execution"] = {"registered": dict(registered_execution), "departures": execution}
     if design is not None:
         pins["design"] = experiments.design_pins(spec["experiment"], design)
     return Plan(spec=dict(spec), package_raw=judged, items=items, arms=table, requests=tuple(requests), pins=pins,
@@ -1283,8 +1283,12 @@ def compute_registered_tests(plan: Plan, responses, metrics) -> dict[str, Any] |
         return None
     family = plan.extra["analysis_plans"]["families"]["E1"]
     arms = {arm for hypothesis in family["hypotheses"] for arm in hypothesis.get("comparison", [])}
+    # The family's protocol label (registered, or departs_from_registration with each departure) is filed whatever its
+    # status, as E2-E4's are (`experiments.compute`): a run awaiting its labels names its departures too.
+    found = list((plan.pins.get("execution") or {}).get("departures") or [])
+    protocol = {"protocol": "departs_from_registration" if found else "registered", "departures": found}
     if any(isinstance(metrics.get(arm), dict) and metrics[arm].get("status") == "awaiting_labels" for arm in arms):
-        return {"status": "awaiting_labels"}
+        return {"status": "awaiting_labels", **protocol}
     settings = plan.spec.get("bootstrap") or {}
     results: dict[str, Any] = {}
     for hypothesis in family["hypotheses"]:
@@ -1305,9 +1309,8 @@ def compute_registered_tests(plan: Plan, responses, metrics) -> dict[str, Any] |
         results[hypothesis["id"]] = {"endpoint": hypothesis["endpoint"], "comparison": [left_arm, right_arm],
                                      "test": hypothesis["test"], **result}
     tested = {name: value["p_value"] for name, value in results.items() if "p_value" in value}
-    found = list((plan.pins.get("execution") or {}).get("departures") or [])
     return {"family": "E1", "correction": "holm", "hypotheses": results, "holm": statistics.holm(tested) if tested else {},
-            "protocol": "departs_from_registration" if found else "registered", "departures": found,
+            **protocol,
             "note": "the registered E1 family; HR-3 is reported without a family test (criteria_only)"}
 
 

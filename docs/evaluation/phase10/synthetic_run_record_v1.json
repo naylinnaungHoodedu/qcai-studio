@@ -778,7 +778,7 @@
  "pins": {
   "analysis_plan": {
    "family": "E1",
-   "sha256": "207077dfb2e70cfa39d5c2967752ac0f7c2a9f742a96846c4ca8752fdea52959"
+   "sha256": "7f0385b3ee41a36875acadc2a57d25947ae46a0822eca46413d162864fbdf83b"
   },
   "arms": {
    "parity": "pass",
@@ -804,12 +804,12 @@
    "evaluation/qcai_eval/abstention.py": "91d0c1c3e9ca741ffa15e5ac1af6b37279abacb271bcaec20c23672338edad91",
    "evaluation/qcai_eval/access_log.py": "a375425e3340f486ec3536843ed5826aaeeacb7439824d47f5156a883bd9b0a0",
    "evaluation/qcai_eval/agreement.py": "0d459bc439eae94a092833a91150f0d48503404b7d8080af9980b7f1690661b3",
-   "evaluation/qcai_eval/analysis_plans.py": "b9efc2a23d6f6a6ecf8e7741fb49816f5ae0a4b2a78995777dd3f72b216c24d8",
+   "evaluation/qcai_eval/analysis_plans.py": "5ab562bc6368200d25a48048414c8f58db85acc76b48ba950d5e9f14201c9610",
    "evaluation/qcai_eval/canonical.py": "d1294995a1c062d5a870dcfaf9c73bbebcfecf1811e8c98840f1046e12aa215a",
    "evaluation/qcai_eval/citation.py": "b42439d6ed5826094e02573895c0b64153834a1b6cdac7450140b05adfd8cf42",
    "evaluation/qcai_eval/claims.py": "0b49dcb6ec658b8c72cb7bdc544e5ffb1af63c727b775d05a4c24766c791846b",
    "evaluation/qcai_eval/contamination.py": "a8e30dd9d14c3bd81449ed949e23855ee5e8b8d0431cdc461588e5b04b4868f0",
-   "evaluation/qcai_eval/experiments.py": "57692a853383dc8ada3122723b156ddc37ad49484c201d17decb69feb187e947",
+   "evaluation/qcai_eval/experiments.py": "0423afffd6daeb79e3dd60fca6ca323753486ab9cea641caa97d63e8445ad702",
    "evaluation/qcai_eval/fabrication.py": "b1e6d10453720a9f8174ca3e54945231984dfa816ba19dca24112d9664d5459e",
    "evaluation/qcai_eval/faithfulness.py": "9020a01d7d9730ce678e5e04c1d14e89e2e725e8a5af88c9b8696f3dbbf981e5",
    "evaluation/qcai_eval/governance.py": "d6fd6e2cd272744b707eabc087f7f007389a479da0f8bdce08209e9e4e869b11",
@@ -822,12 +822,12 @@
    "evaluation/qcai_eval/providers.py": "42f7debfea3fd5a572d026f423d8ee30be8f9506b948cf30f9e2e7a585660ee8",
    "evaluation/qcai_eval/reporting.py": "3cc299f92ad3b9086f1335afe3f1f8668df1369c13a44d114931f86ed77f0c6f",
    "evaluation/qcai_eval/retrieval.py": "fad7346aea2e3b850eb73c0b9410fcf67d9ab910ad058855bcee767100d42e16",
-   "evaluation/qcai_eval/runner.py": "9f16866d4089811ccba607a4422e66510c8ca52d1463d1fbb6093d9d01bb9a0d",
+   "evaluation/qcai_eval/runner.py": "54f9e66c03151e3937e02ef11c69ddd1c4dc25648d84fbbc9392b40b429967fa",
    "evaluation/qcai_eval/seeded_faults.py": "6ec6cc8964542b472cd1190ecf630914d6a269877dff787f1ac7a9a75a3826f9",
    "evaluation/qcai_eval/statistics.py": "dfb60008ca26b53766c4c5bc5571d2827db07e7bcf907b31d93ac4fb36a3d784",
    "evaluation/qcai_eval/synthetic.py": "663f28ec1090c458cee07eecb3034c18617991d78072b4980fc00a630d4dc1ca",
    "evaluation/qcai_eval/ulqs.py": "f9e6703492b065769189ee1a0d2437289fe9e19a87c10833d8167e8cee4037ec",
-   "scripts/run_evaluation.py": "214cc29eb96c44e75d4111d81694bc6b5b2cb6b37411f771c62342b5d70f0409"
+   "scripts/run_evaluation.py": "a9399d7aff91bb140a79eddabf7614132df1be6f323d233d3090e5bc64cafe93"
   },
   "evidence_catalog": {
    "corpus_version": "SYNTHETIC-CORPUS-v1",

@@ -9,7 +9,9 @@ one-sided or equivalence test, its margin, the null value; where VBT RevB Sec. X
 that value (`PAPER_NULLS`). H4b carries the paper's EQC reliability condition (`H4B_CONFIRMATORY_IF`), and the secondary
 analyses the paper and Table XVII name are registered (`SECONDARY_ANALYSES`), implemented or not. Every Table XVII row
 Phase 10 tests (`PHASE10_CRITERIA`) is registered once a family's hypothesis criterion or `criteria_only` entry, and each
-family states its data (`data`). Nothing is filed with OSF while D-08
+family states its data (`data`) and its protocol (`protocol`: the execution values every E1-E4 run keeps and, for E3
+and E4, the design values; each must be the paper's, `PAPER_PROTOCOL`), which the runner judges a run against and the
+pre-registration draft states, so the plans' sha256 an OSF record pins covers them. Nothing is filed with OSF while D-08
 is open (DI-131), so the plans' status must start with `draft` and may not use the word `registered`.
 """
 
@@ -60,6 +62,27 @@ SECONDARY_ANALYSES = ("mixed_effects_logistic", "cumulative_link_mixed_model", "
                       "effective_sample_size")
 
 
+# Each family's protocol as VBT RevB states it. Execution (Sec. VIII-C): "Within-model variability is estimated from three
+# replicates on a 40-item S1 subsample" (every other item runs once) and "API failures are retried three times, then
+# logged and counted"; E3 sends each request once except its single-pass repeats (its replicate variance), so only its
+# retries are registered. Design (Sec. VIII-D): E3 "Single-pass generation is also repeated three times at one fixed
+# level"; E4 "1,000 seeded streams of 2,000 requests ... At request 1,000, one model's first-pass error rate in one topic
+# is raised by ten percentage points" (plan 6.5 Table XVII "1,000 replay streams"). E4's `commissioning_items` is not
+# registered: the paper's 80 commissioning items ("the 30-item pilot plus the golden set (80 items)", Sec. VII) are not
+# ULQS items, and the harness's hold-out of run items in their place is an engineering stand-in (PD-75, DI-148) whose
+# cost is bounded by the streams' floor. `harness_parameters_v1.json` holds the same values as its defaults (PD-68,
+# PD-75; a test keeps them equal).
+_PAPER_EXECUTION = {"replicates.default": 1, "replicates.subsample.stratum": "A", "replicates.subsample.size": 40,
+                    "replicates.subsample.replicates": 3, "retries": 3}
+PAPER_PROTOCOL = {
+    "E1": {"execution": dict(_PAPER_EXECUTION)},
+    "E2": {"execution": dict(_PAPER_EXECUTION)},
+    "E3": {"execution": {"retries": 3}, "design": {"repeats": 3}},
+    "E4": {"execution": dict(_PAPER_EXECUTION),
+           "design": {"streams": 1000, "stream_length": 2000, "shift.at": 1000, "shift.points": "0.10"}},
+}
+
+
 class PlanError(ValueError):
     """An analysis plan that asserts an outcome, repeats a hypothesis or names an unregistered test."""
 
@@ -95,6 +118,9 @@ def _shape_problem(raw: Any) -> str | None:
     for family, body in raw["families"].items():
         if not isinstance(body, Mapping):
             return f"{family}: not an object"
+        protocol = body.get("protocol")
+        if not isinstance(protocol, Mapping) or not all(isinstance(protocol.get(part, {}), Mapping) for part in ("execution", "design")):
+            return f"{family}.protocol: not an object of execution and design objects"
         if "criteria_only" in body and not _strings(body["criteria_only"]):
             return f"{family}.criteria_only: not a list of strings"
         hypotheses = body.get("hypotheses", [])
@@ -141,6 +167,8 @@ def validate_plans(raw: Mapping[str, Any]) -> None:
     for family, body in families.items():
         if not isinstance(body.get("data"), str) or not body["data"]:
             raise PlanError(f"{family}: states its data")
+        if body["protocol"] != PAPER_PROTOCOL[family]:
+            raise PlanError(f"{family}.protocol: must be the paper's execution and design values (VBT RevB Sec. VIII-C, VIII-D)")
         for entry in body.get("criteria_only", []):
             criterion = entry.split(" ", 1)[0] if isinstance(entry, str) else None
             if criterion not in TABLE_XVII:
@@ -225,6 +253,21 @@ def plans_sha256(raw: Mapping[str, Any]) -> str:
     return canonical_sha256(raw)
 
 
+def protocol_sentence(protocol: Mapping[str, Any]) -> str:
+    """The pre-registration's statement of a family's protocol (`protocol`), every registered value named."""
+    def values(block: Mapping[str, Any]) -> str:
+        return ", ".join(f"`{field}` {value}" for field, value in block.items())
+    text = f"Execution protocol: {values(protocol['execution'])}"
+    if "replicates.default" in protocol["execution"]:
+        text += (" (the `replicates.subsample.size` items of the subsample's stratum, drawn by seed (stratum A is the S1 stratum), run"
+                 " `replicates.subsample.replicates` times; every other item runs `replicates.default` time)")
+    text += "; a failed request is retried `retries` times, then logged and counted"
+    if protocol.get("design"):
+        text += f". Design protocol: {values(protocol['design'])}"
+    return text + (". A live run or a run over research data that departs from any of these values is refused; a synthetic run "
+                   "that departs names each departure and files its family as `departs_from_registration`.")
+
+
 def preregistration_markdown(raw: Mapping[str, Any]) -> str:
     """The pre-registration DRAFT (`docs/evaluation/phase10/preregistration-draft.md`), generated from the plans."""
     validate_plans(raw)
@@ -247,6 +290,7 @@ def preregistration_markdown(raw: Mapping[str, Any]) -> str:
         lines += [f"## {family} ({body['rq']})", ""]
         if body.get("data"):
             lines += [f"Data: {body['data']}.", ""]
+        lines += [protocol_sentence(body["protocol"]), ""]
         lines += ["| Hypothesis | Endpoint | Comparison | Test | Sided | Margin (null) | Table XVII criteria |",
                   "|---|---|---|---|---|---|---|"]
         for hypothesis in body["hypotheses"]:

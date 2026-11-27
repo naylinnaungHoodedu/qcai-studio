@@ -1113,13 +1113,21 @@ def _repin(path, lines):
 def test_the_registered_protocol_values_are_the_harness_defaults(tmp_path):
     # VBT RevB Sec. VIII-D: "Single-pass generation is also repeated three times"; "1,000 seeded streams of 2,000 requests
     # ... At request 1,000, one model's first-pass error rate in one topic is raised by ten percentage points".
-    from evaluation.qcai_eval import experiments
+    # The registered values are the analysis plans' `protocol.design` (review 26: in the plans the OSF record pins).
+    from evaluation.qcai_eval import analysis_plans, experiments
 
     defaults = runner.load_harness_parameters()["designs"]
-    assert experiments.REGISTERED_DESIGN == {"E3": {"repeats": defaults["E3"]["repeats"]},
-                                             "E4": {"streams": defaults["E4"]["streams"], "stream_length": defaults["E4"]["stream_length"],
-                                                    "shift.at": defaults["E4"]["shift_at"], "shift.points": defaults["E4"]["shift_points"]}}
-    assert experiments.REGISTERED_DESIGN["E4"] == {"streams": 1000, "stream_length": 2000, "shift.at": 1000, "shift.points": "0.10"}
+    families = analysis_plans.load_plans()["families"]
+    registered = {name: families[name]["protocol"]["design"] for name in ("E3", "E4")}
+    assert all("design" not in families[name]["protocol"] for name in ("E1", "E2"))
+    assert registered == {"E3": {"repeats": defaults["E3"]["repeats"]},
+                          "E4": {"streams": defaults["E4"]["streams"], "stream_length": defaults["E4"]["stream_length"],
+                                 "shift.at": defaults["E4"]["shift_at"], "shift.points": defaults["E4"]["shift_points"]}}
+    assert registered["E4"] == {"streams": 1000, "stream_length": 2000, "shift.at": 1000, "shift.points": "0.10"}
+    # The runner judges a design against the family's registered protocol, the plans' values.
+    design = {"repeats": 2}
+    assert experiments.departures("E3", design, families["E3"]) == [{"field": "design.repeats", "registered": 3, "effective": 2}]
+    assert experiments.departures("E3", design, {**families["E3"], "protocol": {"execution": {}, "design": {"repeats": 2}}}) == []
     # VBT RevB Sec. VII's "30-item pilot plus the golden set (80 items)" are not ULQS items: the hold-out of 80 run items in
     # their place is a provisional engineering default, not a registered value, and the streams keep at least 120 items
     # (AC-10-1's smallest ULQS, "120-200 items across S1-S7").
@@ -1170,7 +1178,7 @@ def test_a_design_that_departs_from_the_registered_protocol_is_refused_over_rese
                 {"field": "design.stream_length", "registered": 2000, "effective": 40},
                 {"field": "design.shift.at", "registered": 1000, "effective": 20}]
     assert record["pins"]["design"]["departures"] == expected
-    # The synthetic spec's 2-item subsample departs from the paper's 40 too (`runner.REGISTERED_EXECUTION`): the family
+    # The synthetic spec's 2-item subsample departs from the paper's 40 too (E4's `protocol.execution`): the family
     # lists the design's departures, then the execution protocol's.
     execution = [{"field": "replicates.subsample.size", "registered": 40, "effective": 2}]
     assert record["pins"]["execution"]["departures"] == execution

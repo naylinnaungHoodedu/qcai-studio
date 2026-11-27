@@ -4,7 +4,7 @@
 `evaluation/config/analysis_plans_v1.json`; `--check` in CI proves this file is current. Nothing here is executed:
 no hypothesis has been tested and no HR-1 to MR-3 outcome is asserted (plan Phase 10 P; invariant 9).
 
-- Analysis plans: `analysis-plans-v1`, canonical sha256 `207077dfb2e70cfa39d5c2967752ac0f7c2a9f742a96846c4ca8752fdea52959`.
+- Analysis plans: `analysis-plans-v1`, canonical sha256 `7f0385b3ee41a36875acadc2a57d25947ae46a0822eca46413d162864fbdf83b`.
 - Status: draft, not filed with OSF (DI-131).
 - Significance: alpha = 0.05, Holm correction within each family (plan 12.7: "E1-E4 are pre-registered
   hypothesis tests (alpha = 0.05, Holm per family), not software gates").
@@ -14,6 +14,8 @@ no hypothesis has been tested and no HR-1 to MR-3 outcome is asserted (plan Phas
 ## E1 (RQ1)
 
 Data: all ULQS items x seven arms; production generator.
+
+Execution protocol: `replicates.default` 1, `replicates.subsample.stratum` A, `replicates.subsample.size` 40, `replicates.subsample.replicates` 3, `retries` 3 (the `replicates.subsample.size` items of the subsample's stratum, drawn by seed (stratum A is the S1 stratum), run `replicates.subsample.replicates` times; every other item runs `replicates.default` time); a failed request is retried `retries` times, then logged and counted. A live run or a run over research data that departs from any of these values is refused; a synthetic run that departs names each departure and files its family as `departs_from_registration`.
 
 | Hypothesis | Endpoint | Comparison | Test | Sided | Margin (null) | Table XVII criteria |
 |---|---|---|---|---|---|---|
@@ -29,6 +31,8 @@ Labelling: GATE, GATE+SV and VLOOP fully labelled; other arms on a random 25% of
 
 Data: the verification set: every human-labelled claim from E1 plus the seeded-fault set (controlled Type A-E insertions into correct E1 responses, the count per type reported with the results and the seeded faults reported separately; the insertion tool is not implemented, DI-145); a blind 2oo3 three-family verifier panel without the generator, each model verifying every claim generated outside its own family and the panels formed by rule (1oo3, 2oo3, 3oo3, Dawid-Skene); Group B novice sessions for UE-1 to UE-3.
 
+Execution protocol: `replicates.default` 1, `replicates.subsample.stratum` A, `replicates.subsample.size` 40, `replicates.subsample.replicates` 3, `retries` 3 (the `replicates.subsample.size` items of the subsample's stratum, drawn by seed (stratum A is the S1 stratum), run `replicates.subsample.replicates` times; every other item runs `replicates.default` time); a failed request is retried `retries` times, then logged and counted. A live run or a run over research data that departs from any of these values is refused; a synthetic run that departs names each departure and files its family as `departs_from_registration`.
+
 | Hypothesis | Endpoint | Comparison | Test | Sided | Margin (null) | Table XVII criteria |
 |---|---|---|---|---|---|---|
 | H2a | panel vs best single verifier, F1 | 2oo3 heterogeneous panel vs best single verifier | `cluster_bootstrap_bca_one_sided (resamples 10000)` | one | 0 | V-2 |
@@ -41,6 +45,8 @@ Criteria reported without a family test: V-3 (<=10% of responses escalated to V3
 
 Data: 25 S7 (stratum G) items x 3 levels x 2 designs (two-pass and single-pass generation); single-pass also repeated three times at one fixed level.
 
+Execution protocol: `retries` 3; a failed request is retried `retries` times, then logged and counted. Design protocol: `repeats` 3. A live run or a run over research data that departs from any of these values is refused; a synthetic run that departs names each departure and files its family as `departs_from_registration`.
+
 | Hypothesis | Endpoint | Comparison | Test | Sided | Margin (null) | Table XVII criteria |
 |---|---|---|---|---|---|---|
 | H3a | invariance violation (eq. 18), two-pass vs single-pass, 25 S7 items | two-pass vs single-pass | `mcnemar_exact` | two | - | LQ-1 |
@@ -49,6 +55,8 @@ Data: 25 S7 (stratum G) items x 3 levels x 2 designs (two-pass and single-pass g
 ## E4 (RQ4)
 
 Data: 1,000 seeded replay streams (plan 6.5 Table XVII; 15.2 MR-1) and the E4 logs; every model answers every item in GATE and VLOOP; before the streams, commissioning_items run items (80 by default, a provisional stand-in for the paper's 30-item pilot plus the golden set, of which no responses of the four models exist; DI-148) are held out in seeded order, each model is commissioned from its own outcomes on them, and the streams draw only the other items, at least 120 of them in a live run or a run over research data; the remaining items are resampled before each stream is drawn.
+
+Execution protocol: `replicates.default` 1, `replicates.subsample.stratum` A, `replicates.subsample.size` 40, `replicates.subsample.replicates` 3, `retries` 3 (the `replicates.subsample.size` items of the subsample's stratum, drawn by seed (stratum A is the S1 stratum), run `replicates.subsample.replicates` times; every other item runs `replicates.default` time); a failed request is retried `retries` times, then logged and counted. Design protocol: `streams` 1000, `stream_length` 2000, `shift.at` 1000, `shift.points` 0.10. A live run or a run over research data that departs from any of these values is refused; a synthetic run that departs names each departure and files its family as `departs_from_registration`.
 
 | Hypothesis | Endpoint | Comparison | Test | Sided | Margin (null) | Table XVII criteria |
 |---|---|---|---|---|---|---|

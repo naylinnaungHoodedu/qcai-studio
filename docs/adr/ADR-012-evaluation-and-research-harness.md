@@ -51,7 +51,9 @@ ratified under DI-140). The Phase 10 exit is not passed (DI-129).
 8. The E1-E4 analysis plans are data with no outcome fields and a draft status (nothing is filed with OSF, DI-131); the
    pre-registration draft is generated from them. Each hypothesis carries its sidedness, its comparison and, as its
    margin, the paper's null (H2b: DR <= 1); H4b carries the paper's EQC reliability condition; the paper's secondary
-   analyses are registered as not implemented. Every hypothesis test they register is a function of `statistics.py` with
+   analyses are registered as not implemented. Each family carries its protocol, the paper's execution values (replicates
+   and retries) and, for E3 and E4, its design values, which the runner judges a run against, so the plans' sha256 an
+   OSF record pins covers them. Every hypothesis test they register is a function of `statistics.py` with
    known-answer tests that returns its Holm p-value, and has run on no research data (DI-138).
 
 ## Consequences

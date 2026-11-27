@@ -200,3 +200,40 @@ def test_every_table_xvii_row_phase_10_tests_is_registered_and_each_family_state
         edit(broken)
         with pytest.raises(analysis_plans.PlanError, match=match):
             analysis_plans.validate_plans(broken)
+
+
+def test_each_family_registers_the_paper_s_execution_and_design_protocol_and_the_draft_states_it():
+    # VBT RevB Sec. VIII-C: "three replicates on a 40-item S1 subsample"; "API failures are retried three times, then
+    # logged and counted". Sec. VIII-D: E3 single-pass "repeated three times"; E4 "1,000 seeded streams of 2,000 requests
+    # ... At request 1,000 ... raised by ten percentage points". Review 26: these values are in the plans the OSF record
+    # pins (`analysis_plan_sha256`), not only in code, and the pre-registration draft states them.
+    raw = plans()
+    execution = {"replicates.default": 1, "replicates.subsample.stratum": "A", "replicates.subsample.size": 40,
+                 "replicates.subsample.replicates": 3, "retries": 3}
+    assert {name: body["protocol"] for name, body in raw["families"].items()} == analysis_plans.PAPER_PROTOCOL == {
+        "E1": {"execution": execution}, "E2": {"execution": execution},
+        "E3": {"execution": {"retries": 3}, "design": {"repeats": 3}},
+        "E4": {"execution": execution, "design": {"streams": 1000, "stream_length": 2000, "shift.at": 1000, "shift.points": "0.10"}}}
+    text = analysis_plans.preregistration_markdown(raw)
+    assert text.count("`replicates.subsample.size` 40, `replicates.subsample.replicates` 3, `retries` 3") == 3
+    assert "Execution protocol: `retries` 3; a failed request is retried `retries` times, then logged and counted. " \
+           "Design protocol: `repeats` 3." in text
+    assert "Design protocol: `streams` 1000, `stream_length` 2000, `shift.at` 1000, `shift.points` 0.10." in text
+    assert text.count("files its family as `departs_from_registration`") == 4
+    # Any other value, a missing protocol or one of the wrong type is refused, so the plans' sha256 binds the protocol.
+    for edit, match in ((lambda r: r["families"]["E1"]["protocol"]["execution"].update(retries=0), "E1.protocol: must be the paper's"),
+                        (lambda r: r["families"]["E2"]["protocol"]["execution"].update({"replicates.subsample.size": 39}), "E2.protocol"),
+                        (lambda r: r["families"]["E3"]["protocol"]["design"].update(repeats=2), "E3.protocol"),
+                        (lambda r: r["families"]["E3"]["protocol"]["execution"].update({"replicates.default": 1}), "E3.protocol"),
+                        (lambda r: r["families"]["E4"]["protocol"]["design"].update({"shift.at": 999}), "E4.protocol"),
+                        (lambda r: r["families"]["E4"]["protocol"].pop("design"), "E4.protocol"),
+                        (lambda r: r["families"]["E1"].pop("protocol"), "E1.protocol: not an object"),
+                        (lambda r: r["families"]["E2"].update(protocol=[]), "E2.protocol: not an object"),
+                        (lambda r: r["families"]["E4"]["protocol"].update(execution="3"), "E4.protocol: not an object")):
+        broken = copy.deepcopy(raw)
+        edit(broken)
+        with pytest.raises(analysis_plans.PlanError, match=match):
+            analysis_plans.validate_plans(broken)
+    changed = copy.deepcopy(raw)
+    changed["families"]["E4"]["protocol"]["design"]["stream_length"] = 1999
+    assert analysis_plans.plans_sha256(changed) != analysis_plans.plans_sha256(raw)

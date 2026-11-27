@@ -16,9 +16,10 @@ valid day is refused (`run_start_invalid`), one with another run's digest too (`
 recording must state its start (`recording_started_on_missing`), not after today (`recording_after_run`). An earlier
 start only tightens the checks; the checkpoint and the header are the operator's files (DI-143). A confirmatory run
 covers every live item of both splits (`items_split_missing` when a live item has no split) and its full replicate
-subsample (`replicate_subsample_short`). An E1-E4 run keeps the paper's execution values (`runner.REGISTERED_EXECUTION`:
-three replicates on a 40-item S1 subsample, every other item once, three retries) when it is live or over research
-data (`design_departs_from_registration:<field>`, exit 2); a synthetic run's record names each departure.
+subsample (`replicate_subsample_short`). An E1-E4 run keeps the paper's execution values, its family's registered
+`protocol.execution` in the analysis plans (three replicates on a 40-item S1 subsample, every other item once, three
+retries), when it is live or over research data (`design_departs_from_registration:<field>`, exit 2); a synthetic
+run's record names each departure.
 --write and --check run in a temporary directory outside the checkout; nothing else is written there. With --access-log
 (required for non-synthetic inputs, with --actor-role) the run logs the spec read, every input as the planner reads it
 (also when it then refuses the run), each checkpoint file it reads (`run_output`: run_events.jsonl when a dated resume

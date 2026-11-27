@@ -5,7 +5,8 @@ Each design plans its requests from the run spec's `design` block, runs them thr
 does (stub, recorded; live refused), and computes its registered family with Holm from the responses. Nothing here
 pins a model: the verifier panel, both E3 designs' generator and E4's four models and prices are the spec's (D-07 pins
 them for a real run; until then only synthetic, stub or recorded runs exist, and E1-E4 runs stay confirmatory only).
-A live run or a run over research data runs the registered protocol (`REGISTERED_DESIGN`, the hypotheses' `resamples`;
+A live run or a run over research data runs the registered protocol (the family's `protocol.design` in the analysis
+plans, the hypotheses' `resamples`;
 `departures`); a synthetic run may depart, and its record names each departure and files its family as
 `departs_from_registration`.
 
@@ -273,20 +274,17 @@ def shape_refusals(experiment: str, design: Any) -> list[str]:
     return reasons
 
 
-# The protocol values the registration fixes: the analysis plan's per-hypothesis `resamples` (H2a, H2b 10,000), and VBT
-# RevB Sec. VIII-D's E3 "Single-pass generation is also repeated three times at one fixed level" and E4 "1,000 seeded
-# streams of 2,000 requests ... At request 1,000, one model's first-pass error rate in one topic is raised by ten
-# percentage points" (plan 6.5 Table XVII "1,000 replay streams"). `harness_parameters_v1.json` `designs` holds the same
-# values as the defaults (PD-75; a test keeps them equal). E4's `commissioning_items` is not registered: the paper's 80
-# commissioning items ("the 30-item pilot plus the golden set (80 items)", VBT RevB Sec. VII) are not ULQS items, and the
-# harness's hold-out of run items in their place is an engineering stand-in (PD-75, DI-148) whose cost, the items the
-# streams lose, is bounded by the streams' floor (`min_stream_items`, `stream_floor_refusals`).
-REGISTERED_DESIGN = {"E3": {"repeats": 3}, "E4": {"streams": 1000, "stream_length": 2000, "shift.at": 1000, "shift.points": "0.10"}}
+# The design values the registration fixes are in the analysis plans: each hypothesis's `resamples` (H2a, H2b 10,000) and
+# the family's `protocol.design` (E3's repeats, E4's streams, stream length and shift: the paper's values, VBT RevB Sec.
+# VIII-D, which `analysis_plans.validate_plans` requires and the pre-registration draft states, so the plans' sha256 an
+# OSF record pins covers them). `harness_parameters_v1.json` `designs` holds the same values as the defaults (PD-75; a
+# test keeps them equal). E4's `commissioning_items` is not registered (`analysis_plans.PAPER_PROTOCOL`): its cost, the
+# items the streams lose, is bounded by the streams' floor (`min_stream_items`, `stream_floor_refusals`).
 
 
 def departures(experiment: str, design: Mapping[str, Any], family: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Each effective design value that differs from the registered protocol (`REGISTERED_DESIGN` and the hypotheses'
-    registered `resamples`), as {field, registered, effective} (with the hypothesis for a resamples departure). The
+    """Each effective design value that differs from the registered protocol (the family's `protocol.design` and the
+    hypotheses' registered `resamples`), as {field, registered, effective} (with the hypothesis for a resamples departure). The
     planner refuses a departure in a live run or a run over non-synthetic data (`design_departs_from_registration:<field>`,
     exit 2); a synthetic run may depart, and its record names every departure (`pins.design.departures`) and files its
     family as `protocol: departs_from_registration`, never as the registered result."""
@@ -296,7 +294,7 @@ def departures(experiment: str, design: Mapping[str, Any], family: Mapping[str, 
             if hypothesis.get("resamples") is not None and int(design["resamples"]) != int(hypothesis["resamples"]):
                 found.append({"field": "design.resamples", "hypothesis": hypothesis["id"], "registered": int(hypothesis["resamples"]),
                               "effective": int(design["resamples"])})
-    for field, registered in REGISTERED_DESIGN.get(experiment, {}).items():
+    for field, registered in ((family.get("protocol") or {}).get("design") or {}).items():
         value = design["shift"][field.split(".", 1)[1]] if field.startswith("shift.") else design[field]
         same = Fraction(value) == Fraction(registered) if field == "shift.points" else value == registered
         if not same:

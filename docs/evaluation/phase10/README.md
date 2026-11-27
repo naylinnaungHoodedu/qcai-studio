@@ -24,7 +24,7 @@ executed and no Table XVII row or HR-1..MR-3 outcome is asserted (plan Phase 10 
   design that cannot run (`design`, `design.<field>`, `design_departs_from_registration:<field>` in a live run or over
   research data, `e2_panel_invalid`, `verification_set_empty`, `e3_no_s7_items`, `e4_models_invalid`,
   `e4_shift_invalid`, `e4_later_price_in_force`, `e4_stream_items_below_floor` in a live run or over research data,
-  `experiment_requires_arms`), an E1-E4 run whose replicates or retries depart from the registered execution protocol in a live run or over research data (`design_departs_from_registration:<field>`, the field one of `replicates.default`, `replicates.subsample.stratum`, `replicates.subsample.size`, `replicates.subsample.replicates` and `retries`; `runner.REGISTERED_EXECUTION`), or a confirmatory run refused with no
+  `experiment_requires_arms`), an E1-E4 run whose replicates or retries depart from the registered execution protocol in a live run or over research data (`design_departs_from_registration:<field>`, the field one of `replicates.default`, `replicates.subsample.stratum`, `replicates.subsample.size`, `replicates.subsample.replicates` and `retries`; the family's `protocol.execution` in `evaluation/config/analysis_plans_v1.json`), or a confirmatory run refused with no
   IRB, OSF, items or freeze-record reason; 3 invalid items, unresolved pointers, a recording entry the run cannot
   read (`recording_invalid`), a design input (`<input>`:
   `verification_set`, `e4_responses`, `ratings`) unreadable (`<input>_unreadable`) or invalid (`<input>_invalid`,
@@ -105,7 +105,8 @@ paired by item on answerable items, H1c); E2, the three-family verifier panel wi
 level's presentation pass) and single-pass generation of every S7 item at three levels (H3a, H3b); E4, four models in
 GATE and VLOOP, costed at their input and output list prices (the local model's cost reported separately), and their
 seeded replay streams over eight routing policies (H4a, H4b). A live run or a run over research data runs the registered
-protocol, its design's values and the paper's execution values (three replicates on a 40-item S1 subsample, every
+protocol of its family in the analysis plans, which the pre-registration draft states: its design's values and the
+paper's execution values (three replicates on a 40-item S1 subsample, every
 other item once, three retries; `design_departs_from_registration:<field>` otherwise); a synthetic run may depart and
 its record names each departure and files its family as `departs_from_registration`. E3's exact claim-set comparison stands in for the paper's entailment comparison, and E4's measured local cost
 and latency wait on a pinned local model and the live adapters (spec conflict 40; DI-148).

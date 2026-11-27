@@ -3482,7 +3482,8 @@
       "test_every_hypothesis_carries_its_sidedness_margin_and_comparison_with_the_paper_s_nulls": "add43b9142c2eaefa8d673a65ce01d941f486ea294165125fef9b9ea3027e193",
       "test_h4b_carries_the_eqc_reliability_condition_and_the_secondary_analyses_are_registered": "0b6c634c39a6f3e942f91e2929d2ef074b97fdf3923e4266f16e71c3fd8712fe",
       "test_the_preregistration_is_generated_as_a_draft_with_every_test_status": "ca3b70d1005d39da5e42af71e78b67b304f4a8accfdc9398fc3d74acd0b0ff8b",
-      "test_every_table_xvii_row_phase_10_tests_is_registered_and_each_family_states_its_data": "c65a5c403fe692709a2694b4ff015bbe37c5197293f5a238539d0d8da3079dd8"
+      "test_every_table_xvii_row_phase_10_tests_is_registered_and_each_family_states_its_data": "c65a5c403fe692709a2694b4ff015bbe37c5197293f5a238539d0d8da3079dd8",
+      "test_each_family_registers_the_paper_s_execution_and_design_protocol_and_the_draft_states_it": "1aa0fed743cd7ca5484baa250656525aead8d7daa601eb2c8556ad98c31d4bae"
     },
     "evaluation/tests/test_contamination_scan.py": {
       "REPO_ROOT": "1040065b1ae3274d3319311f9f2704f4a6d6fba3441d46ffe50248e82808a99c",
@@ -3590,7 +3591,7 @@
       "test_a_design_block_that_cannot_run_is_refused_with_exit_2": "ae512ae8d290cde10cc2aaea44ae3edf48b02d28da377c274768b6bb46189cea",
       "test_a_design_whose_arms_are_not_selected_is_refused": "722fcd9151ad53ac74046b3e5be8259434d7b845b0bd0f347890fb472bca02ba",
       "_repin": "66bd15e05936f94a6b534f4b3607e64ec81f5fb7ed5ef3f5c17a5b0b86271372",
-      "test_the_registered_protocol_values_are_the_harness_defaults": "17678ada68eb60d2be2fd8dd297f5209e1f323701021ed4b0d655ead79fc8094",
+      "test_the_registered_protocol_values_are_the_harness_defaults": "413304a9f2b421fac3189a4f53839a7deebf8b9a2e5eca6223b77a8abc99b016",
       "test_a_design_default_taken_from_the_harness_parameters_is_named_in_the_record_s_used_for": "18b4b4d4ed665ea1c511fb0e48af1830f25bf91d1110ec3357ea8c4ca845672a",
       "test_a_design_that_departs_from_the_registered_protocol_is_refused_over_research_data_and_live_and_named_when_synthetic": "54e2d97cdc48bbdafef7941de11b4366b0636892057b7108f324c9e88fcec978",
       "test_e2_h2a_and_h2c_are_the_registered_bootstraps_of_the_hand_built_panel": "a1ec24083a5c2eddafefda670c4be0725ffe5f451f5b46d4059cdcbdf63c8c54",
@@ -3912,7 +3913,7 @@
       "test_ac_10_5_a_confirmatory_recorded_run_starts_its_window_on_the_recording_s_live_start": "27a14fa862cbb116340ac781cb3a0f62a4078f81c38b732d20b9772e07dcc696",
       "test_ac_10_5_a_confirmatory_run_covers_every_item_and_replicates_the_full_subsample": "bbc9c23868bcf89df489e54aee06006d989580fc41605a118f07291661131b63",
       "EXECUTION_DEPARTURES": "22da67323c0ffb672fae58eeea6c1c581b60d86fe3c0a23a537a10c1cb62327d",
-      "test_ac_10_5_a_confirmatory_run_that_departs_from_the_paper_s_replicates_or_retries_is_refused_or_named": "f471cbe5a1ba74176c367609a02bc6fc1df42e522d6277438598684065531f7b",
+      "test_ac_10_5_a_confirmatory_run_that_departs_from_the_paper_s_replicates_or_retries_is_refused_or_named": "75e72d599e4acb79c47b405926a4d484de53d1c2b2797532140b53bb7ee45f04",
       "test_plan_l_each_stop_condition_refuses": "dbd431cb8a97ab25d3c54fbcdb54ab59bb8abea21c47aa628fee4612186a9202",
       "_keys": "fbf07f64608ac9429f8056ca6936536d65891287fc40b07d2b6ff8da6106e5bb",
       "test_plan_p_no_hr_1_to_mr_3_outcome_is_asserted": "3ee6ce71ad5c9a1724c98bbacbba19257ff7c54f7dc2ce49edcb106977557ace",

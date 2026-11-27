@@ -2235,15 +2235,25 @@ def test_ac_10_5_a_confirmatory_run_that_departs_from_the_paper_s_replicates_or_
     # VBT RevB Sec. VIII-C: "Within-model variability is estimated from three replicates on a 40-item S1 subsample" and
     # "API failures are retried three times, then logged and counted". Review 25: a confirmatory E1 spec could replicate
     # one stratum E item twice with no retries and its record filed the registered family. The paper's values are the
-    # registered execution protocol (`runner.REGISTERED_EXECUTION`): an E1-E4 run that departs from it is refused when
+    # registered execution protocol, the family's `protocol.execution` in the analysis plans (review 26: in the plans the
+    # OSF record pins, so the pre-registration draft states them): an E1-E4 run that departs from it is refused when
     # live or over research data (`design_departs_from_registration:<field>`, exit 2), and a synthetic run's record
     # names each departure (`pins.execution.departures`) and files its family as `departs_from_registration`.
     monkeypatch.setattr(governance, "confirmatory_refusals", lambda spec, **kwargs: [])
     replicates, retries, fields = EXECUTION_DEPARTURES[case]
     parameters = runner.load_harness_parameters()
-    assert runner.REGISTERED_EXECUTION == {
+    plans = analysis_plans.load_plans()
+    registered_execution = plans["families"]["E1"]["protocol"]["execution"]
+    assert registered_execution == {
         "replicates.default": parameters["replicates"]["default"], "retries": parameters["retries"],
         **{f"replicates.subsample.{key}": parameters["replicates"]["subsample"][key] for key in ("stratum", "size", "replicates")}}
+    assert registered_execution == {"replicates.default": 1, "replicates.subsample.stratum": "A", "replicates.subsample.size": 40,
+                                    "replicates.subsample.replicates": 3, "retries": 3}
+    draft = (RECORDS / "preregistration-draft.md").read_text(encoding="utf-8")
+    assert draft == analysis_plans.preregistration_markdown(plans)
+    assert draft.count("Execution protocol: `replicates.default` 1, `replicates.subsample.stratum` A, `replicates.subsample.size` 40, "
+                       "`replicates.subsample.replicates` 3, `retries` 3") == 3  # E1, E2 and E4; E3 registers its retries only
+    assert "Execution protocol: `retries` 3;" in draft
     items_path, catalog_path, _items = synthetic.write_fixture_set(tmp_path, synthetic.PAPER_TARGETS, splits=True)
     spec = synthetic.spec_dict(items_path=items_path, catalog_path=catalog_path, purpose="confirmatory", experiment="E1",
                                run_id="synthetic-confirmatory-departure-v1", retries=retries)
@@ -2251,15 +2261,21 @@ def test_ac_10_5_a_confirmatory_run_that_departs_from_the_paper_s_replicates_or_
     if replicates is not None:
         spec["replicates"] = {**replicates, "subsample": {**replicates["subsample"], "rule": "sha256-order-v1"}}
     registered = {key: value for key, value in spec.items() if key not in ("replicates", "retries")}
-    assert runner.plan_run(registered).pins["execution"] == {"registered": runner.REGISTERED_EXECUTION, "departures": []}
+    assert runner.plan_run(registered).pins["execution"] == {"registered": registered_execution, "departures": []}
     plan = runner.plan_run(spec)
-    expected = [{"field": field, "registered": runner.REGISTERED_EXECUTION[field],
+    expected = [{"field": field, "registered": registered_execution[field],
                  "effective": retries if field == "retries" else (replicates["default"] if field == "replicates.default"
                                                                   else replicates["subsample"][field.rsplit(".", 1)[1]])}
                 for field in fields]
     assert plan.pins["execution"]["departures"] == expected
-    assert runner.execution_departures("E3", spec.get("replicates", parameters["replicates"]), plan.pins["retries"]) == [
+    e3_execution = plans["families"]["E3"]["protocol"]["execution"]
+    assert e3_execution == {"retries": 3}
+    assert runner.execution_departures(e3_execution, spec.get("replicates", parameters["replicates"]), plan.pins["retries"]) == [
         entry for entry in expected if entry["field"] == "retries"]  # E3 uses no subsample: only its retries are judged
+    # The runner judges only the fields the family registers, at the plans' values.
+    assert runner.execution_departures(e3_execution, {"default": 2, "subsample": {"stratum": "E", "size": 1, "replicates": 2}}, 3) == []
+    assert runner.execution_departures({"retries": 4}, parameters["replicates"], 3) == [
+        {"field": "retries", "registered": 4, "effective": 3}]
     reasons = [f"design_departs_from_registration:{field}" for field in fields]
     with pytest.raises(runner.RunRefused) as refused:
         runner.plan_run({**spec, "mode": "live", "responder": {"live": {"adapter": "none"}}})
@@ -2284,6 +2300,14 @@ def test_ac_10_5_a_confirmatory_run_that_departs_from_the_paper_s_replicates_or_
     record = runner.execute_run(small_plan, providers.StubResponder(), tmp_path / "out")
     assert record["registered_tests"]["family"] == "E1" and record["registered_tests"]["protocol"] == "departs_from_registration"
     assert record["registered_tests"]["departures"] == record["pins"]["execution"]["departures"] != []
+    # Review 26: a run whose compared arms await their labels (the state of every real run before step 8, Label) files the
+    # same protocol label and departures, as E2-E4's families do.
+    waiting = {arm: {"status": "awaiting_labels", "units": 1} for arm in ("GATE", "GATE+SV", "VLOOP")}
+    assert runner.compute_registered_tests(small_plan, [], waiting) == {
+        "status": "awaiting_labels", "protocol": "departs_from_registration", "departures": small_plan.pins["execution"]["departures"]}
+    kept_plan = runner.plan_run(registered)
+    assert runner.compute_registered_tests(kept_plan, [], waiting) == {"status": "awaiting_labels", "protocol": "registered",
+                                                                     "departures": []}
     if case == "no retries":  # once: the paper's values file the family as registered
         kept = runner.execute_run(runner.plan_run(registered), providers.StubResponder(), tmp_path / "registered")
         assert kept["registered_tests"]["protocol"] == "registered" and kept["registered_tests"]["departures"] == []
