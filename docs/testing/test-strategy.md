@@ -6,7 +6,7 @@
 | Integration | API/provider/corpus contracts and semantic-off fallback | No contract failure; fallback yields controlled evidence/abstention. |
 | System | Target-browser sign-in, Tutor, device-A/device-B resume | All critical journeys pass. |
 | Accessibility | axe, Lighthouse, keyboard and screen-reader scripts | Zero critical issues; Lighthouse >=95. |
-| Performance | CWV plus backend load profile | CLS <0.1 (plan value); LCP <2.5s and INP <200ms, provisional operator-set values until D-06 (PD-76); approved backend SLO. |
+| Performance | CWV plus backend load profile | CLS p75 <0.1 (plan value); LCP p75 <2.5s and INP p75 <200ms, provisional operator-set values until D-06 (PD-76; the p75 reading is part of the provisional default); approved backend SLO. |
 | Security | Threat model, SCA, SBOM/image scan, abuse tests | No open critical finding. |
 | Grounding | Frozen LQS four-arm run, claim/citation labels | Wilson intervals, paired McNemar, effect sizes, full denominators. |
 | Usability | IRB-authorized persona task sessions | Core-task success >85%. |
@@ -426,17 +426,17 @@ Every test module Phase 10 added, with what it proves, then every existing modul
 
 ## Phase 11 acceptance map (plan Phase 11 K)
 
-Test modules Phase 11 has added: none yet. Slice 11-0 (entry records) adds no test module; each later slice names every test module it adds here, by its repository path and with what it proves, in its own PR (`docs/architecture/phase11-implementation-spec.md`, section 1), and the AC rows below name its tests. Every AC below needs production, owner or calendar evidence, so the exit is not passed at merge (DI-150), and no AC is recorded as passed: a slice's tests prove the repository mechanism in CI, and the rest is a deferred item. CLS p75 < 0.1 is the plan's value; the LCP and INP budgets (L1756, "operator-set value") are provisional until D-06 (PD-76).
+Test modules Phase 11 has added: none yet. Slice 11-0 (entry records) adds no test module; each later slice names every test module it adds here, by its repository path and with what it proves, in its own PR (`docs/architecture/phase11-implementation-spec.md`, section 1), and the AC rows below name its tests. Every AC below needs production, owner or calendar evidence, so the exit is not passed at merge (DI-150), and no AC is recorded as passed: a slice's tests prove the repository mechanism in CI, and the rest is a deferred item. CLS p75 < 0.1 is the plan's value; the LCP p75 < 2.5 s and INP p75 < 200 ms budgets (L1756, "operator-set value"; the p75 reading included) are provisional until D-06 (PD-76). The Tests column lists the test modules Phase 11 adds only; where an earlier phase already carries part of an AC (design E3), the mechanism column names that mechanism and its existing tests.
 
 | AC | Statement | Repository mechanism (slice) | Tests |
 |---|---|---|---|
 | AC-11-1 | CLS p75 < 0.1, LCP and INP in budget for two weeks. | Layout fixes, a navigation-mode lab gate and the vitals checker on synthetic rows (11-A, 11-C) | None yet |
 | AC-11-2 | Zero critical accessibility issues. | Dated axe and Lighthouse records, contrast-token tests and a manual keyboard record (11-C) | None yet |
-| AC-11-3 | Zero DOCX mismatches; QUEN row reads Sensitivity 0.828, FP 1.143. | Source-fidelity register v2 and the inventory gate (11-B) | None yet |
+| AC-11-3 | Zero DOCX mismatches; QUEN row reads Sensitivity 0.828, FP 1.143. | Existing (Phase 7, PD-49): `scripts/check_source_fidelity.py` and its CI step `--check`, tested by `test_plan_p_the_source_fidelity_check_reports_the_quen_transposition` in `apps/api/tests/test_phase7_acceptance.py`. Gap: register v2 and the inventory gate (11-B) | None yet |
 | AC-11-4 | No duplicate lecture asset or unaligned timestamp. | The transcript contract, its strict policy and the catalogue invariant (11-B) | None yet |
 | AC-11-5 | Image holds no MP4 or DOCX; /ready source_assets equals the approved count. | The media scan of the CI-built images and release zips and the governed /ready tests (11-D) | None yet |
 | AC-11-6 | SBOM, signatures and provenance verify. | SBOMs in CI, the pin checker and the provenance verifier on fixtures (11-E) | None yet |
 | AC-11-7 | Restore within RTO; row counts match. | The restore drill on a local PostgreSQL 16 and its runbook (11-A) | None yet |
-| AC-11-8 | Spend at cap refuses calls and alerts. | Caps and shared limits with two-instance tests and linted alert definitions (11-A) | None yet |
+| AC-11-8 | Spend at cap refuses calls and alerts. | Existing: the Phase 5 daily hard stop (`DatabaseBudget`), tested by `test_ac_5_9_calls_stop_at_the_daily_budget` in `apps/api/tests/test_phase5_acceptance.py` and by `apps/api/tests/test_gateway_budget.py`, and the Phase 1 shared HTTP limits (`apps/api/tests/test_rate_limit.py`). Gap: provider caps and the cap alert with two-instance tests, and linted alert definitions (11-A) | None yet |
 
 **Exit gate.** The Phase 11 exit needs every AC from AC-11-1 to AC-11-8 to pass and the SLOs, runbooks and RACI to be filed (plan Phase 11 P: "AC-11-1 to AC-11-8 passed; SLOs, runbooks, RACI filed."). Phase 11 entered with its preconditions and holds unmet (DI-149, P2-12-D-10). The exit is not passed.
