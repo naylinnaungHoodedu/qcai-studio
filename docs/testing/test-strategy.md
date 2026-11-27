@@ -6,7 +6,7 @@
 | Integration | API/provider/corpus contracts and semantic-off fallback | No contract failure; fallback yields controlled evidence/abstention. |
 | System | Target-browser sign-in, Tutor, device-A/device-B resume | All critical journeys pass. |
 | Accessibility | axe, Lighthouse, keyboard and screen-reader scripts | Zero critical issues; Lighthouse >=95. |
-| Performance | CWV plus backend load profile | LCP <2.5s, INP <200ms, CLS <0.1; approved backend SLO. |
+| Performance | CWV plus backend load profile | CLS <0.1 (plan value); LCP <2.5s and INP <200ms, provisional operator-set values until D-06 (PD-76); approved backend SLO. |
 | Security | Threat model, SCA, SBOM/image scan, abuse tests | No open critical finding. |
 | Grounding | Frozen LQS four-arm run, claim/citation labels | Wilson intervals, paired McNemar, effect sizes, full denominators. |
 | Usability | IRB-authorized persona task sessions | Core-task success >85%. |
@@ -423,3 +423,20 @@ Every test module Phase 10 added, with what it proves, then every existing modul
 | `apps/api/tests/data/phase8_shared_baseline_v1.json` | Phase 8's docs guards compare each test module's declarations with main's, so the merge `a27ba5b` added the declarations Phase 10 added or changed at `46cb8fe`, computed with the guard's own `_test_source_symbols` (no declaration was changed by both phases), and each later Phase 10 commit refreshes the entry of every module it changes among the 14 modules Phase 10 added (`scan_guard.py`, `test_phase10_acceptance.py` and the modules of `evaluation/tests` other than `test_evaluators.py`) and the two shared modules whose whole entry the merge took from Phase 10 (`apps/api/tests/conftest.py` and `evaluation/tests/test_evaluators.py`, both on main before Phase 10); in the other shared modules it changed (`test_phase9_acceptance.py`, `test_python_sources.py`) only the declarations it changes, and never another phase's declaration (`test_phase10_docs_phase_8_s_test_baseline_holds_the_current_declarations_of_every_phase_10_module`); the Phase 8 spec's section 13.3 records the rule. |
 
 **Exit gate.** The Phase 10 exit needs AC-10-1 to AC-10-6 passed, the OSF DOI and IRB letter filed and no HR-1 to MR-3 outcome asserted (plan Phase 10 P: "AC-10-1 to AC-10-6 passed; OSF DOI and IRB letter filed; no HR-1 to MR-3 outcome asserted."). AC-10-2 and the stub and recorded half of AC-10-3 are proven in code; AC-10-1, AC-10-4, AC-10-5 and AC-10-6 are proven on synthetic data only, and the live half of AC-10-3 with a scripted fake provider only. No research data plane exists (D-14), no OSF DOI or IRB letter is filed (D-08), and no HR-1 to MR-3 outcome is asserted, since none is executed (DI-129). The exit is not passed.
+
+## Phase 11 acceptance map (plan Phase 11 K)
+
+Slice 11-0 (entry records) adds no test: each later slice adds its tests and names them here, in its own PR (`docs/architecture/phase11-implementation-spec.md`, section 1). Every AC below needs production, owner or calendar evidence, so the exit is not passed at merge (DI-150), and no AC is recorded as passed: a slice's tests prove the repository mechanism in CI, and the rest is a deferred item. CLS p75 < 0.1 is the plan's value; the LCP and INP budgets (L1756, "operator-set value") are provisional until D-06 (PD-76).
+
+| AC | Statement | Repository mechanism (slice) | Tests |
+|---|---|---|---|
+| AC-11-1 | CLS p75 < 0.1, LCP and INP in budget for two weeks. | Layout fixes, a navigation-mode lab gate and the vitals checker on synthetic rows (11-A, 11-C) | None yet |
+| AC-11-2 | Zero critical accessibility issues. | Dated axe and Lighthouse records, contrast-token tests and a manual keyboard record (11-C) | None yet |
+| AC-11-3 | Zero DOCX mismatches; QUEN row reads Sensitivity 0.828, FP 1.143. | Source-fidelity register v2 and the inventory gate (11-B) | None yet |
+| AC-11-4 | No duplicate lecture asset or unaligned timestamp. | The transcript contract, its strict policy and the catalogue invariant (11-B) | None yet |
+| AC-11-5 | Image holds no MP4 or DOCX; /ready source_assets equals the approved count. | The media scan of the CI-built images and release zips and the governed /ready tests (11-D) | None yet |
+| AC-11-6 | SBOM, signatures and provenance verify. | SBOMs in CI, the pin checker and the provenance verifier on fixtures (11-E) | None yet |
+| AC-11-7 | Restore within RTO; row counts match. | The restore drill on a local PostgreSQL 16 and its runbook (11-A) | None yet |
+| AC-11-8 | Spend at cap refuses calls and alerts. | Caps and shared limits with two-instance tests and linted alert definitions (11-A) | None yet |
+
+**Exit gate.** The Phase 11 exit needs every AC from AC-11-1 to AC-11-8 to pass and the SLOs, runbooks and RACI to be filed (plan Phase 11 P: "AC-11-1 to AC-11-8 passed; SLOs, runbooks, RACI filed."). Phase 11 entered with its preconditions and holds unmet (DI-149, P2-12-D-10). The exit is not passed.
