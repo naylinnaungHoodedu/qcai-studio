@@ -809,7 +809,7 @@
    "evaluation/qcai_eval/citation.py": "b42439d6ed5826094e02573895c0b64153834a1b6cdac7450140b05adfd8cf42",
    "evaluation/qcai_eval/claims.py": "0b49dcb6ec658b8c72cb7bdc544e5ffb1af63c727b775d05a4c24766c791846b",
    "evaluation/qcai_eval/contamination.py": "a8e30dd9d14c3bd81449ed949e23855ee5e8b8d0431cdc461588e5b04b4868f0",
-   "evaluation/qcai_eval/experiments.py": "106fe37a5d91cb5170b0672e51d93e1634e60b88b379d279c973a1e40500a68d",
+   "evaluation/qcai_eval/experiments.py": "4b3303e59a5eb86386057d79795e564e267bc81bcf5c456666e0b3e0a7b27a62",
    "evaluation/qcai_eval/fabrication.py": "b1e6d10453720a9f8174ca3e54945231984dfa816ba19dca24112d9664d5459e",
    "evaluation/qcai_eval/faithfulness.py": "9020a01d7d9730ce678e5e04c1d14e89e2e725e8a5af88c9b8696f3dbbf981e5",
    "evaluation/qcai_eval/governance.py": "d6fd6e2cd272744b707eabc087f7f007389a479da0f8bdce08209e9e4e869b11",

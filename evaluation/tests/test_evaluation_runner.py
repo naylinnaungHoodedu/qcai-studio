@@ -2423,7 +2423,12 @@ def _ranking_with(path, value):
     (_ranking_with(("contexts", "clusters", 5), [None]), "package_invalid:ranking.contexts.clusters"),
     # Shaped as the replay reads it, but refused by the ranking arithmetic (the Beta quantile at 0): the dry run.
     (_ranking_with(("trust", "quantile"), "0"), "package_invalid:ranking"),
-    (_ranking_with(("quality", "initial_qbar"), "1e400"), "package_invalid:ranking")])
+    (_ranking_with(("quality", "initial_qbar"), "1e400"), "package_invalid:ranking"),
+    # The eq. (8) weights: non-negative with a positive sum, and weights whose sum overflows the 34-digit context once a
+    # response carries S and K signals (the dry run computes eq. (8) over every subset of V, S, K and F at 0 and at 1).
+    (_ranking_with(("quality", "weights"), {"V": "0.35", "S": "-0.30", "K": "0.15", "F": "0.20"}), "package_invalid:ranking.quality.weights"),
+    (_ranking_with(("quality", "weights"), {"V": "0", "S": "0", "K": "0", "F": "0"}), "package_invalid:ranking.quality.weights"),
+    (_ranking_with(("quality", "weights"), {"V": "0.35", "S": "9e999999", "K": "9e999999", "F": "0.20"}), "package_invalid:ranking")])
 def test_an_e4_run_over_a_package_whose_ranking_block_the_replay_cannot_read_is_refused_before_any_request(
         tmp_path, monkeypatch, ranking, reason):
     # Review 22: E4's replay reads the package's ranking block only after every request was sent, so a malformed block
@@ -2439,6 +2444,49 @@ def test_an_e4_run_over_a_package_whose_ranking_block_the_replay_cannot_read_is_
     code, err = _sweep_main("run_evaluation", _spec_argv(tmp_path, pinned, "r"))
     assert (code, err.strip().splitlines()[-1]) == (6, f"refused (exit 6): {reason}")
     assert not (tmp_path / "out-r" / runner.RESPONSES).exists()
+
+
+class _SignalResponder:
+    """The stub responder, with eq. (8) signals V, S and K on every response."""
+
+    rule = "stub-responder-v1"
+
+    def respond(self, request):
+        return {**StubResponder().respond(request), "signals": {"V": "0.5", "S": "0.5", "K": "0.5", "H": None, "F": None}}
+
+
+def test_an_e4_run_whose_responses_carry_s_and_k_signals_replays_them_with_the_package_weights(tmp_path, monkeypatch):
+    # Review 23: the replay computes eq. (8) over each VLOOP response's own signals (S and K included) after every request
+    # was sent; with the package's weights it completes, and the qualities are eq. (8)'s.
+    from evaluation.qcai_eval import experiments
+
+    spec, _items = _e4_spec(tmp_path, monkeypatch, shift=SHIFT_G)
+    plan = runner.plan_run(spec)
+    record = runner.execute_run(plan, _SignalResponder(), tmp_path / "out")
+    assert "units" in record["metrics"]["replay"]
+    population, _excluded, _prices = experiments._replay_population(plan, read_jsonl(tmp_path / "out" / runner.RESPONSES))
+    assert population and {outcome.quality for unit in population.values() for outcome in unit["outcomes"].values()} == {0.5}
+
+
+def test_an_e4_replay_whose_quality_arithmetic_fails_after_the_run_is_reported_undefined_never_exit_10(tmp_path, monkeypatch):
+    # Should eq. (8) still be refused on a response after the run (`ranking_replay_problem` refuses, before any request,
+    # every block whose eq. (8) arithmetic fails on signals in [0, 1]), the replay and H4a are reported undefined.
+    import decimal
+
+    from evaluation.qcai_eval import experiments
+
+    spec, _items = _e4_spec(tmp_path, monkeypatch, shift=SHIFT_G)
+    plan = runner.plan_run(spec)
+
+    def overflow(*_args):
+        raise decimal.Overflow
+
+    monkeypatch.setattr(experiments, "_quality", overflow)
+    record = runner.execute_run(plan, _SignalResponder(), tmp_path / "out")
+    refused = {"status": "undefined", "reason": experiments.REPLAY_REFUSED, "error": "Overflow"}
+    assert record["metrics"]["replay"] == refused
+    assert {key: record["registered_tests"]["hypotheses"]["H4a"][key] for key in refused} == refused
+    assert len(read_jsonl(tmp_path / "out" / runner.RESPONSES)) == len(plan.requests)
 
 
 def test_an_e4_run_over_a_package_with_a_null_ranking_block_is_not_refused(tmp_path, monkeypatch):

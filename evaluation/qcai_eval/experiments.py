@@ -927,8 +927,9 @@ def ranking_problem(block: Any) -> str | None:
     """The first field of a package's `ranking` block that is not shaped as the E4 replay reads it, as `ranking` or
     `ranking.<dotted field>`, or None: the block is absent, null (E4's controller policies then report
     `no_ranking_block`) or an object whose decimal fields are finite decimal strings or integers, whose counts are
-    positive integers, whose flags are booleans, whose `quality.weights` give a decimal for each of V, S, K and F and
-    `ratings` one for each of A, B and C, whose `tier_permissions` A-D are lists of integers, whose `seed` is a string
+    positive integers, whose flags are booleans, whose `quality.weights` give a decimal for each of V, S, K and F (the
+    four eq. (8) weights non-negative with a positive sum, so that eq. (8) is a weighted mean) and `ratings` one for each
+    of A, B and C, whose `tier_permissions` A-D are lists of integers, whose `seed` is a string
     and whose `contexts.clusters` is a list of strings (each read as a context's cluster). The arithmetic a value takes
     part in is checked by `ranking_replay_problem` when an E4 run is planned."""
     if block is None:
@@ -950,6 +951,9 @@ def ranking_problem(block: Any) -> str | None:
         if not isinstance(values, Mapping) or not set(required) <= set(values) \
                 or not all(isinstance(key, str) and _ranking_decimal(value) for key, value in values.items()):
             return f"ranking.{name}"
+    weights = [Decimal(block["quality"]["weights"][name]) for name in _RANKING_WEIGHTS]
+    if any(weight < 0 for weight in weights) or not any(weight > 0 for weight in weights):
+        return "ranking.quality.weights"
     for tier in _RANKING_TIERS:
         value = _ranking_at(block, ("tier_permissions", tier))
         if not isinstance(value, list) or not all(type(entry) is int for entry in value):
@@ -1045,8 +1049,10 @@ def ranking_replay_problem(block: Any, models: Sequence[Mapping[str, Any]]) -> s
     """`ranking_problem`, then, for a ranking object, a dry run of the replay's controller policies on it before any
     request is sent: both controllers (`_Controller`, with and without hysteresis) are built over the design's models,
     each commissioned from one clean and one failed response, and route and learn from one outcome in every context
-    (each cluster and the unscoped one). A block whose values the ranking arithmetic refuses is `ranking`, so that no E4
-    run sends a request whose replay would then fail."""
+    (each cluster and the unscoped one); and eq. (8) (`_quality`, which the replay applies to each VLOOP response's own
+    signals) is computed over the block's weights for every subset of the signals V, S, K and F, each at 0 and at 1 (a
+    response's signals are decimals in [0, 1], `providers.response_problem`). A block whose values the ranking arithmetic
+    refuses is `ranking`, so that no E4 run sends a request whose replay would then fail."""
     problem = ranking_problem(block)
     if problem is not None or block is None:
         return problem
@@ -1059,11 +1065,18 @@ def ranking_replay_problem(block: Any, models: Sequence[Mapping[str, Any]]) -> s
                 model = controller.choose(t, topic)
                 if model is not None:
                     controller.observe(t, topic, model, Outcome(y=t % 2, quality=0.5, cost=1.0, first_cost=1.0))
+        weights = block["quality"]["weights"]
+        for mask in range(1, 1 << len(_RANKING_WEIGHTS)):
+            for value in ("0", "1"):
+                signals = {name: value if mask >> index & 1 else None for index, name in enumerate(_RANKING_WEIGHTS)}
+                _quality({"signals": {**signals, "H": "0"}}, "answer", weights)
     except (ArithmeticError, LookupError, TypeError, ValueError, AttributeError):
         return "ranking"
     return None
 
 
+REPLAY_REFUSED = ("the ranking arithmetic refused eq. (8) on a VLOOP response's signals with the package's weights, so the "
+                  "replay has no population")
 DETECTION_RULE = ("MR-2's counting (plan 15.1): the degraded model's responses in the shifted topic, from the shift to the first "
                   "alarm on that model's CUSUM stream for the topic's context (model-cluster); every alarm before the shift is a "
                   "false alarm")
@@ -1344,9 +1357,17 @@ def compute_e4(plan: Any, responses: Sequence[Mapping[str, Any]]) -> tuple[dict,
     hypotheses = _hypotheses(plan)
     results: dict[str, Any] = {}
     replay_pending = _pending(pairs, lambda request: True)  # H4a replays every model's GATE and VLOOP responses
+    replay_refused = None
     if not replay_pending:
-        population, excluded, prices = _replay_population(plan, responses)
-        metrics["replay"] = {"units": len(population), "excluded_units": excluded}
+        try:
+            population, excluded, prices = _replay_population(plan, responses)
+            metrics["replay"] = {"units": len(population), "excluded_units": excluded}
+        except ArithmeticError as error:
+            # `ranking_replay_problem` refuses, before any request, a ranking block whose eq. (8) arithmetic fails on
+            # signals in [0, 1]; should a response's quality still be refused here, the replay is reported undefined,
+            # never the last-resort exit 10.
+            replay_refused = {"status": "undefined", "reason": REPLAY_REFUSED, "error": type(error).__name__}
+            metrics["replay"] = replay_refused
     else:
         metrics["replay"] = {"status": "awaiting_labels"}
     for name, hypothesis in hypotheses.items():
@@ -1355,12 +1376,15 @@ def compute_e4(plan: Any, responses: Sequence[Mapping[str, Any]]) -> tuple[dict,
             if replay_pending:
                 results[name] = {**base, "status": "awaiting_labels", "needs": "every model's GATE and VLOOP responses labelled (replicate 1)"}
                 continue
+            if replay_refused is not None:
+                results[name] = {**base, **replay_refused}
+                continue
             results[name] = {**base, **_h4a(plan, population, prices, hypothesis), "margin": hypothesis["margin"]}
             later = {entry["model_id"]: entry["later_price"] for entry in design["models"] if entry.get("later_price")}
             if later:
                 # "at both Gemini prices if runs straddle 1 January 2027": the replay again at the later list prices,
                 # reported beside the registered result and not entering Holm.
-                later_population, _excluded, later_prices = _replay_population(plan, responses, later=True)
+                later_population, _excluded, later_prices = _replay_population(plan, responses, later=True)  # same qualities
                 results[name]["at_later_prices"] = {"later_price": later, "enters_holm": False,
                                                     **_h4a(plan, later_population, later_prices, hypothesis)}
         elif name == "H4b":

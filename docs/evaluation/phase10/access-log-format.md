@@ -35,7 +35,8 @@ could not write is the only one missing:
   one refused on its checkpoint or on an output it cannot write (`output_unwritable`), still leaves its reads and its
   `refused` outcome.
 - `validate_ulqs.py`: the items and the previous set, the agent-check record (`agent_check_record`), the catalog, the
-  corpus text it read, the ratings, and the agreement and freeze records it writes.
+  corpus text it read (one `corpus_text` line covering every document whose bytes it read: the sha256 of a UTF-8
+  document's text, or `{"undecodable_bytes_sha256": ...}` for one that is not UTF-8), the ratings, and the agreement and freeze records it writes.
 - `build_licensed_fingerprints.py`: each licensed text and the ULQS items it reads, and each fingerprint file it writes.
 - `migrate_ulqs_rc1.py`: the rc1 items it reads (also when it then refuses them) and the v1.0 items it writes.
 - `scan_research_logs.py`: each research fingerprint file it reads (`fingerprints`, with the digest the builder logged

@@ -69,7 +69,8 @@ DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-148). Not execu
    live adapters (spec conflict 40; DI-148).
 7. **Scan.** Before and after a run, `scripts/scan_research_logs.py` scans every research-plane log with the salted
    fingerprints and must report zero matches. The pre-run scan the run spec pins must use the research fingerprint sets,
-   the ULQS set built from the run's items, cover the repository and at least one logs or records target (the harness
+   the ULQS set built from the run's items and the licensed set built alongside them (the same content sha256 and the
+   one corpus version the items name; a run whose items name two corpus versions cannot pass), cover the repository and at least one logs or records target (the harness
    writes no prompt file: the payload log keeps prompt hashes only), and pass with full coverage (every target scanned a
    file, none excluded one as too large or unreadable, and no logs or records target excluded one as binary or not
    text; the report says `pass`, never `incomplete`).

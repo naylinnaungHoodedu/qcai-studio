@@ -12,6 +12,7 @@ from collections import Counter
 import dataclasses
 import datetime as datetime_module
 from fractions import Fraction
+import hashlib
 import importlib
 import inspect
 import json
@@ -574,10 +575,17 @@ def test_ac_10_1_a_corpus_text_document_that_is_not_utf_8_is_an_unavailable_docu
     corpus = Path(argv[argv.index("--corpus-text") + 1])
     for path in corpus.iterdir():
         path.write_bytes(b"\xff\xfe")
+    access = Path(argv[argv.index("--access-log") + 1])
+    access.unlink(missing_ok=True)
     capsys.readouterr()
     code = validate.main(argv)
     err = capsys.readouterr().err
     assert code == 4 and "internal_error" not in err and "freeze check failed (exit 4)" in err, (code, err)
+    # Review 23: the undecodable documents' bytes were read from the research plane, so the access log holds one
+    # corpus_text read covering each (the sha256 of its bytes), though no document decoded and the freeze failed.
+    undecodable = {"undecodable_bytes_sha256": hashlib.sha256(b"\xff\xfe").hexdigest()}
+    expected = canonical_sha256({path.stem: undecodable for path in sorted(corpus.iterdir())})
+    assert [line["artifact_sha256"] for line in read_jsonl(access) if line["artifact_kind"] == "corpus_text"] == [expected]
 
 
 @pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085"])

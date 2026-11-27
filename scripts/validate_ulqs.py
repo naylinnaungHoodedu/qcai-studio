@@ -33,8 +33,10 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+import hashlib
 from pathlib import Path
 import sys
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 API_ROOT = REPO_ROOT / "apps" / "api"
@@ -50,16 +52,23 @@ from evaluation.qcai_eval.pointers import EvidenceCatalog, PointerResolver, cont
 AGENT_COUNTS = ("agent_detected_defects", "agent_false_alarms", "agent_missed_defects", "disagreements_adjudicated")
 
 
-def _corpus_text(directory: Path | None, seen: dict[str, str]):
-    """A reader of <document_id>.txt files that records the sha256 of each document it read (for the access log)."""
+def _corpus_text(directory: Path | None, seen: dict[str, Any]):
+    """A reader of <document_id>.txt files that records a digest of each document it read (for the access log), as soon
+    as its bytes are read: the sha256 of its UTF-8 text, or, for a document that is not UTF-8 (then unavailable),
+    `{"undecodable_bytes_sha256": <sha256 of the bytes>}`, so the corpus_text line covers every document read."""
     if directory is None:
         return None
 
     def read(document_id: str) -> str | None:
         path = Path(directory) / f"{document_id}.txt"
         try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, ValueError):  # a document that cannot be read or is not UTF-8 (UnicodeDecodeError) is unavailable
+            data = path.read_bytes()
+        except OSError:  # a document that cannot be read is unavailable, and was not read
+            return None
+        try:
+            text = data.decode("utf-8")
+        except ValueError:  # a document that is not UTF-8 (UnicodeDecodeError) is unavailable, but its bytes were read
+            seen[document_id] = {"undecodable_bytes_sha256": hashlib.sha256(data).hexdigest()}
             return None
         seen[document_id] = content_sha256(text)
         return text
@@ -195,7 +204,7 @@ def _main(argv: list[str] | None = None) -> int:
     if catalog is not None:
         log("read", "evidence_catalog", catalog.sha256)
     corpus_versions = {item["corpus_version"] for item in items}
-    documents: dict[str, str] = {}
+    documents: dict[str, Any] = {}
     resolver = PointerResolver(catalog=catalog, span_lookup=public_span_lookup() if args.public_spans else None,
                                corpus_text=_corpus_text(args.corpus_text, documents),
                                corpus_version=next(iter(corpus_versions)) if len(corpus_versions) == 1 else None)

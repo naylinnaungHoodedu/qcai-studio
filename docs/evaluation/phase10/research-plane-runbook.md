@@ -61,7 +61,8 @@ log is `<plane>/access.jsonl` (digests only).
    pins the report by sha256. The runner accepts it only when it passed with zero matches and full coverage (every target
    scanned a file, none excluded one as too large or unreadable, and no records or run directory held a binary or
    non-text file; the report says `pass`, never `incomplete`), was made with the research fingerprint sets (the ULQS set
-   built from the run's items, step 5) and covered the repository and at least one logs or path target.
+   built from the run's items, and the licensed set built alongside them with the same content sha256 and the one
+   corpus version the items name, `pre_run_scan_invalid:licensed_corpus`, step 5) and covered the repository and at least one logs or path target.
 7. **Run (after H12 is released).** `python scripts/run_evaluation.py --spec <plane>/records/spec.json --output-dir <plane>/runs/<id>
    --access-log <plane>/access.jsonl --actor-role MLE`; after an outage (exit 5), rerun with `--resume` and the same
    spec and responder, the same day or later. Every confirmatory or live run is judged in its run window: today, and its
@@ -77,7 +78,7 @@ log is `<plane>/access.jsonl` (digests only).
    Every input is decoded strictly (no `NaN`, infinity, overflowing, underflowing or out-of-range number, and no string
    that cannot be encoded as UTF-8, such as an escaped unpaired surrogate) and shape-checked by its own validator before
    any request is sent (the package with its ranking block, which an E4 run also dry-runs through the controller
-   policies, the harness parameters, the rc1 mapping, the previous item set, the fingerprint files, the salt file, the
+   policies and eq. (8), the harness parameters, the rc1 mapping, the previous item set, the fingerprint files, the salt file, the
    corpus-text documents (one that is not UTF-8 is unavailable) and the agent-check record among them); JSONL files
    are split at LF only, so a text holding a raw U+2028, U+2029 or U+0085 reads back as written; an exit 10 (`internal_error`, naming only the exception's class) is a harness defect no
    validator caught, never a property of the data: keep the inputs as they are, the run's `refused` outcome is in the
