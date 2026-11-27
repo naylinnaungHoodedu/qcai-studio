@@ -30,6 +30,17 @@ STATUSES = ("resolved", "malformed", "no_catalog", "unknown_pointer", "corpus_ve
 SpanLookup = Callable[[str], "Mapping[str, Any] | None"]
 
 
+def document_id_problem(document_id: Any) -> str | None:
+    """Why a catalog document_id cannot name its corpus-text file `<document_id>.txt` inside one directory, or None: it
+    must be a non-empty string holding no path separator (`/`, a backslash), no drive or stream colon (`:`), no control
+    character (a NUL among them), and not `.` or `..`, so that the file a reader opens is always that directory's own."""
+    if not isinstance(document_id, str) or not document_id:
+        return "document_id type"
+    if document_id in (".", "..") or any(char in "/\\:" or ord(char) < 32 or ord(char) == 127 for char in document_id):
+        return "document_id not a file name"
+    return None
+
+
 def content_sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -79,8 +90,8 @@ class EvidenceCatalog:
                 raise ValueError(f"catalog line {number}: evidence_id pattern")
             if line["volume"] not in VOLUMES:
                 raise ValueError(f"catalog line {number}: volume enum")
-            if not isinstance(line["document_id"], str) or not line["document_id"]:
-                raise ValueError(f"catalog line {number}: document_id type")
+            if document_id_problem(line["document_id"]) is not None:
+                raise ValueError(f"catalog line {number}: {document_id_problem(line['document_id'])}")
             if not isinstance(line["corpus_version"], str) or not line["corpus_version"]:
                 raise ValueError(f"catalog line {number}: corpus_version type")
             if not _integer(line["page"]) or line["page"] < 1:

@@ -7,7 +7,8 @@ Run: python scripts/validate_ulqs.py --items PATH [--catalog PATH] [--corpus-tex
 Public CI runs it on the synthetic fixture only. Real items are research-plane data: a non-synthetic item file inside the
 checkout must be a git-ignored private-plane path, a non-synthetic run needs --access-log, and the strict freeze check
 (--freeze, plan 6.5 "freeze hash") refuses synthetic items, so it runs only in the research plane. --corpus-text DIR holds
-one <document_id>.txt per catalog document, for the character-for-character check; --freeze requires it, and requires
+one <document_id>.txt per catalog document, for the character-for-character check (a document_id is a file name, never
+a path: `pointers.document_id_problem`); --freeze requires it, and requires
 --previous PATH, the item set the freeze starts from (the review set or the last frozen set), against which every state
 transition and the immutability of frozen content are checked. --agent-check PATH is the AI-agent re-check record
 (`ulqs-agent-check-v1`, VBT RevB p. 15): a freeze without it fails with `agent_check_missing`, and no agent check passes
@@ -25,8 +26,8 @@ set (validated as the items are, `ulqs.validate_dataset`: `previous items invali
 (including a main-round rating of a unit that is not a rated unit of the dataset item its item_id names, or one whose
 rubric_sha256 is not the --rubric file's LF sha256), the rubric, the freeze rules, or an
 agent-check record that does not parse or is not shaped as `ulqs-agent-check-v1` (one whose content does not match the
-items is a freeze failure, exit 4); 3 schema problems; 4 freeze failed (codes printed); 5 evidence catalog invalid or
-unresolved pointers; 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
+items is a freeze failure, exit 4); 3 schema problems; 4 freeze failed (codes printed); 5 evidence catalog invalid (a
+document_id that is not a file name included) or unresolved pointers; 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
 """
 
 from __future__ import annotations
@@ -46,24 +47,31 @@ for path in (REPO_ROOT, API_ROOT):
 
 from evaluation.qcai_eval import access_log, agreement, inputs, planes, ulqs  # noqa: E402
 from evaluation.qcai_eval.canonical import canonical_sha256, dumps_record, lf_sha256, read_jsonl, write_lf  # noqa: E402
-from evaluation.qcai_eval.pointers import EvidenceCatalog, PointerResolver, content_sha256, public_span_lookup, resolve_items  # noqa: E402
+from evaluation.qcai_eval.pointers import (  # noqa: E402
+    EvidenceCatalog, PointerResolver, content_sha256, document_id_problem, public_span_lookup, resolve_items)
 
 # The agent re-check counts the freeze record carries (VBT RevB p. 15).
 AGENT_COUNTS = ("agent_detected_defects", "agent_false_alarms", "agent_missed_defects", "disagreements_adjudicated")
 
 
 def _corpus_text(directory: Path | None, seen: dict[str, Any]):
-    """A reader of <document_id>.txt files that records a digest of each document it read (for the access log), as soon
-    as its bytes are read: the sha256 of its UTF-8 text, or, for a document that is not UTF-8 (then unavailable),
-    `{"undecodable_bytes_sha256": <sha256 of the bytes>}`, so the corpus_text line covers every document read."""
+    """A reader of <document_id>.txt files inside `directory` that records a digest of each document it read (for the
+    access log), as soon as its bytes are read: the sha256 of its UTF-8 text, or, for a document that is not UTF-8 (then
+    unavailable), `{"undecodable_bytes_sha256": <sha256 of the bytes>}`, so the corpus_text line covers every document
+    read. The catalog loader refuses a document_id that is not a file name (`pointers.document_id_problem`: a separator,
+    a colon, a control character such as a NUL, `.` or `..`); the reader checks it again, so that no document_id ever
+    opens a file outside `directory`, and such a document, or one that cannot be read (an OSError, or a ValueError for
+    a path open() refuses), is unavailable and was not read."""
     if directory is None:
         return None
 
     def read(document_id: str) -> str | None:
+        if document_id_problem(document_id) is not None:
+            return None
         path = Path(directory) / f"{document_id}.txt"
         try:
             data = path.read_bytes()
-        except OSError:  # a document that cannot be read is unavailable, and was not read
+        except (OSError, ValueError):  # a document that cannot be read is unavailable, and was not read
             return None
         try:
             text = data.decode("utf-8")

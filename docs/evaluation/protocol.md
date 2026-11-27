@@ -28,7 +28,10 @@ DOI (D-08), pinned models (D-07) and the frozen ULQS (DI-129..DI-148). Not execu
    C to `SEM` and D to `GATE`.
 4. **Execute.** Three replicates on a 40-item S1 subsample; failed provider calls are retried three times, then logged and
    counted as outcomes (the provisional defaults of `evaluation/config/harness_parameters_v1.json`; a live or confirmatory
-   spec must keep the subsample, so its record reports replicate variance); abstentions are outcomes, not missing data. Payload logs hold pointers, hashes and sizes only.
+   spec must keep the subsample, so its record reports replicate variance). These values, with every other item run once,
+   are the registered execution protocol of E1-E4 (`runner.REGISTERED_EXECUTION`): an E1-E4 run that departs from them is
+   refused when live or over research data (`design_departs_from_registration:<field>`), and a synthetic one names each
+   departure and files its family as `departs_from_registration`; abstentions are outcomes, not missing data. Payload logs hold pointers, hashes and sizes only.
    A confirmatory run covers every live item, the calibration and the confirmation split alike (E1: all ULQS items
    through all seven arms), and its three replicates fall on all 40 items of the S1 subsample (a subsample stratum with
    fewer live items is refused); the calibration split is for threshold calibration only (plan L470), which this harness

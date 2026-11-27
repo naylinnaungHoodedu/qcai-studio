@@ -79,7 +79,9 @@ log is `<plane>/access.jsonl` (digests only).
    that cannot be encoded as UTF-8, such as an escaped unpaired surrogate) and shape-checked by its own validator before
    any request is sent (the package with its ranking block, which an E4 run also dry-runs through the controller
    policies and eq. (8), the harness parameters, the rc1 mapping, the previous item set, the fingerprint files, the salt file, the
-   corpus-text documents (one that is not UTF-8 is unavailable) and the agent-check record among them); JSONL files
+   corpus-text documents (one that is not UTF-8 is unavailable; a catalog `document_id` that is not a file name, with a
+   separator, a colon, a control character, `.` or `..`, is a catalog invalid, exit 5, never a read outside the
+   `--corpus-text` directory) and the agent-check record among them); JSONL files
    are split at LF only, so a text holding a raw U+2028, U+2029 or U+0085 reads back as written; an exit 10 (`internal_error`, naming only the exception's class) is a harness defect no
    validator caught, never a property of the data: keep the inputs as they are, the run's `refused` outcome is in the
    access log, and report it. `created_at` may be any past day (never a future one, `created_at_in_future`). The checkpoint is the operator's
@@ -87,7 +89,9 @@ log is `<plane>/access.jsonl` (digests only).
    checks. Keep run outputs in the research plane and review each run's start in the access log (step 10). A
    confirmatory run covers every live item of both splits and gives the subsample's 40 S1 items their replicates
    (fewer live items in the stratum: `replicate_subsample_short`); an E3 run uses no subsample, its replicate variance
-   being its single-pass repeats at the fixed level. A confirmatory recorded run replays a live recording
+   being its single-pass repeats at the fixed level. Keep the paper's execution values (three replicates on the 40-item
+   S1 subsample, every other item once, three retries): an E1-E4 run over research data that departs from them is
+   refused (`design_departs_from_registration:<field>`, exit 2). A confirmatory recorded run replays a live recording
    whose header states the live run's start (`started_on`, required, `recording_started_on_missing`, and not after
    today, `recording_after_run`); its window starts on that day, so the IRB must have been approved by then and be
    unexpired on the replay day.

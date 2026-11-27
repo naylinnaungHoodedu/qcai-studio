@@ -1170,7 +1170,12 @@ def test_a_design_that_departs_from_the_registered_protocol_is_refused_over_rese
                 {"field": "design.stream_length", "registered": 2000, "effective": 40},
                 {"field": "design.shift.at", "registered": 1000, "effective": 20}]
     assert record["pins"]["design"]["departures"] == expected
-    assert record["registered_tests"]["protocol"] == "departs_from_registration" and record["registered_tests"]["departures"] == expected
+    # The synthetic spec's 2-item subsample departs from the paper's 40 too (`runner.REGISTERED_EXECUTION`): the family
+    # lists the design's departures, then the execution protocol's.
+    execution = [{"field": "replicates.subsample.size", "registered": 40, "effective": 2}]
+    assert record["pins"]["execution"]["departures"] == execution
+    assert record["registered_tests"]["protocol"] == "departs_from_registration"
+    assert record["registered_tests"]["departures"] == expected + execution
     e2, _source = _e2_spec(tmp_path / "e2", monkeypatch)
     assert runner.plan_run(e2).pins["design"]["departures"] == [
         {"field": "design.resamples", "hypothesis": name, "registered": 10000, "effective": 400} for name in ("H2a", "H2b")]
@@ -1179,14 +1184,20 @@ def test_a_design_that_departs_from_the_registered_protocol_is_refused_over_rese
         runner.plan_run({**spec, "mode": "live", "responder": {"live": {"adapter": "none"}}})
     assert refused.value.code == 2 and refused.value.reasons == [
         "design_departs_from_registration:design.streams", "design_departs_from_registration:design.stream_length",
-        "design_departs_from_registration:design.shift.at"]
+        "design_departs_from_registration:design.shift.at", "design_departs_from_registration:replicates.subsample.size"]
     # Over research data the departure is refused, and the registered values pass on to hold H12.
     monkeypatch.setattr(planes, "all_synthetic", lambda items: False)
     with pytest.raises(runner.RunRefused) as refused:
         runner.plan_run(spec)
     assert refused.value.code == 2 and refused.value.reasons[0] == "design_departs_from_registration:design.streams"
+    small = spec["replicates"]
+    spec = {**spec, "replicates": {**small, "subsample": {**small["subsample"], "size": 40}}}
     registered = {key: value for key, value in spec["design"].items() if key not in ("streams", "stream_length")}
     registered["shift"] = {"model": "model-b", "topic": spec["design"]["shift"]["topic"]}
+    # A registered design whose replicate subsample alone departs is refused for that departure alone.
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**spec, "design": registered, "replicates": small})
+    assert refused.value.code == 2 and refused.value.reasons == ["design_departs_from_registration:replicates.subsample.size"]
     # The 14 items less the four commissioning items leave 10 for the streams: below the floor of 120 they are refused;
     # at a floor of 10 the registered values pass on to hold H12, and at 11 they are refused again.
     with pytest.raises(runner.RunRefused) as refused:
@@ -1955,7 +1966,7 @@ def test_a_design_run_logs_its_design_inputs_and_its_outcome_to_the_access_log(t
 HOSTILE = {"wrong_type": None, "list": "[1]", "dict": '{"k": 1}', "null": "null", "bool": "true", "rational": '"1/3"',
            "overflow": "1e400", "overflow_text": '"1e400"', "underflow": "1e-400", "underflow_text": '"1e-400"',
            "huge_integer": "1" + "0" * 400, "huge_integer_digits": "1" * 5000, "nan": "NaN", "infinity": "Infinity", "negative": "-1",
-           "empty": '""', "lone_surrogate": '"a\\ud800b"'}
+           "empty": '""', "lone_surrogate": '"a\\ud800b"', "nul_text": '"a\\u0000b"'}
 _MARK = "\u0001hostile\u0001"
 SWEEP_CODES = {"run_evaluation": {0, 2, 3, 5, 6, 7, 8, 9}, "validate_ulqs": {0, 2, 3, 4, 5}, "migrate_ulqs_rc1": {0, 2, 3},
                "scan_research_logs": {0, 2}}
@@ -2263,6 +2274,11 @@ def _sweep_case(kind, tmp_path, monkeypatch):
         lines = read_jsonl(synthetic.ITEMS_FIXTURE if kind == "ulqs_items" else synthetic.CATALOG_FIXTURE)
         # Items: the first of strata A (single turn), F (multi-turn) and G (progress-conditioned levels); the catalog's first line.
         indices = [next(i for i, line in enumerate(lines) if line["stratum"] == stratum) for stratum in "AFG"] if kind == "ulqs_items" else [0]
+        # The catalog's values reach the --corpus-text reader too (its document_id names the file it opens; review 25).
+        corpus = tmp_path / "corpus-text"
+        corpus.mkdir(exist_ok=True)
+        for document, body in synthetic.corpus_text(read_jsonl(synthetic.ITEMS_FIXTURE)).items():
+            (corpus / f"{document}.txt").write_bytes(body.encode("utf-8"))
 
         def line(index):
             def write(text, n):
@@ -2270,7 +2286,7 @@ def _sweep_case(kind, tmp_path, monkeypatch):
                 path.write_bytes(_lines_with(lines, index, text).encode("utf-8"))
                 if kind == "ulqs_items":
                     return ["--items", path, "--catalog", synthetic.CATALOG_FIXTURE]
-                return ["--items", synthetic.ITEMS_FIXTURE, "--catalog", path]
+                return ["--items", synthetic.ITEMS_FIXTURE, "--catalog", path, "--corpus-text", corpus]
             return write
         return "validate_ulqs", [(lines[index], (), line(index)) for index in indices]
     if kind == "previous_items":

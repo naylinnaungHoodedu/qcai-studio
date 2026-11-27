@@ -1537,7 +1537,8 @@ def finite(value: Any) -> Any:
 
 def compute(plan: Any, responses: Sequence[Mapping[str, Any]]) -> tuple[dict, dict, dict]:
     """(metrics, registered tests, replicate variance) of a design run. The family names its protocol: `registered`, or
-    `departs_from_registration` with the departures (`departures`; only a synthetic run may depart), and the hypotheses
+    `departs_from_registration` with the departures (`departures`: the design's, `pins.design.departures`, then the
+    execution protocol's, `pins.execution.departures`; only a synthetic run may depart), and the hypotheses
     still waiting for an input (`pending`), whose p-values Holm has not yet seen."""
     experiment = plan.spec["experiment"]
     if experiment == "E2":
@@ -1546,7 +1547,7 @@ def compute(plan: Any, responses: Sequence[Mapping[str, Any]]) -> tuple[dict, di
     else:
         result = compute_e3(plan, responses) if experiment == "E3" else compute_e4(plan, responses)
     registered = result[1]
-    found = list(plan.extra["design"].get("departures") or [])
+    found = list(plan.extra["design"].get("departures") or []) + list((plan.pins.get("execution") or {}).get("departures") or [])
     registered["protocol"] = "departs_from_registration" if found else "registered"
     registered["departures"] = found
     registered["pending"] = sorted(name for name, value in registered["hypotheses"].items()

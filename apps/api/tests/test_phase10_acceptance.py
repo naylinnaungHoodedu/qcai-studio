@@ -588,6 +588,52 @@ def test_ac_10_1_a_corpus_text_document_that_is_not_utf_8_is_an_unavailable_docu
     assert [line["artifact_sha256"] for line in read_jsonl(access) if line["artifact_kind"] == "corpus_text"] == [expected]
 
 
+@pytest.mark.parametrize("document_id", ["syn\u0000doc", "../outside", "sub/doc", "sub\\doc", "C:doc", "..", "line\nbreak", "ABSOLUTE"])
+def test_ac_10_1_a_catalog_document_id_that_is_not_a_file_name_is_refused_and_never_read(tmp_path, capsys, monkeypatch, document_id):
+    # Review 25: `--corpus-text DIR` holds one <document_id>.txt per catalog document. A document_id holding a NUL made the
+    # reader's path raise ValueError past its OSError handler (exit 10, `internal_error`), and an absolute document_id or
+    # one with `..` or a separator opened a .txt file outside DIR, which the path rule never sees. The catalog loader
+    # refuses such an id (`pointers.document_id_problem`, `catalog invalid`, exit 5), the reader checks it again and never
+    # opens a file outside DIR, and a path open() refuses is an unavailable document, never exit 10.
+    validate = script("validate_ulqs")
+    from evaluation.qcai_eval import pointers
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    corpus = tmp_path / "ct"
+    corpus.mkdir()
+    lines = read_jsonl(synthetic.CATALOG_FIXTURE)
+    texts = synthetic.corpus_text(read_jsonl(synthetic.ITEMS_FIXTURE))
+    for document, body in texts.items():
+        (corpus / f"{document}.txt").write_bytes(body.encode("utf-8"))
+    first = lines[0]["document_id"]
+    (outside / "doc.txt").write_bytes(texts[first].encode("utf-8"))  # the right text, outside DIR
+    (tmp_path / "outside.txt").write_bytes(texts[first].encode("utf-8"))  # what "../outside" names
+    hostile = str(outside / "doc") if document_id == "ABSOLUTE" else document_id
+    catalog = tmp_path / "catalog.jsonl"
+    catalog.write_text("".join(json.dumps({**line, "document_id": hostile} if number == 0 else line) + "\n"
+                               for number, line in enumerate(lines)), encoding="utf-8")
+    argv = ["--items", str(synthetic.ITEMS_FIXTURE), "--catalog", str(catalog), "--corpus-text", str(corpus)]
+    capsys.readouterr()
+    code = validate.main(argv)
+    err = capsys.readouterr().err
+    assert code == 5 and "refused (exit 5): catalog invalid (catalog line 1: document_id not a file name)" in err, (code, err)
+    assert "internal_error" not in err and "Traceback" not in err
+    with pytest.raises(ValueError, match="document_id not a file name"):
+        EvidenceCatalog.load(catalog)
+    # The unchanged catalog verifies every EV pointer against the corpus text (exit 0).
+    assert validate.main(["--items", str(synthetic.ITEMS_FIXTURE), "--catalog", str(synthetic.CATALOG_FIXTURE), "--corpus-text", str(corpus)]) == 0
+    # The reader on its own: an id that is not a file name is unavailable and unread, though a file it names exists.
+    seen = {}
+    read = validate._corpus_text(corpus, seen)
+    assert read(hostile) is None and seen == {}
+    assert read(first) == texts[first] and list(seen) == [first]
+    # With the name check removed, a path open() refuses (a NUL) is still an unavailable document, never a ValueError.
+    monkeypatch.setattr(validate, "document_id_problem", lambda value: None)
+    assert validate._corpus_text(corpus, {})("syn\u0000doc") is None
+    assert pointers.document_id_problem(first) is None
+
+
 @pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085"])
 def test_ac_10_1_a_set_the_migrator_writes_with_a_raw_line_separator_is_read_back_by_the_validator(tmp_path, capsys, separator):
     # Review 22: the migrator writes JSONL with dumps_line (ensure_ascii=False), so U+2028, U+2029 or U+0085 in a text, even
@@ -2168,6 +2214,79 @@ def test_ac_10_5_a_confirmatory_run_covers_every_item_and_replicates_the_full_su
     with pytest.raises(runner.RunRefused) as refused:
         runner.plan_run(unsplit)
     assert refused.value.code == 3 and refused.value.reasons == ["items_split_missing"]
+
+
+EXECUTION_DEPARTURES = {
+    "the probe: one stratum E item twice, no retries": (
+        {"default": 1, "subsample": {"stratum": "E", "size": 1, "replicates": 2}}, 0,
+        ["replicates.subsample.stratum", "replicates.subsample.size", "replicates.subsample.replicates", "retries"]),
+    "another stratum": ({"default": 1, "subsample": {"stratum": "B", "size": 20, "replicates": 3}}, 3,
+                        ["replicates.subsample.stratum", "replicates.subsample.size"]),
+    "a smaller subsample": ({"default": 1, "subsample": {"stratum": "A", "size": 39, "replicates": 3}}, 3, ["replicates.subsample.size"]),
+    "two replicates": ({"default": 1, "subsample": {"stratum": "A", "size": 40, "replicates": 2}}, 3, ["replicates.subsample.replicates"]),
+    "every item twice": ({"default": 2, "subsample": {"stratum": "A", "size": 40, "replicates": 3}}, 3, ["replicates.default"]),
+    "no retries": (None, 0, ["retries"]),
+    "more retries": (None, 4, ["retries"]),
+}
+
+
+@pytest.mark.parametrize("case", sorted(EXECUTION_DEPARTURES))
+def test_ac_10_5_a_confirmatory_run_that_departs_from_the_paper_s_replicates_or_retries_is_refused_or_named(tmp_path, monkeypatch, case):
+    # VBT RevB Sec. VIII-C: "Within-model variability is estimated from three replicates on a 40-item S1 subsample" and
+    # "API failures are retried three times, then logged and counted". Review 25: a confirmatory E1 spec could replicate
+    # one stratum E item twice with no retries and its record filed the registered family. The paper's values are the
+    # registered execution protocol (`runner.REGISTERED_EXECUTION`): an E1-E4 run that departs from it is refused when
+    # live or over research data (`design_departs_from_registration:<field>`, exit 2), and a synthetic run's record
+    # names each departure (`pins.execution.departures`) and files its family as `departs_from_registration`.
+    monkeypatch.setattr(governance, "confirmatory_refusals", lambda spec, **kwargs: [])
+    replicates, retries, fields = EXECUTION_DEPARTURES[case]
+    parameters = runner.load_harness_parameters()
+    assert runner.REGISTERED_EXECUTION == {
+        "replicates.default": parameters["replicates"]["default"], "retries": parameters["retries"],
+        **{f"replicates.subsample.{key}": parameters["replicates"]["subsample"][key] for key in ("stratum", "size", "replicates")}}
+    items_path, catalog_path, _items = synthetic.write_fixture_set(tmp_path, synthetic.PAPER_TARGETS, splits=True)
+    spec = synthetic.spec_dict(items_path=items_path, catalog_path=catalog_path, purpose="confirmatory", experiment="E1",
+                               run_id="synthetic-confirmatory-departure-v1", retries=retries)
+    del spec["replicates"]  # the harness default, the paper's values
+    if replicates is not None:
+        spec["replicates"] = {**replicates, "subsample": {**replicates["subsample"], "rule": "sha256-order-v1"}}
+    registered = {key: value for key, value in spec.items() if key not in ("replicates", "retries")}
+    assert runner.plan_run(registered).pins["execution"] == {"registered": runner.REGISTERED_EXECUTION, "departures": []}
+    plan = runner.plan_run(spec)
+    expected = [{"field": field, "registered": runner.REGISTERED_EXECUTION[field],
+                 "effective": retries if field == "retries" else (replicates["default"] if field == "replicates.default"
+                                                                  else replicates["subsample"][field.rsplit(".", 1)[1]])}
+                for field in fields]
+    assert plan.pins["execution"]["departures"] == expected
+    assert runner.execution_departures("E3", spec.get("replicates", parameters["replicates"]), plan.pins["retries"]) == [
+        entry for entry in expected if entry["field"] == "retries"]  # E3 uses no subsample: only its retries are judged
+    reasons = [f"design_departs_from_registration:{field}" for field in fields]
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run({**spec, "mode": "live", "responder": {"live": {"adapter": "none"}}})
+    assert refused.value.code == 2 and refused.value.reasons == reasons
+    monkeypatch.setattr(planes, "all_synthetic", lambda items: False)
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(spec)
+    assert refused.value.code == 2 and refused.value.reasons == reasons
+    with pytest.raises(runner.RunRefused) as refused:
+        runner.plan_run(registered)
+    assert refused.value.code == 9 and refused.value.reasons == ["hold_h12_data_plane"]  # the registered values pass on
+    monkeypatch.undo()
+    # The record of a synthetic run that departs files the E1 family as `departs_from_registration`, never as registered
+    # (a small set, whose subsample of 2 S1 items departs as well).
+    monkeypatch.setattr(governance, "confirmatory_refusals", lambda spec, **kwargs: [])
+    small_path, small_catalog, _small = synthetic.write_fixture_set(tmp_path / "small", synthetic.SMALL, splits=True)
+    small = synthetic.spec_dict(items_path=small_path, catalog_path=small_catalog, purpose="confirmatory", experiment="E1",
+                                run_id="synthetic-confirmatory-departure-v1", retries=retries)
+    small_plan = runner.plan_run(small)
+    assert [entry for entry in small_plan.pins["execution"]["departures"] if entry["field"] == "retries"] == [
+        entry for entry in expected if entry["field"] == "retries"]
+    record = runner.execute_run(small_plan, providers.StubResponder(), tmp_path / "out")
+    assert record["registered_tests"]["family"] == "E1" and record["registered_tests"]["protocol"] == "departs_from_registration"
+    assert record["registered_tests"]["departures"] == record["pins"]["execution"]["departures"] != []
+    if case == "no retries":  # once: the paper's values file the family as registered
+        kept = runner.execute_run(runner.plan_run(registered), providers.StubResponder(), tmp_path / "registered")
+        assert kept["registered_tests"]["protocol"] == "registered" and kept["registered_tests"]["departures"] == []
 
 
 def test_plan_l_each_stop_condition_refuses(tmp_path, monkeypatch):

@@ -16,7 +16,9 @@ valid day is refused (`run_start_invalid`), one with another run's digest too (`
 recording must state its start (`recording_started_on_missing`), not after today (`recording_after_run`). An earlier
 start only tightens the checks; the checkpoint and the header are the operator's files (DI-143). A confirmatory run
 covers every live item of both splits (`items_split_missing` when a live item has no split) and its full replicate
-subsample (`replicate_subsample_short`).
+subsample (`replicate_subsample_short`). An E1-E4 run keeps the paper's execution values (`runner.REGISTERED_EXECUTION`:
+three replicates on a 40-item S1 subsample, every other item once, three retries) when it is live or over research
+data (`design_departs_from_registration:<field>`, exit 2); a synthetic run's record names each departure.
 --write and --check run in a temporary directory outside the checkout; nothing else is written there. With --access-log
 (required for non-synthetic inputs, with --actor-role) the run logs the spec read, every input as the planner reads it
 (also when it then refuses the run), each checkpoint file it reads (`run_output`: run_events.jsonl when a dated resume
@@ -39,7 +41,8 @@ reason code), a non-synthetic run without the access log (`access_log_required`)
 (`pre_run_scan_*`), an analysis plans file its validator refuses (`analysis_plan_invalid:<problem>`, the validator's message, such as `families: not an object`) or an E1-E4 family the design does not compute (`analysis_plan_invalid:<experiment>`) or an E2-E4
 design that cannot run (`design`, `design.<field>`, `design_departs_from_registration:<field>` in a live run or over
 research data, `e2_panel_invalid`, `verification_set_empty`, `e3_no_s7_items`, `e4_models_invalid`, `e4_shift_invalid`,
-`e4_later_price_in_force`, `e4_stream_items_below_floor` in a live run or over research data, `experiment_requires_arms`), or a confirmatory run refused with no IRB, OSF, items or
+`e4_later_price_in_force`, `e4_stream_items_below_floor` in a live run or over research data, `experiment_requires_arms`),
+an E1-E4 run whose replicates or retries depart from the registered execution protocol in a live run or over research data (`design_departs_from_registration:<field>`, the field one of `replicates.default`, `replicates.subsample.stratum`, `replicates.subsample.size`, `replicates.subsample.replicates` and `retries`; `runner.REGISTERED_EXECUTION`), or a confirmatory run refused with no IRB, OSF, items or
 freeze-record reason; 3 invalid items, unresolved pointers, a recording entry the run cannot read (`recording_invalid`:
 each entry's attempts and response are shape-checked when the recording is read, before any request), a design input (`<input>`: `verification_set`,
 `e4_responses`, `ratings`) unreadable (`<input>_unreadable`) or invalid (`<input>_invalid`, `verification_set_items`,

@@ -24,7 +24,7 @@ executed and no Table XVII row or HR-1..MR-3 outcome is asserted (plan Phase 10 
   design that cannot run (`design`, `design.<field>`, `design_departs_from_registration:<field>` in a live run or over
   research data, `e2_panel_invalid`, `verification_set_empty`, `e3_no_s7_items`, `e4_models_invalid`,
   `e4_shift_invalid`, `e4_later_price_in_force`, `e4_stream_items_below_floor` in a live run or over research data,
-  `experiment_requires_arms`), or a confirmatory run refused with no
+  `experiment_requires_arms`), an E1-E4 run whose replicates or retries depart from the registered execution protocol in a live run or over research data (`design_departs_from_registration:<field>`, the field one of `replicates.default`, `replicates.subsample.stratum`, `replicates.subsample.size`, `replicates.subsample.replicates` and `retries`; `runner.REGISTERED_EXECUTION`), or a confirmatory run refused with no
   IRB, OSF, items or freeze-record reason; 3 invalid items, unresolved pointers, a recording entry the run cannot
   read (`recording_invalid`), a design input (`<input>`:
   `verification_set`, `e4_responses`, `ratings`) unreadable (`<input>_unreadable`) or invalid (`<input>_invalid`,
@@ -40,7 +40,8 @@ executed and no Table XVII row or HR-1..MR-3 outcome is asserted (plan Phase 10 
   `--actor-role`), path refused, an output or the access log that cannot be written, or an input unreadable or invalid (the items, the previous set, validated as the items are (`previous items invalid`), the ratings, a main-round rating of a unit its item does not own or under another rubric included, the rubric,
   the freeze rules, or an agent-check record that does not parse or is not shaped as `ulqs-agent-check-v1`); 3 schema
   problems; 4 freeze failed (an agent-check record that does not match the items is a freeze code); 5 evidence catalog
-  invalid or unresolved pointers (a `--corpus-text` document that cannot be read or is not UTF-8 is unavailable, so its
+  invalid (a `document_id` that is not a file name included: `pointers.document_id_problem`) or unresolved pointers (a
+  `--corpus-text` document that cannot be read, whose path open() refuses or that is not UTF-8 is unavailable, so its
   pointers are not text-verified: exit 5, or with `--freeze` a failed freeze, exit 4); 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
 - `migrate_ulqs_rc1.py`: 0; 2 refused path or usage, a mapping that cannot be read, is not strict JSON or is not shaped as `ulqs-rc1-to-v1.0` format 1 (`mapping unreadable`, `mapping invalid (<field>)`, before the input is read), or an output or the access log that cannot be written; 3 the input unreadable, an input item fails rc1 validation, or a migrated
   record fails v1.0 validation; 10 an unexpected internal error (`internal_error`: the last-resort handler of `main`, which names the exception's class, never its message).
@@ -104,8 +105,9 @@ paired by item on answerable items, H1c); E2, the three-family verifier panel wi
 level's presentation pass) and single-pass generation of every S7 item at three levels (H3a, H3b); E4, four models in
 GATE and VLOOP, costed at their input and output list prices (the local model's cost reported separately), and their
 seeded replay streams over eight routing policies (H4a, H4b). A live run or a run over research data runs the registered
-protocol (`design_departs_from_registration:<field>` otherwise); a synthetic run may depart and its record names each
-departure. E3's exact claim-set comparison stands in for the paper's entailment comparison, and E4's measured local cost
+protocol, its design's values and the paper's execution values (three replicates on a 40-item S1 subsample, every
+other item once, three retries; `design_departs_from_registration:<field>` otherwise); a synthetic run may depart and
+its record names each departure and files its family as `departs_from_registration`. E3's exact claim-set comparison stands in for the paper's entailment comparison, and E4's measured local cost
 and latency wait on a pinned local model and the live adapters (spec conflict 40; DI-148).
 E2-E4 take their models from the spec's `design` block (PD-75): none is pinned (D-07), so they run on stub or recorded
 responses only.
